@@ -7,6 +7,7 @@ pub mod announcements;
 pub mod focus;
 pub mod keyboard;
 pub mod screen_reader;
+pub mod shortcuts;
 
 use crate::common::Result;
 
@@ -17,6 +18,7 @@ pub struct Accessibility {
     keyboard: keyboard::KeyboardHandler,
     focus: focus::FocusManager,
     announcements: announcements::AnnouncementQueue,
+    shortcuts: shortcuts::ShortcutManager,
 }
 
 impl Accessibility {
@@ -27,6 +29,7 @@ impl Accessibility {
             keyboard: keyboard::KeyboardHandler::new()?,
             focus: focus::FocusManager::new()?,
             announcements: announcements::AnnouncementQueue::new()?,
+            shortcuts: shortcuts::ShortcutManager::new(),
         })
     }
 
@@ -34,6 +37,11 @@ impl Accessibility {
     pub fn initialize(&self) -> Result<()> {
         // TODO: Initialize Windows UI Automation
         Ok(())
+    }
+
+    /// Get shortcut manager
+    pub fn shortcuts(&self) -> &shortcuts::ShortcutManager {
+        &self.shortcuts
     }
 }
 
@@ -44,6 +52,7 @@ impl Default for Accessibility {
             keyboard: keyboard::KeyboardHandler,
             focus: focus::FocusManager,
             announcements: announcements::AnnouncementQueue,
+            shortcuts: shortcuts::ShortcutManager::new(),
         })
     }
 }
