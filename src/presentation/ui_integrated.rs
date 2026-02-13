@@ -5,14 +5,18 @@
 
 use crate::application::mail_controller::MailController;
 use crate::common::Result;
+use crate::data::account::{Account, AccountManager};
 use crate::data::email_providers::{self, EmailProvider};
-use crate::data::message_cache::MessageCache;
+use crate::data::message_cache::{MessageCache, Tag};
+use crate::presentation::account_manager::{AccountManagerWindow, AccountAction};
 use crate::presentation::composition::{CompositionWindow, CompositionAction};
+use crate::presentation::signature_manager::{SignatureManagerWindow, SignatureAction};
+use crate::presentation::tag_manager::{TagManagerWindow, TagAction};
+use async_channel::{Receiver, Sender};
 use eframe::egui;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex as TokioMutex;
-use async_channel::{Sender, Receiver};
 
 /// UI state for the integrated mail client
 pub struct UIState {
@@ -50,12 +54,39 @@ pub struct UIState {
     pub search_query: String,
     /// Search results
     pub search_results: Vec<MessageItem>,
+    /// Advanced search: selected tags
+    pub search_selected_tags: Vec<String>,
+    /// Advanced search: date from
+    pub search_date_from: String,
+    /// Advanced search: date to
+    pub search_date_to: String,
+    /// Advanced search: sender filter
+    pub search_sender: String,
+    /// Advanced search: recipient filter
+    pub search_recipient: String,
+    /// Advanced search: has attachments
+    pub search_has_attachments: Option<bool>,
+    /// Advanced search: unread only
+    pub search_unread_only: bool,
+    /// Advanced search: starred only
+    pub search_starred_only: bool,
+    /// Tag manager window
+    pub tag_manager: TagManagerWindow,
+    /// Signature manager window
+    pub signature_manager: SignatureManagerWindow,
+    /// Account manager window
+    pub account_manager: AccountManagerWindow,
+    /// Message tags for display
+    pub message_tags: std::collections::HashMap<u32, Vec<Tag>>,
+    /// Selected tag filter
+    pub selected_tag_filter: Option<String>,
 }
 
 /// Message item for display
 #[derive(Clone, Debug)]
 pub struct MessageItem {
     pub uid: u32,
+    pub message_id: i64,  // Database ID for tag lookups
     pub subject: String,
     pub from: String,
     pub date: String,
@@ -148,6 +179,19 @@ impl Default for UIState {
             },
             search_query: String::new(),
             search_results: Vec::new(),
+            search_selected_tags: Vec::new(),
+            search_date_from: String::new(),
+            search_date_to: String::new(),
+            search_sender: String::new(),
+            search_recipient: String::new(),
+            search_has_attachments: None,
+            search_unread_only: false,
+            search_starred_only: false,
+            tag_manager: TagManagerWindow::new(),
+            signature_manager: SignatureManagerWindow::new(),
+            account_manager: AccountManagerWindow::new(),
+            message_tags: std::collections::HashMap::new(),
+            selected_tag_filter: None,
         }
     }
 }
@@ -172,13 +216,30 @@ impl IntegratedUI {
         let mail_controller = Arc::new(TokioMutex::new(MailController::new()));
         let (ui_tx, ui_rx) = async_channel::unbounded();
         
+        // Initialize message cache
+        let cache_dir = dirs::cache_dir()
+            .ok_or_else(|| crate::common::Error::Other("Could not find cache directory".to_string()))?
+            .join("wixen-mail");
+        let message_cache = Some(MessageCache::new(cache_dir)?);
+        
+        let mut state = UIState::default();
+        
+        // Load accounts from database if available
+        if let Some(ref cache) = message_cache {
+            if let Ok(accounts) = cache.load_accounts() {
+                // Set first account as active if any exist
+                state.account_manager.active_account_id = accounts.first().map(|a| a.id.clone());
+                state.account_manager.accounts = accounts;
+            }
+        }
+        
         Ok(Self {
             mail_controller,
             runtime,
             ui_tx,
             ui_rx,
-            state: UIState::default(),
-            message_cache: None,
+            state,
+            message_cache,
         })
     }
     
@@ -304,6 +365,7 @@ impl IntegratedUI {
                     let message_items: Vec<MessageItem> = messages.iter().map(|m| {
                         MessageItem {
                             uid: m.uid,
+                            message_id: 0,  // Will be populated when we cache messages
                             subject: m.subject.clone(),
                             from: m.from.clone(),
                             date: m.date.clone(),
@@ -324,6 +386,38 @@ impl IntegratedUI {
                 }
             }
         });
+    }
+    
+    /// Filter messages by tag
+    fn filter_messages_by_tag(&mut self, tag_id: String) {
+        if let Some(cache) = &self.message_cache {
+            match cache.get_messages_by_tag(&tag_id) {
+                Ok(messages) => {
+                    let message_items: Vec<MessageItem> = messages.iter().map(|m| {
+                        MessageItem {
+                            uid: m.uid,
+                            message_id: m.id,
+                            subject: m.subject.clone(),
+                            from: m.from_addr.clone(),
+                            date: m.date.clone(),
+                            read: m.read,
+                            starred: m.starred,
+                            has_attachments: false, // TODO: Check attachments
+                            attachments: Vec::new(),
+                            thread_depth: 0,
+                            is_thread_parent: true,
+                            thread_id: None,
+                        }
+                    }).collect();
+                    
+                    self.state.messages = message_items;
+                    self.state.status_message = format!("Filtered by tag: {} messages", messages.len());
+                }
+                Err(e) => {
+                    self.state.error_message = Some(format!("Failed to filter by tag: {}", e));
+                }
+            }
+        }
     }
     
     /// Fetch message body
@@ -391,6 +485,17 @@ impl IntegratedUI {
                     }
                     if ui.button("📧 New Message (Ctrl+N)").clicked() {
                         self.state.composition_window.open();
+                        // Auto-insert default signature
+                        if let Some(cache) = &self.message_cache {
+                            if let Ok(Some(sig)) = cache.get_default_signature(&self.state.account_config.email) {
+                                let sig_text = if self.state.composition_window.html_mode {
+                                    sig.content_html.unwrap_or(sig.content_plain)
+                                } else {
+                                    sig.content_plain
+                                };
+                                self.state.composition_window.insert_signature(&sig_text);
+                            }
+                        }
                         ui.close_menu();
                     }
                     ui.separator();
@@ -405,8 +510,25 @@ impl IntegratedUI {
                 });
                 
                 ui.menu_button("Edit", |ui| {
-                    if ui.button("🔍 Search (Ctrl+F)").clicked() {
+                    if ui.button("🔍 Advanced Search (Ctrl+Shift+F)").clicked() {
                         self.state.search_open = true;
+                        ui.close_menu();
+                    }
+                });
+                
+                ui.menu_button("Tools", |ui| {
+                    if ui.button("🏷 Manage Tags (Ctrl+T)").clicked() {
+                        self.state.tag_manager.open(self.state.account_config.email.clone());
+                        ui.close_menu();
+                    }
+                    if ui.button("✍ Manage Signatures (Ctrl+Shift+S)").clicked() {
+                        self.state.signature_manager.open(self.state.account_config.email.clone());
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("🔑 Manage Accounts (Ctrl+M)").clicked() {
+                        // For now, open with empty accounts list - will be populated from AccountManager later
+                        self.state.account_manager.open(Vec::new(), None);
                         ui.close_menu();
                     }
                 });
@@ -482,6 +604,71 @@ impl IntegratedUI {
                             }
                         }
                     });
+                    
+                    // Tags section for filtering
+                    ui.add_space(16.0);
+                    ui.heading("🏷 Tags");
+                    ui.separator();
+                    
+                    let mut tag_filter_action: Option<Option<String>> = None;
+                    
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false; 2])
+                        .max_height(200.0)
+                        .show(ui, |ui| {
+                        if let Some(cache) = &self.message_cache {
+                            if let Ok(tags) = cache.get_tags_for_account(&self.state.account_config.email) {
+                                if tags.is_empty() {
+                                    ui.label("No tags yet");
+                                } else {
+                                    // "All Messages" option to clear filter
+                                    let is_all_selected = self.state.selected_tag_filter.is_none();
+                                    if ui.selectable_label(is_all_selected, "📧 All Messages").clicked() {
+                                        tag_filter_action = Some(None);  // Clear filter
+                                    }
+                                    
+                                    ui.separator();
+                                    
+                                    // Clone tags to avoid borrow issues
+                                    let tags_clone = tags.clone();
+                                    
+                                    // Display each tag with message count
+                                    for tag in &tags_clone {
+                                        let is_selected = self.state.selected_tag_filter.as_ref() == Some(&tag.id);
+                                        let color = parse_hex_color(&tag.color).unwrap_or(egui::Color32::GRAY);
+                                        
+                                        // Get message count for this tag
+                                        let count = cache.get_messages_by_tag(&tag.id).map(|m| m.len()).unwrap_or(0);
+                                        
+                                        ui.horizontal(|ui| {
+                                            ui.colored_label(color, "●");
+                                            if ui.selectable_label(is_selected, format!("{} ({})", tag.name, count)).clicked() {
+                                                tag_filter_action = Some(Some(tag.id.clone()));  // Set filter
+                                            }
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    
+                    // Apply tag filter action after the ScrollArea closes
+                    if let Some(action) = tag_filter_action {
+                        match action {
+                            None => {
+                                // Clear filter
+                                self.state.selected_tag_filter = None;
+                                if let Some(folder) = &self.state.selected_folder.clone() {
+                                    self.fetch_messages_for_folder(folder.clone());
+                                }
+                            }
+                            Some(tag_id) => {
+                                // Apply filter
+                                self.state.selected_tag_filter = Some(tag_id.clone());
+                                self.filter_messages_by_tag(tag_id);
+                            }
+                        }
+                    }
                 });
                 
                 ui.separator();
@@ -552,6 +739,27 @@ impl IntegratedUI {
                                         ui.label(&msg.subject);
                                     });
                                     
+                                    // Display tags for this message
+                                    if let Some(cache) = &self.message_cache {
+                                        if msg.message_id > 0 {
+                                            if let Ok(tags) = cache.get_tags_for_message(msg.message_id) {
+                                                if !tags.is_empty() {
+                                                    ui.horizontal(|ui| {
+                                                        ui.add_space(4.0);
+                                                        for tag in &tags {
+                                                            let color = parse_hex_color(&tag.color).unwrap_or(egui::Color32::GRAY);
+                                                            let text = egui::RichText::new(&tag.name)
+                                                                .color(egui::Color32::WHITE)
+                                                                .small();
+                                                            ui.colored_label(color, text);
+                                                            ui.add_space(2.0);
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
                                     ui.label(format!("From: {}", msg.from));
                                     ui.label(format!("Date: {}", msg.date));
                                 });
@@ -563,6 +771,17 @@ impl IntegratedUI {
                                             msg.from.clone(),
                                             msg.subject.clone()
                                         );
+                                        // Auto-insert signature above quoted text
+                                        if let Some(cache) = &self.message_cache {
+                                            if let Ok(Some(sig)) = cache.get_default_signature(&self.state.account_config.email) {
+                                                let sig_text = if self.state.composition_window.html_mode {
+                                                    sig.content_html.unwrap_or(sig.content_plain.clone())
+                                                } else {
+                                                    sig.content_plain
+                                                };
+                                                self.state.composition_window.insert_signature(&sig_text);
+                                            }
+                                        }
                                         ui.close_menu();
                                     }
                                     if ui.button("↪ Forward").clicked() {
@@ -570,6 +789,18 @@ impl IntegratedUI {
                                             msg.subject.clone(),
                                             String::new() // TODO: Get actual message body
                                         );
+                                        // Auto-insert signature above forwarded content
+                                        if let Some(cache) = &self.message_cache {
+                                            if let Ok(Some(sig)) = cache.get_default_signature(&self.state.account_config.email) {
+                                                let sig_text = if self.state.composition_window.html_mode {
+                                                    sig.content_html.unwrap_or(sig.content_plain.clone())
+                                                } else {
+                                                    sig.content_plain
+                                                };
+                                                // Insert before "---------- Forwarded message ----------"
+                                                self.state.composition_window.insert_signature_above_quote(&sig_text, "---------- Forwarded message ----------");
+                                            }
+                                        }
                                         ui.close_menu();
                                     }
                                     ui.separator();
@@ -584,6 +815,55 @@ impl IntegratedUI {
                                     if ui.button("📬 Mark as Unread").clicked() {
                                         self.state.status_message = format!("Marked as unread: {}", msg.subject);
                                         ui.close_menu();
+                                    }
+                                    
+                                    // Tag submenu
+                                    ui.separator();
+                                    if msg.message_id > 0 {
+                                        ui.menu_button("🏷 Tags", |ui| {
+                                            if let Some(cache) = &self.message_cache {
+                                                // Get available tags
+                                                if let Ok(all_tags) = cache.get_tags_for_account(&self.state.account_config.email) {
+                                                    // Get currently applied tags
+                                                    let applied_tags = cache.get_tags_for_message(msg.message_id).unwrap_or_default();
+                                                    let applied_ids: Vec<String> = applied_tags.iter().map(|t| t.id.clone()).collect();
+                                                    
+                                                    if all_tags.is_empty() {
+                                                        ui.label("No tags available");
+                                                    } else {
+                                                        for tag in &all_tags {
+                                                            let is_applied = applied_ids.contains(&tag.id);
+                                                            let color = parse_hex_color(&tag.color).unwrap_or(egui::Color32::GRAY);
+                                                            
+                                                            ui.horizontal(|ui| {
+                                                                ui.colored_label(color, "●");
+                                                                let mut checked = is_applied;
+                                                                if ui.checkbox(&mut checked, &tag.name).clicked() {
+                                                                    if is_applied {
+                                                                        // Remove tag
+                                                                        if let Ok(_) = cache.remove_tag_from_message(msg.message_id, &tag.id) {
+                                                                            self.state.status_message = format!("Removed tag '{}' from message", tag.name);
+                                                                        }
+                                                                    } else {
+                                                                        // Add tag
+                                                                        if let Ok(_) = cache.add_tag_to_message(msg.message_id, &tag.id) {
+                                                                            self.state.status_message = format!("Added tag '{}' to message", tag.name);
+                                                                        }
+                                                                    }
+                                                                    ui.close_menu();
+                                                                }
+                                                            });
+                                                        }
+                                                    }
+                                                    
+                                                    ui.separator();
+                                                    if ui.button("Manage Tags...").clicked() {
+                                                        self.state.tag_manager.open(self.state.account_config.email.clone());
+                                                        ui.close_menu();
+                                                    }
+                                                }
+                                            }
+                                        });
                                     }
                                 });
                             }
@@ -718,6 +998,38 @@ impl IntegratedUI {
         if self.state.search_open {
             self.render_search_window(ctx);
         }
+        
+        // Tag manager window
+        if let Some(action) = self.state.tag_manager.render(ctx, &self.message_cache) {
+            self.handle_tag_action(action);
+        }
+        
+        // Signature manager window
+        if let Some(action) = self.state.signature_manager.render(ctx, &self.message_cache) {
+            self.handle_signature_action(action);
+        }
+        
+        // Account manager window
+        let account_action = self.state.account_manager.render(ctx);
+        if !matches!(account_action, AccountAction::None) {
+            self.handle_account_action(account_action);
+        }
+        
+        // Handle tag/signature/account manager keyboard shortcuts
+        ctx.input(|i| {
+            // Tag manager shortcut: Ctrl+T
+            if i.key_pressed(egui::Key::T) && i.modifiers.ctrl && !i.modifiers.shift {
+                self.state.tag_manager.open(self.state.account_config.email.clone());
+            }
+            // Signature manager shortcut: Ctrl+Shift+S
+            if i.key_pressed(egui::Key::S) && i.modifiers.ctrl && i.modifiers.shift {
+                self.state.signature_manager.open(self.state.account_config.email.clone());
+            }
+            // Account manager shortcut: Ctrl+M
+            if i.key_pressed(egui::Key::M) && i.modifiers.ctrl && !i.modifiers.shift {
+                self.state.account_manager.open(Vec::new(), None);
+            }
+        });
         
         // Error message window (Feature 7: Better Error Handling)
         if let Some(ref error) = self.state.error_message.clone() {
@@ -928,34 +1240,183 @@ impl IntegratedUI {
     
     /// Render search window (Feature 4: Advanced Search UI)
     fn render_search_window(&mut self, ctx: &egui::Context) {
-        egui::Window::new("🔍 Search Messages")
+        egui::Window::new("🔍 Advanced Search")
             .collapsible(false)
             .resizable(true)
-            .default_size([500.0, 400.0])
+            .default_size([600.0, 500.0])
             .show(ctx, |ui| {
                 ui.heading("Search Criteria");
+                ui.add_space(8.0);
                 
+                // Basic text search
                 ui.horizontal(|ui| {
-                    ui.label("Search:");
-                    ui.text_edit_singleline(&mut self.state.search_query);
-                    if ui.button("🔍 Search").clicked() {
-                        // TODO: Implement search functionality
-                        self.state.status_message = format!("Searching for '{}'...", self.state.search_query);
+                    ui.label("Text Search:");
+                    ui.text_edit_singleline(&mut self.state.search_query)
+                        .on_hover_text("Search in subject and sender");
+                });
+                
+                ui.add_space(4.0);
+                
+                // Tag filter
+                ui.horizontal(|ui| {
+                    ui.label("Tags:");
+                    if let Some(cache) = &self.message_cache {
+                        if let Ok(tags) = cache.get_tags_for_account(&self.state.account_config.email) {
+                            egui::ComboBox::from_id_salt("search_tags")
+                                .selected_text(format!("{} selected", self.state.search_selected_tags.len()))
+                                .show_ui(ui, |ui| {
+                                    if tags.is_empty() {
+                                        ui.label("No tags available");
+                                    } else {
+                                        for tag in &tags {
+                                            let mut is_selected = self.state.search_selected_tags.contains(&tag.id);
+                                            let color = parse_hex_color(&tag.color).unwrap_or(egui::Color32::GRAY);
+                                            
+                                            ui.horizontal(|ui| {
+                                                ui.colored_label(color, "●");
+                                                if ui.checkbox(&mut is_selected, &tag.name).changed() {
+                                                    if is_selected {
+                                                        self.state.search_selected_tags.push(tag.id.clone());
+                                                    } else {
+                                                        self.state.search_selected_tags.retain(|id| id != &tag.id);
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    }
+                                });
+                        }
                     }
                 });
                 
+                ui.add_space(4.0);
+                
+                // Date range
+                ui.horizontal(|ui| {
+                    ui.label("Date Range:");
+                    ui.label("From:");
+                    ui.text_edit_singleline(&mut self.state.search_date_from)
+                        .on_hover_text("Format: YYYY-MM-DD");
+                    ui.label("To:");
+                    ui.text_edit_singleline(&mut self.state.search_date_to)
+                        .on_hover_text("Format: YYYY-MM-DD");
+                });
+                
+                ui.add_space(4.0);
+                
+                // Sender filter
+                ui.horizontal(|ui| {
+                    ui.label("Sender:");
+                    ui.text_edit_singleline(&mut self.state.search_sender)
+                        .on_hover_text("Filter by sender email or name");
+                });
+                
+                ui.add_space(4.0);
+                
+                // Recipient filter
+                ui.horizontal(|ui| {
+                    ui.label("Recipient:");
+                    ui.text_edit_singleline(&mut self.state.search_recipient)
+                        .on_hover_text("Filter by recipient email or name");
+                });
+                
+                ui.add_space(4.0);
+                
+                // Checkbox filters
+                ui.horizontal(|ui| {
+                    // Has attachments filter (tri-state)
+                    let attachments_text = match self.state.search_has_attachments {
+                        None => "Any",
+                        Some(true) => "With Attachments",
+                        Some(false) => "Without Attachments",
+                    };
+                    
+                    if ui.button(format!("📎 {}", attachments_text)).clicked() {
+                        self.state.search_has_attachments = match self.state.search_has_attachments {
+                            None => Some(true),
+                            Some(true) => Some(false),
+                            Some(false) => None,
+                        };
+                    }
+                });
+                
+                ui.add_space(4.0);
+                
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.state.search_unread_only, "📬 Unread only");
+                    ui.checkbox(&mut self.state.search_starred_only, "⭐ Starred only");
+                });
+                
+                ui.add_space(8.0);
+                ui.separator();
+                
+                // Action buttons
+                ui.horizontal(|ui| {
+                    if ui.button("🔍 Search").clicked() {
+                        self.perform_advanced_search();
+                    }
+                    
+                    if ui.button("🗑 Clear All").clicked() {
+                        self.state.search_query.clear();
+                        self.state.search_selected_tags.clear();
+                        self.state.search_date_from.clear();
+                        self.state.search_date_to.clear();
+                        self.state.search_sender.clear();
+                        self.state.search_recipient.clear();
+                        self.state.search_has_attachments = None;
+                        self.state.search_unread_only = false;
+                        self.state.search_starred_only = false;
+                        self.state.search_results.clear();
+                    }
+                });
+                
+                ui.add_space(8.0);
                 ui.separator();
                 ui.heading("Search Results");
+                ui.label(format!("{} messages found", self.state.search_results.len()));
                 
-                egui::ScrollArea::vertical().show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(200.0)
+                    .show(ui, |ui| {
                     if self.state.search_results.is_empty() {
-                        ui.label("No results found.");
+                        ui.label("No results found. Adjust your search criteria and try again.");
                     } else {
-                        for msg in &self.state.search_results {
+                        for msg in &self.state.search_results.clone() {
                             ui.group(|ui| {
-                                ui.label(&msg.subject);
+                                ui.horizontal(|ui| {
+                                    if msg.starred {
+                                        ui.label("⭐");
+                                    }
+                                    if !msg.read {
+                                        ui.label("●");
+                                    }
+                                    if msg.has_attachments {
+                                        ui.label("📎");
+                                    }
+                                    ui.label(&msg.subject);
+                                });
                                 ui.label(format!("From: {}", msg.from));
                                 ui.label(format!("Date: {}", msg.date));
+                                
+                                // Show tags if available
+                                if let Some(cache) = &self.message_cache {
+                                    if msg.message_id > 0 {
+                                        if let Ok(tags) = cache.get_tags_for_message(msg.message_id) {
+                                            if !tags.is_empty() {
+                                                ui.horizontal(|ui| {
+                                                    ui.label("Tags:");
+                                                    for tag in &tags {
+                                                        let color = parse_hex_color(&tag.color).unwrap_or(egui::Color32::GRAY);
+                                                        let text = egui::RichText::new(&tag.name)
+                                                            .color(egui::Color32::WHITE)
+                                                            .small();
+                                                        ui.colored_label(color, text);
+                                                    }
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
                             });
                         }
                     }
@@ -966,6 +1427,69 @@ impl IntegratedUI {
                     self.state.search_open = false;
                 }
             });
+    }
+    
+    /// Perform advanced search with all filters
+    fn perform_advanced_search(&mut self) {
+        let mut results = self.state.messages.clone();
+        
+        // Filter by text in subject or sender
+        if !self.state.search_query.is_empty() {
+            let query_lower = self.state.search_query.to_lowercase();
+            results.retain(|m| {
+                m.subject.to_lowercase().contains(&query_lower) || 
+                m.from.to_lowercase().contains(&query_lower)
+            });
+        }
+        
+        // Filter by sender
+        if !self.state.search_sender.is_empty() {
+            let sender_lower = self.state.search_sender.to_lowercase();
+            results.retain(|m| m.from.to_lowercase().contains(&sender_lower));
+        }
+        
+        // Filter by tags
+        if !self.state.search_selected_tags.is_empty() {
+            if let Some(cache) = &self.message_cache {
+                results.retain(|m| {
+                    if m.message_id > 0 {
+                        if let Ok(tags) = cache.get_tags_for_message(m.message_id) {
+                            tags.iter().any(|t| self.state.search_selected_tags.contains(&t.id))
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                });
+            }
+        }
+        
+        // Filter by attachments
+        if let Some(has_attachments) = self.state.search_has_attachments {
+            results.retain(|m| m.has_attachments == has_attachments);
+        }
+        
+        // Filter by unread status
+        if self.state.search_unread_only {
+            results.retain(|m| !m.read);
+        }
+        
+        // Filter by starred status
+        if self.state.search_starred_only {
+            results.retain(|m| m.starred);
+        }
+        
+        // Date filtering (basic string comparison for now)
+        if !self.state.search_date_from.is_empty() {
+            results.retain(|m| m.date >= self.state.search_date_from);
+        }
+        if !self.state.search_date_to.is_empty() {
+            results.retain(|m| m.date <= self.state.search_date_to);
+        }
+        
+        self.state.search_results = results;
+        self.state.status_message = format!("Search completed: {} results found", self.state.search_results.len());
     }
     
     /// Get file icon based on MIME type
@@ -990,6 +1514,212 @@ impl IntegratedUI {
             "📎"
         }
     }
+    
+    /// Handle tag actions from the tag manager
+    fn handle_tag_action(&mut self, action: TagAction) {
+        if let Some(ref cache) = self.message_cache {
+            match action {
+                TagAction::Create(name, color) => {
+                    let tag = Tag {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        account_id: self.state.account_config.email.clone(),
+                        name: name.clone(),
+                        color,
+                        created_at: chrono::Utc::now().to_rfc3339(),
+                    };
+                    
+                    match cache.create_tag(&tag) {
+                        Ok(_) => {
+                            self.state.status_message = format!("Tag '{}' created", name);
+                            self.state.tag_manager.status = "Tag created successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to create tag: {}", e));
+                            self.state.tag_manager.error = Some(format!("Failed to create tag: {}", e));
+                        }
+                    }
+                }
+                TagAction::Update(tag) => {
+                    match cache.update_tag(&tag) {
+                        Ok(_) => {
+                            self.state.status_message = format!("Tag '{}' updated", tag.name);
+                            self.state.tag_manager.status = "Tag updated successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to update tag: {}", e));
+                            self.state.tag_manager.error = Some(format!("Failed to update tag: {}", e));
+                        }
+                    }
+                }
+                TagAction::Delete(tag_id) => {
+                    match cache.delete_tag(&tag_id) {
+                        Ok(_) => {
+                            self.state.status_message = "Tag deleted".to_string();
+                            self.state.tag_manager.status = "Tag deleted successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to delete tag: {}", e));
+                            self.state.tag_manager.error = Some(format!("Failed to delete tag: {}", e));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Handle signature actions from the signature manager
+    fn handle_signature_action(&mut self, action: SignatureAction) {
+        if let Some(ref cache) = self.message_cache {
+            match action {
+                SignatureAction::Create(name, content_plain, content_html, is_default) => {
+                    let signature = crate::data::message_cache::Signature {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        account_id: self.state.account_config.email.clone(),
+                        name: name.clone(),
+                        content_plain,
+                        content_html,
+                        is_default,
+                        created_at: chrono::Utc::now().to_rfc3339(),
+                    };
+                    
+                    match cache.create_signature(&signature) {
+                        Ok(_) => {
+                            self.state.status_message = format!("Signature '{}' created", name);
+                            self.state.signature_manager.status = "Signature created successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to create signature: {}", e));
+                            self.state.signature_manager.error = Some(format!("Failed to create signature: {}", e));
+                        }
+                    }
+                }
+                SignatureAction::Update(signature) => {
+                    match cache.update_signature(&signature) {
+                        Ok(_) => {
+                            self.state.status_message = format!("Signature '{}' updated", signature.name);
+                            self.state.signature_manager.status = "Signature updated successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to update signature: {}", e));
+                            self.state.signature_manager.error = Some(format!("Failed to update signature: {}", e));
+                        }
+                    }
+                }
+                SignatureAction::Delete(signature_id) => {
+                    match cache.delete_signature(&signature_id) {
+                        Ok(_) => {
+                            self.state.status_message = "Signature deleted".to_string();
+                            self.state.signature_manager.status = "Signature deleted successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to delete signature: {}", e));
+                            self.state.signature_manager.error = Some(format!("Failed to delete signature: {}", e));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Handle account manager actions
+    fn handle_account_action(&mut self, action: AccountAction) {
+        match action {
+            AccountAction::None => {}
+            AccountAction::Create(account) => {
+                if let Some(ref cache) = self.message_cache {
+                    match cache.save_account(&account) {
+                        Ok(_) => {
+                            self.state.status_message = format!("Account '{}' created", account.name);
+                            self.state.account_manager.status = format!("Account '{}' created successfully", account.name);
+                            // Reload accounts from database
+                            if let Ok(accounts) = cache.load_accounts() {
+                                self.state.account_manager.accounts = accounts;
+                            }
+                            self.state.account_manager.close();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to create account: {}", e));
+                            self.state.account_manager.error = Some(format!("Error: {}", e));
+                        }
+                    }
+                } else {
+                    self.state.error_message = Some("Database not available".to_string());
+                }
+            }
+            AccountAction::Update(account) => {
+                if let Some(ref cache) = self.message_cache {
+                    match cache.save_account(&account) {
+                        Ok(_) => {
+                            self.state.status_message = format!("Account '{}' updated", account.name);
+                            self.state.account_manager.status = format!("Account '{}' updated successfully", account.name);
+                            // Reload accounts from database
+                            if let Ok(accounts) = cache.load_accounts() {
+                                self.state.account_manager.accounts = accounts;
+                            }
+                            self.state.account_manager.close();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to update account: {}", e));
+                            self.state.account_manager.error = Some(format!("Error: {}", e));
+                        }
+                    }
+                } else {
+                    self.state.error_message = Some("Database not available".to_string());
+                }
+            }
+            AccountAction::Delete(account_id) => {
+                if let Some(ref cache) = self.message_cache {
+                    match cache.delete_account(&account_id) {
+                        Ok(_) => {
+                            self.state.status_message = "Account deleted successfully".to_string();
+                            self.state.account_manager.status = "Account deleted".to_string();
+                            // Reload accounts from database
+                            if let Ok(accounts) = cache.load_accounts() {
+                                self.state.account_manager.accounts = accounts;
+                            }
+                            // Clear active account if it was deleted
+                            if self.state.account_manager.active_account_id.as_ref() == Some(&account_id) {
+                                self.state.account_manager.active_account_id = None;
+                            }
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to delete account: {}", e));
+                            self.state.account_manager.error = Some(format!("Error: {}", e));
+                        }
+                    }
+                } else {
+                    self.state.error_message = Some("Database not available".to_string());
+                }
+            }
+            AccountAction::SetActive(account_id) => {
+                // Check if account exists
+                if self.state.account_manager.accounts.iter().any(|a| a.id == account_id) {
+                    self.state.account_manager.active_account_id = Some(account_id);
+                    self.state.status_message = "Active account changed".to_string();
+                    // TODO: Switch to this account's data (will be implemented in Item 3)
+                } else {
+                    self.state.error_message = Some("Account not found".to_string());
+                }
+            }
+            AccountAction::TestConnection(account_id) => {
+                self.state.status_message = format!("Testing connection for account {}...", account_id);
+                // TODO: Implement connection test
+            }
+        }
+    }
+}
+
+/// Parse hex color string to egui Color32
+fn parse_hex_color(hex: &str) -> Option<egui::Color32> {
+    if !hex.starts_with('#') || hex.len() != 7 {
+        return None;
+    }
+
+    let r = u8::from_str_radix(&hex[1..3], 16).ok()?;
+    let g = u8::from_str_radix(&hex[3..5], 16).ok()?;
+    let b = u8::from_str_radix(&hex[5..7], 16).ok()?;
+
+    Some(egui::Color32::from_rgb(r, g, b))
 }
 
 impl Default for IntegratedUI {
