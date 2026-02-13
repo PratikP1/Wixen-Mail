@@ -4,6 +4,7 @@
 //! through the MailController.
 
 use crate::application::mail_controller::MailController;
+use crate::common::Result;
 use crate::data::email_providers::{self, EmailProvider};
 use crate::data::message_cache::{MessageCache, Tag};
 use crate::presentation::composition::{CompositionWindow, CompositionAction};

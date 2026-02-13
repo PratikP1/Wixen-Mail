@@ -428,7 +428,7 @@ pub fn render_tag_pills(ui: &mut Ui, tags: &[Tag]) {
 
     ui.horizontal(|ui| {
         for tag in tags {
-            let color = parse_hex_color(&tag.color).unwrap_or(Color32::GRAY);
+            let _color = parse_hex_color(&tag.color).unwrap_or(Color32::GRAY);
             let text = RichText::new(&tag.name).color(Color32::WHITE).small();
             
             ui.label(text);
