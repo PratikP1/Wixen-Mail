@@ -10,7 +10,10 @@ keywords = ["email", "mail-client", "accessibility", "imap", "smtp"]
 categories = ["email", "gui"]
 
 [dependencies]
-# Core dependencies will be added as development progresses
+# Core dependencies for modular architecture
+uuid = { version = "1.11", features = ["v4"] }
+
+# Additional dependencies will be added as development progresses
 # async-imap = "0.9"
 # lettre = "0.11"
 # tokio = { version = "1", features = ["full"] }
