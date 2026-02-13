@@ -4,10 +4,11 @@
 //! through the MailController.
 
 use crate::application::mail_controller::MailController;
-use crate::common::Result;
 use crate::data::email_providers::{self, EmailProvider};
-use crate::data::message_cache::MessageCache;
+use crate::data::message_cache::{MessageCache, Tag};
 use crate::presentation::composition::{CompositionWindow, CompositionAction};
+use crate::presentation::tag_manager::{TagManagerWindow, TagAction};
+use crate::presentation::signature_manager::{SignatureManagerWindow, SignatureAction};
 use eframe::egui;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -50,6 +51,14 @@ pub struct UIState {
     pub search_query: String,
     /// Search results
     pub search_results: Vec<MessageItem>,
+    /// Tag manager window
+    pub tag_manager: TagManagerWindow,
+    /// Signature manager window
+    pub signature_manager: SignatureManagerWindow,
+    /// Message tags for display
+    pub message_tags: std::collections::HashMap<u32, Vec<Tag>>,
+    /// Selected tag filter
+    pub selected_tag_filter: Option<String>,
 }
 
 /// Message item for display
@@ -148,6 +157,10 @@ impl Default for UIState {
             },
             search_query: String::new(),
             search_results: Vec::new(),
+            tag_manager: TagManagerWindow::new(),
+            signature_manager: SignatureManagerWindow::new(),
+            message_tags: std::collections::HashMap::new(),
+            selected_tag_filter: None,
         }
     }
 }
@@ -407,6 +420,17 @@ impl IntegratedUI {
                 ui.menu_button("Edit", |ui| {
                     if ui.button("🔍 Search (Ctrl+F)").clicked() {
                         self.state.search_open = true;
+                        ui.close_menu();
+                    }
+                });
+                
+                ui.menu_button("Tools", |ui| {
+                    if ui.button("🏷 Manage Tags (Ctrl+T)").clicked() {
+                        self.state.tag_manager.open(self.state.account_config.email.clone());
+                        ui.close_menu();
+                    }
+                    if ui.button("✍ Manage Signatures (Ctrl+Shift+S)").clicked() {
+                        self.state.signature_manager.open(self.state.account_config.email.clone());
                         ui.close_menu();
                     }
                 });
@@ -719,6 +743,28 @@ impl IntegratedUI {
             self.render_search_window(ctx);
         }
         
+        // Tag manager window
+        if let Some(action) = self.state.tag_manager.render(ctx, &self.message_cache) {
+            self.handle_tag_action(action);
+        }
+        
+        // Signature manager window
+        if let Some(action) = self.state.signature_manager.render(ctx, &self.message_cache) {
+            self.handle_signature_action(action);
+        }
+        
+        // Handle tag/signature manager keyboard shortcuts
+        ctx.input(|i| {
+            // Tag manager shortcut: Ctrl+T
+            if i.key_pressed(egui::Key::T) && i.modifiers.ctrl {
+                self.state.tag_manager.open(self.state.account_config.email.clone());
+            }
+            // Signature manager shortcut: Ctrl+Shift+S
+            if i.key_pressed(egui::Key::S) && i.modifiers.ctrl && i.modifiers.shift {
+                self.state.signature_manager.open(self.state.account_config.email.clone());
+            }
+        });
+        
         // Error message window (Feature 7: Better Error Handling)
         if let Some(ref error) = self.state.error_message.clone() {
             egui::Window::new("❌ Error")
@@ -988,6 +1034,112 @@ impl IntegratedUI {
             "📦"
         } else {
             "📎"
+        }
+    }
+    
+    /// Handle tag actions from the tag manager
+    fn handle_tag_action(&mut self, action: TagAction) {
+        if let Some(ref cache) = self.message_cache {
+            match action {
+                TagAction::Create(name, color) => {
+                    let tag = Tag {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        account_id: self.state.account_config.email.clone(),
+                        name: name.clone(),
+                        color,
+                        created_at: chrono::Utc::now().to_rfc3339(),
+                    };
+                    
+                    match cache.create_tag(&tag) {
+                        Ok(_) => {
+                            self.state.status_message = format!("Tag '{}' created", name);
+                            self.state.tag_manager.status = "Tag created successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to create tag: {}", e));
+                            self.state.tag_manager.error = Some(format!("Failed to create tag: {}", e));
+                        }
+                    }
+                }
+                TagAction::Update(tag) => {
+                    match cache.update_tag(&tag) {
+                        Ok(_) => {
+                            self.state.status_message = format!("Tag '{}' updated", tag.name);
+                            self.state.tag_manager.status = "Tag updated successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to update tag: {}", e));
+                            self.state.tag_manager.error = Some(format!("Failed to update tag: {}", e));
+                        }
+                    }
+                }
+                TagAction::Delete(tag_id) => {
+                    match cache.delete_tag(&tag_id) {
+                        Ok(_) => {
+                            self.state.status_message = "Tag deleted".to_string();
+                            self.state.tag_manager.status = "Tag deleted successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to delete tag: {}", e));
+                            self.state.tag_manager.error = Some(format!("Failed to delete tag: {}", e));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Handle signature actions from the signature manager
+    fn handle_signature_action(&mut self, action: SignatureAction) {
+        if let Some(ref cache) = self.message_cache {
+            match action {
+                SignatureAction::Create(name, content_plain, content_html, is_default) => {
+                    let signature = crate::data::message_cache::Signature {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        account_id: self.state.account_config.email.clone(),
+                        name: name.clone(),
+                        content_plain,
+                        content_html,
+                        is_default,
+                        created_at: chrono::Utc::now().to_rfc3339(),
+                    };
+                    
+                    match cache.create_signature(&signature) {
+                        Ok(_) => {
+                            self.state.status_message = format!("Signature '{}' created", name);
+                            self.state.signature_manager.status = "Signature created successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to create signature: {}", e));
+                            self.state.signature_manager.error = Some(format!("Failed to create signature: {}", e));
+                        }
+                    }
+                }
+                SignatureAction::Update(signature) => {
+                    match cache.update_signature(&signature) {
+                        Ok(_) => {
+                            self.state.status_message = format!("Signature '{}' updated", signature.name);
+                            self.state.signature_manager.status = "Signature updated successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to update signature: {}", e));
+                            self.state.signature_manager.error = Some(format!("Failed to update signature: {}", e));
+                        }
+                    }
+                }
+                SignatureAction::Delete(signature_id) => {
+                    match cache.delete_signature(&signature_id) {
+                        Ok(_) => {
+                            self.state.status_message = "Signature deleted".to_string();
+                            self.state.signature_manager.status = "Signature deleted successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to delete signature: {}", e));
+                            self.state.signature_manager.error = Some(format!("Failed to delete signature: {}", e));
+                        }
+                    }
+                }
+            }
         }
     }
 }
