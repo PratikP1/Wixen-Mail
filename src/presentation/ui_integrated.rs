@@ -404,11 +404,11 @@ impl IntegratedUI {
                             date: m.date.clone(),
                             read: m.read,
                             starred: m.starred,
-                            has_attachments: Self::estimate_has_attachments(&m.subject),
+                            has_attachments: false,
                             attachments: Vec::new(),
                             thread_depth,
                             is_thread_parent: thread_depth == 0,
-                            thread_id: Some(format!("thread:{}", m.subject.trim().to_lowercase())),
+                            thread_id: None,
                         }
                     }).collect();
                     
@@ -427,6 +427,7 @@ impl IntegratedUI {
             match cache.get_messages_by_tag(&tag_id) {
                 Ok(messages) => {
                     let message_items: Vec<MessageItem> = messages.iter().map(|m| {
+                        let thread_depth = Self::estimate_thread_depth(&m.subject);
                         MessageItem {
                             uid: m.uid,
                             message_id: m.id,
@@ -435,11 +436,11 @@ impl IntegratedUI {
                             date: m.date.clone(),
                             read: m.read,
                             starred: m.starred,
-                            has_attachments: Self::estimate_has_attachments(&m.subject),
+                            has_attachments: false,
                             attachments: Vec::new(),
-                            thread_depth: Self::estimate_thread_depth(&m.subject),
-                            is_thread_parent: Self::estimate_thread_depth(&m.subject) == 0,
-                            thread_id: Some(format!("thread:{}", m.subject.trim().to_lowercase())),
+                            thread_depth,
+                            is_thread_parent: thread_depth == 0,
+                            thread_id: None,
                         }
                     }).collect();
                     
@@ -1830,7 +1831,15 @@ impl IntegratedUI {
                     let ui_tx = self.ui_tx.clone();
                     self.runtime.spawn(async move {
                         let controller = MailController::new();
-                        let port = account.imap_port.parse().unwrap_or(DEFAULT_IMAP_PORT);
+                        let port = account.imap_port.parse().unwrap_or_else(|_| {
+                            tracing::warn!(
+                                "Invalid IMAP port '{}' for account '{}', using default {}",
+                                account.imap_port,
+                                account.email,
+                                DEFAULT_IMAP_PORT
+                            );
+                            DEFAULT_IMAP_PORT
+                        });
                         match controller.connect_imap(
                             account.imap_server.clone(),
                             port,
@@ -1911,8 +1920,13 @@ impl IntegratedUI {
     }
     
     fn ensure_background_sync(&mut self, account: Account) {
-        if let Ok(mut sync_accounts) = self.sync_accounts.lock() {
-            sync_accounts.insert(account.id.clone(), account.clone());
+        match self.sync_accounts.lock() {
+            Ok(mut sync_accounts) => {
+                sync_accounts.insert(account.id.clone(), account.clone());
+            }
+            Err(e) => {
+                tracing::warn!("Failed to lock sync account map for update: {}", e);
+            }
         }
         
         if !account.enabled {
@@ -1920,16 +1934,22 @@ impl IntegratedUI {
             return;
         }
         
-        self.stop_background_sync(&account.id);
-        self.spawn_background_sync(account.id.clone());
+        if !self.background_sync_tasks.contains_key(&account.id) {
+            self.spawn_background_sync(account.id.clone());
+        }
     }
     
     fn stop_background_sync(&mut self, account_id: &str) {
         if let Some(task) = self.background_sync_tasks.remove(account_id) {
             task.abort();
         }
-        if let Ok(mut sync_accounts) = self.sync_accounts.lock() {
-            sync_accounts.remove(account_id);
+        match self.sync_accounts.lock() {
+            Ok(mut sync_accounts) => {
+                sync_accounts.remove(account_id);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to lock sync account map for removal: {}", e);
+            }
         }
     }
     
@@ -1947,7 +1967,10 @@ impl IntegratedUI {
             loop {
                 let account = match sync_accounts.lock() {
                     Ok(accounts) => accounts.get(&task_account_id).cloned(),
-                    Err(_) => None,
+                    Err(e) => {
+                        tracing::warn!("Failed to lock sync account map in background task: {}", e);
+                        None
+                    }
                 };
                 
                 let Some(account) = account else { break };
@@ -1992,17 +2015,25 @@ impl IntegratedUI {
     }
     
     fn estimate_thread_depth(subject: &str) -> usize {
-        let lower = subject.trim().to_lowercase();
-        if lower.starts_with("re:") || lower.starts_with("fwd:") || lower.starts_with("fw:") {
-            1
-        } else {
-            0
+        let mut remaining = subject.trim();
+        let mut depth = 0;
+        
+        loop {
+            if remaining.get(..3).map(|p| p.eq_ignore_ascii_case("re:")).unwrap_or(false) {
+                depth += 1;
+                remaining = remaining.get(3..).unwrap_or("").trim_start();
+            } else if remaining.get(..4).map(|p| p.eq_ignore_ascii_case("fwd:")).unwrap_or(false) {
+                depth += 1;
+                remaining = remaining.get(4..).unwrap_or("").trim_start();
+            } else if remaining.get(..3).map(|p| p.eq_ignore_ascii_case("fw:")).unwrap_or(false) {
+                depth += 1;
+                remaining = remaining.get(3..).unwrap_or("").trim_start();
+            } else {
+                break;
+            }
         }
-    }
-    
-    fn estimate_has_attachments(subject: &str) -> bool {
-        let lower = subject.to_lowercase();
-        lower.contains("attach") || lower.contains("attachment") || lower.contains("📎")
+        
+        depth
     }
 }
 
@@ -2010,6 +2041,9 @@ impl Drop for IntegratedUI {
     fn drop(&mut self) {
         for (_, task) in self.background_sync_tasks.drain() {
             task.abort();
+        }
+        if let Ok(mut sync_accounts) = self.sync_accounts.lock() {
+            sync_accounts.clear();
         }
     }
 }
@@ -2065,12 +2099,7 @@ mod tests {
         assert_eq!(IntegratedUI::estimate_thread_depth("Hello"), 0);
         assert_eq!(IntegratedUI::estimate_thread_depth("Re: Hello"), 1);
         assert_eq!(IntegratedUI::estimate_thread_depth("Fwd: Update"), 1);
-    }
-    
-    #[test]
-    fn test_estimate_has_attachments() {
-        assert!(IntegratedUI::estimate_has_attachments("Please see attachment"));
-        assert!(IntegratedUI::estimate_has_attachments("📎 Report"));
-        assert!(!IntegratedUI::estimate_has_attachments("Quick status update"));
+        assert_eq!(IntegratedUI::estimate_thread_depth("Re: Re: Update"), 2);
+        assert_eq!(IntegratedUI::estimate_thread_depth("Fw: Re: Update"), 2);
     }
 }
