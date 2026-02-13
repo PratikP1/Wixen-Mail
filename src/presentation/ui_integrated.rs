@@ -6,6 +6,7 @@
 use crate::application::mail_controller::MailController;
 use crate::common::Result;
 use crate::data::email_providers::{self, EmailProvider};
+use crate::data::message_cache::MessageCache;
 use crate::presentation::composition::{CompositionWindow, CompositionAction};
 use eframe::egui;
 use std::sync::Arc;
@@ -158,6 +159,7 @@ pub struct IntegratedUI {
     ui_tx: Sender<UIUpdate>,
     ui_rx: Receiver<UIUpdate>,
     state: UIState,
+    message_cache: Option<MessageCache>,
 }
 
 impl IntegratedUI {
@@ -176,7 +178,18 @@ impl IntegratedUI {
             ui_tx,
             ui_rx,
             state: UIState::default(),
+            message_cache: None,
         })
+    }
+    
+    /// Initialize message cache
+    fn init_cache(&mut self) -> Result<()> {
+        let cache_dir = dirs::cache_dir()
+            .ok_or_else(|| crate::common::Error::Other("Could not find cache directory".to_string()))?
+            .join("wixen-mail");
+        
+        self.message_cache = Some(MessageCache::new(cache_dir)?);
+        Ok(())
     }
     
     /// Run the UI event loop
@@ -635,16 +648,58 @@ impl IntegratedUI {
         
         // Composition window
         let action = self.state.composition_window.render(ctx);
+        
+        // Auto-save draft if needed
+        if self.state.composition_window.open && self.state.composition_window.should_auto_save() {
+            if let Some(ref cache) = self.message_cache {
+                let account_id = if !self.state.account_config.username.is_empty() {
+                    self.state.account_config.username.clone()
+                } else {
+                    "default@local".to_string()
+                };
+                
+                let draft = self.state.composition_window.to_draft(&account_id);
+                if let Ok(_) = cache.save_draft(&draft) {
+                    self.state.composition_window.mark_saved();
+                }
+            }
+        }
+        
         match action {
             CompositionAction::Send => {
                 let to = self.state.composition_window.get_recipients();
                 let subject = self.state.composition_window.subject.clone();
                 let body = self.state.composition_window.body.clone();
+                
+                // Delete draft if it exists
+                if let (Some(ref cache), Some(ref draft_id)) = (&self.message_cache, &self.state.composition_window.draft_id) {
+                    let _ = cache.delete_draft(draft_id);
+                }
+                
                 self.send_email(to, subject, body);
             }
             CompositionAction::SaveDraft => {
-                // TODO: Implement draft saving to SQLite
-                self.state.status_message = "Draft saved".to_string();
+                // Save draft to SQLite
+                if let Some(ref cache) = self.message_cache {
+                    let account_id = if !self.state.account_config.username.is_empty() {
+                        self.state.account_config.username.clone()
+                    } else {
+                        "default@local".to_string()
+                    };
+                    
+                    let draft = self.state.composition_window.to_draft(&account_id);
+                    match cache.save_draft(&draft) {
+                        Ok(_) => {
+                            self.state.composition_window.mark_saved();
+                            self.state.status_message = "Draft saved".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to save draft: {}", e));
+                        }
+                    }
+                } else {
+                    self.state.status_message = "Draft saved (in memory)".to_string();
+                }
             }
             CompositionAction::Discard => {
                 // Window closed, nothing to do

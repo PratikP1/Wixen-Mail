@@ -357,6 +357,39 @@ impl CompositionWindow {
             .filter(|s| !s.is_empty())
             .collect()
     }
+    
+    /// Convert to draft for saving
+    pub fn to_draft(&self, account_id: &str) -> crate::data::message_cache::CachedDraft {
+        use crate::data::message_cache::CachedDraft;
+        
+        let draft_id = self.draft_id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let now = chrono::Utc::now().to_rfc3339();
+        
+        CachedDraft {
+            id: draft_id,
+            account_id: account_id.to_string(),
+            to_addr: self.to.clone(),
+            cc: if self.cc.is_empty() { None } else { Some(self.cc.clone()) },
+            bcc: if self.bcc.is_empty() { None } else { Some(self.bcc.clone()) },
+            subject: self.subject.clone(),
+            body: self.body.clone(),
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+    
+    /// Load from draft
+    pub fn from_draft(&mut self, draft: &crate::data::message_cache::CachedDraft) {
+        self.draft_id = Some(draft.id.clone());
+        self.to = draft.to_addr.clone();
+        self.cc = draft.cc.clone().unwrap_or_default();
+        self.bcc = draft.bcc.clone().unwrap_or_default();
+        self.subject = draft.subject.clone();
+        self.body = draft.body.clone();
+        self.show_cc = draft.cc.is_some();
+        self.show_bcc = draft.bcc.is_some();
+        self.open = true;
+    }
 }
 
 /// Actions that can be triggered from the composition window
