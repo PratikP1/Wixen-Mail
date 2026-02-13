@@ -9,8 +9,8 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [x] Initialize Rust project with Cargo
 - [x] Set up Git repository structure
 - [x] Create project documentation (README, LICENSE, ROADMAP)
-- [ ] Set up CI/CD pipeline (GitHub Actions)
-- [ ] Configure Rust formatting and linting tools (rustfmt, clippy)
+- [x] Set up CI/CD pipeline (GitHub Actions)
+- [x] Configure Rust formatting and linting tools (rustfmt, clippy)
 
 ### Core Architecture
 - [ ] Design modular architecture for mail client components
