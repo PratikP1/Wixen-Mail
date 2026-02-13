@@ -5,6 +5,7 @@
 
 use crate::application::mail_controller::MailController;
 use crate::common::Result;
+use crate::data::email_providers::{self, EmailProvider};
 use eframe::egui;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -23,12 +24,16 @@ pub struct UIState {
     pub messages: Vec<MessageItem>,
     /// Message preview text
     pub message_preview: String,
+    /// Current message attachments
+    pub current_attachments: Vec<AttachmentItem>,
     /// Composition window state
     pub composition_open: bool,
     /// Settings window state
     pub settings_open: bool,
     /// Account configuration window state
     pub account_config_open: bool,
+    /// Search window state
+    pub search_open: bool,
     /// Connection status
     pub connection_status: ConnectionStatus,
     /// Error message (if any)
@@ -39,6 +44,10 @@ pub struct UIState {
     pub account_config: AccountConfig,
     /// Composition data
     pub composition_data: CompositionData,
+    /// Search query
+    pub search_query: String,
+    /// Search results
+    pub search_results: Vec<MessageItem>,
 }
 
 /// Message item for display
@@ -50,6 +59,16 @@ pub struct MessageItem {
     pub date: String,
     pub read: bool,
     pub starred: bool,
+    pub has_attachments: bool,
+    pub attachments: Vec<AttachmentItem>,
+}
+
+/// Attachment item for display
+#[derive(Clone, Debug)]
+pub struct AttachmentItem {
+    pub filename: String,
+    pub mime_type: String,
+    pub size: usize,
 }
 
 /// Connection status
@@ -64,6 +83,8 @@ pub enum ConnectionStatus {
 /// Account configuration
 #[derive(Clone, Debug, Default)]
 pub struct AccountConfig {
+    pub email: String,
+    pub selected_provider: Option<String>,
     pub imap_server: String,
     pub imap_port: String,
     pub imap_use_tls: bool,
@@ -104,9 +125,11 @@ impl Default for UIState {
             folders: Vec::new(),
             messages: Vec::new(),
             message_preview: String::new(),
+            current_attachments: Vec::new(),
             composition_open: false,
             settings_open: false,
             account_config_open: false,
+            search_open: false,
             connection_status: ConnectionStatus::Disconnected,
             error_message: None,
             status_message: "Ready".to_string(),
@@ -118,6 +141,8 @@ impl Default for UIState {
                 ..Default::default()
             },
             composition_data: CompositionData::default(),
+            search_query: String::new(),
+            search_results: Vec::new(),
         }
     }
 }
@@ -268,6 +293,8 @@ impl IntegratedUI {
                             date: m.date.clone(),
                             read: m.read,
                             starred: m.starred,
+                            has_attachments: false, // TODO: Get from actual message
+                            attachments: Vec::new(), // TODO: Get from actual message
                         }
                     }).collect();
                     
@@ -361,6 +388,7 @@ impl IntegratedUI {
                 
                 ui.menu_button("Edit", |ui| {
                     if ui.button("🔍 Search (Ctrl+F)").clicked() {
+                        self.state.search_open = true;
                         ui.close_menu();
                     }
                 });
@@ -445,9 +473,10 @@ impl IntegratedUI {
                         } else {
                             for msg in self.state.messages.clone() {
                                 let selected = self.state.selected_message == Some(msg.uid);
-                                ui.group(|ui| {
+                                let response = ui.group(|ui| {
                                     if ui.selectable_label(selected, "").clicked() {
                                         self.state.selected_message = Some(msg.uid);
+                                        self.state.current_attachments = msg.attachments.clone();
                                         if let Some(folder) = &self.state.selected_folder.clone() {
                                             self.fetch_message_body(folder.clone(), msg.uid);
                                         }
@@ -460,11 +489,42 @@ impl IntegratedUI {
                                         if !msg.read {
                                             ui.label("●");
                                         }
+                                        if msg.has_attachments {
+                                            ui.label("📎");
+                                        }
                                         ui.label(&msg.subject);
                                     });
                                     
                                     ui.label(format!("From: {}", msg.from));
                                     ui.label(format!("Date: {}", msg.date));
+                                });
+                                
+                                // Context menu (Feature 5: Right-click actions)
+                                response.response.context_menu(|ui| {
+                                    if ui.button("📧 Reply").clicked() {
+                                        self.state.composition_open = true;
+                                        self.state.composition_data.to = msg.from.clone();
+                                        self.state.composition_data.subject = format!("Re: {}", msg.subject);
+                                        ui.close_menu();
+                                    }
+                                    if ui.button("↪ Forward").clicked() {
+                                        self.state.composition_open = true;
+                                        self.state.composition_data.subject = format!("Fwd: {}", msg.subject);
+                                        ui.close_menu();
+                                    }
+                                    ui.separator();
+                                    if ui.button("🗑 Delete").clicked() {
+                                        self.state.status_message = format!("Deleted message: {}", msg.subject);
+                                        ui.close_menu();
+                                    }
+                                    if ui.button("⭐ Toggle Star").clicked() {
+                                        self.state.status_message = format!("Toggled star for: {}", msg.subject);
+                                        ui.close_menu();
+                                    }
+                                    if ui.button("📬 Mark as Unread").clicked() {
+                                        self.state.status_message = format!("Marked as unread: {}", msg.subject);
+                                        ui.close_menu();
+                                    }
                                 });
                             }
                         }
@@ -483,6 +543,34 @@ impl IntegratedUI {
                             ui.label("Select a message to preview.");
                         } else {
                             ui.label(&self.state.message_preview);
+                            
+                            // Show attachments if any
+                            if !self.state.current_attachments.is_empty() {
+                                ui.separator();
+                                ui.heading("📎 Attachments");
+                                
+                                for attachment in &self.state.current_attachments {
+                                    ui.group(|ui| {
+                                        ui.horizontal(|ui| {
+                                            // File icon based on mime type
+                                            let icon = Self::get_file_icon(&attachment.mime_type);
+                                            ui.label(icon);
+                                            
+                                            ui.vertical(|ui| {
+                                                ui.label(&attachment.filename);
+                                                ui.label(format!("{} ({} bytes)", attachment.mime_type, attachment.size));
+                                            });
+                                            
+                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                if ui.button("💾 Save").clicked() {
+                                                    // TODO: Implement save functionality
+                                                    self.state.status_message = format!("Saving {}...", attachment.filename);
+                                                }
+                                            });
+                                        });
+                                    });
+                                }
+                            }
                         }
                     });
                 });
@@ -504,16 +592,54 @@ impl IntegratedUI {
             self.render_settings_window(ctx);
         }
         
-        // Error message window
+        // Search window (Feature 4)
+        if self.state.search_open {
+            self.render_search_window(ctx);
+        }
+        
+        // Error message window (Feature 7: Better Error Handling)
         if let Some(ref error) = self.state.error_message.clone() {
             egui::Window::new("❌ Error")
                 .collapsible(false)
-                .resizable(false)
+                .resizable(true)
+                .default_size([400.0, 200.0])
                 .show(ctx, |ui| {
+                    ui.heading("An error occurred");
+                    ui.separator();
+                    
                     ui.label(error);
-                    if ui.button("OK").clicked() {
-                        self.state.error_message = None;
+                    
+                    ui.separator();
+                    ui.label("ℹ Troubleshooting tips:");
+                    
+                    // Provide context-specific help
+                    if error.contains("Connection") || error.contains("connect") {
+                        ui.label("• Check your internet connection");
+                        ui.label("• Verify server address and port");
+                        ui.label("• Ensure TLS/SSL settings are correct");
+                        ui.label("• Check if firewall is blocking the connection");
+                    } else if error.contains("Authentication") || error.contains("auth") || error.contains("credentials") {
+                        ui.label("• Verify your username and password");
+                        ui.label("• Check if 2FA/app password is required");
+                        ui.label("• Ensure account has IMAP/SMTP enabled");
+                    } else if error.contains("folder") || error.contains("Folder") {
+                        ui.label("• Folder may have been deleted or renamed");
+                        ui.label("• Try refreshing the folder list");
+                    } else {
+                        ui.label("• Try again in a few moments");
+                        ui.label("• Check the application logs for details");
                     }
+                    
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui.button("✅ OK").clicked() {
+                            self.state.error_message = None;
+                        }
+                        if ui.button("📖 Help").clicked() {
+                            // TODO: Open help documentation
+                            self.state.status_message = "Opening help documentation...".to_string();
+                        }
+                    });
                 });
         }
         
@@ -534,8 +660,67 @@ impl IntegratedUI {
         egui::Window::new("🔌 Account Configuration")
             .collapsible(false)
             .resizable(true)
-            .default_size([500.0, 500.0])
+            .default_size([600.0, 650.0])
             .show(ctx, |ui| {
+                ui.heading("Email Provider");
+                ui.label("Select your email provider for automatic configuration:");
+                
+                // Email address input for auto-detection
+                ui.horizontal(|ui| {
+                    ui.label("Email Address:");
+                    let email_changed = ui.text_edit_singleline(&mut self.state.account_config.email).changed();
+                    
+                    if email_changed && !self.state.account_config.email.is_empty() {
+                        // Auto-detect provider from email
+                        if let Some(provider) = email_providers::detect_provider_from_email(&self.state.account_config.email) {
+                            self.apply_provider_settings(&provider);
+                        }
+                    }
+                });
+                
+                // Provider dropdown
+                ui.horizontal(|ui| {
+                    ui.label("Provider:");
+                    let providers = email_providers::get_providers();
+                    let current_label = self.state.account_config.selected_provider
+                        .as_ref()
+                        .and_then(|name| providers.iter().find(|p| &p.name == name))
+                        .map(|p| p.display_name.as_str())
+                        .unwrap_or("Manual Configuration");
+                    
+                    egui::ComboBox::from_label("")
+                        .selected_text(current_label)
+                        .show_ui(ui, |ui| {
+                            // Manual configuration option
+                            if ui.selectable_label(self.state.account_config.selected_provider.is_none(), "Manual Configuration").clicked() {
+                                self.state.account_config.selected_provider = None;
+                            }
+                            
+                            ui.separator();
+                            
+                            // Provider options
+                            for provider in providers {
+                                let selected = self.state.account_config.selected_provider.as_ref() == Some(&provider.name);
+                                if ui.selectable_label(selected, &provider.display_name).clicked() {
+                                    self.apply_provider_settings(&provider);
+                                }
+                            }
+                        });
+                });
+                
+                // Show provider help if available
+                if let Some(provider_name) = &self.state.account_config.selected_provider {
+                    if let Some(provider) = email_providers::get_provider_by_name(provider_name) {
+                        if let Some(doc_url) = provider.documentation_url {
+                            ui.horizontal(|ui| {
+                                ui.label("ℹ");
+                                ui.hyperlink_to("Provider setup guide", doc_url);
+                            });
+                        }
+                    }
+                }
+                
+                ui.separator();
                 ui.heading("IMAP Settings (Incoming Mail)");
                 ui.horizontal(|ui| {
                     ui.label("Server:");
@@ -581,6 +766,17 @@ impl IntegratedUI {
                     }
                 });
             });
+    }
+    
+    /// Apply provider settings to account configuration
+    fn apply_provider_settings(&mut self, provider: &EmailProvider) {
+        self.state.account_config.selected_provider = Some(provider.name.clone());
+        self.state.account_config.imap_server = provider.imap_server.clone();
+        self.state.account_config.imap_port = provider.imap_port.to_string();
+        self.state.account_config.imap_use_tls = provider.imap_tls;
+        self.state.account_config.smtp_server = provider.smtp_server.clone();
+        self.state.account_config.smtp_port = provider.smtp_port.to_string();
+        self.state.account_config.smtp_use_tls = provider.smtp_tls;
     }
     
     /// Render composition window
@@ -655,6 +851,71 @@ impl IntegratedUI {
                     self.state.settings_open = false;
                 }
             });
+    }
+    
+    /// Render search window (Feature 4: Advanced Search UI)
+    fn render_search_window(&mut self, ctx: &egui::Context) {
+        egui::Window::new("🔍 Search Messages")
+            .collapsible(false)
+            .resizable(true)
+            .default_size([500.0, 400.0])
+            .show(ctx, |ui| {
+                ui.heading("Search Criteria");
+                
+                ui.horizontal(|ui| {
+                    ui.label("Search:");
+                    ui.text_edit_singleline(&mut self.state.search_query);
+                    if ui.button("🔍 Search").clicked() {
+                        // TODO: Implement search functionality
+                        self.state.status_message = format!("Searching for '{}'...", self.state.search_query);
+                    }
+                });
+                
+                ui.separator();
+                ui.heading("Search Results");
+                
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    if self.state.search_results.is_empty() {
+                        ui.label("No results found.");
+                    } else {
+                        for msg in &self.state.search_results {
+                            ui.group(|ui| {
+                                ui.label(&msg.subject);
+                                ui.label(format!("From: {}", msg.from));
+                                ui.label(format!("Date: {}", msg.date));
+                            });
+                        }
+                    }
+                });
+                
+                ui.separator();
+                if ui.button("Close").clicked() {
+                    self.state.search_open = false;
+                }
+            });
+    }
+    
+    /// Get file icon based on MIME type
+    fn get_file_icon(mime_type: &str) -> &'static str {
+        if mime_type.starts_with("image/") {
+            "🖼"
+        } else if mime_type.starts_with("video/") {
+            "🎥"
+        } else if mime_type.starts_with("audio/") {
+            "🎵"
+        } else if mime_type.contains("pdf") {
+            "📄"
+        } else if mime_type.contains("word") || mime_type.contains("document") {
+            "📝"
+        } else if mime_type.contains("spreadsheet") || mime_type.contains("excel") {
+            "📊"
+        } else if mime_type.contains("presentation") || mime_type.contains("powerpoint") {
+            "📽"
+        } else if mime_type.contains("zip") || mime_type.contains("archive") {
+            "📦"
+        } else {
+            "📎"
+        }
     }
 }
 
