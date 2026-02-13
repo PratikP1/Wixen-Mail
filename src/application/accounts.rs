@@ -2,7 +2,10 @@
 //!
 //! Manages email accounts, credentials, and authentication.
 
-use crate::common::{Result, types::{Id, Protocol}};
+use crate::common::{
+    types::{Id, Protocol},
+    Result,
+};
 
 /// Account information
 #[derive(Debug, Clone)]
@@ -81,7 +84,7 @@ mod tests {
         );
         let id = account.id.clone();
         manager.add_account(account).unwrap();
-        
+
         assert_eq!(manager.get_accounts().len(), 1);
         assert!(manager.get_account(&id).is_some());
     }

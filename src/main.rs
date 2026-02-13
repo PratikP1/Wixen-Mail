@@ -1,6 +1,6 @@
 use wixen_mail::application::{AccountManager, MessageManager};
-use wixen_mail::presentation::{UI, Accessibility};
 use wixen_mail::data::ConfigManager;
+use wixen_mail::presentation::{Accessibility, UI};
 
 fn main() {
     println!("Wixen Mail - Accessible Mail Client");
@@ -16,7 +16,9 @@ fn main() {
             println!();
             println!("Architecture layers:");
             println!("  • Presentation Layer: UI + Accessibility");
-            println!("  • Application Layer: Accounts, Messages, Composition, Search, Filters, Contacts");
+            println!(
+                "  • Application Layer: Accounts, Messages, Composition, Search, Filters, Contacts"
+            );
             println!("  • Service Layer: IMAP, SMTP, POP3, Security, Cache, Attachments");
             println!("  • Data Layer: Database, Storage, Configuration");
             println!();

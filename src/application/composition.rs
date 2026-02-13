@@ -2,7 +2,7 @@
 //!
 //! Handles creation and editing of email messages.
 
-use crate::common::{Result, types::EmailAddress};
+use crate::common::{types::EmailAddress, Result};
 
 /// Draft message
 #[derive(Debug, Clone)]
@@ -44,9 +44,7 @@ pub struct CompositionManager {
 impl CompositionManager {
     /// Create a new composition manager
     pub fn new() -> Result<Self> {
-        Ok(Self {
-            drafts: Vec::new(),
-        })
+        Ok(Self { drafts: Vec::new() })
     }
 
     /// Create a new draft
@@ -78,7 +76,7 @@ mod tests {
         let mut manager = CompositionManager::new().unwrap();
         let draft = manager.create_draft();
         draft.subject = "Test".to_string();
-        
+
         assert_eq!(manager.get_drafts().len(), 1);
         assert_eq!(manager.get_drafts()[0].subject, "Test");
     }

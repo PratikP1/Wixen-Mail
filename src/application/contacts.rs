@@ -2,7 +2,7 @@
 //!
 //! Manages contacts and address book.
 
-use crate::common::{Result, types::EmailAddress};
+use crate::common::{types::EmailAddress, Result};
 
 /// Contact information
 #[derive(Debug, Clone)]

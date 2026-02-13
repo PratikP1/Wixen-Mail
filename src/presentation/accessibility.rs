@@ -3,10 +3,10 @@
 //! Provides interfaces for screen readers (NVDA, JAWS, Narrator) and
 //! keyboard navigation support.
 
-pub mod screen_reader;
-pub mod keyboard;
-pub mod focus;
 pub mod announcements;
+pub mod focus;
+pub mod keyboard;
+pub mod screen_reader;
 
 use crate::common::Result;
 

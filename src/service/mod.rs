@@ -2,12 +2,12 @@
 //!
 //! This layer handles email protocols, security, caching, and other services.
 
+pub mod attachments;
+pub mod cache;
 pub mod protocols;
 pub mod security;
-pub mod cache;
-pub mod attachments;
 
-pub use protocols::{imap, smtp, pop3};
-pub use security::SecurityService;
-pub use cache::CacheService;
 pub use attachments::AttachmentHandler;
+pub use cache::CacheService;
+pub use protocols::{imap, pop3, smtp};
+pub use security::SecurityService;

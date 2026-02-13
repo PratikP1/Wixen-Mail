@@ -32,9 +32,7 @@ pub struct FilterEngine {
 impl FilterEngine {
     /// Create a new filter engine
     pub fn new() -> Result<Self> {
-        Ok(Self {
-            rules: Vec::new(),
-        })
+        Ok(Self { rules: Vec::new() })
     }
 
     /// Add a filter rule

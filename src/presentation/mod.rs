@@ -2,8 +2,8 @@
 //!
 //! This layer handles all user interface rendering and accessibility features.
 
-pub mod ui;
 pub mod accessibility;
+pub mod ui;
 
-pub use ui::UI;
 pub use accessibility::Accessibility;
+pub use ui::UI;

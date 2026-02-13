@@ -2,7 +2,10 @@
 //!
 //! Manages email messages, threads, and message operations.
 
-use crate::common::{Result, types::{Id, EmailAddress}};
+use crate::common::{
+    types::{EmailAddress, Id},
+    Result,
+};
 
 /// Message flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -84,8 +87,13 @@ mod tests {
     fn test_message_creation() {
         let from = EmailAddress::new("sender@example.com".to_string(), None);
         let to = vec![EmailAddress::new("recipient@example.com".to_string(), None)];
-        let msg = Message::new("Test Subject".to_string(), from, to, "Test body".to_string());
-        
+        let msg = Message::new(
+            "Test Subject".to_string(),
+            from,
+            to,
+            "Test body".to_string(),
+        );
+
         assert_eq!(msg.subject, "Test Subject");
         assert!(!msg.flags.read);
     }
@@ -97,10 +105,10 @@ mod tests {
         let to = vec![EmailAddress::new("recipient@example.com".to_string(), None)];
         let msg = Message::new("Test".to_string(), from, to, "Body".to_string());
         let id = msg.id.clone();
-        
+
         manager.add_message(msg).unwrap();
         manager.mark_as_read(&id).unwrap();
-        
+
         let msg = manager.get_message(&id).unwrap();
         assert!(msg.flags.read);
     }
