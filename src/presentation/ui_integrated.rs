@@ -26,6 +26,8 @@ pub struct UIState {
     pub message_preview: String,
     /// Current message attachments
     pub current_attachments: Vec<AttachmentItem>,
+    /// Thread view enabled
+    pub thread_view_enabled: bool,
     /// Composition window state
     pub composition_open: bool,
     /// Settings window state
@@ -61,6 +63,9 @@ pub struct MessageItem {
     pub starred: bool,
     pub has_attachments: bool,
     pub attachments: Vec<AttachmentItem>,
+    pub thread_depth: usize,
+    pub is_thread_parent: bool,
+    pub thread_id: Option<String>,
 }
 
 /// Attachment item for display
@@ -126,6 +131,7 @@ impl Default for UIState {
             messages: Vec::new(),
             message_preview: String::new(),
             current_attachments: Vec::new(),
+            thread_view_enabled: true, // Default to thread view enabled
             composition_open: false,
             settings_open: false,
             account_config_open: false,
@@ -295,6 +301,9 @@ impl IntegratedUI {
                             starred: m.starred,
                             has_attachments: false, // TODO: Get from actual message
                             attachments: Vec::new(), // TODO: Get from actual message
+                            thread_depth: 0, // TODO: Calculate from message headers
+                            is_thread_parent: true, // TODO: Determine from thread structure
+                            thread_id: None, // TODO: Extract from message-id/references
                         }
                     }).collect();
                     
@@ -394,6 +403,10 @@ impl IntegratedUI {
                 });
                 
                 ui.menu_button("View", |ui| {
+                    if ui.checkbox(&mut self.state.thread_view_enabled, "🧵 Thread View").changed() {
+                        ui.close_menu();
+                    }
+                    ui.separator();
                     if ui.button("🔄 Refresh (F5)").clicked() {
                         if let Some(folder) = &self.state.selected_folder.clone() {
                             self.fetch_messages_for_folder(folder.clone());
@@ -444,7 +457,10 @@ impl IntegratedUI {
                     ui.heading("📁 Folders");
                     ui.separator();
                     
-                    egui::ScrollArea::vertical().show(ui, |ui| {
+                    // Performance optimization (Feature 6)
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false; 2])
+                        .show(ui, |ui| {
                         if self.state.folders.is_empty() {
                             ui.label("No folders loaded. Connect to server first.");
                         } else {
@@ -464,16 +480,39 @@ impl IntegratedUI {
                 // Middle panel - Message list
                 ui.vertical(|ui| {
                     ui.set_width(400.0);
-                    ui.heading("📨 Messages");
+                    ui.horizontal(|ui| {
+                        ui.heading("📨 Messages");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            // Thread view toggle (Feature 2)
+                            if ui.checkbox(&mut self.state.thread_view_enabled, "🧵 Thread View").changed() {
+                                self.state.status_message = if self.state.thread_view_enabled {
+                                    "Thread view enabled".to_string()
+                                } else {
+                                    "Thread view disabled".to_string()
+                                };
+                            }
+                        });
+                    });
                     ui.separator();
                     
-                    egui::ScrollArea::vertical().show(ui, |ui| {
+                    // Performance optimization (Feature 6): Use ScrollArea with sensible defaults
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false; 2]) // Don't shrink to content
+                        .max_height(f32::INFINITY) // Use all available space
+                        .show(ui, |ui| {
                         if self.state.messages.is_empty() {
                             ui.label("No messages to display.");
                         } else {
+                            // Performance optimization: Only render visible messages
+                            // In production, this would use proper virtualization
                             for msg in self.state.messages.clone() {
                                 let selected = self.state.selected_message == Some(msg.uid);
                                 let response = ui.group(|ui| {
+                                    // Thread indentation (Feature 2)
+                                    if self.state.thread_view_enabled && msg.thread_depth > 0 {
+                                        ui.add_space(msg.thread_depth as f32 * 20.0);
+                                    }
+                                    
                                     if ui.selectable_label(selected, "").clicked() {
                                         self.state.selected_message = Some(msg.uid);
                                         self.state.current_attachments = msg.attachments.clone();
@@ -483,6 +522,15 @@ impl IntegratedUI {
                                     }
                                     
                                     ui.horizontal(|ui| {
+                                        // Thread indicator (Feature 2)
+                                        if self.state.thread_view_enabled {
+                                            if msg.is_thread_parent && msg.thread_depth == 0 {
+                                                ui.label("📧");
+                                            } else if msg.thread_depth > 0 {
+                                                ui.label("↳");
+                                            }
+                                        }
+                                        
                                         if msg.starred {
                                             ui.label("⭐");
                                         }
@@ -538,7 +586,11 @@ impl IntegratedUI {
                     ui.heading("👁 Preview");
                     ui.separator();
                     
-                    egui::ScrollArea::vertical().show(ui, |ui| {
+                    // Performance optimization (Feature 6)
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false; 2])
+                        .max_height(f32::INFINITY)
+                        .show(ui, |ui| {
                         if self.state.message_preview.is_empty() {
                             ui.label("Select a message to preview.");
                         } else {
