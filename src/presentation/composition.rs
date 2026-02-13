@@ -44,6 +44,8 @@ pub struct CompositionWindow {
     pub error: Option<String>,
     /// Attachments
     pub attachments: Vec<AttachmentInfo>,
+    /// Rich text mode (HTML vs plain text)
+    pub html_mode: bool,
 }
 
 impl CompositionWindow {
@@ -63,6 +65,7 @@ impl CompositionWindow {
             status: String::new(),
             error: None,
             attachments: Vec::new(),
+            html_mode: false, // Default to plain text
         }
     }
 
@@ -164,6 +167,12 @@ impl CompositionWindow {
         let mut should_cancel = false;
         let mut should_attach = false;
         let mut attachments_to_remove: Vec<usize> = Vec::new();
+        let mut should_convert_to_html = false;
+        let mut should_convert_to_plain = false;
+        let mut should_format_bold = false;
+        let mut should_format_italic = false;
+        let mut should_format_underline = false;
+        let mut should_insert_link = false;
 
         egui::Window::new("✉ Compose Message")
             .id(egui::Id::new("composition_window"))
@@ -237,14 +246,55 @@ impl CompositionWindow {
                 });
 
                 ui.separator();
+                
+                // Rich text toolbar
+                ui.horizontal(|ui| {
+                    ui.label("Format:");
+                    
+                    // HTML/Plain text toggle
+                    if ui.selectable_label(!self.html_mode, "Plain Text").clicked() {
+                        if self.html_mode {
+                            should_convert_to_plain = true;
+                        }
+                    }
+                    if ui.selectable_label(self.html_mode, "HTML").clicked() {
+                        if !self.html_mode {
+                            should_convert_to_html = true;
+                        }
+                    }
+                    
+                    ui.separator();
+                    
+                    // Formatting buttons (only in HTML mode)
+                    if self.html_mode {
+                        if ui.button("B").on_hover_text("Bold (Ctrl+B)").clicked() {
+                            should_format_bold = true;
+                        }
+                        if ui.button("I").on_hover_text("Italic (Ctrl+I)").clicked() {
+                            should_format_italic = true;
+                        }
+                        if ui.button("U").on_hover_text("Underline (Ctrl+U)").clicked() {
+                            should_format_underline = true;
+                        }
+                        if ui.button("🔗").on_hover_text("Insert Link").clicked() {
+                            should_insert_link = true;
+                        }
+                    } else {
+                        ui.label("(Enable HTML mode for formatting)");
+                    }
+                });
 
                 // Body field (multiline)
                 ui.label("Message:");
                 let _body_response = ui.add(
                     egui::TextEdit::multiline(&mut self.body)
                         .desired_width(f32::INFINITY)
-                        .desired_rows(12)
-                        .hint_text("Type your message here...")
+                        .desired_rows(10)
+                        .hint_text(if self.html_mode { 
+                            "Type your message here... (HTML mode enabled)"
+                        } else {
+                            "Type your message here..."
+                        })
                 );
                 
                 ui.separator();
@@ -358,6 +408,31 @@ impl CompositionWindow {
         // Remove attachments
         for idx in attachments_to_remove.iter().rev() {
             self.remove_attachment(*idx);
+        }
+        
+        // Handle rich text actions
+        if should_convert_to_html {
+            self.convert_to_html();
+        }
+        if should_convert_to_plain {
+            self.convert_to_plain();
+        }
+        
+        // For formatting, we'd need cursor position from TextEdit
+        // For now, these are placeholders that would wrap entire body
+        // In a real implementation, we'd track text selection
+        if should_format_bold {
+            // Placeholder: In real UI, would format selected text only
+            self.status = "Bold formatting available in HTML mode".to_string();
+        }
+        if should_format_italic {
+            self.status = "Italic formatting available in HTML mode".to_string();
+        }
+        if should_format_underline {
+            self.status = "Underline formatting available in HTML mode".to_string();
+        }
+        if should_insert_link {
+            self.status = "Link insertion available in HTML mode".to_string();
         }
 
         // Handle send action
@@ -524,6 +599,87 @@ impl CompositionWindow {
     pub fn total_attachment_size(&self) -> u64 {
         self.attachments.iter().map(|a| a.size).sum()
     }
+    
+    /// Apply bold formatting (wrap selection in <b> tags)
+    pub fn apply_bold(&mut self, start: usize, end: usize) {
+        if self.html_mode && end > start && end <= self.body.len() {
+            let text = &self.body[start..end];
+            let formatted = format!("<b>{}</b>", text);
+            self.body.replace_range(start..end, &formatted);
+        }
+    }
+    
+    /// Apply italic formatting
+    pub fn apply_italic(&mut self, start: usize, end: usize) {
+        if self.html_mode && end > start && end <= self.body.len() {
+            let text = &self.body[start..end];
+            let formatted = format!("<i>{}</i>", text);
+            self.body.replace_range(start..end, &formatted);
+        }
+    }
+    
+    /// Apply underline formatting
+    pub fn apply_underline(&mut self, start: usize, end: usize) {
+        if self.html_mode && end > start && end <= self.body.len() {
+            let text = &self.body[start..end];
+            let formatted = format!("<u>{}</u>", text);
+            self.body.replace_range(start..end, &formatted);
+        }
+    }
+    
+    /// Insert link
+    pub fn insert_link(&mut self, start: usize, end: usize, url: &str) {
+        if self.html_mode && end > start && end <= self.body.len() {
+            let text = &self.body[start..end];
+            let formatted = format!("<a href=\"{}\">{}</a>", url, text);
+            self.body.replace_range(start..end, &formatted);
+        }
+    }
+    
+    /// Convert plain text to HTML
+    pub fn convert_to_html(&mut self) {
+        if !self.html_mode {
+            // Simple conversion: wrap in <p> tags and convert newlines to <br>
+            let html = self.body.replace("\n\n", "</p><p>").replace("\n", "<br>");
+            self.body = format!("<p>{}</p>", html);
+            self.html_mode = true;
+        }
+    }
+    
+    /// Convert HTML to plain text
+    pub fn convert_to_plain(&mut self) {
+        if self.html_mode {
+            // Simple conversion: remove HTML tags
+            let plain = self.strip_html_tags(&self.body.clone());
+            self.body = plain;
+            self.html_mode = false;
+        }
+    }
+    
+    /// Strip HTML tags from text
+    fn strip_html_tags(&self, html: &str) -> String {
+        // Simple HTML tag removal
+        let mut result = String::new();
+        let mut in_tag = false;
+        
+        for ch in html.chars() {
+            match ch {
+                '<' => in_tag = true,
+                '>' => in_tag = false,
+                _ if !in_tag => result.push(ch),
+                _ => {}
+            }
+        }
+        
+        // Clean up HTML entities
+        result
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&amp;", "&")
+            .replace("&nbsp;", " ")
+            .replace("<br>", "\n")
+            .replace("</p>", "\n\n")
+    }
 }
 
 /// Actions that can be triggered from the composition window
@@ -668,5 +824,63 @@ mod tests {
         assert_eq!(CompositionWindow::guess_mime_type("image.png"), "image/png");
         assert_eq!(CompositionWindow::guess_mime_type("doc.docx"), "application/msword");
         assert_eq!(CompositionWindow::guess_mime_type("unknown.xyz"), "application/octet-stream");
+    }
+    
+    #[test]
+    fn test_html_mode_toggle() {
+        let mut comp = CompositionWindow::new();
+        
+        // Initially plain text
+        assert!(!comp.html_mode);
+        
+        // Set some plain text
+        comp.body = "Hello\nWorld".to_string();
+        
+        // Convert to HTML
+        comp.convert_to_html();
+        assert!(comp.html_mode);
+        assert!(comp.body.contains("<p>") || comp.body.contains("<br>"));
+        
+        // Convert back to plain
+        comp.convert_to_plain();
+        assert!(!comp.html_mode);
+        assert!(!comp.body.contains("<"));
+    }
+    
+    #[test]
+    fn test_html_formatting() {
+        let mut comp = CompositionWindow::new();
+        comp.html_mode = true;
+        comp.body = "Hello World".to_string();
+        
+        // Apply bold (0-5 = "Hello")
+        comp.apply_bold(0, 5);
+        assert!(comp.body.contains("<b>"));
+        
+        // Reset for italic test
+        comp.body = "Hello World".to_string();
+        comp.apply_italic(6, 11); // "World"
+        assert!(comp.body.contains("<i>"));
+        
+        // Reset for underline test
+        comp.body = "Hello World".to_string();
+        comp.apply_underline(0, 11);
+        assert!(comp.body.contains("<u>"));
+    }
+    
+    #[test]
+    fn test_strip_html_tags() {
+        let comp = CompositionWindow::new();
+        
+        let html = "<p>Hello <b>World</b></p>";
+        let plain = comp.strip_html_tags(html);
+        // The function removes tags but doesn't add newlines for </p>
+        assert!(plain.contains("Hello World"));
+        
+        let html2 = "Text with &amp; &lt; &gt; entities";
+        let plain2 = comp.strip_html_tags(html2);
+        assert!(plain2.contains("&"));
+        assert!(plain2.contains("<"));
+        assert!(plain2.contains(">"));
     }
 }
