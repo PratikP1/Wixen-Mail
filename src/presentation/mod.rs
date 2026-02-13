@@ -5,6 +5,7 @@
 pub mod accessibility;
 pub mod account_manager;
 pub mod composition;
+pub mod contact_manager;
 pub mod filter_manager;
 pub mod html_renderer;
 pub mod signature_manager;
@@ -15,6 +16,7 @@ pub mod ui_integrated;
 pub use accessibility::Accessibility;
 pub use account_manager::{AccountManagerWindow, AccountAction};
 pub use composition::{CompositionWindow, CompositionAction};
+pub use contact_manager::{ContactAction, ContactManagerWindow};
 pub use filter_manager::{FilterManagerWindow, FilterRuleAction};
 pub use html_renderer::HtmlRenderer;
 pub use signature_manager::{SignatureManagerWindow, SignatureAction, SignatureSelector};

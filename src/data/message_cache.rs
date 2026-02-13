@@ -105,6 +105,18 @@ pub struct MessageFilterRule {
     pub created_at: String,
 }
 
+/// Contact entry for account address book
+#[derive(Debug, Clone)]
+pub struct ContactEntry {
+    pub id: String,
+    pub account_id: String,
+    pub name: String,
+    pub email: String,
+    pub notes: Option<String>,
+    pub favorite: bool,
+    pub created_at: String,
+}
+
 impl MessageCache {
     /// Create a new message cache
     pub fn new(cache_dir: PathBuf) -> Result<Self> {
@@ -248,6 +260,22 @@ impl MessageCache {
             )",
             [],
         ).map_err(|e| Error::Other(format!("Failed to create message_filter_rules table: {}", e)))?;
+        
+        // Create contacts table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS contacts (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                notes TEXT,
+                favorite BOOLEAN DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(account_id, email)
+            )",
+            [],
+        ).map_err(|e| Error::Other(format!("Failed to create contacts table: {}", e)))?;
         
         // Schema migration support for existing databases
         self.ensure_column_exists("message_filter_rules", "match_type", "TEXT NOT NULL DEFAULT 'contains'")?;
@@ -1005,6 +1033,99 @@ impl MessageCache {
         Ok(())
     }
     
+    // ===== Contact Management Methods =====
+    
+    /// Save or update a contact
+    pub fn save_contact(&self, contact: &ContactEntry) -> Result<()> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT OR REPLACE INTO contacts
+             (id, account_id, name, email, notes, favorite, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6,
+                    COALESCE((SELECT created_at FROM contacts WHERE id = ?1), ?7), ?8)",
+            params![
+                &contact.id,
+                &contact.account_id,
+                &contact.name,
+                &contact.email,
+                &contact.notes,
+                &contact.favorite,
+                &contact.created_at,
+                &now,
+            ],
+        ).map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
+        Ok(())
+    }
+    
+    /// Load all contacts for an account
+    pub fn get_contacts_for_account(&self, account_id: &str) -> Result<Vec<ContactEntry>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, account_id, name, email, notes, favorite, created_at
+             FROM contacts
+             WHERE account_id = ?1
+             ORDER BY favorite DESC, name ASC"
+        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+        
+        let contacts = stmt.query_map(params![account_id], |row| {
+            Ok(ContactEntry {
+                id: row.get(0)?,
+                account_id: row.get(1)?,
+                name: row.get(2)?,
+                email: row.get(3)?,
+                notes: row.get(4)?,
+                favorite: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        }).map_err(|e| Error::Other(format!("Failed to query contacts: {}", e)))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| Error::Other(format!("Failed to collect contacts: {}", e)))?;
+        
+        Ok(contacts)
+    }
+    
+    /// Search contacts for autocomplete
+    pub fn search_contacts_for_account(&self, account_id: &str, query: &str, limit: usize) -> Result<Vec<ContactEntry>> {
+        let escaped = query
+            .to_lowercase()
+            .replace('!', "!!")
+            .replace('%', "!%")
+            .replace('_', "!_");
+        let pattern = format!("%{}%", escaped);
+        let mut stmt = self.conn.prepare(
+            "SELECT id, account_id, name, email, notes, favorite, created_at
+             FROM contacts
+             WHERE account_id = ?1
+               AND (LOWER(name) LIKE ?2 ESCAPE '!' OR LOWER(email) LIKE ?2 ESCAPE '!')
+             ORDER BY favorite DESC, name ASC
+             LIMIT ?3"
+        ).map_err(|e| Error::Other(format!("Failed to prepare search statement: {}", e)))?;
+        
+        let contacts = stmt.query_map(params![account_id, pattern, limit as i64], |row| {
+            Ok(ContactEntry {
+                id: row.get(0)?,
+                account_id: row.get(1)?,
+                name: row.get(2)?,
+                email: row.get(3)?,
+                notes: row.get(4)?,
+                favorite: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        }).map_err(|e| Error::Other(format!("Failed to search contacts: {}", e)))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| Error::Other(format!("Failed to collect contacts: {}", e)))?;
+        
+        Ok(contacts)
+    }
+    
+    /// Delete a contact
+    pub fn delete_contact(&self, contact_id: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM contacts WHERE id = ?1",
+            params![contact_id],
+        ).map_err(|e| Error::Other(format!("Failed to delete contact: {}", e)))?;
+        Ok(())
+    }
+    
     // ==================== Account Management ====================
     
     /// Save an account to the database
@@ -1697,6 +1818,39 @@ mod tests {
         
         cache.delete_filter_rule("rule-1").unwrap();
         let empty = cache.get_filter_rules_for_account("test@example.com").unwrap();
+        assert!(empty.is_empty());
+    }
+    
+    #[test]
+    fn test_contact_operations() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_contacts_{}", nanos));
+        let cache = MessageCache::new(temp_dir).unwrap();
+        
+        let contact = ContactEntry {
+            id: "contact-1".to_string(),
+            account_id: "test@example.com".to_string(),
+            name: "Ada Lovelace".to_string(),
+            email: "ada@example.com".to_string(),
+            notes: Some("VIP".to_string()),
+            favorite: true,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+        
+        cache.save_contact(&contact).unwrap();
+        let all = cache.get_contacts_for_account("test@example.com").unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].email, "ada@example.com");
+        
+        let search = cache.search_contacts_for_account("test@example.com", "ada", 5).unwrap();
+        assert_eq!(search.len(), 1);
+        
+        let wildcard_literal = cache.search_contacts_for_account("test@example.com", "%", 5).unwrap();
+        assert_eq!(wildcard_literal.len(), 0);
+        
+        cache.delete_contact("contact-1").unwrap();
+        let empty = cache.get_contacts_for_account("test@example.com").unwrap();
         assert!(empty.is_empty());
     }
 }

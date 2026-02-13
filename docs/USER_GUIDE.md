@@ -121,6 +121,16 @@ Each rule can:
 - Choose case-sensitive or case-insensitive matching
 - Perform actions: `mark_as_read`, `mark_as_unread`, `star`, `unstar`, `delete`, `move_to_folder`, `add_tag`
 
+### Contacts (Phase 8)
+
+Use **Tools → Manage Contacts** (`Ctrl+Shift+C`) to manage an account-specific address book.
+
+Features:
+- Create/edit/delete contacts
+- Mark favorite contacts
+- Search by name or email
+- Recipient autocomplete suggestions while composing messages
+
 ## Reading and Managing Email
 
 ### Three-Pane Layout

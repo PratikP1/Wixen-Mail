@@ -11,6 +11,7 @@ use crate::data::email_providers::{self, EmailProvider};
 use crate::data::message_cache::{CachedMessage, MessageCache, Tag};
 use crate::presentation::account_manager::{AccountManagerWindow, AccountAction};
 use crate::presentation::composition::{CompositionWindow, CompositionAction};
+use crate::presentation::contact_manager::{ContactAction, ContactManagerWindow};
 use crate::presentation::filter_manager::{FilterManagerWindow, FilterRuleAction};
 use crate::presentation::signature_manager::{SignatureManagerWindow, SignatureAction};
 use crate::presentation::tag_manager::{TagManagerWindow, TagAction};
@@ -26,6 +27,7 @@ use tokio::task::JoinHandle;
 const SECONDS_PER_MINUTE: u64 = 60;
 const DEFAULT_IMAP_PORT: u16 = 993;
 const PLACEHOLDER_FOLDER_ID: i64 = 0;
+const MAX_CONTACT_SUGGESTIONS: usize = 5;
 
 /// UI state for the integrated mail client
 pub struct UIState {
@@ -87,6 +89,8 @@ pub struct UIState {
     pub account_manager: AccountManagerWindow,
     /// Filter manager window
     pub filter_manager: FilterManagerWindow,
+    /// Contact manager window
+    pub contact_manager: ContactManagerWindow,
     /// Message tags for display
     pub message_tags: std::collections::HashMap<u32, Vec<Tag>>,
     /// Selected tag filter
@@ -202,6 +206,7 @@ impl Default for UIState {
             signature_manager: SignatureManagerWindow::new(),
             account_manager: AccountManagerWindow::new(),
             filter_manager: FilterManagerWindow::new(),
+            contact_manager: ContactManagerWindow::new(),
             message_tags: std::collections::HashMap::new(),
             selected_tag_filter: None,
         }
@@ -566,6 +571,10 @@ impl IntegratedUI {
                 ui.menu_button("Tools", |ui| {
                     if ui.button("🏷 Manage Tags (Ctrl+T)").clicked() {
                         self.state.tag_manager.open(self.state.account_config.email.clone());
+                        ui.close_menu();
+                    }
+                    if ui.button("👥 Manage Contacts (Ctrl+Shift+C)").clicked() {
+                        self.state.contact_manager.open(self.state.account_config.email.clone());
                         ui.close_menu();
                     }
                     if ui.button("📋 Manage Rules (Ctrl+Shift+E)").clicked() {
@@ -1034,6 +1043,26 @@ impl IntegratedUI {
         }
         
         // Composition window
+        if self.state.composition_window.open {
+            let query = self.state.composition_window.to.trim().to_string();
+            if query.is_empty() {
+                self.state.composition_window.set_contact_suggestions(Vec::new());
+                self.state.composition_window.last_contact_query.clear();
+            } else if query != self.state.composition_window.last_contact_query {
+                self.state.composition_window.last_contact_query = query.clone();
+                if let Some(cache) = &self.message_cache {
+                let suggestions = cache.search_contacts_for_account(
+                    &self.state.account_config.email,
+                    &query,
+                    MAX_CONTACT_SUGGESTIONS,
+                ).unwrap_or_default()
+                    .into_iter()
+                    .map(|c| (c.name, c.email))
+                    .collect();
+                self.state.composition_window.set_contact_suggestions(suggestions);
+                }
+            }
+        }
         let action = self.state.composition_window.render(ctx);
         
         // Auto-save draft if needed
@@ -1116,6 +1145,11 @@ impl IntegratedUI {
             self.handle_filter_rule_action(action);
         }
         
+        // Contact manager window
+        if let Some(action) = self.state.contact_manager.render(ctx, &self.message_cache) {
+            self.handle_contact_action(action);
+        }
+        
         // Signature manager window
         if let Some(action) = self.state.signature_manager.render(ctx, &self.message_cache) {
             self.handle_signature_action(action);
@@ -1133,6 +1167,10 @@ impl IntegratedUI {
             // Tag manager shortcut: Ctrl+T
             if i.key_pressed(egui::Key::T) && i.modifiers.ctrl && !i.modifiers.shift {
                 self.state.tag_manager.open(self.state.account_config.email.clone());
+            }
+            // Contact manager shortcut: Ctrl+Shift+C
+            if i.key_pressed(egui::Key::C) && i.modifiers.ctrl && i.modifiers.shift {
+                self.state.contact_manager.open(self.state.account_config.email.clone());
             }
             // Filter manager shortcut: Ctrl+Shift+E
             if i.key_pressed(egui::Key::E) && i.modifiers.ctrl && i.modifiers.shift {
@@ -1745,6 +1783,38 @@ impl IntegratedUI {
                         Err(e) => {
                             self.state.error_message = Some(format!("Failed to delete rule: {}", e));
                             self.state.filter_manager.error = Some(format!("Failed to delete rule: {}", e));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Handle contact actions from the contact manager
+    fn handle_contact_action(&mut self, action: ContactAction) {
+        if let Some(ref cache) = self.message_cache {
+            match action {
+                ContactAction::Create(contact) | ContactAction::Update(contact) => {
+                    match cache.save_contact(&contact) {
+                        Ok(_) => {
+                            self.state.status_message = format!("Contact '{}' saved", contact.name);
+                            self.state.contact_manager.status = "Contact saved successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to save contact: {}", e));
+                            self.state.contact_manager.error = Some(format!("Failed to save contact: {}", e));
+                        }
+                    }
+                }
+                ContactAction::Delete(contact_id) => {
+                    match cache.delete_contact(&contact_id) {
+                        Ok(_) => {
+                            self.state.status_message = "Contact deleted".to_string();
+                            self.state.contact_manager.status = "Contact deleted successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to delete contact: {}", e));
+                            self.state.contact_manager.error = Some(format!("Failed to delete contact: {}", e));
                         }
                     }
                 }
