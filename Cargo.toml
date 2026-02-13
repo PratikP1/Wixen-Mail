@@ -40,6 +40,9 @@ async-channel = "2.3"
 # Database for persistent caching
 rusqlite = { version = "0.32", features = ["bundled"] }
 
+# Encoding for password storage
+base64 = "0.22"
+
 # HTML sanitization for security
 ammonia = "4.0"
 regex = "1.11"
