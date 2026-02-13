@@ -6,6 +6,7 @@
 use crate::application::mail_controller::MailController;
 use crate::common::Result;
 use crate::data::email_providers::{self, EmailProvider};
+use crate::presentation::composition::{CompositionWindow, CompositionAction};
 use eframe::egui;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -28,8 +29,8 @@ pub struct UIState {
     pub current_attachments: Vec<AttachmentItem>,
     /// Thread view enabled
     pub thread_view_enabled: bool,
-    /// Composition window state
-    pub composition_open: bool,
+    /// Composition window
+    pub composition_window: CompositionWindow,
     /// Settings window state
     pub settings_open: bool,
     /// Account configuration window state
@@ -44,8 +45,6 @@ pub struct UIState {
     pub status_message: String,
     /// Account configuration
     pub account_config: AccountConfig,
-    /// Composition data
-    pub composition_data: CompositionData,
     /// Search query
     pub search_query: String,
     /// Search results
@@ -132,7 +131,7 @@ impl Default for UIState {
             message_preview: String::new(),
             current_attachments: Vec::new(),
             thread_view_enabled: true, // Default to thread view enabled
-            composition_open: false,
+            composition_window: CompositionWindow::new(),
             settings_open: false,
             account_config_open: false,
             search_open: false,
@@ -146,7 +145,6 @@ impl Default for UIState {
                 smtp_use_tls: true,
                 ..Default::default()
             },
-            composition_data: CompositionData::default(),
             search_query: String::new(),
             search_results: Vec::new(),
         }
@@ -229,8 +227,7 @@ impl IntegratedUI {
                 self.state.status_message = status;
             }
             UIUpdate::EmailSent => {
-                self.state.composition_open = false;
-                self.state.composition_data = CompositionData::default();
+                self.state.composition_window.close();
                 self.state.status_message = "Email sent successfully".to_string();
             }
         }
@@ -338,10 +335,9 @@ impl IntegratedUI {
     }
     
     /// Send email via SMTP
-    fn send_email(&self) {
+    fn send_email(&self, to: Vec<String>, subject: String, body: String) {
         let mail_controller = Arc::clone(&self.mail_controller);
         let config = self.state.account_config.clone();
-        let composition = self.state.composition_data.clone();
         let ui_tx = self.ui_tx.clone();
         
         self.runtime.spawn(async move {
@@ -356,9 +352,9 @@ impl IntegratedUI {
                 config.username.clone(),
                 config.password,
                 config.smtp_use_tls,
-                vec![composition.to],
-                composition.subject,
-                composition.body,
+                to,
+                subject,
+                body,
             ).await {
                 Ok(_) => {
                     let _ = ui_tx.send(UIUpdate::EmailSent).await;
@@ -381,7 +377,7 @@ impl IntegratedUI {
                         ui.close_menu();
                     }
                     if ui.button("📧 New Message (Ctrl+N)").clicked() {
-                        self.state.composition_open = true;
+                        self.state.composition_window.open();
                         ui.close_menu();
                     }
                     ui.separator();
@@ -550,14 +546,17 @@ impl IntegratedUI {
                                 // Context menu (Feature 5: Right-click actions)
                                 response.response.context_menu(|ui| {
                                     if ui.button("📧 Reply").clicked() {
-                                        self.state.composition_open = true;
-                                        self.state.composition_data.to = msg.from.clone();
-                                        self.state.composition_data.subject = format!("Re: {}", msg.subject);
+                                        self.state.composition_window.open_reply(
+                                            msg.from.clone(),
+                                            msg.subject.clone()
+                                        );
                                         ui.close_menu();
                                     }
                                     if ui.button("↪ Forward").clicked() {
-                                        self.state.composition_open = true;
-                                        self.state.composition_data.subject = format!("Fwd: {}", msg.subject);
+                                        self.state.composition_window.open_forward(
+                                            msg.subject.clone(),
+                                            String::new() // TODO: Get actual message body
+                                        );
                                         ui.close_menu();
                                     }
                                     ui.separator();
@@ -635,8 +634,24 @@ impl IntegratedUI {
         }
         
         // Composition window
-        if self.state.composition_open {
-            self.render_composition_window(ctx);
+        let action = self.state.composition_window.render(ctx);
+        match action {
+            CompositionAction::Send => {
+                let to = self.state.composition_window.get_recipients();
+                let subject = self.state.composition_window.subject.clone();
+                let body = self.state.composition_window.body.clone();
+                self.send_email(to, subject, body);
+            }
+            CompositionAction::SaveDraft => {
+                // TODO: Implement draft saving to SQLite
+                self.state.status_message = "Draft saved".to_string();
+            }
+            CompositionAction::Discard => {
+                // Window closed, nothing to do
+            }
+            CompositionAction::None => {
+                // No action
+            }
         }
         
         // Settings window
@@ -829,55 +844,6 @@ impl IntegratedUI {
         self.state.account_config.smtp_server = provider.smtp_server.clone();
         self.state.account_config.smtp_port = provider.smtp_port.to_string();
         self.state.account_config.smtp_use_tls = provider.smtp_tls;
-    }
-    
-    /// Render composition window
-    fn render_composition_window(&mut self, ctx: &egui::Context) {
-        egui::Window::new("✉ New Message")
-            .collapsible(false)
-            .resizable(true)
-            .default_size([600.0, 500.0])
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("To:");
-                    ui.text_edit_singleline(&mut self.state.composition_data.to);
-                });
-                
-                ui.horizontal(|ui| {
-                    ui.label("CC:");
-                    ui.text_edit_singleline(&mut self.state.composition_data.cc);
-                });
-                
-                ui.horizontal(|ui| {
-                    ui.label("BCC:");
-                    ui.text_edit_singleline(&mut self.state.composition_data.bcc);
-                });
-                
-                ui.horizontal(|ui| {
-                    ui.label("Subject:");
-                    ui.text_edit_singleline(&mut self.state.composition_data.subject);
-                });
-                
-                ui.label("Message:");
-                ui.add(
-                    egui::TextEdit::multiline(&mut self.state.composition_data.body)
-                        .desired_width(f32::INFINITY)
-                        .desired_rows(15)
-                );
-                
-                ui.horizontal(|ui| {
-                    if ui.button("📤 Send (Ctrl+Enter)").clicked() {
-                        self.send_email();
-                    }
-                    if ui.button("💾 Save Draft (Ctrl+S)").clicked() {
-                        self.state.composition_open = false;
-                    }
-                    if ui.button("❌ Cancel").clicked() {
-                        self.state.composition_open = false;
-                        self.state.composition_data = CompositionData::default();
-                    }
-                });
-            });
     }
     
     /// Render settings window
