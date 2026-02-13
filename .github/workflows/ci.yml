@@ -9,10 +9,16 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test Suite
     runs-on: windows-latest
+    
+    permissions:
+      contents: read
     
     steps:
     - name: Checkout code
@@ -46,6 +52,9 @@ jobs:
     name: Rustfmt
     runs-on: windows-latest
     
+    permissions:
+      contents: read
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -61,6 +70,9 @@ jobs:
   clippy:
     name: Clippy
     runs-on: windows-latest
+    
+    permissions:
+      contents: read
     
     steps:
     - name: Checkout code
@@ -95,6 +107,9 @@ jobs:
   build:
     name: Build
     runs-on: windows-latest
+    
+    permissions:
+      contents: read
     
     strategy:
       matrix:
