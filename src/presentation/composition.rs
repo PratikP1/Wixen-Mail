@@ -4,6 +4,16 @@
 /// Supports keyboard navigation, screen reader announcements, and draft auto-save.
 
 use egui;
+use std::path::PathBuf;
+
+/// Attachment information
+#[derive(Clone, Debug)]
+pub struct AttachmentInfo {
+    pub filename: String,
+    pub path: PathBuf,
+    pub size: u64,
+    pub mime_type: String,
+}
 
 /// Composition window state
 #[derive(Clone, Debug, Default)]
@@ -32,6 +42,8 @@ pub struct CompositionWindow {
     pub status: String,
     /// Error message (if any)
     pub error: Option<String>,
+    /// Attachments
+    pub attachments: Vec<AttachmentInfo>,
 }
 
 impl CompositionWindow {
@@ -50,6 +62,7 @@ impl CompositionWindow {
             last_save: None,
             status: String::new(),
             error: None,
+            attachments: Vec::new(),
         }
     }
 
@@ -100,6 +113,7 @@ impl CompositionWindow {
         self.last_save = None;
         self.status.clear();
         self.error = None;
+        self.attachments.clear();
     }
 
     /// Validate email addresses
@@ -148,6 +162,8 @@ impl CompositionWindow {
         let mut should_save = false;
         let mut should_discard = false;
         let mut should_cancel = false;
+        let mut should_attach = false;
+        let mut attachments_to_remove: Vec<usize> = Vec::new();
 
         egui::Window::new("✉ Compose Message")
             .id(egui::Id::new("composition_window"))
@@ -227,9 +243,56 @@ impl CompositionWindow {
                 let _body_response = ui.add(
                     egui::TextEdit::multiline(&mut self.body)
                         .desired_width(f32::INFINITY)
-                        .desired_rows(15)
+                        .desired_rows(12)
                         .hint_text("Type your message here...")
                 );
+                
+                ui.separator();
+                
+                // Attachments section
+                ui.horizontal(|ui| {
+                    ui.label(format!("Attachments ({})", self.attachments.len()));
+                    if ui.button("📎 Attach File").clicked() {
+                        should_attach = true;
+                    }
+                    if !self.attachments.is_empty() {
+                        let total_mb = self.total_attachment_size() as f64 / (1024.0 * 1024.0);
+                        ui.label(format!("({:.1} MB total)", total_mb));
+                    }
+                });
+                
+                // Display attachments
+                for (idx, attachment) in self.attachments.clone().iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        // File icon based on type
+                        let icon = if attachment.mime_type.starts_with("image/") {
+                            "🖼"
+                        } else if attachment.mime_type.starts_with("video/") {
+                            "🎬"
+                        } else if attachment.mime_type.starts_with("audio/") {
+                            "🎵"
+                        } else if attachment.mime_type.contains("pdf") {
+                            "📄"
+                        } else if attachment.mime_type.contains("word") {
+                            "📝"
+                        } else if attachment.mime_type.contains("excel") || attachment.mime_type.contains("spreadsheet") {
+                            "📊"
+                        } else if attachment.mime_type.contains("zip") || attachment.mime_type.contains("archive") {
+                            "📦"
+                        } else {
+                            "📎"
+                        };
+                        
+                        ui.label(icon);
+                        ui.label(&attachment.filename);
+                        let size_kb = attachment.size as f64 / 1024.0;
+                        ui.label(format!("({:.1} KB)", size_kb));
+                        
+                        if ui.small_button("❌").clicked() {
+                            attachments_to_remove.push(idx);
+                        }
+                    });
+                }
 
                 ui.separator();
 
@@ -282,6 +345,19 @@ impl CompositionWindow {
         }
         if show_bcc_toggle {
             self.show_bcc = true;
+        }
+        
+        // Handle attachment actions
+        if should_attach {
+            // Open file picker
+            if let Some(file) = rfd::FileDialog::new().pick_file() {
+                self.add_attachment(file);
+            }
+        }
+        
+        // Remove attachments
+        for idx in attachments_to_remove.iter().rev() {
+            self.remove_attachment(*idx);
         }
 
         // Handle send action
@@ -389,6 +465,64 @@ impl CompositionWindow {
         self.show_cc = draft.cc.is_some();
         self.show_bcc = draft.bcc.is_some();
         self.open = true;
+    }
+    
+    /// Add attachment
+    pub fn add_attachment(&mut self, path: PathBuf) {
+        if let Ok(metadata) = std::fs::metadata(&path) {
+            let filename = path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            
+            let size = metadata.len();
+            
+            // Simple MIME type detection based on extension
+            let mime_type = Self::guess_mime_type(&filename);
+            
+            // Warn if file is large (>10MB)
+            if size > 10 * 1024 * 1024 {
+                self.status = format!("Warning: {} is {} MB (large file)", filename, size / (1024 * 1024));
+            }
+            
+            self.attachments.push(AttachmentInfo {
+                filename,
+                path,
+                size,
+                mime_type,
+            });
+        }
+    }
+    
+    /// Remove attachment by index
+    pub fn remove_attachment(&mut self, index: usize) {
+        if index < self.attachments.len() {
+            self.attachments.remove(index);
+        }
+    }
+    
+    /// Guess MIME type from filename
+    fn guess_mime_type(filename: &str) -> String {
+        let ext = filename.split('.').last().unwrap_or("").to_lowercase();
+        match ext.as_str() {
+            "txt" => "text/plain",
+            "pdf" => "application/pdf",
+            "jpg" | "jpeg" => "image/jpeg",
+            "png" => "image/png",
+            "gif" => "image/gif",
+            "doc" | "docx" => "application/msword",
+            "xls" | "xlsx" => "application/vnd.ms-excel",
+            "ppt" | "pptx" => "application/vnd.ms-powerpoint",
+            "zip" => "application/zip",
+            "mp3" => "audio/mpeg",
+            "mp4" => "video/mp4",
+            _ => "application/octet-stream",
+        }.to_string()
+    }
+    
+    /// Get total attachment size
+    pub fn total_attachment_size(&self) -> u64 {
+        self.attachments.iter().map(|a| a.size).sum()
     }
 }
 
@@ -501,5 +635,38 @@ mod tests {
         let mut comp2 = CompositionWindow::new();
         comp2.mark_saved();
         assert!(!comp2.should_auto_save()); // Just saved, shouldn't need to save yet
+    }
+    
+    #[test]
+    fn test_attachment_management() {
+        let mut comp = CompositionWindow::new();
+        
+        // Initially no attachments
+        assert_eq!(comp.attachments.len(), 0);
+        assert_eq!(comp.total_attachment_size(), 0);
+        
+        // Add attachment (simulated)
+        comp.attachments.push(AttachmentInfo {
+            filename: "test.pdf".to_string(),
+            path: std::path::PathBuf::from("/tmp/test.pdf"),
+            size: 1024,
+            mime_type: "application/pdf".to_string(),
+        });
+        
+        assert_eq!(comp.attachments.len(), 1);
+        assert_eq!(comp.total_attachment_size(), 1024);
+        
+        // Remove attachment
+        comp.remove_attachment(0);
+        assert_eq!(comp.attachments.len(), 0);
+    }
+    
+    #[test]
+    fn test_mime_type_guessing() {
+        assert_eq!(CompositionWindow::guess_mime_type("file.pdf"), "application/pdf");
+        assert_eq!(CompositionWindow::guess_mime_type("image.jpg"), "image/jpeg");
+        assert_eq!(CompositionWindow::guess_mime_type("image.png"), "image/png");
+        assert_eq!(CompositionWindow::guess_mime_type("doc.docx"), "application/msword");
+        assert_eq!(CompositionWindow::guess_mime_type("unknown.xyz"), "application/octet-stream");
     }
 }
