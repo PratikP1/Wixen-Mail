@@ -4,10 +4,12 @@
 
 pub mod config;
 pub mod database;
-pub mod storage;
+pub mod email_providers;
 pub mod message_cache;
+pub mod storage;
 
 pub use config::ConfigManager;
 pub use database::Database;
-pub use storage::Storage;
+pub use email_providers::*;
 pub use message_cache::MessageCache;
+pub use storage::Storage;
