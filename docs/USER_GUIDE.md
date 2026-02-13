@@ -116,9 +116,10 @@ Wixen Mail supports managing multiple email accounts.
 Use **Tools → Manage Rules** (`Ctrl+Shift+E`) to create accessibility-friendly message rules.
 
 Each rule can:
-- Match on `subject`, `from`, or `to`
-- Use case-insensitive "contains text" matching
-- Perform actions: `mark_as_read`, `delete`, `move_to_folder`, or `add_tag`
+- Match on fields: `subject`, `from`, `to`, `cc`, `date`, `message_id`, `body_plain`, `body_html`, `read`, `starred`, `deleted`
+- Use match types: `contains`, `not_contains`, `equals`, `not_equals`, `starts_with`, `ends_with`, `is_empty`, `is_not_empty`, `is_true`, `is_false`, `regex`
+- Choose case-sensitive or case-insensitive matching
+- Perform actions: `mark_as_read`, `mark_as_unread`, `star`, `unstar`, `delete`, `move_to_folder`, `add_tag`
 
 ## Reading and Managing Email
 

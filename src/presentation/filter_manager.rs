@@ -22,7 +22,9 @@ pub struct FilterManagerWindow {
 pub struct RuleEdit {
     pub name: String,
     pub field: String,
+    pub match_type: String,
     pub pattern: String,
+    pub case_sensitive: bool,
     pub action_type: String,
     pub action_value: String,
     pub enabled: bool,
@@ -43,6 +45,10 @@ impl Default for FilterManagerWindow {
 }
 
 impl FilterManagerWindow {
+    fn match_type_uses_pattern(match_type: &str) -> bool {
+        !matches!(match_type, "is_true" | "is_false" | "is_empty" | "is_not_empty")
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -63,7 +69,9 @@ impl FilterManagerWindow {
         self.new_rule = Some(RuleEdit {
             name: String::new(),
             field: "subject".to_string(),
+            match_type: "contains".to_string(),
             pattern: String::new(),
+            case_sensitive: false,
             action_type: "mark_as_read".to_string(),
             action_value: String::new(),
             enabled: true,
@@ -75,7 +83,9 @@ impl FilterManagerWindow {
         self.new_rule = Some(RuleEdit {
             name: rule.name.clone(),
             field: rule.field.clone(),
+            match_type: rule.match_type.clone(),
             pattern: rule.pattern.clone(),
+            case_sensitive: rule.case_sensitive,
             action_type: rule.action_type.clone(),
             action_value: rule.action_value.clone().unwrap_or_default(),
             enabled: rule.enabled,
@@ -135,9 +145,10 @@ impl FilterManagerWindow {
                                 ui.group(|ui| {
                                     ui.horizontal(|ui| {
                                         ui.label(format!(
-                                            "{}: if {} contains '{}' -> {}{}{}",
+                                            "{}: if {} {} '{}' -> {}{}{}",
                                             if rule.enabled { "✅" } else { "⏸" },
                                             rule.field,
+                                            rule.match_type,
                                             rule.pattern,
                                             rule.action_type,
                                             if rule.action_value.is_some() { " (" } else { "" },
@@ -184,18 +195,55 @@ impl FilterManagerWindow {
                                 ui.selectable_value(&mut edit_data.field, "subject".to_string(), "subject");
                                 ui.selectable_value(&mut edit_data.field, "from".to_string(), "from");
                                 ui.selectable_value(&mut edit_data.field, "to".to_string(), "to");
+                                ui.selectable_value(&mut edit_data.field, "cc".to_string(), "cc");
+                                ui.selectable_value(&mut edit_data.field, "date".to_string(), "date");
+                                ui.selectable_value(&mut edit_data.field, "message_id".to_string(), "message_id");
+                                ui.selectable_value(&mut edit_data.field, "body_plain".to_string(), "body_plain");
+                                ui.selectable_value(&mut edit_data.field, "body_html".to_string(), "body_html");
+                                ui.selectable_value(&mut edit_data.field, "read".to_string(), "read");
+                                ui.selectable_value(&mut edit_data.field, "starred".to_string(), "starred");
+                                ui.selectable_value(&mut edit_data.field, "deleted".to_string(), "deleted");
                             });
                     });
                     ui.horizontal(|ui| {
-                        ui.label("Contains text:");
-                        ui.text_edit_singleline(&mut edit_data.pattern);
+                        ui.label("Match type:");
+                        egui::ComboBox::from_id_salt("rule_match_type")
+                            .selected_text(&edit_data.match_type)
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut edit_data.match_type, "contains".to_string(), "contains");
+                                ui.selectable_value(&mut edit_data.match_type, "not_contains".to_string(), "not_contains");
+                                ui.selectable_value(&mut edit_data.match_type, "equals".to_string(), "equals");
+                                ui.selectable_value(&mut edit_data.match_type, "not_equals".to_string(), "not_equals");
+                                ui.selectable_value(&mut edit_data.match_type, "starts_with".to_string(), "starts_with");
+                                ui.selectable_value(&mut edit_data.match_type, "ends_with".to_string(), "ends_with");
+                                ui.selectable_value(&mut edit_data.match_type, "is_empty".to_string(), "is_empty");
+                                ui.selectable_value(&mut edit_data.match_type, "is_not_empty".to_string(), "is_not_empty");
+                                ui.selectable_value(&mut edit_data.match_type, "is_true".to_string(), "is_true");
+                                ui.selectable_value(&mut edit_data.match_type, "is_false".to_string(), "is_false");
+                                ui.selectable_value(&mut edit_data.match_type, "regex".to_string(), "regex");
+                            });
                     });
+                    if Self::match_type_uses_pattern(&edit_data.match_type) {
+                        ui.horizontal(|ui| {
+                            ui.label("Match text:");
+                            ui.text_edit_singleline(&mut edit_data.pattern);
+                        });
+                    } else {
+                        ui.horizontal(|ui| {
+                            ui.label("Match text:");
+                            ui.label("(not required for selected match type)");
+                        });
+                    }
+                    ui.checkbox(&mut edit_data.case_sensitive, "Case sensitive match");
                     ui.horizontal(|ui| {
                         ui.label("Action:");
                         egui::ComboBox::from_id_salt("rule_action")
                             .selected_text(&edit_data.action_type)
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(&mut edit_data.action_type, "mark_as_read".to_string(), "mark_as_read");
+                                ui.selectable_value(&mut edit_data.action_type, "mark_as_unread".to_string(), "mark_as_unread");
+                                ui.selectable_value(&mut edit_data.action_type, "star".to_string(), "star");
+                                ui.selectable_value(&mut edit_data.action_type, "unstar".to_string(), "unstar");
                                 ui.selectable_value(&mut edit_data.action_type, "delete".to_string(), "delete");
                                 ui.selectable_value(&mut edit_data.action_type, "move_to_folder".to_string(), "move_to_folder");
                                 ui.selectable_value(&mut edit_data.action_type, "add_tag".to_string(), "add_tag");
@@ -224,7 +272,9 @@ impl FilterManagerWindow {
                         self.error = None;
                         if edit_data.name.trim().is_empty() {
                             self.error = Some("Rule name is required.".to_string());
-                        } else if edit_data.pattern.trim().is_empty() {
+                        } else if Self::match_type_uses_pattern(&edit_data.match_type)
+                            && edit_data.pattern.trim().is_empty()
+                        {
                             self.error = Some("Match text is required.".to_string());
                         } else {
                             let action_value = if edit_data.action_type == "move_to_folder" || edit_data.action_type == "add_tag" {
@@ -245,7 +295,9 @@ impl FilterManagerWindow {
                                     account_id: self.account_id.clone(),
                                     name: edit_data.name.clone(),
                                     field: edit_data.field.clone(),
+                                    match_type: edit_data.match_type.clone(),
                                     pattern: edit_data.pattern.clone(),
+                                    case_sensitive: edit_data.case_sensitive,
                                     action_type: edit_data.action_type.clone(),
                                     action_value,
                                     enabled: edit_data.enabled,

@@ -96,7 +96,9 @@ pub struct MessageFilterRule {
     pub account_id: String,
     pub name: String,
     pub field: String,        // subject, from, to
+    pub match_type: String,   // contains, equals, starts_with, regex, etc.
     pub pattern: String,      // case-insensitive contains
+    pub case_sensitive: bool,
     pub action_type: String,  // move_to_folder, add_tag, mark_as_read, delete
     pub action_value: Option<String>, // folder or tag id for value-based actions
     pub enabled: bool,
@@ -234,7 +236,9 @@ impl MessageCache {
                 account_id TEXT NOT NULL,
                 name TEXT NOT NULL,
                 field TEXT NOT NULL,
+                match_type TEXT NOT NULL DEFAULT 'contains',
                 pattern TEXT NOT NULL,
+                case_sensitive BOOLEAN DEFAULT 0,
                 action_type TEXT NOT NULL,
                 action_value TEXT,
                 enabled BOOLEAN DEFAULT 1,
@@ -244,6 +248,10 @@ impl MessageCache {
             )",
             [],
         ).map_err(|e| Error::Other(format!("Failed to create message_filter_rules table: {}", e)))?;
+        
+        // Schema migration support for existing databases
+        self.ensure_column_exists("message_filter_rules", "match_type", "TEXT NOT NULL DEFAULT 'contains'")?;
+        self.ensure_column_exists("message_filter_rules", "case_sensitive", "BOOLEAN DEFAULT 0")?;
         
         // Create accounts table
         self.conn.execute(
@@ -290,6 +298,32 @@ impl MessageCache {
             "CREATE INDEX IF NOT EXISTS idx_message_tags_message_id ON message_tags(message_id)",
             [],
         ).map_err(|e| Error::Other(format!("Failed to create index: {}", e)))?;
+        
+        Ok(())
+    }
+    
+    fn ensure_column_exists(&self, table: &str, column: &str, column_def: &str) -> Result<()> {
+        fn is_safe_identifier(value: &str) -> bool {
+            value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        }
+        if !is_safe_identifier(table) || !is_safe_identifier(column) {
+            return Err(Error::Other("Unsafe identifier in schema migration".to_string()));
+        }
+        
+        let mut stmt = self.conn.prepare(&format!("PRAGMA table_info({})", table))
+            .map_err(|e| Error::Other(format!("Failed to inspect schema for {}: {}", table, e)))?;
+        
+        let columns = stmt.query_map([], |row| row.get::<_, String>(1))
+            .map_err(|e| Error::Other(format!("Failed to read schema for {}: {}", table, e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect schema info for {}: {}", table, e)))?;
+        
+        if !columns.iter().any(|c| c == column) {
+            self.conn.execute(
+                &format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, column_def),
+                [],
+            ).map_err(|e| Error::Other(format!("Failed to add column {}.{}: {}", table, column, e)))?;
+        }
         
         Ok(())
     }
@@ -889,14 +923,16 @@ impl MessageCache {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
             "INSERT INTO message_filter_rules
-             (id, account_id, name, field, pattern, action_type, action_value, enabled, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             (id, account_id, name, field, match_type, pattern, case_sensitive, action_type, action_value, enabled, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 &rule.id,
                 &rule.account_id,
                 &rule.name,
                 &rule.field,
+                &rule.match_type,
                 &rule.pattern,
+                &rule.case_sensitive,
                 &rule.action_type,
                 &rule.action_value,
                 &rule.enabled,
@@ -910,7 +946,7 @@ impl MessageCache {
     /// Get all message filter rules for an account
     pub fn get_filter_rules_for_account(&self, account_id: &str) -> Result<Vec<MessageFilterRule>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, name, field, pattern, action_type, action_value, enabled, created_at
+            "SELECT id, account_id, name, field, match_type, pattern, case_sensitive, action_type, action_value, enabled, created_at
              FROM message_filter_rules
              WHERE account_id = ?1
              ORDER BY name"
@@ -922,11 +958,13 @@ impl MessageCache {
                 account_id: row.get(1)?,
                 name: row.get(2)?,
                 field: row.get(3)?,
-                pattern: row.get(4)?,
-                action_type: row.get(5)?,
-                action_value: row.get(6)?,
-                enabled: row.get(7)?,
-                created_at: row.get(8)?,
+                match_type: row.get(4)?,
+                pattern: row.get(5)?,
+                case_sensitive: row.get(6)?,
+                action_type: row.get(7)?,
+                action_value: row.get(8)?,
+                enabled: row.get(9)?,
+                created_at: row.get(10)?,
             })
         }).map_err(|e| Error::Other(format!("Failed to query filter rules: {}", e)))?
         .collect::<std::result::Result<Vec<_>, _>>()
@@ -940,12 +978,14 @@ impl MessageCache {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
             "UPDATE message_filter_rules
-             SET name = ?1, field = ?2, pattern = ?3, action_type = ?4, action_value = ?5, enabled = ?6, updated_at = ?7
-             WHERE id = ?8",
+             SET name = ?1, field = ?2, match_type = ?3, pattern = ?4, case_sensitive = ?5, action_type = ?6, action_value = ?7, enabled = ?8, updated_at = ?9
+             WHERE id = ?10",
             params![
                 &rule.name,
                 &rule.field,
+                &rule.match_type,
                 &rule.pattern,
+                &rule.case_sensitive,
                 &rule.action_type,
                 &rule.action_value,
                 &rule.enabled,
@@ -1630,7 +1670,9 @@ mod tests {
             account_id: "test@example.com".to_string(),
             name: "Newsletter Cleanup".to_string(),
             field: "subject".to_string(),
+            match_type: "contains".to_string(),
             pattern: "newsletter".to_string(),
+            case_sensitive: false,
             action_type: "move_to_folder".to_string(),
             action_value: Some("Archive".to_string()),
             enabled: true,
@@ -1643,12 +1685,14 @@ mod tests {
         assert_eq!(rules[0].name, "Newsletter Cleanup");
         
         rule.enabled = false;
+        rule.match_type = "starts_with".to_string();
         rule.pattern = "promo".to_string();
         cache.update_filter_rule(&rule).unwrap();
         
         let updated = cache.get_filter_rules_for_account("test@example.com").unwrap();
         assert_eq!(updated.len(), 1);
         assert_eq!(updated[0].pattern, "promo");
+        assert_eq!(updated[0].match_type, "starts_with");
         assert!(!updated[0].enabled);
         
         cache.delete_filter_rule("rule-1").unwrap();

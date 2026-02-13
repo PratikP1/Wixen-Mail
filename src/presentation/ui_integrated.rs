@@ -2122,6 +2122,16 @@ impl IntegratedUI {
         };
         engine.load_from_persisted(&persisted_rules);
         
+        let account_tags = cache.get_tags_for_account(&self.state.account_config.email).unwrap_or_default();
+        let tag_ids: std::collections::HashSet<String> = account_tags
+            .iter()
+            .map(|t| t.id.clone())
+            .collect();
+        let tags_by_name: std::collections::HashMap<String, String> = account_tags
+            .into_iter()
+            .map(|t| (t.name.to_lowercase(), t.id))
+            .collect();
+        
         let before_count = messages.len();
         messages.retain_mut(|msg| {
             // Rules are evaluated against the metadata available in MessageItem.
@@ -2149,8 +2159,23 @@ impl IntegratedUI {
             for action in actions {
                 match action {
                     RuleFilterAction::MarkAsRead => msg.read = true,
+                    RuleFilterAction::MarkAsUnread => msg.read = false,
+                    RuleFilterAction::Star => msg.starred = true,
+                    RuleFilterAction::Unstar => msg.starred = false,
                     RuleFilterAction::Delete => keep = false,
-                    RuleFilterAction::MoveToFolder(_) | RuleFilterAction::AddTag(_) => {}
+                    RuleFilterAction::MoveToFolder(_) => {}
+                    RuleFilterAction::AddTag(value) => {
+                        if msg.message_id > 0 {
+                            let tag_id = if tag_ids.contains(&value) {
+                                Some(value.clone())
+                            } else {
+                                tags_by_name.get(&value.to_lowercase()).cloned()
+                            };
+                            if let Some(tag_id) = tag_id {
+                                let _ = cache.add_tag_to_message(msg.message_id, &tag_id);
+                            }
+                        }
+                    }
                 }
             }
             keep
