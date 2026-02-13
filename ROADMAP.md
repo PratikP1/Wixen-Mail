@@ -28,16 +28,16 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 ## Phase 2: Mail Protocol Support (Months 3-4)
 
 ### IMAP Implementation
-- [ ] Implement IMAP4 protocol client
+- [x] Implement IMAP4 protocol client
 - [ ] Support for IDLE (push notifications)
-- [ ] Folder synchronization
-- [ ] Message fetching and caching
+- [x] Folder synchronization
+- [x] Message fetching and caching
 - [ ] Search functionality
 
 ### SMTP Implementation
-- [ ] Implement SMTP client for sending emails
-- [ ] Support for authentication (PLAIN, LOGIN, OAUTH2)
-- [ ] Support for TLS/SSL encryption
+- [x] Implement SMTP client for sending emails
+- [x] Support for authentication (PLAIN, LOGIN, OAUTH2)
+- [x] Support for TLS/SSL encryption
 - [ ] Queue management for offline sending
 
 ### POP3 Support (Optional)

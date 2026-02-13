@@ -13,10 +13,20 @@ pub enum Error {
     Network(String),
     /// Authentication error
     Authentication(String),
+    /// Protocol error (IMAP/SMTP/POP3)
+    Protocol(String),
     /// IO error
     Io(std::io::Error),
     /// Generic error
     Other(String),
+}
+
+// Convenience alias
+impl Error {
+    /// Create an Auth error (alias for Authentication)
+    pub fn auth(msg: String) -> Self {
+        Error::Authentication(msg)
+    }
 }
 
 impl fmt::Display for Error {
@@ -26,6 +36,7 @@ impl fmt::Display for Error {
             Error::Database(msg) => write!(f, "Database error: {}", msg),
             Error::Network(msg) => write!(f, "Network error: {}", msg),
             Error::Authentication(msg) => write!(f, "Authentication error: {}", msg),
+            Error::Protocol(msg) => write!(f, "Protocol error: {}", msg),
             Error::Io(err) => write!(f, "IO error: {}", err),
             Error::Other(msg) => write!(f, "Error: {}", msg),
         }
@@ -51,5 +62,17 @@ mod tests {
     fn test_error_display() {
         let err = Error::Config("Invalid setting".to_string());
         assert!(err.to_string().contains("Configuration error"));
+    }
+
+    #[test]
+    fn test_protocol_error() {
+        let err = Error::Protocol("IMAP command failed".to_string());
+        assert!(err.to_string().contains("Protocol error"));
+    }
+
+    #[test]
+    fn test_auth_alias() {
+        let err = Error::auth("Invalid password".to_string());
+        assert!(err.to_string().contains("Authentication error"));
     }
 }
