@@ -15,9 +15,11 @@ use crate::presentation::tag_manager::{TagManagerWindow, TagAction};
 use async_channel::{Receiver, Sender};
 use eframe::egui;
 use std::collections::HashMap;
+use std::sync::Mutex as StdMutex;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex as TokioMutex;
+use tokio::task::JoinHandle;
 
 const SECONDS_PER_MINUTE: u64 = 60;
 const DEFAULT_IMAP_PORT: u16 = 993;
@@ -203,6 +205,8 @@ impl Default for UIState {
 /// Main UI struct with async integration
 pub struct IntegratedUI {
     mail_controllers: HashMap<String, Arc<TokioMutex<MailController>>>,
+    background_sync_tasks: HashMap<String, JoinHandle<()>>,
+    sync_accounts: Arc<StdMutex<HashMap<String, Account>>>,
     active_account_id: Option<String>,
     runtime: Arc<Runtime>,
     ui_tx: Sender<UIUpdate>,
@@ -238,6 +242,8 @@ impl IntegratedUI {
         
         let mut ui = Self {
             mail_controllers: HashMap::new(),
+            background_sync_tasks: HashMap::new(),
+            sync_accounts: Arc::new(StdMutex::new(HashMap::new())),
             active_account_id: state.account_manager.active_account_id.clone(),
             runtime,
             ui_tx,
@@ -256,7 +262,7 @@ impl IntegratedUI {
             .cloned()
             .collect();
         for account in enabled_accounts {
-            ui.spawn_background_sync(account);
+            ui.ensure_background_sync(account);
         }
         
         Ok(ui)
@@ -389,6 +395,7 @@ impl IntegratedUI {
             match controller.fetch_messages(&folder).await {
                 Ok(messages) => {
                     let message_items: Vec<MessageItem> = messages.iter().map(|m| {
+                        let thread_depth = Self::estimate_thread_depth(&m.subject);
                         MessageItem {
                             uid: m.uid,
                             message_id: 0,  // Will be populated when we cache messages
@@ -397,11 +404,11 @@ impl IntegratedUI {
                             date: m.date.clone(),
                             read: m.read,
                             starred: m.starred,
-                            has_attachments: false, // TODO: Get from actual message
-                            attachments: Vec::new(), // TODO: Get from actual message
-                            thread_depth: 0, // TODO: Calculate from message headers
-                            is_thread_parent: true, // TODO: Determine from thread structure
-                            thread_id: None, // TODO: Extract from message-id/references
+                            has_attachments: Self::estimate_has_attachments(&m.subject),
+                            attachments: Vec::new(),
+                            thread_depth,
+                            is_thread_parent: thread_depth == 0,
+                            thread_id: Some(format!("thread:{}", m.subject.trim().to_lowercase())),
                         }
                     }).collect();
                     
@@ -428,11 +435,11 @@ impl IntegratedUI {
                             date: m.date.clone(),
                             read: m.read,
                             starred: m.starred,
-                            has_attachments: false, // TODO: Check attachments
+                            has_attachments: Self::estimate_has_attachments(&m.subject),
                             attachments: Vec::new(),
-                            thread_depth: 0,
-                            is_thread_parent: true,
-                            thread_id: None,
+                            thread_depth: Self::estimate_thread_depth(&m.subject),
+                            is_thread_parent: Self::estimate_thread_depth(&m.subject) == 0,
+                            thread_id: Some(format!("thread:{}", m.subject.trim().to_lowercase())),
                         }
                     }).collect();
                     
@@ -854,7 +861,11 @@ impl IntegratedUI {
                                     if ui.button("↪ Forward").clicked() {
                                         self.state.composition_window.open_forward(
                                             msg.subject.clone(),
-                                            String::new() // TODO: Get actual message body
+                                            if self.state.selected_message == Some(msg.uid) {
+                                                self.state.message_preview.clone()
+                                            } else {
+                                                String::new()
+                                            }
                                         );
                                         // Auto-insert signature above forwarded content
                                         if let Some(cache) = &self.message_cache {
@@ -974,8 +985,25 @@ impl IntegratedUI {
                                             
                                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                                 if ui.button("💾 Save").clicked() {
-                                                    // TODO: Implement save functionality
-                                                    self.state.status_message = format!("Saving {}...", attachment.filename);
+                                                    if let Some(path) = rfd::FileDialog::new()
+                                                        .set_file_name(&attachment.filename)
+                                                        .save_file()
+                                                    {
+                                                        let placeholder = format!(
+                                                            "Attachment placeholder\nName: {}\nType: {}\nSize: {}\n\nAttachment bytes are not currently cached in local preview mode.",
+                                                            attachment.filename,
+                                                            attachment.mime_type,
+                                                            attachment.size
+                                                        );
+                                                        match std::fs::write(&path, placeholder) {
+                                                            Ok(_) => {
+                                                                self.state.status_message = format!("Saved attachment placeholder to {}", path.display());
+                                                            }
+                                                            Err(e) => {
+                                                                self.state.error_message = Some(format!("Failed to save attachment: {}", e));
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             });
                                         });
@@ -1159,8 +1187,11 @@ impl IntegratedUI {
                             self.state.error_message = None;
                         }
                         if ui.button("📖 Help").clicked() {
-                            // TODO: Open help documentation
-                            self.state.status_message = "Opening help documentation...".to_string();
+                            ui.ctx().open_url(egui::OpenUrl {
+                                url: "https://github.com/PratikP1/Wixen-Mail/blob/main/docs/USER_GUIDE.md".to_string(),
+                                new_tab: true,
+                            });
+                            self.state.status_message = "Opened help documentation".to_string();
                         }
                     });
                 });
@@ -1724,9 +1755,7 @@ impl IntegratedUI {
                             if let Ok(accounts) = cache.load_accounts() {
                                 self.state.account_manager.accounts = accounts;
                             }
-                            if account.enabled && !self.mail_controllers.contains_key(&account.id) {
-                                self.spawn_background_sync(account.clone());
-                            }
+                            self.ensure_background_sync(account.clone());
                             self.state.account_manager.close();
                         }
                         Err(e) => {
@@ -1748,6 +1777,7 @@ impl IntegratedUI {
                             if let Ok(accounts) = cache.load_accounts() {
                                 self.state.account_manager.accounts = accounts;
                             }
+                            self.ensure_background_sync(account.clone());
                             self.state.account_manager.close();
                         }
                         Err(e) => {
@@ -1774,6 +1804,7 @@ impl IntegratedUI {
                                 self.state.account_manager.active_account_id = None;
                                 self.active_account_id = None;
                             }
+                            self.stop_background_sync(&account_id);
                             self.mail_controllers.remove(&account_id);
                         }
                         Err(e) => {
@@ -1794,8 +1825,34 @@ impl IntegratedUI {
                 }
             }
             AccountAction::TestConnection(account_id) => {
-                self.state.status_message = format!("Testing connection for account {}...", account_id);
-                // TODO: Implement connection test
+                if let Some(account) = self.state.account_manager.accounts.iter().find(|a| a.id == account_id).cloned() {
+                    self.state.status_message = format!("Testing connection for account {}...", account.display_name());
+                    let ui_tx = self.ui_tx.clone();
+                    self.runtime.spawn(async move {
+                        let controller = MailController::new();
+                        let port = account.imap_port.parse().unwrap_or(DEFAULT_IMAP_PORT);
+                        match controller.connect_imap(
+                            account.imap_server.clone(),
+                            port,
+                            account.username.clone(),
+                            account.password.clone(),
+                            account.imap_use_tls,
+                        ).await {
+                            Ok(_) => {
+                                let _ = ui_tx.send(UIUpdate::StatusUpdated(
+                                    format!("Connection test successful for {}", account.display_name())
+                                )).await;
+                            }
+                            Err(e) => {
+                                let _ = ui_tx.send(UIUpdate::ErrorOccurred(
+                                    format!("Connection test failed for {}: {}", account.display_name(), e)
+                                )).await;
+                            }
+                        }
+                    });
+                } else {
+                    self.state.error_message = Some("Account not found for connection test".to_string());
+                }
             }
         }
     }
@@ -1853,22 +1910,56 @@ impl IntegratedUI {
         }
     }
     
-    fn spawn_background_sync(&mut self, account: Account) {
+    fn ensure_background_sync(&mut self, account: Account) {
+        if let Ok(mut sync_accounts) = self.sync_accounts.lock() {
+            sync_accounts.insert(account.id.clone(), account.clone());
+        }
+        
         if !account.enabled {
+            self.stop_background_sync(&account.id);
             return;
         }
         
-        let runtime = self.runtime.clone();
-        let controller = self.get_or_create_controller(&account.id);
+        self.stop_background_sync(&account.id);
+        self.spawn_background_sync(account.id.clone());
+    }
+    
+    fn stop_background_sync(&mut self, account_id: &str) {
+        if let Some(task) = self.background_sync_tasks.remove(account_id) {
+            task.abort();
+        }
+        if let Ok(mut sync_accounts) = self.sync_accounts.lock() {
+            sync_accounts.remove(account_id);
+        }
+    }
+    
+    fn spawn_background_sync(&mut self, account_id: String) {
+        if !self.mail_controllers.contains_key(&account_id) {
+            self.get_or_create_controller(&account_id);
+        }
         
-        runtime.spawn(async move {
+        let runtime = self.runtime.clone();
+        let controller = self.get_or_create_controller(&account_id);
+        let sync_accounts = self.sync_accounts.clone();
+        
+        let task_account_id = account_id.clone();
+        let task = runtime.spawn(async move {
             loop {
+                let account = match sync_accounts.lock() {
+                    Ok(accounts) => accounts.get(&task_account_id).cloned(),
+                    Err(_) => None,
+                };
+                
+                let Some(account) = account else { break };
+                if !account.enabled {
+                    break;
+                }
+                
                 let interval = std::time::Duration::from_secs(
                     account.check_interval_minutes.max(1) as u64 * SECONDS_PER_MINUTE,
                 );
                 tokio::time::sleep(interval).await;
                 
-                let controller = controller.lock().await;
                 let port = account.imap_port.parse().unwrap_or_else(|_| {
                     tracing::warn!(
                         "Invalid IMAP port '{}' for account '{}', using default {}",
@@ -1878,17 +1969,48 @@ impl IntegratedUI {
                     );
                     DEFAULT_IMAP_PORT
                 });
-                if controller.connect_imap(
-                    account.imap_server.clone(),
-                    port,
-                    account.username.clone(),
-                    account.password.clone(),
-                    account.imap_use_tls,
-                ).await.is_ok() {
+                
+                let connect_ok = {
+                    let controller = controller.lock().await;
+                    controller.connect_imap(
+                        account.imap_server.clone(),
+                        port,
+                        account.username.clone(),
+                        account.password.clone(),
+                        account.imap_use_tls,
+                    ).await.is_ok()
+                };
+                
+                if connect_ok {
+                    let controller = controller.lock().await;
                     let _ = controller.fetch_folders().await;
                 }
             }
         });
+        
+        self.background_sync_tasks.insert(account_id, task);
+    }
+    
+    fn estimate_thread_depth(subject: &str) -> usize {
+        let lower = subject.trim().to_lowercase();
+        if lower.starts_with("re:") || lower.starts_with("fwd:") || lower.starts_with("fw:") {
+            1
+        } else {
+            0
+        }
+    }
+    
+    fn estimate_has_attachments(subject: &str) -> bool {
+        let lower = subject.to_lowercase();
+        lower.contains("attach") || lower.contains("attachment") || lower.contains("📎")
+    }
+}
+
+impl Drop for IntegratedUI {
+    fn drop(&mut self) {
+        for (_, task) in self.background_sync_tasks.drain() {
+            task.abort();
+        }
     }
 }
 
@@ -1936,5 +2058,19 @@ mod tests {
         assert_eq!(config.smtp_port, "");
         assert!(!config.imap_use_tls);
         assert!(!config.smtp_use_tls);
+    }
+    
+    #[test]
+    fn test_estimate_thread_depth() {
+        assert_eq!(IntegratedUI::estimate_thread_depth("Hello"), 0);
+        assert_eq!(IntegratedUI::estimate_thread_depth("Re: Hello"), 1);
+        assert_eq!(IntegratedUI::estimate_thread_depth("Fwd: Update"), 1);
+    }
+    
+    #[test]
+    fn test_estimate_has_attachments() {
+        assert!(IntegratedUI::estimate_has_attachments("Please see attachment"));
+        assert!(IntegratedUI::estimate_has_attachments("📎 Report"));
+        assert!(!IntegratedUI::estimate_has_attachments("Quick status update"));
     }
 }
