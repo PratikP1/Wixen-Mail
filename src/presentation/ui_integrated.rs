@@ -52,6 +52,22 @@ pub struct UIState {
     pub search_query: String,
     /// Search results
     pub search_results: Vec<MessageItem>,
+    /// Advanced search: selected tags
+    pub search_selected_tags: Vec<String>,
+    /// Advanced search: date from
+    pub search_date_from: String,
+    /// Advanced search: date to
+    pub search_date_to: String,
+    /// Advanced search: sender filter
+    pub search_sender: String,
+    /// Advanced search: recipient filter
+    pub search_recipient: String,
+    /// Advanced search: has attachments
+    pub search_has_attachments: Option<bool>,
+    /// Advanced search: unread only
+    pub search_unread_only: bool,
+    /// Advanced search: starred only
+    pub search_starred_only: bool,
     /// Tag manager window
     pub tag_manager: TagManagerWindow,
     /// Signature manager window
@@ -159,6 +175,14 @@ impl Default for UIState {
             },
             search_query: String::new(),
             search_results: Vec::new(),
+            search_selected_tags: Vec::new(),
+            search_date_from: String::new(),
+            search_date_to: String::new(),
+            search_sender: String::new(),
+            search_recipient: String::new(),
+            search_has_attachments: None,
+            search_unread_only: false,
+            search_starred_only: false,
             tag_manager: TagManagerWindow::new(),
             signature_manager: SignatureManagerWindow::new(),
             message_tags: std::collections::HashMap::new(),
@@ -464,7 +488,7 @@ impl IntegratedUI {
                 });
                 
                 ui.menu_button("Edit", |ui| {
-                    if ui.button("🔍 Search (Ctrl+F)").clicked() {
+                    if ui.button("🔍 Advanced Search (Ctrl+Shift+F)").clicked() {
                         self.state.search_open = true;
                         ui.close_menu();
                     }
@@ -1178,34 +1202,183 @@ impl IntegratedUI {
     
     /// Render search window (Feature 4: Advanced Search UI)
     fn render_search_window(&mut self, ctx: &egui::Context) {
-        egui::Window::new("🔍 Search Messages")
+        egui::Window::new("🔍 Advanced Search")
             .collapsible(false)
             .resizable(true)
-            .default_size([500.0, 400.0])
+            .default_size([600.0, 500.0])
             .show(ctx, |ui| {
                 ui.heading("Search Criteria");
+                ui.add_space(8.0);
                 
+                // Basic text search
                 ui.horizontal(|ui| {
-                    ui.label("Search:");
-                    ui.text_edit_singleline(&mut self.state.search_query);
-                    if ui.button("🔍 Search").clicked() {
-                        // TODO: Implement search functionality
-                        self.state.status_message = format!("Searching for '{}'...", self.state.search_query);
+                    ui.label("Text Search:");
+                    ui.text_edit_singleline(&mut self.state.search_query)
+                        .on_hover_text("Search in subject and sender");
+                });
+                
+                ui.add_space(4.0);
+                
+                // Tag filter
+                ui.horizontal(|ui| {
+                    ui.label("Tags:");
+                    if let Some(cache) = &self.message_cache {
+                        if let Ok(tags) = cache.get_tags_for_account(&self.state.account_config.email) {
+                            egui::ComboBox::from_id_salt("search_tags")
+                                .selected_text(format!("{} selected", self.state.search_selected_tags.len()))
+                                .show_ui(ui, |ui| {
+                                    if tags.is_empty() {
+                                        ui.label("No tags available");
+                                    } else {
+                                        for tag in &tags {
+                                            let mut is_selected = self.state.search_selected_tags.contains(&tag.id);
+                                            let color = parse_hex_color(&tag.color).unwrap_or(egui::Color32::GRAY);
+                                            
+                                            ui.horizontal(|ui| {
+                                                ui.colored_label(color, "●");
+                                                if ui.checkbox(&mut is_selected, &tag.name).changed() {
+                                                    if is_selected {
+                                                        self.state.search_selected_tags.push(tag.id.clone());
+                                                    } else {
+                                                        self.state.search_selected_tags.retain(|id| id != &tag.id);
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    }
+                                });
+                        }
                     }
                 });
                 
+                ui.add_space(4.0);
+                
+                // Date range
+                ui.horizontal(|ui| {
+                    ui.label("Date Range:");
+                    ui.label("From:");
+                    ui.text_edit_singleline(&mut self.state.search_date_from)
+                        .on_hover_text("Format: YYYY-MM-DD");
+                    ui.label("To:");
+                    ui.text_edit_singleline(&mut self.state.search_date_to)
+                        .on_hover_text("Format: YYYY-MM-DD");
+                });
+                
+                ui.add_space(4.0);
+                
+                // Sender filter
+                ui.horizontal(|ui| {
+                    ui.label("Sender:");
+                    ui.text_edit_singleline(&mut self.state.search_sender)
+                        .on_hover_text("Filter by sender email or name");
+                });
+                
+                ui.add_space(4.0);
+                
+                // Recipient filter
+                ui.horizontal(|ui| {
+                    ui.label("Recipient:");
+                    ui.text_edit_singleline(&mut self.state.search_recipient)
+                        .on_hover_text("Filter by recipient email or name");
+                });
+                
+                ui.add_space(4.0);
+                
+                // Checkbox filters
+                ui.horizontal(|ui| {
+                    // Has attachments filter (tri-state)
+                    let attachments_text = match self.state.search_has_attachments {
+                        None => "Any",
+                        Some(true) => "With Attachments",
+                        Some(false) => "Without Attachments",
+                    };
+                    
+                    if ui.button(format!("📎 {}", attachments_text)).clicked() {
+                        self.state.search_has_attachments = match self.state.search_has_attachments {
+                            None => Some(true),
+                            Some(true) => Some(false),
+                            Some(false) => None,
+                        };
+                    }
+                });
+                
+                ui.add_space(4.0);
+                
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.state.search_unread_only, "📬 Unread only");
+                    ui.checkbox(&mut self.state.search_starred_only, "⭐ Starred only");
+                });
+                
+                ui.add_space(8.0);
+                ui.separator();
+                
+                // Action buttons
+                ui.horizontal(|ui| {
+                    if ui.button("🔍 Search").clicked() {
+                        self.perform_advanced_search();
+                    }
+                    
+                    if ui.button("🗑 Clear All").clicked() {
+                        self.state.search_query.clear();
+                        self.state.search_selected_tags.clear();
+                        self.state.search_date_from.clear();
+                        self.state.search_date_to.clear();
+                        self.state.search_sender.clear();
+                        self.state.search_recipient.clear();
+                        self.state.search_has_attachments = None;
+                        self.state.search_unread_only = false;
+                        self.state.search_starred_only = false;
+                        self.state.search_results.clear();
+                    }
+                });
+                
+                ui.add_space(8.0);
                 ui.separator();
                 ui.heading("Search Results");
+                ui.label(format!("{} messages found", self.state.search_results.len()));
                 
-                egui::ScrollArea::vertical().show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(200.0)
+                    .show(ui, |ui| {
                     if self.state.search_results.is_empty() {
-                        ui.label("No results found.");
+                        ui.label("No results found. Adjust your search criteria and try again.");
                     } else {
-                        for msg in &self.state.search_results {
+                        for msg in &self.state.search_results.clone() {
                             ui.group(|ui| {
-                                ui.label(&msg.subject);
+                                ui.horizontal(|ui| {
+                                    if msg.starred {
+                                        ui.label("⭐");
+                                    }
+                                    if !msg.read {
+                                        ui.label("●");
+                                    }
+                                    if msg.has_attachments {
+                                        ui.label("📎");
+                                    }
+                                    ui.label(&msg.subject);
+                                });
                                 ui.label(format!("From: {}", msg.from));
                                 ui.label(format!("Date: {}", msg.date));
+                                
+                                // Show tags if available
+                                if let Some(cache) = &self.message_cache {
+                                    if msg.message_id > 0 {
+                                        if let Ok(tags) = cache.get_tags_for_message(msg.message_id) {
+                                            if !tags.is_empty() {
+                                                ui.horizontal(|ui| {
+                                                    ui.label("Tags:");
+                                                    for tag in &tags {
+                                                        let color = parse_hex_color(&tag.color).unwrap_or(egui::Color32::GRAY);
+                                                        let text = egui::RichText::new(&tag.name)
+                                                            .color(egui::Color32::WHITE)
+                                                            .small();
+                                                        ui.colored_label(color, text);
+                                                    }
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
                             });
                         }
                     }
@@ -1216,6 +1389,69 @@ impl IntegratedUI {
                     self.state.search_open = false;
                 }
             });
+    }
+    
+    /// Perform advanced search with all filters
+    fn perform_advanced_search(&mut self) {
+        let mut results = self.state.messages.clone();
+        
+        // Filter by text in subject or sender
+        if !self.state.search_query.is_empty() {
+            let query_lower = self.state.search_query.to_lowercase();
+            results.retain(|m| {
+                m.subject.to_lowercase().contains(&query_lower) || 
+                m.from.to_lowercase().contains(&query_lower)
+            });
+        }
+        
+        // Filter by sender
+        if !self.state.search_sender.is_empty() {
+            let sender_lower = self.state.search_sender.to_lowercase();
+            results.retain(|m| m.from.to_lowercase().contains(&sender_lower));
+        }
+        
+        // Filter by tags
+        if !self.state.search_selected_tags.is_empty() {
+            if let Some(cache) = &self.message_cache {
+                results.retain(|m| {
+                    if m.message_id > 0 {
+                        if let Ok(tags) = cache.get_tags_for_message(m.message_id) {
+                            tags.iter().any(|t| self.state.search_selected_tags.contains(&t.id))
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                });
+            }
+        }
+        
+        // Filter by attachments
+        if let Some(has_attachments) = self.state.search_has_attachments {
+            results.retain(|m| m.has_attachments == has_attachments);
+        }
+        
+        // Filter by unread status
+        if self.state.search_unread_only {
+            results.retain(|m| !m.read);
+        }
+        
+        // Filter by starred status
+        if self.state.search_starred_only {
+            results.retain(|m| m.starred);
+        }
+        
+        // Date filtering (basic string comparison for now)
+        if !self.state.search_date_from.is_empty() {
+            results.retain(|m| m.date >= self.state.search_date_from);
+        }
+        if !self.state.search_date_to.is_empty() {
+            results.retain(|m| m.date <= self.state.search_date_to);
+        }
+        
+        self.state.search_results = results;
+        self.state.status_message = format!("Search completed: {} results found", self.state.search_results.len());
     }
     
     /// Get file icon based on MIME type
