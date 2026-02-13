@@ -5,16 +5,18 @@
 
 use crate::application::mail_controller::MailController;
 use crate::common::Result;
+use crate::data::account::{Account, AccountManager};
 use crate::data::email_providers::{self, EmailProvider};
 use crate::data::message_cache::{MessageCache, Tag};
+use crate::presentation::account_manager::{AccountManagerWindow, AccountAction};
 use crate::presentation::composition::{CompositionWindow, CompositionAction};
-use crate::presentation::tag_manager::{TagManagerWindow, TagAction};
 use crate::presentation::signature_manager::{SignatureManagerWindow, SignatureAction};
+use crate::presentation::tag_manager::{TagManagerWindow, TagAction};
+use async_channel::{Receiver, Sender};
 use eframe::egui;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex as TokioMutex;
-use async_channel::{Sender, Receiver};
 
 /// UI state for the integrated mail client
 pub struct UIState {
@@ -72,6 +74,8 @@ pub struct UIState {
     pub tag_manager: TagManagerWindow,
     /// Signature manager window
     pub signature_manager: SignatureManagerWindow,
+    /// Account manager window
+    pub account_manager: AccountManagerWindow,
     /// Message tags for display
     pub message_tags: std::collections::HashMap<u32, Vec<Tag>>,
     /// Selected tag filter
@@ -185,6 +189,7 @@ impl Default for UIState {
             search_starred_only: false,
             tag_manager: TagManagerWindow::new(),
             signature_manager: SignatureManagerWindow::new(),
+            account_manager: AccountManagerWindow::new(),
             message_tags: std::collections::HashMap::new(),
             selected_tag_filter: None,
         }
@@ -501,6 +506,12 @@ impl IntegratedUI {
                     }
                     if ui.button("✍ Manage Signatures (Ctrl+Shift+S)").clicked() {
                         self.state.signature_manager.open(self.state.account_config.email.clone());
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("🔑 Manage Accounts (Ctrl+M)").clicked() {
+                        // For now, open with empty accounts list - will be populated from AccountManager later
+                        self.state.account_manager.open(Vec::new(), None);
                         ui.close_menu();
                     }
                 });
@@ -981,15 +992,25 @@ impl IntegratedUI {
             self.handle_signature_action(action);
         }
         
-        // Handle tag/signature manager keyboard shortcuts
+        // Account manager window
+        let account_action = self.state.account_manager.render(ctx);
+        if !matches!(account_action, AccountAction::None) {
+            self.handle_account_action(account_action);
+        }
+        
+        // Handle tag/signature/account manager keyboard shortcuts
         ctx.input(|i| {
             // Tag manager shortcut: Ctrl+T
-            if i.key_pressed(egui::Key::T) && i.modifiers.ctrl {
+            if i.key_pressed(egui::Key::T) && i.modifiers.ctrl && !i.modifiers.shift {
                 self.state.tag_manager.open(self.state.account_config.email.clone());
             }
             // Signature manager shortcut: Ctrl+Shift+S
             if i.key_pressed(egui::Key::S) && i.modifiers.ctrl && i.modifiers.shift {
                 self.state.signature_manager.open(self.state.account_config.email.clone());
+            }
+            // Account manager shortcut: Ctrl+M
+            if i.key_pressed(egui::Key::M) && i.modifiers.ctrl && !i.modifiers.shift {
+                self.state.account_manager.open(Vec::new(), None);
             }
         });
         
@@ -1579,6 +1600,36 @@ impl IntegratedUI {
                         }
                     }
                 }
+            }
+        }
+    }
+    
+    /// Handle account manager actions
+    fn handle_account_action(&mut self, action: AccountAction) {
+        match action {
+            AccountAction::None => {}
+            AccountAction::Create(account) => {
+                // For now, just show status message
+                // In a full implementation, this would save to a persistent account store
+                self.state.status_message = format!("Account '{}' would be created", account.name);
+                self.state.account_manager.status = format!("Account '{}' created (placeholder)", account.name);
+                self.state.account_manager.close();
+            }
+            AccountAction::Update(account) => {
+                self.state.status_message = format!("Account '{}' would be updated", account.name);
+                self.state.account_manager.status = format!("Account '{}' updated (placeholder)", account.name);
+                self.state.account_manager.close();
+            }
+            AccountAction::Delete(account_id) => {
+                self.state.status_message = format!("Account {} would be deleted", account_id);
+                self.state.account_manager.status = "Account deleted (placeholder)".to_string();
+            }
+            AccountAction::SetActive(account_id) => {
+                self.state.status_message = format!("Account {} would be set as active", account_id);
+                self.state.account_manager.status = "Account activated (placeholder)".to_string();
+            }
+            AccountAction::TestConnection(account_id) => {
+                self.state.status_message = format!("Testing connection for account {}...", account_id);
             }
         }
     }
