@@ -14,7 +14,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 
 ### Core Architecture
 - [x] Design modular architecture for mail client components
-- [ ] Define data models for emails, accounts, folders
+- [x] Define data models for emails, accounts, folders
 - [ ] Implement configuration management system
 - [ ] Create logging framework for debugging and diagnostics
 

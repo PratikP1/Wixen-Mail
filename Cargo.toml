@@ -12,6 +12,8 @@ categories = ["email", "gui"]
 [dependencies]
 # Core dependencies for modular architecture
 uuid = { version = "1.11", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
 
 # Additional dependencies will be added as development progresses
 # async-imap = "0.9"
