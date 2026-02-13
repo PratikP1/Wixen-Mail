@@ -118,6 +118,36 @@ impl CompositionWindow {
         self.error = None;
         self.attachments.clear();
     }
+    
+    /// Insert signature at the end of the body
+    pub fn insert_signature(&mut self, signature_text: &str) {
+        if !signature_text.is_empty() {
+            if !self.body.is_empty() && !self.body.ends_with("\n\n") {
+                self.body.push_str("\n\n");
+            }
+            self.body.push_str(signature_text);
+        }
+    }
+    
+    /// Insert signature above quoted text (for reply/forward)
+    pub fn insert_signature_above_quote(&mut self, signature_text: &str, quote_marker: &str) {
+        if !signature_text.is_empty() {
+            if let Some(pos) = self.body.find(quote_marker) {
+                // Insert signature before the quote
+                let mut new_body = self.body[..pos].to_string();
+                if !new_body.is_empty() && !new_body.ends_with("\n\n") {
+                    new_body.push_str("\n\n");
+                }
+                new_body.push_str(signature_text);
+                new_body.push_str("\n\n");
+                new_body.push_str(&self.body[pos..]);
+                self.body = new_body;
+            } else {
+                // No quote found, just append
+                self.insert_signature(signature_text);
+            }
+        }
+    }
 
     /// Validate email addresses
     pub fn validate(&self) -> Result<(), String> {

@@ -66,6 +66,7 @@ pub struct UIState {
 #[derive(Clone, Debug)]
 pub struct MessageItem {
     pub uid: u32,
+    pub message_id: i64,  // Database ID for tag lookups
     pub subject: String,
     pub from: String,
     pub date: String,
@@ -318,6 +319,7 @@ impl IntegratedUI {
                     let message_items: Vec<MessageItem> = messages.iter().map(|m| {
                         MessageItem {
                             uid: m.uid,
+                            message_id: 0,  // Will be populated when we cache messages
                             subject: m.subject.clone(),
                             from: m.from.clone(),
                             date: m.date.clone(),
@@ -338,6 +340,38 @@ impl IntegratedUI {
                 }
             }
         });
+    }
+    
+    /// Filter messages by tag
+    fn filter_messages_by_tag(&mut self, tag_id: String) {
+        if let Some(cache) = &self.message_cache {
+            match cache.get_messages_by_tag(&tag_id) {
+                Ok(messages) => {
+                    let message_items: Vec<MessageItem> = messages.iter().map(|m| {
+                        MessageItem {
+                            uid: m.uid,
+                            message_id: m.id,
+                            subject: m.subject.clone(),
+                            from: m.from_addr.clone(),
+                            date: m.date.clone(),
+                            read: m.read,
+                            starred: m.starred,
+                            has_attachments: false, // TODO: Check attachments
+                            attachments: Vec::new(),
+                            thread_depth: 0,
+                            is_thread_parent: true,
+                            thread_id: None,
+                        }
+                    }).collect();
+                    
+                    self.state.messages = message_items;
+                    self.state.status_message = format!("Filtered by tag: {} messages", messages.len());
+                }
+                Err(e) => {
+                    self.state.error_message = Some(format!("Failed to filter by tag: {}", e));
+                }
+            }
+        }
     }
     
     /// Fetch message body
@@ -405,6 +439,17 @@ impl IntegratedUI {
                     }
                     if ui.button("📧 New Message (Ctrl+N)").clicked() {
                         self.state.composition_window.open();
+                        // Auto-insert default signature
+                        if let Some(cache) = &self.message_cache {
+                            if let Ok(Some(sig)) = cache.get_default_signature(&self.state.account_config.email) {
+                                let sig_text = if self.state.composition_window.html_mode {
+                                    sig.content_html.unwrap_or(sig.content_plain)
+                                } else {
+                                    sig.content_plain
+                                };
+                                self.state.composition_window.insert_signature(&sig_text);
+                            }
+                        }
                         ui.close_menu();
                     }
                     ui.separator();
@@ -507,6 +552,71 @@ impl IntegratedUI {
                             }
                         }
                     });
+                    
+                    // Tags section for filtering
+                    ui.add_space(16.0);
+                    ui.heading("🏷 Tags");
+                    ui.separator();
+                    
+                    let mut tag_filter_action: Option<Option<String>> = None;
+                    
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false; 2])
+                        .max_height(200.0)
+                        .show(ui, |ui| {
+                        if let Some(cache) = &self.message_cache {
+                            if let Ok(tags) = cache.get_tags_for_account(&self.state.account_config.email) {
+                                if tags.is_empty() {
+                                    ui.label("No tags yet");
+                                } else {
+                                    // "All Messages" option to clear filter
+                                    let is_all_selected = self.state.selected_tag_filter.is_none();
+                                    if ui.selectable_label(is_all_selected, "📧 All Messages").clicked() {
+                                        tag_filter_action = Some(None);  // Clear filter
+                                    }
+                                    
+                                    ui.separator();
+                                    
+                                    // Clone tags to avoid borrow issues
+                                    let tags_clone = tags.clone();
+                                    
+                                    // Display each tag with message count
+                                    for tag in &tags_clone {
+                                        let is_selected = self.state.selected_tag_filter.as_ref() == Some(&tag.id);
+                                        let color = parse_hex_color(&tag.color).unwrap_or(egui::Color32::GRAY);
+                                        
+                                        // Get message count for this tag
+                                        let count = cache.get_messages_by_tag(&tag.id).map(|m| m.len()).unwrap_or(0);
+                                        
+                                        ui.horizontal(|ui| {
+                                            ui.colored_label(color, "●");
+                                            if ui.selectable_label(is_selected, format!("{} ({})", tag.name, count)).clicked() {
+                                                tag_filter_action = Some(Some(tag.id.clone()));  // Set filter
+                                            }
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    
+                    // Apply tag filter action after the ScrollArea closes
+                    if let Some(action) = tag_filter_action {
+                        match action {
+                            None => {
+                                // Clear filter
+                                self.state.selected_tag_filter = None;
+                                if let Some(folder) = &self.state.selected_folder.clone() {
+                                    self.fetch_messages_for_folder(folder.clone());
+                                }
+                            }
+                            Some(tag_id) => {
+                                // Apply filter
+                                self.state.selected_tag_filter = Some(tag_id.clone());
+                                self.filter_messages_by_tag(tag_id);
+                            }
+                        }
+                    }
                 });
                 
                 ui.separator();
@@ -577,6 +687,27 @@ impl IntegratedUI {
                                         ui.label(&msg.subject);
                                     });
                                     
+                                    // Display tags for this message
+                                    if let Some(cache) = &self.message_cache {
+                                        if msg.message_id > 0 {
+                                            if let Ok(tags) = cache.get_tags_for_message(msg.message_id) {
+                                                if !tags.is_empty() {
+                                                    ui.horizontal(|ui| {
+                                                        ui.add_space(4.0);
+                                                        for tag in &tags {
+                                                            let color = parse_hex_color(&tag.color).unwrap_or(egui::Color32::GRAY);
+                                                            let text = egui::RichText::new(&tag.name)
+                                                                .color(egui::Color32::WHITE)
+                                                                .small();
+                                                            ui.colored_label(color, text);
+                                                            ui.add_space(2.0);
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
                                     ui.label(format!("From: {}", msg.from));
                                     ui.label(format!("Date: {}", msg.date));
                                 });
@@ -588,6 +719,17 @@ impl IntegratedUI {
                                             msg.from.clone(),
                                             msg.subject.clone()
                                         );
+                                        // Auto-insert signature above quoted text
+                                        if let Some(cache) = &self.message_cache {
+                                            if let Ok(Some(sig)) = cache.get_default_signature(&self.state.account_config.email) {
+                                                let sig_text = if self.state.composition_window.html_mode {
+                                                    sig.content_html.unwrap_or(sig.content_plain.clone())
+                                                } else {
+                                                    sig.content_plain
+                                                };
+                                                self.state.composition_window.insert_signature(&sig_text);
+                                            }
+                                        }
                                         ui.close_menu();
                                     }
                                     if ui.button("↪ Forward").clicked() {
@@ -595,6 +737,18 @@ impl IntegratedUI {
                                             msg.subject.clone(),
                                             String::new() // TODO: Get actual message body
                                         );
+                                        // Auto-insert signature above forwarded content
+                                        if let Some(cache) = &self.message_cache {
+                                            if let Ok(Some(sig)) = cache.get_default_signature(&self.state.account_config.email) {
+                                                let sig_text = if self.state.composition_window.html_mode {
+                                                    sig.content_html.unwrap_or(sig.content_plain.clone())
+                                                } else {
+                                                    sig.content_plain
+                                                };
+                                                // Insert before "---------- Forwarded message ----------"
+                                                self.state.composition_window.insert_signature_above_quote(&sig_text, "---------- Forwarded message ----------");
+                                            }
+                                        }
                                         ui.close_menu();
                                     }
                                     ui.separator();
@@ -609,6 +763,55 @@ impl IntegratedUI {
                                     if ui.button("📬 Mark as Unread").clicked() {
                                         self.state.status_message = format!("Marked as unread: {}", msg.subject);
                                         ui.close_menu();
+                                    }
+                                    
+                                    // Tag submenu
+                                    ui.separator();
+                                    if msg.message_id > 0 {
+                                        ui.menu_button("🏷 Tags", |ui| {
+                                            if let Some(cache) = &self.message_cache {
+                                                // Get available tags
+                                                if let Ok(all_tags) = cache.get_tags_for_account(&self.state.account_config.email) {
+                                                    // Get currently applied tags
+                                                    let applied_tags = cache.get_tags_for_message(msg.message_id).unwrap_or_default();
+                                                    let applied_ids: Vec<String> = applied_tags.iter().map(|t| t.id.clone()).collect();
+                                                    
+                                                    if all_tags.is_empty() {
+                                                        ui.label("No tags available");
+                                                    } else {
+                                                        for tag in &all_tags {
+                                                            let is_applied = applied_ids.contains(&tag.id);
+                                                            let color = parse_hex_color(&tag.color).unwrap_or(egui::Color32::GRAY);
+                                                            
+                                                            ui.horizontal(|ui| {
+                                                                ui.colored_label(color, "●");
+                                                                let mut checked = is_applied;
+                                                                if ui.checkbox(&mut checked, &tag.name).clicked() {
+                                                                    if is_applied {
+                                                                        // Remove tag
+                                                                        if let Ok(_) = cache.remove_tag_from_message(msg.message_id, &tag.id) {
+                                                                            self.state.status_message = format!("Removed tag '{}' from message", tag.name);
+                                                                        }
+                                                                    } else {
+                                                                        // Add tag
+                                                                        if let Ok(_) = cache.add_tag_to_message(msg.message_id, &tag.id) {
+                                                                            self.state.status_message = format!("Added tag '{}' to message", tag.name);
+                                                                        }
+                                                                    }
+                                                                    ui.close_menu();
+                                                                }
+                                                            });
+                                                        }
+                                                    }
+                                                    
+                                                    ui.separator();
+                                                    if ui.button("Manage Tags...").clicked() {
+                                                        self.state.tag_manager.open(self.state.account_config.email.clone());
+                                                        ui.close_menu();
+                                                    }
+                                                }
+                                            }
+                                        });
                                     }
                                 });
                             }
@@ -1143,6 +1346,19 @@ impl IntegratedUI {
             }
         }
     }
+}
+
+/// Parse hex color string to egui Color32
+fn parse_hex_color(hex: &str) -> Option<egui::Color32> {
+    if !hex.starts_with('#') || hex.len() != 7 {
+        return None;
+    }
+
+    let r = u8::from_str_radix(&hex[1..3], 16).ok()?;
+    let g = u8::from_str_radix(&hex[3..5], 16).ok()?;
+    let b = u8::from_str_radix(&hex[5..7], 16).ok()?;
+
+    Some(egui::Color32::from_rgb(r, g, b))
 }
 
 impl Default for IntegratedUI {
