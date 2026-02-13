@@ -23,4 +23,4 @@ Planned keyboard commands:
 - `Delete`: Delete selected message
 - `Ctrl+Shift+A`: Mark all as read in current folder
 
-See `/home/runner/work/Wixen-Mail/Wixen-Mail/TASKS.md` for the implementation checklist.
+See `TASKS.md` for the implementation checklist.
