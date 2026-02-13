@@ -4,6 +4,8 @@
 
 pub mod accessibility;
 pub mod ui;
+pub mod ui_integrated;
 
 pub use accessibility::Accessibility;
 pub use ui::UI;
+pub use ui_integrated::IntegratedUI;
