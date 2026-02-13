@@ -100,6 +100,17 @@ For other email providers:
 
 4. Click **Connect**
 
+### Multiple Accounts
+
+Wixen Mail supports managing multiple email accounts.
+
+- Open **Tools → Manage Accounts** (`Ctrl+M`) to add/edit/delete accounts.
+- Switch active account from the toolbar account dropdown (📧).
+- Keyboard shortcuts:
+  - `Ctrl+1` - Switch to first enabled account
+  - `Ctrl+2` - Switch to second enabled account
+  - `Ctrl+3` - Switch to third enabled account
+
 ## Reading and Managing Email
 
 ### Three-Pane Layout

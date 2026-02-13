@@ -5,7 +5,7 @@
 
 use crate::application::mail_controller::MailController;
 use crate::common::Result;
-use crate::data::account::{Account, AccountManager};
+use crate::data::account::Account;
 use crate::data::email_providers::{self, EmailProvider};
 use crate::data::message_cache::{MessageCache, Tag};
 use crate::presentation::account_manager::{AccountManagerWindow, AccountAction};
@@ -14,6 +14,7 @@ use crate::presentation::signature_manager::{SignatureManagerWindow, SignatureAc
 use crate::presentation::tag_manager::{TagManagerWindow, TagAction};
 use async_channel::{Receiver, Sender};
 use eframe::egui;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex as TokioMutex;
@@ -198,7 +199,8 @@ impl Default for UIState {
 
 /// Main UI struct with async integration
 pub struct IntegratedUI {
-    mail_controller: Arc<TokioMutex<MailController>>,
+    mail_controllers: HashMap<String, Arc<TokioMutex<MailController>>>,
+    active_account_id: Option<String>,
     runtime: Arc<Runtime>,
     ui_tx: Sender<UIUpdate>,
     ui_rx: Receiver<UIUpdate>,
@@ -212,8 +214,6 @@ impl IntegratedUI {
         let runtime = Arc::new(Runtime::new().map_err(|e| {
             crate::common::Error::Other(format!("Failed to create runtime: {}", e))
         })?);
-        
-        let mail_controller = Arc::new(TokioMutex::new(MailController::new()));
         let (ui_tx, ui_rx) = async_channel::unbounded();
         
         // Initialize message cache
@@ -233,14 +233,30 @@ impl IntegratedUI {
             }
         }
         
-        Ok(Self {
-            mail_controller,
+        let mut ui = Self {
+            mail_controllers: HashMap::new(),
+            active_account_id: state.account_manager.active_account_id.clone(),
             runtime,
             ui_tx,
             ui_rx,
             state,
             message_cache,
-        })
+        };
+        
+        if let Some(active_id) = ui.active_account_id.clone() {
+            ui.get_or_create_controller(&active_id);
+        }
+        
+        let enabled_accounts: Vec<Account> = ui.state.account_manager.accounts
+            .iter()
+            .filter(|a| a.enabled)
+            .cloned()
+            .collect();
+        for account in enabled_accounts {
+            ui.spawn_background_sync(account);
+        }
+        
+        Ok(ui)
     }
     
     /// Initialize message cache
@@ -308,10 +324,15 @@ impl IntegratedUI {
     }
     
     /// Connect to IMAP server
-    fn connect_to_imap(&self) {
-        let mail_controller = Arc::clone(&self.mail_controller);
+    fn connect_to_imap(&mut self) {
         let config = self.state.account_config.clone();
         let ui_tx = self.ui_tx.clone();
+        let account_id = self.active_account_id
+            .clone()
+            .unwrap_or_else(|| config.email.clone());
+        let mail_controller = self.get_or_create_controller(&account_id);
+        self.active_account_id = Some(account_id.clone());
+        self.state.account_manager.active_account_id = Some(account_id);
         
         self.runtime.spawn(async move {
             let _ = ui_tx.send(UIUpdate::ConnectionStatusChanged(ConnectionStatus::Connecting)).await;
@@ -353,7 +374,9 @@ impl IntegratedUI {
     
     /// Fetch messages from selected folder
     fn fetch_messages_for_folder(&self, folder: String) {
-        let mail_controller = Arc::clone(&self.mail_controller);
+        let Some(mail_controller) = self.get_active_controller() else {
+            return;
+        };
         let ui_tx = self.ui_tx.clone();
         
         self.runtime.spawn(async move {
@@ -422,7 +445,9 @@ impl IntegratedUI {
     
     /// Fetch message body
     fn fetch_message_body(&self, folder: String, uid: u32) {
-        let mail_controller = Arc::clone(&self.mail_controller);
+        let Some(mail_controller) = self.get_active_controller() else {
+            return;
+        };
         let ui_tx = self.ui_tx.clone();
         
         self.runtime.spawn(async move {
@@ -443,7 +468,9 @@ impl IntegratedUI {
     
     /// Send email via SMTP
     fn send_email(&self, to: Vec<String>, subject: String, body: String) {
-        let mail_controller = Arc::clone(&self.mail_controller);
+        let Some(mail_controller) = self.get_active_controller() else {
+            return;
+        };
         let config = self.state.account_config.clone();
         let ui_tx = self.ui_tx.clone();
         
@@ -475,6 +502,8 @@ impl IntegratedUI {
     
     /// Render the main UI
     fn render_ui(&mut self, ctx: &egui::Context) {
+        let mut account_switch_to: Option<String> = None;
+        
         // Menu bar
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
@@ -527,8 +556,10 @@ impl IntegratedUI {
                     }
                     ui.separator();
                     if ui.button("🔑 Manage Accounts (Ctrl+M)").clicked() {
-                        // For now, open with empty accounts list - will be populated from AccountManager later
-                        self.state.account_manager.open(Vec::new(), None);
+                        self.state.account_manager.open(
+                            self.state.account_manager.accounts.clone(),
+                            self.state.account_manager.active_account_id.clone(),
+                        );
                         ui.close_menu();
                     }
                 });
@@ -559,6 +590,35 @@ impl IntegratedUI {
                     }
                 });
                 
+                // Account switcher dropdown
+                ui.separator();
+                ui.label("📧");
+                let active_display = self.state.account_manager.active_account_id
+                    .as_ref()
+                    .and_then(|active_id| self.state.account_manager.accounts.iter().find(|a| &a.id == active_id))
+                    .map(|a| a.display_name())
+                    .unwrap_or_else(|| "No Account".to_string());
+                let enabled_accounts: Vec<_> = self.state.account_manager.accounts
+                    .iter()
+                    .filter(|a| a.enabled)
+                    .cloned()
+                    .collect();
+                if !enabled_accounts.is_empty() {
+                    egui::ComboBox::from_id_salt("account_switcher")
+                        .selected_text(active_display)
+                        .show_ui(ui, |ui| {
+                            for account in &enabled_accounts {
+                                let is_active = self.state.account_manager.active_account_id
+                                    .as_ref()
+                                    .map(|id| id == &account.id)
+                                    .unwrap_or(false);
+                                if ui.selectable_label(is_active, account.display_name()).clicked() {
+                                    account_switch_to = Some(account.id.clone());
+                                }
+                            }
+                        });
+                }
+                
                 // Connection status indicator
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     match &self.state.connection_status {
@@ -578,6 +638,10 @@ impl IntegratedUI {
                 });
             });
         });
+        
+        if let Some(account_id) = account_switch_to {
+            self.switch_account(&account_id);
+        }
         
         // Main content area with three-pane layout
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -1016,6 +1080,7 @@ impl IntegratedUI {
         }
         
         // Handle tag/signature/account manager keyboard shortcuts
+        let mut shortcut_account_switch: Option<String> = None;
         ctx.input(|i| {
             // Tag manager shortcut: Ctrl+T
             if i.key_pressed(egui::Key::T) && i.modifiers.ctrl && !i.modifiers.shift {
@@ -1027,9 +1092,30 @@ impl IntegratedUI {
             }
             // Account manager shortcut: Ctrl+M
             if i.key_pressed(egui::Key::M) && i.modifiers.ctrl && !i.modifiers.shift {
-                self.state.account_manager.open(Vec::new(), None);
+                self.state.account_manager.open(
+                    self.state.account_manager.accounts.clone(),
+                    self.state.account_manager.active_account_id.clone(),
+                );
+            }
+            // Account switching shortcuts: Ctrl+1/2/3
+            if i.modifiers.ctrl {
+                let enabled_accounts: Vec<_> = self.state.account_manager.accounts
+                    .iter()
+                    .filter(|a| a.enabled)
+                    .cloned()
+                    .collect();
+                if i.key_pressed(egui::Key::Num1) {
+                    shortcut_account_switch = enabled_accounts.get(0).map(|a| a.id.clone());
+                } else if i.key_pressed(egui::Key::Num2) {
+                    shortcut_account_switch = enabled_accounts.get(1).map(|a| a.id.clone());
+                } else if i.key_pressed(egui::Key::Num3) {
+                    shortcut_account_switch = enabled_accounts.get(2).map(|a| a.id.clone());
+                }
             }
         });
+        if let Some(account_id) = shortcut_account_switch {
+            self.switch_account(&account_id);
+        }
         
         // Error message window (Feature 7: Better Error Handling)
         if let Some(ref error) = self.state.error_message.clone() {
@@ -1635,6 +1721,9 @@ impl IntegratedUI {
                             if let Ok(accounts) = cache.load_accounts() {
                                 self.state.account_manager.accounts = accounts;
                             }
+                            if account.enabled && !self.mail_controllers.contains_key(&account.id) {
+                                self.spawn_background_sync(account.clone());
+                            }
                             self.state.account_manager.close();
                         }
                         Err(e) => {
@@ -1680,7 +1769,9 @@ impl IntegratedUI {
                             // Clear active account if it was deleted
                             if self.state.account_manager.active_account_id.as_ref() == Some(&account_id) {
                                 self.state.account_manager.active_account_id = None;
+                                self.active_account_id = None;
                             }
+                            self.mail_controllers.remove(&account_id);
                         }
                         Err(e) => {
                             self.state.error_message = Some(format!("Failed to delete account: {}", e));
@@ -1694,9 +1785,7 @@ impl IntegratedUI {
             AccountAction::SetActive(account_id) => {
                 // Check if account exists
                 if self.state.account_manager.accounts.iter().any(|a| a.id == account_id) {
-                    self.state.account_manager.active_account_id = Some(account_id);
-                    self.state.status_message = "Active account changed".to_string();
-                    // TODO: Switch to this account's data (will be implemented in Item 3)
+                    self.switch_account(&account_id);
                 } else {
                     self.state.error_message = Some("Account not found".to_string());
                 }
@@ -1706,6 +1795,87 @@ impl IntegratedUI {
                 // TODO: Implement connection test
             }
         }
+    }
+    
+    fn get_or_create_controller(&mut self, account_id: &str) -> Arc<TokioMutex<MailController>> {
+        if let Some(controller) = self.mail_controllers.get(account_id) {
+            return controller.clone();
+        }
+        
+        let controller = Arc::new(TokioMutex::new(MailController::new()));
+        self.mail_controllers.insert(account_id.to_string(), controller.clone());
+        controller
+    }
+    
+    fn get_active_controller(&self) -> Option<Arc<TokioMutex<MailController>>> {
+        self.active_account_id
+            .as_ref()
+            .and_then(|id| self.mail_controllers.get(id))
+            .cloned()
+    }
+    
+    fn switch_account(&mut self, account_id: &str) {
+        if !self.state.account_manager.accounts.iter().any(|a| a.id == account_id) {
+            self.state.error_message = Some("Account not found".to_string());
+            return;
+        }
+        
+        self.state.account_manager.active_account_id = Some(account_id.to_string());
+        self.active_account_id = Some(account_id.to_string());
+        self.get_or_create_controller(account_id);
+        
+        self.state.selected_folder = None;
+        self.state.selected_message = None;
+        self.state.folders.clear();
+        self.state.messages.clear();
+        self.state.message_preview.clear();
+        
+        if let Some(account) = self.state.account_manager.active_account_id
+            .as_ref()
+            .and_then(|active_id| self.state.account_manager.accounts.iter().find(|a| &a.id == active_id))
+        {
+            self.state.account_config.email = account.email.clone();
+            self.state.account_config.username = account.username.clone();
+            self.state.account_config.password = account.password.clone();
+            self.state.account_config.imap_server = account.imap_server.clone();
+            self.state.account_config.imap_port = account.imap_port.clone();
+            self.state.account_config.imap_use_tls = account.imap_use_tls;
+            self.state.account_config.smtp_server = account.smtp_server.clone();
+            self.state.account_config.smtp_port = account.smtp_port.clone();
+            self.state.account_config.smtp_use_tls = account.smtp_use_tls;
+            self.state.account_config.selected_provider = account.provider.clone();
+            self.state.status_message = format!("Switched to account: {}", account.display_name());
+        } else {
+            self.state.status_message = "Active account changed".to_string();
+        }
+    }
+    
+    fn spawn_background_sync(&mut self, account: Account) {
+        if !account.enabled {
+            return;
+        }
+        
+        let runtime = self.runtime.clone();
+        let controller = self.get_or_create_controller(&account.id);
+        
+        runtime.spawn(async move {
+            loop {
+                let interval = std::time::Duration::from_secs(account.check_interval_minutes.max(1) as u64 * 60);
+                tokio::time::sleep(interval).await;
+                
+                let controller = controller.lock().await;
+                let port = account.imap_port.parse().unwrap_or(993);
+                if controller.connect_imap(
+                    account.imap_server.clone(),
+                    port,
+                    account.username.clone(),
+                    account.password.clone(),
+                    account.imap_use_tls,
+                ).await.is_ok() {
+                    let _ = controller.fetch_folders().await;
+                }
+            }
+        });
     }
 }
 
