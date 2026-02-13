@@ -89,6 +89,20 @@ pub struct Signature {
     pub created_at: String,
 }
 
+/// Message filter rule for automatic organization
+#[derive(Debug, Clone)]
+pub struct MessageFilterRule {
+    pub id: String,
+    pub account_id: String,
+    pub name: String,
+    pub field: String,        // subject, from, to
+    pub pattern: String,      // case-insensitive contains
+    pub action_type: String,  // move_to_folder, add_tag, mark_as_read, delete
+    pub action_value: Option<String>, // folder or tag id for value-based actions
+    pub enabled: bool,
+    pub created_at: String,
+}
+
 impl MessageCache {
     /// Create a new message cache
     pub fn new(cache_dir: PathBuf) -> Result<Self> {
@@ -212,6 +226,24 @@ impl MessageCache {
             )",
             [],
         ).map_err(|e| Error::Other(format!("Failed to create signatures table: {}", e)))?;
+        
+        // Create message filter rules table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS message_filter_rules (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                field TEXT NOT NULL,
+                pattern TEXT NOT NULL,
+                action_type TEXT NOT NULL,
+                action_value TEXT,
+                enabled BOOLEAN DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(account_id, name)
+            )",
+            [],
+        ).map_err(|e| Error::Other(format!("Failed to create message_filter_rules table: {}", e)))?;
         
         // Create accounts table
         self.conn.execute(
@@ -847,6 +879,89 @@ impl MessageCache {
             params![signature_id],
         ).map_err(|e| Error::Other(format!("Failed to delete signature: {}", e)))?;
         
+        Ok(())
+    }
+    
+    // ===== Message Filter Rule Methods =====
+    
+    /// Create a new message filter rule
+    pub fn create_filter_rule(&self, rule: &MessageFilterRule) -> Result<()> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO message_filter_rules
+             (id, account_id, name, field, pattern, action_type, action_value, enabled, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                &rule.id,
+                &rule.account_id,
+                &rule.name,
+                &rule.field,
+                &rule.pattern,
+                &rule.action_type,
+                &rule.action_value,
+                &rule.enabled,
+                &rule.created_at,
+                &now,
+            ],
+        ).map_err(|e| Error::Other(format!("Failed to create filter rule: {}", e)))?;
+        Ok(())
+    }
+    
+    /// Get all message filter rules for an account
+    pub fn get_filter_rules_for_account(&self, account_id: &str) -> Result<Vec<MessageFilterRule>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, account_id, name, field, pattern, action_type, action_value, enabled, created_at
+             FROM message_filter_rules
+             WHERE account_id = ?1
+             ORDER BY name"
+        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+        
+        let rules = stmt.query_map(params![account_id], |row| {
+            Ok(MessageFilterRule {
+                id: row.get(0)?,
+                account_id: row.get(1)?,
+                name: row.get(2)?,
+                field: row.get(3)?,
+                pattern: row.get(4)?,
+                action_type: row.get(5)?,
+                action_value: row.get(6)?,
+                enabled: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        }).map_err(|e| Error::Other(format!("Failed to query filter rules: {}", e)))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| Error::Other(format!("Failed to collect filter rules: {}", e)))?;
+        
+        Ok(rules)
+    }
+    
+    /// Update an existing message filter rule
+    pub fn update_filter_rule(&self, rule: &MessageFilterRule) -> Result<()> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE message_filter_rules
+             SET name = ?1, field = ?2, pattern = ?3, action_type = ?4, action_value = ?5, enabled = ?6, updated_at = ?7
+             WHERE id = ?8",
+            params![
+                &rule.name,
+                &rule.field,
+                &rule.pattern,
+                &rule.action_type,
+                &rule.action_value,
+                &rule.enabled,
+                &now,
+                &rule.id,
+            ],
+        ).map_err(|e| Error::Other(format!("Failed to update filter rule: {}", e)))?;
+        Ok(())
+    }
+    
+    /// Delete a message filter rule by ID
+    pub fn delete_filter_rule(&self, rule_id: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM message_filter_rules WHERE id = ?1",
+            params![rule_id],
+        ).map_err(|e| Error::Other(format!("Failed to delete filter rule: {}", e)))?;
         Ok(())
     }
     
@@ -1501,5 +1616,43 @@ mod tests {
         
         let messages_cross = cache.get_messages_for_folder(folder1_id, "acc-2").unwrap();
         assert!(messages_cross.is_empty());
+    }
+    
+    #[test]
+    fn test_filter_rule_operations() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_filter_rules_{}", nanos));
+        let cache = MessageCache::new(temp_dir).unwrap();
+        
+        let mut rule = MessageFilterRule {
+            id: "rule-1".to_string(),
+            account_id: "test@example.com".to_string(),
+            name: "Newsletter Cleanup".to_string(),
+            field: "subject".to_string(),
+            pattern: "newsletter".to_string(),
+            action_type: "move_to_folder".to_string(),
+            action_value: Some("Archive".to_string()),
+            enabled: true,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+        
+        cache.create_filter_rule(&rule).unwrap();
+        let rules = cache.get_filter_rules_for_account("test@example.com").unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].name, "Newsletter Cleanup");
+        
+        rule.enabled = false;
+        rule.pattern = "promo".to_string();
+        cache.update_filter_rule(&rule).unwrap();
+        
+        let updated = cache.get_filter_rules_for_account("test@example.com").unwrap();
+        assert_eq!(updated.len(), 1);
+        assert_eq!(updated[0].pattern, "promo");
+        assert!(!updated[0].enabled);
+        
+        cache.delete_filter_rule("rule-1").unwrap();
+        let empty = cache.get_filter_rules_for_account("test@example.com").unwrap();
+        assert!(empty.is_empty());
     }
 }

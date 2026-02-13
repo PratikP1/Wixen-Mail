@@ -4,12 +4,14 @@
 //! through the MailController.
 
 use crate::application::mail_controller::MailController;
+use crate::application::filters::{FilterAction as RuleFilterAction, FilterEngine};
 use crate::common::Result;
 use crate::data::account::Account;
 use crate::data::email_providers::{self, EmailProvider};
-use crate::data::message_cache::{MessageCache, Tag};
+use crate::data::message_cache::{CachedMessage, MessageCache, Tag};
 use crate::presentation::account_manager::{AccountManagerWindow, AccountAction};
 use crate::presentation::composition::{CompositionWindow, CompositionAction};
+use crate::presentation::filter_manager::{FilterManagerWindow, FilterRuleAction};
 use crate::presentation::signature_manager::{SignatureManagerWindow, SignatureAction};
 use crate::presentation::tag_manager::{TagManagerWindow, TagAction};
 use async_channel::{Receiver, Sender};
@@ -23,6 +25,7 @@ use tokio::task::JoinHandle;
 
 const SECONDS_PER_MINUTE: u64 = 60;
 const DEFAULT_IMAP_PORT: u16 = 993;
+const PLACEHOLDER_FOLDER_ID: i64 = 0;
 
 /// UI state for the integrated mail client
 pub struct UIState {
@@ -82,6 +85,8 @@ pub struct UIState {
     pub signature_manager: SignatureManagerWindow,
     /// Account manager window
     pub account_manager: AccountManagerWindow,
+    /// Filter manager window
+    pub filter_manager: FilterManagerWindow,
     /// Message tags for display
     pub message_tags: std::collections::HashMap<u32, Vec<Tag>>,
     /// Selected tag filter
@@ -196,6 +201,7 @@ impl Default for UIState {
             tag_manager: TagManagerWindow::new(),
             signature_manager: SignatureManagerWindow::new(),
             account_manager: AccountManagerWindow::new(),
+            filter_manager: FilterManagerWindow::new(),
             message_tags: std::collections::HashMap::new(),
             selected_tag_filter: None,
         }
@@ -308,7 +314,8 @@ impl IntegratedUI {
                 self.state.folders = folders;
                 self.state.status_message = "Folders loaded".to_string();
             }
-            UIUpdate::MessagesLoaded(messages) => {
+            UIUpdate::MessagesLoaded(mut messages) => {
+                self.apply_filter_rules(&mut messages);
                 self.state.messages = messages;
                 self.state.status_message = format!("{} messages loaded", self.state.messages.len());
             }
@@ -559,6 +566,10 @@ impl IntegratedUI {
                 ui.menu_button("Tools", |ui| {
                     if ui.button("🏷 Manage Tags (Ctrl+T)").clicked() {
                         self.state.tag_manager.open(self.state.account_config.email.clone());
+                        ui.close_menu();
+                    }
+                    if ui.button("📋 Manage Rules (Ctrl+Shift+E)").clicked() {
+                        self.state.filter_manager.open(self.state.account_config.email.clone());
                         ui.close_menu();
                     }
                     if ui.button("✍ Manage Signatures (Ctrl+Shift+S)").clicked() {
@@ -1100,6 +1111,11 @@ impl IntegratedUI {
             self.handle_tag_action(action);
         }
         
+        // Filter manager window
+        if let Some(action) = self.state.filter_manager.render(ctx, &self.message_cache) {
+            self.handle_filter_rule_action(action);
+        }
+        
         // Signature manager window
         if let Some(action) = self.state.signature_manager.render(ctx, &self.message_cache) {
             self.handle_signature_action(action);
@@ -1117,6 +1133,10 @@ impl IntegratedUI {
             // Tag manager shortcut: Ctrl+T
             if i.key_pressed(egui::Key::T) && i.modifiers.ctrl && !i.modifiers.shift {
                 self.state.tag_manager.open(self.state.account_config.email.clone());
+            }
+            // Filter manager shortcut: Ctrl+Shift+E
+            if i.key_pressed(egui::Key::E) && i.modifiers.ctrl && i.modifiers.shift {
+                self.state.filter_manager.open(self.state.account_config.email.clone());
             }
             // Signature manager shortcut: Ctrl+Shift+S
             if i.key_pressed(egui::Key::S) && i.modifiers.ctrl && i.modifiers.shift {
@@ -1688,6 +1708,50 @@ impl IntegratedUI {
         }
     }
     
+    /// Handle filter rule actions from the filter manager
+    fn handle_filter_rule_action(&mut self, action: FilterRuleAction) {
+        if let Some(ref cache) = self.message_cache {
+            match action {
+                FilterRuleAction::Create(rule) => {
+                    match cache.create_filter_rule(&rule) {
+                        Ok(_) => {
+                            self.state.status_message = format!("Rule '{}' created", rule.name);
+                            self.state.filter_manager.status = "Rule created successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to create rule: {}", e));
+                            self.state.filter_manager.error = Some(format!("Failed to create rule: {}", e));
+                        }
+                    }
+                }
+                FilterRuleAction::Update(rule) => {
+                    match cache.update_filter_rule(&rule) {
+                        Ok(_) => {
+                            self.state.status_message = format!("Rule '{}' updated", rule.name);
+                            self.state.filter_manager.status = "Rule updated successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to update rule: {}", e));
+                            self.state.filter_manager.error = Some(format!("Failed to update rule: {}", e));
+                        }
+                    }
+                }
+                FilterRuleAction::Delete(rule_id) => {
+                    match cache.delete_filter_rule(&rule_id) {
+                        Ok(_) => {
+                            self.state.status_message = "Rule deleted".to_string();
+                            self.state.filter_manager.status = "Rule deleted successfully".to_string();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to delete rule: {}", e));
+                            self.state.filter_manager.error = Some(format!("Failed to delete rule: {}", e));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     /// Handle signature actions from the signature manager
     fn handle_signature_action(&mut self, action: SignatureAction) {
         if let Some(ref cache) = self.message_cache {
@@ -2034,6 +2098,68 @@ impl IntegratedUI {
         }
         
         depth
+    }
+    
+    fn apply_filter_rules(&self, messages: &mut Vec<MessageItem>) {
+        let Some(cache) = &self.message_cache else {
+            return;
+        };
+        
+        let persisted_rules = match cache.get_filter_rules_for_account(&self.state.account_config.email) {
+            Ok(rules) => rules,
+            Err(e) => {
+                tracing::warn!("Failed to load filter rules for account '{}': {}", self.state.account_config.email, e);
+                return;
+            }
+        };
+        
+        let mut engine = match FilterEngine::new() {
+            Ok(engine) => engine,
+            Err(e) => {
+                tracing::warn!("Failed to initialize filter engine: {}", e);
+                return;
+            }
+        };
+        engine.load_from_persisted(&persisted_rules);
+        
+        let before_count = messages.len();
+        messages.retain_mut(|msg| {
+            // Rules are evaluated against the metadata available in MessageItem.
+            // Folder and recipient details are not available from the message list preview payload,
+            // so placeholders are used for non-evaluated fields.
+            let cached = CachedMessage {
+                id: msg.message_id,
+                uid: msg.uid,
+                folder_id: PLACEHOLDER_FOLDER_ID,
+                message_id: msg.message_id.to_string(),
+                subject: msg.subject.clone(),
+                from_addr: msg.from.clone(),
+                to_addr: String::new(),
+                cc: None,
+                date: msg.date.clone(),
+                body_plain: None,
+                body_html: None,
+                read: msg.read,
+                starred: msg.starred,
+                deleted: false,
+            };
+            
+            let actions = engine.evaluate_message(&cached);
+            let mut keep = true;
+            for action in actions {
+                match action {
+                    RuleFilterAction::MarkAsRead => msg.read = true,
+                    RuleFilterAction::Delete => keep = false,
+                    RuleFilterAction::MoveToFolder(_) | RuleFilterAction::AddTag(_) => {}
+                }
+            }
+            keep
+        });
+        
+        let removed = before_count.saturating_sub(messages.len());
+        if removed > 0 {
+            tracing::info!("Applied filter rules removed {} message(s) from current view", removed);
+        }
     }
 }
 

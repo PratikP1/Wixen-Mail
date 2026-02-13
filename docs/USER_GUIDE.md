@@ -111,6 +111,15 @@ Wixen Mail supports managing multiple email accounts.
   - `Ctrl+2` - Switch to second enabled account
   - `Ctrl+3` - Switch to third enabled account
 
+### Message Rules (Phase 7)
+
+Use **Tools → Manage Rules** (`Ctrl+Shift+E`) to create accessibility-friendly message rules.
+
+Each rule can:
+- Match on `subject`, `from`, or `to`
+- Use case-insensitive "contains text" matching
+- Perform actions: `mark_as_read`, `delete`, `move_to_folder`, or `add_tag`
+
 ## Reading and Managing Email
 
 ### Three-Pane Layout

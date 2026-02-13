@@ -63,6 +63,12 @@ Complete reference of all keyboard shortcuts in Wixen Mail for efficient, access
 | Switch to Account 2 | `Ctrl+2` | Switch to second enabled account |
 | Switch to Account 3 | `Ctrl+3` | Switch to third enabled account |
 
+### Rules Management
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Open Rules Manager | `Ctrl+Shift+E` | Open message filter rules manager |
+
 ### View Menu
 
 | Action | Shortcut | Description |
