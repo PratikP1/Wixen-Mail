@@ -131,6 +131,37 @@ impl Account {
     pub fn mark_synced(&mut self) {
         self.last_sync = Some(SystemTime::now());
     }
+    
+    /// Migrate from old AccountConfig to new Account
+    pub fn from_account_config(config: &crate::presentation::ui_integrated::AccountConfig) -> Self {
+        let email = config.email.clone();
+        
+        // Detect provider from email
+        let provider = if let Some(provider_name) = &config.selected_provider {
+            Some(provider_name.clone())
+        } else {
+            crate::data::email_providers::detect_provider_from_email(&email).map(|p| p.name.clone())
+        };
+        
+        Account {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: "Primary Account".to_string(), // User can rename later
+            email,
+            imap_server: config.imap_server.clone(),
+            imap_port: config.imap_port.clone(),
+            imap_use_tls: config.imap_use_tls,
+            smtp_server: config.smtp_server.clone(),
+            smtp_port: config.smtp_port.clone(),
+            smtp_use_tls: config.smtp_use_tls,
+            username: config.username.clone(),
+            password: config.password.clone(),
+            enabled: true,
+            check_interval_minutes: 5,
+            provider,
+            last_sync: None,
+            color: "#4A90E2".to_string(), // Default blue
+        }
+    }
 }
 
 impl Default for Account {
@@ -354,5 +385,33 @@ mod tests {
         assert_eq!(manager.get_active_account_id(), Some(&id1));
         manager.set_active_account(&id2).unwrap();
         assert_eq!(manager.get_active_account_id(), Some(&id2));
+    }
+    
+    #[test]
+    fn test_migrate_from_account_config() {
+        use crate::presentation::ui_integrated::AccountConfig;
+        
+        let config = AccountConfig {
+            email: "user@gmail.com".to_string(),
+            selected_provider: Some("Gmail".to_string()),
+            imap_server: "imap.gmail.com".to_string(),
+            imap_port: "993".to_string(),
+            imap_use_tls: true,
+            smtp_server: "smtp.gmail.com".to_string(),
+            smtp_port: "465".to_string(),
+            smtp_use_tls: true,
+            username: "user@gmail.com".to_string(),
+            password: "password123".to_string(),
+        };
+        
+        let account = Account::from_account_config(&config);
+        
+        assert_eq!(account.email, "user@gmail.com");
+        assert_eq!(account.name, "Primary Account");
+        assert_eq!(account.imap_server, "imap.gmail.com");
+        assert_eq!(account.imap_port, "993");
+        assert_eq!(account.enabled, true);
+        assert!(!account.id.is_empty()); // UUID generated
+        assert_eq!(account.provider, Some("Gmail".to_string()));
     }
 }
