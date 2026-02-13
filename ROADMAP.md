@@ -47,25 +47,26 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 ## Phase 3: User Interface (Months 5-6)
 
 ### Main Window Layout
-- [ ] Design three-pane layout (folder tree, message list, message preview)
-- [ ] Implement resizable panes with keyboard controls
-- [ ] Create menu bar with full keyboard navigation
+- [x] Design three-pane layout (folder tree, message list, message preview)
+- [x] Implement resizable panes with keyboard controls
+- [x] Create menu bar with full keyboard navigation
 - [ ] Implement toolbar with accessible buttons
 
 ### Folder Management
-- [ ] Display folder tree with keyboard navigation
+- [x] Display folder tree with keyboard navigation
 - [ ] Support for expanding/collapsing folders
 - [ ] Context menus for folder operations
 - [ ] Drag-and-drop support with keyboard alternatives
 
 ### Message List View
-- [ ] Display message list with sortable columns
+- [x] Display message list with sortable columns
 - [ ] Thread view support
 - [ ] Multi-selection with keyboard
 - [ ] Quick search/filter functionality
-- [ ] Unread/starred message indicators
+- [x] Unread/starred message indicators
 
 ### Message Reading Pane
+- [x] Plain text email rendering
 - [ ] HTML email rendering with accessibility
 - [ ] Plain text fallback
 - [ ] Attachment preview and management
