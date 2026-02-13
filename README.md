@@ -35,6 +35,8 @@ Comprehensive documentation available in the `docs/` directory:
 - **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Solutions for common issues
 - **[PROVIDER_SETUP.md](docs/PROVIDER_SETUP.md)** - Step-by-step provider configuration
 - **[FEATURES_SUMMARY.md](docs/FEATURES_SUMMARY.md)** - Technical feature overview
+- **[NEXT_STEPS.md](NEXT_STEPS.md)** - v1.0 roadmap and implementation plan
+- **[ROADMAP.md](ROADMAP.md)** - Complete project roadmap
 - **[ACCESSIBILITY.md](ACCESSIBILITY.md)** - Accessibility framework details
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical architecture
 
