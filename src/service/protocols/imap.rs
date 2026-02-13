@@ -122,10 +122,58 @@ impl ImapSession {
     }
 
     /// Fetch complete message body (placeholder)
-    pub async fn fetch_message_body(&mut self, uid: u32) -> Result<String> {
+    pub async fn fetch_message_body(&mut self, _folder: &str, uid: u32) -> Result<String> {
         tracing::debug!("Fetching IMAP message body for UID: {} (placeholder)", uid);
         
         Ok(format!("From: test@example.com\r\nTo: recipient@example.com\r\nSubject: Test Message {}\r\n\r\nThis is a test message body.", uid))
+    }
+
+    /// Fetch messages from a folder (placeholder)
+    pub async fn fetch_messages(&mut self, folder: &str, _range: Option<&str>) -> Result<Vec<ImapMessage>> {
+        tracing::debug!("Fetching messages from folder: {} (placeholder)", folder);
+        
+        // Return mock messages
+        Ok(vec![
+            ImapMessage {
+                uid: 1,
+                subject: format!("Welcome to {}", folder),
+                from: "welcome@example.com".to_string(),
+                date: "Mon, 10 Jan 2024 10:00:00 +0000".to_string(),
+                flags: vec!["\\Seen".to_string()],
+            },
+            ImapMessage {
+                uid: 2,
+                subject: "Getting Started".to_string(),
+                from: "help@example.com".to_string(),
+                date: "Tue, 11 Jan 2024 14:30:00 +0000".to_string(),
+                flags: vec![],
+            },
+            ImapMessage {
+                uid: 3,
+                subject: "Important Update".to_string(),
+                from: "updates@example.com".to_string(),
+                date: "Wed, 12 Jan 2024 09:15:00 +0000".to_string(),
+                flags: vec!["\\Flagged".to_string()],
+            },
+        ])
+    }
+
+    /// Mark message as read (placeholder)
+    pub async fn mark_as_read(&mut self, folder: &str, uid: u32) -> Result<()> {
+        tracing::debug!("Marking message {} as read in folder: {} (placeholder)", uid, folder);
+        Ok(())
+    }
+
+    /// Toggle a flag on a message (placeholder)
+    pub async fn toggle_flag(&mut self, folder: &str, uid: u32, flag: &str) -> Result<()> {
+        tracing::debug!("Toggling flag {} on message {} in folder: {} (placeholder)", flag, uid, folder);
+        Ok(())
+    }
+
+    /// Delete a message (placeholder)
+    pub async fn delete_message(&mut self, folder: &str, uid: u32) -> Result<()> {
+        tracing::debug!("Deleting message {} from folder: {} (placeholder)", uid, folder);
+        Ok(())
     }
 
     /// Logout and close session (placeholder)

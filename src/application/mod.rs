@@ -6,6 +6,7 @@ pub mod accounts;
 pub mod composition;
 pub mod contacts;
 pub mod filters;
+pub mod mail_controller;
 pub mod messages;
 pub mod search;
 
@@ -13,5 +14,6 @@ pub use accounts::AccountManager;
 pub use composition::CompositionManager;
 pub use contacts::ContactManager;
 pub use filters::FilterEngine;
+pub use mail_controller::MailController;
 pub use messages::MessageManager;
 pub use search::SearchEngine;
