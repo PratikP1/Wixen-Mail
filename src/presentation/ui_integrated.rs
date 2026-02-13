@@ -19,6 +19,9 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex as TokioMutex;
 
+const SECONDS_PER_MINUTE: u64 = 60;
+const DEFAULT_IMAP_PORT: u16 = 993;
+
 /// UI state for the integrated mail client
 pub struct UIState {
     /// Current folder
@@ -1860,11 +1863,21 @@ impl IntegratedUI {
         
         runtime.spawn(async move {
             loop {
-                let interval = std::time::Duration::from_secs(account.check_interval_minutes.max(1) as u64 * 60);
+                let interval = std::time::Duration::from_secs(
+                    account.check_interval_minutes.max(1) as u64 * SECONDS_PER_MINUTE,
+                );
                 tokio::time::sleep(interval).await;
                 
                 let controller = controller.lock().await;
-                let port = account.imap_port.parse().unwrap_or(993);
+                let port = account.imap_port.parse().unwrap_or_else(|_| {
+                    tracing::warn!(
+                        "Invalid IMAP port '{}' for account '{}', using default {}",
+                        account.imap_port,
+                        account.email,
+                        DEFAULT_IMAP_PORT
+                    );
+                    DEFAULT_IMAP_PORT
+                });
                 if controller.connect_imap(
                     account.imap_server.clone(),
                     port,
