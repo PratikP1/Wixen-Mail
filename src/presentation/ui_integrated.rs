@@ -216,13 +216,30 @@ impl IntegratedUI {
         let mail_controller = Arc::new(TokioMutex::new(MailController::new()));
         let (ui_tx, ui_rx) = async_channel::unbounded();
         
+        // Initialize message cache
+        let cache_dir = dirs::cache_dir()
+            .ok_or_else(|| crate::common::Error::Other("Could not find cache directory".to_string()))?
+            .join("wixen-mail");
+        let message_cache = Some(MessageCache::new(cache_dir)?);
+        
+        let mut state = UIState::default();
+        
+        // Load accounts from database if available
+        if let Some(ref cache) = message_cache {
+            if let Ok(accounts) = cache.load_accounts() {
+                // Set first account as active if any exist
+                state.account_manager.active_account_id = accounts.first().map(|a| a.id.clone());
+                state.account_manager.accounts = accounts;
+            }
+        }
+        
         Ok(Self {
             mail_controller,
             runtime,
             ui_tx,
             ui_rx,
-            state: UIState::default(),
-            message_cache: None,
+            state,
+            message_cache,
         })
     }
     
@@ -1609,27 +1626,84 @@ impl IntegratedUI {
         match action {
             AccountAction::None => {}
             AccountAction::Create(account) => {
-                // For now, just show status message
-                // In a full implementation, this would save to a persistent account store
-                self.state.status_message = format!("Account '{}' would be created", account.name);
-                self.state.account_manager.status = format!("Account '{}' created (placeholder)", account.name);
-                self.state.account_manager.close();
+                if let Some(ref cache) = self.message_cache {
+                    match cache.save_account(&account) {
+                        Ok(_) => {
+                            self.state.status_message = format!("Account '{}' created", account.name);
+                            self.state.account_manager.status = format!("Account '{}' created successfully", account.name);
+                            // Reload accounts from database
+                            if let Ok(accounts) = cache.load_accounts() {
+                                self.state.account_manager.accounts = accounts;
+                            }
+                            self.state.account_manager.close();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to create account: {}", e));
+                            self.state.account_manager.error = Some(format!("Error: {}", e));
+                        }
+                    }
+                } else {
+                    self.state.error_message = Some("Database not available".to_string());
+                }
             }
             AccountAction::Update(account) => {
-                self.state.status_message = format!("Account '{}' would be updated", account.name);
-                self.state.account_manager.status = format!("Account '{}' updated (placeholder)", account.name);
-                self.state.account_manager.close();
+                if let Some(ref cache) = self.message_cache {
+                    match cache.save_account(&account) {
+                        Ok(_) => {
+                            self.state.status_message = format!("Account '{}' updated", account.name);
+                            self.state.account_manager.status = format!("Account '{}' updated successfully", account.name);
+                            // Reload accounts from database
+                            if let Ok(accounts) = cache.load_accounts() {
+                                self.state.account_manager.accounts = accounts;
+                            }
+                            self.state.account_manager.close();
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to update account: {}", e));
+                            self.state.account_manager.error = Some(format!("Error: {}", e));
+                        }
+                    }
+                } else {
+                    self.state.error_message = Some("Database not available".to_string());
+                }
             }
             AccountAction::Delete(account_id) => {
-                self.state.status_message = format!("Account {} would be deleted", account_id);
-                self.state.account_manager.status = "Account deleted (placeholder)".to_string();
+                if let Some(ref cache) = self.message_cache {
+                    match cache.delete_account(&account_id) {
+                        Ok(_) => {
+                            self.state.status_message = "Account deleted successfully".to_string();
+                            self.state.account_manager.status = "Account deleted".to_string();
+                            // Reload accounts from database
+                            if let Ok(accounts) = cache.load_accounts() {
+                                self.state.account_manager.accounts = accounts;
+                            }
+                            // Clear active account if it was deleted
+                            if self.state.account_manager.active_account_id.as_ref() == Some(&account_id) {
+                                self.state.account_manager.active_account_id = None;
+                            }
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("Failed to delete account: {}", e));
+                            self.state.account_manager.error = Some(format!("Error: {}", e));
+                        }
+                    }
+                } else {
+                    self.state.error_message = Some("Database not available".to_string());
+                }
             }
             AccountAction::SetActive(account_id) => {
-                self.state.status_message = format!("Account {} would be set as active", account_id);
-                self.state.account_manager.status = "Account activated (placeholder)".to_string();
+                // Check if account exists
+                if self.state.account_manager.accounts.iter().any(|a| a.id == account_id) {
+                    self.state.account_manager.active_account_id = Some(account_id);
+                    self.state.status_message = "Active account changed".to_string();
+                    // TODO: Switch to this account's data (will be implemented in Item 3)
+                } else {
+                    self.state.error_message = Some("Account not found".to_string());
+                }
             }
             AccountAction::TestConnection(account_id) => {
                 self.state.status_message = format!("Testing connection for account {}...", account_id);
+                // TODO: Implement connection test
             }
         }
     }
