@@ -13,6 +13,7 @@ use crate::presentation::account_manager::{AccountManagerWindow, AccountAction};
 use crate::presentation::composition::{CompositionWindow, CompositionAction};
 use crate::presentation::contact_manager::{ContactAction, ContactManagerWindow};
 use crate::presentation::filter_manager::{FilterManagerWindow, FilterRuleAction};
+use crate::presentation::html_renderer::{HtmlRenderer, RenderedContent};
 use crate::presentation::oauth_manager::{oauth_token_entry_from_set, OAuthAction, OAuthManagerWindow};
 use crate::presentation::signature_manager::{SignatureManagerWindow, SignatureAction};
 use crate::presentation::tag_manager::{TagManagerWindow, TagAction};
@@ -33,6 +34,7 @@ const DEFAULT_SMTP_PORT: u16 = 465;
 const PLACEHOLDER_FOLDER_ID: i64 = 0;
 const MAX_CONTACT_SUGGESTIONS: usize = 5;
 const MAX_OUTBOX_FLUSH_CONCURRENCY: usize = 4;
+const ATTACHMENT_PREVIEW_SUFFIX: &str = ".preview.txt";
 
 /// UI state for the integrated mail client
 pub struct UIState {
@@ -46,8 +48,16 @@ pub struct UIState {
     pub messages: Vec<MessageItem>,
     /// Message preview text
     pub message_preview: String,
+    /// Rich rendered preview metadata
+    pub rendered_message_preview: Option<RenderedContent>,
     /// Current message attachments
     pub current_attachments: Vec<AttachmentItem>,
+    /// Attachment preview dialog state
+    pub attachment_preview_open: bool,
+    /// Attachment preview title
+    pub attachment_preview_title: String,
+    /// Attachment preview content
+    pub attachment_preview_text: String,
     /// Thread view enabled
     pub thread_view_enabled: bool,
     /// Composition window
@@ -198,7 +208,11 @@ impl Default for UIState {
             folders: Vec::new(),
             messages: Vec::new(),
             message_preview: String::new(),
+            rendered_message_preview: None,
             current_attachments: Vec::new(),
+            attachment_preview_open: false,
+            attachment_preview_title: String::new(),
+            attachment_preview_text: String::new(),
             thread_view_enabled: true, // Default to thread view enabled
             composition_window: CompositionWindow::new(),
             settings_open: false,
@@ -367,7 +381,20 @@ impl IntegratedUI {
                 }
             }
             UIUpdate::MessageBodyLoaded(body) => {
-                self.state.message_preview = body;
+                let renderer = HtmlRenderer::new();
+                let body_lower = body.to_lowercase();
+                let rendered = if body_lower.contains("<html")
+                    || body_lower.contains("<body")
+                    || body_lower.contains("<div")
+                    || body_lower.contains("<p>")
+                {
+                    renderer.render_for_egui(&body)
+                } else {
+                    let escaped = html_escape::encode_safe(&body).to_string();
+                    renderer.render_for_egui(&format!("<pre>{}</pre>", escaped))
+                };
+                self.state.message_preview = rendered.plain_text.clone();
+                self.state.rendered_message_preview = Some(rendered);
             }
             UIUpdate::ConnectionStatusChanged(status) => {
                 self.state.connection_status = status;
@@ -1261,13 +1288,43 @@ impl IntegratedUI {
                         if self.state.message_preview.is_empty() {
                             ui.label("Select a message to preview.");
                         } else {
-                            ui.label(&self.state.message_preview);
+                            if let Some(rendered) = &self.state.rendered_message_preview {
+                                ui.label(&rendered.plain_text);
+
+                                if !rendered.warnings.is_empty() {
+                                    ui.separator();
+                                    ui.label("⚠ Security & accessibility notes");
+                                    for warning in &rendered.warnings {
+                                        ui.label(format!("• {}", warning));
+                                    }
+                                }
+
+                                if !rendered.links.is_empty() {
+                                    ui.separator();
+                                    ui.label("🔗 Links");
+                                    for link in &rendered.links {
+                                        let label = if link.text.trim().is_empty() {
+                                            link.url.clone()
+                                        } else {
+                                            format!("{} ({})", link.text, link.url)
+                                        };
+                                        if ui.button(label).clicked() {
+                                            ui.ctx().open_url(egui::OpenUrl {
+                                                url: link.url.clone(),
+                                                new_tab: true,
+                                            });
+                                        }
+                                    }
+                                }
+                            } else {
+                                ui.label(&self.state.message_preview);
+                            }
                             
                             // Show attachments if any
                             if !self.state.current_attachments.is_empty() {
                                 ui.separator();
                                 ui.heading("📎 Attachments");
-                                
+
                                 for attachment in &self.state.current_attachments {
                                     ui.group(|ui| {
                                         ui.horizontal(|ui| {
@@ -1281,17 +1338,29 @@ impl IntegratedUI {
                                             });
                                             
                                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                if ui.button("📂 Open").clicked() {
+                                                    match Self::open_attachment_placeholder(attachment) {
+                                                        Ok(path) => {
+                                                            self.state.status_message = format!("Opened attachment placeholder: {}", path.display());
+                                                        }
+                                                        Err(e) => {
+                                                            self.state.error_message = Some(format!("Failed to open attachment: {}", e));
+                                                        }
+                                                    }
+                                                }
+                                                if ui.button("👁 Preview").clicked() {
+                                                    self.state.attachment_preview_open = true;
+                                                    self.state.attachment_preview_title =
+                                                        format!("Attachment Preview: {}", attachment.filename);
+                                                    self.state.attachment_preview_text =
+                                                        Self::build_attachment_preview_text(attachment);
+                                                }
                                                 if ui.button("💾 Save").clicked() {
                                                     if let Some(path) = rfd::FileDialog::new()
                                                         .set_file_name(&attachment.filename)
                                                         .save_file()
                                                     {
-                                                        let placeholder = format!(
-                                                            "Attachment placeholder\nName: {}\nType: {}\nSize: {}\n\nAttachment bytes are not currently cached in local preview mode.",
-                                                            attachment.filename,
-                                                            attachment.mime_type,
-                                                            attachment.size
-                                                        );
+                                                        let placeholder = Self::build_attachment_preview_text(attachment);
                                                         match std::fs::write(&path, placeholder) {
                                                             Ok(_) => {
                                                                 self.state.status_message = format!("Saved attachment placeholder to {}", path.display());
@@ -1312,6 +1381,17 @@ impl IntegratedUI {
                 });
             });
         });
+
+        if self.state.attachment_preview_open {
+            let mut open = self.state.attachment_preview_open;
+            egui::Window::new(&self.state.attachment_preview_title)
+                .open(&mut open)
+                .resizable(true)
+                .show(ctx, |ui| {
+                    ui.label(&self.state.attachment_preview_text);
+                });
+            self.state.attachment_preview_open = open;
+        }
         
         // Account configuration window
         if self.state.account_config_open {
@@ -2079,6 +2159,108 @@ impl IntegratedUI {
             "📎"
         }
     }
+
+    fn is_safe_filename_char(c: char) -> bool {
+        c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_'
+    }
+
+    fn sanitize_attachment_filename(filename: &str) -> String {
+        let candidate = std::path::Path::new(filename)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("attachment.bin");
+        let mut sanitized: String = candidate
+            .chars()
+            .map(|c| if Self::is_safe_filename_char(c) { c } else { '_' })
+            .collect();
+        sanitized = sanitized.replace("..", "_");
+        if sanitized.is_empty() || sanitized == "." || sanitized == ".." {
+            "attachment.bin".to_string()
+        } else {
+            sanitized
+        }
+    }
+
+    fn build_attachment_preview_text(attachment: &AttachmentItem) -> String {
+        format!(
+            "Attachment preview\n\nName: {}\nType: {}\nSize: {} bytes\n\nPreview note:\nAttachment bytes are not currently cached in local preview mode.\nUse Save/Open to inspect placeholder metadata locally.",
+            attachment.filename, attachment.mime_type, attachment.size
+        )
+    }
+
+    fn open_attachment_placeholder(attachment: &AttachmentItem) -> Result<std::path::PathBuf> {
+        let preview_root = std::env::temp_dir().join("wixen-mail");
+        let preview_dir = preview_root.join("attachment-preview");
+        std::fs::create_dir_all(&preview_dir)?;
+        for check_path in [&preview_root, &preview_dir] {
+            if let Ok(metadata) = std::fs::symlink_metadata(check_path) {
+                if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                    return Err(crate::common::Error::Other(
+                        "Attachment preview directory path is not safe".to_string(),
+                    ));
+                }
+            }
+        }
+        let safe_name = Self::sanitize_attachment_filename(&attachment.filename);
+        if std::path::Path::new(&safe_name).components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            return Err(crate::common::Error::Other(
+                "Attachment filename failed safety checks".to_string(),
+            ));
+        }
+        // Keep ".preview.txt" suffix to clearly indicate local placeholder content.
+        let file_name = format!(
+            "{}_{}{}",
+            safe_name,
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default(),
+            ATTACHMENT_PREVIEW_SUFFIX
+        );
+        let path = preview_dir.join(file_name);
+        let canonical_preview_dir = std::fs::canonicalize(&preview_dir)?;
+        if !path.starts_with(&canonical_preview_dir) {
+            return Err(crate::common::Error::Other(
+                "Attachment preview path escaped preview directory".to_string(),
+            ));
+        }
+        let mut file = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&path)?;
+        use std::io::Write;
+        file.write_all(Self::build_attachment_preview_text(attachment).as_bytes())?;
+
+        #[cfg(target_os = "windows")]
+        {
+            let status = std::process::Command::new("explorer")
+                .arg(&path)
+                .status()
+                .map_err(|e| crate::common::Error::Other(format!("Failed to open attachment: {}", e)))?;
+            if !status.success() {
+                return Err(crate::common::Error::Other("Attachment open command failed".to_string()));
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let status = std::process::Command::new("open")
+                .arg(&path)
+                .status()
+                .map_err(|e| crate::common::Error::Other(format!("Failed to open attachment: {}", e)))?;
+            if !status.success() {
+                return Err(crate::common::Error::Other("Attachment open command failed".to_string()));
+            }
+        }
+        #[cfg(all(unix, not(target_os = "macos")))]
+        {
+            let status = std::process::Command::new("xdg-open")
+                .arg(&path)
+                .status()
+                .map_err(|e| crate::common::Error::Other(format!("Failed to open attachment: {}", e)))?;
+            if !status.success() {
+                return Err(crate::common::Error::Other("Attachment open command failed".to_string()));
+            }
+        }
+
+        Ok(path)
+    }
     
     /// Handle tag actions from the tag manager
     fn handle_tag_action(&mut self, action: TagAction) {
@@ -2498,6 +2680,8 @@ impl IntegratedUI {
         self.state.folders.clear();
         self.state.messages.clear();
         self.state.message_preview.clear();
+        self.state.rendered_message_preview = None;
+        self.state.current_attachments.clear();
         
         if let Some(account) = self.state.account_manager.active_account_id
             .as_ref()
