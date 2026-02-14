@@ -3,6 +3,12 @@
 //! Handles IMAP4rev1 protocol for receiving email.
 
 use crate::common::Result;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
+use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
+use tokio::time;
 
 /// IMAP client configuration
 #[derive(Debug, Clone)]
@@ -31,6 +37,49 @@ pub struct ImapMessage {
     pub flags: Vec<String>,
 }
 
+/// IMAP IDLE event emitted by push notification loop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImapIdleEvent {
+    KeepAlive { folder: String },
+    Exists {
+        folder: String,
+        new_uids: Vec<u32>,
+        total_messages: u32,
+    },
+}
+
+/// Configuration for IDLE loop timing.
+#[derive(Debug, Clone)]
+pub struct ImapIdleOptions {
+    pub keepalive_interval: Duration,
+    pub simulated_exists_interval: Duration,
+}
+
+impl Default for ImapIdleOptions {
+    fn default() -> Self {
+        Self {
+            keepalive_interval: Duration::from_secs(29 * 60),
+            simulated_exists_interval: Duration::from_secs(90),
+        }
+    }
+}
+
+/// Handle used to stop the running IDLE loop.
+pub struct ImapIdleHandle {
+    stop_tx: Option<oneshot::Sender<()>>,
+    task: JoinHandle<()>,
+}
+
+impl ImapIdleHandle {
+    pub async fn stop(mut self) -> Result<()> {
+        if let Some(stop_tx) = self.stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        let _ = self.task.await;
+        Ok(())
+    }
+}
+
 /// IMAP client (placeholder for full async implementation)
 ///
 /// Note: This is a placeholder implementation. Full IMAP support will be added
@@ -54,6 +103,8 @@ impl ImapClient {
         // For now, return a placeholder session
         Ok(ImapSession {
             config: self.config.clone(),
+            selected_folder: None,
+            next_mock_uid: Arc::new(AtomicU32::new(1)),
         })
     }
 }
@@ -62,6 +113,8 @@ impl ImapClient {
 pub struct ImapSession {
     #[allow(dead_code)]
     config: ImapConfig,
+    selected_folder: Option<String>,
+    next_mock_uid: Arc<AtomicU32>,
 }
 
 impl ImapSession {
@@ -92,6 +145,7 @@ impl ImapSession {
     /// Select a folder (placeholder)
     pub async fn select_folder(&mut self, folder: &str) -> Result<()> {
         tracing::debug!("Selecting IMAP folder: {} (placeholder)", folder);
+        self.selected_folder = Some(folder.to_string());
         Ok(())
     }
 
@@ -181,6 +235,63 @@ impl ImapSession {
         tracing::debug!("Logging out from IMAP server (placeholder)");
         Ok(())
     }
+
+    /// Start IMAP IDLE push notification loop.
+    ///
+    /// Placeholder implementation emits keepalive and simulated EXISTS events so
+    /// upper layers can integrate push-driven refresh behavior.
+    pub fn start_idle_push_notifications(
+        &mut self,
+        folder: Option<String>,
+        options: ImapIdleOptions,
+    ) -> Result<(mpsc::UnboundedReceiver<ImapIdleEvent>, ImapIdleHandle)> {
+        let folder = folder
+            .or_else(|| self.selected_folder.clone())
+            .unwrap_or_else(|| "INBOX".to_string());
+        let uid_counter = self.next_mock_uid.clone();
+
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (stop_tx, mut stop_rx) = oneshot::channel();
+        let keepalive_interval = options.keepalive_interval;
+        let exists_interval = options.simulated_exists_interval;
+
+        let task = tokio::spawn(async move {
+            let mut keepalive_tick = time::interval(keepalive_interval);
+            let mut exists_tick = time::interval(exists_interval);
+            keepalive_tick.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+            exists_tick.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+            // Consume immediate first tick to avoid duplicate startup events.
+            let _ = keepalive_tick.tick().await;
+            let _ = exists_tick.tick().await;
+
+            loop {
+                tokio::select! {
+                    _ = &mut stop_rx => break,
+                    _ = keepalive_tick.tick() => {
+                        let _ = event_tx.send(ImapIdleEvent::KeepAlive {
+                            folder: folder.clone(),
+                        });
+                    }
+                    _ = exists_tick.tick() => {
+                        let uid = uid_counter.fetch_add(1, Ordering::Relaxed);
+                        let _ = event_tx.send(ImapIdleEvent::Exists {
+                            folder: folder.clone(),
+                            new_uids: vec![uid],
+                            total_messages: uid,
+                        });
+                    }
+                }
+            }
+        });
+
+        Ok((
+            event_rx,
+            ImapIdleHandle {
+                stop_tx: Some(stop_tx),
+                task,
+            },
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -251,5 +362,47 @@ mod tests {
         session.select_folder("INBOX").await.unwrap();
         let uids = session.fetch_uids("1:*").await.unwrap();
         assert!(!uids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_imap_idle_notifications_emit_events() {
+        let config = ImapConfig {
+            server: "imap.example.com".to_string(),
+            port: 993,
+            use_tls: true,
+            username: "test@example.com".to_string(),
+        };
+        let client = ImapClient::new(config).unwrap();
+        let mut session = client.connect("password").await.unwrap();
+        session.select_folder("INBOX").await.unwrap();
+
+        let (mut rx, handle) = session
+            .start_idle_push_notifications(
+                None,
+                ImapIdleOptions {
+                    keepalive_interval: Duration::from_millis(20),
+                    simulated_exists_interval: Duration::from_millis(25),
+                },
+            )
+            .unwrap();
+
+        let mut has_keepalive = false;
+        let mut has_exists = false;
+        const MAX_EVENT_POLL_ITERATIONS: usize = 8;
+        for _ in 0..MAX_EVENT_POLL_ITERATIONS {
+            if let Some(event) = rx.recv().await {
+                match event {
+                    ImapIdleEvent::KeepAlive { .. } => has_keepalive = true,
+                    ImapIdleEvent::Exists { .. } => has_exists = true,
+                }
+            }
+            if has_keepalive && has_exists {
+                break;
+            }
+        }
+
+        assert!(has_keepalive);
+        assert!(has_exists);
+        handle.stop().await.unwrap();
     }
 }

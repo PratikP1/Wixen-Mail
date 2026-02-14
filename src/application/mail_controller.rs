@@ -5,7 +5,9 @@
 use crate::application::accounts::AccountManager;
 use crate::application::messages::MessageManager;
 use crate::common::{Error, Result};
-use crate::service::protocols::imap::{ImapClient, ImapConfig, ImapSession};
+use crate::service::protocols::imap::{
+    ImapClient, ImapConfig, ImapIdleEvent, ImapIdleHandle, ImapIdleOptions, ImapSession,
+};
 use crate::service::protocols::smtp::{Email, SmtpClient, SmtpConfig};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -15,6 +17,7 @@ pub struct MailController {
     account_manager: Arc<Mutex<AccountManager>>,
     message_manager: Arc<Mutex<MessageManager>>,
     imap_session: Arc<Mutex<Option<ImapSession>>>,
+    idle_handle: Arc<Mutex<Option<ImapIdleHandle>>>,
 }
 
 impl MailController {
@@ -24,6 +27,7 @@ impl MailController {
             account_manager: Arc::new(Mutex::new(AccountManager::new().unwrap())),
             message_manager: Arc::new(Mutex::new(MessageManager::new().unwrap())),
             imap_session: Arc::new(Mutex::new(None)),
+            idle_handle: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -180,6 +184,34 @@ impl MailController {
         let imap_session = self.imap_session.lock().await;
         imap_session.is_some()
     }
+
+    /// Start IMAP IDLE push notification loop for selected folder.
+    pub async fn start_imap_idle(
+        &self,
+        folder: Option<String>,
+        options: ImapIdleOptions,
+    ) -> Result<tokio::sync::mpsc::UnboundedReceiver<ImapIdleEvent>> {
+        let mut imap_session = self.imap_session.lock().await;
+        let session = imap_session
+            .as_mut()
+            .ok_or_else(|| Error::Other("Not connected to IMAP server".to_string()))?;
+        let (rx, handle) = session.start_idle_push_notifications(folder, options)?;
+        let mut idle_handle = self.idle_handle.lock().await;
+        if let Some(existing) = idle_handle.take() {
+            let _ = existing.stop().await;
+        }
+        *idle_handle = Some(handle);
+        Ok(rx)
+    }
+
+    /// Stop running IMAP IDLE loop, if present.
+    pub async fn stop_imap_idle(&self) -> Result<()> {
+        let mut idle_handle = self.idle_handle.lock().await;
+        if let Some(handle) = idle_handle.take() {
+            handle.stop().await?;
+        }
+        Ok(())
+    }
 }
 
 impl Default for MailController {
@@ -213,5 +245,34 @@ mod tests {
     fn test_mail_controller_default() {
         let controller = MailController::default();
         assert!(!tokio_test::block_on(controller.is_connected()));
+    }
+
+    #[tokio::test]
+    async fn test_mail_controller_start_and_stop_idle() {
+        let controller = MailController::new();
+        controller
+            .connect_imap(
+                "imap.example.com".to_string(),
+                993,
+                "test@example.com".to_string(),
+                "password".to_string(),
+                true,
+            )
+            .await
+            .unwrap();
+
+        let mut rx = controller
+            .start_imap_idle(
+                Some("INBOX".to_string()),
+                ImapIdleOptions {
+                    keepalive_interval: std::time::Duration::from_millis(20),
+                    simulated_exists_interval: std::time::Duration::from_millis(25),
+                },
+            )
+            .await
+            .unwrap();
+        let event = rx.recv().await;
+        assert!(event.is_some());
+        controller.stop_imap_idle().await.unwrap();
     }
 }
