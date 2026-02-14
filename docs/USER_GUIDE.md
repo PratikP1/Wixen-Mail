@@ -146,6 +146,16 @@ Capabilities:
 - Refresh or revoke stored tokens
 - View token expiry status for selected account/provider
 
+### Offline Mode (Phase 10)
+
+Use **View → Offline Mode** to switch to offline-first behavior.
+
+When offline mode is enabled:
+- Sending a composed message queues it to the offline outbox (instead of SMTP send)
+- Queue is persisted per account in local SQLite storage
+
+Use **View → Flush Outbox** to attempt queued sends when back online.
+
 ## Reading and Managing Email
 
 ### Three-Pane Layout

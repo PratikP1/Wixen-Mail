@@ -28,6 +28,7 @@ use tokio::task::JoinHandle;
 
 const SECONDS_PER_MINUTE: u64 = 60;
 const DEFAULT_IMAP_PORT: u16 = 993;
+const DEFAULT_SMTP_PORT: u16 = 465;
 const PLACEHOLDER_FOLDER_ID: i64 = 0;
 const MAX_CONTACT_SUGGESTIONS: usize = 5;
 
@@ -97,6 +98,10 @@ pub struct UIState {
     pub contact_manager: ContactManagerWindow,
     /// OAuth manager window
     pub oauth_manager: OAuthManagerWindow,
+    /// Offline mode enabled
+    pub offline_mode: bool,
+    /// Count of queued outbound messages for active account
+    pub outbox_queue_count: usize,
     /// Message tags for display
     pub message_tags: std::collections::HashMap<u32, Vec<Tag>>,
     /// Selected tag filter
@@ -172,6 +177,11 @@ pub enum UIUpdate {
     ErrorOccurred(String),
     StatusUpdated(String),
     EmailSent,
+    OutboxSendResult {
+        queue_id: String,
+        success: bool,
+        error: Option<String>,
+    },
 }
 
 impl Default for UIState {
@@ -215,6 +225,8 @@ impl Default for UIState {
             filter_manager: FilterManagerWindow::new(),
             contact_manager: ContactManagerWindow::new(),
             oauth_manager: OAuthManagerWindow::new(),
+            offline_mode: false,
+            outbox_queue_count: 0,
             message_tags: std::collections::HashMap::new(),
             selected_tag_filter: None,
         }
@@ -283,6 +295,7 @@ impl IntegratedUI {
         for account in enabled_accounts {
             ui.ensure_background_sync(account);
         }
+        ui.refresh_outbox_queue_count();
         
         Ok(ui)
     }
@@ -357,6 +370,18 @@ impl IntegratedUI {
             UIUpdate::EmailSent => {
                 self.state.composition_window.close();
                 self.state.status_message = "Email sent successfully".to_string();
+            }
+            UIUpdate::OutboxSendResult { queue_id, success, error } => {
+                if let Some(cache) = &self.message_cache {
+                    if success {
+                        let _ = cache.delete_outbox_message(&queue_id);
+                        self.state.status_message = "Queued email sent".to_string();
+                    } else if let Some(err) = error {
+                        let _ = cache.update_outbox_failure(&queue_id, &err);
+                        self.state.status_message = format!("Queued email failed: {}", err);
+                    }
+                }
+                self.refresh_outbox_queue_count();
             }
         }
     }
@@ -517,7 +542,7 @@ impl IntegratedUI {
         self.runtime.spawn(async move {
             let _ = ui_tx.send(UIUpdate::StatusUpdated("Sending email...".to_string())).await;
             
-            let port = config.smtp_port.parse().unwrap_or(465);
+            let port = config.smtp_port.parse().unwrap_or(DEFAULT_SMTP_PORT);
             let controller = mail_controller.lock().await;
             
             match controller.send_email(
@@ -535,6 +560,137 @@ impl IntegratedUI {
                 }
                 Err(e) => {
                     let _ = ui_tx.send(UIUpdate::ErrorOccurred(format!("Failed to send email: {}", e))).await;
+                }
+            }
+        });
+    }
+
+    fn current_account_storage_id(&self) -> String {
+        self.active_account_id
+            .clone()
+            .or_else(|| self.state.account_manager.active_account_id.clone())
+            .unwrap_or_else(|| {
+                if !self.state.account_config.email.is_empty() {
+                    self.state.account_config.email.clone()
+                } else {
+                    "default@local".to_string()
+                }
+            })
+    }
+
+    fn refresh_outbox_queue_count(&mut self) {
+        if let Some(cache) = &self.message_cache {
+            if let Ok(messages) = cache.load_outbox_messages(&self.current_account_storage_id()) {
+                self.state.outbox_queue_count = messages.len();
+            }
+        }
+    }
+
+    fn queue_email_for_offline(&mut self, to: Vec<String>, subject: String, body: String) {
+        if let Some(cache) = &self.message_cache {
+            let account_id = self.current_account_storage_id();
+            let item = crate::data::message_cache::QueuedOutboxMessage {
+                id: uuid::Uuid::new_v4().to_string(),
+                account_id,
+                to_addr: to.join(", "),
+                subject,
+                body,
+                attempt_count: 0,
+                last_error: None,
+                created_at: chrono::Utc::now().to_rfc3339(),
+            };
+            match cache.queue_outbox_message(&item) {
+                Ok(_) => {
+                    self.state.status_message = "Offline mode enabled: email queued".to_string();
+                    self.state.composition_window.close();
+                    self.refresh_outbox_queue_count();
+                }
+                Err(e) => {
+                    self.state.error_message = Some(format!("Failed to queue offline email: {}", e));
+                }
+            }
+        } else {
+            self.state.error_message = Some("Message cache not available".to_string());
+        }
+    }
+
+    fn parse_recipients_csv(value: &str) -> Vec<String> {
+        value
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    }
+
+    fn flush_outbox_queue(&mut self) {
+        if self.state.offline_mode {
+            self.state.status_message = "Cannot flush queue while offline mode is enabled".to_string();
+            return;
+        }
+
+        let Some(mail_controller) = self.get_active_controller() else {
+            self.state.error_message = Some("No active account/controller to flush outbox".to_string());
+            return;
+        };
+        let Some(cache) = &self.message_cache else {
+            self.state.error_message = Some("Message cache not available".to_string());
+            return;
+        };
+        
+        let account_id = self.current_account_storage_id();
+        let queued = match cache.load_outbox_messages(&account_id) {
+            Ok(items) => items,
+            Err(e) => {
+                self.state.error_message = Some(format!("Failed to load outbox queue: {}", e));
+                return;
+            }
+        };
+        if queued.is_empty() {
+            self.state.status_message = "No queued messages to flush".to_string();
+            return;
+        }
+        
+        let config = self.state.account_config.clone();
+        let ui_tx = self.ui_tx.clone();
+        self.state.status_message = format!("Flushing {} queued message(s)...", queued.len());
+        
+        self.runtime.spawn(async move {
+            let port = config.smtp_port.parse().unwrap_or_else(|_| {
+                tracing::warn!(
+                    "Invalid SMTP port '{}' for queued outbox flush, falling back to {}",
+                    config.smtp_port
+                    , DEFAULT_SMTP_PORT
+                );
+                DEFAULT_SMTP_PORT
+            });
+            let controller = mail_controller.lock().await;
+            for item in queued {
+                let result = controller.send_email(
+                    config.smtp_server.clone(),
+                    port,
+                    config.username.clone(),
+                    config.password.clone(),
+                    config.smtp_use_tls,
+                    Self::parse_recipients_csv(&item.to_addr),
+                    item.subject.clone(),
+                    item.body.clone(),
+                ).await;
+                
+                match result {
+                    Ok(_) => {
+                        let _ = ui_tx.send(UIUpdate::OutboxSendResult {
+                            queue_id: item.id.clone(),
+                            success: true,
+                            error: None,
+                        }).await;
+                    }
+                    Err(e) => {
+                        let _ = ui_tx.send(UIUpdate::OutboxSendResult {
+                            queue_id: item.id.clone(),
+                            success: false,
+                            error: Some(e.to_string()),
+                        }).await;
+                    }
                 }
             }
         });
@@ -620,6 +776,17 @@ impl IntegratedUI {
                 
                 ui.menu_button("View", |ui| {
                     if ui.checkbox(&mut self.state.thread_view_enabled, "🧵 Thread View").changed() {
+                        ui.close_menu();
+                    }
+                    if ui.checkbox(&mut self.state.offline_mode, "📴 Offline Mode").changed() {
+                        self.state.status_message = if self.state.offline_mode {
+                            "Offline mode enabled".to_string()
+                        } else {
+                            "Offline mode disabled".to_string()
+                        };
+                    }
+                    if ui.button(format!("📤 Flush Outbox ({})", self.state.outbox_queue_count)).clicked() {
+                        self.flush_outbox_queue();
                         ui.close_menu();
                     }
                     ui.separator();
@@ -1114,8 +1281,11 @@ impl IntegratedUI {
                 if let (Some(ref cache), Some(ref draft_id)) = (&self.message_cache, &self.state.composition_window.draft_id) {
                     let _ = cache.delete_draft(draft_id);
                 }
-                
-                self.send_email(to, subject, body);
+                if self.state.offline_mode {
+                    self.queue_email_for_offline(to, subject, body);
+                } else {
+                    self.send_email(to, subject, body);
+                }
             }
             CompositionAction::SaveDraft => {
                 // Save draft to SQLite
@@ -1306,6 +1476,13 @@ impl IntegratedUI {
                 ui.label(format!("Folder: {}", self.state.selected_folder.as_ref().unwrap_or(&"None".to_string())));
                 ui.separator();
                 ui.label(format!("{} messages", self.state.messages.len()));
+                ui.separator();
+                ui.label(format!(
+                    "Mode: {}",
+                    if self.state.offline_mode { "Offline" } else { "Online" }
+                ));
+                ui.separator();
+                ui.label(format!("Outbox: {}", self.state.outbox_queue_count));
                 ui.separator();
                 ui.label(&self.state.status_message);
             });
@@ -2051,6 +2228,7 @@ impl IntegratedUI {
                             } else {
                                 self.refresh_oauth_configuration_gate();
                             }
+                            self.refresh_outbox_queue_count();
                             self.state.account_manager.close();
                         }
                         Err(e) => {
@@ -2074,6 +2252,7 @@ impl IntegratedUI {
                             }
                             self.ensure_background_sync(account.clone());
                             self.refresh_oauth_configuration_gate();
+                            self.refresh_outbox_queue_count();
                             self.state.account_manager.close();
                         }
                         Err(e) => {
@@ -2118,6 +2297,7 @@ impl IntegratedUI {
                             self.stop_background_sync(&account_id);
                             self.mail_controllers.remove(&account_id);
                             self.refresh_oauth_configuration_gate();
+                            self.refresh_outbox_queue_count();
                         }
                         Err(e) => {
                             self.state.error_message = Some(format!("Failed to delete account: {}", e));
@@ -2228,6 +2408,7 @@ impl IntegratedUI {
         } else {
             self.state.status_message = "Active account changed".to_string();
         }
+        self.refresh_outbox_queue_count();
     }
     
     fn ensure_background_sync(&mut self, account: Account) {
@@ -2531,6 +2712,8 @@ mod tests {
         assert_eq!(state.connection_status, ConnectionStatus::Disconnected);
         assert_eq!(state.status_message, "Ready");
         assert!(state.folders.is_empty());
+        assert!(!state.offline_mode);
+        assert_eq!(state.outbox_queue_count, 0);
     }
     
     #[test]
@@ -2567,5 +2750,11 @@ mod tests {
         let account = Account::new("Fallback".to_string(), "user@outlook.com".to_string());
         let detected = IntegratedUI::oauth_provider_for_account(&account);
         assert_eq!(detected.as_deref(), Some("outlook"));
+    }
+
+    #[test]
+    fn test_parse_recipients_csv() {
+        let parsed = IntegratedUI::parse_recipients_csv("a@example.com, b@example.com , ,c@example.com");
+        assert_eq!(parsed, vec!["a@example.com", "b@example.com", "c@example.com"]);
     }
 }
