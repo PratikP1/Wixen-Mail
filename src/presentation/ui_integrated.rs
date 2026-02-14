@@ -13,8 +13,10 @@ use crate::presentation::account_manager::{AccountManagerWindow, AccountAction};
 use crate::presentation::composition::{CompositionWindow, CompositionAction};
 use crate::presentation::contact_manager::{ContactAction, ContactManagerWindow};
 use crate::presentation::filter_manager::{FilterManagerWindow, FilterRuleAction};
+use crate::presentation::oauth_manager::{oauth_token_entry_from_set, OAuthAction, OAuthManagerWindow};
 use crate::presentation::signature_manager::{SignatureManagerWindow, SignatureAction};
 use crate::presentation::tag_manager::{TagManagerWindow, TagAction};
+use crate::service::OAuthService;
 use async_channel::{Receiver, Sender};
 use eframe::egui;
 use std::collections::HashMap;
@@ -93,6 +95,8 @@ pub struct UIState {
     pub filter_manager: FilterManagerWindow,
     /// Contact manager window
     pub contact_manager: ContactManagerWindow,
+    /// OAuth manager window
+    pub oauth_manager: OAuthManagerWindow,
     /// Message tags for display
     pub message_tags: std::collections::HashMap<u32, Vec<Tag>>,
     /// Selected tag filter
@@ -210,6 +214,7 @@ impl Default for UIState {
             account_manager: AccountManagerWindow::new(),
             filter_manager: FilterManagerWindow::new(),
             contact_manager: ContactManagerWindow::new(),
+            oauth_manager: OAuthManagerWindow::new(),
             message_tags: std::collections::HashMap::new(),
             selected_tag_filter: None,
         }
@@ -591,6 +596,10 @@ impl IntegratedUI {
                     }
                     if ui.button("📋 Manage Rules (Ctrl+Shift+E)").clicked() {
                         self.state.filter_manager.open(self.state.account_config.email.clone());
+                        ui.close_menu();
+                    }
+                    if ui.button("🔐 OAuth 2.0 Manager (Ctrl+Shift+O)").clicked() {
+                        self.state.oauth_manager.open(self.state.account_manager.active_account_id.clone());
                         ui.close_menu();
                     }
                     if ui.button("✍ Manage Signatures (Ctrl+Shift+S)").clicked() {
@@ -1162,6 +1171,15 @@ impl IntegratedUI {
             self.handle_contact_action(action);
         }
         
+        // OAuth manager window
+        if let Some(action) = self.state.oauth_manager.render(
+            ctx,
+            &self.state.account_manager.accounts,
+            &self.message_cache,
+        ) {
+            self.handle_oauth_action(action);
+        }
+        
         // Signature manager window
         if let Some(action) = self.state.signature_manager.render(ctx, &self.message_cache) {
             self.handle_signature_action(action);
@@ -1187,6 +1205,10 @@ impl IntegratedUI {
             // Filter manager shortcut: Ctrl+Shift+E
             if i.key_pressed(egui::Key::E) && i.modifiers.ctrl && i.modifiers.shift {
                 self.state.filter_manager.open(self.state.account_config.email.clone());
+            }
+            // OAuth manager shortcut: Ctrl+Shift+O
+            if i.key_pressed(egui::Key::O) && i.modifiers.ctrl && i.modifiers.shift {
+                self.state.oauth_manager.open(self.state.account_manager.active_account_id.clone());
             }
             // Signature manager shortcut: Ctrl+Shift+S
             if i.key_pressed(egui::Key::S) && i.modifiers.ctrl && i.modifiers.shift {
@@ -1885,6 +1907,60 @@ impl IntegratedUI {
                             self.state.contact_manager.error = Some(format!("Failed to delete contact: {}", e));
                         }
                     }
+                }
+            }
+        }
+    }
+    
+    fn handle_oauth_action(&mut self, action: OAuthAction) {
+        let Some(cache) = &self.message_cache else {
+            self.state.error_message = Some("Database not available".to_string());
+            return;
+        };
+
+        match action {
+            OAuthAction::ExchangeCode {
+                account_id,
+                provider,
+                authorization_code,
+            } => match OAuthService::exchange_code(&provider, &authorization_code) {
+                Ok(token_set) => {
+                    let token = oauth_token_entry_from_set(account_id, provider.clone(), token_set);
+                    match cache.save_oauth_token(&token) {
+                        Ok(_) => self.state.status_message = format!("OAuth token saved for provider '{}'", provider),
+                        Err(e) => self.state.error_message = Some(format!("Failed to save OAuth token: {}", e)),
+                    }
+                }
+                Err(e) => self.state.error_message = Some(format!("OAuth exchange failed: {}", e)),
+            },
+            OAuthAction::RefreshToken { account_id, provider } => {
+                match cache.get_oauth_token(&account_id, &provider) {
+                    Ok(Some(existing)) => {
+                        let Some(refresh_token) = existing.refresh_token.clone() else {
+                            self.state.error_message = Some("No refresh token available".to_string());
+                            return;
+                        };
+                        match OAuthService::refresh_access_token(&provider, &refresh_token) {
+                            Ok(new_set) => {
+                                let mut token = oauth_token_entry_from_set(account_id, provider.clone(), new_set);
+                                token.id = existing.id;
+                                if let Err(e) = cache.save_oauth_token(&token) {
+                                    self.state.error_message = Some(format!("Failed to store refreshed token: {}", e));
+                                } else {
+                                    self.state.status_message = format!("OAuth token refreshed for '{}'", provider);
+                                }
+                            }
+                            Err(e) => self.state.error_message = Some(format!("OAuth refresh failed: {}", e)),
+                        }
+                    }
+                    Ok(None) => self.state.error_message = Some("No OAuth token found for account/provider".to_string()),
+                    Err(e) => self.state.error_message = Some(format!("Failed to load OAuth token: {}", e)),
+                }
+            }
+            OAuthAction::RevokeToken { account_id, provider } => {
+                match cache.delete_oauth_token(&account_id, &provider) {
+                    Ok(_) => self.state.status_message = format!("OAuth token revoked for '{}'", provider),
+                    Err(e) => self.state.error_message = Some(format!("Failed to revoke OAuth token: {}", e)),
                 }
             }
         }

@@ -75,6 +75,12 @@ Complete reference of all keyboard shortcuts in Wixen Mail for efficient, access
 |--------|----------|-------------|
 | Open Contact Manager | `Ctrl+Shift+C` | Open account contact/address book manager |
 
+### OAuth Management
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Open OAuth Manager | `Ctrl+Shift+O` | Open provider OAuth 2.0 manager |
+
 ### View Menu
 
 | Action | Shortcut | Description |

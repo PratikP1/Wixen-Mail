@@ -135,6 +135,16 @@ Features:
 - Automatic contact import from message history/provider account activity
 - vCard import and export
 
+### OAuth 2.0 (Phase 9)
+
+Use **Tools → OAuth 2.0 Manager** (`Ctrl+Shift+O`) to manage provider tokens.
+
+Capabilities:
+- Generate provider authorization URL (Gmail/Outlook presets)
+- Exchange authorization code for token set
+- Refresh or revoke stored tokens
+- View token expiry status for selected account/provider
+
 ## Reading and Managing Email
 
 ### Three-Pane Layout
