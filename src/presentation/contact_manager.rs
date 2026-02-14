@@ -206,7 +206,7 @@ impl ContactManagerWindow {
                                     ui.horizontal(|ui| {
                                         ui.label(if contact.favorite { "⭐" } else { "•" });
                                         if contact.avatar_url.is_some() || contact.avatar_data_base64.is_some() {
-                                            ui.label("🖼");
+                                            ui.label("🖼 Avatar");
                                         }
                                         ui.label(format!("{} <{}>", contact.name, contact.email));
                                     });
@@ -270,7 +270,7 @@ impl ContactManagerWindow {
                         ui.text_edit_singleline(&mut edit_data.company);
                     });
                     ui.horizontal(|ui| {
-                        ui.label("Job title:");
+                        ui.label("Job Title:");
                         ui.text_edit_singleline(&mut edit_data.job_title);
                     });
                     ui.horizontal(|ui| {
@@ -337,7 +337,7 @@ impl ContactManagerWindow {
                                 account_id: self.account_id.clone(),
                                 name: edit_data.name.clone(),
                                 email: edit_data.email.clone(),
-                                provider_contact_id: self.editing_contact.as_ref().and_then(|c| c.provider_contact_id.clone()),
+                                provider_contact_id: None,
                                 phone: if edit_data.phone.trim().is_empty() { None } else { Some(edit_data.phone.clone()) },
                                 company: if edit_data.company.trim().is_empty() { None } else { Some(edit_data.company.clone()) },
                                 job_title: if edit_data.job_title.trim().is_empty() { None } else { Some(edit_data.job_title.clone()) },
@@ -346,9 +346,9 @@ impl ContactManagerWindow {
                                 birthday: if edit_data.birthday.trim().is_empty() { None } else { Some(edit_data.birthday.clone()) },
                                 avatar_url: if edit_data.avatar_url.trim().is_empty() { None } else { Some(edit_data.avatar_url.clone()) },
                                 avatar_data_base64: edit_data.avatar_data_base64.clone(),
-                                source_provider: self.editing_contact.as_ref().and_then(|c| c.source_provider.clone()),
-                                last_synced_at: self.editing_contact.as_ref().and_then(|c| c.last_synced_at.clone()),
-                                vcard_raw: self.editing_contact.as_ref().and_then(|c| c.vcard_raw.clone()),
+                                source_provider: None,
+                                last_synced_at: None,
+                                vcard_raw: None,
                                 notes: if edit_data.notes.trim().is_empty() { None } else { Some(edit_data.notes.clone()) },
                                 favorite: edit_data.favorite,
                                 created_at: self.editing_contact.as_ref()

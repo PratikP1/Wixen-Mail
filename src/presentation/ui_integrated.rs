@@ -1063,15 +1063,15 @@ impl IntegratedUI {
             } else if query != self.state.composition_window.last_contact_query {
                 self.state.composition_window.last_contact_query = query.clone();
                 if let Some(cache) = &self.message_cache {
-                let suggestions = cache.search_contacts_for_account(
-                    &self.state.account_config.email,
-                    &query,
-                    MAX_CONTACT_SUGGESTIONS,
-                ).unwrap_or_default()
-                    .into_iter()
-                    .map(|c| (c.name, c.email))
-                    .collect();
-                self.state.composition_window.set_contact_suggestions(suggestions);
+                    let suggestions = cache.search_contacts_for_account(
+                        &self.state.account_config.email,
+                        &query,
+                        MAX_CONTACT_SUGGESTIONS,
+                    ).unwrap_or_default()
+                        .into_iter()
+                        .map(|c| (c.name, c.email))
+                        .collect();
+                    self.state.composition_window.set_contact_suggestions(suggestions);
                 }
             }
         }
@@ -1719,6 +1719,8 @@ impl IntegratedUI {
         self.state.search_results = results;
         if let Some(cache) = &self.message_cache {
             let mut contact_query = self.state.search_query.clone();
+            // Built-in search reuses sender/recipient criteria to surface matching contacts
+            // even when general query text is empty.
             if contact_query.trim().is_empty() {
                 contact_query = self.state.search_sender.clone();
             }

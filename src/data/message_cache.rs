@@ -1083,7 +1083,7 @@ impl MessageCache {
             "INSERT INTO contacts
              (id, account_id, name, email, provider_contact_id, phone, company, job_title, website, address, birthday,
               avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
+             VALUES (COALESCE((SELECT id FROM contacts WHERE account_id = ?2 AND email = ?4), ?1), ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
                     COALESCE((SELECT created_at FROM contacts WHERE account_id = ?2 AND email = ?4), ?19), ?20)
              ON CONFLICT(account_id, email) DO UPDATE SET
                 name = excluded.name,
@@ -1219,9 +1219,10 @@ impl MessageCache {
         Ok(contacts)
     }
 
-    /// Auto-import contacts from cached messages (senders/recipients)
+    /// Auto-import contacts from cached messages (senders/recipients).
+    /// Returns number of successful save operations (new or updated contacts).
     pub fn auto_import_contacts_from_messages(&self, account_id: &str, source_provider: Option<&str>) -> Result<usize> {
-        let mut imported = 0usize;
+        let mut imported_count = 0usize;
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT m.from_addr, m.to_addr, m.cc
              FROM messages m
@@ -1250,7 +1251,11 @@ impl MessageCache {
                         let contact = ContactEntry {
                             id: uuid::Uuid::new_v4().to_string(),
                             account_id: account_id.to_string(),
-                            name: if name.is_empty() { email.clone() } else { name },
+                            name: if name.is_empty() {
+                                Self::email_local_part_or_unknown(&email)
+                            } else {
+                                name
+                            },
                             email,
                             provider_contact_id: None,
                             phone: None,
@@ -1268,15 +1273,16 @@ impl MessageCache {
                             favorite: false,
                             created_at: chrono::Utc::now().to_rfc3339(),
                         };
-                        if self.save_contact(&contact).is_ok() {
-                            imported += 1;
+                        match self.save_contact(&contact) {
+                            Ok(_) => imported_count += 1,
+                            Err(e) => tracing::warn!("Auto-import skipped contact '{}': {}", contact.email, e),
                         }
                     }
                 }
             }
         }
         
-        Ok(imported)
+        Ok(imported_count)
     }
 
     /// Import contacts from a vCard string
@@ -1285,8 +1291,9 @@ impl MessageCache {
         for block in vcard_data.split("BEGIN:VCARD").skip(1) {
             let entry = format!("BEGIN:VCARD{}", block);
             if let Some(contact) = Self::contact_from_vcard_block(account_id, &entry) {
-                if self.save_contact(&contact).is_ok() {
-                    imported += 1;
+                match self.save_contact(&contact) {
+                    Ok(_) => imported += 1,
+                    Err(e) => tracing::warn!("vCard import skipped contact '{}': {}", contact.email, e),
                 }
             }
         }
@@ -1299,33 +1306,40 @@ impl MessageCache {
         let mut output = String::new();
         for c in contacts {
             output.push_str("BEGIN:VCARD\r\nVERSION:3.0\r\n");
-            output.push_str(&format!("FN:{}\r\n", c.name));
-            output.push_str(&format!("EMAIL:{}\r\n", c.email));
+            output.push_str(&Self::fold_vcard_line(&format!("FN:{}", Self::escape_vcard_text(&c.name))));
+            output.push_str(&Self::fold_vcard_line(&format!("EMAIL:{}", Self::escape_vcard_text(&c.email))));
             if let Some(phone) = c.phone {
-                output.push_str(&format!("TEL:{}\r\n", phone));
+                output.push_str(&Self::fold_vcard_line(&format!("TEL:{}", Self::escape_vcard_text(&phone))));
             }
             if let Some(company) = c.company {
-                output.push_str(&format!("ORG:{}\r\n", company));
+                output.push_str(&Self::fold_vcard_line(&format!("ORG:{}", Self::escape_vcard_text(&company))));
             }
             if let Some(job_title) = c.job_title {
-                output.push_str(&format!("TITLE:{}\r\n", job_title));
+                output.push_str(&Self::fold_vcard_line(&format!("TITLE:{}", Self::escape_vcard_text(&job_title))));
             }
             if let Some(website) = c.website {
-                output.push_str(&format!("URL:{}\r\n", website));
+                output.push_str(&Self::fold_vcard_line(&format!("URL:{}", Self::escape_vcard_text(&website))));
             }
             if let Some(address) = c.address {
-                output.push_str(&format!("ADR:{}\r\n", address));
+                let escaped_address = Self::escape_vcard_text(&address);
+                let structured = if escaped_address.contains(';') {
+                    escaped_address
+                } else {
+                    format!(";;{};;;;", escaped_address)
+                };
+                output.push_str(&Self::fold_vcard_line(&format!("ADR:{}", structured)));
             }
             if let Some(birthday) = c.birthday {
-                output.push_str(&format!("BDAY:{}\r\n", birthday));
+                output.push_str(&Self::fold_vcard_line(&format!("BDAY:{}", Self::escape_vcard_text(&birthday))));
             }
             if let Some(photo_url) = c.avatar_url {
-                output.push_str(&format!("PHOTO:{}\r\n", photo_url));
+                output.push_str(&Self::fold_vcard_line(&format!("PHOTO:{}", Self::escape_vcard_text(&photo_url))));
             } else if let Some(photo_data) = c.avatar_data_base64 {
-                output.push_str(&format!("PHOTO;ENCODING=b:{}\r\n", photo_data));
+                let compact_base64 = photo_data.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+                output.push_str(&Self::fold_vcard_line(&format!("PHOTO;ENCODING=b:{}", compact_base64)));
             }
             if let Some(notes) = c.notes {
-                output.push_str(&format!("NOTE:{}\r\n", notes.replace('\n', "\\n")));
+                output.push_str(&Self::fold_vcard_line(&format!("NOTE:{}", Self::escape_vcard_text(&notes))));
             }
             output.push_str("END:VCARD\r\n");
         }
@@ -1375,45 +1389,47 @@ impl MessageCache {
         let mut avatar_url = None;
         let mut avatar_data_base64 = None;
 
-        for line in block.lines().map(|l| l.trim()) {
+        for line in Self::unfold_vcard_lines(block) {
             if let Some(value) = line.strip_prefix("FN:") {
-                name = value.trim().to_string();
+                name = Self::unescape_vcard_text(value.trim());
             } else if line.starts_with("EMAIL") {
                 if let Some((_, value)) = line.split_once(':') {
-                    email = value.trim().to_string();
+                    email = Self::unescape_vcard_text(value.trim());
                 }
             } else if line.starts_with("TEL") {
                 if let Some((_, value)) = line.split_once(':') {
-                    phone = Some(value.trim().to_string());
+                    phone = Some(Self::unescape_vcard_text(value.trim()));
                 }
             } else if line.starts_with("ORG") {
                 if let Some((_, value)) = line.split_once(':') {
-                    company = Some(value.trim().to_string());
+                    company = Some(Self::unescape_vcard_text(value.trim()));
                 }
             } else if line.starts_with("TITLE") {
                 if let Some((_, value)) = line.split_once(':') {
-                    job_title = Some(value.trim().to_string());
+                    job_title = Some(Self::unescape_vcard_text(value.trim()));
                 }
             } else if line.starts_with("URL") {
                 if let Some((_, value)) = line.split_once(':') {
-                    website = Some(value.trim().to_string());
+                    website = Some(Self::unescape_vcard_text(value.trim()));
                 }
             } else if line.starts_with("ADR") {
                 if let Some((_, value)) = line.split_once(':') {
-                    address = Some(value.trim().to_string());
+                    address = Some(Self::unescape_vcard_text(value.trim()));
                 }
             } else if line.starts_with("BDAY") {
                 if let Some((_, value)) = line.split_once(':') {
-                    birthday = Some(value.trim().to_string());
+                    birthday = Some(Self::unescape_vcard_text(value.trim()));
                 }
             } else if line.starts_with("NOTE") {
                 if let Some((_, value)) = line.split_once(':') {
-                    notes = Some(value.trim().replace("\\n", "\n"));
+                    notes = Some(Self::unescape_vcard_text(value.trim()));
                 }
             } else if line.starts_with("PHOTO;ENCODING=b:") {
-                avatar_data_base64 = line.split_once(':').map(|(_, v)| v.trim().to_string());
+                avatar_data_base64 = line.split_once(':').map(|(_, v)| {
+                    v.chars().filter(|c| !c.is_whitespace()).collect::<String>()
+                });
             } else if line.starts_with("PHOTO:") {
-                avatar_url = line.split_once(':').map(|(_, v)| v.trim().to_string());
+                avatar_url = line.split_once(':').map(|(_, v)| Self::unescape_vcard_text(v.trim()));
             }
         }
 
@@ -1421,7 +1437,7 @@ impl MessageCache {
             return None;
         }
         if name.is_empty() {
-            name = email.clone();
+            name = Self::email_local_part_or_unknown(&email);
         }
 
         Some(ContactEntry {
@@ -1445,6 +1461,86 @@ impl MessageCache {
             favorite: false,
             created_at: chrono::Utc::now().to_rfc3339(),
         })
+    }
+
+    fn escape_vcard_text(value: &str) -> String {
+        value
+            .replace('\\', "\\\\")
+            .replace('\n', "\\n")
+            .replace(';', "\\;")
+            .replace(',', "\\,")
+    }
+
+    fn unescape_vcard_text(value: &str) -> String {
+        let mut out = String::new();
+        let mut chars = value.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\\' {
+                if let Some(next) = chars.next() {
+                    match next {
+                        'n' | 'N' => out.push('\n'),
+                        ';' => out.push(';'),
+                        ',' => out.push(','),
+                        '\\' => out.push('\\'),
+                        other => {
+                            out.push('\\');
+                            out.push(other);
+                        }
+                    }
+                } else {
+                    out.push('\\');
+                }
+            } else {
+                out.push(ch);
+            }
+        }
+        out
+    }
+
+    fn fold_vcard_line(line: &str) -> String {
+        // vCard 3.0 folds lines at 75 characters with continuation lines prefixed by a space.
+        const LIMIT: usize = 75;
+        let chars: Vec<char> = line.chars().collect();
+        if chars.len() <= LIMIT {
+            return format!("{}\r\n", line);
+        }
+        let mut out = String::new();
+        let mut start = 0usize;
+        while start < chars.len() {
+            let end = (start + LIMIT).min(chars.len());
+            let chunk: String = chars[start..end].iter().collect();
+            if start == 0 {
+                out.push_str(&chunk);
+                out.push_str("\r\n");
+            } else {
+                out.push(' ');
+                out.push_str(&chunk);
+                out.push_str("\r\n");
+            }
+            start = end;
+        }
+        out
+    }
+
+    fn unfold_vcard_lines(block: &str) -> Vec<String> {
+        let mut lines: Vec<String> = Vec::new();
+        for raw in block.lines() {
+            let line = raw.trim_end_matches('\r');
+            if line.starts_with(' ') || line.starts_with('\t') {
+                if let Some(last) = lines.last_mut() {
+                    last.push_str(line.trim_start());
+                } else {
+                    lines.push(line.trim_start().to_string());
+                }
+            } else {
+                lines.push(line.trim().to_string());
+            }
+        }
+        lines
+    }
+
+    fn email_local_part_or_unknown(email: &str) -> String {
+        email.split('@').next().unwrap_or("Unknown").to_string()
     }
     
     // ==================== Account Management ====================
