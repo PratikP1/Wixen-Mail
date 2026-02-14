@@ -47,6 +47,8 @@ base64 = "0.22"
 ammonia = "4.0"
 regex = "1.11"
 html-escape = "0.2"
+aes-gcm = "0.10"
+rand = "0.8"
 
 # File picker for attachments
 rfd = "0.14"
