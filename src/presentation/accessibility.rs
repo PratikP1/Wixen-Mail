@@ -35,7 +35,13 @@ impl Accessibility {
 
     /// Initialize accessibility features
     pub fn initialize(&self) -> Result<()> {
-        // TODO: Initialize Windows UI Automation
+        self.keyboard.register_shortcut("Ctrl+N", "compose_new_message")?;
+        self.keyboard.register_shortcut("Ctrl+F", "search_messages")?;
+        self.keyboard.register_shortcut("F1", "open_help")?;
+        self.focus.set_focus("folder_tree")?;
+        self.announcements
+            .announce("Accessibility initialized", announcements::Priority::Normal)?;
+        self.screen_reader.announce("Accessibility initialized")?;
         Ok(())
     }
 
@@ -48,10 +54,10 @@ impl Accessibility {
 impl Default for Accessibility {
     fn default() -> Self {
         Self::new().unwrap_or(Self {
-            screen_reader: screen_reader::ScreenReaderBridge,
-            keyboard: keyboard::KeyboardHandler,
-            focus: focus::FocusManager,
-            announcements: announcements::AnnouncementQueue,
+            screen_reader: screen_reader::ScreenReaderBridge::default(),
+            keyboard: keyboard::KeyboardHandler::default(),
+            focus: focus::FocusManager::default(),
+            announcements: announcements::AnnouncementQueue::default(),
             shortcuts: shortcuts::ShortcutManager::new(),
         })
     }
@@ -65,5 +71,11 @@ mod tests {
     fn test_accessibility_creation() {
         let a11y = Accessibility::new();
         assert!(a11y.is_ok());
+    }
+
+    #[test]
+    fn test_accessibility_initialize() {
+        let a11y = Accessibility::new().unwrap();
+        assert!(a11y.initialize().is_ok());
     }
 }
