@@ -54,6 +54,33 @@ Complete reference of all keyboard shortcuts in Wixen Mail for efficient, access
 | Search | `Ctrl+F` | Open search dialog |
 | Find Next | `F3` | Find next search result (when search is active) |
 
+### Account Management
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Open Account Manager | `Ctrl+M` | Open multiple account management window |
+| Switch to Account 1 | `Ctrl+1` | Switch to first enabled account |
+| Switch to Account 2 | `Ctrl+2` | Switch to second enabled account |
+| Switch to Account 3 | `Ctrl+3` | Switch to third enabled account |
+
+### Rules Management
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Open Rules Manager | `Ctrl+Shift+E` | Open message filter rules manager |
+
+### Contact Management
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Open Contact Manager | `Ctrl+Shift+C` | Open account contact/address book manager |
+
+### OAuth Management
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Open OAuth Manager | `Ctrl+Shift+O` | Open provider OAuth 2.0 manager |
+
 ### View Menu
 
 | Action | Shortcut | Description |

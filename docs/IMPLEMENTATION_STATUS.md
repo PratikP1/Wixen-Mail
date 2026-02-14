@@ -1,5 +1,19 @@
 # Wixen Mail - Implementation Status
 
+## Current Snapshot (2026-02-13)
+
+The active implementation branch has completed the Phase 6 multiple-account scope (controller isolation, account switching, background sync lifecycle, and account-scoped cache reads).  
+
+### Remaining completion focus (additional phases)
+
+- **Phase 7:** Email Rules / Filters
+- **Phase 8:** Contact Management
+- **Phase 9:** OAuth 2.0 provider auth
+- **Phase 10:** Offline Mode + queued send/sync
+- **Phase 11:** Polish, beta validation, and release hardening
+
+These are the highest-value unfinished phases after the completed Phase 6 work.
+
 ## Executive Summary
 
 **Wixen Mail** is now a fully-featured, accessibility-first email client with comprehensive backend support and an extensible UI framework. This document provides the complete status of all features and components.

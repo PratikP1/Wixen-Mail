@@ -36,7 +36,8 @@ fn main() {
 fn initialize_components() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize presentation layer
     let _ui = UI::new()?;
-    let _accessibility = Accessibility::new()?;
+    let accessibility = Accessibility::new()?;
+    accessibility.initialize()?;
     println!("✓ Presentation layer initialized");
 
     // Initialize application layer

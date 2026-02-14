@@ -2,8 +2,51 @@
 //!
 //! Renders HTML email content with security (XSS protection) and accessibility features.
 
-use crate::common::Result;
 use ammonia::clean;
+use std::sync::OnceLock;
+
+const SAFE_URL_SCHEMES: [&str; 3] = ["http://", "https://", "mailto:"];
+
+fn html_tag_re() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"<[^>]*>").expect("valid html tag regex"))
+}
+
+fn newline_compact_re() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"\n\s*\n\s*\n+").expect("valid newline compact regex"))
+}
+
+fn image_alt_re() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r#"(?is)<img[^>]*?alt=(?:"([^"]*)"|'([^']*)')[^>]*?>"#)
+            .expect("valid image alt regex")
+    })
+}
+
+fn link_re() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r#"(?is)<a[^>]*?href=(?:"([^"]*)"|'([^']*)')[^>]*?>([\s\S]*?)</a>"#)
+            .expect("valid link regex")
+    })
+}
+
+fn img_tag_re() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"(?is)<img\b").expect("valid image tag regex"))
+}
+
+fn anchor_tag_re() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"(?is)<a\b").expect("valid anchor tag regex"))
+}
+
+fn script_tag_re() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"(?is)<\s*script\b").expect("valid script tag regex"))
+}
 
 /// HTML renderer with sanitization
 pub struct HtmlRenderer {
@@ -35,12 +78,6 @@ impl HtmlRenderer {
             return self.html_to_plain_text(html);
         }
         
-        // Use ammonia to clean HTML
-        // It removes:
-        // - JavaScript
-        // - onclick/onerror/etc handlers
-        // - data: URLs (potential XSS)
-        // - Dangerous CSS
         clean(html)
     }
     
@@ -66,15 +103,13 @@ impl HtmlRenderer {
         text = text.replace("</li>", "\n");
         
         // Remove all remaining HTML tags
-        let re = regex::Regex::new(r"<[^>]*>").unwrap();
-        text = re.replace_all(&text, "").to_string();
+        text = html_tag_re().replace_all(&text, "").to_string();
         
         // Decode HTML entities
         text = html_escape::decode_html_entities(&text).to_string();
         
         // Clean up whitespace
-        let re = regex::Regex::new(r"\n\s*\n\s*\n+").unwrap();
-        text = re.replace_all(&text, "\n\n").to_string();
+        text = newline_compact_re().replace_all(&text, "\n\n").to_string();
         
         text.trim().to_string()
     }
@@ -86,12 +121,18 @@ impl HtmlRenderer {
     pub fn render_for_egui(&self, html: &str) -> RenderedContent {
         let sanitized = self.sanitize_html(html);
         let plain_text = self.html_to_plain_text(&sanitized);
+        let image_alt_texts = self.extract_image_alt_texts(&sanitized);
+        let links = self.extract_link_texts(&sanitized);
+        let warnings = self.build_warnings(html, &sanitized, &image_alt_texts, &links);
         
         RenderedContent {
             html: sanitized,
             plain_text,
             has_images: html.contains("<img"),
             has_links: html.contains("<a "),
+            links,
+            image_alt_texts,
+            warnings,
         }
     }
     
@@ -99,11 +140,9 @@ impl HtmlRenderer {
     pub fn extract_image_alt_texts(&self, html: &str) -> Vec<String> {
         let mut alt_texts = Vec::new();
         
-        // Simple regex to extract alt attributes
-        let re = regex::Regex::new(r#"<img[^>]*alt=["']([^"']*)["'][^>]*>"#).unwrap();
-        
-        for cap in re.captures_iter(html) {
-            if let Some(alt) = cap.get(1) {
+        for cap in image_alt_re().captures_iter(html) {
+            // Group 1 captures double-quoted alt text, group 2 captures single-quoted alt text.
+            if let Some(alt) = cap.get(1).or_else(|| cap.get(2)) {
                 alt_texts.push(alt.as_str().to_string());
             }
         }
@@ -115,19 +154,68 @@ impl HtmlRenderer {
     pub fn extract_link_texts(&self, html: &str) -> Vec<LinkInfo> {
         let mut links = Vec::new();
         
-        // Extract href and link text
-        let re = regex::Regex::new(r#"<a[^>]*href=["']([^"']*)["'][^>]*>(.*?)</a>"#).unwrap();
-        
-        for cap in re.captures_iter(html) {
-            if let (Some(href), Some(text)) = (cap.get(1), cap.get(2)) {
-                links.push(LinkInfo {
-                    url: href.as_str().to_string(),
-                    text: self.html_to_plain_text(text.as_str()),
-                });
+        for cap in link_re().captures_iter(html) {
+            if let (Some(href), Some(text)) = (cap.get(1).or_else(|| cap.get(2)), cap.get(3)) {
+                if let Some(safe_url) = Self::sanitize_url(href.as_str()) {
+                    links.push(LinkInfo {
+                        url: safe_url,
+                        text: self.html_to_plain_text(text.as_str()),
+                    });
+                }
             }
         }
         
         links
+    }
+
+    /// Convert supported URL schemes to safe navigable values.
+    fn sanitize_url(url: &str) -> Option<String> {
+        let trimmed = url.trim();
+        let lower = trimmed.to_ascii_lowercase();
+        if trimmed.chars().any(|c| c.is_control()) {
+            return None;
+        }
+        if SAFE_URL_SCHEMES.iter().any(|scheme| lower.starts_with(scheme)) {
+            if lower.starts_with("http://") || lower.starts_with("https://") {
+                let remainder = &trimmed[trimmed.find("://")? + 3..];
+                // Intentionally reject userinfo URLs to reduce phishing obfuscation risks.
+                if remainder.is_empty() || remainder.starts_with('/') || remainder.contains('@') {
+                    return None;
+                }
+            }
+            if lower.starts_with("mailto:") && !trimmed[7..].contains('@') {
+                return None;
+            }
+            return Some(trimmed.to_string());
+        }
+        None
+    }
+
+    fn build_warnings(
+        &self,
+        original_html: &str,
+        sanitized_html: &str,
+        image_alt_texts: &[String],
+        links: &[LinkInfo],
+    ) -> Vec<String> {
+        let mut warnings = Vec::new();
+        let original_lower = original_html.to_lowercase();
+        let sanitized_lower = sanitized_html.to_lowercase();
+        if script_tag_re().is_match(&original_lower) && !script_tag_re().is_match(&sanitized_lower)
+        {
+            warnings.push("Potentially unsafe scripts were removed.".to_string());
+        }
+        if original_lower.contains("onerror=") || original_lower.contains("onclick=") {
+            warnings.push("Inline event handlers were removed for safety.".to_string());
+        }
+        let image_count = img_tag_re().find_iter(original_html).count();
+        if image_count > image_alt_texts.len() {
+            warnings.push("Images without alt text may reduce accessibility.".to_string());
+        }
+        if anchor_tag_re().is_match(original_html) && links.is_empty() {
+            warnings.push("Unsupported/unsafe links were omitted from preview.".to_string());
+        }
+        warnings
     }
 }
 
@@ -148,6 +236,12 @@ pub struct RenderedContent {
     pub has_images: bool,
     /// Whether content has links
     pub has_links: bool,
+    /// Safe extracted links
+    pub links: Vec<LinkInfo>,
+    /// Extracted alt text from images
+    pub image_alt_texts: Vec<String>,
+    /// Renderer warnings and safety notes
+    pub warnings: Vec<String>,
 }
 
 /// Link information for accessibility
@@ -216,12 +310,22 @@ mod tests {
     #[test]
     fn test_render_for_egui() {
         let renderer = HtmlRenderer::new();
-        let html = "<p>Hello <strong>World</strong>!</p>";
+        let html = r#"<p>Hello <strong>World</strong>!</p><a href="https://example.com">Example</a>"#;
         let content = renderer.render_for_egui(html);
         
         assert!(!content.html.is_empty());
         assert!(!content.plain_text.is_empty());
         assert!(!content.has_images);
-        assert!(!content.has_links);
+        assert!(content.has_links);
+        assert_eq!(content.links.len(), 1);
+    }
+
+    #[test]
+    fn test_extract_links_filters_unsafe_schemes() {
+        let renderer = HtmlRenderer::new();
+        let html = r#"<a href="javascript:alert(1)">Bad</a><a href="mailto:test@example.com">Mail</a>"#;
+        let links = renderer.extract_link_texts(html);
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].url, "mailto:test@example.com");
     }
 }

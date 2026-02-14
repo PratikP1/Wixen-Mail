@@ -100,6 +100,73 @@ For other email providers:
 
 4. Click **Connect**
 
+### Multiple Accounts
+
+Wixen Mail supports managing multiple email accounts.
+
+- Open **Tools → Manage Accounts** (`Ctrl+M`) to add/edit/delete accounts.
+- Switch active account from the toolbar account dropdown (📧).
+- Keyboard shortcuts:
+  - `Ctrl+1` - Switch to first enabled account
+  - `Ctrl+2` - Switch to second enabled account
+  - `Ctrl+3` - Switch to third enabled account
+
+### Message Rules (Phase 7)
+
+Use **Tools → Manage Rules** (`Ctrl+Shift+E`) to create accessibility-friendly message rules.
+
+Each rule can:
+- Match on fields: `subject`, `from`, `to`, `cc`, `date`, `message_id`, `body_plain`, `body_html`, `read`, `starred`, `deleted`
+- Use match types: `contains`, `not_contains`, `equals`, `not_equals`, `starts_with`, `ends_with`, `is_empty`, `is_not_empty`, `is_true`, `is_false`, `regex`
+- Choose case-sensitive or case-insensitive matching
+- Perform actions: `mark_as_read`, `mark_as_unread`, `star`, `unstar`, `delete`, `move_to_folder`, `add_tag`
+
+### Contacts (Phase 8)
+
+Use **Tools → Manage Contacts** (`Ctrl+Shift+C`) to manage an account-specific address book.
+
+Features:
+- Create/edit/delete contacts
+- Mark favorite contacts
+- Search by name or email
+- Recipient autocomplete suggestions while composing messages
+- Extended provider-ready fields (phone, company, title, website, address, birthday)
+- Photo/avatar support (URL or embedded uploaded image)
+- Automatic contact import from message history/provider account activity
+- vCard import and export
+
+### OAuth 2.0 (Phase 9)
+
+Use **Tools → OAuth 2.0 Manager** (`Ctrl+Shift+O`) to manage provider tokens.
+The OAuth manager is shown only when at least one configured account requires OAuth (for example Gmail or Outlook).
+
+Capabilities:
+- Generate provider authorization URL (Gmail/Outlook presets)
+- Exchange authorization code for token set
+- Refresh or revoke stored tokens
+- View token expiry status for selected account/provider
+
+### Offline Mode (Phase 10)
+
+Use **View → Offline Mode** to switch to offline-first behavior.
+
+When offline mode is enabled:
+- Sending a composed message queues it to the offline outbox (instead of SMTP send)
+- Queue is persisted per account in local SQLite storage
+
+Use **View → Flush Outbox** to attempt queued sends when back online.
+
+### Beta Readiness Diagnostics (Phase 11)
+
+Use **Help → Beta Readiness Check** to run final release-hardening diagnostics.
+
+The check reports:
+- account/active-account readiness
+- cache availability
+- online/offline status
+- queued outbox backlog warnings
+- OAuth-capable account detection
+
 ## Reading and Managing Email
 
 ### Three-Pane Layout

@@ -46,6 +46,10 @@ pub struct CompositionWindow {
     pub attachments: Vec<AttachmentInfo>,
     /// Rich text mode (HTML vs plain text)
     pub html_mode: bool,
+    /// Contact suggestions for recipient autocomplete
+    pub contact_suggestions: Vec<(String, String)>, // (name, email)
+    /// Last query used for contact suggestions
+    pub last_contact_query: String,
 }
 
 impl CompositionWindow {
@@ -66,6 +70,8 @@ impl CompositionWindow {
             error: None,
             attachments: Vec::new(),
             html_mode: false, // Default to plain text
+            contact_suggestions: Vec::new(),
+            last_contact_query: String::new(),
         }
     }
 
@@ -117,6 +123,13 @@ impl CompositionWindow {
         self.status.clear();
         self.error = None;
         self.attachments.clear();
+        self.contact_suggestions.clear();
+        self.last_contact_query.clear();
+    }
+    
+    /// Set contact suggestions for recipient autocomplete
+    pub fn set_contact_suggestions(&mut self, suggestions: Vec<(String, String)>) {
+        self.contact_suggestions = suggestions;
     }
     
     /// Insert signature at the end of the body
@@ -240,6 +253,23 @@ impl CompositionWindow {
                         show_bcc_toggle = true;
                     }
                 });
+                if !self.to.trim().is_empty() && !self.contact_suggestions.is_empty() {
+                    let mut selected_suggestion: Option<String> = None;
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Suggestions:");
+                        for (name, email) in &self.contact_suggestions {
+                            let label = format!("{} <{}>", name, email);
+                            if ui.small_button(&label).clicked() {
+                                selected_suggestion = Some(email.clone());
+                            }
+                        }
+                    });
+                    if let Some(email) = selected_suggestion {
+                        self.to = Self::replace_last_recipient_token(&self.to, &email);
+                        self.contact_suggestions.clear();
+                        self.last_contact_query.clear();
+                    }
+                }
 
                 // CC field (optional)
                 if show_cc {
@@ -520,6 +550,21 @@ impl CompositionWindow {
             .filter(|s| !s.is_empty())
             .collect()
     }
+    
+    fn replace_last_recipient_token(current: &str, replacement: &str) -> String {
+        let mut parts: Vec<String> = current
+            .split(',')
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty())
+            .collect();
+        if parts.is_empty() {
+            replacement.to_string()
+        } else {
+            parts.pop();
+            parts.push(replacement.to_string());
+            parts.join(", ")
+        }
+    }
 
     /// Get CC recipients as list
     pub fn get_cc(&self) -> Vec<String> {
@@ -799,6 +844,18 @@ mod tests {
         assert_eq!(recipients.len(), 2);
         assert_eq!(recipients[0], "user1@example.com");
         assert_eq!(recipients[1], "user2@example.com");
+    }
+    
+    #[test]
+    fn test_replace_last_recipient_token() {
+        let replaced = CompositionWindow::replace_last_recipient_token(
+            "alice@example.com, bo",
+            "bob@example.com",
+        );
+        assert_eq!(replaced, "alice@example.com, bob@example.com");
+        
+        let single = CompositionWindow::replace_last_recipient_token("ad", "ada@example.com");
+        assert_eq!(single, "ada@example.com");
     }
 
     #[test]

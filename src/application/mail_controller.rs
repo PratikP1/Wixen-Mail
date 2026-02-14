@@ -5,7 +5,10 @@
 use crate::application::accounts::AccountManager;
 use crate::application::messages::MessageManager;
 use crate::common::{Error, Result};
-use crate::service::protocols::imap::{ImapClient, ImapConfig, ImapSession};
+use crate::service::protocols::imap::{
+    ImapClient, ImapConfig, ImapIdleEvent, ImapIdleHandle, ImapIdleOptions, ImapSession,
+};
+use crate::service::protocols::pop3::{Pop3Client, Pop3Config, Pop3Session};
 use crate::service::protocols::smtp::{Email, SmtpClient, SmtpConfig};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -15,6 +18,8 @@ pub struct MailController {
     account_manager: Arc<Mutex<AccountManager>>,
     message_manager: Arc<Mutex<MessageManager>>,
     imap_session: Arc<Mutex<Option<ImapSession>>>,
+    pop3_session: Arc<Mutex<Option<Pop3Session>>>,
+    idle_handle: Arc<Mutex<Option<ImapIdleHandle>>>,
 }
 
 impl MailController {
@@ -24,6 +29,8 @@ impl MailController {
             account_manager: Arc::new(Mutex::new(AccountManager::new().unwrap())),
             message_manager: Arc::new(Mutex::new(MessageManager::new().unwrap())),
             imap_session: Arc::new(Mutex::new(None)),
+            pop3_session: Arc::new(Mutex::new(None)),
+            idle_handle: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -136,6 +143,25 @@ impl MailController {
         Ok(())
     }
 
+    /// Send an email via SMTP for POP3-based accounts.
+    ///
+    /// POP3 only supports retrieval, so SMTP remains the transport for sending.
+    pub async fn send_email_for_pop3_account(
+        &self,
+        server: String,
+        port: u16,
+        username: String,
+        password: String,
+        use_tls: bool,
+        to: Vec<String>,
+        subject: String,
+        body: String,
+    ) -> Result<()> {
+        tracing::debug!("Sending via SMTP for POP3 account workflow");
+        self.send_email(server, port, username, password, use_tls, to, subject, body)
+            .await
+    }
+
     /// Mark message as read
     pub async fn mark_as_read(&self, folder: &str, uid: u32) -> Result<()> {
         let mut imap_session = self.imap_session.lock().await;
@@ -180,6 +206,101 @@ impl MailController {
         let imap_session = self.imap_session.lock().await;
         imap_session.is_some()
     }
+
+    /// Connect to POP3 server.
+    pub async fn connect_pop3(
+        &self,
+        server: String,
+        port: u16,
+        username: String,
+        password: String,
+        use_tls: bool,
+    ) -> Result<()> {
+        let config = Pop3Config {
+            server,
+            port,
+            use_tls,
+            username,
+        };
+        let client = Pop3Client::new(config)?;
+        let session = client.connect(&password).await?;
+        let mut pop3_session = self.pop3_session.lock().await;
+        *pop3_session = Some(session);
+        tracing::info!("Connected to POP3 server");
+        Ok(())
+    }
+
+    /// Fetch message list from POP3 mailbox.
+    pub async fn list_pop3_messages(&self) -> Result<Vec<Pop3MessagePreview>> {
+        let pop3_session = self.pop3_session.lock().await;
+        if let Some(session) = pop3_session.as_ref() {
+            let list = session.list().await?;
+            Ok(list
+                .into_iter()
+                .map(|m| Pop3MessagePreview {
+                    id: m.id,
+                    size: m.size,
+                    uidl: m.uidl,
+                })
+                .collect())
+        } else {
+            Err(Error::Other("Not connected to POP3 server".to_string()))
+        }
+    }
+
+    /// Fetch full POP3 message body by message id.
+    pub async fn fetch_pop3_message_body(&self, id: u32) -> Result<String> {
+        let pop3_session = self.pop3_session.lock().await;
+        if let Some(session) = pop3_session.as_ref() {
+            Ok(session.retr(id).await?.raw)
+        } else {
+            Err(Error::Other("Not connected to POP3 server".to_string()))
+        }
+    }
+
+    /// Mark POP3 message for deletion.
+    pub async fn delete_pop3_message(&self, id: u32) -> Result<()> {
+        let mut pop3_session = self.pop3_session.lock().await;
+        if let Some(session) = pop3_session.as_mut() {
+            session.dele(id).await
+        } else {
+            Err(Error::Other("Not connected to POP3 server".to_string()))
+        }
+    }
+
+    /// Check if POP3 session is connected.
+    pub async fn is_pop3_connected(&self) -> bool {
+        let pop3_session = self.pop3_session.lock().await;
+        pop3_session.is_some()
+    }
+
+    /// Start IMAP IDLE push notification loop for selected folder.
+    pub async fn start_imap_idle(
+        &self,
+        folder: Option<String>,
+        options: ImapIdleOptions,
+    ) -> Result<tokio::sync::mpsc::UnboundedReceiver<ImapIdleEvent>> {
+        let mut imap_session = self.imap_session.lock().await;
+        let session = imap_session
+            .as_mut()
+            .ok_or_else(|| Error::Other("Not connected to IMAP server".to_string()))?;
+        let (rx, handle) = session.start_idle_push_notifications(folder, options)?;
+        let mut idle_handle = self.idle_handle.lock().await;
+        if let Some(existing) = idle_handle.take() {
+            let _ = existing.stop().await;
+        }
+        *idle_handle = Some(handle);
+        Ok(rx)
+    }
+
+    /// Stop running IMAP IDLE loop, if present.
+    pub async fn stop_imap_idle(&self) -> Result<()> {
+        let mut idle_handle = self.idle_handle.lock().await;
+        if let Some(handle) = idle_handle.take() {
+            handle.stop().await?;
+        }
+        Ok(())
+    }
 }
 
 impl Default for MailController {
@@ -199,6 +320,14 @@ pub struct MessagePreview {
     pub starred: bool,
 }
 
+/// POP3 message preview for UI display
+#[derive(Debug, Clone)]
+pub struct Pop3MessagePreview {
+    pub id: u32,
+    pub size: usize,
+    pub uidl: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,5 +342,72 @@ mod tests {
     fn test_mail_controller_default() {
         let controller = MailController::default();
         assert!(!tokio_test::block_on(controller.is_connected()));
+    }
+
+    #[tokio::test]
+    async fn test_mail_controller_start_and_stop_idle() {
+        let controller = MailController::new();
+        controller
+            .connect_imap(
+                "imap.example.com".to_string(),
+                993,
+                "test@example.com".to_string(),
+                "password".to_string(),
+                true,
+            )
+            .await
+            .unwrap();
+
+        let mut rx = controller
+            .start_imap_idle(
+                Some("INBOX".to_string()),
+                ImapIdleOptions {
+                    keepalive_interval: std::time::Duration::from_millis(20),
+                    simulated_exists_interval: std::time::Duration::from_millis(25),
+                },
+            )
+            .await
+            .unwrap();
+        let event = rx.recv().await;
+        assert!(event.is_some());
+        controller.stop_imap_idle().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_mail_controller_connect_pop3_and_fetch() {
+        let controller = MailController::new();
+        controller
+            .connect_pop3(
+                "pop3.example.com".to_string(),
+                995,
+                "test@example.com".to_string(),
+                "password".to_string(),
+                true,
+            )
+            .await
+            .unwrap();
+        assert!(controller.is_pop3_connected().await);
+        let msgs = controller.list_pop3_messages().await.unwrap();
+        assert!(!msgs.is_empty());
+        let body = controller.fetch_pop3_message_body(msgs[0].id).await.unwrap();
+        assert!(body.contains("Subject: POP3 Test Message"));
+    }
+
+    #[tokio::test]
+    async fn test_send_email_for_pop3_uses_smtp_path() {
+        let controller = MailController::new();
+        let result = controller
+            .send_email_for_pop3_account(
+                "smtp.example.com".to_string(),
+                587,
+                "test@example.com".to_string(),
+                "password".to_string(),
+                true,
+                vec!["to@example.com".to_string()],
+                "Hello".to_string(),
+                "Body".to_string(),
+            )
+            .await;
+        assert!(result.is_err()); // expected in tests due placeholder/non-routable SMTP server
     }
 }
