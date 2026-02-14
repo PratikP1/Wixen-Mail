@@ -138,6 +138,7 @@ Features:
 ### OAuth 2.0 (Phase 9)
 
 Use **Tools → OAuth 2.0 Manager** (`Ctrl+Shift+O`) to manage provider tokens.
+The OAuth manager is shown only when at least one configured account requires OAuth (for example Gmail or Outlook).
 
 Capabilities:
 - Generate provider authorization URL (Gmail/Outlook presets)

@@ -598,9 +598,11 @@ impl IntegratedUI {
                         self.state.filter_manager.open(self.state.account_config.email.clone());
                         ui.close_menu();
                     }
-                    if ui.button("🔐 OAuth 2.0 Manager (Ctrl+Shift+O)").clicked() {
-                        self.state.oauth_manager.open(self.state.account_manager.active_account_id.clone());
-                        ui.close_menu();
+                    if self.has_oauth_configurable_accounts() {
+                        if ui.button("🔐 OAuth 2.0 Manager (Ctrl+Shift+O)").clicked() {
+                            self.state.oauth_manager.open(self.state.account_manager.active_account_id.clone());
+                            ui.close_menu();
+                        }
                     }
                     if ui.button("✍ Manage Signatures (Ctrl+Shift+S)").clicked() {
                         self.state.signature_manager.open(self.state.account_config.email.clone());
@@ -1172,12 +1174,16 @@ impl IntegratedUI {
         }
         
         // OAuth manager window
-        if let Some(action) = self.state.oauth_manager.render(
-            ctx,
-            &self.state.account_manager.accounts,
-            &self.message_cache,
-        ) {
-            self.handle_oauth_action(action);
+        if self.has_oauth_configurable_accounts() {
+            if let Some(action) = self.state.oauth_manager.render(
+                ctx,
+                &self.state.account_manager.accounts,
+                &self.message_cache,
+            ) {
+                self.handle_oauth_action(action);
+            }
+        } else if self.state.oauth_manager.open {
+            self.state.oauth_manager.close();
         }
         
         // Signature manager window
@@ -1207,7 +1213,11 @@ impl IntegratedUI {
                 self.state.filter_manager.open(self.state.account_config.email.clone());
             }
             // OAuth manager shortcut: Ctrl+Shift+O
-            if i.key_pressed(egui::Key::O) && i.modifiers.ctrl && i.modifiers.shift {
+            if i.key_pressed(egui::Key::O)
+                && i.modifiers.ctrl
+                && i.modifiers.shift
+                && self.has_oauth_configurable_accounts()
+            {
                 self.state.oauth_manager.open(self.state.account_manager.active_account_id.clone());
             }
             // Signature manager shortcut: Ctrl+Shift+S
@@ -2035,6 +2045,12 @@ impl IntegratedUI {
                                 self.state.account_manager.accounts = accounts;
                             }
                             self.ensure_background_sync(account.clone());
+                            if let Some(provider) = Self::oauth_provider_for_account(&account) {
+                                self.state.oauth_manager.open(Some(account.id.clone()));
+                                self.state.oauth_manager.provider = provider;
+                            } else {
+                                self.refresh_oauth_configuration_gate();
+                            }
                             self.state.account_manager.close();
                         }
                         Err(e) => {
@@ -2057,6 +2073,7 @@ impl IntegratedUI {
                                 self.state.account_manager.accounts = accounts;
                             }
                             self.ensure_background_sync(account.clone());
+                            self.refresh_oauth_configuration_gate();
                             self.state.account_manager.close();
                         }
                         Err(e) => {
@@ -2069,9 +2086,21 @@ impl IntegratedUI {
                 }
             }
             AccountAction::Delete(account_id) => {
-                if let Some(ref cache) = self.message_cache {
-                    match cache.delete_account(&account_id) {
+                if let Some(cache) = self.message_cache.as_ref() {
+                    let delete_result = cache.delete_account(&account_id);
+                    match delete_result {
                         Ok(_) => {
+                            let deleted_account = self
+                                .state
+                                .account_manager
+                                .accounts
+                                .iter()
+                                .find(|a| a.id == account_id)
+                                .cloned();
+                            let oauth_cleanup = deleted_account.as_ref().and_then(|account| {
+                                Self::oauth_provider_for_account(account)
+                                    .map(|provider| (account_id.clone(), provider))
+                            });
                             self.state.status_message = "Account deleted successfully".to_string();
                             self.state.account_manager.status = "Account deleted".to_string();
                             // Reload accounts from database
@@ -2083,8 +2112,12 @@ impl IntegratedUI {
                                 self.state.account_manager.active_account_id = None;
                                 self.active_account_id = None;
                             }
+                            if let Some((account_id_for_oauth, provider)) = oauth_cleanup {
+                                let _ = cache.delete_oauth_token(&account_id_for_oauth, &provider);
+                            }
                             self.stop_background_sync(&account_id);
                             self.mail_controllers.remove(&account_id);
+                            self.refresh_oauth_configuration_gate();
                         }
                         Err(e) => {
                             self.state.error_message = Some(format!("Failed to delete account: {}", e));
@@ -2092,7 +2125,7 @@ impl IntegratedUI {
                         }
                     }
                 } else {
-                    self.state.error_message = Some("Database not available".to_string());
+                    self.state.error_message = Some("Message cache not available".to_string());
                 }
             }
             AccountAction::SetActive(account_id) => {
@@ -2291,6 +2324,56 @@ impl IntegratedUI {
         
         self.background_sync_tasks.insert(account_id, task);
     }
+
+    /// Resolve OAuth-capable provider for an account.
+    /// Uses explicit account.provider first; if unavailable or unsupported,
+    /// falls back to provider detection by email domain.
+    fn oauth_provider_for_account(account: &Account) -> Option<String> {
+        if let Some(provider) = &account.provider {
+            let lower = provider.to_lowercase();
+            if OAuthService::provider_by_name(&lower).is_some() {
+                return Some(lower);
+            }
+        }
+        email_providers::detect_provider_from_email(&account.email)
+            .map(|p| p.name.to_lowercase())
+            .filter(|p| OAuthService::provider_by_name(p).is_some())
+    }
+
+    fn account_requires_oauth_provider(account: &Account) -> bool {
+        Self::oauth_provider_for_account(account).is_some()
+    }
+
+    fn has_oauth_configurable_accounts(&self) -> bool {
+        self.state
+            .account_manager
+            .accounts
+            .iter()
+            .any(Self::account_requires_oauth_provider)
+    }
+
+    fn refresh_oauth_configuration_gate(&mut self) {
+        if !self.has_oauth_configurable_accounts() {
+            self.state.oauth_manager.close();
+            return;
+        }
+        if let Some(active_id) = self.state.account_manager.active_account_id.clone() {
+            if let Some(account) = self
+                .state
+                .account_manager
+                .accounts
+                .iter()
+                .find(|a| a.id == active_id)
+            {
+                if Self::account_requires_oauth_provider(account) {
+                    self.state.oauth_manager.account_id = Some(account.id.clone());
+                    if let Some(provider) = Self::oauth_provider_for_account(account) {
+                        self.state.oauth_manager.provider = provider;
+                    }
+                }
+            }
+        }
+    }
     
     fn estimate_thread_depth(subject: &str) -> usize {
         let mut remaining = subject.trim();
@@ -2466,5 +2549,23 @@ mod tests {
         assert_eq!(IntegratedUI::estimate_thread_depth("Fwd: Update"), 1);
         assert_eq!(IntegratedUI::estimate_thread_depth("Re: Re: Update"), 2);
         assert_eq!(IntegratedUI::estimate_thread_depth("Fw: Re: Update"), 2);
+    }
+
+    #[test]
+    fn test_account_requires_oauth_provider() {
+        let mut gmail = Account::new("Gmail".to_string(), "user@gmail.com".to_string());
+        gmail.provider = Some("gmail".to_string());
+        assert!(IntegratedUI::account_requires_oauth_provider(&gmail));
+
+        let mut custom = Account::new("Custom".to_string(), "user@custom.local".to_string());
+        custom.provider = Some("custom".to_string());
+        assert!(!IntegratedUI::account_requires_oauth_provider(&custom));
+    }
+
+    #[test]
+    fn test_oauth_provider_fallback_detection() {
+        let account = Account::new("Fallback".to_string(), "user@outlook.com".to_string());
+        let detected = IntegratedUI::oauth_provider_for_account(&account);
+        assert_eq!(detected.as_deref(), Some("outlook"));
     }
 }
