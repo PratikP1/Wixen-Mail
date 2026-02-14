@@ -112,6 +112,18 @@ pub struct ContactEntry {
     pub account_id: String,
     pub name: String,
     pub email: String,
+    pub provider_contact_id: Option<String>,
+    pub phone: Option<String>,
+    pub company: Option<String>,
+    pub job_title: Option<String>,
+    pub website: Option<String>,
+    pub address: Option<String>,
+    pub birthday: Option<String>,
+    pub avatar_url: Option<String>,
+    pub avatar_data_base64: Option<String>,
+    pub source_provider: Option<String>,
+    pub last_synced_at: Option<String>,
+    pub vcard_raw: Option<String>,
     pub notes: Option<String>,
     pub favorite: bool,
     pub created_at: String,
@@ -268,6 +280,18 @@ impl MessageCache {
                 account_id TEXT NOT NULL,
                 name TEXT NOT NULL,
                 email TEXT NOT NULL,
+                provider_contact_id TEXT,
+                phone TEXT,
+                company TEXT,
+                job_title TEXT,
+                website TEXT,
+                address TEXT,
+                birthday TEXT,
+                avatar_url TEXT,
+                avatar_data_base64 TEXT,
+                source_provider TEXT,
+                last_synced_at TEXT,
+                vcard_raw TEXT,
                 notes TEXT,
                 favorite BOOLEAN DEFAULT 0,
                 created_at TEXT NOT NULL,
@@ -280,6 +304,18 @@ impl MessageCache {
         // Schema migration support for existing databases
         self.ensure_column_exists("message_filter_rules", "match_type", "TEXT NOT NULL DEFAULT 'contains'")?;
         self.ensure_column_exists("message_filter_rules", "case_sensitive", "BOOLEAN DEFAULT 0")?;
+        self.ensure_column_exists("contacts", "provider_contact_id", "TEXT")?;
+        self.ensure_column_exists("contacts", "phone", "TEXT")?;
+        self.ensure_column_exists("contacts", "company", "TEXT")?;
+        self.ensure_column_exists("contacts", "job_title", "TEXT")?;
+        self.ensure_column_exists("contacts", "website", "TEXT")?;
+        self.ensure_column_exists("contacts", "address", "TEXT")?;
+        self.ensure_column_exists("contacts", "birthday", "TEXT")?;
+        self.ensure_column_exists("contacts", "avatar_url", "TEXT")?;
+        self.ensure_column_exists("contacts", "avatar_data_base64", "TEXT")?;
+        self.ensure_column_exists("contacts", "source_provider", "TEXT")?;
+        self.ensure_column_exists("contacts", "last_synced_at", "TEXT")?;
+        self.ensure_column_exists("contacts", "vcard_raw", "TEXT")?;
         
         // Create accounts table
         self.conn.execute(
@@ -324,6 +360,11 @@ impl MessageCache {
         
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_message_tags_message_id ON message_tags(message_id)",
+            [],
+        ).map_err(|e| Error::Other(format!("Failed to create index: {}", e)))?;
+        
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_contacts_account_email ON contacts(account_id, email)",
             [],
         ).map_err(|e| Error::Other(format!("Failed to create index: {}", e)))?;
         
@@ -1039,15 +1080,45 @@ impl MessageCache {
     pub fn save_contact(&self, contact: &ContactEntry) -> Result<()> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
-            "INSERT OR REPLACE INTO contacts
-             (id, account_id, name, email, notes, favorite, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6,
-                    COALESCE((SELECT created_at FROM contacts WHERE id = ?1), ?7), ?8)",
+            "INSERT INTO contacts
+             (id, account_id, name, email, provider_contact_id, phone, company, job_title, website, address, birthday,
+              avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
+                    COALESCE((SELECT created_at FROM contacts WHERE account_id = ?2 AND email = ?4), ?19), ?20)
+             ON CONFLICT(account_id, email) DO UPDATE SET
+                name = excluded.name,
+                provider_contact_id = excluded.provider_contact_id,
+                phone = excluded.phone,
+                company = excluded.company,
+                job_title = excluded.job_title,
+                website = excluded.website,
+                address = excluded.address,
+                birthday = excluded.birthday,
+                avatar_url = excluded.avatar_url,
+                avatar_data_base64 = excluded.avatar_data_base64,
+                source_provider = excluded.source_provider,
+                last_synced_at = excluded.last_synced_at,
+                vcard_raw = excluded.vcard_raw,
+                notes = excluded.notes,
+                favorite = excluded.favorite,
+                updated_at = excluded.updated_at",
             params![
                 &contact.id,
                 &contact.account_id,
                 &contact.name,
                 &contact.email,
+                &contact.provider_contact_id,
+                &contact.phone,
+                &contact.company,
+                &contact.job_title,
+                &contact.website,
+                &contact.address,
+                &contact.birthday,
+                &contact.avatar_url,
+                &contact.avatar_data_base64,
+                &contact.source_provider,
+                &contact.last_synced_at,
+                &contact.vcard_raw,
                 &contact.notes,
                 &contact.favorite,
                 &contact.created_at,
@@ -1060,7 +1131,8 @@ impl MessageCache {
     /// Load all contacts for an account
     pub fn get_contacts_for_account(&self, account_id: &str) -> Result<Vec<ContactEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, name, email, notes, favorite, created_at
+            "SELECT id, account_id, name, email, provider_contact_id, phone, company, job_title, website, address, birthday,
+                    avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at
              FROM contacts
              WHERE account_id = ?1
              ORDER BY favorite DESC, name ASC"
@@ -1072,9 +1144,21 @@ impl MessageCache {
                 account_id: row.get(1)?,
                 name: row.get(2)?,
                 email: row.get(3)?,
-                notes: row.get(4)?,
-                favorite: row.get(5)?,
-                created_at: row.get(6)?,
+                provider_contact_id: row.get(4)?,
+                phone: row.get(5)?,
+                company: row.get(6)?,
+                job_title: row.get(7)?,
+                website: row.get(8)?,
+                address: row.get(9)?,
+                birthday: row.get(10)?,
+                avatar_url: row.get(11)?,
+                avatar_data_base64: row.get(12)?,
+                source_provider: row.get(13)?,
+                last_synced_at: row.get(14)?,
+                vcard_raw: row.get(15)?,
+                notes: row.get(16)?,
+                favorite: row.get(17)?,
+                created_at: row.get(18)?,
             })
         }).map_err(|e| Error::Other(format!("Failed to query contacts: {}", e)))?
         .collect::<std::result::Result<Vec<_>, _>>()
@@ -1092,10 +1176,16 @@ impl MessageCache {
             .replace('_', "!_");
         let pattern = format!("%{}%", escaped);
         let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, name, email, notes, favorite, created_at
+            "SELECT id, account_id, name, email, provider_contact_id, phone, company, job_title, website, address, birthday,
+                    avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at
              FROM contacts
              WHERE account_id = ?1
-               AND (LOWER(name) LIKE ?2 ESCAPE '!' OR LOWER(email) LIKE ?2 ESCAPE '!')
+               AND (
+                    LOWER(name) LIKE ?2 ESCAPE '!' OR
+                    LOWER(email) LIKE ?2 ESCAPE '!' OR
+                    LOWER(COALESCE(company, '')) LIKE ?2 ESCAPE '!' OR
+                    LOWER(COALESCE(phone, '')) LIKE ?2 ESCAPE '!'
+               )
              ORDER BY favorite DESC, name ASC
              LIMIT ?3"
         ).map_err(|e| Error::Other(format!("Failed to prepare search statement: {}", e)))?;
@@ -1106,15 +1196,140 @@ impl MessageCache {
                 account_id: row.get(1)?,
                 name: row.get(2)?,
                 email: row.get(3)?,
-                notes: row.get(4)?,
-                favorite: row.get(5)?,
-                created_at: row.get(6)?,
+                provider_contact_id: row.get(4)?,
+                phone: row.get(5)?,
+                company: row.get(6)?,
+                job_title: row.get(7)?,
+                website: row.get(8)?,
+                address: row.get(9)?,
+                birthday: row.get(10)?,
+                avatar_url: row.get(11)?,
+                avatar_data_base64: row.get(12)?,
+                source_provider: row.get(13)?,
+                last_synced_at: row.get(14)?,
+                vcard_raw: row.get(15)?,
+                notes: row.get(16)?,
+                favorite: row.get(17)?,
+                created_at: row.get(18)?,
             })
         }).map_err(|e| Error::Other(format!("Failed to search contacts: {}", e)))?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|e| Error::Other(format!("Failed to collect contacts: {}", e)))?;
         
         Ok(contacts)
+    }
+
+    /// Auto-import contacts from cached messages (senders/recipients)
+    pub fn auto_import_contacts_from_messages(&self, account_id: &str, source_provider: Option<&str>) -> Result<usize> {
+        let mut imported = 0usize;
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT m.from_addr, m.to_addr, m.cc
+             FROM messages m
+             INNER JOIN folders f ON m.folder_id = f.id
+             WHERE f.account_id = ?1 AND m.deleted = 0"
+        ).map_err(|e| Error::Other(format!("Failed to prepare auto-import query: {}", e)))?;
+        
+        let rows = stmt.query_map(params![account_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        }).map_err(|e| Error::Other(format!("Failed to query import rows: {}", e)))?;
+        
+        for row in rows {
+            let (from_addr, to_addr, cc) = row.map_err(|e| Error::Other(format!("Failed to parse import row: {}", e)))?;
+            let mut candidates = vec![from_addr, to_addr];
+            if let Some(cc_line) = cc {
+                candidates.push(cc_line);
+            }
+            
+            for candidate_line in candidates {
+                for token in candidate_line.split(',') {
+                    if let Some((name, email)) = Self::parse_name_email(token.trim()) {
+                        let contact = ContactEntry {
+                            id: uuid::Uuid::new_v4().to_string(),
+                            account_id: account_id.to_string(),
+                            name: if name.is_empty() { email.clone() } else { name },
+                            email,
+                            provider_contact_id: None,
+                            phone: None,
+                            company: None,
+                            job_title: None,
+                            website: None,
+                            address: None,
+                            birthday: None,
+                            avatar_url: None,
+                            avatar_data_base64: None,
+                            source_provider: source_provider.map(|p| p.to_string()),
+                            last_synced_at: Some(chrono::Utc::now().to_rfc3339()),
+                            vcard_raw: None,
+                            notes: Some("Imported automatically from message history".to_string()),
+                            favorite: false,
+                            created_at: chrono::Utc::now().to_rfc3339(),
+                        };
+                        if self.save_contact(&contact).is_ok() {
+                            imported += 1;
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(imported)
+    }
+
+    /// Import contacts from a vCard string
+    pub fn import_contacts_from_vcard(&self, account_id: &str, vcard_data: &str) -> Result<usize> {
+        let mut imported = 0usize;
+        for block in vcard_data.split("BEGIN:VCARD").skip(1) {
+            let entry = format!("BEGIN:VCARD{}", block);
+            if let Some(contact) = Self::contact_from_vcard_block(account_id, &entry) {
+                if self.save_contact(&contact).is_ok() {
+                    imported += 1;
+                }
+            }
+        }
+        Ok(imported)
+    }
+
+    /// Export contacts to vCard 3.0 format
+    pub fn export_contacts_to_vcard(&self, account_id: &str) -> Result<String> {
+        let contacts = self.get_contacts_for_account(account_id)?;
+        let mut output = String::new();
+        for c in contacts {
+            output.push_str("BEGIN:VCARD\r\nVERSION:3.0\r\n");
+            output.push_str(&format!("FN:{}\r\n", c.name));
+            output.push_str(&format!("EMAIL:{}\r\n", c.email));
+            if let Some(phone) = c.phone {
+                output.push_str(&format!("TEL:{}\r\n", phone));
+            }
+            if let Some(company) = c.company {
+                output.push_str(&format!("ORG:{}\r\n", company));
+            }
+            if let Some(job_title) = c.job_title {
+                output.push_str(&format!("TITLE:{}\r\n", job_title));
+            }
+            if let Some(website) = c.website {
+                output.push_str(&format!("URL:{}\r\n", website));
+            }
+            if let Some(address) = c.address {
+                output.push_str(&format!("ADR:{}\r\n", address));
+            }
+            if let Some(birthday) = c.birthday {
+                output.push_str(&format!("BDAY:{}\r\n", birthday));
+            }
+            if let Some(photo_url) = c.avatar_url {
+                output.push_str(&format!("PHOTO:{}\r\n", photo_url));
+            } else if let Some(photo_data) = c.avatar_data_base64 {
+                output.push_str(&format!("PHOTO;ENCODING=b:{}\r\n", photo_data));
+            }
+            if let Some(notes) = c.notes {
+                output.push_str(&format!("NOTE:{}\r\n", notes.replace('\n', "\\n")));
+            }
+            output.push_str("END:VCARD\r\n");
+        }
+        Ok(output)
     }
     
     /// Delete a contact
@@ -1124,6 +1339,112 @@ impl MessageCache {
             params![contact_id],
         ).map_err(|e| Error::Other(format!("Failed to delete contact: {}", e)))?;
         Ok(())
+    }
+
+    fn parse_name_email(token: &str) -> Option<(String, String)> {
+        let trimmed = token.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        if let (Some(start), Some(end)) = (trimmed.find('<'), trimmed.rfind('>')) {
+            if end > start {
+                let name = trimmed[..start].trim().trim_matches('"').to_string();
+                let email = trimmed[start + 1..end].trim().to_string();
+                if email.contains('@') {
+                    return Some((name, email));
+                }
+            }
+        }
+        if trimmed.contains('@') {
+            Some(("".to_string(), trimmed.to_string()))
+        } else {
+            None
+        }
+    }
+
+    fn contact_from_vcard_block(account_id: &str, block: &str) -> Option<ContactEntry> {
+        let mut name = String::new();
+        let mut email = String::new();
+        let mut phone = None;
+        let mut company = None;
+        let mut job_title = None;
+        let mut website = None;
+        let mut address = None;
+        let mut birthday = None;
+        let mut notes = None;
+        let mut avatar_url = None;
+        let mut avatar_data_base64 = None;
+
+        for line in block.lines().map(|l| l.trim()) {
+            if let Some(value) = line.strip_prefix("FN:") {
+                name = value.trim().to_string();
+            } else if line.starts_with("EMAIL") {
+                if let Some((_, value)) = line.split_once(':') {
+                    email = value.trim().to_string();
+                }
+            } else if line.starts_with("TEL") {
+                if let Some((_, value)) = line.split_once(':') {
+                    phone = Some(value.trim().to_string());
+                }
+            } else if line.starts_with("ORG") {
+                if let Some((_, value)) = line.split_once(':') {
+                    company = Some(value.trim().to_string());
+                }
+            } else if line.starts_with("TITLE") {
+                if let Some((_, value)) = line.split_once(':') {
+                    job_title = Some(value.trim().to_string());
+                }
+            } else if line.starts_with("URL") {
+                if let Some((_, value)) = line.split_once(':') {
+                    website = Some(value.trim().to_string());
+                }
+            } else if line.starts_with("ADR") {
+                if let Some((_, value)) = line.split_once(':') {
+                    address = Some(value.trim().to_string());
+                }
+            } else if line.starts_with("BDAY") {
+                if let Some((_, value)) = line.split_once(':') {
+                    birthday = Some(value.trim().to_string());
+                }
+            } else if line.starts_with("NOTE") {
+                if let Some((_, value)) = line.split_once(':') {
+                    notes = Some(value.trim().replace("\\n", "\n"));
+                }
+            } else if line.starts_with("PHOTO;ENCODING=b:") {
+                avatar_data_base64 = line.split_once(':').map(|(_, v)| v.trim().to_string());
+            } else if line.starts_with("PHOTO:") {
+                avatar_url = line.split_once(':').map(|(_, v)| v.trim().to_string());
+            }
+        }
+
+        if email.is_empty() || !email.contains('@') {
+            return None;
+        }
+        if name.is_empty() {
+            name = email.clone();
+        }
+
+        Some(ContactEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            account_id: account_id.to_string(),
+            name,
+            email,
+            provider_contact_id: None,
+            phone,
+            company,
+            job_title,
+            website,
+            address,
+            birthday,
+            avatar_url,
+            avatar_data_base64,
+            source_provider: Some("vcard".to_string()),
+            last_synced_at: Some(chrono::Utc::now().to_rfc3339()),
+            vcard_raw: Some(block.to_string()),
+            notes,
+            favorite: false,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        })
     }
     
     // ==================== Account Management ====================
@@ -1833,6 +2154,18 @@ mod tests {
             account_id: "test@example.com".to_string(),
             name: "Ada Lovelace".to_string(),
             email: "ada@example.com".to_string(),
+            provider_contact_id: Some("gmail-contact-1".to_string()),
+            phone: Some("+1-555-0101".to_string()),
+            company: Some("Analytical Engines".to_string()),
+            job_title: Some("Mathematician".to_string()),
+            website: Some("https://example.com".to_string()),
+            address: Some("London".to_string()),
+            birthday: Some("1815-12-10".to_string()),
+            avatar_url: Some("https://example.com/avatar.png".to_string()),
+            avatar_data_base64: None,
+            source_provider: Some("gmail".to_string()),
+            last_synced_at: Some(chrono::Utc::now().to_rfc3339()),
+            vcard_raw: Some("BEGIN:VCARD...".to_string()),
             notes: Some("VIP".to_string()),
             favorite: true,
             created_at: chrono::Utc::now().to_rfc3339(),
@@ -1846,11 +2179,86 @@ mod tests {
         let search = cache.search_contacts_for_account("test@example.com", "ada", 5).unwrap();
         assert_eq!(search.len(), 1);
         
-        let wildcard_literal = cache.search_contacts_for_account("test@example.com", "%", 5).unwrap();
-        assert_eq!(wildcard_literal.len(), 0);
+        let wildcard_escape_results = cache.search_contacts_for_account("test@example.com", "%", 5).unwrap();
+        assert_eq!(wildcard_escape_results.len(), 0);
         
         cache.delete_contact("contact-1").unwrap();
         let empty = cache.get_contacts_for_account("test@example.com").unwrap();
         assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_vcard_import_export() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_vcard_{}", nanos));
+        let cache = MessageCache::new(temp_dir).unwrap();
+
+        let vcard = "BEGIN:VCARD
+VERSION:3.0
+FN:Grace Hopper
+EMAIL:grace@example.com
+TEL:+1-555-0001
+ORG:US Navy
+PHOTO:https://example.com/grace.png
+END:VCARD";
+
+        let imported = cache.import_contacts_from_vcard("test@example.com", vcard).unwrap();
+        assert_eq!(imported, 1);
+
+        let contacts = cache.get_contacts_for_account("test@example.com").unwrap();
+        assert_eq!(contacts.len(), 1);
+        assert_eq!(contacts[0].name, "Grace Hopper");
+        assert_eq!(contacts[0].company.as_deref(), Some("US Navy"));
+        assert_eq!(contacts[0].avatar_url.as_deref(), Some("https://example.com/grace.png"));
+
+        let exported = cache.export_contacts_to_vcard("test@example.com").unwrap();
+        assert!(exported.contains("FN:Grace Hopper"));
+        assert!(exported.contains("EMAIL:grace@example.com"));
+    }
+
+    #[test]
+    fn test_auto_import_contacts_from_messages() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_auto_import_{}", nanos));
+        let cache = MessageCache::new(temp_dir).unwrap();
+
+        let folder = CachedFolder {
+            id: 0,
+            account_id: "test@example.com".to_string(),
+            name: "INBOX".to_string(),
+            path: "INBOX".to_string(),
+            folder_type: "Inbox".to_string(),
+            unread_count: 0,
+            total_count: 0,
+        };
+        let folder_id = cache.save_folder(&folder).unwrap();
+
+        let message = CachedMessage {
+            id: 0,
+            uid: 1,
+            folder_id,
+            message_id: "msg-auto-1".to_string(),
+            subject: "Welcome".to_string(),
+            from_addr: "Grace Hopper <grace@example.com>".to_string(),
+            to_addr: "ada@example.com, alan@example.com".to_string(),
+            cc: Some("Katherine Johnson <katherine@example.com>".to_string()),
+            date: chrono::Utc::now().to_rfc3339(),
+            body_plain: Some("Hello".to_string()),
+            body_html: None,
+            read: false,
+            starred: false,
+            deleted: false,
+        };
+        cache.save_message(&message).unwrap();
+
+        let imported = cache.auto_import_contacts_from_messages("test@example.com", Some("gmail")).unwrap();
+        assert!(imported >= 3);
+
+        let contacts = cache.get_contacts_for_account("test@example.com").unwrap();
+        assert!(contacts.iter().any(|c| c.email == "grace@example.com"));
+        assert!(contacts.iter().any(|c| c.email == "ada@example.com"));
+        assert!(contacts.iter().any(|c| c.email == "katherine@example.com"));
     }
 }

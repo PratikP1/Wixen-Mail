@@ -8,7 +8,7 @@ use crate::application::filters::{FilterAction as RuleFilterAction, FilterEngine
 use crate::common::Result;
 use crate::data::account::Account;
 use crate::data::email_providers::{self, EmailProvider};
-use crate::data::message_cache::{CachedMessage, MessageCache, Tag};
+use crate::data::message_cache::{CachedMessage, ContactEntry, MessageCache, Tag};
 use crate::presentation::account_manager::{AccountManagerWindow, AccountAction};
 use crate::presentation::composition::{CompositionWindow, CompositionAction};
 use crate::presentation::contact_manager::{ContactAction, ContactManagerWindow};
@@ -65,6 +65,8 @@ pub struct UIState {
     pub search_query: String,
     /// Search results
     pub search_results: Vec<MessageItem>,
+    /// Contact search results (built-in search integration)
+    pub search_contact_results: Vec<ContactEntry>,
     /// Advanced search: selected tags
     pub search_selected_tags: Vec<String>,
     /// Advanced search: date from
@@ -194,6 +196,7 @@ impl Default for UIState {
             },
             search_query: String::new(),
             search_results: Vec::new(),
+            search_contact_results: Vec::new(),
             search_selected_tags: Vec::new(),
             search_date_from: String::new(),
             search_date_to: String::new(),
@@ -323,6 +326,15 @@ impl IntegratedUI {
                 self.apply_filter_rules(&mut messages);
                 self.state.messages = messages;
                 self.state.status_message = format!("{} messages loaded", self.state.messages.len());
+                if let Some(cache) = &self.message_cache {
+                    let provider = self.state.account_manager.active_account_id.as_ref()
+                        .and_then(|id| self.state.account_manager.accounts.iter().find(|a| &a.id == id))
+                        .and_then(|a| a.provider.clone());
+                    let _ = cache.auto_import_contacts_from_messages(
+                        &self.state.account_config.email,
+                        provider.as_deref(),
+                    );
+                }
             }
             UIUpdate::MessageBodyLoaded(body) => {
                 self.state.message_preview = body;
@@ -1546,6 +1558,7 @@ impl IntegratedUI {
                         self.state.search_unread_only = false;
                         self.state.search_starred_only = false;
                         self.state.search_results.clear();
+                        self.state.search_contact_results.clear();
                     }
                 });
                 
@@ -1600,6 +1613,42 @@ impl IntegratedUI {
                         }
                     }
                 });
+                
+                ui.add_space(8.0);
+                ui.separator();
+                ui.heading("Matching Contacts");
+                ui.label(format!("{} contacts found", self.state.search_contact_results.len()));
+                egui::ScrollArea::vertical()
+                    .max_height(140.0)
+                    .show(ui, |ui| {
+                        if self.state.search_contact_results.is_empty() {
+                            ui.label("No matching contacts");
+                        } else {
+                            for contact in &self.state.search_contact_results {
+                                ui.group(|ui| {
+                                    ui.horizontal(|ui| {
+                                        if contact.favorite {
+                                            ui.label("⭐");
+                                        }
+                                        if contact.avatar_url.is_some() || contact.avatar_data_base64.is_some() {
+                                            ui.label("🖼");
+                                        }
+                                        ui.label(format!("{} <{}>", contact.name, contact.email));
+                                    });
+                                    if let Some(company) = &contact.company {
+                                        if !company.is_empty() {
+                                            ui.label(format!("Company: {}", company));
+                                        }
+                                    }
+                                    if let Some(phone) = &contact.phone {
+                                        if !phone.is_empty() {
+                                            ui.label(format!("Phone: {}", phone));
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    });
                 
                 ui.separator();
                 if ui.button("Close").clicked() {
@@ -1668,6 +1717,23 @@ impl IntegratedUI {
         }
         
         self.state.search_results = results;
+        if let Some(cache) = &self.message_cache {
+            let mut contact_query = self.state.search_query.clone();
+            if contact_query.trim().is_empty() {
+                contact_query = self.state.search_sender.clone();
+            }
+            if contact_query.trim().is_empty() {
+                contact_query = self.state.search_recipient.clone();
+            }
+            self.state.search_contact_results = if contact_query.trim().is_empty() {
+                Vec::new()
+            } else {
+                cache.search_contacts_for_account(&self.state.account_config.email, &contact_query, 25)
+                    .unwrap_or_default()
+            };
+        } else {
+            self.state.search_contact_results.clear();
+        }
         self.state.status_message = format!("Search completed: {} results found", self.state.search_results.len());
     }
     

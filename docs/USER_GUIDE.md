@@ -130,6 +130,10 @@ Features:
 - Mark favorite contacts
 - Search by name or email
 - Recipient autocomplete suggestions while composing messages
+- Extended provider-ready fields (phone, company, title, website, address, birthday)
+- Photo/avatar support (URL or embedded uploaded image)
+- Automatic contact import from message history/provider account activity
+- vCard import and export
 
 ## Reading and Managing Email
 
