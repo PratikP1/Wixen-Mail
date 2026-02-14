@@ -156,6 +156,17 @@ When offline mode is enabled:
 
 Use **View → Flush Outbox** to attempt queued sends when back online.
 
+### Beta Readiness Diagnostics (Phase 11)
+
+Use **Help → Beta Readiness Check** to run final release-hardening diagnostics.
+
+The check reports:
+- account/active-account readiness
+- cache availability
+- online/offline status
+- queued outbox backlog warnings
+- OAuth-capable account detection
+
 ## Reading and Managing Email
 
 ### Three-Pane Layout

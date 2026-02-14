@@ -102,6 +102,10 @@ pub struct UIState {
     pub offline_mode: bool,
     /// Count of queued outbound messages for active account
     pub outbox_queue_count: usize,
+    /// Beta readiness diagnostics window
+    pub beta_readiness_open: bool,
+    /// Beta readiness check results
+    pub beta_readiness_results: Vec<String>,
     /// Message tags for display
     pub message_tags: std::collections::HashMap<u32, Vec<Tag>>,
     /// Selected tag filter
@@ -227,6 +231,8 @@ impl Default for UIState {
             oauth_manager: OAuthManagerWindow::new(),
             offline_mode: false,
             outbox_queue_count: 0,
+            beta_readiness_open: false,
+            beta_readiness_results: Vec::new(),
             message_tags: std::collections::HashMap::new(),
             selected_tag_filter: None,
         }
@@ -800,9 +806,16 @@ impl IntegratedUI {
                 
                 ui.menu_button("Help", |ui| {
                     if ui.button("📖 Documentation (F1)").clicked() {
+                        self.state.status_message = "Open docs: https://github.com/PratikP1/Wixen-Mail/blob/main/docs/USER_GUIDE.md".to_string();
                         ui.close_menu();
                     }
                     if ui.button("⌨ Keyboard Shortcuts").clicked() {
+                        self.state.status_message = "Keyboard shortcuts: see docs/KEYBOARD_SHORTCUTS.md".to_string();
+                        ui.close_menu();
+                    }
+                    if ui.button("🧪 Beta Readiness Check").clicked() {
+                        self.state.beta_readiness_results = self.build_beta_readiness_report();
+                        self.state.beta_readiness_open = true;
                         ui.close_menu();
                     }
                     ui.separator();
@@ -1468,6 +1481,29 @@ impl IntegratedUI {
                         }
                     });
                 });
+        }
+        
+        if self.state.beta_readiness_open {
+            let mut rerun_checks = false;
+            egui::Window::new("🧪 Beta Readiness Check")
+                .collapsible(false)
+                .resizable(true)
+                .default_size([620.0, 320.0])
+                .open(&mut self.state.beta_readiness_open)
+                .show(ctx, |ui| {
+                    ui.label("Release hardening diagnostics for current runtime state:");
+                    ui.add_space(6.0);
+                    for item in &self.state.beta_readiness_results {
+                        ui.label(item);
+                    }
+                    ui.add_space(8.0);
+                    if ui.button("Run Again").clicked() {
+                        rerun_checks = true;
+                    }
+                });
+            if rerun_checks {
+                self.state.beta_readiness_results = self.build_beta_readiness_report();
+            }
         }
         
         // Status bar
@@ -2555,6 +2591,55 @@ impl IntegratedUI {
             }
         }
     }
+
+    fn build_beta_readiness_report(&self) -> Vec<String> {
+        let mut results = Vec::new();
+
+        if self.state.account_manager.accounts.is_empty() {
+            results.push("❌ FAIL: No accounts configured".to_string());
+        } else {
+            results.push(format!(
+                "✅ PASS: {} account(s) configured",
+                self.state.account_manager.accounts.len()
+            ));
+        }
+
+        if self.state.account_manager.active_account_id.is_some() {
+            results.push("✅ PASS: Active account selected".to_string());
+        } else {
+            results.push("❌ FAIL: No active account selected".to_string());
+        }
+
+        if self.message_cache.is_some() {
+            results.push("✅ PASS: Local message cache initialized".to_string());
+        } else {
+            results.push("❌ FAIL: Local message cache unavailable".to_string());
+        }
+
+        if self.state.offline_mode {
+            results.push("⚠ WARN: Offline mode currently enabled".to_string());
+        } else {
+            results.push("✅ PASS: Online mode active".to_string());
+        }
+
+        if self.state.outbox_queue_count > 0 {
+            results.push(format!(
+                "⚠ WARN: {} queued outbox message(s) pending flush",
+                self.state.outbox_queue_count
+            ));
+        } else {
+            results.push("✅ PASS: Outbox queue empty".to_string());
+        }
+
+        // OAuth-capable accounts are providers with known OAuth metadata (e.g., Gmail/Outlook).
+        if self.has_oauth_configurable_accounts() {
+            results.push("✅ PASS: OAuth-capable account(s) detected".to_string());
+        } else {
+            results.push("⚠ WARN: No OAuth-capable accounts configured".to_string());
+        }
+
+        results
+    }
     
     fn estimate_thread_depth(subject: &str) -> usize {
         let mut remaining = subject.trim();
@@ -2756,5 +2841,13 @@ mod tests {
     fn test_parse_recipients_csv() {
         let parsed = IntegratedUI::parse_recipients_csv("a@example.com, b@example.com , ,c@example.com");
         assert_eq!(parsed, vec!["a@example.com", "b@example.com", "c@example.com"]);
+    }
+
+    #[test]
+    fn test_beta_readiness_report_detects_missing_accounts() {
+        let ui = IntegratedUI::new().unwrap();
+        let report = ui.build_beta_readiness_report();
+        assert!(report.iter().any(|line| line.contains("No accounts configured")));
+        assert!(report.iter().any(|line| line.contains("No active account selected")));
     }
 }
