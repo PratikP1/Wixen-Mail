@@ -20,17 +20,19 @@ use crate::service::OAuthService;
 use async_channel::{Receiver, Sender};
 use eframe::egui;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Mutex as StdMutex;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex as TokioMutex;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 
 const SECONDS_PER_MINUTE: u64 = 60;
 const DEFAULT_IMAP_PORT: u16 = 993;
 const DEFAULT_SMTP_PORT: u16 = 465;
 const PLACEHOLDER_FOLDER_ID: i64 = 0;
 const MAX_CONTACT_SUGGESTIONS: usize = 5;
+const MAX_OUTBOX_FLUSH_CONCURRENCY: usize = 4;
 
 /// UI state for the integrated mail client
 pub struct UIState {
@@ -242,6 +244,7 @@ impl Default for UIState {
 /// Main UI struct with async integration
 pub struct IntegratedUI {
     mail_controllers: HashMap<String, Arc<TokioMutex<MailController>>>,
+    outbox_flush_controllers: Vec<Arc<TokioMutex<MailController>>>,
     background_sync_tasks: HashMap<String, JoinHandle<()>>,
     sync_accounts: Arc<StdMutex<HashMap<String, Account>>>,
     active_account_id: Option<String>,
@@ -279,6 +282,9 @@ impl IntegratedUI {
         
         let mut ui = Self {
             mail_controllers: HashMap::new(),
+            outbox_flush_controllers: (0..MAX_OUTBOX_FLUSH_CONCURRENCY.max(1))
+                .map(|_| Arc::new(TokioMutex::new(MailController::new())))
+                .collect(),
             background_sync_tasks: HashMap::new(),
             sync_accounts: Arc::new(StdMutex::new(HashMap::new())),
             active_account_id: state.account_manager.active_account_id.clone(),
@@ -593,6 +599,10 @@ impl IntegratedUI {
     }
 
     fn queue_email_for_offline(&mut self, to: Vec<String>, subject: String, body: String) {
+        if to.is_empty() {
+            self.state.error_message = Some("Cannot queue email: no valid recipients".to_string());
+            return;
+        }
         if let Some(cache) = &self.message_cache {
             let account_id = self.current_account_storage_id();
             let item = crate::data::message_cache::QueuedOutboxMessage {
@@ -628,16 +638,28 @@ impl IntegratedUI {
             .collect()
     }
 
+    fn normalize_recipients(recipients: Vec<String>) -> Vec<String> {
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut normalized = Vec::new();
+        for recipient in recipients {
+            let trimmed = recipient.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let key = trimmed.to_lowercase();
+            if seen.insert(key) {
+                normalized.push(trimmed.to_string());
+            }
+        }
+        normalized
+    }
+
     fn flush_outbox_queue(&mut self) {
         if self.state.offline_mode {
             self.state.status_message = "Cannot flush queue while offline mode is enabled".to_string();
             return;
         }
 
-        let Some(mail_controller) = self.get_active_controller() else {
-            self.state.error_message = Some("No active account/controller to flush outbox".to_string());
-            return;
-        };
         let Some(cache) = &self.message_cache else {
             self.state.error_message = Some("Message cache not available".to_string());
             return;
@@ -658,6 +680,10 @@ impl IntegratedUI {
         
         let config = self.state.account_config.clone();
         let ui_tx = self.ui_tx.clone();
+        let queued_len = queued.len();
+        // MailController::send_email is parameter-driven (host/port/creds passed per call),
+        // so pooled controllers can be reused safely across queued sends.
+        let controller_pool = self.outbox_flush_controllers.clone();
         self.state.status_message = format!("Flushing {} queued message(s)...", queued.len());
         
         self.runtime.spawn(async move {
@@ -669,36 +695,83 @@ impl IntegratedUI {
                 );
                 DEFAULT_SMTP_PORT
             });
-            let controller = mail_controller.lock().await;
-            for item in queued {
-                let result = controller.send_email(
-                    config.smtp_server.clone(),
-                    port,
-                    config.username.clone(),
-                    config.password.clone(),
-                    config.smtp_use_tls,
-                    Self::parse_recipients_csv(&item.to_addr),
-                    item.subject.clone(),
-                    item.body.clone(),
-                ).await;
-                
-                match result {
-                    Ok(_) => {
-                        let _ = ui_tx.send(UIUpdate::OutboxSendResult {
-                            queue_id: item.id.clone(),
-                            success: true,
-                            error: None,
-                        }).await;
-                    }
+            let concurrency_limit = Arc::new(tokio::sync::Semaphore::new(MAX_OUTBOX_FLUSH_CONCURRENCY));
+            let mut join_set = JoinSet::new();
+            // Use available pool entries up to queued message count for this flush.
+            let available_pool_size = controller_pool.len().min(queued.len());
+            if available_pool_size == 0 {
+                let _ = ui_tx.send(UIUpdate::StatusUpdated(
+                    "Outbox flush unavailable: controller pool is empty".to_string()
+                )).await;
+                return;
+            }
+            for (idx, item) in queued.into_iter().enumerate() {
+                let permit = match concurrency_limit.clone().acquire_owned().await {
+                    Ok(permit) => permit,
                     Err(e) => {
+                        tracing::warn!("Outbox flush permit acquisition failed: {}", e);
                         let _ = ui_tx.send(UIUpdate::OutboxSendResult {
                             queue_id: item.id.clone(),
                             success: false,
-                            error: Some(e.to_string()),
+                            error: Some(format!("Outbox flush permit failed: {}", e)),
                         }).await;
+                        continue;
                     }
+                };
+                let ui_tx = ui_tx.clone();
+                let config = config.clone();
+                let controller = controller_pool[idx % available_pool_size].clone();
+                join_set.spawn(async move {
+                    let _permit = permit;
+                    let recipients = Self::normalize_recipients(Self::parse_recipients_csv(&item.to_addr));
+                    if recipients.is_empty() {
+                        let _ = ui_tx.send(UIUpdate::OutboxSendResult {
+                            queue_id: item.id.clone(),
+                            success: false,
+                            error: Some("No valid recipients".to_string()),
+                        }).await;
+                        return;
+                    }
+
+                    let controller = controller.lock().await;
+                    let result = controller.send_email(
+                        config.smtp_server.clone(),
+                        port,
+                        config.username.clone(),
+                        config.password.clone(),
+                        config.smtp_use_tls,
+                        recipients,
+                        item.subject.clone(),
+                        item.body.clone(),
+                    ).await;
+                    
+                    match result {
+                        Ok(_) => {
+                            let _ = ui_tx.send(UIUpdate::OutboxSendResult {
+                                queue_id: item.id.clone(),
+                                success: true,
+                                error: None,
+                            }).await;
+                        }
+                        Err(e) => {
+                            let _ = ui_tx.send(UIUpdate::OutboxSendResult {
+                                queue_id: item.id.clone(),
+                                success: false,
+                                error: Some(e.to_string()),
+                            }).await;
+                        }
+                    }
+                });
+            }
+            while let Some(join_result) = join_set.join_next().await {
+                if let Err(e) = join_result {
+                    tracing::warn!("Outbox flush task failed: {}", e);
                 }
             }
+            let _ = ui_tx.send(UIUpdate::StatusUpdated(format!(
+                "Outbox flush completed: {} message(s) processed",
+                queued_len
+            ))).await;
         });
     }
     
@@ -1286,7 +1359,7 @@ impl IntegratedUI {
         
         match action {
             CompositionAction::Send => {
-                let to = self.state.composition_window.get_recipients();
+                let to = Self::normalize_recipients(self.state.composition_window.get_recipients());
                 let subject = self.state.composition_window.subject.clone();
                 let body = self.state.composition_window.body.clone();
                 
@@ -2602,6 +2675,21 @@ impl IntegratedUI {
                 "✅ PASS: {} account(s) configured",
                 self.state.account_manager.accounts.len()
             ));
+            let mut unique_emails: HashSet<String> = HashSet::new();
+            let mut duplicate_count = 0usize;
+            for account in &self.state.account_manager.accounts {
+                if !unique_emails.insert(account.email.to_lowercase()) {
+                    duplicate_count += 1;
+                }
+            }
+            if duplicate_count > 0 {
+                results.push(format!(
+                    "⚠ WARN: {} duplicate account email entries detected",
+                    duplicate_count
+                ));
+            } else {
+                results.push("✅ PASS: No duplicate account emails".to_string());
+            }
         }
 
         if self.state.account_manager.active_account_id.is_some() {
@@ -2841,6 +2929,19 @@ mod tests {
     fn test_parse_recipients_csv() {
         let parsed = IntegratedUI::parse_recipients_csv("a@example.com, b@example.com , ,c@example.com");
         assert_eq!(parsed, vec!["a@example.com", "b@example.com", "c@example.com"]);
+    }
+
+    #[test]
+    fn test_normalize_recipients_deduplicates_case_insensitive() {
+        let normalized = IntegratedUI::normalize_recipients(vec![
+            "A@example.com".to_string(),
+            "a@example.com".to_string(),
+            "  b@example.com  ".to_string(),
+            "".to_string(),
+            "   ".to_string(),
+            "b@example.com".to_string(),
+        ]);
+        assert_eq!(normalized, vec!["A@example.com", "b@example.com"]);
     }
 
     #[test]
