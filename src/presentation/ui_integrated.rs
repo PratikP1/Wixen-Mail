@@ -11,7 +11,7 @@ use crate::data::email_providers::{self, EmailProvider};
 use crate::data::message_cache::{CachedMessage, ContactEntry, MessageCache, Tag};
 use crate::presentation::account_manager::{AccountManagerWindow, AccountAction};
 use crate::presentation::composition::{CompositionWindow, CompositionAction};
-use crate::presentation::contact_manager::{ContactAction, ContactManagerWindow};
+use crate::presentation::contact_manager::{ContactAction, ContactManagerWindow, ContactSortOption};
 use crate::presentation::filter_manager::{FilterManagerWindow, FilterRuleAction};
 use crate::presentation::html_renderer::{HtmlRenderer, RenderedContent};
 use crate::presentation::oauth_manager::{oauth_token_entry_from_set, OAuthAction, OAuthManagerWindow};
@@ -122,6 +122,10 @@ pub struct UIState {
     pub message_tags: std::collections::HashMap<u32, Vec<Tag>>,
     /// Selected tag filter
     pub selected_tag_filter: Option<String>,
+    /// Mail list sort option
+    pub mail_sort_option: MailSortOption,
+    /// Contact list sort option
+    pub contact_sort_option: ContactSortOption,
 }
 
 /// Message item for display
@@ -147,6 +151,17 @@ pub struct AttachmentItem {
     pub filename: String,
     pub mime_type: String,
     pub size: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MailSortOption {
+    DateNewestFirst,
+    DateOldestFirst,
+    SenderAZ,
+    SenderZA,
+    SubjectAZ,
+    SubjectZA,
+    UnreadFirst,
 }
 
 /// Connection status
@@ -251,6 +266,8 @@ impl Default for UIState {
             beta_readiness_results: Vec::new(),
             message_tags: std::collections::HashMap::new(),
             selected_tag_filter: None,
+            mail_sort_option: MailSortOption::DateNewestFirst,
+            contact_sort_option: ContactSortOption::NameAsc,
         }
     }
 }
@@ -368,6 +385,7 @@ impl IntegratedUI {
             }
             UIUpdate::MessagesLoaded(mut messages) => {
                 self.apply_filter_rules(&mut messages);
+                Self::sort_messages(&mut messages, self.state.mail_sort_option);
                 self.state.messages = messages;
                 self.state.status_message = format!("{} messages loaded", self.state.messages.len());
                 if let Some(cache) = &self.message_cache {
@@ -536,8 +554,9 @@ impl IntegratedUI {
                             thread_id: None,
                         }
                     }).collect();
-                    
-                    self.state.messages = message_items;
+                    let mut sorted_items = message_items;
+                    Self::sort_messages(&mut sorted_items, self.state.mail_sort_option);
+                    self.state.messages = sorted_items;
                     self.state.status_message = format!("Filtered by tag: {} messages", messages.len());
                 }
                 Err(e) => {
@@ -895,6 +914,24 @@ impl IntegratedUI {
                         self.flush_outbox_queue();
                         ui.close_menu();
                     }
+                    ui.separator();
+                    ui.menu_button("Sort Mail", |ui| {
+                        self.render_mail_sort_option(ui, MailSortOption::DateNewestFirst, "Date (Newest first)");
+                        self.render_mail_sort_option(ui, MailSortOption::DateOldestFirst, "Date (Oldest first)");
+                        self.render_mail_sort_option(ui, MailSortOption::UnreadFirst, "Unread first");
+                        self.render_mail_sort_option(ui, MailSortOption::SenderAZ, "Sender (A-Z)");
+                        self.render_mail_sort_option(ui, MailSortOption::SenderZA, "Sender (Z-A)");
+                        self.render_mail_sort_option(ui, MailSortOption::SubjectAZ, "Subject (A-Z)");
+                        self.render_mail_sort_option(ui, MailSortOption::SubjectZA, "Subject (Z-A)");
+                    });
+                    ui.menu_button("Sort Contacts", |ui| {
+                        self.render_contact_sort_option(ui, ContactSortOption::NameAsc, "Name (A-Z)");
+                        self.render_contact_sort_option(ui, ContactSortOption::NameDesc, "Name (Z-A)");
+                        self.render_contact_sort_option(ui, ContactSortOption::EmailAsc, "Email (A-Z)");
+                        self.render_contact_sort_option(ui, ContactSortOption::EmailDesc, "Email (Z-A)");
+                        self.render_contact_sort_option(ui, ContactSortOption::FavoritesFirst, "Favorites first");
+                        self.render_contact_sort_option(ui, ContactSortOption::RecentlyAdded, "Recently added");
+                    });
                     ui.separator();
                     if ui.button("🔄 Refresh (F5)").clicked() {
                         if let Some(folder) = &self.state.selected_folder.clone() {
@@ -1505,6 +1542,7 @@ impl IntegratedUI {
         }
         
         // Contact manager window
+        self.state.contact_manager.set_sort_option(self.state.contact_sort_option);
         if let Some(action) = self.state.contact_manager.render(ctx, &self.message_cache) {
             self.handle_contact_action(action);
         }
@@ -2131,10 +2169,88 @@ impl IntegratedUI {
                 cache.search_contacts_for_account(&self.state.account_config.email, &contact_query, 25)
                     .unwrap_or_default()
             };
+            Self::sort_contacts(
+                &mut self.state.search_contact_results,
+                self.state.contact_sort_option,
+            );
         } else {
             self.state.search_contact_results.clear();
         }
         self.state.status_message = format!("Search completed: {} results found", self.state.search_results.len());
+    }
+
+    fn render_mail_sort_option(&mut self, ui: &mut egui::Ui, option: MailSortOption, label: &str) {
+        let selected = self.state.mail_sort_option == option;
+        if ui.selectable_label(selected, label).clicked() {
+            self.state.mail_sort_option = option;
+            Self::sort_messages(&mut self.state.messages, option);
+            self.state.status_message = format!("Mail sort: {}", label);
+            ui.close_menu();
+        }
+    }
+
+    fn render_contact_sort_option(&mut self, ui: &mut egui::Ui, option: ContactSortOption, label: &str) {
+        let selected = self.state.contact_sort_option == option;
+        if ui.selectable_label(selected, label).clicked() {
+            self.state.contact_sort_option = option;
+            self.state.contact_manager.set_sort_option(option);
+            Self::sort_contacts(&mut self.state.search_contact_results, option);
+            self.state.status_message = format!("Contact sort: {}", label);
+            ui.close_menu();
+        }
+    }
+
+    fn sort_messages(messages: &mut [MessageItem], sort_option: MailSortOption) {
+        match sort_option {
+            MailSortOption::DateNewestFirst => {
+                messages.sort_by(|a, b| b.date.cmp(&a.date));
+            }
+            MailSortOption::DateOldestFirst => {
+                messages.sort_by(|a, b| a.date.cmp(&b.date));
+            }
+            MailSortOption::SenderAZ => {
+                messages.sort_by(|a, b| a.from.to_lowercase().cmp(&b.from.to_lowercase()));
+            }
+            MailSortOption::SenderZA => {
+                messages.sort_by(|a, b| b.from.to_lowercase().cmp(&a.from.to_lowercase()));
+            }
+            MailSortOption::SubjectAZ => {
+                messages.sort_by(|a, b| a.subject.to_lowercase().cmp(&b.subject.to_lowercase()));
+            }
+            MailSortOption::SubjectZA => {
+                messages.sort_by(|a, b| b.subject.to_lowercase().cmp(&a.subject.to_lowercase()));
+            }
+            MailSortOption::UnreadFirst => {
+                messages.sort_by(|a, b| a.read.cmp(&b.read).then_with(|| b.date.cmp(&a.date)));
+            }
+        }
+    }
+
+    fn sort_contacts(contacts: &mut [ContactEntry], sort_option: ContactSortOption) {
+        match sort_option {
+            ContactSortOption::NameAsc => {
+                contacts.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+            }
+            ContactSortOption::NameDesc => {
+                contacts.sort_by(|a, b| b.name.to_lowercase().cmp(&a.name.to_lowercase()));
+            }
+            ContactSortOption::EmailAsc => {
+                contacts.sort_by(|a, b| a.email.to_lowercase().cmp(&b.email.to_lowercase()));
+            }
+            ContactSortOption::EmailDesc => {
+                contacts.sort_by(|a, b| b.email.to_lowercase().cmp(&a.email.to_lowercase()));
+            }
+            ContactSortOption::FavoritesFirst => {
+                contacts.sort_by(|a, b| {
+                    b.favorite
+                        .cmp(&a.favorite)
+                        .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                });
+            }
+            ContactSortOption::RecentlyAdded => {
+                contacts.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+            }
+        }
     }
     
     /// Get file icon based on MIME type
@@ -3134,5 +3250,93 @@ mod tests {
         let report = ui.build_beta_readiness_report();
         assert!(report.iter().any(|line| line.contains("No accounts configured")));
         assert!(report.iter().any(|line| line.contains("No active account selected")));
+    }
+
+    #[test]
+    fn test_sort_messages_unread_first() {
+        let mut messages = vec![
+            MessageItem {
+                uid: 1,
+                message_id: 1,
+                subject: "B".to_string(),
+                from: "z@example.com".to_string(),
+                date: "2026-01-01".to_string(),
+                read: true,
+                starred: false,
+                has_attachments: false,
+                attachments: Vec::new(),
+                thread_depth: 0,
+                is_thread_parent: true,
+                thread_id: None,
+            },
+            MessageItem {
+                uid: 2,
+                message_id: 2,
+                subject: "A".to_string(),
+                from: "a@example.com".to_string(),
+                date: "2026-01-02".to_string(),
+                read: false,
+                starred: false,
+                has_attachments: false,
+                attachments: Vec::new(),
+                thread_depth: 0,
+                is_thread_parent: true,
+                thread_id: None,
+            },
+        ];
+
+        IntegratedUI::sort_messages(&mut messages, MailSortOption::UnreadFirst);
+        assert!(!messages[0].read);
+    }
+
+    #[test]
+    fn test_sort_contacts_favorites_first() {
+        let mut contacts = vec![
+            ContactEntry {
+                id: "1".to_string(),
+                account_id: "a".to_string(),
+                name: "Zed".to_string(),
+                email: "zed@example.com".to_string(),
+                provider_contact_id: None,
+                phone: None,
+                company: None,
+                job_title: None,
+                website: None,
+                address: None,
+                birthday: None,
+                avatar_url: None,
+                avatar_data_base64: None,
+                source_provider: None,
+                last_synced_at: None,
+                vcard_raw: None,
+                notes: None,
+                favorite: false,
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+            },
+            ContactEntry {
+                id: "2".to_string(),
+                account_id: "a".to_string(),
+                name: "Ada".to_string(),
+                email: "ada@example.com".to_string(),
+                provider_contact_id: None,
+                phone: None,
+                company: None,
+                job_title: None,
+                website: None,
+                address: None,
+                birthday: None,
+                avatar_url: None,
+                avatar_data_base64: None,
+                source_provider: None,
+                last_synced_at: None,
+                vcard_raw: None,
+                notes: None,
+                favorite: true,
+                created_at: "2026-01-02T00:00:00Z".to_string(),
+            },
+        ];
+
+        IntegratedUI::sort_contacts(&mut contacts, ContactSortOption::FavoritesFirst);
+        assert!(contacts[0].favorite);
     }
 }

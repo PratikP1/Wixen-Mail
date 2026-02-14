@@ -17,6 +17,7 @@ pub struct ContactManagerWindow {
     pub error: Option<String>,
     pub account_id: String,
     pub search_query: String,
+    pub sort_option: ContactSortOption,
 }
 
 #[derive(Clone, Debug)]
@@ -35,6 +36,16 @@ pub struct ContactEdit {
     pub favorite: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContactSortOption {
+    NameAsc,
+    NameDesc,
+    EmailAsc,
+    EmailDesc,
+    FavoritesFirst,
+    RecentlyAdded,
+}
+
 impl Default for ContactManagerWindow {
     fn default() -> Self {
         Self {
@@ -46,6 +57,7 @@ impl Default for ContactManagerWindow {
             error: None,
             account_id: "default".to_string(),
             search_query: String::new(),
+            sort_option: ContactSortOption::NameAsc,
         }
     }
 }
@@ -65,6 +77,10 @@ impl ContactManagerWindow {
         self.editing_contact = None;
         self.new_contact = None;
         self.error = None;
+    }
+
+    pub fn set_sort_option(&mut self, sort_option: ContactSortOption) {
+        self.sort_option = sort_option;
     }
 
     pub fn start_create_contact(&mut self) {
@@ -124,6 +140,7 @@ impl ContactManagerWindow {
             } else {
                 cache.search_contacts_for_account(&self.account_id, &self.search_query, 100).unwrap_or_default()
             };
+            Self::sort_contacts(&mut self.contacts, self.sort_option);
         }
 
         Window::new("Manage Contacts")
@@ -383,6 +400,79 @@ impl ContactManagerWindow {
         }
 
         action
+    }
+}
+
+impl ContactManagerWindow {
+    fn sort_contacts(contacts: &mut [ContactEntry], sort_option: ContactSortOption) {
+        match sort_option {
+            ContactSortOption::NameAsc => {
+                contacts.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+            }
+            ContactSortOption::NameDesc => {
+                contacts.sort_by(|a, b| b.name.to_lowercase().cmp(&a.name.to_lowercase()));
+            }
+            ContactSortOption::EmailAsc => {
+                contacts.sort_by(|a, b| a.email.to_lowercase().cmp(&b.email.to_lowercase()));
+            }
+            ContactSortOption::EmailDesc => {
+                contacts.sort_by(|a, b| b.email.to_lowercase().cmp(&a.email.to_lowercase()));
+            }
+            ContactSortOption::FavoritesFirst => {
+                contacts.sort_by(|a, b| {
+                    b.favorite
+                        .cmp(&a.favorite)
+                        .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                });
+            }
+            ContactSortOption::RecentlyAdded => {
+                contacts.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ContactManagerWindow, ContactSortOption};
+    use crate::data::message_cache::ContactEntry;
+
+    fn contact(id: &str, name: &str, email: &str, favorite: bool, created_at: &str) -> ContactEntry {
+        ContactEntry {
+            id: id.to_string(),
+            account_id: "a".to_string(),
+            name: name.to_string(),
+            email: email.to_string(),
+            provider_contact_id: None,
+            phone: None,
+            company: None,
+            job_title: None,
+            website: None,
+            address: None,
+            birthday: None,
+            avatar_url: None,
+            avatar_data_base64: None,
+            source_provider: None,
+            last_synced_at: None,
+            vcard_raw: None,
+            notes: None,
+            favorite,
+            created_at: created_at.to_string(),
+        }
+    }
+
+    #[test]
+    fn sort_contacts_by_name_and_favorite() {
+        let mut contacts = vec![
+            contact("1", "Zoe", "zoe@example.com", false, "2025-01-01T00:00:00Z"),
+            contact("2", "Ada", "ada@example.com", true, "2025-02-01T00:00:00Z"),
+        ];
+
+        ContactManagerWindow::sort_contacts(&mut contacts, ContactSortOption::NameAsc);
+        assert_eq!(contacts[0].name, "Ada");
+
+        ContactManagerWindow::sort_contacts(&mut contacts, ContactSortOption::FavoritesFirst);
+        assert!(contacts[0].favorite);
     }
 }
 
