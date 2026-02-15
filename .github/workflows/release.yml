@@ -20,6 +20,7 @@ jobs:
   quality-gate:
     name: Release Quality Gate
     runs-on: windows-latest
+    if: github.actor != 'github-actions[bot]'
 
     steps:
       - name: Checkout code
@@ -68,7 +69,9 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Create release version and tag
-        run: cargo release beta --execute --no-confirm --no-publish --allow-branch main --tag-prefix v --push-remote origin
+        run: >
+          cargo release beta --execute --no-confirm --no-publish
+          --allow-branch main --tag-prefix v --push-remote origin
 
       - name: Capture release tag
         id: release_tag
