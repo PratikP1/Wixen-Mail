@@ -34,11 +34,8 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
 
-      - name: Run clippy check action
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-targets --all-features -- -D warnings
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Run tests
         run: cargo test --quiet
