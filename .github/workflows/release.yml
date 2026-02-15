@@ -2,20 +2,35 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
   workflow_dispatch:
+    inputs:
+      release_level:
+        description: "Prerelease level for cargo release"
+        required: false
+        default: beta
+        type: choice
+        options:
+          - alpha
+          - beta
+          - rc
 
 env:
   CARGO_TERM_COLOR: always
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
-  build-release-assets:
-    name: Build setup executables
+  quality-gate:
+    name: Release Quality Gate
     runs-on: windows-latest
+    if: github.actor != 'github-actions[bot]'
 
     steps:
       - name: Checkout code
@@ -23,16 +38,70 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --quiet
+
+  build-release-assets:
+    name: Build setup executables
+    needs: quality-gate
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-release
+        run: cargo install cargo-release --locked
+
+      - name: Configure git user
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create release version and tag
+        run: >
+          cargo release ${{ github.event.inputs.release_level || 'beta' }} --execute --no-confirm --no-publish
+          --allow-branch main --tag-prefix v --push-remote origin
+
+      - name: Capture release tag
+        id: release_tag
+        shell: pwsh
+        run: |
+          $tag = (git describe --tags --abbrev=0).Trim()
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Build release binary
         run: cargo build --release --verbose
 
+      - name: Build installer executable
+        uses: Minionguyjpro/Inno-Setup-Action@7547f78e92afc13352b946775483c5392b7fda10 # v1.2.5
+        with:
+          path: installer/Wixen-Mail-Setup.iss
+
       - name: Prepare setup executable artifacts
         shell: pwsh
         run: |
-          $tag = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "manual-${{ github.run_number }}" }
+          $tag = "${{ steps.release_tag.outputs.tag }}"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item "target/release/wixen-mail.exe" "dist/Wixen-Mail-Setup-$tag.exe"
+          Copy-Item "target/release/wixen-mail.exe" "dist/wixen-mail-$tag.exe"
+          Copy-Item "dist/Wixen-Mail-Setup.exe" "dist/Wixen-Mail-Setup-$tag.exe"
           Compress-Archive -Path "target/release/wixen-mail.exe" -DestinationPath "dist/Wixen-Mail-$tag-windows.zip" -Force
 
       - name: Upload release artifacts
@@ -42,9 +111,14 @@ jobs:
           path: dist/*
 
       - name: Publish GitHub release assets
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          name: ${{ steps.release_tag.outputs.tag }}
+          generate_release_notes: true
+          prerelease: true
           files: |
             dist/Wixen-Mail-Setup-*.exe
+            dist/wixen-mail-*.exe
             dist/Wixen-Mail-*-windows.zip
+            CHANGELOG.md
