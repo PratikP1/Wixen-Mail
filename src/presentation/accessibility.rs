@@ -183,6 +183,11 @@ mod tests {
         assert!(a11y.initialize().is_ok());
         let snapshot = a11y.automation_snapshot().unwrap();
         assert!(snapshot.iter().any(|n| n.id == "main_window"));
+        assert!(snapshot.iter().any(|n| n.id == "folder_tree"));
+        assert_eq!(
+            a11y.keyboard.action_for_key("Ctrl+N").unwrap().as_deref(),
+            Some("compose_new_message")
+        );
     }
 
     #[test]
@@ -196,5 +201,35 @@ mod tests {
                 automation::AutomationEvent::FocusChanged(id) if id == "message_list"
             )
         }));
+    }
+
+    #[test]
+    fn test_flush_announcements_priority_order() {
+        let a11y = Accessibility::new().unwrap();
+        a11y.announcements
+            .announce("normal", announcements::Priority::Normal)
+            .unwrap();
+        a11y.announcements
+            .announce("urgent", announcements::Priority::Urgent)
+            .unwrap();
+        a11y.announcements
+            .announce("high", announcements::Priority::High)
+            .unwrap();
+
+        a11y.flush_announcements().unwrap();
+
+        let spoken: Vec<String> = a11y
+            .screen_reader
+            .events()
+            .unwrap()
+            .into_iter()
+            .filter_map(|event| match event {
+                automation::AutomationEvent::LiveRegion(region, text) if region == "global" => {
+                    Some(text)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(spoken, vec!["urgent", "high", "normal"]);
     }
 }
