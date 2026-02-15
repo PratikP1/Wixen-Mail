@@ -184,10 +184,8 @@ mod tests {
         let snapshot = a11y.automation_snapshot().unwrap();
         assert!(snapshot.iter().any(|n| n.id == "main_window"));
         assert!(snapshot.iter().any(|n| n.id == "folder_tree"));
-        assert_eq!(
-            a11y.keyboard.action_for_key("Ctrl+N").unwrap().as_deref(),
-            Some("compose_new_message")
-        );
+        let compose_shortcut = a11y.keyboard.action_for_key("Ctrl+N").unwrap();
+        assert_eq!(compose_shortcut.as_deref(), Some("compose_new_message"));
     }
 
     #[test]
@@ -205,6 +203,7 @@ mod tests {
 
     #[test]
     fn test_flush_announcements_priority_order() {
+        const GLOBAL_REGION_ID: &str = "global";
         let a11y = Accessibility::new().unwrap();
         a11y.announcements
             .announce("normal", announcements::Priority::Normal)
@@ -224,7 +223,9 @@ mod tests {
             .unwrap()
             .into_iter()
             .filter_map(|event| match event {
-                automation::AutomationEvent::LiveRegion(region, text) if region == "global" => {
+                automation::AutomationEvent::LiveRegion(region, text)
+                    if region == GLOBAL_REGION_ID =>
+                {
                     Some(text)
                 }
                 _ => None,
