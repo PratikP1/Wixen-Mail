@@ -53,6 +53,9 @@ mod tests {
     fn test_register_and_lookup_shortcut() {
         let handler = KeyboardHandler::new().unwrap();
         handler.register_shortcut("Ctrl+N", "compose").unwrap();
-        assert_eq!(handler.action_for_key("Ctrl+N").unwrap().as_deref(), Some("compose"));
+        assert_eq!(
+            handler.action_for_key("Ctrl+N").unwrap().as_deref(),
+            Some("compose")
+        );
     }
 }

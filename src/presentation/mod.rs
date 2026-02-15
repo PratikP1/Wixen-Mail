@@ -15,13 +15,13 @@ pub mod ui;
 pub mod ui_integrated;
 
 pub use accessibility::Accessibility;
-pub use account_manager::{AccountManagerWindow, AccountAction};
-pub use composition::{CompositionWindow, CompositionAction};
+pub use account_manager::{AccountAction, AccountManagerWindow};
+pub use composition::{CompositionAction, CompositionWindow};
 pub use contact_manager::{ContactAction, ContactManagerWindow};
 pub use filter_manager::{FilterManagerWindow, FilterRuleAction};
 pub use html_renderer::HtmlRenderer;
 pub use oauth_manager::{OAuthAction, OAuthManagerWindow};
-pub use signature_manager::{SignatureManagerWindow, SignatureAction, SignatureSelector};
-pub use tag_manager::{TagManagerWindow, QuickTagMenu, TagAction, QuickTagAction};
+pub use signature_manager::{SignatureAction, SignatureManagerWindow, SignatureSelector};
+pub use tag_manager::{QuickTagAction, QuickTagMenu, TagAction, TagManagerWindow};
 pub use ui::UI;
 pub use ui_integrated::IntegratedUI;

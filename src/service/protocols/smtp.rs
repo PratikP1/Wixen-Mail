@@ -2,7 +2,7 @@
 //!
 //! Handles SMTP protocol for sending email.
 
-use crate::common::{Result, Error};
+use crate::common::{Error, Result};
 use lettre::{
     message::{header::ContentType, Mailbox, Message, MultiPart, SinglePart},
     transport::smtp::authentication::Credentials,
@@ -63,7 +63,11 @@ impl SmtpClient {
         tracing::info!(
             "Sending email from {} to {:?}",
             crate::common::logging::mask_email(&email.from),
-            email.to.iter().map(|e| crate::common::logging::mask_email(e)).collect::<Vec<_>>()
+            email
+                .to
+                .iter()
+                .map(|e| crate::common::logging::mask_email(e))
+                .collect::<Vec<_>>()
         );
 
         // Build the message
@@ -106,10 +110,7 @@ impl SmtpClient {
         };
 
         // Create transport
-        let creds = Credentials::new(
-            self.config.username.clone(),
-            password.to_string(),
-        );
+        let creds = Credentials::new(self.config.username.clone(), password.to_string());
 
         let transport = if self.config.use_tls {
             AsyncSmtpTransport::<Tokio1Executor>::relay(&self.config.server)

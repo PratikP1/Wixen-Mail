@@ -38,8 +38,10 @@ impl Accessibility {
 
     /// Initialize accessibility features
     pub fn initialize(&self) -> Result<()> {
-        self.keyboard.register_shortcut("Ctrl+N", "compose_new_message")?;
-        self.keyboard.register_shortcut("Ctrl+F", "search_messages")?;
+        self.keyboard
+            .register_shortcut("Ctrl+N", "compose_new_message")?;
+        self.keyboard
+            .register_shortcut("Ctrl+F", "search_messages")?;
         self.keyboard.register_shortcut("F1", "open_help")?;
         self.register_node(automation::AutomationNode {
             id: "main_window".to_string(),
@@ -83,7 +85,9 @@ impl Accessibility {
     pub fn set_focus(&self, element_id: &str) -> Result<()> {
         self.focus.set_focus(element_id)?;
         self.screen_reader
-            .notify_event(automation::AutomationEvent::FocusChanged(element_id.to_string()))?;
+            .notify_event(automation::AutomationEvent::FocusChanged(
+                element_id.to_string(),
+            ))?;
         let focus_label = self
             .automation
             .get_node(element_id)?
@@ -104,7 +108,9 @@ impl Accessibility {
     ) -> Result<()> {
         self.automation.update_state(node_id, state)?;
         self.screen_reader
-            .notify_event(automation::AutomationEvent::NodeUpdated(node_id.to_string()))?;
+            .notify_event(automation::AutomationEvent::NodeUpdated(
+                node_id.to_string(),
+            ))?;
         Ok(())
     }
 

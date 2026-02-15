@@ -4,8 +4,8 @@
 
 use crate::common::Result;
 use std::fs;
-use std::path::{Component, Path};
 use std::path::PathBuf;
+use std::path::{Component, Path};
 
 /// File system storage manager
 pub struct Storage {
@@ -56,7 +56,9 @@ impl Storage {
                 .components()
                 .any(|c| matches!(c, Component::ParentDir | Component::Prefix(_)))
         {
-            return Err(crate::common::Error::Other("Invalid storage path".to_string()));
+            return Err(crate::common::Error::Other(
+                "Invalid storage path".to_string(),
+            ));
         }
         Ok(self.base_path.join(relative))
     }
@@ -76,7 +78,10 @@ mod tests {
 
     #[test]
     fn test_storage_write_read_delete() {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let base = std::env::temp_dir().join(format!("wixen_storage_test_{}", nanos));
         let storage = Storage::new(base).unwrap();
 

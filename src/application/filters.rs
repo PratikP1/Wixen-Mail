@@ -57,7 +57,7 @@ impl FilterEngine {
     pub fn get_rules(&self) -> &[FilterRule] {
         &self.rules
     }
-    
+
     /// Evaluate all enabled rules against a message and return matched actions
     pub fn evaluate_message(&self, message: &CachedMessage) -> Vec<FilterAction> {
         self.rules
@@ -66,20 +66,21 @@ impl FilterEngine {
             .map(|rule| rule.action.clone())
             .collect()
     }
-    
+
     /// Convert persisted rules into runtime rules for execution
     pub fn load_from_persisted(&mut self, rules: &[MessageFilterRule]) {
-        self.rules = rules
-            .iter()
-            .filter_map(Self::from_persisted_rule)
-            .collect();
+        self.rules = rules.iter().filter_map(Self::from_persisted_rule).collect();
     }
-    
+
     fn matches(rule: &FilterRule, message: &CachedMessage) -> bool {
         fn bool_to_str(value: bool) -> &'static str {
-            if value { "true" } else { "false" }
+            if value {
+                "true"
+            } else {
+                "false"
+            }
         }
-        
+
         let target_text = match rule.field.as_str() {
             "subject" => Some(message.subject.as_str()),
             "from" => Some(message.from_addr.as_str()),
@@ -97,7 +98,7 @@ impl FilterEngine {
         let Some(target_text) = target_text else {
             return false;
         };
-        
+
         let lhs = if rule.case_sensitive {
             target_text.to_string()
         } else {
@@ -108,7 +109,7 @@ impl FilterEngine {
         } else {
             rule.pattern.to_lowercase()
         };
-        
+
         match rule.match_type.as_str() {
             "contains" => lhs.contains(&rhs),
             "not_contains" => !lhs.contains(&rhs),
@@ -120,23 +121,30 @@ impl FilterEngine {
             "is_not_empty" => !lhs.trim().is_empty(),
             "is_true" => lhs == "true",
             "is_false" => lhs == "false",
-            "regex" => {
-                match Regex::new(&rule.pattern) {
-                    Ok(regex) => regex.is_match(target_text),
-                    Err(e) => {
-                        tracing::warn!("Invalid regex pattern '{}' in rule '{}': {}", rule.pattern, rule.name, e);
-                        false
-                    }
+            "regex" => match Regex::new(&rule.pattern) {
+                Ok(regex) => regex.is_match(target_text),
+                Err(e) => {
+                    tracing::warn!(
+                        "Invalid regex pattern '{}' in rule '{}': {}",
+                        rule.pattern,
+                        rule.name,
+                        e
+                    );
+                    false
                 }
-            }
+            },
             _ => false,
         }
     }
-    
+
     fn from_persisted_rule(rule: &MessageFilterRule) -> Option<FilterRule> {
         let action = match rule.action_type.as_str() {
-            "move_to_folder" => FilterAction::MoveToFolder(Self::validated_action_value(rule.action_value.as_ref())?),
-            "add_tag" => FilterAction::AddTag(Self::validated_action_value(rule.action_value.as_ref())?),
+            "move_to_folder" => FilterAction::MoveToFolder(Self::validated_action_value(
+                rule.action_value.as_ref(),
+            )?),
+            "add_tag" => {
+                FilterAction::AddTag(Self::validated_action_value(rule.action_value.as_ref())?)
+            }
             "mark_as_read" => FilterAction::MarkAsRead,
             "mark_as_unread" => FilterAction::MarkAsUnread,
             "star" => FilterAction::Star,
@@ -144,7 +152,7 @@ impl FilterEngine {
             "delete" => FilterAction::Delete,
             _ => return None,
         };
-        
+
         Some(FilterRule {
             id: rule.id.clone(),
             name: rule.name.clone(),
@@ -156,7 +164,7 @@ impl FilterEngine {
             enabled: rule.enabled,
         })
     }
-    
+
     fn validated_action_value(value: Option<&String>) -> Option<String> {
         let value = value?.trim();
         if value.is_empty() {
@@ -176,21 +184,23 @@ mod tests {
         let engine = FilterEngine::new();
         assert!(engine.is_ok());
     }
-    
+
     #[test]
     fn test_filter_engine_evaluates_message() {
         let mut engine = FilterEngine::new().unwrap();
-        engine.add_rule(FilterRule {
-            id: "r1".to_string(),
-            name: "Mark newsletter as read".to_string(),
-            field: "subject".to_string(),
-            match_type: "contains".to_string(),
-            pattern: "newsletter".to_string(),
-            case_sensitive: false,
-            action: FilterAction::MarkAsRead,
-            enabled: true,
-        }).unwrap();
-        
+        engine
+            .add_rule(FilterRule {
+                id: "r1".to_string(),
+                name: "Mark newsletter as read".to_string(),
+                field: "subject".to_string(),
+                match_type: "contains".to_string(),
+                pattern: "newsletter".to_string(),
+                case_sensitive: false,
+                action: FilterAction::MarkAsRead,
+                enabled: true,
+            })
+            .unwrap();
+
         let message = CachedMessage {
             id: 1,
             uid: 1,
@@ -207,26 +217,28 @@ mod tests {
             starred: false,
             deleted: false,
         };
-        
+
         let actions = engine.evaluate_message(&message);
         assert_eq!(actions.len(), 1);
         assert!(matches!(actions[0], FilterAction::MarkAsRead));
     }
-    
+
     #[test]
     fn test_filter_match_types() {
         let mut engine = FilterEngine::new().unwrap();
-        engine.add_rule(FilterRule {
-            id: "r2".to_string(),
-            name: "Starts with Re".to_string(),
-            field: "subject".to_string(),
-            match_type: "starts_with".to_string(),
-            pattern: "Re:".to_string(),
-            case_sensitive: true,
-            action: FilterAction::Star,
-            enabled: true,
-        }).unwrap();
-        
+        engine
+            .add_rule(FilterRule {
+                id: "r2".to_string(),
+                name: "Starts with Re".to_string(),
+                field: "subject".to_string(),
+                match_type: "starts_with".to_string(),
+                pattern: "Re:".to_string(),
+                case_sensitive: true,
+                action: FilterAction::Star,
+                enabled: true,
+            })
+            .unwrap();
+
         let message = CachedMessage {
             id: 1,
             uid: 1,
@@ -243,7 +255,7 @@ mod tests {
             starred: false,
             deleted: false,
         };
-        
+
         let actions = engine.evaluate_message(&message);
         assert_eq!(actions.len(), 1);
         assert!(matches!(actions[0], FilterAction::Star));
