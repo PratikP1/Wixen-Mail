@@ -996,7 +996,7 @@ impl IntegratedUI {
                                     .open(self.state.account_config.email.clone());
                                 ui.close_menu();
                             }
-                        } else if let Some(msg) = selected_message.clone() {
+                        } else if let Some(msg) = selected_message.as_ref() {
                             if ui.button("📧 Reply").clicked() {
                                 self.state
                                     .composition_window
