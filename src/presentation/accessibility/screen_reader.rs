@@ -55,20 +55,18 @@ impl ScreenReaderBridge {
     }
 
     fn push_event(&self, event: AutomationEvent) -> Result<()> {
-        let mut log = self
-            .event_log
-            .lock()
-            .map_err(|_| crate::common::Error::Other("Screen reader event log lock poisoned".to_string()))?;
+        let mut log = self.event_log.lock().map_err(|_| {
+            crate::common::Error::Other("Screen reader event log lock poisoned".to_string())
+        })?;
         log.push(event);
         Ok(())
     }
 
     /// Return event log (for diagnostics/testing).
     pub fn events(&self) -> Result<Vec<AutomationEvent>> {
-        let log = self
-            .event_log
-            .lock()
-            .map_err(|_| crate::common::Error::Other("Screen reader event log lock poisoned".to_string()))?;
+        let log = self.event_log.lock().map_err(|_| {
+            crate::common::Error::Other("Screen reader event log lock poisoned".to_string())
+        })?;
         Ok(log.clone())
     }
 
@@ -109,7 +107,10 @@ mod tests {
     fn test_announce_updates_last_value() {
         let bridge = ScreenReaderBridge::new().unwrap();
         bridge.announce("Hello").unwrap();
-        assert_eq!(bridge.last_announcement().unwrap().as_deref(), Some("Hello"));
+        assert_eq!(
+            bridge.last_announcement().unwrap().as_deref(),
+            Some("Hello")
+        );
         assert!(!bridge.events().unwrap().is_empty());
     }
 }

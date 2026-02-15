@@ -142,9 +142,10 @@ impl Pop3Session {
                 id
             )));
         }
-        self.store.get(&id).cloned().ok_or_else(|| {
-            crate::common::Error::Protocol(format!("Message {} not found", id))
-        })
+        self.store
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| crate::common::Error::Protocol(format!("Message {} not found", id)))
     }
 
     /// TOP: returns header and up to N body lines.

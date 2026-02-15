@@ -6,7 +6,7 @@
 use crate::common::{Error, Result};
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use rand::RngCore;
 use regex::Regex;
 use std::fs;
@@ -35,8 +35,7 @@ fn ip_url_re() -> &'static Regex {
 fn deceptive_link_re() -> &'static Regex {
     static LINK_RE: OnceLock<Regex> = OnceLock::new();
     LINK_RE.get_or_init(|| {
-        Regex::new(r#"(?is)<a[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>"#)
-            .expect("valid link regex")
+        Regex::new(r#"(?is)<a[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>"#).expect("valid link regex")
     })
 }
 
@@ -169,9 +168,9 @@ impl SecurityService {
         }
         let text = std::str::from_utf8(data)
             .map_err(|e| Error::Other(format!("Encrypted payload not valid UTF-8: {}", e)))?;
-        let encoded = text.strip_prefix(ENCRYPTION_PREFIX).ok_or_else(|| {
-            Error::Other("Encrypted payload missing expected prefix".to_string())
-        })?;
+        let encoded = text
+            .strip_prefix(ENCRYPTION_PREFIX)
+            .ok_or_else(|| Error::Other("Encrypted payload missing expected prefix".to_string()))?;
         let decoded = STANDARD
             .decode(encoded)
             .map_err(|e| Error::Other(format!("Encrypted payload decode failed: {}", e)))?;
@@ -308,7 +307,8 @@ impl SecurityService {
             indicators.push("Sender/response instruction mismatch".to_string());
         }
 
-        if ip_url_re().is_match(body_text) || body_html.is_some_and(|html| ip_url_re().is_match(html))
+        if ip_url_re().is_match(body_text)
+            || body_html.is_some_and(|html| ip_url_re().is_match(html))
         {
             phishing_score = phishing_score.saturating_add(SCORE_RAW_IP_URL);
             indicators.push("Contains URL using raw IP address".to_string());

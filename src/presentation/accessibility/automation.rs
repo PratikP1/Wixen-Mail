@@ -80,19 +80,17 @@ impl AutomationStore {
     }
 
     pub fn upsert_node(&self, node: AutomationNode) -> Result<()> {
-        let mut nodes = self
-            .nodes
-            .write()
-            .map_err(|_| crate::common::Error::Other("Automation tree lock poisoned".to_string()))?;
+        let mut nodes = self.nodes.write().map_err(|_| {
+            crate::common::Error::Other("Automation tree lock poisoned".to_string())
+        })?;
         nodes.insert(node.id.clone(), node);
         Ok(())
     }
 
     pub fn update_state(&self, node_id: &str, state: AutomationState) -> Result<()> {
-        let mut nodes = self
-            .nodes
-            .write()
-            .map_err(|_| crate::common::Error::Other("Automation tree lock poisoned".to_string()))?;
+        let mut nodes = self.nodes.write().map_err(|_| {
+            crate::common::Error::Other("Automation tree lock poisoned".to_string())
+        })?;
         if let Some(node) = nodes.get_mut(node_id) {
             node.state = state;
         }
@@ -100,18 +98,16 @@ impl AutomationStore {
     }
 
     pub fn get_node(&self, node_id: &str) -> Result<Option<AutomationNode>> {
-        let nodes = self
-            .nodes
-            .read()
-            .map_err(|_| crate::common::Error::Other("Automation tree lock poisoned".to_string()))?;
+        let nodes = self.nodes.read().map_err(|_| {
+            crate::common::Error::Other("Automation tree lock poisoned".to_string())
+        })?;
         Ok(nodes.get(node_id).cloned())
     }
 
     pub fn snapshot(&self) -> Result<Vec<AutomationNode>> {
-        let nodes = self
-            .nodes
-            .read()
-            .map_err(|_| crate::common::Error::Other("Automation tree lock poisoned".to_string()))?;
+        let nodes = self.nodes.read().map_err(|_| {
+            crate::common::Error::Other("Automation tree lock poisoned".to_string())
+        })?;
         Ok(nodes.values().cloned().collect())
     }
 }

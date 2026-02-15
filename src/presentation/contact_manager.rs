@@ -1,6 +1,6 @@
-/// Contact Management UI
-///
-/// Accessible address book CRUD with keyboard-friendly controls.
+//! Contact Management UI
+//!
+//! Accessible address book CRUD with keyboard-friendly controls.
 
 use crate::data::message_cache::{ContactEntry, MessageCache};
 use egui::{Color32, Context, Window};
@@ -136,9 +136,13 @@ impl ContactManagerWindow {
 
         if let Some(cache) = cache {
             self.contacts = if self.search_query.trim().is_empty() {
-                cache.get_contacts_for_account(&self.account_id).unwrap_or_default()
+                cache
+                    .get_contacts_for_account(&self.account_id)
+                    .unwrap_or_default()
             } else {
-                cache.search_contacts_for_account(&self.account_id, &self.search_query, 100).unwrap_or_default()
+                cache
+                    .search_contacts_for_account(&self.account_id, &self.search_query, 100)
+                    .unwrap_or_default()
             };
             Self::sort_contacts(&mut self.contacts, self.sort_option);
         }
@@ -172,7 +176,10 @@ impl ContactManagerWindow {
                     if ui.button("⬇ Auto Import").clicked() {
                         if let Some(cache) = cache {
                             match cache.auto_import_contacts_from_messages(&self.account_id, None) {
-                                Ok(count) => self.status = format!("Imported {} contacts from message history", count),
+                                Ok(count) => {
+                                    self.status =
+                                        format!("Imported {} contacts from message history", count)
+                                }
                                 Err(e) => self.error = Some(format!("Auto import failed: {}", e)),
                             }
                         }
@@ -184,11 +191,21 @@ impl ContactManagerWindow {
                                 .pick_file()
                             {
                                 match std::fs::read_to_string(&path) {
-                                    Ok(content) => match cache.import_contacts_from_vcard(&self.account_id, &content) {
-                                        Ok(count) => self.status = format!("Imported {} contacts from vCard", count),
-                                        Err(e) => self.error = Some(format!("vCard import failed: {}", e)),
+                                    Ok(content) => match cache
+                                        .import_contacts_from_vcard(&self.account_id, &content)
+                                    {
+                                        Ok(count) => {
+                                            self.status =
+                                                format!("Imported {} contacts from vCard", count)
+                                        }
+                                        Err(e) => {
+                                            self.error = Some(format!("vCard import failed: {}", e))
+                                        }
                                     },
-                                    Err(e) => self.error = Some(format!("Failed to read vCard file: {}", e)),
+                                    Err(e) => {
+                                        self.error =
+                                            Some(format!("Failed to read vCard file: {}", e))
+                                    }
                                 }
                             }
                         }
@@ -201,10 +218,18 @@ impl ContactManagerWindow {
                             {
                                 match cache.export_contacts_to_vcard(&self.account_id) {
                                     Ok(vcard) => match std::fs::write(&path, vcard) {
-                                        Ok(_) => self.status = format!("Exported contacts to {}", path.display()),
-                                        Err(e) => self.error = Some(format!("Failed to save vCard: {}", e)),
+                                        Ok(_) => {
+                                            self.status =
+                                                format!("Exported contacts to {}", path.display())
+                                        }
+                                        Err(e) => {
+                                            self.error =
+                                                Some(format!("Failed to save vCard: {}", e))
+                                        }
                                     },
-                                    Err(e) => self.error = Some(format!("vCard export failed: {}", e)),
+                                    Err(e) => {
+                                        self.error = Some(format!("vCard export failed: {}", e))
+                                    }
                                 }
                             }
                         }
@@ -222,7 +247,9 @@ impl ContactManagerWindow {
                                 ui.group(|ui| {
                                     ui.horizontal(|ui| {
                                         ui.label(if contact.favorite { "⭐" } else { "•" });
-                                        if contact.avatar_url.is_some() || contact.avatar_data_base64.is_some() {
+                                        if contact.avatar_url.is_some()
+                                            || contact.avatar_data_base64.is_some()
+                                        {
                                             ui.label("🖼 Avatar");
                                         }
                                         ui.label(format!("{} <{}>", contact.name, contact.email));
@@ -247,7 +274,8 @@ impl ContactManagerWindow {
                                             start_edit_contact_id = Some(contact.id.clone());
                                         }
                                         if ui.button("🗑 Delete").clicked() {
-                                            action = Some(ContactAction::Delete(contact.id.clone()));
+                                            action =
+                                                Some(ContactAction::Delete(contact.id.clone()));
                                         }
                                     });
                                 });
@@ -261,7 +289,11 @@ impl ContactManagerWindow {
                         self.start_create_contact();
                     }
                 } else if let Some(edit) = &self.new_contact {
-                    ui.heading(if self.editing_contact.is_some() { "Edit Contact" } else { "Create Contact" });
+                    ui.heading(if self.editing_contact.is_some() {
+                        "Edit Contact"
+                    } else {
+                        "Create Contact"
+                    });
                     let mut edit_data = edit.clone();
                     let mut save_clicked = false;
                     let mut cancel_clicked = false;
@@ -316,10 +348,15 @@ impl ContactManagerWindow {
                                 match std::fs::read(&path) {
                                     Ok(bytes) => {
                                         use base64::Engine as _;
-                                        edit_data.avatar_data_base64 = Some(base64::engine::general_purpose::STANDARD.encode(bytes));
+                                        edit_data.avatar_data_base64 = Some(
+                                            base64::engine::general_purpose::STANDARD.encode(bytes),
+                                        );
                                         self.status = "Avatar image loaded".to_string();
                                     }
-                                    Err(e) => self.error = Some(format!("Failed to read avatar image: {}", e)),
+                                    Err(e) => {
+                                        self.error =
+                                            Some(format!("Failed to read avatar image: {}", e))
+                                    }
                                 }
                             }
                         }
@@ -348,27 +385,63 @@ impl ContactManagerWindow {
                             self.error = Some("Valid email is required.".to_string());
                         } else {
                             let contact = ContactEntry {
-                                id: self.editing_contact.as_ref()
+                                id: self
+                                    .editing_contact
+                                    .as_ref()
                                     .map(|c| c.id.clone())
                                     .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                                 account_id: self.account_id.clone(),
                                 name: edit_data.name.clone(),
                                 email: edit_data.email.clone(),
                                 provider_contact_id: None,
-                                phone: if edit_data.phone.trim().is_empty() { None } else { Some(edit_data.phone.clone()) },
-                                company: if edit_data.company.trim().is_empty() { None } else { Some(edit_data.company.clone()) },
-                                job_title: if edit_data.job_title.trim().is_empty() { None } else { Some(edit_data.job_title.clone()) },
-                                website: if edit_data.website.trim().is_empty() { None } else { Some(edit_data.website.clone()) },
-                                address: if edit_data.address.trim().is_empty() { None } else { Some(edit_data.address.clone()) },
-                                birthday: if edit_data.birthday.trim().is_empty() { None } else { Some(edit_data.birthday.clone()) },
-                                avatar_url: if edit_data.avatar_url.trim().is_empty() { None } else { Some(edit_data.avatar_url.clone()) },
+                                phone: if edit_data.phone.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(edit_data.phone.clone())
+                                },
+                                company: if edit_data.company.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(edit_data.company.clone())
+                                },
+                                job_title: if edit_data.job_title.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(edit_data.job_title.clone())
+                                },
+                                website: if edit_data.website.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(edit_data.website.clone())
+                                },
+                                address: if edit_data.address.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(edit_data.address.clone())
+                                },
+                                birthday: if edit_data.birthday.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(edit_data.birthday.clone())
+                                },
+                                avatar_url: if edit_data.avatar_url.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(edit_data.avatar_url.clone())
+                                },
                                 avatar_data_base64: edit_data.avatar_data_base64.clone(),
                                 source_provider: None,
                                 last_synced_at: None,
                                 vcard_raw: None,
-                                notes: if edit_data.notes.trim().is_empty() { None } else { Some(edit_data.notes.clone()) },
+                                notes: if edit_data.notes.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(edit_data.notes.clone())
+                                },
                                 favorite: edit_data.favorite,
-                                created_at: self.editing_contact.as_ref()
+                                created_at: self
+                                    .editing_contact
+                                    .as_ref()
                                     .map(|c| c.created_at.clone())
                                     .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
                             };
@@ -437,7 +510,13 @@ mod tests {
     use super::{ContactManagerWindow, ContactSortOption};
     use crate::data::message_cache::ContactEntry;
 
-    fn contact(id: &str, name: &str, email: &str, favorite: bool, created_at: &str) -> ContactEntry {
+    fn contact(
+        id: &str,
+        name: &str,
+        email: &str,
+        favorite: bool,
+        created_at: &str,
+    ) -> ContactEntry {
         ContactEntry {
             id: id.to_string(),
             account_id: "a".to_string(),
@@ -486,7 +565,8 @@ pub enum ContactAction {
 fn is_valid_email(email: &str) -> bool {
     static EMAIL_REGEX: OnceLock<Regex> = OnceLock::new();
     let regex = EMAIL_REGEX.get_or_init(|| {
-        Regex::new(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").expect("Failed to compile email validation regex pattern")
+        Regex::new(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+            .expect("Failed to compile email validation regex pattern")
     });
     regex.is_match(email)
 }

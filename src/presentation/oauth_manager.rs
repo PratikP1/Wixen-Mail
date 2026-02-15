@@ -1,6 +1,6 @@
-/// OAuth Manager UI
-///
-/// Accessible OAuth 2.0 token workflow for provider-linked accounts.
+//! OAuth Manager UI
+//!
+//! Accessible OAuth 2.0 token workflow for provider-linked accounts.
 
 use crate::data::account::Account;
 use crate::data::message_cache::{MessageCache, OAuthTokenEntry};
@@ -99,10 +99,13 @@ impl OAuthManagerWindow {
                         )
                         .show_ui(ui, |ui| {
                             for account in accounts {
-                                if ui.selectable_label(
-                                    self.account_id.as_ref() == Some(&account.id),
-                                    account.display_name(),
-                                ).clicked() {
+                                if ui
+                                    .selectable_label(
+                                        self.account_id.as_ref() == Some(&account.id),
+                                        account.display_name(),
+                                    )
+                                    .clicked()
+                                {
                                     self.account_id = Some(account.id.clone());
                                     if let Some(provider) = &account.provider {
                                         self.provider = provider.to_lowercase();
@@ -224,8 +227,16 @@ impl OAuthManagerWindow {
                             if let Some(exp) = token.expires_at.as_deref() {
                                 let expired = OAuthService::is_expired(Some(exp));
                                 ui.colored_label(
-                                    if expired { Color32::RED } else { Color32::GREEN },
-                                    format!("Expires: {}{}", exp, if expired { " (expired)" } else { "" }),
+                                    if expired {
+                                        Color32::RED
+                                    } else {
+                                        Color32::GREEN
+                                    },
+                                    format!(
+                                        "Expires: {}{}",
+                                        exp,
+                                        if expired { " (expired)" } else { "" }
+                                    ),
                                 );
                             }
                         }

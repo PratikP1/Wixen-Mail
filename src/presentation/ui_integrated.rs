@@ -3,27 +3,31 @@
 //! This is the fully integrated UI that connects to real IMAP/SMTP servers
 //! through the MailController.
 
-use crate::application::mail_controller::MailController;
 use crate::application::filters::{FilterAction as RuleFilterAction, FilterEngine};
+use crate::application::mail_controller::MailController;
 use crate::common::Result;
 use crate::data::account::Account;
 use crate::data::email_providers::{self, EmailProvider};
 use crate::data::message_cache::{CachedMessage, ContactEntry, MessageCache, Tag};
-use crate::presentation::account_manager::{AccountManagerWindow, AccountAction};
-use crate::presentation::composition::{CompositionWindow, CompositionAction};
-use crate::presentation::contact_manager::{ContactAction, ContactManagerWindow, ContactSortOption};
+use crate::presentation::account_manager::{AccountAction, AccountManagerWindow};
+use crate::presentation::composition::{CompositionAction, CompositionWindow};
+use crate::presentation::contact_manager::{
+    ContactAction, ContactManagerWindow, ContactSortOption,
+};
 use crate::presentation::filter_manager::{FilterManagerWindow, FilterRuleAction};
 use crate::presentation::html_renderer::{HtmlRenderer, RenderedContent};
-use crate::presentation::oauth_manager::{oauth_token_entry_from_set, OAuthAction, OAuthManagerWindow};
-use crate::presentation::signature_manager::{SignatureManagerWindow, SignatureAction};
-use crate::presentation::tag_manager::{TagManagerWindow, TagAction};
+use crate::presentation::oauth_manager::{
+    oauth_token_entry_from_set, OAuthAction, OAuthManagerWindow,
+};
+use crate::presentation::signature_manager::{SignatureAction, SignatureManagerWindow};
+use crate::presentation::tag_manager::{TagAction, TagManagerWindow};
 use crate::service::OAuthService;
 use async_channel::{Receiver, Sender};
 use eframe::egui;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::sync::Mutex as StdMutex;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::{JoinHandle, JoinSet};
@@ -132,7 +136,7 @@ pub struct UIState {
 #[derive(Clone, Debug)]
 pub struct MessageItem {
     pub uid: u32,
-    pub message_id: i64,  // Database ID for tag lookups
+    pub message_id: i64, // Database ID for tag lookups
     pub subject: String,
     pub from: String,
     pub date: String,
@@ -293,15 +297,17 @@ impl IntegratedUI {
             crate::common::Error::Other(format!("Failed to create runtime: {}", e))
         })?);
         let (ui_tx, ui_rx) = async_channel::unbounded();
-        
+
         // Initialize message cache
         let cache_dir = dirs::cache_dir()
-            .ok_or_else(|| crate::common::Error::Other("Could not find cache directory".to_string()))?
+            .ok_or_else(|| {
+                crate::common::Error::Other("Could not find cache directory".to_string())
+            })?
             .join("wixen-mail");
         let message_cache = Some(MessageCache::new(cache_dir)?);
-        
+
         let mut state = UIState::default();
-        
+
         // Load accounts from database if available
         if let Some(ref cache) = message_cache {
             if let Ok(accounts) = cache.load_accounts() {
@@ -310,7 +316,7 @@ impl IntegratedUI {
                 state.account_manager.accounts = accounts;
             }
         }
-        
+
         let mut ui = Self {
             mail_controllers: HashMap::new(),
             outbox_flush_controllers: (0..MAX_OUTBOX_FLUSH_CONCURRENCY.max(1))
@@ -325,12 +331,15 @@ impl IntegratedUI {
             state,
             message_cache,
         };
-        
+
         if let Some(active_id) = ui.active_account_id.clone() {
             ui.get_or_create_controller(&active_id);
         }
-        
-        let enabled_accounts: Vec<Account> = ui.state.account_manager.accounts
+
+        let enabled_accounts: Vec<Account> = ui
+            .state
+            .account_manager
+            .accounts
             .iter()
             .filter(|a| a.enabled)
             .cloned()
@@ -339,20 +348,23 @@ impl IntegratedUI {
             ui.ensure_background_sync(account);
         }
         ui.refresh_outbox_queue_count();
-        
+
         Ok(ui)
     }
-    
+
     /// Initialize message cache
+    #[allow(dead_code)]
     fn init_cache(&mut self) -> Result<()> {
         let cache_dir = dirs::cache_dir()
-            .ok_or_else(|| crate::common::Error::Other("Could not find cache directory".to_string()))?
+            .ok_or_else(|| {
+                crate::common::Error::Other("Could not find cache directory".to_string())
+            })?
             .join("wixen-mail");
-        
+
         self.message_cache = Some(MessageCache::new(cache_dir)?);
         Ok(())
     }
-    
+
     /// Run the UI event loop
     pub fn run(mut self) -> Result<()> {
         let options = eframe::NativeOptions {
@@ -361,21 +373,21 @@ impl IntegratedUI {
                 .with_title("Wixen Mail - Accessible Email Client"),
             ..Default::default()
         };
-        
+
         eframe::run_simple_native("Wixen Mail", options, move |ctx, _frame| {
             // Process UI updates from async tasks
             while let Ok(update) = self.ui_rx.try_recv() {
                 self.handle_ui_update(update);
             }
-            
+
             // Render the UI
             self.render_ui(ctx);
         })
         .map_err(|e| crate::common::Error::Other(format!("UI error: {}", e)))?;
-        
+
         Ok(())
     }
-    
+
     /// Handle UI updates from async tasks
     fn handle_ui_update(&mut self, update: UIUpdate) {
         match update {
@@ -387,10 +399,21 @@ impl IntegratedUI {
                 self.apply_filter_rules(&mut messages);
                 Self::sort_messages(&mut messages, self.state.mail_sort_option);
                 self.state.messages = messages;
-                self.state.status_message = format!("{} messages loaded", self.state.messages.len());
+                self.state.status_message =
+                    format!("{} messages loaded", self.state.messages.len());
                 if let Some(cache) = &self.message_cache {
-                    let provider = self.state.account_manager.active_account_id.as_ref()
-                        .and_then(|id| self.state.account_manager.accounts.iter().find(|a| &a.id == id))
+                    let provider = self
+                        .state
+                        .account_manager
+                        .active_account_id
+                        .as_ref()
+                        .and_then(|id| {
+                            self.state
+                                .account_manager
+                                .accounts
+                                .iter()
+                                .find(|a| &a.id == id)
+                        })
                         .and_then(|a| a.provider.clone());
                     let _ = cache.auto_import_contacts_from_messages(
                         &self.state.account_config.email,
@@ -428,7 +451,11 @@ impl IntegratedUI {
                 self.state.composition_window.close();
                 self.state.status_message = "Email sent successfully".to_string();
             }
-            UIUpdate::OutboxSendResult { queue_id, success, error } => {
+            UIUpdate::OutboxSendResult {
+                queue_id,
+                success,
+                error,
+            } => {
                 if let Some(cache) = &self.message_cache {
                     if success {
                         let _ = cache.delete_outbox_message(&queue_id);
@@ -442,122 +469,164 @@ impl IntegratedUI {
             }
         }
     }
-    
+
     /// Connect to IMAP server
     fn connect_to_imap(&mut self) {
         let config = self.state.account_config.clone();
         let ui_tx = self.ui_tx.clone();
-        let account_id = self.active_account_id
+        let account_id = self
+            .active_account_id
             .clone()
             .unwrap_or_else(|| config.email.clone());
         let mail_controller = self.get_or_create_controller(&account_id);
         self.active_account_id = Some(account_id.clone());
         self.state.account_manager.active_account_id = Some(account_id);
-        
+
         self.runtime.spawn(async move {
-            let _ = ui_tx.send(UIUpdate::ConnectionStatusChanged(ConnectionStatus::Connecting)).await;
-            let _ = ui_tx.send(UIUpdate::StatusUpdated("Connecting to IMAP...".to_string())).await;
-            
+            let _ = ui_tx
+                .send(UIUpdate::ConnectionStatusChanged(
+                    ConnectionStatus::Connecting,
+                ))
+                .await;
+            let _ = ui_tx
+                .send(UIUpdate::StatusUpdated("Connecting to IMAP...".to_string()))
+                .await;
+
             let port = config.imap_port.parse().unwrap_or(993);
             let controller = mail_controller.lock().await;
-            
-            match controller.connect_imap(
-                config.imap_server,
-                port,
-                config.username,
-                config.password,
-                config.imap_use_tls,
-            ).await {
+
+            match controller
+                .connect_imap(
+                    config.imap_server,
+                    port,
+                    config.username,
+                    config.password,
+                    config.imap_use_tls,
+                )
+                .await
+            {
                 Ok(_) => {
-                    let _ = ui_tx.send(UIUpdate::ConnectionStatusChanged(ConnectionStatus::Connected)).await;
-                    let _ = ui_tx.send(UIUpdate::StatusUpdated("Connected to IMAP".to_string())).await;
-                    
+                    let _ = ui_tx
+                        .send(UIUpdate::ConnectionStatusChanged(
+                            ConnectionStatus::Connected,
+                        ))
+                        .await;
+                    let _ = ui_tx
+                        .send(UIUpdate::StatusUpdated("Connected to IMAP".to_string()))
+                        .await;
+
                     // Fetch folders
                     match controller.fetch_folders().await {
                         Ok(folders) => {
                             let _ = ui_tx.send(UIUpdate::FoldersLoaded(folders)).await;
                         }
                         Err(e) => {
-                            let _ = ui_tx.send(UIUpdate::ErrorOccurred(format!("Failed to fetch folders: {}", e))).await;
+                            let _ = ui_tx
+                                .send(UIUpdate::ErrorOccurred(format!(
+                                    "Failed to fetch folders: {}",
+                                    e
+                                )))
+                                .await;
                         }
                     }
                 }
                 Err(e) => {
-                    let _ = ui_tx.send(UIUpdate::ConnectionStatusChanged(
-                        ConnectionStatus::Error(format!("Connection failed: {}", e))
-                    )).await;
-                    let _ = ui_tx.send(UIUpdate::ErrorOccurred(format!("Connection failed: {}", e))).await;
+                    let _ = ui_tx
+                        .send(UIUpdate::ConnectionStatusChanged(ConnectionStatus::Error(
+                            format!("Connection failed: {}", e),
+                        )))
+                        .await;
+                    let _ = ui_tx
+                        .send(UIUpdate::ErrorOccurred(format!("Connection failed: {}", e)))
+                        .await;
                 }
             }
         });
     }
-    
+
     /// Fetch messages from selected folder
     fn fetch_messages_for_folder(&self, folder: String) {
         let Some(mail_controller) = self.get_active_controller() else {
             return;
         };
         let ui_tx = self.ui_tx.clone();
-        
+
         self.runtime.spawn(async move {
-            let _ = ui_tx.send(UIUpdate::StatusUpdated(format!("Loading messages from {}...", folder))).await;
-            
+            let _ = ui_tx
+                .send(UIUpdate::StatusUpdated(format!(
+                    "Loading messages from {}...",
+                    folder
+                )))
+                .await;
+
             let controller = mail_controller.lock().await;
             match controller.fetch_messages(&folder).await {
                 Ok(messages) => {
-                    let message_items: Vec<MessageItem> = messages.iter().map(|m| {
-                        let thread_depth = Self::estimate_thread_depth(&m.subject);
-                        MessageItem {
-                            uid: m.uid,
-                            message_id: 0,  // Will be populated when we cache messages
-                            subject: m.subject.clone(),
-                            from: m.from.clone(),
-                            date: m.date.clone(),
-                            read: m.read,
-                            starred: m.starred,
-                            has_attachments: false,
-                            attachments: Vec::new(),
-                            thread_depth,
-                            is_thread_parent: thread_depth == 0,
-                            thread_id: None,
-                        }
-                    }).collect();
-                    
+                    let message_items: Vec<MessageItem> = messages
+                        .iter()
+                        .map(|m| {
+                            let thread_depth = Self::estimate_thread_depth(&m.subject);
+                            MessageItem {
+                                uid: m.uid,
+                                message_id: 0, // Will be populated when we cache messages
+                                subject: m.subject.clone(),
+                                from: m.from.clone(),
+                                date: m.date.clone(),
+                                read: m.read,
+                                starred: m.starred,
+                                has_attachments: false,
+                                attachments: Vec::new(),
+                                thread_depth,
+                                is_thread_parent: thread_depth == 0,
+                                thread_id: None,
+                            }
+                        })
+                        .collect();
+
                     let _ = ui_tx.send(UIUpdate::MessagesLoaded(message_items)).await;
                 }
                 Err(e) => {
-                    let _ = ui_tx.send(UIUpdate::ErrorOccurred(format!("Failed to fetch messages: {}", e))).await;
+                    let _ = ui_tx
+                        .send(UIUpdate::ErrorOccurred(format!(
+                            "Failed to fetch messages: {}",
+                            e
+                        )))
+                        .await;
                 }
             }
         });
     }
-    
+
     /// Filter messages by tag
     fn filter_messages_by_tag(&mut self, tag_id: String) {
         if let Some(cache) = &self.message_cache {
             match cache.get_messages_by_tag(&tag_id) {
                 Ok(messages) => {
-                    let message_items: Vec<MessageItem> = messages.iter().map(|m| {
-                        let thread_depth = Self::estimate_thread_depth(&m.subject);
-                        MessageItem {
-                            uid: m.uid,
-                            message_id: m.id,
-                            subject: m.subject.clone(),
-                            from: m.from_addr.clone(),
-                            date: m.date.clone(),
-                            read: m.read,
-                            starred: m.starred,
-                            has_attachments: false,
-                            attachments: Vec::new(),
-                            thread_depth,
-                            is_thread_parent: thread_depth == 0,
-                            thread_id: None,
-                        }
-                    }).collect();
+                    let message_items: Vec<MessageItem> = messages
+                        .iter()
+                        .map(|m| {
+                            let thread_depth = Self::estimate_thread_depth(&m.subject);
+                            MessageItem {
+                                uid: m.uid,
+                                message_id: m.id,
+                                subject: m.subject.clone(),
+                                from: m.from_addr.clone(),
+                                date: m.date.clone(),
+                                read: m.read,
+                                starred: m.starred,
+                                has_attachments: false,
+                                attachments: Vec::new(),
+                                thread_depth,
+                                is_thread_parent: thread_depth == 0,
+                                thread_id: None,
+                            }
+                        })
+                        .collect();
                     let mut sorted_items = message_items;
                     Self::sort_messages(&mut sorted_items, self.state.mail_sort_option);
                     self.state.messages = sorted_items;
-                    self.state.status_message = format!("Filtered by tag: {} messages", messages.len());
+                    self.state.status_message =
+                        format!("Filtered by tag: {} messages", messages.len());
                 }
                 Err(e) => {
                     self.state.error_message = Some(format!("Failed to filter by tag: {}", e));
@@ -565,30 +634,39 @@ impl IntegratedUI {
             }
         }
     }
-    
+
     /// Fetch message body
     fn fetch_message_body(&self, folder: String, uid: u32) {
         let Some(mail_controller) = self.get_active_controller() else {
             return;
         };
         let ui_tx = self.ui_tx.clone();
-        
+
         self.runtime.spawn(async move {
-            let _ = ui_tx.send(UIUpdate::StatusUpdated("Loading message...".to_string())).await;
-            
+            let _ = ui_tx
+                .send(UIUpdate::StatusUpdated("Loading message...".to_string()))
+                .await;
+
             let controller = mail_controller.lock().await;
             match controller.fetch_message_body(&folder, uid).await {
                 Ok(body) => {
                     let _ = ui_tx.send(UIUpdate::MessageBodyLoaded(body)).await;
-                    let _ = ui_tx.send(UIUpdate::StatusUpdated("Message loaded".to_string())).await;
+                    let _ = ui_tx
+                        .send(UIUpdate::StatusUpdated("Message loaded".to_string()))
+                        .await;
                 }
                 Err(e) => {
-                    let _ = ui_tx.send(UIUpdate::ErrorOccurred(format!("Failed to fetch message: {}", e))).await;
+                    let _ = ui_tx
+                        .send(UIUpdate::ErrorOccurred(format!(
+                            "Failed to fetch message: {}",
+                            e
+                        )))
+                        .await;
                 }
             }
         });
     }
-    
+
     /// Send email via SMTP
     fn send_email(&self, to: Vec<String>, subject: String, body: String) {
         let Some(mail_controller) = self.get_active_controller() else {
@@ -596,28 +674,38 @@ impl IntegratedUI {
         };
         let config = self.state.account_config.clone();
         let ui_tx = self.ui_tx.clone();
-        
+
         self.runtime.spawn(async move {
-            let _ = ui_tx.send(UIUpdate::StatusUpdated("Sending email...".to_string())).await;
-            
+            let _ = ui_tx
+                .send(UIUpdate::StatusUpdated("Sending email...".to_string()))
+                .await;
+
             let port = config.smtp_port.parse().unwrap_or(DEFAULT_SMTP_PORT);
             let controller = mail_controller.lock().await;
-            
-            match controller.send_email(
-                config.smtp_server,
-                port,
-                config.username.clone(),
-                config.password,
-                config.smtp_use_tls,
-                to,
-                subject,
-                body,
-            ).await {
+
+            match controller
+                .send_email(
+                    config.smtp_server,
+                    port,
+                    config.username.clone(),
+                    config.password,
+                    config.smtp_use_tls,
+                    to,
+                    subject,
+                    body,
+                )
+                .await
+            {
                 Ok(_) => {
                     let _ = ui_tx.send(UIUpdate::EmailSent).await;
                 }
                 Err(e) => {
-                    let _ = ui_tx.send(UIUpdate::ErrorOccurred(format!("Failed to send email: {}", e))).await;
+                    let _ = ui_tx
+                        .send(UIUpdate::ErrorOccurred(format!(
+                            "Failed to send email: {}",
+                            e
+                        )))
+                        .await;
                 }
             }
         });
@@ -668,7 +756,8 @@ impl IntegratedUI {
                     self.refresh_outbox_queue_count();
                 }
                 Err(e) => {
-                    self.state.error_message = Some(format!("Failed to queue offline email: {}", e));
+                    self.state.error_message =
+                        Some(format!("Failed to queue offline email: {}", e));
                 }
             }
         } else {
@@ -702,7 +791,8 @@ impl IntegratedUI {
 
     fn flush_outbox_queue(&mut self) {
         if self.state.offline_mode {
-            self.state.status_message = "Cannot flush queue while offline mode is enabled".to_string();
+            self.state.status_message =
+                "Cannot flush queue while offline mode is enabled".to_string();
             return;
         }
 
@@ -710,7 +800,7 @@ impl IntegratedUI {
             self.state.error_message = Some("Message cache not available".to_string());
             return;
         };
-        
+
         let account_id = self.current_account_storage_id();
         let queued = match cache.load_outbox_messages(&account_id) {
             Ok(items) => items,
@@ -723,7 +813,7 @@ impl IntegratedUI {
             self.state.status_message = "No queued messages to flush".to_string();
             return;
         }
-        
+
         let config = self.state.account_config.clone();
         let ui_tx = self.ui_tx.clone();
         let queued_len = queued.len();
@@ -731,24 +821,27 @@ impl IntegratedUI {
         // so pooled controllers can be reused safely across queued sends.
         let controller_pool = self.outbox_flush_controllers.clone();
         self.state.status_message = format!("Flushing {} queued message(s)...", queued.len());
-        
+
         self.runtime.spawn(async move {
             let port = config.smtp_port.parse().unwrap_or_else(|_| {
                 tracing::warn!(
                     "Invalid SMTP port '{}' for queued outbox flush, falling back to {}",
-                    config.smtp_port
-                    , DEFAULT_SMTP_PORT
+                    config.smtp_port,
+                    DEFAULT_SMTP_PORT
                 );
                 DEFAULT_SMTP_PORT
             });
-            let concurrency_limit = Arc::new(tokio::sync::Semaphore::new(MAX_OUTBOX_FLUSH_CONCURRENCY));
+            let concurrency_limit =
+                Arc::new(tokio::sync::Semaphore::new(MAX_OUTBOX_FLUSH_CONCURRENCY));
             let mut join_set = JoinSet::new();
             // Use available pool entries up to queued message count for this flush.
             let available_pool_size = controller_pool.len().min(queued.len());
             if available_pool_size == 0 {
-                let _ = ui_tx.send(UIUpdate::StatusUpdated(
-                    "Outbox flush unavailable: controller pool is empty".to_string()
-                )).await;
+                let _ = ui_tx
+                    .send(UIUpdate::StatusUpdated(
+                        "Outbox flush unavailable: controller pool is empty".to_string(),
+                    ))
+                    .await;
                 return;
             }
             for (idx, item) in queued.into_iter().enumerate() {
@@ -756,11 +849,13 @@ impl IntegratedUI {
                     Ok(permit) => permit,
                     Err(e) => {
                         tracing::warn!("Outbox flush permit acquisition failed: {}", e);
-                        let _ = ui_tx.send(UIUpdate::OutboxSendResult {
-                            queue_id: item.id.clone(),
-                            success: false,
-                            error: Some(format!("Outbox flush permit failed: {}", e)),
-                        }).await;
+                        let _ = ui_tx
+                            .send(UIUpdate::OutboxSendResult {
+                                queue_id: item.id.clone(),
+                                success: false,
+                                error: Some(format!("Outbox flush permit failed: {}", e)),
+                            })
+                            .await;
                         continue;
                     }
                 };
@@ -769,42 +864,51 @@ impl IntegratedUI {
                 let controller = controller_pool[idx % available_pool_size].clone();
                 join_set.spawn(async move {
                     let _permit = permit;
-                    let recipients = Self::normalize_recipients(Self::parse_recipients_csv(&item.to_addr));
+                    let recipients =
+                        Self::normalize_recipients(Self::parse_recipients_csv(&item.to_addr));
                     if recipients.is_empty() {
-                        let _ = ui_tx.send(UIUpdate::OutboxSendResult {
-                            queue_id: item.id.clone(),
-                            success: false,
-                            error: Some("No valid recipients".to_string()),
-                        }).await;
+                        let _ = ui_tx
+                            .send(UIUpdate::OutboxSendResult {
+                                queue_id: item.id.clone(),
+                                success: false,
+                                error: Some("No valid recipients".to_string()),
+                            })
+                            .await;
                         return;
                     }
 
                     let controller = controller.lock().await;
-                    let result = controller.send_email(
-                        config.smtp_server.clone(),
-                        port,
-                        config.username.clone(),
-                        config.password.clone(),
-                        config.smtp_use_tls,
-                        recipients,
-                        item.subject.clone(),
-                        item.body.clone(),
-                    ).await;
-                    
+                    let result = controller
+                        .send_email(
+                            config.smtp_server.clone(),
+                            port,
+                            config.username.clone(),
+                            config.password.clone(),
+                            config.smtp_use_tls,
+                            recipients,
+                            item.subject.clone(),
+                            item.body.clone(),
+                        )
+                        .await;
+
                     match result {
                         Ok(_) => {
-                            let _ = ui_tx.send(UIUpdate::OutboxSendResult {
-                                queue_id: item.id.clone(),
-                                success: true,
-                                error: None,
-                            }).await;
+                            let _ = ui_tx
+                                .send(UIUpdate::OutboxSendResult {
+                                    queue_id: item.id.clone(),
+                                    success: true,
+                                    error: None,
+                                })
+                                .await;
                         }
                         Err(e) => {
-                            let _ = ui_tx.send(UIUpdate::OutboxSendResult {
-                                queue_id: item.id.clone(),
-                                success: false,
-                                error: Some(e.to_string()),
-                            }).await;
+                            let _ = ui_tx
+                                .send(UIUpdate::OutboxSendResult {
+                                    queue_id: item.id.clone(),
+                                    success: false,
+                                    error: Some(e.to_string()),
+                                })
+                                .await;
                         }
                     }
                 });
@@ -814,17 +918,19 @@ impl IntegratedUI {
                     tracing::warn!("Outbox flush task failed: {}", e);
                 }
             }
-            let _ = ui_tx.send(UIUpdate::StatusUpdated(format!(
-                "Outbox flush completed: {} message(s) processed",
-                queued_len
-            ))).await;
+            let _ = ui_tx
+                .send(UIUpdate::StatusUpdated(format!(
+                    "Outbox flush completed: {} message(s) processed",
+                    queued_len
+                )))
+                .await;
         });
     }
-    
+
     /// Render the main UI
     fn render_ui(&mut self, ctx: &egui::Context) {
         let mut account_switch_to: Option<String> = None;
-        
+
         // Menu bar
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
@@ -858,14 +964,14 @@ impl IntegratedUI {
                         std::process::exit(0);
                     }
                 });
-                
+
                 ui.menu_button("Edit", |ui| {
                     if ui.button("🔍 Advanced Search (Ctrl+Shift+F)").clicked() {
                         self.state.search_open = true;
                         ui.close_menu();
                     }
                 });
-                
+
                 ui.menu_button("Tools", |ui| {
                     if ui.button("🏷 Manage Tags (Ctrl+T)").clicked() {
                         self.state.tag_manager.open(self.state.account_config.email.clone());
@@ -879,11 +985,11 @@ impl IntegratedUI {
                         self.state.filter_manager.open(self.state.account_config.email.clone());
                         ui.close_menu();
                     }
-                    if self.has_oauth_configurable_accounts() {
-                        if ui.button("🔐 OAuth 2.0 Manager (Ctrl+Shift+O)").clicked() {
-                            self.state.oauth_manager.open(self.state.account_manager.active_account_id.clone());
-                            ui.close_menu();
-                        }
+                    if self.has_oauth_configurable_accounts()
+                        && ui.button("🔐 OAuth 2.0 Manager (Ctrl+Shift+O)").clicked()
+                    {
+                        self.state.oauth_manager.open(self.state.account_manager.active_account_id.clone());
+                        ui.close_menu();
                     }
                     if ui.button("✍ Manage Signatures (Ctrl+Shift+S)").clicked() {
                         self.state.signature_manager.open(self.state.account_config.email.clone());
@@ -898,7 +1004,7 @@ impl IntegratedUI {
                         ui.close_menu();
                     }
                 });
-                
+
                 ui.menu_button("View", |ui| {
                     if ui.checkbox(&mut self.state.thread_view_enabled, "🧵 Thread View").changed() {
                         ui.close_menu();
@@ -940,7 +1046,7 @@ impl IntegratedUI {
                         ui.close_menu();
                     }
                 });
-                
+
                 ui.menu_button("Help", |ui| {
                     if ui.button("📖 Documentation (F1)").clicked() {
                         self.state.status_message = "Open docs: https://github.com/PratikP1/Wixen-Mail/blob/main/docs/USER_GUIDE.md".to_string();
@@ -960,7 +1066,7 @@ impl IntegratedUI {
                         ui.close_menu();
                     }
                 });
-                
+
                 // Account switcher dropdown
                 ui.separator();
                 ui.label("📧");
@@ -989,7 +1095,7 @@ impl IntegratedUI {
                             }
                         });
                 }
-                
+
                 // Connection status indicator
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     match &self.state.connection_status {
@@ -1009,11 +1115,11 @@ impl IntegratedUI {
                 });
             });
         });
-        
+
         if let Some(account_id) = account_switch_to {
             self.switch_account(&account_id);
         }
-        
+
         // Main content area with three-pane layout
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -1022,7 +1128,7 @@ impl IntegratedUI {
                     ui.set_width(200.0);
                     ui.heading("📁 Folders");
                     ui.separator();
-                    
+
                     // Performance optimization (Feature 6)
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2])
@@ -1039,14 +1145,14 @@ impl IntegratedUI {
                             }
                         }
                     });
-                    
+
                     // Tags section for filtering
                     ui.add_space(16.0);
                     ui.heading("🏷 Tags");
                     ui.separator();
-                    
+
                     let mut tag_filter_action: Option<Option<String>> = None;
-                    
+
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2])
                         .max_height(200.0)
@@ -1061,20 +1167,20 @@ impl IntegratedUI {
                                     if ui.selectable_label(is_all_selected, "📧 All Messages").clicked() {
                                         tag_filter_action = Some(None);  // Clear filter
                                     }
-                                    
+
                                     ui.separator();
-                                    
+
                                     // Clone tags to avoid borrow issues
                                     let tags_clone = tags.clone();
-                                    
+
                                     // Display each tag with message count
                                     for tag in &tags_clone {
                                         let is_selected = self.state.selected_tag_filter.as_ref() == Some(&tag.id);
                                         let color = parse_hex_color(&tag.color).unwrap_or(egui::Color32::GRAY);
-                                        
+
                                         // Get message count for this tag
                                         let count = cache.get_messages_by_tag(&tag.id).map(|m| m.len()).unwrap_or(0);
-                                        
+
                                         ui.horizontal(|ui| {
                                             ui.colored_label(color, "●");
                                             if ui.selectable_label(is_selected, format!("{} ({})", tag.name, count)).clicked() {
@@ -1086,7 +1192,7 @@ impl IntegratedUI {
                             }
                         }
                     });
-                    
+
                     // Apply tag filter action after the ScrollArea closes
                     if let Some(action) = tag_filter_action {
                         match action {
@@ -1105,9 +1211,9 @@ impl IntegratedUI {
                         }
                     }
                 });
-                
+
                 ui.separator();
-                
+
                 // Middle panel - Message list
                 ui.vertical(|ui| {
                     ui.set_width(400.0);
@@ -1125,7 +1231,7 @@ impl IntegratedUI {
                         });
                     });
                     ui.separator();
-                    
+
                     // Performance optimization (Feature 6): Use ScrollArea with sensible defaults
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2]) // Don't shrink to content
@@ -1143,7 +1249,7 @@ impl IntegratedUI {
                                     if self.state.thread_view_enabled && msg.thread_depth > 0 {
                                         ui.add_space(msg.thread_depth as f32 * 20.0);
                                     }
-                                    
+
                                     if ui.selectable_label(selected, "").clicked() {
                                         self.state.selected_message = Some(msg.uid);
                                         self.state.current_attachments = msg.attachments.clone();
@@ -1151,7 +1257,7 @@ impl IntegratedUI {
                                             self.fetch_message_body(folder.clone(), msg.uid);
                                         }
                                     }
-                                    
+
                                     ui.horizontal(|ui| {
                                         // Thread indicator (Feature 2)
                                         if self.state.thread_view_enabled {
@@ -1161,7 +1267,7 @@ impl IntegratedUI {
                                                 ui.label("↳");
                                             }
                                         }
-                                        
+
                                         if msg.starred {
                                             ui.label("⭐");
                                         }
@@ -1173,7 +1279,7 @@ impl IntegratedUI {
                                         }
                                         ui.label(&msg.subject);
                                     });
-                                    
+
                                     // Display tags for this message
                                     if let Some(cache) = &self.message_cache {
                                         if msg.message_id > 0 {
@@ -1194,11 +1300,11 @@ impl IntegratedUI {
                                             }
                                         }
                                     }
-                                    
+
                                     ui.label(format!("From: {}", msg.from));
                                     ui.label(format!("Date: {}", msg.date));
                                 });
-                                
+
                                 // Context menu (Feature 5: Right-click actions)
                                 response.response.context_menu(|ui| {
                                     if ui.button("📧 Reply").clicked() {
@@ -1255,7 +1361,7 @@ impl IntegratedUI {
                                         self.state.status_message = format!("Marked as unread: {}", msg.subject);
                                         ui.close_menu();
                                     }
-                                    
+
                                     // Tag submenu
                                     ui.separator();
                                     if msg.message_id > 0 {
@@ -1266,26 +1372,26 @@ impl IntegratedUI {
                                                     // Get currently applied tags
                                                     let applied_tags = cache.get_tags_for_message(msg.message_id).unwrap_or_default();
                                                     let applied_ids: Vec<String> = applied_tags.iter().map(|t| t.id.clone()).collect();
-                                                    
+
                                                     if all_tags.is_empty() {
                                                         ui.label("No tags available");
                                                     } else {
                                                         for tag in &all_tags {
                                                             let is_applied = applied_ids.contains(&tag.id);
                                                             let color = parse_hex_color(&tag.color).unwrap_or(egui::Color32::GRAY);
-                                                            
+
                                                             ui.horizontal(|ui| {
                                                                 ui.colored_label(color, "●");
                                                                 let mut checked = is_applied;
                                                                 if ui.checkbox(&mut checked, &tag.name).clicked() {
                                                                     if is_applied {
                                                                         // Remove tag
-                                                                        if let Ok(_) = cache.remove_tag_from_message(msg.message_id, &tag.id) {
+                                                                        if cache.remove_tag_from_message(msg.message_id, &tag.id).is_ok() {
                                                                             self.state.status_message = format!("Removed tag '{}' from message", tag.name);
                                                                         }
                                                                     } else {
                                                                         // Add tag
-                                                                        if let Ok(_) = cache.add_tag_to_message(msg.message_id, &tag.id) {
+                                                                        if cache.add_tag_to_message(msg.message_id, &tag.id).is_ok() {
                                                                             self.state.status_message = format!("Added tag '{}' to message", tag.name);
                                                                         }
                                                                     }
@@ -1294,7 +1400,7 @@ impl IntegratedUI {
                                                             });
                                                         }
                                                     }
-                                                    
+
                                                     ui.separator();
                                                     if ui.button("Manage Tags...").clicked() {
                                                         self.state.tag_manager.open(self.state.account_config.email.clone());
@@ -1309,14 +1415,14 @@ impl IntegratedUI {
                         }
                     });
                 });
-                
+
                 ui.separator();
-                
+
                 // Right panel - Message preview
                 ui.vertical(|ui| {
                     ui.heading("👁 Preview");
                     ui.separator();
-                    
+
                     // Performance optimization (Feature 6)
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2])
@@ -1356,7 +1462,7 @@ impl IntegratedUI {
                             } else {
                                 ui.label(&self.state.message_preview);
                             }
-                            
+
                             // Show attachments if any
                             if !self.state.current_attachments.is_empty() {
                                 ui.separator();
@@ -1368,12 +1474,12 @@ impl IntegratedUI {
                                             // File icon based on mime type
                                             let icon = Self::get_file_icon(&attachment.mime_type);
                                             ui.label(icon);
-                                            
+
                                             ui.vertical(|ui| {
                                                 ui.label(&attachment.filename);
                                                 ui.label(format!("{} ({} bytes)", attachment.mime_type, attachment.size));
                                             });
-                                            
+
                                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                                 if ui.button("📂 Open").clicked() {
                                                     match Self::open_attachment_placeholder(attachment) {
@@ -1429,35 +1535,41 @@ impl IntegratedUI {
                 });
             self.state.attachment_preview_open = open;
         }
-        
+
         // Account configuration window
         if self.state.account_config_open {
             self.render_account_config_window(ctx);
         }
-        
+
         // Composition window
         if self.state.composition_window.open {
             let query = self.state.composition_window.to.trim().to_string();
             if query.is_empty() {
-                self.state.composition_window.set_contact_suggestions(Vec::new());
+                self.state
+                    .composition_window
+                    .set_contact_suggestions(Vec::new());
                 self.state.composition_window.last_contact_query.clear();
             } else if query != self.state.composition_window.last_contact_query {
                 self.state.composition_window.last_contact_query = query.clone();
                 if let Some(cache) = &self.message_cache {
-                    let suggestions = cache.search_contacts_for_account(
-                        &self.state.account_config.email,
-                        &query,
-                        MAX_CONTACT_SUGGESTIONS,
-                    ).unwrap_or_default()
+                    let suggestions = cache
+                        .search_contacts_for_account(
+                            &self.state.account_config.email,
+                            &query,
+                            MAX_CONTACT_SUGGESTIONS,
+                        )
+                        .unwrap_or_default()
                         .into_iter()
                         .map(|c| (c.name, c.email))
                         .collect();
-                    self.state.composition_window.set_contact_suggestions(suggestions);
+                    self.state
+                        .composition_window
+                        .set_contact_suggestions(suggestions);
                 }
             }
         }
         let action = self.state.composition_window.render(ctx);
-        
+
         // Auto-save draft if needed
         if self.state.composition_window.open && self.state.composition_window.should_auto_save() {
             if let Some(ref cache) = self.message_cache {
@@ -1466,22 +1578,24 @@ impl IntegratedUI {
                 } else {
                     "default@local".to_string()
                 };
-                
+
                 let draft = self.state.composition_window.to_draft(&account_id);
-                if let Ok(_) = cache.save_draft(&draft) {
+                if cache.save_draft(&draft).is_ok() {
                     self.state.composition_window.mark_saved();
                 }
             }
         }
-        
+
         match action {
             CompositionAction::Send => {
                 let to = Self::normalize_recipients(self.state.composition_window.get_recipients());
                 let subject = self.state.composition_window.subject.clone();
                 let body = self.state.composition_window.body.clone();
-                
+
                 // Delete draft if it exists
-                if let (Some(ref cache), Some(ref draft_id)) = (&self.message_cache, &self.state.composition_window.draft_id) {
+                if let (Some(ref cache), Some(ref draft_id)) =
+                    (&self.message_cache, &self.state.composition_window.draft_id)
+                {
                     let _ = cache.delete_draft(draft_id);
                 }
                 if self.state.offline_mode {
@@ -1498,7 +1612,7 @@ impl IntegratedUI {
                     } else {
                         "default@local".to_string()
                     };
-                    
+
                     let draft = self.state.composition_window.to_draft(&account_id);
                     match cache.save_draft(&draft) {
                         Ok(_) => {
@@ -1520,33 +1634,35 @@ impl IntegratedUI {
                 // No action
             }
         }
-        
+
         // Settings window
         if self.state.settings_open {
             self.render_settings_window(ctx);
         }
-        
+
         // Search window (Feature 4)
         if self.state.search_open {
             self.render_search_window(ctx);
         }
-        
+
         // Tag manager window
         if let Some(action) = self.state.tag_manager.render(ctx, &self.message_cache) {
             self.handle_tag_action(action);
         }
-        
+
         // Filter manager window
         if let Some(action) = self.state.filter_manager.render(ctx, &self.message_cache) {
             self.handle_filter_rule_action(action);
         }
-        
+
         // Contact manager window
-        self.state.contact_manager.set_sort_option(self.state.contact_sort_option);
+        self.state
+            .contact_manager
+            .set_sort_option(self.state.contact_sort_option);
         if let Some(action) = self.state.contact_manager.render(ctx, &self.message_cache) {
             self.handle_contact_action(action);
         }
-        
+
         // OAuth manager window
         if self.has_oauth_configurable_accounts() {
             if let Some(action) = self.state.oauth_manager.render(
@@ -1559,32 +1675,42 @@ impl IntegratedUI {
         } else if self.state.oauth_manager.open {
             self.state.oauth_manager.close();
         }
-        
+
         // Signature manager window
-        if let Some(action) = self.state.signature_manager.render(ctx, &self.message_cache) {
+        if let Some(action) = self
+            .state
+            .signature_manager
+            .render(ctx, &self.message_cache)
+        {
             self.handle_signature_action(action);
         }
-        
+
         // Account manager window
         let account_action = self.state.account_manager.render(ctx);
         if !matches!(account_action, AccountAction::None) {
             self.handle_account_action(account_action);
         }
-        
+
         // Handle tag/signature/account manager keyboard shortcuts
         let mut shortcut_account_switch: Option<String> = None;
         ctx.input(|i| {
             // Tag manager shortcut: Ctrl+T
             if i.key_pressed(egui::Key::T) && i.modifiers.ctrl && !i.modifiers.shift {
-                self.state.tag_manager.open(self.state.account_config.email.clone());
+                self.state
+                    .tag_manager
+                    .open(self.state.account_config.email.clone());
             }
             // Contact manager shortcut: Ctrl+Shift+C
             if i.key_pressed(egui::Key::C) && i.modifiers.ctrl && i.modifiers.shift {
-                self.state.contact_manager.open(self.state.account_config.email.clone());
+                self.state
+                    .contact_manager
+                    .open(self.state.account_config.email.clone());
             }
             // Filter manager shortcut: Ctrl+Shift+E
             if i.key_pressed(egui::Key::E) && i.modifiers.ctrl && i.modifiers.shift {
-                self.state.filter_manager.open(self.state.account_config.email.clone());
+                self.state
+                    .filter_manager
+                    .open(self.state.account_config.email.clone());
             }
             // OAuth manager shortcut: Ctrl+Shift+O
             if i.key_pressed(egui::Key::O)
@@ -1592,11 +1718,15 @@ impl IntegratedUI {
                 && i.modifiers.shift
                 && self.has_oauth_configurable_accounts()
             {
-                self.state.oauth_manager.open(self.state.account_manager.active_account_id.clone());
+                self.state
+                    .oauth_manager
+                    .open(self.state.account_manager.active_account_id.clone());
             }
             // Signature manager shortcut: Ctrl+Shift+S
             if i.key_pressed(egui::Key::S) && i.modifiers.ctrl && i.modifiers.shift {
-                self.state.signature_manager.open(self.state.account_config.email.clone());
+                self.state
+                    .signature_manager
+                    .open(self.state.account_config.email.clone());
             }
             // Account manager shortcut: Ctrl+M
             if i.key_pressed(egui::Key::M) && i.modifiers.ctrl && !i.modifiers.shift {
@@ -1607,13 +1737,16 @@ impl IntegratedUI {
             }
             // Account switching shortcuts: Ctrl+1/2/3
             if i.modifiers.ctrl {
-                let enabled_accounts: Vec<_> = self.state.account_manager.accounts
+                let enabled_accounts: Vec<_> = self
+                    .state
+                    .account_manager
+                    .accounts
                     .iter()
                     .filter(|a| a.enabled)
                     .cloned()
                     .collect();
                 if i.key_pressed(egui::Key::Num1) {
-                    shortcut_account_switch = enabled_accounts.get(0).map(|a| a.id.clone());
+                    shortcut_account_switch = enabled_accounts.first().map(|a| a.id.clone());
                 } else if i.key_pressed(egui::Key::Num2) {
                     shortcut_account_switch = enabled_accounts.get(1).map(|a| a.id.clone());
                 } else if i.key_pressed(egui::Key::Num3) {
@@ -1624,7 +1757,7 @@ impl IntegratedUI {
         if let Some(account_id) = shortcut_account_switch {
             self.switch_account(&account_id);
         }
-        
+
         // Error message window (Feature 7: Better Error Handling)
         if let Some(ref error) = self.state.error_message.clone() {
             egui::Window::new("❌ Error")
@@ -1634,12 +1767,12 @@ impl IntegratedUI {
                 .show(ctx, |ui| {
                     ui.heading("An error occurred");
                     ui.separator();
-                    
+
                     ui.label(error);
-                    
+
                     ui.separator();
                     ui.label("ℹ Troubleshooting tips:");
-                    
+
                     // Provide context-specific help
                     if error.contains("Connection") || error.contains("connect") {
                         ui.label("• Check your internet connection");
@@ -1657,7 +1790,7 @@ impl IntegratedUI {
                         ui.label("• Try again in a few moments");
                         ui.label("• Check the application logs for details");
                     }
-                    
+
                     ui.separator();
                     ui.horizontal(|ui| {
                         if ui.button("✅ OK").clicked() {
@@ -1673,7 +1806,7 @@ impl IntegratedUI {
                     });
                 });
         }
-        
+
         if self.state.beta_readiness_open {
             let mut rerun_checks = false;
             egui::Window::new("🧪 Beta Readiness Check")
@@ -1696,17 +1829,27 @@ impl IntegratedUI {
                 self.state.beta_readiness_results = self.build_beta_readiness_report();
             }
         }
-        
+
         // Status bar
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label(format!("Folder: {}", self.state.selected_folder.as_ref().unwrap_or(&"None".to_string())));
+                ui.label(format!(
+                    "Folder: {}",
+                    self.state
+                        .selected_folder
+                        .as_ref()
+                        .unwrap_or(&"None".to_string())
+                ));
                 ui.separator();
                 ui.label(format!("{} messages", self.state.messages.len()));
                 ui.separator();
                 ui.label(format!(
                     "Mode: {}",
-                    if self.state.offline_mode { "Offline" } else { "Online" }
+                    if self.state.offline_mode {
+                        "Offline"
+                    } else {
+                        "Online"
+                    }
                 ));
                 ui.separator();
                 ui.label(format!("Outbox: {}", self.state.outbox_queue_count));
@@ -1715,7 +1858,7 @@ impl IntegratedUI {
             });
         });
     }
-    
+
     /// Render account configuration window
     fn render_account_config_window(&mut self, ctx: &egui::Context) {
         egui::Window::new("🔌 Account Configuration")
@@ -1725,50 +1868,67 @@ impl IntegratedUI {
             .show(ctx, |ui| {
                 ui.heading("Email Provider");
                 ui.label("Select your email provider for automatic configuration:");
-                
+
                 // Email address input for auto-detection
                 ui.horizontal(|ui| {
                     ui.label("Email Address:");
-                    let email_changed = ui.text_edit_singleline(&mut self.state.account_config.email).changed();
-                    
+                    let email_changed = ui
+                        .text_edit_singleline(&mut self.state.account_config.email)
+                        .changed();
+
                     if email_changed && !self.state.account_config.email.is_empty() {
                         // Auto-detect provider from email
-                        if let Some(provider) = email_providers::detect_provider_from_email(&self.state.account_config.email) {
+                        if let Some(provider) = email_providers::detect_provider_from_email(
+                            &self.state.account_config.email,
+                        ) {
                             self.apply_provider_settings(&provider);
                         }
                     }
                 });
-                
+
                 // Provider dropdown
                 ui.horizontal(|ui| {
                     ui.label("Provider:");
                     let providers = email_providers::get_providers();
-                    let current_label = self.state.account_config.selected_provider
+                    let current_label = self
+                        .state
+                        .account_config
+                        .selected_provider
                         .as_ref()
                         .and_then(|name| providers.iter().find(|p| &p.name == name))
                         .map(|p| p.display_name.as_str())
                         .unwrap_or("Manual Configuration");
-                    
+
                     egui::ComboBox::from_label("")
                         .selected_text(current_label)
                         .show_ui(ui, |ui| {
                             // Manual configuration option
-                            if ui.selectable_label(self.state.account_config.selected_provider.is_none(), "Manual Configuration").clicked() {
+                            if ui
+                                .selectable_label(
+                                    self.state.account_config.selected_provider.is_none(),
+                                    "Manual Configuration",
+                                )
+                                .clicked()
+                            {
                                 self.state.account_config.selected_provider = None;
                             }
-                            
+
                             ui.separator();
-                            
+
                             // Provider options
                             for provider in providers {
-                                let selected = self.state.account_config.selected_provider.as_ref() == Some(&provider.name);
-                                if ui.selectable_label(selected, &provider.display_name).clicked() {
+                                let selected = self.state.account_config.selected_provider.as_ref()
+                                    == Some(&provider.name);
+                                if ui
+                                    .selectable_label(selected, &provider.display_name)
+                                    .clicked()
+                                {
                                     self.apply_provider_settings(&provider);
                                 }
                             }
                         });
                 });
-                
+
                 // Show provider help if available
                 if let Some(provider_name) = &self.state.account_config.selected_provider {
                     if let Some(provider) = email_providers::get_provider_by_name(provider_name) {
@@ -1780,7 +1940,7 @@ impl IntegratedUI {
                         }
                     }
                 }
-                
+
                 ui.separator();
                 ui.heading("IMAP Settings (Incoming Mail)");
                 ui.horizontal(|ui| {
@@ -1792,7 +1952,7 @@ impl IntegratedUI {
                     ui.text_edit_singleline(&mut self.state.account_config.imap_port);
                 });
                 ui.checkbox(&mut self.state.account_config.imap_use_tls, "Use TLS/SSL");
-                
+
                 ui.separator();
                 ui.heading("SMTP Settings (Outgoing Mail)");
                 ui.horizontal(|ui| {
@@ -1804,7 +1964,7 @@ impl IntegratedUI {
                     ui.text_edit_singleline(&mut self.state.account_config.smtp_port);
                 });
                 ui.checkbox(&mut self.state.account_config.smtp_use_tls, "Use TLS/SSL");
-                
+
                 ui.separator();
                 ui.heading("Credentials");
                 ui.horizontal(|ui| {
@@ -1813,9 +1973,12 @@ impl IntegratedUI {
                 });
                 ui.horizontal(|ui| {
                     ui.label("Password:");
-                    ui.add(egui::TextEdit::singleline(&mut self.state.account_config.password).password(true));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.state.account_config.password)
+                            .password(true),
+                    );
                 });
-                
+
                 ui.separator();
                 ui.horizontal(|ui| {
                     if ui.button("✅ Connect").clicked() {
@@ -1828,7 +1991,7 @@ impl IntegratedUI {
                 });
             });
     }
-    
+
     /// Apply provider settings to account configuration
     fn apply_provider_settings(&mut self, provider: &EmailProvider) {
         self.state.account_config.selected_provider = Some(provider.name.clone());
@@ -1839,7 +2002,7 @@ impl IntegratedUI {
         self.state.account_config.smtp_port = provider.smtp_port.to_string();
         self.state.account_config.smtp_use_tls = provider.smtp_tls;
     }
-    
+
     /// Render settings window
     fn render_settings_window(&mut self, ctx: &egui::Context) {
         egui::Window::new("⚙ Settings")
@@ -1850,21 +2013,21 @@ impl IntegratedUI {
                 ui.heading("Account Settings");
                 ui.label("Configure your email accounts here.");
                 ui.separator();
-                
+
                 ui.heading("Appearance");
                 ui.label("Theme, font size, and display options.");
                 ui.separator();
-                
+
                 ui.heading("Accessibility");
                 ui.label("Screen reader and keyboard settings.");
                 ui.separator();
-                
+
                 if ui.button("✅ Save & Close").clicked() {
                     self.state.settings_open = false;
                 }
             });
     }
-    
+
     /// Render search window (Feature 4: Advanced Search UI)
     fn render_search_window(&mut self, ctx: &egui::Context) {
         egui::Window::new("🔍 Advanced Search")
@@ -1874,38 +2037,52 @@ impl IntegratedUI {
             .show(ctx, |ui| {
                 ui.heading("Search Criteria");
                 ui.add_space(8.0);
-                
+
                 // Basic text search
                 ui.horizontal(|ui| {
                     ui.label("Text Search:");
                     ui.text_edit_singleline(&mut self.state.search_query)
                         .on_hover_text("Search in subject and sender");
                 });
-                
+
                 ui.add_space(4.0);
-                
+
                 // Tag filter
                 ui.horizontal(|ui| {
                     ui.label("Tags:");
                     if let Some(cache) = &self.message_cache {
-                        if let Ok(tags) = cache.get_tags_for_account(&self.state.account_config.email) {
+                        if let Ok(tags) =
+                            cache.get_tags_for_account(&self.state.account_config.email)
+                        {
                             egui::ComboBox::from_id_salt("search_tags")
-                                .selected_text(format!("{} selected", self.state.search_selected_tags.len()))
+                                .selected_text(format!(
+                                    "{} selected",
+                                    self.state.search_selected_tags.len()
+                                ))
                                 .show_ui(ui, |ui| {
                                     if tags.is_empty() {
                                         ui.label("No tags available");
                                     } else {
                                         for tag in &tags {
-                                            let mut is_selected = self.state.search_selected_tags.contains(&tag.id);
-                                            let color = parse_hex_color(&tag.color).unwrap_or(egui::Color32::GRAY);
-                                            
+                                            let mut is_selected =
+                                                self.state.search_selected_tags.contains(&tag.id);
+                                            let color = parse_hex_color(&tag.color)
+                                                .unwrap_or(egui::Color32::GRAY);
+
                                             ui.horizontal(|ui| {
                                                 ui.colored_label(color, "●");
-                                                if ui.checkbox(&mut is_selected, &tag.name).changed() {
+                                                if ui
+                                                    .checkbox(&mut is_selected, &tag.name)
+                                                    .changed()
+                                                {
                                                     if is_selected {
-                                                        self.state.search_selected_tags.push(tag.id.clone());
+                                                        self.state
+                                                            .search_selected_tags
+                                                            .push(tag.id.clone());
                                                     } else {
-                                                        self.state.search_selected_tags.retain(|id| id != &tag.id);
+                                                        self.state
+                                                            .search_selected_tags
+                                                            .retain(|id| id != &tag.id);
                                                     }
                                                 }
                                             });
@@ -1915,9 +2092,9 @@ impl IntegratedUI {
                         }
                     }
                 });
-                
+
                 ui.add_space(4.0);
-                
+
                 // Date range
                 ui.horizontal(|ui| {
                     ui.label("Date Range:");
@@ -1928,27 +2105,27 @@ impl IntegratedUI {
                     ui.text_edit_singleline(&mut self.state.search_date_to)
                         .on_hover_text("Format: YYYY-MM-DD");
                 });
-                
+
                 ui.add_space(4.0);
-                
+
                 // Sender filter
                 ui.horizontal(|ui| {
                     ui.label("Sender:");
                     ui.text_edit_singleline(&mut self.state.search_sender)
                         .on_hover_text("Filter by sender email or name");
                 });
-                
+
                 ui.add_space(4.0);
-                
+
                 // Recipient filter
                 ui.horizontal(|ui| {
                     ui.label("Recipient:");
                     ui.text_edit_singleline(&mut self.state.search_recipient)
                         .on_hover_text("Filter by recipient email or name");
                 });
-                
+
                 ui.add_space(4.0);
-                
+
                 // Checkbox filters
                 ui.horizontal(|ui| {
                     // Has attachments filter (tri-state)
@@ -1957,32 +2134,33 @@ impl IntegratedUI {
                         Some(true) => "With Attachments",
                         Some(false) => "Without Attachments",
                     };
-                    
+
                     if ui.button(format!("📎 {}", attachments_text)).clicked() {
-                        self.state.search_has_attachments = match self.state.search_has_attachments {
+                        self.state.search_has_attachments = match self.state.search_has_attachments
+                        {
                             None => Some(true),
                             Some(true) => Some(false),
                             Some(false) => None,
                         };
                     }
                 });
-                
+
                 ui.add_space(4.0);
-                
+
                 ui.horizontal(|ui| {
                     ui.checkbox(&mut self.state.search_unread_only, "📬 Unread only");
                     ui.checkbox(&mut self.state.search_starred_only, "⭐ Starred only");
                 });
-                
+
                 ui.add_space(8.0);
                 ui.separator();
-                
+
                 // Action buttons
                 ui.horizontal(|ui| {
                     if ui.button("🔍 Search").clicked() {
                         self.perform_advanced_search();
                     }
-                    
+
                     if ui.button("🗑 Clear All").clicked() {
                         self.state.search_query.clear();
                         self.state.search_selected_tags.clear();
@@ -1997,63 +2175,75 @@ impl IntegratedUI {
                         self.state.search_contact_results.clear();
                     }
                 });
-                
+
                 ui.add_space(8.0);
                 ui.separator();
                 ui.heading("Search Results");
-                ui.label(format!("{} messages found", self.state.search_results.len()));
-                
+                ui.label(format!(
+                    "{} messages found",
+                    self.state.search_results.len()
+                ));
+
                 egui::ScrollArea::vertical()
                     .max_height(200.0)
                     .show(ui, |ui| {
-                    if self.state.search_results.is_empty() {
-                        ui.label("No results found. Adjust your search criteria and try again.");
-                    } else {
-                        for msg in &self.state.search_results.clone() {
-                            ui.group(|ui| {
-                                ui.horizontal(|ui| {
-                                    if msg.starred {
-                                        ui.label("⭐");
-                                    }
-                                    if !msg.read {
-                                        ui.label("●");
-                                    }
-                                    if msg.has_attachments {
-                                        ui.label("📎");
-                                    }
-                                    ui.label(&msg.subject);
-                                });
-                                ui.label(format!("From: {}", msg.from));
-                                ui.label(format!("Date: {}", msg.date));
-                                
-                                // Show tags if available
-                                if let Some(cache) = &self.message_cache {
-                                    if msg.message_id > 0 {
-                                        if let Ok(tags) = cache.get_tags_for_message(msg.message_id) {
-                                            if !tags.is_empty() {
-                                                ui.horizontal(|ui| {
-                                                    ui.label("Tags:");
-                                                    for tag in &tags {
-                                                        let color = parse_hex_color(&tag.color).unwrap_or(egui::Color32::GRAY);
-                                                        let text = egui::RichText::new(&tag.name)
-                                                            .color(egui::Color32::WHITE)
-                                                            .small();
-                                                        ui.colored_label(color, text);
-                                                    }
-                                                });
+                        if self.state.search_results.is_empty() {
+                            ui.label(
+                                "No results found. Adjust your search criteria and try again.",
+                            );
+                        } else {
+                            for msg in &self.state.search_results.clone() {
+                                ui.group(|ui| {
+                                    ui.horizontal(|ui| {
+                                        if msg.starred {
+                                            ui.label("⭐");
+                                        }
+                                        if !msg.read {
+                                            ui.label("●");
+                                        }
+                                        if msg.has_attachments {
+                                            ui.label("📎");
+                                        }
+                                        ui.label(&msg.subject);
+                                    });
+                                    ui.label(format!("From: {}", msg.from));
+                                    ui.label(format!("Date: {}", msg.date));
+
+                                    // Show tags if available
+                                    if let Some(cache) = &self.message_cache {
+                                        if msg.message_id > 0 {
+                                            if let Ok(tags) =
+                                                cache.get_tags_for_message(msg.message_id)
+                                            {
+                                                if !tags.is_empty() {
+                                                    ui.horizontal(|ui| {
+                                                        ui.label("Tags:");
+                                                        for tag in &tags {
+                                                            let color = parse_hex_color(&tag.color)
+                                                                .unwrap_or(egui::Color32::GRAY);
+                                                            let text =
+                                                                egui::RichText::new(&tag.name)
+                                                                    .color(egui::Color32::WHITE)
+                                                                    .small();
+                                                            ui.colored_label(color, text);
+                                                        }
+                                                    });
+                                                }
                                             }
                                         }
                                     }
-                                }
-                            });
+                                });
+                            }
                         }
-                    }
-                });
-                
+                    });
+
                 ui.add_space(8.0);
                 ui.separator();
                 ui.heading("Matching Contacts");
-                ui.label(format!("{} contacts found", self.state.search_contact_results.len()));
+                ui.label(format!(
+                    "{} contacts found",
+                    self.state.search_contact_results.len()
+                ));
                 egui::ScrollArea::vertical()
                     .max_height(140.0)
                     .show(ui, |ui| {
@@ -2066,7 +2256,9 @@ impl IntegratedUI {
                                         if contact.favorite {
                                             ui.label("⭐");
                                         }
-                                        if contact.avatar_url.is_some() || contact.avatar_data_base64.is_some() {
+                                        if contact.avatar_url.is_some()
+                                            || contact.avatar_data_base64.is_some()
+                                        {
                                             ui.label("🖼");
                                         }
                                         ui.label(format!("{} <{}>", contact.name, contact.email));
@@ -2085,40 +2277,41 @@ impl IntegratedUI {
                             }
                         }
                     });
-                
+
                 ui.separator();
                 if ui.button("Close").clicked() {
                     self.state.search_open = false;
                 }
             });
     }
-    
+
     /// Perform advanced search with all filters
     fn perform_advanced_search(&mut self) {
         let mut results = self.state.messages.clone();
-        
+
         // Filter by text in subject or sender
         if !self.state.search_query.is_empty() {
             let query_lower = self.state.search_query.to_lowercase();
             results.retain(|m| {
-                m.subject.to_lowercase().contains(&query_lower) || 
-                m.from.to_lowercase().contains(&query_lower)
+                m.subject.to_lowercase().contains(&query_lower)
+                    || m.from.to_lowercase().contains(&query_lower)
             });
         }
-        
+
         // Filter by sender
         if !self.state.search_sender.is_empty() {
             let sender_lower = self.state.search_sender.to_lowercase();
             results.retain(|m| m.from.to_lowercase().contains(&sender_lower));
         }
-        
+
         // Filter by tags
         if !self.state.search_selected_tags.is_empty() {
             if let Some(cache) = &self.message_cache {
                 results.retain(|m| {
                     if m.message_id > 0 {
                         if let Ok(tags) = cache.get_tags_for_message(m.message_id) {
-                            tags.iter().any(|t| self.state.search_selected_tags.contains(&t.id))
+                            tags.iter()
+                                .any(|t| self.state.search_selected_tags.contains(&t.id))
                         } else {
                             false
                         }
@@ -2128,22 +2321,22 @@ impl IntegratedUI {
                 });
             }
         }
-        
+
         // Filter by attachments
         if let Some(has_attachments) = self.state.search_has_attachments {
             results.retain(|m| m.has_attachments == has_attachments);
         }
-        
+
         // Filter by unread status
         if self.state.search_unread_only {
             results.retain(|m| !m.read);
         }
-        
+
         // Filter by starred status
         if self.state.search_starred_only {
             results.retain(|m| m.starred);
         }
-        
+
         // Date filtering (basic string comparison for now)
         if !self.state.search_date_from.is_empty() {
             results.retain(|m| m.date >= self.state.search_date_from);
@@ -2151,7 +2344,7 @@ impl IntegratedUI {
         if !self.state.search_date_to.is_empty() {
             results.retain(|m| m.date <= self.state.search_date_to);
         }
-        
+
         self.state.search_results = results;
         if let Some(cache) = &self.message_cache {
             let mut contact_query = self.state.search_query.clone();
@@ -2166,7 +2359,12 @@ impl IntegratedUI {
             self.state.search_contact_results = if contact_query.trim().is_empty() {
                 Vec::new()
             } else {
-                cache.search_contacts_for_account(&self.state.account_config.email, &contact_query, 25)
+                cache
+                    .search_contacts_for_account(
+                        &self.state.account_config.email,
+                        &contact_query,
+                        25,
+                    )
                     .unwrap_or_default()
             };
             Self::sort_contacts(
@@ -2176,7 +2374,10 @@ impl IntegratedUI {
         } else {
             self.state.search_contact_results.clear();
         }
-        self.state.status_message = format!("Search completed: {} results found", self.state.search_results.len());
+        self.state.status_message = format!(
+            "Search completed: {} results found",
+            self.state.search_results.len()
+        );
     }
 
     fn render_mail_sort_option(&mut self, ui: &mut egui::Ui, option: MailSortOption, label: &str) {
@@ -2189,7 +2390,12 @@ impl IntegratedUI {
         }
     }
 
-    fn render_contact_sort_option(&mut self, ui: &mut egui::Ui, option: ContactSortOption, label: &str) {
+    fn render_contact_sort_option(
+        &mut self,
+        ui: &mut egui::Ui,
+        option: ContactSortOption,
+        label: &str,
+    ) {
         let selected = self.state.contact_sort_option == option;
         if ui.selectable_label(selected, label).clicked() {
             self.state.contact_sort_option = option;
@@ -2252,7 +2458,7 @@ impl IntegratedUI {
             }
         }
     }
-    
+
     /// Get file icon based on MIME type
     fn get_file_icon(mime_type: &str) -> &'static str {
         if mime_type.starts_with("image/") {
@@ -2287,7 +2493,13 @@ impl IntegratedUI {
             .unwrap_or("attachment.bin");
         let mut sanitized: String = candidate
             .chars()
-            .map(|c| if Self::is_safe_filename_char(c) { c } else { '_' })
+            .map(|c| {
+                if Self::is_safe_filename_char(c) {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         sanitized = sanitized.replace("..", "_");
         if sanitized.is_empty() || sanitized == "." || sanitized == ".." {
@@ -2318,7 +2530,10 @@ impl IntegratedUI {
             }
         }
         let safe_name = Self::sanitize_attachment_filename(&attachment.filename);
-        if std::path::Path::new(&safe_name).components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        if std::path::Path::new(&safe_name)
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
             return Err(crate::common::Error::Other(
                 "Attachment filename failed safety checks".to_string(),
             ));
@@ -2349,9 +2564,13 @@ impl IntegratedUI {
             let status = std::process::Command::new("explorer")
                 .arg(&path)
                 .status()
-                .map_err(|e| crate::common::Error::Other(format!("Failed to open attachment: {}", e)))?;
+                .map_err(|e| {
+                    crate::common::Error::Other(format!("Failed to open attachment: {}", e))
+                })?;
             if !status.success() {
-                return Err(crate::common::Error::Other("Attachment open command failed".to_string()));
+                return Err(crate::common::Error::Other(
+                    "Attachment open command failed".to_string(),
+                ));
             }
         }
         #[cfg(target_os = "macos")]
@@ -2359,9 +2578,13 @@ impl IntegratedUI {
             let status = std::process::Command::new("open")
                 .arg(&path)
                 .status()
-                .map_err(|e| crate::common::Error::Other(format!("Failed to open attachment: {}", e)))?;
+                .map_err(|e| {
+                    crate::common::Error::Other(format!("Failed to open attachment: {}", e))
+                })?;
             if !status.success() {
-                return Err(crate::common::Error::Other("Attachment open command failed".to_string()));
+                return Err(crate::common::Error::Other(
+                    "Attachment open command failed".to_string(),
+                ));
             }
         }
         #[cfg(all(unix, not(target_os = "macos")))]
@@ -2369,15 +2592,19 @@ impl IntegratedUI {
             let status = std::process::Command::new("xdg-open")
                 .arg(&path)
                 .status()
-                .map_err(|e| crate::common::Error::Other(format!("Failed to open attachment: {}", e)))?;
+                .map_err(|e| {
+                    crate::common::Error::Other(format!("Failed to open attachment: {}", e))
+                })?;
             if !status.success() {
-                return Err(crate::common::Error::Other("Attachment open command failed".to_string()));
+                return Err(crate::common::Error::Other(
+                    "Attachment open command failed".to_string(),
+                ));
             }
         }
 
         Ok(path)
     }
-    
+
     /// Handle tag actions from the tag manager
     fn handle_tag_action(&mut self, action: TagAction) {
         if let Some(ref cache) = self.message_cache {
@@ -2390,7 +2617,7 @@ impl IntegratedUI {
                         color,
                         created_at: chrono::Utc::now().to_rfc3339(),
                     };
-                    
+
                     match cache.create_tag(&tag) {
                         Ok(_) => {
                             self.state.status_message = format!("Tag '{}' created", name);
@@ -2398,82 +2625,76 @@ impl IntegratedUI {
                         }
                         Err(e) => {
                             self.state.error_message = Some(format!("Failed to create tag: {}", e));
-                            self.state.tag_manager.error = Some(format!("Failed to create tag: {}", e));
+                            self.state.tag_manager.error =
+                                Some(format!("Failed to create tag: {}", e));
                         }
                     }
                 }
-                TagAction::Update(tag) => {
-                    match cache.update_tag(&tag) {
-                        Ok(_) => {
-                            self.state.status_message = format!("Tag '{}' updated", tag.name);
-                            self.state.tag_manager.status = "Tag updated successfully".to_string();
-                        }
-                        Err(e) => {
-                            self.state.error_message = Some(format!("Failed to update tag: {}", e));
-                            self.state.tag_manager.error = Some(format!("Failed to update tag: {}", e));
-                        }
+                TagAction::Update(tag) => match cache.update_tag(&tag) {
+                    Ok(_) => {
+                        self.state.status_message = format!("Tag '{}' updated", tag.name);
+                        self.state.tag_manager.status = "Tag updated successfully".to_string();
                     }
-                }
-                TagAction::Delete(tag_id) => {
-                    match cache.delete_tag(&tag_id) {
-                        Ok(_) => {
-                            self.state.status_message = "Tag deleted".to_string();
-                            self.state.tag_manager.status = "Tag deleted successfully".to_string();
-                        }
-                        Err(e) => {
-                            self.state.error_message = Some(format!("Failed to delete tag: {}", e));
-                            self.state.tag_manager.error = Some(format!("Failed to delete tag: {}", e));
-                        }
+                    Err(e) => {
+                        self.state.error_message = Some(format!("Failed to update tag: {}", e));
+                        self.state.tag_manager.error = Some(format!("Failed to update tag: {}", e));
                     }
-                }
+                },
+                TagAction::Delete(tag_id) => match cache.delete_tag(&tag_id) {
+                    Ok(_) => {
+                        self.state.status_message = "Tag deleted".to_string();
+                        self.state.tag_manager.status = "Tag deleted successfully".to_string();
+                    }
+                    Err(e) => {
+                        self.state.error_message = Some(format!("Failed to delete tag: {}", e));
+                        self.state.tag_manager.error = Some(format!("Failed to delete tag: {}", e));
+                    }
+                },
             }
         }
     }
-    
+
     /// Handle filter rule actions from the filter manager
     fn handle_filter_rule_action(&mut self, action: FilterRuleAction) {
         if let Some(ref cache) = self.message_cache {
             match action {
-                FilterRuleAction::Create(rule) => {
-                    match cache.create_filter_rule(&rule) {
-                        Ok(_) => {
-                            self.state.status_message = format!("Rule '{}' created", rule.name);
-                            self.state.filter_manager.status = "Rule created successfully".to_string();
-                        }
-                        Err(e) => {
-                            self.state.error_message = Some(format!("Failed to create rule: {}", e));
-                            self.state.filter_manager.error = Some(format!("Failed to create rule: {}", e));
-                        }
+                FilterRuleAction::Create(rule) => match cache.create_filter_rule(&rule) {
+                    Ok(_) => {
+                        self.state.status_message = format!("Rule '{}' created", rule.name);
+                        self.state.filter_manager.status = "Rule created successfully".to_string();
                     }
-                }
-                FilterRuleAction::Update(rule) => {
-                    match cache.update_filter_rule(&rule) {
-                        Ok(_) => {
-                            self.state.status_message = format!("Rule '{}' updated", rule.name);
-                            self.state.filter_manager.status = "Rule updated successfully".to_string();
-                        }
-                        Err(e) => {
-                            self.state.error_message = Some(format!("Failed to update rule: {}", e));
-                            self.state.filter_manager.error = Some(format!("Failed to update rule: {}", e));
-                        }
+                    Err(e) => {
+                        self.state.error_message = Some(format!("Failed to create rule: {}", e));
+                        self.state.filter_manager.error =
+                            Some(format!("Failed to create rule: {}", e));
                     }
-                }
-                FilterRuleAction::Delete(rule_id) => {
-                    match cache.delete_filter_rule(&rule_id) {
-                        Ok(_) => {
-                            self.state.status_message = "Rule deleted".to_string();
-                            self.state.filter_manager.status = "Rule deleted successfully".to_string();
-                        }
-                        Err(e) => {
-                            self.state.error_message = Some(format!("Failed to delete rule: {}", e));
-                            self.state.filter_manager.error = Some(format!("Failed to delete rule: {}", e));
-                        }
+                },
+                FilterRuleAction::Update(rule) => match cache.update_filter_rule(&rule) {
+                    Ok(_) => {
+                        self.state.status_message = format!("Rule '{}' updated", rule.name);
+                        self.state.filter_manager.status = "Rule updated successfully".to_string();
                     }
-                }
+                    Err(e) => {
+                        self.state.error_message = Some(format!("Failed to update rule: {}", e));
+                        self.state.filter_manager.error =
+                            Some(format!("Failed to update rule: {}", e));
+                    }
+                },
+                FilterRuleAction::Delete(rule_id) => match cache.delete_filter_rule(&rule_id) {
+                    Ok(_) => {
+                        self.state.status_message = "Rule deleted".to_string();
+                        self.state.filter_manager.status = "Rule deleted successfully".to_string();
+                    }
+                    Err(e) => {
+                        self.state.error_message = Some(format!("Failed to delete rule: {}", e));
+                        self.state.filter_manager.error =
+                            Some(format!("Failed to delete rule: {}", e));
+                    }
+                },
             }
         }
     }
-    
+
     /// Handle contact actions from the contact manager
     fn handle_contact_action(&mut self, action: ContactAction) {
         if let Some(ref cache) = self.message_cache {
@@ -2482,30 +2703,33 @@ impl IntegratedUI {
                     match cache.save_contact(&contact) {
                         Ok(_) => {
                             self.state.status_message = format!("Contact '{}' saved", contact.name);
-                            self.state.contact_manager.status = "Contact saved successfully".to_string();
+                            self.state.contact_manager.status =
+                                "Contact saved successfully".to_string();
                         }
                         Err(e) => {
-                            self.state.error_message = Some(format!("Failed to save contact: {}", e));
-                            self.state.contact_manager.error = Some(format!("Failed to save contact: {}", e));
+                            self.state.error_message =
+                                Some(format!("Failed to save contact: {}", e));
+                            self.state.contact_manager.error =
+                                Some(format!("Failed to save contact: {}", e));
                         }
                     }
                 }
-                ContactAction::Delete(contact_id) => {
-                    match cache.delete_contact(&contact_id) {
-                        Ok(_) => {
-                            self.state.status_message = "Contact deleted".to_string();
-                            self.state.contact_manager.status = "Contact deleted successfully".to_string();
-                        }
-                        Err(e) => {
-                            self.state.error_message = Some(format!("Failed to delete contact: {}", e));
-                            self.state.contact_manager.error = Some(format!("Failed to delete contact: {}", e));
-                        }
+                ContactAction::Delete(contact_id) => match cache.delete_contact(&contact_id) {
+                    Ok(_) => {
+                        self.state.status_message = "Contact deleted".to_string();
+                        self.state.contact_manager.status =
+                            "Contact deleted successfully".to_string();
                     }
-                }
+                    Err(e) => {
+                        self.state.error_message = Some(format!("Failed to delete contact: {}", e));
+                        self.state.contact_manager.error =
+                            Some(format!("Failed to delete contact: {}", e));
+                    }
+                },
             }
         }
     }
-    
+
     fn handle_oauth_action(&mut self, action: OAuthAction) {
         let Some(cache) = &self.message_cache else {
             self.state.error_message = Some("Database not available".to_string());
@@ -2521,45 +2745,67 @@ impl IntegratedUI {
                 Ok(token_set) => {
                     let token = oauth_token_entry_from_set(account_id, provider.clone(), token_set);
                     match cache.save_oauth_token(&token) {
-                        Ok(_) => self.state.status_message = format!("OAuth token saved for provider '{}'", provider),
-                        Err(e) => self.state.error_message = Some(format!("Failed to save OAuth token: {}", e)),
+                        Ok(_) => {
+                            self.state.status_message =
+                                format!("OAuth token saved for provider '{}'", provider)
+                        }
+                        Err(e) => {
+                            self.state.error_message =
+                                Some(format!("Failed to save OAuth token: {}", e))
+                        }
                     }
                 }
                 Err(e) => self.state.error_message = Some(format!("OAuth exchange failed: {}", e)),
             },
-            OAuthAction::RefreshToken { account_id, provider } => {
-                match cache.get_oauth_token(&account_id, &provider) {
-                    Ok(Some(existing)) => {
-                        let Some(refresh_token) = existing.refresh_token.clone() else {
-                            self.state.error_message = Some("No refresh token available".to_string());
-                            return;
-                        };
-                        match OAuthService::refresh_access_token(&provider, &refresh_token) {
-                            Ok(new_set) => {
-                                let mut token = oauth_token_entry_from_set(account_id, provider.clone(), new_set);
-                                token.id = existing.id;
-                                if let Err(e) = cache.save_oauth_token(&token) {
-                                    self.state.error_message = Some(format!("Failed to store refreshed token: {}", e));
-                                } else {
-                                    self.state.status_message = format!("OAuth token refreshed for '{}'", provider);
-                                }
+            OAuthAction::RefreshToken {
+                account_id,
+                provider,
+            } => match cache.get_oauth_token(&account_id, &provider) {
+                Ok(Some(existing)) => {
+                    let Some(refresh_token) = existing.refresh_token.clone() else {
+                        self.state.error_message = Some("No refresh token available".to_string());
+                        return;
+                    };
+                    match OAuthService::refresh_access_token(&provider, &refresh_token) {
+                        Ok(new_set) => {
+                            let mut token =
+                                oauth_token_entry_from_set(account_id, provider.clone(), new_set);
+                            token.id = existing.id;
+                            if let Err(e) = cache.save_oauth_token(&token) {
+                                self.state.error_message =
+                                    Some(format!("Failed to store refreshed token: {}", e));
+                            } else {
+                                self.state.status_message =
+                                    format!("OAuth token refreshed for '{}'", provider);
                             }
-                            Err(e) => self.state.error_message = Some(format!("OAuth refresh failed: {}", e)),
+                        }
+                        Err(e) => {
+                            self.state.error_message = Some(format!("OAuth refresh failed: {}", e))
                         }
                     }
-                    Ok(None) => self.state.error_message = Some("No OAuth token found for account/provider".to_string()),
-                    Err(e) => self.state.error_message = Some(format!("Failed to load OAuth token: {}", e)),
                 }
-            }
-            OAuthAction::RevokeToken { account_id, provider } => {
-                match cache.delete_oauth_token(&account_id, &provider) {
-                    Ok(_) => self.state.status_message = format!("OAuth token revoked for '{}'", provider),
-                    Err(e) => self.state.error_message = Some(format!("Failed to revoke OAuth token: {}", e)),
+                Ok(None) => {
+                    self.state.error_message =
+                        Some("No OAuth token found for account/provider".to_string())
                 }
-            }
+                Err(e) => {
+                    self.state.error_message = Some(format!("Failed to load OAuth token: {}", e))
+                }
+            },
+            OAuthAction::RevokeToken {
+                account_id,
+                provider,
+            } => match cache.delete_oauth_token(&account_id, &provider) {
+                Ok(_) => {
+                    self.state.status_message = format!("OAuth token revoked for '{}'", provider)
+                }
+                Err(e) => {
+                    self.state.error_message = Some(format!("Failed to revoke OAuth token: {}", e))
+                }
+            },
         }
     }
-    
+
     /// Handle signature actions from the signature manager
     fn handle_signature_action(&mut self, action: SignatureAction) {
         if let Some(ref cache) = self.message_cache {
@@ -2574,46 +2820,54 @@ impl IntegratedUI {
                         is_default,
                         created_at: chrono::Utc::now().to_rfc3339(),
                     };
-                    
+
                     match cache.create_signature(&signature) {
                         Ok(_) => {
                             self.state.status_message = format!("Signature '{}' created", name);
-                            self.state.signature_manager.status = "Signature created successfully".to_string();
+                            self.state.signature_manager.status =
+                                "Signature created successfully".to_string();
                         }
                         Err(e) => {
-                            self.state.error_message = Some(format!("Failed to create signature: {}", e));
-                            self.state.signature_manager.error = Some(format!("Failed to create signature: {}", e));
+                            self.state.error_message =
+                                Some(format!("Failed to create signature: {}", e));
+                            self.state.signature_manager.error =
+                                Some(format!("Failed to create signature: {}", e));
                         }
                     }
                 }
-                SignatureAction::Update(signature) => {
-                    match cache.update_signature(&signature) {
-                        Ok(_) => {
-                            self.state.status_message = format!("Signature '{}' updated", signature.name);
-                            self.state.signature_manager.status = "Signature updated successfully".to_string();
-                        }
-                        Err(e) => {
-                            self.state.error_message = Some(format!("Failed to update signature: {}", e));
-                            self.state.signature_manager.error = Some(format!("Failed to update signature: {}", e));
-                        }
+                SignatureAction::Update(signature) => match cache.update_signature(&signature) {
+                    Ok(_) => {
+                        self.state.status_message =
+                            format!("Signature '{}' updated", signature.name);
+                        self.state.signature_manager.status =
+                            "Signature updated successfully".to_string();
                     }
-                }
+                    Err(e) => {
+                        self.state.error_message =
+                            Some(format!("Failed to update signature: {}", e));
+                        self.state.signature_manager.error =
+                            Some(format!("Failed to update signature: {}", e));
+                    }
+                },
                 SignatureAction::Delete(signature_id) => {
                     match cache.delete_signature(&signature_id) {
                         Ok(_) => {
                             self.state.status_message = "Signature deleted".to_string();
-                            self.state.signature_manager.status = "Signature deleted successfully".to_string();
+                            self.state.signature_manager.status =
+                                "Signature deleted successfully".to_string();
                         }
                         Err(e) => {
-                            self.state.error_message = Some(format!("Failed to delete signature: {}", e));
-                            self.state.signature_manager.error = Some(format!("Failed to delete signature: {}", e));
+                            self.state.error_message =
+                                Some(format!("Failed to delete signature: {}", e));
+                            self.state.signature_manager.error =
+                                Some(format!("Failed to delete signature: {}", e));
                         }
                     }
                 }
             }
         }
     }
-    
+
     /// Handle account manager actions
     fn handle_account_action(&mut self, action: AccountAction) {
         match action {
@@ -2622,8 +2876,10 @@ impl IntegratedUI {
                 if let Some(ref cache) = self.message_cache {
                     match cache.save_account(&account) {
                         Ok(_) => {
-                            self.state.status_message = format!("Account '{}' created", account.name);
-                            self.state.account_manager.status = format!("Account '{}' created successfully", account.name);
+                            self.state.status_message =
+                                format!("Account '{}' created", account.name);
+                            self.state.account_manager.status =
+                                format!("Account '{}' created successfully", account.name);
                             // Reload accounts from database
                             if let Ok(accounts) = cache.load_accounts() {
                                 self.state.account_manager.accounts = accounts;
@@ -2639,7 +2895,8 @@ impl IntegratedUI {
                             self.state.account_manager.close();
                         }
                         Err(e) => {
-                            self.state.error_message = Some(format!("Failed to create account: {}", e));
+                            self.state.error_message =
+                                Some(format!("Failed to create account: {}", e));
                             self.state.account_manager.error = Some(format!("Error: {}", e));
                         }
                     }
@@ -2651,8 +2908,10 @@ impl IntegratedUI {
                 if let Some(ref cache) = self.message_cache {
                     match cache.save_account(&account) {
                         Ok(_) => {
-                            self.state.status_message = format!("Account '{}' updated", account.name);
-                            self.state.account_manager.status = format!("Account '{}' updated successfully", account.name);
+                            self.state.status_message =
+                                format!("Account '{}' updated", account.name);
+                            self.state.account_manager.status =
+                                format!("Account '{}' updated successfully", account.name);
                             // Reload accounts from database
                             if let Ok(accounts) = cache.load_accounts() {
                                 self.state.account_manager.accounts = accounts;
@@ -2663,7 +2922,8 @@ impl IntegratedUI {
                             self.state.account_manager.close();
                         }
                         Err(e) => {
-                            self.state.error_message = Some(format!("Failed to update account: {}", e));
+                            self.state.error_message =
+                                Some(format!("Failed to update account: {}", e));
                             self.state.account_manager.error = Some(format!("Error: {}", e));
                         }
                     }
@@ -2694,7 +2954,9 @@ impl IntegratedUI {
                                 self.state.account_manager.accounts = accounts;
                             }
                             // Clear active account if it was deleted
-                            if self.state.account_manager.active_account_id.as_ref() == Some(&account_id) {
+                            if self.state.account_manager.active_account_id.as_ref()
+                                == Some(&account_id)
+                            {
                                 self.state.account_manager.active_account_id = None;
                                 self.active_account_id = None;
                             }
@@ -2707,7 +2969,8 @@ impl IntegratedUI {
                             self.refresh_outbox_queue_count();
                         }
                         Err(e) => {
-                            self.state.error_message = Some(format!("Failed to delete account: {}", e));
+                            self.state.error_message =
+                                Some(format!("Failed to delete account: {}", e));
                             self.state.account_manager.error = Some(format!("Error: {}", e));
                         }
                     }
@@ -2717,15 +2980,31 @@ impl IntegratedUI {
             }
             AccountAction::SetActive(account_id) => {
                 // Check if account exists
-                if self.state.account_manager.accounts.iter().any(|a| a.id == account_id) {
+                if self
+                    .state
+                    .account_manager
+                    .accounts
+                    .iter()
+                    .any(|a| a.id == account_id)
+                {
                     self.switch_account(&account_id);
                 } else {
                     self.state.error_message = Some("Account not found".to_string());
                 }
             }
             AccountAction::TestConnection(account_id) => {
-                if let Some(account) = self.state.account_manager.accounts.iter().find(|a| a.id == account_id).cloned() {
-                    self.state.status_message = format!("Testing connection for account {}...", account.display_name());
+                if let Some(account) = self
+                    .state
+                    .account_manager
+                    .accounts
+                    .iter()
+                    .find(|a| a.id == account_id)
+                    .cloned()
+                {
+                    self.state.status_message = format!(
+                        "Testing connection for account {}...",
+                        account.display_name()
+                    );
                     let ui_tx = self.ui_tx.clone();
                     self.runtime.spawn(async move {
                         let controller = MailController::new();
@@ -2738,59 +3017,77 @@ impl IntegratedUI {
                             );
                             DEFAULT_IMAP_PORT
                         });
-                        match controller.connect_imap(
-                            account.imap_server.clone(),
-                            port,
-                            account.username.clone(),
-                            account.password.clone(),
-                            account.imap_use_tls,
-                        ).await {
+                        match controller
+                            .connect_imap(
+                                account.imap_server.clone(),
+                                port,
+                                account.username.clone(),
+                                account.password.clone(),
+                                account.imap_use_tls,
+                            )
+                            .await
+                        {
                             Ok(_) => {
-                                let _ = ui_tx.send(UIUpdate::StatusUpdated(
-                                    format!("Connection test successful for {}", account.display_name())
-                                )).await;
+                                let _ = ui_tx
+                                    .send(UIUpdate::StatusUpdated(format!(
+                                        "Connection test successful for {}",
+                                        account.display_name()
+                                    )))
+                                    .await;
                             }
                             Err(e) => {
-                                let _ = ui_tx.send(UIUpdate::ErrorOccurred(
-                                    format!("Connection test failed for {}: {}", account.display_name(), e)
-                                )).await;
+                                let _ = ui_tx
+                                    .send(UIUpdate::ErrorOccurred(format!(
+                                        "Connection test failed for {}: {}",
+                                        account.display_name(),
+                                        e
+                                    )))
+                                    .await;
                             }
                         }
                     });
                 } else {
-                    self.state.error_message = Some("Account not found for connection test".to_string());
+                    self.state.error_message =
+                        Some("Account not found for connection test".to_string());
                 }
             }
         }
     }
-    
+
     fn get_or_create_controller(&mut self, account_id: &str) -> Arc<TokioMutex<MailController>> {
         if let Some(controller) = self.mail_controllers.get(account_id) {
             return controller.clone();
         }
-        
+
         let controller = Arc::new(TokioMutex::new(MailController::new()));
-        self.mail_controllers.insert(account_id.to_string(), controller.clone());
+        self.mail_controllers
+            .insert(account_id.to_string(), controller.clone());
         controller
     }
-    
+
     fn get_active_controller(&self) -> Option<Arc<TokioMutex<MailController>>> {
         self.active_account_id
             .as_ref()
             .and_then(|id| self.mail_controllers.get(id))
             .cloned()
     }
-    
+
     fn switch_account(&mut self, account_id: &str) {
-        if !self.state.account_manager.accounts.iter().any(|a| a.id == account_id) {
+        if !self
+            .state
+            .account_manager
+            .accounts
+            .iter()
+            .any(|a| a.id == account_id)
+        {
             self.state.error_message = Some("Account not found".to_string());
             return;
         }
-        
+
         self.state.account_manager.active_account_id = Some(account_id.to_string());
         self.active_account_id = Some(account_id.to_string());
         self.get_or_create_controller(account_id);
-        
+
         self.state.selected_folder = None;
         self.state.selected_message = None;
         self.state.folders.clear();
@@ -2798,10 +3095,19 @@ impl IntegratedUI {
         self.state.message_preview.clear();
         self.state.rendered_message_preview = None;
         self.state.current_attachments.clear();
-        
-        if let Some(account) = self.state.account_manager.active_account_id
+
+        if let Some(account) = self
+            .state
+            .account_manager
+            .active_account_id
             .as_ref()
-            .and_then(|active_id| self.state.account_manager.accounts.iter().find(|a| &a.id == active_id))
+            .and_then(|active_id| {
+                self.state
+                    .account_manager
+                    .accounts
+                    .iter()
+                    .find(|a| &a.id == active_id)
+            })
         {
             self.state.account_config.email = account.email.clone();
             self.state.account_config.username = account.username.clone();
@@ -2819,7 +3125,7 @@ impl IntegratedUI {
         }
         self.refresh_outbox_queue_count();
     }
-    
+
     fn ensure_background_sync(&mut self, account: Account) {
         match self.sync_accounts.lock() {
             Ok(mut sync_accounts) => {
@@ -2829,17 +3135,17 @@ impl IntegratedUI {
                 tracing::warn!("Failed to lock sync account map for update: {}", e);
             }
         }
-        
+
         if !account.enabled {
             self.stop_background_sync(&account.id);
             return;
         }
-        
+
         if !self.background_sync_tasks.contains_key(&account.id) {
             self.spawn_background_sync(account.id.clone());
         }
     }
-    
+
     fn stop_background_sync(&mut self, account_id: &str) {
         if let Some(task) = self.background_sync_tasks.remove(account_id) {
             task.abort();
@@ -2853,16 +3159,16 @@ impl IntegratedUI {
             }
         }
     }
-    
+
     fn spawn_background_sync(&mut self, account_id: String) {
         if !self.mail_controllers.contains_key(&account_id) {
             self.get_or_create_controller(&account_id);
         }
-        
+
         let runtime = self.runtime.clone();
         let controller = self.get_or_create_controller(&account_id);
         let sync_accounts = self.sync_accounts.clone();
-        
+
         let task_account_id = account_id.clone();
         let task = runtime.spawn(async move {
             loop {
@@ -2873,17 +3179,17 @@ impl IntegratedUI {
                         None
                     }
                 };
-                
+
                 let Some(account) = account else { break };
                 if !account.enabled {
                     break;
                 }
-                
+
                 let interval = std::time::Duration::from_secs(
                     account.check_interval_minutes.max(1) as u64 * SECONDS_PER_MINUTE,
                 );
                 tokio::time::sleep(interval).await;
-                
+
                 let port = account.imap_port.parse().unwrap_or_else(|_| {
                     tracing::warn!(
                         "Invalid IMAP port '{}' for account '{}', using default {}",
@@ -2893,25 +3199,28 @@ impl IntegratedUI {
                     );
                     DEFAULT_IMAP_PORT
                 });
-                
+
                 let connect_ok = {
                     let controller = controller.lock().await;
-                    controller.connect_imap(
-                        account.imap_server.clone(),
-                        port,
-                        account.username.clone(),
-                        account.password.clone(),
-                        account.imap_use_tls,
-                    ).await.is_ok()
+                    controller
+                        .connect_imap(
+                            account.imap_server.clone(),
+                            port,
+                            account.username.clone(),
+                            account.password.clone(),
+                            account.imap_use_tls,
+                        )
+                        .await
+                        .is_ok()
                 };
-                
+
                 if connect_ok {
                     let controller = controller.lock().await;
                     let _ = controller.fetch_folders().await;
                 }
             }
         });
-        
+
         self.background_sync_tasks.insert(account_id, task);
     }
 
@@ -3028,42 +3337,59 @@ impl IntegratedUI {
 
         results
     }
-    
+
     fn estimate_thread_depth(subject: &str) -> usize {
         let mut remaining = subject.trim();
         let mut depth = 0;
-        
+
         loop {
-            if remaining.get(..3).map(|p| p.eq_ignore_ascii_case("re:")).unwrap_or(false) {
+            if remaining
+                .get(..3)
+                .map(|p| p.eq_ignore_ascii_case("re:"))
+                .unwrap_or(false)
+            {
                 depth += 1;
                 remaining = remaining.get(3..).unwrap_or("").trim_start();
-            } else if remaining.get(..4).map(|p| p.eq_ignore_ascii_case("fwd:")).unwrap_or(false) {
+            } else if remaining
+                .get(..4)
+                .map(|p| p.eq_ignore_ascii_case("fwd:"))
+                .unwrap_or(false)
+            {
                 depth += 1;
                 remaining = remaining.get(4..).unwrap_or("").trim_start();
-            } else if remaining.get(..3).map(|p| p.eq_ignore_ascii_case("fw:")).unwrap_or(false) {
+            } else if remaining
+                .get(..3)
+                .map(|p| p.eq_ignore_ascii_case("fw:"))
+                .unwrap_or(false)
+            {
                 depth += 1;
                 remaining = remaining.get(3..).unwrap_or("").trim_start();
             } else {
                 break;
             }
         }
-        
+
         depth
     }
-    
+
     fn apply_filter_rules(&self, messages: &mut Vec<MessageItem>) {
         let Some(cache) = &self.message_cache else {
             return;
         };
-        
-        let persisted_rules = match cache.get_filter_rules_for_account(&self.state.account_config.email) {
-            Ok(rules) => rules,
-            Err(e) => {
-                tracing::warn!("Failed to load filter rules for account '{}': {}", self.state.account_config.email, e);
-                return;
-            }
-        };
-        
+
+        let persisted_rules =
+            match cache.get_filter_rules_for_account(&self.state.account_config.email) {
+                Ok(rules) => rules,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to load filter rules for account '{}': {}",
+                        self.state.account_config.email,
+                        e
+                    );
+                    return;
+                }
+            };
+
         let mut engine = match FilterEngine::new() {
             Ok(engine) => engine,
             Err(e) => {
@@ -3072,17 +3398,17 @@ impl IntegratedUI {
             }
         };
         engine.load_from_persisted(&persisted_rules);
-        
-        let account_tags = cache.get_tags_for_account(&self.state.account_config.email).unwrap_or_default();
-        let tag_ids: std::collections::HashSet<String> = account_tags
-            .iter()
-            .map(|t| t.id.clone())
-            .collect();
+
+        let account_tags = cache
+            .get_tags_for_account(&self.state.account_config.email)
+            .unwrap_or_default();
+        let tag_ids: std::collections::HashSet<String> =
+            account_tags.iter().map(|t| t.id.clone()).collect();
         let tags_by_name: std::collections::HashMap<String, String> = account_tags
             .into_iter()
             .map(|t| (t.name.to_lowercase(), t.id))
             .collect();
-        
+
         let before_count = messages.len();
         messages.retain_mut(|msg| {
             // Rules are evaluated against the metadata available in MessageItem.
@@ -3104,7 +3430,7 @@ impl IntegratedUI {
                 starred: msg.starred,
                 deleted: false,
             };
-            
+
             let actions = engine.evaluate_message(&cached);
             let mut keep = true;
             for action in actions {
@@ -3131,10 +3457,13 @@ impl IntegratedUI {
             }
             keep
         });
-        
+
         let removed = before_count.saturating_sub(messages.len());
         if removed > 0 {
-            tracing::info!("Applied filter rules removed {} message(s) from current view", removed);
+            tracing::info!(
+                "Applied filter rules removed {} message(s) from current view",
+                removed
+            );
         }
     }
 }
@@ -3172,13 +3501,13 @@ impl Default for IntegratedUI {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_integrated_ui_creation() {
         let ui = IntegratedUI::new();
         assert!(ui.is_ok());
     }
-    
+
     #[test]
     fn test_ui_state_default() {
         let state = UIState::default();
@@ -3188,7 +3517,7 @@ mod tests {
         assert!(!state.offline_mode);
         assert_eq!(state.outbox_queue_count, 0);
     }
-    
+
     #[test]
     fn test_account_config_default() {
         let config = AccountConfig::default();
@@ -3197,7 +3526,7 @@ mod tests {
         assert!(!config.imap_use_tls);
         assert!(!config.smtp_use_tls);
     }
-    
+
     #[test]
     fn test_estimate_thread_depth() {
         assert_eq!(IntegratedUI::estimate_thread_depth("Hello"), 0);
@@ -3227,8 +3556,12 @@ mod tests {
 
     #[test]
     fn test_parse_recipients_csv() {
-        let parsed = IntegratedUI::parse_recipients_csv("a@example.com, b@example.com , ,c@example.com");
-        assert_eq!(parsed, vec!["a@example.com", "b@example.com", "c@example.com"]);
+        let parsed =
+            IntegratedUI::parse_recipients_csv("a@example.com, b@example.com , ,c@example.com");
+        assert_eq!(
+            parsed,
+            vec!["a@example.com", "b@example.com", "c@example.com"]
+        );
     }
 
     #[test]
@@ -3248,8 +3581,12 @@ mod tests {
     fn test_beta_readiness_report_detects_missing_accounts() {
         let ui = IntegratedUI::new().unwrap();
         let report = ui.build_beta_readiness_report();
-        assert!(report.iter().any(|line| line.contains("No accounts configured")));
-        assert!(report.iter().any(|line| line.contains("No active account selected")));
+        assert!(report
+            .iter()
+            .any(|line| line.contains("No accounts configured")));
+        assert!(report
+            .iter()
+            .any(|line| line.contains("No active account selected")));
     }
 
     #[test]

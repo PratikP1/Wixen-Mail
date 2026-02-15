@@ -44,37 +44,35 @@ pub struct UI {
 impl UI {
     /// Create a new UI instance
     pub fn new() -> Result<Self> {
-        let mut state = UIState::default();
-        
-        // Initialize with mock data
-        state.folders = vec![
-            "INBOX".to_string(),
-            "Sent".to_string(),
-            "Drafts".to_string(),
-            "Trash".to_string(),
-        ];
-        
-        state.messages = vec![
-            MessageItem {
-                uid: 1,
-                subject: "Welcome to Wixen Mail!".to_string(),
-                from: "welcome@wixen-mail.org".to_string(),
-                date: "2024-01-10".to_string(),
-                read: false,
-                starred: true,
-            },
-            MessageItem {
-                uid: 2,
-                subject: "Getting Started Guide".to_string(),
-                from: "help@wixen-mail.org".to_string(),
-                date: "2024-01-11".to_string(),
-                read: true,
-                starred: false,
-            },
-        ];
-        
-        state.selected_folder = Some("INBOX".to_string());
-        
+        let state = UIState {
+            selected_folder: Some("INBOX".to_string()),
+            folders: vec![
+                "INBOX".to_string(),
+                "Sent".to_string(),
+                "Drafts".to_string(),
+                "Trash".to_string(),
+            ],
+            messages: vec![
+                MessageItem {
+                    uid: 1,
+                    subject: "Welcome to Wixen Mail!".to_string(),
+                    from: "welcome@wixen-mail.org".to_string(),
+                    date: "2024-01-10".to_string(),
+                    read: false,
+                    starred: true,
+                },
+                MessageItem {
+                    uid: 2,
+                    subject: "Getting Started Guide".to_string(),
+                    from: "help@wixen-mail.org".to_string(),
+                    date: "2024-01-11".to_string(),
+                    read: true,
+                    starred: false,
+                },
+            ],
+            ..Default::default()
+        };
+
         Ok(Self {
             state: Arc::new(Mutex::new(state)),
         })
@@ -90,7 +88,7 @@ impl UI {
         };
 
         let state = Arc::clone(&self.state);
-        
+
         eframe::run_simple_native("Wixen Mail", options, move |ctx, _frame| {
             let mut state = state.lock().unwrap();
             render_ui(ctx, &mut state);
@@ -132,19 +130,19 @@ fn render_ui(ctx: &egui::Context, state: &mut UIState) {
                     std::process::exit(0);
                 }
             });
-            
+
             ui.menu_button("Edit", |ui| {
                 if ui.button("🔍 Search (Ctrl+F)").clicked() {
                     ui.close_menu();
                 }
             });
-            
+
             ui.menu_button("View", |ui| {
                 if ui.button("🔄 Refresh (F5)").clicked() {
                     ui.close_menu();
                 }
             });
-            
+
             ui.menu_button("Help", |ui| {
                 if ui.button("📖 Documentation (F1)").clicked() {
                     ui.close_menu();
@@ -168,7 +166,7 @@ fn render_ui(ctx: &egui::Context, state: &mut UIState) {
                 ui.set_width(200.0);
                 ui.heading("📁 Folders");
                 ui.separator();
-                
+
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for folder in &state.folders.clone() {
                         let selected = state.selected_folder.as_ref() == Some(folder);
@@ -186,7 +184,7 @@ fn render_ui(ctx: &egui::Context, state: &mut UIState) {
                 ui.set_width(400.0);
                 ui.heading("📨 Messages");
                 ui.separator();
-                
+
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for msg in &state.messages.clone() {
                         let selected = state.selected_message == Some(msg.uid);
@@ -198,7 +196,7 @@ fn render_ui(ctx: &egui::Context, state: &mut UIState) {
                                     msg.from, msg.date, msg.subject
                                 );
                             }
-                            
+
                             ui.horizontal(|ui| {
                                 if msg.starred {
                                     ui.label("⭐");
@@ -208,7 +206,7 @@ fn render_ui(ctx: &egui::Context, state: &mut UIState) {
                                 }
                                 ui.label(&msg.subject);
                             });
-                            
+
                             ui.label(format!("From: {}", msg.from));
                             ui.label(format!("Date: {}", msg.date));
                         });
@@ -222,7 +220,7 @@ fn render_ui(ctx: &egui::Context, state: &mut UIState) {
             ui.vertical(|ui| {
                 ui.heading("👁 Preview");
                 ui.separator();
-                
+
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.label(&state.message_preview);
                 });
@@ -239,13 +237,13 @@ fn render_ui(ctx: &egui::Context, state: &mut UIState) {
             .show(ctx, |ui| {
                 ui.label("To:");
                 ui.text_edit_singleline(&mut String::new());
-                
+
                 ui.label("Subject:");
                 ui.text_edit_singleline(&mut String::new());
-                
+
                 ui.label("Message:");
                 ui.text_edit_multiline(&mut String::new());
-                
+
                 ui.horizontal(|ui| {
                     if ui.button("📤 Send (Ctrl+Enter)").clicked() {
                         state.composition_open = false;
@@ -270,15 +268,15 @@ fn render_ui(ctx: &egui::Context, state: &mut UIState) {
                 ui.heading("Account Settings");
                 ui.label("Configure your email accounts here.");
                 ui.separator();
-                
+
                 ui.heading("Appearance");
                 ui.label("Theme, font size, and display options.");
                 ui.separator();
-                
+
                 ui.heading("Accessibility");
                 ui.label("Screen reader and keyboard settings.");
                 ui.separator();
-                
+
                 if ui.button("✅ Save & Close").clicked() {
                     state.settings_open = false;
                 }
@@ -288,7 +286,13 @@ fn render_ui(ctx: &egui::Context, state: &mut UIState) {
     // Status bar
     egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
         ui.horizontal(|ui| {
-            ui.label(format!("Folder: {}", state.selected_folder.as_ref().unwrap_or(&"None".to_string())));
+            ui.label(format!(
+                "Folder: {}",
+                state
+                    .selected_folder
+                    .as_ref()
+                    .unwrap_or(&"None".to_string())
+            ));
             ui.separator();
             ui.label(format!("{} messages", state.messages.len()));
             ui.separator();

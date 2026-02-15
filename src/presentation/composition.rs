@@ -1,7 +1,7 @@
-/// Message Composition Window
-///
-/// Provides a fully accessible composition interface for creating and sending emails.
-/// Supports keyboard navigation, screen reader announcements, and draft auto-save.
+//! Message Composition Window
+//!
+//! Provides a fully accessible composition interface for creating and sending emails.
+//! Supports keyboard navigation, screen reader announcements, and draft auto-save.
 
 use egui;
 use std::path::PathBuf;
@@ -126,12 +126,12 @@ impl CompositionWindow {
         self.contact_suggestions.clear();
         self.last_contact_query.clear();
     }
-    
+
     /// Set contact suggestions for recipient autocomplete
     pub fn set_contact_suggestions(&mut self, suggestions: Vec<(String, String)>) {
         self.contact_suggestions = suggestions;
     }
-    
+
     /// Insert signature at the end of the body
     pub fn insert_signature(&mut self, signature_text: &str) {
         if !signature_text.is_empty() {
@@ -141,7 +141,7 @@ impl CompositionWindow {
             self.body.push_str(signature_text);
         }
     }
-    
+
     /// Insert signature above quoted text (for reply/forward)
     pub fn insert_signature_above_quote(&mut self, signature_text: &str, quote_marker: &str) {
         if !signature_text.is_empty() {
@@ -170,7 +170,12 @@ impl CompositionWindow {
         }
 
         // Basic email validation
-        for email in self.to.split(',').chain(self.cc.split(',')).chain(self.bcc.split(',')) {
+        for email in self
+            .to
+            .split(',')
+            .chain(self.cc.split(','))
+            .chain(self.bcc.split(','))
+        {
             let email = email.trim();
             if !email.is_empty() && !email.contains('@') {
                 return Err(format!("Invalid email address: {}", email));
@@ -189,12 +194,8 @@ impl CompositionWindow {
         }
 
         // Check for keyboard shortcuts before rendering (to avoid borrow issues)
-        let send_shortcut = ctx.input(|i| 
-            i.key_pressed(egui::Key::Enter) && i.modifiers.ctrl
-        );
-        let save_shortcut = ctx.input(|i| 
-            i.key_pressed(egui::Key::S) && i.modifiers.ctrl
-        );
+        let send_shortcut = ctx.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.ctrl);
+        let save_shortcut = ctx.input(|i| i.key_pressed(egui::Key::S) && i.modifiers.ctrl);
 
         // Copy state before closure to avoid borrow issues
         let mut open = self.open;
@@ -239,9 +240,9 @@ impl CompositionWindow {
                     let _to_response = ui.add(
                         egui::TextEdit::singleline(&mut self.to)
                             .desired_width(f32::INFINITY)
-                            .hint_text("recipient@example.com")
+                            .hint_text("recipient@example.com"),
                     );
-                    
+
                     // Request focus on first render
                     // Note: egui handles focus automatically for text fields
 
@@ -278,7 +279,7 @@ impl CompositionWindow {
                         ui.add(
                             egui::TextEdit::singleline(&mut self.cc)
                                 .desired_width(f32::INFINITY)
-                                .hint_text("cc@example.com")
+                                .hint_text("cc@example.com"),
                         );
                     });
                 }
@@ -290,7 +291,7 @@ impl CompositionWindow {
                         ui.add(
                             egui::TextEdit::singleline(&mut self.bcc)
                                 .desired_width(f32::INFINITY)
-                                .hint_text("bcc@example.com")
+                                .hint_text("bcc@example.com"),
                         );
                     });
                 }
@@ -301,30 +302,28 @@ impl CompositionWindow {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.subject)
                             .desired_width(f32::INFINITY)
-                            .hint_text("Email subject")
+                            .hint_text("Email subject"),
                     );
                 });
 
                 ui.separator();
-                
+
                 // Rich text toolbar
                 ui.horizontal(|ui| {
                     ui.label("Format:");
-                    
+
                     // HTML/Plain text toggle
-                    if ui.selectable_label(!self.html_mode, "Plain Text").clicked() {
-                        if self.html_mode {
-                            should_convert_to_plain = true;
-                        }
+                    if ui.selectable_label(!self.html_mode, "Plain Text").clicked()
+                        && self.html_mode
+                    {
+                        should_convert_to_plain = true;
                     }
-                    if ui.selectable_label(self.html_mode, "HTML").clicked() {
-                        if !self.html_mode {
-                            should_convert_to_html = true;
-                        }
+                    if ui.selectable_label(self.html_mode, "HTML").clicked() && !self.html_mode {
+                        should_convert_to_html = true;
                     }
-                    
+
                     ui.separator();
-                    
+
                     // Formatting buttons (only in HTML mode)
                     if self.html_mode {
                         if ui.button("B").on_hover_text("Bold (Ctrl+B)").clicked() {
@@ -350,15 +349,15 @@ impl CompositionWindow {
                     egui::TextEdit::multiline(&mut self.body)
                         .desired_width(f32::INFINITY)
                         .desired_rows(10)
-                        .hint_text(if self.html_mode { 
+                        .hint_text(if self.html_mode {
                             "Type your message here... (HTML mode enabled)"
                         } else {
                             "Type your message here..."
-                        })
+                        }),
                 );
-                
+
                 ui.separator();
-                
+
                 // Attachments section
                 ui.horizontal(|ui| {
                     ui.label(format!("Attachments ({})", self.attachments.len()));
@@ -370,7 +369,7 @@ impl CompositionWindow {
                         ui.label(format!("({:.1} MB total)", total_mb));
                     }
                 });
-                
+
                 // Display attachments
                 for (idx, attachment) in self.attachments.clone().iter().enumerate() {
                     ui.horizontal(|ui| {
@@ -385,19 +384,23 @@ impl CompositionWindow {
                             "📄"
                         } else if attachment.mime_type.contains("word") {
                             "📝"
-                        } else if attachment.mime_type.contains("excel") || attachment.mime_type.contains("spreadsheet") {
+                        } else if attachment.mime_type.contains("excel")
+                            || attachment.mime_type.contains("spreadsheet")
+                        {
                             "📊"
-                        } else if attachment.mime_type.contains("zip") || attachment.mime_type.contains("archive") {
+                        } else if attachment.mime_type.contains("zip")
+                            || attachment.mime_type.contains("archive")
+                        {
                             "📦"
                         } else {
                             "📎"
                         };
-                        
+
                         ui.label(icon);
                         ui.label(&attachment.filename);
                         let size_kb = attachment.size as f64 / 1024.0;
                         ui.label(format!("({:.1} KB)", size_kb));
-                        
+
                         if ui.small_button("❌").clicked() {
                             attachments_to_remove.push(idx);
                         }
@@ -456,7 +459,7 @@ impl CompositionWindow {
         if show_bcc_toggle {
             self.show_bcc = true;
         }
-        
+
         // Handle attachment actions
         if should_attach {
             // Open file picker
@@ -464,12 +467,12 @@ impl CompositionWindow {
                 self.add_attachment(file);
             }
         }
-        
+
         // Remove attachments
         for idx in attachments_to_remove.iter().rev() {
             self.remove_attachment(*idx);
         }
-        
+
         // Handle rich text actions
         if should_convert_to_html {
             self.convert_to_html();
@@ -477,7 +480,7 @@ impl CompositionWindow {
         if should_convert_to_plain {
             self.convert_to_plain();
         }
-        
+
         // For formatting, we'd need cursor position from TextEdit
         // For now, these are placeholders that would wrap entire body
         // In a real implementation, we'd track text selection
@@ -550,7 +553,7 @@ impl CompositionWindow {
             .filter(|s| !s.is_empty())
             .collect()
     }
-    
+
     fn replace_last_recipient_token(current: &str, replacement: &str) -> String {
         let mut parts: Vec<String> = current
             .split(',')
@@ -583,27 +586,38 @@ impl CompositionWindow {
             .filter(|s| !s.is_empty())
             .collect()
     }
-    
+
     /// Convert to draft for saving
     pub fn to_draft(&self, account_id: &str) -> crate::data::message_cache::CachedDraft {
         use crate::data::message_cache::CachedDraft;
-        
-        let draft_id = self.draft_id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+        let draft_id = self
+            .draft_id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let now = chrono::Utc::now().to_rfc3339();
-        
+
         CachedDraft {
             id: draft_id,
             account_id: account_id.to_string(),
             to_addr: self.to.clone(),
-            cc: if self.cc.is_empty() { None } else { Some(self.cc.clone()) },
-            bcc: if self.bcc.is_empty() { None } else { Some(self.bcc.clone()) },
+            cc: if self.cc.is_empty() {
+                None
+            } else {
+                Some(self.cc.clone())
+            },
+            bcc: if self.bcc.is_empty() {
+                None
+            } else {
+                Some(self.bcc.clone())
+            },
             subject: self.subject.clone(),
             body: self.body.clone(),
             created_at: now.clone(),
             updated_at: now,
         }
     }
-    
+
     /// Load from draft
     pub fn from_draft(&mut self, draft: &crate::data::message_cache::CachedDraft) {
         self.draft_id = Some(draft.id.clone());
@@ -616,25 +630,30 @@ impl CompositionWindow {
         self.show_bcc = draft.bcc.is_some();
         self.open = true;
     }
-    
+
     /// Add attachment
     pub fn add_attachment(&mut self, path: PathBuf) {
         if let Ok(metadata) = std::fs::metadata(&path) {
-            let filename = path.file_name()
+            let filename = path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown")
                 .to_string();
-            
+
             let size = metadata.len();
-            
+
             // Simple MIME type detection based on extension
             let mime_type = Self::guess_mime_type(&filename);
-            
+
             // Warn if file is large (>10MB)
             if size > 10 * 1024 * 1024 {
-                self.status = format!("Warning: {} is {} MB (large file)", filename, size / (1024 * 1024));
+                self.status = format!(
+                    "Warning: {} is {} MB (large file)",
+                    filename,
+                    size / (1024 * 1024)
+                );
             }
-            
+
             self.attachments.push(AttachmentInfo {
                 filename,
                 path,
@@ -643,17 +662,17 @@ impl CompositionWindow {
             });
         }
     }
-    
+
     /// Remove attachment by index
     pub fn remove_attachment(&mut self, index: usize) {
         if index < self.attachments.len() {
             self.attachments.remove(index);
         }
     }
-    
+
     /// Guess MIME type from filename
     fn guess_mime_type(filename: &str) -> String {
-        let ext = filename.split('.').last().unwrap_or("").to_lowercase();
+        let ext = filename.split('.').next_back().unwrap_or("").to_lowercase();
         match ext.as_str() {
             "txt" => "text/plain",
             "pdf" => "application/pdf",
@@ -667,14 +686,15 @@ impl CompositionWindow {
             "mp3" => "audio/mpeg",
             "mp4" => "video/mp4",
             _ => "application/octet-stream",
-        }.to_string()
+        }
+        .to_string()
     }
-    
+
     /// Get total attachment size
     pub fn total_attachment_size(&self) -> u64 {
         self.attachments.iter().map(|a| a.size).sum()
     }
-    
+
     /// Apply bold formatting (wrap selection in <b> tags)
     pub fn apply_bold(&mut self, start: usize, end: usize) {
         if self.html_mode && end > start && end <= self.body.len() {
@@ -683,7 +703,7 @@ impl CompositionWindow {
             self.body.replace_range(start..end, &formatted);
         }
     }
-    
+
     /// Apply italic formatting
     pub fn apply_italic(&mut self, start: usize, end: usize) {
         if self.html_mode && end > start && end <= self.body.len() {
@@ -692,7 +712,7 @@ impl CompositionWindow {
             self.body.replace_range(start..end, &formatted);
         }
     }
-    
+
     /// Apply underline formatting
     pub fn apply_underline(&mut self, start: usize, end: usize) {
         if self.html_mode && end > start && end <= self.body.len() {
@@ -701,7 +721,7 @@ impl CompositionWindow {
             self.body.replace_range(start..end, &formatted);
         }
     }
-    
+
     /// Insert link
     pub fn insert_link(&mut self, start: usize, end: usize, url: &str) {
         if self.html_mode && end > start && end <= self.body.len() {
@@ -710,7 +730,7 @@ impl CompositionWindow {
             self.body.replace_range(start..end, &formatted);
         }
     }
-    
+
     /// Convert plain text to HTML
     pub fn convert_to_html(&mut self) {
         if !self.html_mode {
@@ -720,7 +740,7 @@ impl CompositionWindow {
             self.html_mode = true;
         }
     }
-    
+
     /// Convert HTML to plain text
     pub fn convert_to_plain(&mut self) {
         if self.html_mode {
@@ -730,13 +750,13 @@ impl CompositionWindow {
             self.html_mode = false;
         }
     }
-    
+
     /// Strip HTML tags from text
     fn strip_html_tags(&self, html: &str) -> String {
         // Simple HTML tag removal
         let mut result = String::new();
         let mut in_tag = false;
-        
+
         for ch in html.chars() {
             match ch {
                 '<' => in_tag = true,
@@ -745,7 +765,7 @@ impl CompositionWindow {
                 _ => {}
             }
         }
-        
+
         // Clean up HTML entities
         result
             .replace("&lt;", "<")
@@ -845,7 +865,7 @@ mod tests {
         assert_eq!(recipients[0], "user1@example.com");
         assert_eq!(recipients[1], "user2@example.com");
     }
-    
+
     #[test]
     fn test_replace_last_recipient_token() {
         let replaced = CompositionWindow::replace_last_recipient_token(
@@ -853,7 +873,7 @@ mod tests {
             "bob@example.com",
         );
         assert_eq!(replaced, "alice@example.com, bob@example.com");
-        
+
         let single = CompositionWindow::replace_last_recipient_token("ad", "ada@example.com");
         assert_eq!(single, "ada@example.com");
     }
@@ -879,15 +899,15 @@ mod tests {
         comp2.mark_saved();
         assert!(!comp2.should_auto_save()); // Just saved, shouldn't need to save yet
     }
-    
+
     #[test]
     fn test_attachment_management() {
         let mut comp = CompositionWindow::new();
-        
+
         // Initially no attachments
         assert_eq!(comp.attachments.len(), 0);
         assert_eq!(comp.total_attachment_size(), 0);
-        
+
         // Add attachment (simulated)
         comp.attachments.push(AttachmentInfo {
             filename: "test.pdf".to_string(),
@@ -895,75 +915,87 @@ mod tests {
             size: 1024,
             mime_type: "application/pdf".to_string(),
         });
-        
+
         assert_eq!(comp.attachments.len(), 1);
         assert_eq!(comp.total_attachment_size(), 1024);
-        
+
         // Remove attachment
         comp.remove_attachment(0);
         assert_eq!(comp.attachments.len(), 0);
     }
-    
+
     #[test]
     fn test_mime_type_guessing() {
-        assert_eq!(CompositionWindow::guess_mime_type("file.pdf"), "application/pdf");
-        assert_eq!(CompositionWindow::guess_mime_type("image.jpg"), "image/jpeg");
+        assert_eq!(
+            CompositionWindow::guess_mime_type("file.pdf"),
+            "application/pdf"
+        );
+        assert_eq!(
+            CompositionWindow::guess_mime_type("image.jpg"),
+            "image/jpeg"
+        );
         assert_eq!(CompositionWindow::guess_mime_type("image.png"), "image/png");
-        assert_eq!(CompositionWindow::guess_mime_type("doc.docx"), "application/msword");
-        assert_eq!(CompositionWindow::guess_mime_type("unknown.xyz"), "application/octet-stream");
+        assert_eq!(
+            CompositionWindow::guess_mime_type("doc.docx"),
+            "application/msword"
+        );
+        assert_eq!(
+            CompositionWindow::guess_mime_type("unknown.xyz"),
+            "application/octet-stream"
+        );
     }
-    
+
     #[test]
     fn test_html_mode_toggle() {
         let mut comp = CompositionWindow::new();
-        
+
         // Initially plain text
         assert!(!comp.html_mode);
-        
+
         // Set some plain text
         comp.body = "Hello\nWorld".to_string();
-        
+
         // Convert to HTML
         comp.convert_to_html();
         assert!(comp.html_mode);
         assert!(comp.body.contains("<p>") || comp.body.contains("<br>"));
-        
+
         // Convert back to plain
         comp.convert_to_plain();
         assert!(!comp.html_mode);
         assert!(!comp.body.contains("<"));
     }
-    
+
     #[test]
     fn test_html_formatting() {
         let mut comp = CompositionWindow::new();
         comp.html_mode = true;
         comp.body = "Hello World".to_string();
-        
+
         // Apply bold (0-5 = "Hello")
         comp.apply_bold(0, 5);
         assert!(comp.body.contains("<b>"));
-        
+
         // Reset for italic test
         comp.body = "Hello World".to_string();
         comp.apply_italic(6, 11); // "World"
         assert!(comp.body.contains("<i>"));
-        
+
         // Reset for underline test
         comp.body = "Hello World".to_string();
         comp.apply_underline(0, 11);
         assert!(comp.body.contains("<u>"));
     }
-    
+
     #[test]
     fn test_strip_html_tags() {
         let comp = CompositionWindow::new();
-        
+
         let html = "<p>Hello <b>World</b></p>";
         let plain = comp.strip_html_tags(html);
         // The function removes tags but doesn't add newlines for </p>
         assert!(plain.contains("Hello World"));
-        
+
         let html2 = "Text with &amp; &lt; &gt; entities";
         let plain2 = comp.strip_html_tags(html2);
         assert!(plain2.contains("&"));

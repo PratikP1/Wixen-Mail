@@ -55,10 +55,9 @@ impl AnnouncementQueue {
 
     /// Add an announcement to the queue
     pub fn announce(&self, text: &str, priority: Priority) -> Result<()> {
-        let mut queue = self
-            .queue
-            .lock()
-            .map_err(|_| crate::common::Error::Other("Announcement queue lock poisoned".to_string()))?;
+        let mut queue = self.queue.lock().map_err(|_| {
+            crate::common::Error::Other("Announcement queue lock poisoned".to_string())
+        })?;
         let rank = match priority {
             Priority::Urgent => 0,
             Priority::High => 1,
@@ -76,10 +75,9 @@ impl AnnouncementQueue {
 
     /// Get next announcement in priority order
     pub fn pop_next(&self) -> Result<Option<String>> {
-        let mut queue = self
-            .queue
-            .lock()
-            .map_err(|_| crate::common::Error::Other("Announcement queue lock poisoned".to_string()))?;
+        let mut queue = self.queue.lock().map_err(|_| {
+            crate::common::Error::Other("Announcement queue lock poisoned".to_string())
+        })?;
         Ok(queue.pop().map(|item| item.text))
     }
 }

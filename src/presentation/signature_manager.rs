@@ -1,6 +1,6 @@
-/// Signature Management UI
-///
-/// Provides dialogs for managing email signatures with full accessibility support.
+//! Signature Management UI
+//!
+//! Provides dialogs for managing email signatures with full accessibility support.
 
 use crate::data::message_cache::{MessageCache, Signature};
 use egui::{Color32, Context, TextEdit, Ui, Window};
@@ -117,7 +117,11 @@ impl SignatureManagerWindow {
     }
 
     /// Render the signature manager window
-    pub fn render(&mut self, ctx: &Context, cache: &Option<MessageCache>) -> Option<SignatureAction> {
+    pub fn render(
+        &mut self,
+        ctx: &Context,
+        cache: &Option<MessageCache>,
+    ) -> Option<SignatureAction> {
         if !self.open {
             return None;
         }
@@ -175,21 +179,25 @@ impl SignatureManagerWindow {
                                     if sig.is_default {
                                         ui.label("⭐");
                                     }
-                                    
+
                                     // Signature name
                                     ui.label(&sig.name);
-                                    
-                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                        // Delete button
-                                        if ui.button("🗑 Delete").clicked() {
-                                            action = Some(SignatureAction::Delete(sig.id.clone()));
-                                        }
-                                        
-                                        // Edit button
-                                        if ui.button("✏ Edit").clicked() {
-                                            start_edit_sig_id = Some(sig.id.clone());
-                                        }
-                                    });
+
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            // Delete button
+                                            if ui.button("🗑 Delete").clicked() {
+                                                action =
+                                                    Some(SignatureAction::Delete(sig.id.clone()));
+                                            }
+
+                                            // Edit button
+                                            if ui.button("✏ Edit").clicked() {
+                                                start_edit_sig_id = Some(sig.id.clone());
+                                            }
+                                        },
+                                    );
                                 });
                                 ui.add_space(4.0);
                             }
@@ -202,7 +210,11 @@ impl SignatureManagerWindow {
                 // Create/Edit form
                 if let Some(ref mut edit) = self.new_signature {
                     let is_editing = self.editing_signature.is_some();
-                    ui.heading(if is_editing { "Edit Signature" } else { "Create Signature" });
+                    ui.heading(if is_editing {
+                        "Edit Signature"
+                    } else {
+                        "Create Signature"
+                    });
                     ui.add_space(8.0);
 
                     // Name field
@@ -237,7 +249,7 @@ impl SignatureManagerWindow {
                                 TextEdit::multiline(content)
                                     .desired_width(f32::INFINITY)
                                     .desired_rows(8)
-                                    .code_editor()
+                                    .code_editor(),
                             );
                         });
 
@@ -251,24 +263,25 @@ impl SignatureManagerWindow {
                     // Preview section
                     ui.collapsing("Preview", |ui| {
                         ui.add_space(4.0);
-                        
+
                         ui.horizontal(|ui| {
                             ui.label("Preview as:");
                             ui.selectable_value(&mut self.preview_html, false, "Plain Text");
                             ui.selectable_value(&mut self.preview_html, true, "HTML");
                         });
-                        
+
                         ui.add_space(4.0);
-                        
+
                         egui::ScrollArea::vertical()
                             .max_height(150.0)
                             .show(ui, |ui| {
-                                let preview_content = if self.preview_html && !edit.content_html.is_empty() {
-                                    &edit.content_html
-                                } else {
-                                    &edit.content_plain
-                                };
-                                
+                                let preview_content =
+                                    if self.preview_html && !edit.content_html.is_empty() {
+                                        &edit.content_html
+                                    } else {
+                                        &edit.content_plain
+                                    };
+
                                 ui.label(preview_content);
                             });
                     });
@@ -318,7 +331,7 @@ impl SignatureManagerWindow {
         if should_save {
             if let Some(ref edit) = self.new_signature.clone() {
                 let is_editing = self.editing_signature.is_some();
-                
+
                 if edit.name.is_empty() {
                     self.error = Some("Signature name cannot be empty".to_string());
                 } else if edit.content_plain.is_empty() {
@@ -326,19 +339,21 @@ impl SignatureManagerWindow {
                 } else {
                     if is_editing {
                         if let Some(ref sig) = self.editing_signature {
-                            action = Some(SignatureAction::Update(crate::data::message_cache::Signature {
-                                id: sig.id.clone(),
-                                account_id: self.account_id.clone(),
-                                name: edit.name.clone(),
-                                content_plain: edit.content_plain.clone(),
-                                content_html: if edit.content_html.is_empty() {
-                                    None
-                                } else {
-                                    Some(edit.content_html.clone())
+                            action = Some(SignatureAction::Update(
+                                crate::data::message_cache::Signature {
+                                    id: sig.id.clone(),
+                                    account_id: self.account_id.clone(),
+                                    name: edit.name.clone(),
+                                    content_plain: edit.content_plain.clone(),
+                                    content_html: if edit.content_html.is_empty() {
+                                        None
+                                    } else {
+                                        Some(edit.content_html.clone())
+                                    },
+                                    is_default: edit.is_default,
+                                    created_at: sig.created_at.clone(),
                                 },
-                                is_default: edit.is_default,
-                                created_at: sig.created_at.clone(),
-                            }));
+                            ));
                         }
                     } else {
                         action = Some(SignatureAction::Create(
@@ -399,21 +414,12 @@ pub fn get_default_signature_text(
 }
 
 /// Signature selector for composition window
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SignatureSelector {
     /// Available signatures
     pub signatures: Vec<Signature>,
     /// Currently selected signature ID
     pub selected_id: Option<String>,
-}
-
-impl Default for SignatureSelector {
-    fn default() -> Self {
-        Self {
-            signatures: Vec::new(),
-            selected_id: None,
-        }
-    }
 }
 
 impl SignatureSelector {
@@ -437,15 +443,16 @@ impl SignatureSelector {
     /// Render signature selector dropdown
     pub fn render(&mut self, ui: &mut Ui) -> Option<String> {
         let mut result = None;
-        
+
         if self.signatures.is_empty() {
             ui.label("No signatures available");
             return None;
         }
 
         ui.label("Signature:");
-        
-        let selected_name = self.selected_id
+
+        let selected_name = self
+            .selected_id
             .as_ref()
             .and_then(|id| self.signatures.iter().find(|s| s.id == *id))
             .map(|s| s.name.clone())
@@ -455,11 +462,14 @@ impl SignatureSelector {
             .selected_text(selected_name)
             .show_ui(ui, |ui| {
                 // None option
-                if ui.selectable_label(self.selected_id.is_none(), "None").clicked() {
+                if ui
+                    .selectable_label(self.selected_id.is_none(), "None")
+                    .clicked()
+                {
                     self.selected_id = None;
                     result = Some(String::new());
                 }
-                
+
                 // Signature options
                 for sig in &self.signatures {
                     let is_selected = self.selected_id.as_ref() == Some(&sig.id);
@@ -468,7 +478,7 @@ impl SignatureSelector {
                     } else {
                         sig.name.clone()
                     };
-                    
+
                     if ui.selectable_label(is_selected, label).clicked() {
                         self.selected_id = Some(sig.id.clone());
                         result = Some(sig.content_plain.clone());
@@ -484,7 +494,9 @@ impl SignatureSelector {
         if let Some(id) = &self.selected_id {
             if let Some(sig) = self.signatures.iter().find(|s| s.id == *id) {
                 if html_mode {
-                    sig.content_html.clone().unwrap_or_else(|| sig.content_plain.clone())
+                    sig.content_html
+                        .clone()
+                        .unwrap_or_else(|| sig.content_plain.clone())
                 } else {
                     sig.content_plain.clone()
                 }

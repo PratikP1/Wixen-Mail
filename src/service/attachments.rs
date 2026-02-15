@@ -89,7 +89,10 @@ mod tests {
     #[test]
     fn test_attachment_save_and_load() {
         let handler = AttachmentHandler::new().unwrap();
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let path = std::env::temp_dir().join(format!("wixen_attachment_{}.txt", nanos));
         let attachment = Attachment {
             filename: "note.txt".to_string(),

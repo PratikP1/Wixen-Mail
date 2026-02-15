@@ -15,7 +15,9 @@ use tokio::sync::Mutex;
 
 /// Mail controller for managing mail operations
 pub struct MailController {
+    #[allow(dead_code)]
     account_manager: Arc<Mutex<AccountManager>>,
+    #[allow(dead_code)]
     message_manager: Arc<Mutex<MessageManager>>,
     imap_session: Arc<Mutex<Option<ImapSession>>>,
     pop3_session: Arc<Mutex<Option<Pop3Session>>>,
@@ -63,7 +65,7 @@ impl MailController {
     /// Fetch folders from IMAP
     pub async fn fetch_folders(&self) -> Result<Vec<String>> {
         let mut imap_session = self.imap_session.lock().await;
-        
+
         if let Some(session) = imap_session.as_mut() {
             let folders = session.list_folders().await?;
             Ok(folders.into_iter().map(|f| f.name).collect())
@@ -75,10 +77,10 @@ impl MailController {
     /// Fetch messages from a folder
     pub async fn fetch_messages(&self, folder: &str) -> Result<Vec<MessagePreview>> {
         let mut imap_session = self.imap_session.lock().await;
-        
+
         if let Some(session) = imap_session.as_mut() {
             let messages = session.fetch_messages(folder, None).await?;
-            
+
             Ok(messages
                 .into_iter()
                 .map(|m| MessagePreview {
@@ -98,7 +100,7 @@ impl MailController {
     /// Fetch message body
     pub async fn fetch_message_body(&self, folder: &str, uid: u32) -> Result<String> {
         let mut imap_session = self.imap_session.lock().await;
-        
+
         if let Some(session) = imap_session.as_mut() {
             session.fetch_message_body(folder, uid).await
         } else {
@@ -107,6 +109,7 @@ impl MailController {
     }
 
     /// Send an email via SMTP
+    #[allow(clippy::too_many_arguments)]
     pub async fn send_email(
         &self,
         server: String,
@@ -146,6 +149,7 @@ impl MailController {
     /// Send an email via SMTP for POP3-based accounts.
     ///
     /// POP3 only supports retrieval, so SMTP remains the transport for sending.
+    #[allow(clippy::too_many_arguments)]
     pub async fn send_email_for_pop3_account(
         &self,
         server: String,
@@ -165,7 +169,7 @@ impl MailController {
     /// Mark message as read
     pub async fn mark_as_read(&self, folder: &str, uid: u32) -> Result<()> {
         let mut imap_session = self.imap_session.lock().await;
-        
+
         if let Some(session) = imap_session.as_mut() {
             session.mark_as_read(folder, uid).await?;
             tracing::debug!("Marked message {} as read", uid);
@@ -178,7 +182,7 @@ impl MailController {
     /// Mark message as starred
     pub async fn toggle_starred(&self, folder: &str, uid: u32) -> Result<()> {
         let mut imap_session = self.imap_session.lock().await;
-        
+
         if let Some(session) = imap_session.as_mut() {
             session.toggle_flag(folder, uid, "\\Flagged").await?;
             tracing::debug!("Toggled starred flag for message {}", uid);
@@ -191,7 +195,7 @@ impl MailController {
     /// Delete a message
     pub async fn delete_message(&self, folder: &str, uid: u32) -> Result<()> {
         let mut imap_session = self.imap_session.lock().await;
-        
+
         if let Some(session) = imap_session.as_mut() {
             session.delete_message(folder, uid).await?;
             tracing::info!("Deleted message {}", uid);
@@ -389,7 +393,10 @@ mod tests {
         assert!(controller.is_pop3_connected().await);
         let msgs = controller.list_pop3_messages().await.unwrap();
         assert!(!msgs.is_empty());
-        let body = controller.fetch_pop3_message_body(msgs[0].id).await.unwrap();
+        let body = controller
+            .fetch_pop3_message_body(msgs[0].id)
+            .await
+            .unwrap();
         assert!(body.contains("Subject: POP3 Test Message"));
     }
 

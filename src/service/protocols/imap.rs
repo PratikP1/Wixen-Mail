@@ -3,8 +3,8 @@
 //! Handles IMAP4rev1 protocol for receiving email.
 
 use crate::common::Result;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -40,7 +40,9 @@ pub struct ImapMessage {
 /// IMAP IDLE event emitted by push notification loop.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImapIdleEvent {
-    KeepAlive { folder: String },
+    KeepAlive {
+        folder: String,
+    },
     Exists {
         folder: String,
         new_uids: Vec<u32>,
@@ -96,9 +98,12 @@ impl ImapClient {
 
     /// Connect and authenticate to IMAP server (placeholder)
     pub async fn connect(&self, _password: &str) -> Result<ImapSession> {
-        tracing::info!("IMAP connection to {}:{} (placeholder)", 
-            self.config.server, self.config.port);
-        
+        tracing::info!(
+            "IMAP connection to {}:{} (placeholder)",
+            self.config.server,
+            self.config.port
+        );
+
         // TODO: Implement actual IMAP connection using a mature async library
         // For now, return a placeholder session
         Ok(ImapSession {
@@ -121,7 +126,7 @@ impl ImapSession {
     /// List all folders (placeholder)
     pub async fn list_folders(&mut self) -> Result<Vec<ImapFolder>> {
         tracing::debug!("Listing IMAP folders (placeholder)");
-        
+
         // Return mock folders for now
         Ok(vec![
             ImapFolder {
@@ -152,25 +157,29 @@ impl ImapSession {
     /// Fetch message UIDs from current folder (placeholder)
     pub async fn fetch_uids(&mut self, range: &str) -> Result<Vec<u32>> {
         tracing::debug!("Fetching IMAP UIDs: {} (placeholder)", range);
-        
+
         // Return mock UIDs
         Ok(vec![1, 2, 3, 4, 5])
     }
 
     /// Fetch message headers (placeholder)
     pub async fn fetch_headers(&mut self, uids: &[u32]) -> Result<Vec<ImapMessage>> {
-        tracing::debug!("Fetching IMAP headers for {} UIDs (placeholder)", uids.len());
-        
+        tracing::debug!(
+            "Fetching IMAP headers for {} UIDs (placeholder)",
+            uids.len()
+        );
+
         // Return mock messages
-        let messages = uids.iter().map(|uid| {
-            ImapMessage {
+        let messages = uids
+            .iter()
+            .map(|uid| ImapMessage {
                 uid: *uid,
                 subject: format!("Test Message {}", uid),
                 from: "test@example.com".to_string(),
                 date: "Mon, 10 Jan 2022 10:00:00 +0000".to_string(),
                 flags: vec!["\\Seen".to_string()],
-            }
-        }).collect();
+            })
+            .collect();
 
         Ok(messages)
     }
@@ -178,14 +187,18 @@ impl ImapSession {
     /// Fetch complete message body (placeholder)
     pub async fn fetch_message_body(&mut self, _folder: &str, uid: u32) -> Result<String> {
         tracing::debug!("Fetching IMAP message body for UID: {} (placeholder)", uid);
-        
+
         Ok(format!("From: test@example.com\r\nTo: recipient@example.com\r\nSubject: Test Message {}\r\n\r\nThis is a test message body.", uid))
     }
 
     /// Fetch messages from a folder (placeholder)
-    pub async fn fetch_messages(&mut self, folder: &str, _range: Option<&str>) -> Result<Vec<ImapMessage>> {
+    pub async fn fetch_messages(
+        &mut self,
+        folder: &str,
+        _range: Option<&str>,
+    ) -> Result<Vec<ImapMessage>> {
         tracing::debug!("Fetching messages from folder: {} (placeholder)", folder);
-        
+
         // Return mock messages
         Ok(vec![
             ImapMessage {
@@ -214,19 +227,32 @@ impl ImapSession {
 
     /// Mark message as read (placeholder)
     pub async fn mark_as_read(&mut self, folder: &str, uid: u32) -> Result<()> {
-        tracing::debug!("Marking message {} as read in folder: {} (placeholder)", uid, folder);
+        tracing::debug!(
+            "Marking message {} as read in folder: {} (placeholder)",
+            uid,
+            folder
+        );
         Ok(())
     }
 
     /// Toggle a flag on a message (placeholder)
     pub async fn toggle_flag(&mut self, folder: &str, uid: u32, flag: &str) -> Result<()> {
-        tracing::debug!("Toggling flag {} on message {} in folder: {} (placeholder)", flag, uid, folder);
+        tracing::debug!(
+            "Toggling flag {} on message {} in folder: {} (placeholder)",
+            flag,
+            uid,
+            folder
+        );
         Ok(())
     }
 
     /// Delete a message (placeholder)
     pub async fn delete_message(&mut self, folder: &str, uid: u32) -> Result<()> {
-        tracing::debug!("Deleting message {} from folder: {} (placeholder)", uid, folder);
+        tracing::debug!(
+            "Deleting message {} from folder: {} (placeholder)",
+            uid,
+            folder
+        );
         Ok(())
     }
 

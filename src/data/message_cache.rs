@@ -83,7 +83,7 @@ pub struct Signature {
     pub id: String,
     pub account_id: String,
     pub name: String,
-    pub content_plain: String, // Plain text version
+    pub content_plain: String,        // Plain text version
     pub content_html: Option<String>, // HTML version
     pub is_default: bool,
     pub created_at: String,
@@ -95,11 +95,11 @@ pub struct MessageFilterRule {
     pub id: String,
     pub account_id: String,
     pub name: String,
-    pub field: String,        // subject, from, to
-    pub match_type: String,   // contains, equals, starts_with, regex, etc.
-    pub pattern: String,      // case-insensitive contains
+    pub field: String,      // subject, from, to
+    pub match_type: String, // contains, equals, starts_with, regex, etc.
+    pub pattern: String,    // case-insensitive contains
     pub case_sensitive: bool,
-    pub action_type: String,  // move_to_folder, add_tag, mark_as_read, delete
+    pub action_type: String, // move_to_folder, add_tag, mark_as_read, delete
     pub action_value: Option<String>, // folder or tag id for value-based actions
     pub enabled: bool,
     pub created_at: String,
@@ -161,21 +161,22 @@ impl MessageCache {
     pub fn new(cache_dir: PathBuf) -> Result<Self> {
         std::fs::create_dir_all(&cache_dir)
             .map_err(|e| Error::Other(format!("Failed to create cache directory: {}", e)))?;
-        
+
         let db_path = cache_dir.join("message_cache.db");
         let conn = Connection::open(db_path)
             .map_err(|e| Error::Other(format!("Failed to open database: {}", e)))?;
-        
+
         let cache = Self { conn };
         cache.initialize_schema()?;
-        
+
         Ok(cache)
     }
-    
+
     /// Initialize database schema
     fn initialize_schema(&self) -> Result<()> {
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS folders (
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS folders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 account_id TEXT NOT NULL,
                 name TEXT NOT NULL,
@@ -185,11 +186,13 @@ impl MessageCache {
                 total_count INTEGER DEFAULT 0,
                 UNIQUE(account_id, path)
             )",
-            [],
-        ).map_err(|e| Error::Other(format!("Failed to create folders table: {}", e)))?;
-        
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS messages (
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create folders table: {}", e)))?;
+
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 uid INTEGER NOT NULL,
                 folder_id INTEGER NOT NULL,
@@ -207,11 +210,13 @@ impl MessageCache {
                 FOREIGN KEY(folder_id) REFERENCES folders(id) ON DELETE CASCADE,
                 UNIQUE(folder_id, uid)
             )",
-            [],
-        ).map_err(|e| Error::Other(format!("Failed to create messages table: {}", e)))?;
-        
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS attachments (
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create messages table: {}", e)))?;
+
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS attachments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 message_id INTEGER NOT NULL,
                 filename TEXT NOT NULL,
@@ -220,12 +225,14 @@ impl MessageCache {
                 content_id TEXT,
                 FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
             )",
-            [],
-        ).map_err(|e| Error::Other(format!("Failed to create attachments table: {}", e)))?;
-        
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create attachments table: {}", e)))?;
+
         // Create drafts table
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS drafts (
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS drafts (
                 id TEXT PRIMARY KEY,
                 account_id TEXT NOT NULL,
                 to_addr TEXT NOT NULL,
@@ -236,12 +243,14 @@ impl MessageCache {
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )",
-            [],
-        ).map_err(|e| Error::Other(format!("Failed to create drafts table: {}", e)))?;
-        
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create drafts table: {}", e)))?;
+
         // Create tags table
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS tags (
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS tags (
                 id TEXT PRIMARY KEY,
                 account_id TEXT NOT NULL,
                 name TEXT NOT NULL,
@@ -249,12 +258,14 @@ impl MessageCache {
                 created_at TEXT NOT NULL,
                 UNIQUE(account_id, name)
             )",
-            [],
-        ).map_err(|e| Error::Other(format!("Failed to create tags table: {}", e)))?;
-        
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create tags table: {}", e)))?;
+
         // Create message_tags junction table
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS message_tags (
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS message_tags (
                 message_id INTEGER NOT NULL,
                 tag_id TEXT NOT NULL,
                 created_at TEXT NOT NULL,
@@ -262,12 +273,14 @@ impl MessageCache {
                 FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
                 FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
             )",
-            [],
-        ).map_err(|e| Error::Other(format!("Failed to create message_tags table: {}", e)))?;
-        
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create message_tags table: {}", e)))?;
+
         // Create signatures table
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS signatures (
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS signatures (
                 id TEXT PRIMARY KEY,
                 account_id TEXT NOT NULL,
                 name TEXT NOT NULL,
@@ -277,12 +290,14 @@ impl MessageCache {
                 created_at TEXT NOT NULL,
                 UNIQUE(account_id, name)
             )",
-            [],
-        ).map_err(|e| Error::Other(format!("Failed to create signatures table: {}", e)))?;
-        
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create signatures table: {}", e)))?;
+
         // Create message filter rules table
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS message_filter_rules (
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS message_filter_rules (
                 id TEXT PRIMARY KEY,
                 account_id TEXT NOT NULL,
                 name TEXT NOT NULL,
@@ -297,12 +312,19 @@ impl MessageCache {
                 updated_at TEXT NOT NULL,
                 UNIQUE(account_id, name)
             )",
-            [],
-        ).map_err(|e| Error::Other(format!("Failed to create message_filter_rules table: {}", e)))?;
-        
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to create message_filter_rules table: {}",
+                    e
+                ))
+            })?;
+
         // Create contacts table
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS contacts (
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS contacts (
                 id TEXT PRIMARY KEY,
                 account_id TEXT NOT NULL,
                 name TEXT NOT NULL,
@@ -325,12 +347,14 @@ impl MessageCache {
                 updated_at TEXT NOT NULL,
                 UNIQUE(account_id, email)
             )",
-            [],
-        ).map_err(|e| Error::Other(format!("Failed to create contacts table: {}", e)))?;
-        
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create contacts table: {}", e)))?;
+
         // Create OAuth token storage
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS oauth_tokens (
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS oauth_tokens (
                 id TEXT PRIMARY KEY,
                 account_id TEXT NOT NULL,
                 provider TEXT NOT NULL,
@@ -343,12 +367,14 @@ impl MessageCache {
                 updated_at TEXT NOT NULL,
                 UNIQUE(account_id, provider)
             )",
-            [],
-        ).map_err(|e| Error::Other(format!("Failed to create oauth_tokens table: {}", e)))?;
-        
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create oauth_tokens table: {}", e)))?;
+
         // Create offline outbox queue
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS outbox_queue (
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS outbox_queue (
                 id TEXT PRIMARY KEY,
                 account_id TEXT NOT NULL,
                 to_addr TEXT NOT NULL,
@@ -358,12 +384,21 @@ impl MessageCache {
                 last_error TEXT,
                 created_at TEXT NOT NULL
             )",
-            [],
-        ).map_err(|e| Error::Other(format!("Failed to create outbox_queue table: {}", e)))?;
-        
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create outbox_queue table: {}", e)))?;
+
         // Schema migration support for existing databases
-        self.ensure_column_exists("message_filter_rules", "match_type", "TEXT NOT NULL DEFAULT 'contains'")?;
-        self.ensure_column_exists("message_filter_rules", "case_sensitive", "BOOLEAN DEFAULT 0")?;
+        self.ensure_column_exists(
+            "message_filter_rules",
+            "match_type",
+            "TEXT NOT NULL DEFAULT 'contains'",
+        )?;
+        self.ensure_column_exists(
+            "message_filter_rules",
+            "case_sensitive",
+            "BOOLEAN DEFAULT 0",
+        )?;
         self.ensure_column_exists("contacts", "provider_contact_id", "TEXT")?;
         self.ensure_column_exists("contacts", "phone", "TEXT")?;
         self.ensure_column_exists("contacts", "company", "TEXT")?;
@@ -376,13 +411,18 @@ impl MessageCache {
         self.ensure_column_exists("contacts", "source_provider", "TEXT")?;
         self.ensure_column_exists("contacts", "last_synced_at", "TEXT")?;
         self.ensure_column_exists("contacts", "vcard_raw", "TEXT")?;
-        self.ensure_column_exists("oauth_tokens", "token_type", "TEXT NOT NULL DEFAULT 'Bearer'")?;
+        self.ensure_column_exists(
+            "oauth_tokens",
+            "token_type",
+            "TEXT NOT NULL DEFAULT 'Bearer'",
+        )?;
         self.ensure_column_exists("oauth_tokens", "scope", "TEXT")?;
         self.ensure_column_exists("oauth_tokens", "expires_at", "TEXT")?;
-        
+
         // Create accounts table
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS accounts (
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS accounts (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 email TEXT NOT NULL UNIQUE,
@@ -402,74 +442,95 @@ impl MessageCache {
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )",
-            [],
-        ).map_err(|e| Error::Other(format!("Failed to create accounts table: {}", e)))?;
-        
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create accounts table: {}", e)))?;
+
         // Create indexes for performance
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_messages_folder_id ON messages(folder_id)",
-            [],
-        ).map_err(|e| Error::Other(format!("Failed to create index: {}", e)))?;
-        
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_messages_uid ON messages(uid)",
-            [],
-        ).map_err(|e| Error::Other(format!("Failed to create index: {}", e)))?;
-        
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_message_tags_tag_id ON message_tags(tag_id)",
-            [],
-        ).map_err(|e| Error::Other(format!("Failed to create index: {}", e)))?;
-        
+        self.conn
+            .execute(
+                "CREATE INDEX IF NOT EXISTS idx_messages_folder_id ON messages(folder_id)",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create index: {}", e)))?;
+
+        self.conn
+            .execute(
+                "CREATE INDEX IF NOT EXISTS idx_messages_uid ON messages(uid)",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create index: {}", e)))?;
+
+        self.conn
+            .execute(
+                "CREATE INDEX IF NOT EXISTS idx_message_tags_tag_id ON message_tags(tag_id)",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create index: {}", e)))?;
+
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_message_tags_message_id ON message_tags(message_id)",
             [],
         ).map_err(|e| Error::Other(format!("Failed to create index: {}", e)))?;
-        
+
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_contacts_account_email ON contacts(account_id, email)",
             [],
         ).map_err(|e| Error::Other(format!("Failed to create index: {}", e)))?;
-        
+
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_oauth_tokens_account_provider ON oauth_tokens(account_id, provider)",
             [],
         ).map_err(|e| Error::Other(format!("Failed to create index: {}", e)))?;
-        
+
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_outbox_queue_account_created ON outbox_queue(account_id, created_at)",
             [],
         ).map_err(|e| Error::Other(format!("Failed to create index: {}", e)))?;
-        
+
         Ok(())
     }
-    
+
     fn ensure_column_exists(&self, table: &str, column: &str, column_def: &str) -> Result<()> {
         fn is_safe_identifier(value: &str) -> bool {
             value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         }
         if !is_safe_identifier(table) || !is_safe_identifier(column) {
-            return Err(Error::Other("Unsafe identifier in schema migration".to_string()));
+            return Err(Error::Other(
+                "Unsafe identifier in schema migration".to_string(),
+            ));
         }
-        
-        let mut stmt = self.conn.prepare(&format!("PRAGMA table_info({})", table))
+
+        let mut stmt = self
+            .conn
+            .prepare(&format!("PRAGMA table_info({})", table))
             .map_err(|e| Error::Other(format!("Failed to inspect schema for {}: {}", table, e)))?;
-        
-        let columns = stmt.query_map([], |row| row.get::<_, String>(1))
+
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))
             .map_err(|e| Error::Other(format!("Failed to read schema for {}: {}", table, e)))?
             .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|e| Error::Other(format!("Failed to collect schema info for {}: {}", table, e)))?;
-        
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to collect schema info for {}: {}",
+                    table, e
+                ))
+            })?;
+
         if !columns.iter().any(|c| c == column) {
-            self.conn.execute(
-                &format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, column_def),
-                [],
-            ).map_err(|e| Error::Other(format!("Failed to add column {}.{}: {}", table, column, e)))?;
+            self.conn
+                .execute(
+                    &format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, column_def),
+                    [],
+                )
+                .map_err(|e| {
+                    Error::Other(format!("Failed to add column {}.{}: {}", table, column, e))
+                })?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Save a folder to cache
     pub fn save_folder(&self, folder: &CachedFolder) -> Result<i64> {
         self.conn.execute(
@@ -484,61 +545,71 @@ impl MessageCache {
                 folder.total_count,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save folder: {}", e)))?;
-        
+
         Ok(self.conn.last_insert_rowid())
     }
-    
+
     /// Get folder by account and path
     pub fn get_folder(&self, account_id: &str, path: &str) -> Result<Option<CachedFolder>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, name, path, folder_type, unread_count, total_count
-             FROM folders WHERE account_id = ?1 AND path = ?2"
-        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-        
-        let folder = stmt.query_row(params![account_id, path], |row| {
-            Ok(CachedFolder {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                name: row.get(2)?,
-                path: row.get(3)?,
-                folder_type: row.get(4)?,
-                unread_count: row.get(5)?,
-                total_count: row.get(6)?,
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, account_id, name, path, folder_type, unread_count, total_count
+             FROM folders WHERE account_id = ?1 AND path = ?2",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let folder = stmt
+            .query_row(params![account_id, path], |row| {
+                Ok(CachedFolder {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    path: row.get(3)?,
+                    folder_type: row.get(4)?,
+                    unread_count: row.get(5)?,
+                    total_count: row.get(6)?,
+                })
             })
-        }).optional()
-        .map_err(|e| Error::Other(format!("Failed to get folder: {}", e)))?;
-        
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to get folder: {}", e)))?;
+
         Ok(folder)
     }
-    
+
     /// Get all folders for an account
     pub fn get_folders_for_account(&self, account_id: &str) -> Result<Vec<CachedFolder>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, name, path, folder_type, unread_count, total_count
-             FROM folders WHERE account_id = ?1 ORDER BY name"
-        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-        
-        let folders = stmt.query_map(params![account_id], |row| {
-            Ok(CachedFolder {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                name: row.get(2)?,
-                path: row.get(3)?,
-                folder_type: row.get(4)?,
-                unread_count: row.get(5)?,
-                total_count: row.get(6)?,
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, account_id, name, path, folder_type, unread_count, total_count
+             FROM folders WHERE account_id = ?1 ORDER BY name",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let folders = stmt
+            .query_map(params![account_id], |row| {
+                Ok(CachedFolder {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    path: row.get(3)?,
+                    folder_type: row.get(4)?,
+                    unread_count: row.get(5)?,
+                    total_count: row.get(6)?,
+                })
             })
-        }).map_err(|e| Error::Other(format!("Failed to query folders: {}", e)))?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| Error::Other(format!("Failed to collect folders: {}", e)))?;
-        
+            .map_err(|e| Error::Other(format!("Failed to query folders: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect folders: {}", e)))?;
+
         Ok(folders)
     }
-    
+
     /// Save a message to cache
     pub fn save_message(&self, msg: &CachedMessage) -> Result<i64> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO messages 
+            "INSERT OR REPLACE INTO messages
              (uid, folder_id, message_id, subject, from_addr, to_addr, cc, date, body_plain, body_html, read, starred, deleted)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
@@ -557,115 +628,132 @@ impl MessageCache {
                 msg.deleted,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save message: {}", e)))?;
-        
+
         Ok(self.conn.last_insert_rowid())
     }
-    
+
     /// Get messages for a folder scoped to an account
-    pub fn get_messages_for_folder(&self, folder_id: i64, account_id: &str) -> Result<Vec<CachedMessage>> {
+    pub fn get_messages_for_folder(
+        &self,
+        folder_id: i64,
+        account_id: &str,
+    ) -> Result<Vec<CachedMessage>> {
         let mut stmt = self.conn.prepare(
-            "SELECT m.id, m.uid, m.folder_id, m.message_id, m.subject, m.from_addr, m.to_addr, m.cc, m.date, 
+            "SELECT m.id, m.uid, m.folder_id, m.message_id, m.subject, m.from_addr, m.to_addr, m.cc, m.date,
                     m.body_plain, m.body_html, m.read, m.starred, m.deleted
              FROM messages m
              INNER JOIN folders f ON m.folder_id = f.id
              WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
              ORDER BY m.date DESC"
         ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-        
-        let messages = stmt.query_map(params![folder_id, account_id], |row| {
-            Ok(CachedMessage {
-                id: row.get(0)?,
-                uid: row.get(1)?,
-                folder_id: row.get(2)?,
-                message_id: row.get(3)?,
-                subject: row.get(4)?,
-                from_addr: row.get(5)?,
-                to_addr: row.get(6)?,
-                cc: row.get(7)?,
-                date: row.get(8)?,
-                body_plain: row.get(9)?,
-                body_html: row.get(10)?,
-                read: row.get(11)?,
-                starred: row.get(12)?,
-                deleted: row.get(13)?,
+
+        let messages = stmt
+            .query_map(params![folder_id, account_id], |row| {
+                Ok(CachedMessage {
+                    id: row.get(0)?,
+                    uid: row.get(1)?,
+                    folder_id: row.get(2)?,
+                    message_id: row.get(3)?,
+                    subject: row.get(4)?,
+                    from_addr: row.get(5)?,
+                    to_addr: row.get(6)?,
+                    cc: row.get(7)?,
+                    date: row.get(8)?,
+                    body_plain: row.get(9)?,
+                    body_html: row.get(10)?,
+                    read: row.get(11)?,
+                    starred: row.get(12)?,
+                    deleted: row.get(13)?,
+                })
             })
-        }).map_err(|e| Error::Other(format!("Failed to query messages: {}", e)))?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| Error::Other(format!("Failed to collect messages: {}", e)))?;
-        
+            .map_err(|e| Error::Other(format!("Failed to query messages: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect messages: {}", e)))?;
+
         Ok(messages)
     }
-    
+
     /// Get a specific message by ID
     pub fn get_message(&self, message_id: i64) -> Result<Option<CachedMessage>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, uid, folder_id, message_id, subject, from_addr, to_addr, cc, date,
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, uid, folder_id, message_id, subject, from_addr, to_addr, cc, date,
                     body_plain, body_html, read, starred, deleted
-             FROM messages WHERE id = ?1"
-        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-        
-        let message = stmt.query_row(params![message_id], |row| {
-            Ok(CachedMessage {
-                id: row.get(0)?,
-                uid: row.get(1)?,
-                folder_id: row.get(2)?,
-                message_id: row.get(3)?,
-                subject: row.get(4)?,
-                from_addr: row.get(5)?,
-                to_addr: row.get(6)?,
-                cc: row.get(7)?,
-                date: row.get(8)?,
-                body_plain: row.get(9)?,
-                body_html: row.get(10)?,
-                read: row.get(11)?,
-                starred: row.get(12)?,
-                deleted: row.get(13)?,
+             FROM messages WHERE id = ?1",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let message = stmt
+            .query_row(params![message_id], |row| {
+                Ok(CachedMessage {
+                    id: row.get(0)?,
+                    uid: row.get(1)?,
+                    folder_id: row.get(2)?,
+                    message_id: row.get(3)?,
+                    subject: row.get(4)?,
+                    from_addr: row.get(5)?,
+                    to_addr: row.get(6)?,
+                    cc: row.get(7)?,
+                    date: row.get(8)?,
+                    body_plain: row.get(9)?,
+                    body_html: row.get(10)?,
+                    read: row.get(11)?,
+                    starred: row.get(12)?,
+                    deleted: row.get(13)?,
+                })
             })
-        }).optional()
-        .map_err(|e| Error::Other(format!("Failed to get message: {}", e)))?;
-        
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to get message: {}", e)))?;
+
         Ok(message)
     }
-    
+
     /// Update message flags
     pub fn update_message_flags(&self, message_id: i64, read: bool, starred: bool) -> Result<()> {
-        self.conn.execute(
-            "UPDATE messages SET read = ?1, starred = ?2 WHERE id = ?3",
-            params![read, starred, message_id],
-        ).map_err(|e| Error::Other(format!("Failed to update flags: {}", e)))?;
-        
+        self.conn
+            .execute(
+                "UPDATE messages SET read = ?1, starred = ?2 WHERE id = ?3",
+                params![read, starred, message_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to update flags: {}", e)))?;
+
         Ok(())
     }
-    
+
     /// Delete message (mark as deleted)
     pub fn delete_message(&self, message_id: i64) -> Result<()> {
-        self.conn.execute(
-            "UPDATE messages SET deleted = 1 WHERE id = ?1",
-            params![message_id],
-        ).map_err(|e| Error::Other(format!("Failed to delete message: {}", e)))?;
-        
+        self.conn
+            .execute(
+                "UPDATE messages SET deleted = 1 WHERE id = ?1",
+                params![message_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to delete message: {}", e)))?;
+
         Ok(())
     }
-    
+
     /// Clear cache for an account
     pub fn clear_account_cache(&self, account_id: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM folders WHERE account_id = ?1",
-            params![account_id],
-        ).map_err(|e| Error::Other(format!("Failed to clear cache: {}", e)))?;
-        
+        self.conn
+            .execute(
+                "DELETE FROM folders WHERE account_id = ?1",
+                params![account_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to clear cache: {}", e)))?;
+
         Ok(())
     }
-    
+
     // ===== Draft Management Methods =====
-    
+
     /// Save a draft to cache
     pub fn save_draft(&self, draft: &CachedDraft) -> Result<()> {
         let now = chrono::Utc::now().to_rfc3339();
-        
+
         self.conn.execute(
             "INSERT OR REPLACE INTO drafts (id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7,
                      COALESCE((SELECT created_at FROM drafts WHERE id = ?1), ?8), ?9)",
             params![
                 draft.id,
@@ -679,49 +767,24 @@ impl MessageCache {
                 now,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save draft: {}", e)))?;
-        
+
         Ok(())
     }
-    
+
     /// Load all drafts for an account
     pub fn load_drafts(&self, account_id: &str) -> Result<Vec<CachedDraft>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at
              FROM drafts
              WHERE account_id = ?1
-             ORDER BY updated_at DESC"
-        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-        
-        let drafts = stmt.query_map(params![account_id], |row| {
-            Ok(CachedDraft {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                to_addr: row.get(2)?,
-                cc: row.get(3)?,
-                bcc: row.get(4)?,
-                subject: row.get(5)?,
-                body: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-            })
-        }).map_err(|e| Error::Other(format!("Failed to query drafts: {}", e)))?;
-        
-        let mut result = Vec::new();
-        for draft in drafts {
-            result.push(draft.map_err(|e| Error::Other(format!("Failed to read draft: {}", e)))?);
-        }
-        
-        Ok(result)
-    }
-    
-    /// Load a specific draft by ID
-    pub fn load_draft(&self, draft_id: &str) -> Result<Option<CachedDraft>> {
-        let result = self.conn.query_row(
-            "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at
-             FROM drafts
-             WHERE id = ?1",
-            params![draft_id],
-            |row| {
+             ORDER BY updated_at DESC",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let drafts = stmt
+            .query_map(params![account_id], |row| {
                 Ok(CachedDraft {
                     id: row.get(0)?,
                     account_id: row.get(1)?,
@@ -733,161 +796,218 @@ impl MessageCache {
                     created_at: row.get(7)?,
                     updated_at: row.get(8)?,
                 })
-            }
-        ).optional().map_err(|e| Error::Other(format!("Failed to load draft: {}", e)))?;
-        
+            })
+            .map_err(|e| Error::Other(format!("Failed to query drafts: {}", e)))?;
+
+        let mut result = Vec::new();
+        for draft in drafts {
+            result.push(draft.map_err(|e| Error::Other(format!("Failed to read draft: {}", e)))?);
+        }
+
         Ok(result)
     }
-    
+
+    /// Load a specific draft by ID
+    pub fn load_draft(&self, draft_id: &str) -> Result<Option<CachedDraft>> {
+        let result = self
+            .conn
+            .query_row(
+                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at
+             FROM drafts
+             WHERE id = ?1",
+                params![draft_id],
+                |row| {
+                    Ok(CachedDraft {
+                        id: row.get(0)?,
+                        account_id: row.get(1)?,
+                        to_addr: row.get(2)?,
+                        cc: row.get(3)?,
+                        bcc: row.get(4)?,
+                        subject: row.get(5)?,
+                        body: row.get(6)?,
+                        created_at: row.get(7)?,
+                        updated_at: row.get(8)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to load draft: {}", e)))?;
+
+        Ok(result)
+    }
+
     /// Delete a draft
     pub fn delete_draft(&self, draft_id: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM drafts WHERE id = ?1",
-            params![draft_id],
-        ).map_err(|e| Error::Other(format!("Failed to delete draft: {}", e)))?;
-        
+        self.conn
+            .execute("DELETE FROM drafts WHERE id = ?1", params![draft_id])
+            .map_err(|e| Error::Other(format!("Failed to delete draft: {}", e)))?;
+
         Ok(())
     }
-    
+
     /// Clear all drafts for an account
     pub fn clear_drafts(&self, account_id: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM drafts WHERE account_id = ?1",
-            params![account_id],
-        ).map_err(|e| Error::Other(format!("Failed to clear drafts: {}", e)))?;
-        
+        self.conn
+            .execute(
+                "DELETE FROM drafts WHERE account_id = ?1",
+                params![account_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to clear drafts: {}", e)))?;
+
         Ok(())
     }
-    
+
     // ===== Tag Management Methods =====
-    
+
     /// Create a new tag
     pub fn create_tag(&self, tag: &Tag) -> Result<()> {
-        self.conn.execute(
-            "INSERT INTO tags (id, account_id, name, color, created_at)
+        self.conn
+            .execute(
+                "INSERT INTO tags (id, account_id, name, color, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                &tag.id,
-                &tag.account_id,
-                &tag.name,
-                &tag.color,
-                &tag.created_at,
-            ],
-        ).map_err(|e| Error::Other(format!("Failed to create tag: {}", e)))?;
-        
+                params![
+                    &tag.id,
+                    &tag.account_id,
+                    &tag.name,
+                    &tag.color,
+                    &tag.created_at,
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create tag: {}", e)))?;
+
         Ok(())
     }
-    
+
     /// Get all tags for an account
     pub fn get_tags_for_account(&self, account_id: &str) -> Result<Vec<Tag>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, name, color, created_at
-             FROM tags WHERE account_id = ?1 ORDER BY name"
-        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-        
-        let tags = stmt.query_map(params![account_id], |row| {
-            Ok(Tag {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                name: row.get(2)?,
-                color: row.get(3)?,
-                created_at: row.get(4)?,
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, account_id, name, color, created_at
+             FROM tags WHERE account_id = ?1 ORDER BY name",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let tags = stmt
+            .query_map(params![account_id], |row| {
+                Ok(Tag {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    color: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
             })
-        }).map_err(|e| Error::Other(format!("Failed to query tags: {}", e)))?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| Error::Other(format!("Failed to collect tags: {}", e)))?;
-        
+            .map_err(|e| Error::Other(format!("Failed to query tags: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect tags: {}", e)))?;
+
         Ok(tags)
     }
-    
+
     /// Get a specific tag by ID
     pub fn get_tag(&self, tag_id: &str) -> Result<Option<Tag>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, name, color, created_at
-             FROM tags WHERE id = ?1"
-        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-        
-        let tag = stmt.query_row(params![tag_id], |row| {
-            Ok(Tag {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                name: row.get(2)?,
-                color: row.get(3)?,
-                created_at: row.get(4)?,
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, account_id, name, color, created_at
+             FROM tags WHERE id = ?1",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let tag = stmt
+            .query_row(params![tag_id], |row| {
+                Ok(Tag {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    color: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
             })
-        }).optional()
-        .map_err(|e| Error::Other(format!("Failed to get tag: {}", e)))?;
-        
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to get tag: {}", e)))?;
+
         Ok(tag)
     }
-    
+
     /// Update a tag
     pub fn update_tag(&self, tag: &Tag) -> Result<()> {
-        self.conn.execute(
-            "UPDATE tags SET name = ?1, color = ?2 WHERE id = ?3",
-            params![&tag.name, &tag.color, &tag.id],
-        ).map_err(|e| Error::Other(format!("Failed to update tag: {}", e)))?;
-        
+        self.conn
+            .execute(
+                "UPDATE tags SET name = ?1, color = ?2 WHERE id = ?3",
+                params![&tag.name, &tag.color, &tag.id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to update tag: {}", e)))?;
+
         Ok(())
     }
-    
+
     /// Delete a tag
     pub fn delete_tag(&self, tag_id: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM tags WHERE id = ?1",
-            params![tag_id],
-        ).map_err(|e| Error::Other(format!("Failed to delete tag: {}", e)))?;
-        
+        self.conn
+            .execute("DELETE FROM tags WHERE id = ?1", params![tag_id])
+            .map_err(|e| Error::Other(format!("Failed to delete tag: {}", e)))?;
+
         Ok(())
     }
-    
+
     /// Add a tag to a message
     pub fn add_tag_to_message(&self, message_id: i64, tag_id: &str) -> Result<()> {
         let now = chrono::Utc::now().to_rfc3339();
-        self.conn.execute(
-            "INSERT OR IGNORE INTO message_tags (message_id, tag_id, created_at)
+        self.conn
+            .execute(
+                "INSERT OR IGNORE INTO message_tags (message_id, tag_id, created_at)
              VALUES (?1, ?2, ?3)",
-            params![message_id, tag_id, now],
-        ).map_err(|e| Error::Other(format!("Failed to add tag to message: {}", e)))?;
-        
+                params![message_id, tag_id, now],
+            )
+            .map_err(|e| Error::Other(format!("Failed to add tag to message: {}", e)))?;
+
         Ok(())
     }
-    
+
     /// Remove a tag from a message
     pub fn remove_tag_from_message(&self, message_id: i64, tag_id: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM message_tags WHERE message_id = ?1 AND tag_id = ?2",
-            params![message_id, tag_id],
-        ).map_err(|e| Error::Other(format!("Failed to remove tag from message: {}", e)))?;
-        
+        self.conn
+            .execute(
+                "DELETE FROM message_tags WHERE message_id = ?1 AND tag_id = ?2",
+                params![message_id, tag_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to remove tag from message: {}", e)))?;
+
         Ok(())
     }
-    
+
     /// Get all tags for a message
     pub fn get_tags_for_message(&self, message_id: i64) -> Result<Vec<Tag>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT t.id, t.account_id, t.name, t.color, t.created_at
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT t.id, t.account_id, t.name, t.color, t.created_at
              FROM tags t
              INNER JOIN message_tags mt ON t.id = mt.tag_id
              WHERE mt.message_id = ?1
-             ORDER BY t.name"
-        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-        
-        let tags = stmt.query_map(params![message_id], |row| {
-            Ok(Tag {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                name: row.get(2)?,
-                color: row.get(3)?,
-                created_at: row.get(4)?,
+             ORDER BY t.name",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let tags = stmt
+            .query_map(params![message_id], |row| {
+                Ok(Tag {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    color: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
             })
-        }).map_err(|e| Error::Other(format!("Failed to query message tags: {}", e)))?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| Error::Other(format!("Failed to collect message tags: {}", e)))?;
-        
+            .map_err(|e| Error::Other(format!("Failed to query message tags: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect message tags: {}", e)))?;
+
         Ok(tags)
     }
-    
+
     /// Get all messages with a specific tag
     pub fn get_messages_by_tag(&self, tag_id: &str) -> Result<Vec<CachedMessage>> {
         let mut stmt = self.conn.prepare(
@@ -898,33 +1018,35 @@ impl MessageCache {
              WHERE mt.tag_id = ?1 AND m.deleted = 0
              ORDER BY m.date DESC"
         ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-        
-        let messages = stmt.query_map(params![tag_id], |row| {
-            Ok(CachedMessage {
-                id: row.get(0)?,
-                uid: row.get(1)?,
-                folder_id: row.get(2)?,
-                message_id: row.get(3)?,
-                subject: row.get(4)?,
-                from_addr: row.get(5)?,
-                to_addr: row.get(6)?,
-                cc: row.get(7)?,
-                date: row.get(8)?,
-                body_plain: row.get(9)?,
-                body_html: row.get(10)?,
-                read: row.get(11)?,
-                starred: row.get(12)?,
-                deleted: row.get(13)?,
+
+        let messages = stmt
+            .query_map(params![tag_id], |row| {
+                Ok(CachedMessage {
+                    id: row.get(0)?,
+                    uid: row.get(1)?,
+                    folder_id: row.get(2)?,
+                    message_id: row.get(3)?,
+                    subject: row.get(4)?,
+                    from_addr: row.get(5)?,
+                    to_addr: row.get(6)?,
+                    cc: row.get(7)?,
+                    date: row.get(8)?,
+                    body_plain: row.get(9)?,
+                    body_html: row.get(10)?,
+                    read: row.get(11)?,
+                    starred: row.get(12)?,
+                    deleted: row.get(13)?,
+                })
             })
-        }).map_err(|e| Error::Other(format!("Failed to query messages by tag: {}", e)))?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| Error::Other(format!("Failed to collect messages by tag: {}", e)))?;
-        
+            .map_err(|e| Error::Other(format!("Failed to query messages by tag: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect messages by tag: {}", e)))?;
+
         Ok(messages)
     }
-    
+
     // ===== Signature Management Methods =====
-    
+
     /// Create a new signature
     pub fn create_signature(&self, signature: &Signature) -> Result<()> {
         self.conn.execute(
@@ -940,126 +1062,149 @@ impl MessageCache {
                 &signature.created_at,
             ],
         ).map_err(|e| Error::Other(format!("Failed to create signature: {}", e)))?;
-        
+
         // If this is marked as default, unset other defaults for this account
         if signature.is_default {
-            self.conn.execute(
-                "UPDATE signatures SET is_default = 0 WHERE account_id = ?1 AND id != ?2",
-                params![&signature.account_id, &signature.id],
-            ).map_err(|e| Error::Other(format!("Failed to update defaults: {}", e)))?;
+            self.conn
+                .execute(
+                    "UPDATE signatures SET is_default = 0 WHERE account_id = ?1 AND id != ?2",
+                    params![&signature.account_id, &signature.id],
+                )
+                .map_err(|e| Error::Other(format!("Failed to update defaults: {}", e)))?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Get all signatures for an account
     pub fn get_signatures_for_account(&self, account_id: &str) -> Result<Vec<Signature>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, name, content_plain, content_html, is_default, created_at
-             FROM signatures WHERE account_id = ?1 ORDER BY name"
-        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-        
-        let signatures = stmt.query_map(params![account_id], |row| {
-            Ok(Signature {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                name: row.get(2)?,
-                content_plain: row.get(3)?,
-                content_html: row.get(4)?,
-                is_default: row.get(5)?,
-                created_at: row.get(6)?,
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, account_id, name, content_plain, content_html, is_default, created_at
+             FROM signatures WHERE account_id = ?1 ORDER BY name",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let signatures = stmt
+            .query_map(params![account_id], |row| {
+                Ok(Signature {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    content_plain: row.get(3)?,
+                    content_html: row.get(4)?,
+                    is_default: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
             })
-        }).map_err(|e| Error::Other(format!("Failed to query signatures: {}", e)))?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| Error::Other(format!("Failed to collect signatures: {}", e)))?;
-        
+            .map_err(|e| Error::Other(format!("Failed to query signatures: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect signatures: {}", e)))?;
+
         Ok(signatures)
     }
-    
+
     /// Get a specific signature by ID
     pub fn get_signature(&self, signature_id: &str) -> Result<Option<Signature>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, name, content_plain, content_html, is_default, created_at
-             FROM signatures WHERE id = ?1"
-        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-        
-        let signature = stmt.query_row(params![signature_id], |row| {
-            Ok(Signature {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                name: row.get(2)?,
-                content_plain: row.get(3)?,
-                content_html: row.get(4)?,
-                is_default: row.get(5)?,
-                created_at: row.get(6)?,
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, account_id, name, content_plain, content_html, is_default, created_at
+             FROM signatures WHERE id = ?1",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let signature = stmt
+            .query_row(params![signature_id], |row| {
+                Ok(Signature {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    content_plain: row.get(3)?,
+                    content_html: row.get(4)?,
+                    is_default: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
             })
-        }).optional()
-        .map_err(|e| Error::Other(format!("Failed to get signature: {}", e)))?;
-        
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to get signature: {}", e)))?;
+
         Ok(signature)
     }
-    
+
     /// Get the default signature for an account
     pub fn get_default_signature(&self, account_id: &str) -> Result<Option<Signature>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, name, content_plain, content_html, is_default, created_at
-             FROM signatures WHERE account_id = ?1 AND is_default = 1"
-        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-        
-        let signature = stmt.query_row(params![account_id], |row| {
-            Ok(Signature {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                name: row.get(2)?,
-                content_plain: row.get(3)?,
-                content_html: row.get(4)?,
-                is_default: row.get(5)?,
-                created_at: row.get(6)?,
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, account_id, name, content_plain, content_html, is_default, created_at
+             FROM signatures WHERE account_id = ?1 AND is_default = 1",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let signature = stmt
+            .query_row(params![account_id], |row| {
+                Ok(Signature {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    content_plain: row.get(3)?,
+                    content_html: row.get(4)?,
+                    is_default: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
             })
-        }).optional()
-        .map_err(|e| Error::Other(format!("Failed to get default signature: {}", e)))?;
-        
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to get default signature: {}", e)))?;
+
         Ok(signature)
     }
-    
+
     /// Update a signature
     pub fn update_signature(&self, signature: &Signature) -> Result<()> {
-        self.conn.execute(
-            "UPDATE signatures 
+        self.conn
+            .execute(
+                "UPDATE signatures
              SET name = ?1, content_plain = ?2, content_html = ?3, is_default = ?4
              WHERE id = ?5",
-            params![
-                &signature.name,
-                &signature.content_plain,
-                &signature.content_html,
-                &signature.is_default,
-                &signature.id
-            ],
-        ).map_err(|e| Error::Other(format!("Failed to update signature: {}", e)))?;
-        
+                params![
+                    &signature.name,
+                    &signature.content_plain,
+                    &signature.content_html,
+                    &signature.is_default,
+                    &signature.id
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to update signature: {}", e)))?;
+
         // If this is marked as default, unset other defaults for this account
         if signature.is_default {
-            self.conn.execute(
-                "UPDATE signatures SET is_default = 0 WHERE account_id = ?1 AND id != ?2",
-                params![&signature.account_id, &signature.id],
-            ).map_err(|e| Error::Other(format!("Failed to update defaults: {}", e)))?;
+            self.conn
+                .execute(
+                    "UPDATE signatures SET is_default = 0 WHERE account_id = ?1 AND id != ?2",
+                    params![&signature.account_id, &signature.id],
+                )
+                .map_err(|e| Error::Other(format!("Failed to update defaults: {}", e)))?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Delete a signature
     pub fn delete_signature(&self, signature_id: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM signatures WHERE id = ?1",
-            params![signature_id],
-        ).map_err(|e| Error::Other(format!("Failed to delete signature: {}", e)))?;
-        
+        self.conn
+            .execute(
+                "DELETE FROM signatures WHERE id = ?1",
+                params![signature_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to delete signature: {}", e)))?;
+
         Ok(())
     }
-    
+
     // ===== Message Filter Rule Methods =====
-    
+
     /// Create a new message filter rule
     pub fn create_filter_rule(&self, rule: &MessageFilterRule) -> Result<()> {
         let now = chrono::Utc::now().to_rfc3339();
@@ -1084,7 +1229,7 @@ impl MessageCache {
         ).map_err(|e| Error::Other(format!("Failed to create filter rule: {}", e)))?;
         Ok(())
     }
-    
+
     /// Get all message filter rules for an account
     pub fn get_filter_rules_for_account(&self, account_id: &str) -> Result<Vec<MessageFilterRule>> {
         let mut stmt = self.conn.prepare(
@@ -1093,28 +1238,30 @@ impl MessageCache {
              WHERE account_id = ?1
              ORDER BY name"
         ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-        
-        let rules = stmt.query_map(params![account_id], |row| {
-            Ok(MessageFilterRule {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                name: row.get(2)?,
-                field: row.get(3)?,
-                match_type: row.get(4)?,
-                pattern: row.get(5)?,
-                case_sensitive: row.get(6)?,
-                action_type: row.get(7)?,
-                action_value: row.get(8)?,
-                enabled: row.get(9)?,
-                created_at: row.get(10)?,
+
+        let rules = stmt
+            .query_map(params![account_id], |row| {
+                Ok(MessageFilterRule {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    field: row.get(3)?,
+                    match_type: row.get(4)?,
+                    pattern: row.get(5)?,
+                    case_sensitive: row.get(6)?,
+                    action_type: row.get(7)?,
+                    action_value: row.get(8)?,
+                    enabled: row.get(9)?,
+                    created_at: row.get(10)?,
+                })
             })
-        }).map_err(|e| Error::Other(format!("Failed to query filter rules: {}", e)))?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| Error::Other(format!("Failed to collect filter rules: {}", e)))?;
-        
+            .map_err(|e| Error::Other(format!("Failed to query filter rules: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect filter rules: {}", e)))?;
+
         Ok(rules)
     }
-    
+
     /// Update an existing message filter rule
     pub fn update_filter_rule(&self, rule: &MessageFilterRule) -> Result<()> {
         let now = chrono::Utc::now().to_rfc3339();
@@ -1137,18 +1284,20 @@ impl MessageCache {
         ).map_err(|e| Error::Other(format!("Failed to update filter rule: {}", e)))?;
         Ok(())
     }
-    
+
     /// Delete a message filter rule by ID
     pub fn delete_filter_rule(&self, rule_id: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM message_filter_rules WHERE id = ?1",
-            params![rule_id],
-        ).map_err(|e| Error::Other(format!("Failed to delete filter rule: {}", e)))?;
+        self.conn
+            .execute(
+                "DELETE FROM message_filter_rules WHERE id = ?1",
+                params![rule_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to delete filter rule: {}", e)))?;
         Ok(())
     }
-    
+
     // ===== Contact Management Methods =====
-    
+
     /// Save or update a contact
     pub fn save_contact(&self, contact: &ContactEntry) -> Result<()> {
         let now = chrono::Utc::now().to_rfc3339();
@@ -1200,7 +1349,7 @@ impl MessageCache {
         ).map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
         Ok(())
     }
-    
+
     /// Load all contacts for an account
     pub fn get_contacts_for_account(&self, account_id: &str) -> Result<Vec<ContactEntry>> {
         let mut stmt = self.conn.prepare(
@@ -1210,38 +1359,45 @@ impl MessageCache {
              WHERE account_id = ?1
              ORDER BY favorite DESC, name ASC"
         ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-        
-        let contacts = stmt.query_map(params![account_id], |row| {
-            Ok(ContactEntry {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                name: row.get(2)?,
-                email: row.get(3)?,
-                provider_contact_id: row.get(4)?,
-                phone: row.get(5)?,
-                company: row.get(6)?,
-                job_title: row.get(7)?,
-                website: row.get(8)?,
-                address: row.get(9)?,
-                birthday: row.get(10)?,
-                avatar_url: row.get(11)?,
-                avatar_data_base64: row.get(12)?,
-                source_provider: row.get(13)?,
-                last_synced_at: row.get(14)?,
-                vcard_raw: row.get(15)?,
-                notes: row.get(16)?,
-                favorite: row.get(17)?,
-                created_at: row.get(18)?,
+
+        let contacts = stmt
+            .query_map(params![account_id], |row| {
+                Ok(ContactEntry {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    email: row.get(3)?,
+                    provider_contact_id: row.get(4)?,
+                    phone: row.get(5)?,
+                    company: row.get(6)?,
+                    job_title: row.get(7)?,
+                    website: row.get(8)?,
+                    address: row.get(9)?,
+                    birthday: row.get(10)?,
+                    avatar_url: row.get(11)?,
+                    avatar_data_base64: row.get(12)?,
+                    source_provider: row.get(13)?,
+                    last_synced_at: row.get(14)?,
+                    vcard_raw: row.get(15)?,
+                    notes: row.get(16)?,
+                    favorite: row.get(17)?,
+                    created_at: row.get(18)?,
+                })
             })
-        }).map_err(|e| Error::Other(format!("Failed to query contacts: {}", e)))?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| Error::Other(format!("Failed to collect contacts: {}", e)))?;
-        
+            .map_err(|e| Error::Other(format!("Failed to query contacts: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect contacts: {}", e)))?;
+
         Ok(contacts)
     }
-    
+
     /// Search contacts for autocomplete
-    pub fn search_contacts_for_account(&self, account_id: &str, query: &str, limit: usize) -> Result<Vec<ContactEntry>> {
+    pub fn search_contacts_for_account(
+        &self,
+        account_id: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<ContactEntry>> {
         let escaped = query
             .to_lowercase()
             .replace('!', "!!")
@@ -1262,62 +1418,74 @@ impl MessageCache {
              ORDER BY favorite DESC, name ASC
              LIMIT ?3"
         ).map_err(|e| Error::Other(format!("Failed to prepare search statement: {}", e)))?;
-        
-        let contacts = stmt.query_map(params![account_id, pattern, limit as i64], |row| {
-            Ok(ContactEntry {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                name: row.get(2)?,
-                email: row.get(3)?,
-                provider_contact_id: row.get(4)?,
-                phone: row.get(5)?,
-                company: row.get(6)?,
-                job_title: row.get(7)?,
-                website: row.get(8)?,
-                address: row.get(9)?,
-                birthday: row.get(10)?,
-                avatar_url: row.get(11)?,
-                avatar_data_base64: row.get(12)?,
-                source_provider: row.get(13)?,
-                last_synced_at: row.get(14)?,
-                vcard_raw: row.get(15)?,
-                notes: row.get(16)?,
-                favorite: row.get(17)?,
-                created_at: row.get(18)?,
+
+        let contacts = stmt
+            .query_map(params![account_id, pattern, limit as i64], |row| {
+                Ok(ContactEntry {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    email: row.get(3)?,
+                    provider_contact_id: row.get(4)?,
+                    phone: row.get(5)?,
+                    company: row.get(6)?,
+                    job_title: row.get(7)?,
+                    website: row.get(8)?,
+                    address: row.get(9)?,
+                    birthday: row.get(10)?,
+                    avatar_url: row.get(11)?,
+                    avatar_data_base64: row.get(12)?,
+                    source_provider: row.get(13)?,
+                    last_synced_at: row.get(14)?,
+                    vcard_raw: row.get(15)?,
+                    notes: row.get(16)?,
+                    favorite: row.get(17)?,
+                    created_at: row.get(18)?,
+                })
             })
-        }).map_err(|e| Error::Other(format!("Failed to search contacts: {}", e)))?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| Error::Other(format!("Failed to collect contacts: {}", e)))?;
-        
+            .map_err(|e| Error::Other(format!("Failed to search contacts: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect contacts: {}", e)))?;
+
         Ok(contacts)
     }
 
     /// Auto-import contacts from cached messages (senders/recipients).
     /// Returns number of successful save operations (new or updated contacts).
-    pub fn auto_import_contacts_from_messages(&self, account_id: &str, source_provider: Option<&str>) -> Result<usize> {
+    pub fn auto_import_contacts_from_messages(
+        &self,
+        account_id: &str,
+        source_provider: Option<&str>,
+    ) -> Result<usize> {
         let mut imported_count = 0usize;
-        let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT m.from_addr, m.to_addr, m.cc
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT DISTINCT m.from_addr, m.to_addr, m.cc
              FROM messages m
              INNER JOIN folders f ON m.folder_id = f.id
-             WHERE f.account_id = ?1 AND m.deleted = 0"
-        ).map_err(|e| Error::Other(format!("Failed to prepare auto-import query: {}", e)))?;
-        
-        let rows = stmt.query_map(params![account_id], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, Option<String>>(2)?,
-            ))
-        }).map_err(|e| Error::Other(format!("Failed to query import rows: {}", e)))?;
-        
+             WHERE f.account_id = ?1 AND m.deleted = 0",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare auto-import query: {}", e)))?;
+
+        let rows = stmt
+            .query_map(params![account_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            })
+            .map_err(|e| Error::Other(format!("Failed to query import rows: {}", e)))?;
+
         for row in rows {
-            let (from_addr, to_addr, cc) = row.map_err(|e| Error::Other(format!("Failed to parse import row: {}", e)))?;
+            let (from_addr, to_addr, cc) =
+                row.map_err(|e| Error::Other(format!("Failed to parse import row: {}", e)))?;
             let mut candidates = vec![from_addr, to_addr];
             if let Some(cc_line) = cc {
                 candidates.push(cc_line);
             }
-            
+
             for candidate_line in candidates {
                 for token in candidate_line.split(',') {
                     if let Some((name, email)) = Self::parse_name_email(token.trim()) {
@@ -1348,13 +1516,17 @@ impl MessageCache {
                         };
                         match self.save_contact(&contact) {
                             Ok(_) => imported_count += 1,
-                            Err(e) => tracing::warn!("Auto-import skipped contact '{}': {}", contact.email, e),
+                            Err(e) => tracing::warn!(
+                                "Auto-import skipped contact '{}': {}",
+                                contact.email,
+                                e
+                            ),
                         }
                     }
                 }
             }
         }
-        
+
         Ok(imported_count)
     }
 
@@ -1366,7 +1538,9 @@ impl MessageCache {
             if let Some(contact) = Self::contact_from_vcard_block(account_id, &entry) {
                 match self.save_contact(&contact) {
                     Ok(_) => imported += 1,
-                    Err(e) => tracing::warn!("vCard import skipped contact '{}': {}", contact.email, e),
+                    Err(e) => {
+                        tracing::warn!("vCard import skipped contact '{}': {}", contact.email, e)
+                    }
                 }
             }
         }
@@ -1379,19 +1553,37 @@ impl MessageCache {
         let mut output = String::new();
         for c in contacts {
             output.push_str("BEGIN:VCARD\r\nVERSION:3.0\r\n");
-            output.push_str(&Self::fold_vcard_line(&format!("FN:{}", Self::escape_vcard_text(&c.name))));
-            output.push_str(&Self::fold_vcard_line(&format!("EMAIL:{}", Self::escape_vcard_text(&c.email))));
+            output.push_str(&Self::fold_vcard_line(&format!(
+                "FN:{}",
+                Self::escape_vcard_text(&c.name)
+            )));
+            output.push_str(&Self::fold_vcard_line(&format!(
+                "EMAIL:{}",
+                Self::escape_vcard_text(&c.email)
+            )));
             if let Some(phone) = c.phone {
-                output.push_str(&Self::fold_vcard_line(&format!("TEL:{}", Self::escape_vcard_text(&phone))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "TEL:{}",
+                    Self::escape_vcard_text(&phone)
+                )));
             }
             if let Some(company) = c.company {
-                output.push_str(&Self::fold_vcard_line(&format!("ORG:{}", Self::escape_vcard_text(&company))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "ORG:{}",
+                    Self::escape_vcard_text(&company)
+                )));
             }
             if let Some(job_title) = c.job_title {
-                output.push_str(&Self::fold_vcard_line(&format!("TITLE:{}", Self::escape_vcard_text(&job_title))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "TITLE:{}",
+                    Self::escape_vcard_text(&job_title)
+                )));
             }
             if let Some(website) = c.website {
-                output.push_str(&Self::fold_vcard_line(&format!("URL:{}", Self::escape_vcard_text(&website))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "URL:{}",
+                    Self::escape_vcard_text(&website)
+                )));
             }
             if let Some(address) = c.address {
                 let escaped_address = Self::escape_vcard_text(&address);
@@ -1403,28 +1595,42 @@ impl MessageCache {
                 output.push_str(&Self::fold_vcard_line(&format!("ADR:{}", structured)));
             }
             if let Some(birthday) = c.birthday {
-                output.push_str(&Self::fold_vcard_line(&format!("BDAY:{}", Self::escape_vcard_text(&birthday))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "BDAY:{}",
+                    Self::escape_vcard_text(&birthday)
+                )));
             }
             if let Some(photo_url) = c.avatar_url {
-                output.push_str(&Self::fold_vcard_line(&format!("PHOTO:{}", Self::escape_vcard_text(&photo_url))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "PHOTO:{}",
+                    Self::escape_vcard_text(&photo_url)
+                )));
             } else if let Some(photo_data) = c.avatar_data_base64 {
-                let compact_base64 = photo_data.chars().filter(|c| !c.is_whitespace()).collect::<String>();
-                output.push_str(&Self::fold_vcard_line(&format!("PHOTO;ENCODING=b:{}", compact_base64)));
+                let compact_base64 = photo_data
+                    .chars()
+                    .filter(|c| !c.is_whitespace())
+                    .collect::<String>();
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "PHOTO;ENCODING=b:{}",
+                    compact_base64
+                )));
             }
             if let Some(notes) = c.notes {
-                output.push_str(&Self::fold_vcard_line(&format!("NOTE:{}", Self::escape_vcard_text(&notes))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "NOTE:{}",
+                    Self::escape_vcard_text(&notes)
+                )));
             }
             output.push_str("END:VCARD\r\n");
         }
         Ok(output)
     }
-    
+
     /// Delete a contact
     pub fn delete_contact(&self, contact_id: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM contacts WHERE id = ?1",
-            params![contact_id],
-        ).map_err(|e| Error::Other(format!("Failed to delete contact: {}", e)))?;
+        self.conn
+            .execute("DELETE FROM contacts WHERE id = ?1", params![contact_id])
+            .map_err(|e| Error::Other(format!("Failed to delete contact: {}", e)))?;
         Ok(())
     }
 
@@ -1462,42 +1668,50 @@ impl MessageCache {
     }
 
     /// Get OAuth token for account/provider
-    pub fn get_oauth_token(&self, account_id: &str, provider: &str) -> Result<Option<OAuthTokenEntry>> {
+    pub fn get_oauth_token(
+        &self,
+        account_id: &str,
+        provider: &str,
+    ) -> Result<Option<OAuthTokenEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, account_id, provider, access_token, refresh_token, token_type, scope, expires_at, created_at
              FROM oauth_tokens
              WHERE account_id = ?1 AND provider = ?2"
         ).map_err(|e| Error::Other(format!("Failed to prepare oauth token query: {}", e)))?;
 
-        let token = stmt.query_row(params![account_id, provider], |row| {
-            Ok(OAuthTokenEntry {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                provider: row.get(2)?,
-                access_token: row.get(3)?,
-                refresh_token: row.get(4)?,
-                token_type: row.get(5)?,
-                scope: row.get(6)?,
-                expires_at: row.get(7)?,
-                created_at: row.get(8)?,
+        let token = stmt
+            .query_row(params![account_id, provider], |row| {
+                Ok(OAuthTokenEntry {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    provider: row.get(2)?,
+                    access_token: row.get(3)?,
+                    refresh_token: row.get(4)?,
+                    token_type: row.get(5)?,
+                    scope: row.get(6)?,
+                    expires_at: row.get(7)?,
+                    created_at: row.get(8)?,
+                })
             })
-        }).optional()
-        .map_err(|e| Error::Other(format!("Failed to load oauth token: {}", e)))?;
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to load oauth token: {}", e)))?;
 
         Ok(token)
     }
 
     /// Delete OAuth token for account/provider
     pub fn delete_oauth_token(&self, account_id: &str, provider: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM oauth_tokens WHERE account_id = ?1 AND provider = ?2",
-            params![account_id, provider],
-        ).map_err(|e| Error::Other(format!("Failed to delete oauth token: {}", e)))?;
+        self.conn
+            .execute(
+                "DELETE FROM oauth_tokens WHERE account_id = ?1 AND provider = ?2",
+                params![account_id, provider],
+            )
+            .map_err(|e| Error::Other(format!("Failed to delete oauth token: {}", e)))?;
         Ok(())
     }
-    
+
     // ===== Offline Outbox Queue Methods =====
-    
+
     /// Queue message for later sending when offline
     pub fn queue_outbox_message(&self, item: &QueuedOutboxMessage) -> Result<()> {
         self.conn.execute(
@@ -1516,7 +1730,7 @@ impl MessageCache {
         ).map_err(|e| Error::Other(format!("Failed to queue outbox message: {}", e)))?;
         Ok(())
     }
-    
+
     /// Load queued outbox messages for an account
     pub fn load_outbox_messages(&self, account_id: &str) -> Result<Vec<QueuedOutboxMessage>> {
         let mut stmt = self.conn.prepare(
@@ -1525,42 +1739,45 @@ impl MessageCache {
              WHERE account_id = ?1
              ORDER BY created_at ASC"
         ).map_err(|e| Error::Other(format!("Failed to prepare outbox query: {}", e)))?;
-        
-        let rows = stmt.query_map(params![account_id], |row| {
-            Ok(QueuedOutboxMessage {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                to_addr: row.get(2)?,
-                subject: row.get(3)?,
-                body: row.get(4)?,
-                attempt_count: row.get(5)?,
-                last_error: row.get(6)?,
-                created_at: row.get(7)?,
+
+        let rows = stmt
+            .query_map(params![account_id], |row| {
+                Ok(QueuedOutboxMessage {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    to_addr: row.get(2)?,
+                    subject: row.get(3)?,
+                    body: row.get(4)?,
+                    attempt_count: row.get(5)?,
+                    last_error: row.get(6)?,
+                    created_at: row.get(7)?,
+                })
             })
-        }).map_err(|e| Error::Other(format!("Failed to query outbox messages: {}", e)))?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| Error::Other(format!("Failed to collect outbox messages: {}", e)))?;
-        
+            .map_err(|e| Error::Other(format!("Failed to query outbox messages: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect outbox messages: {}", e)))?;
+
         Ok(rows)
     }
-    
+
     /// Delete queued outbox message
     pub fn delete_outbox_message(&self, id: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM outbox_queue WHERE id = ?1",
-            params![id],
-        ).map_err(|e| Error::Other(format!("Failed to delete outbox message: {}", e)))?;
+        self.conn
+            .execute("DELETE FROM outbox_queue WHERE id = ?1", params![id])
+            .map_err(|e| Error::Other(format!("Failed to delete outbox message: {}", e)))?;
         Ok(())
     }
-    
+
     /// Update outbox attempt count/error after failed send
     pub fn update_outbox_failure(&self, id: &str, last_error: &str) -> Result<()> {
-        self.conn.execute(
-            "UPDATE outbox_queue
+        self.conn
+            .execute(
+                "UPDATE outbox_queue
              SET attempt_count = attempt_count + 1, last_error = ?2
              WHERE id = ?1",
-            params![id, last_error],
-        ).map_err(|e| Error::Other(format!("Failed to update outbox failure: {}", e)))?;
+                params![id, last_error],
+            )
+            .map_err(|e| Error::Other(format!("Failed to update outbox failure: {}", e)))?;
         Ok(())
     }
 
@@ -1634,11 +1851,13 @@ impl MessageCache {
                     notes = Some(Self::unescape_vcard_text(value.trim()));
                 }
             } else if line.starts_with("PHOTO;ENCODING=b:") {
-                avatar_data_base64 = line.split_once(':').map(|(_, v)| {
-                    v.chars().filter(|c| !c.is_whitespace()).collect::<String>()
-                });
+                avatar_data_base64 = line
+                    .split_once(':')
+                    .map(|(_, v)| v.chars().filter(|c| !c.is_whitespace()).collect::<String>());
             } else if line.starts_with("PHOTO:") {
-                avatar_url = line.split_once(':').map(|(_, v)| Self::unescape_vcard_text(v.trim()));
+                avatar_url = line
+                    .split_once(':')
+                    .map(|(_, v)| Self::unescape_vcard_text(v.trim()));
             }
         }
 
@@ -1751,21 +1970,21 @@ impl MessageCache {
     fn email_local_part_or_unknown(email: &str) -> String {
         email.split('@').next().unwrap_or("Unknown").to_string()
     }
-    
+
     // ==================== Account Management ====================
-    
+
     /// Save an account to the database
     pub fn save_account(&self, account: &crate::data::account::Account) -> Result<()> {
+        use base64::{engine::general_purpose, Engine as _};
         use chrono::Utc;
-        use base64::{Engine as _, engine::general_purpose};
-        
+
         // Encode password (simple base64 encoding for now)
         let encoded_password = general_purpose::STANDARD.encode(&account.password);
-        
+
         let now = Utc::now().to_rfc3339();
-        
+
         self.conn.execute(
-            "INSERT OR REPLACE INTO accounts 
+            "INSERT OR REPLACE INTO accounts
              (id, name, email, imap_server, imap_port, imap_use_tls,
               smtp_server, smtp_port, smtp_use_tls, username, password,
               enabled, check_interval_minutes, provider, last_sync, color,
@@ -1794,87 +2013,96 @@ impl MessageCache {
                 &now
             ],
         ).map_err(|e| Error::Other(format!("Failed to save account: {}", e)))?;
-        
+
         Ok(())
     }
-    
+
     /// Load all accounts from the database
     pub fn load_accounts(&self) -> Result<Vec<crate::data::account::Account>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, email, imap_server, imap_port, imap_use_tls,
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, name, email, imap_server, imap_port, imap_use_tls,
                     smtp_server, smtp_port, smtp_use_tls, username, password,
                     enabled, check_interval_minutes, provider, last_sync, color
              FROM accounts
-             ORDER BY created_at"
-        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-        
-        let accounts = stmt.query_map([], |row| {
-            use base64::{Engine as _, engine::general_purpose};
-            
-            // Decode password
-            let encoded_password: String = row.get(10)?;
-            let password = general_purpose::STANDARD.decode(&encoded_password)
-                .ok()
-                .and_then(|bytes| String::from_utf8(bytes).ok())
-                .unwrap_or_default();
-            
-            // Parse last_sync
-            let last_sync: Option<String> = row.get(14)?;
-            let last_sync_time = last_sync.and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(&s)
+             ORDER BY created_at",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let accounts = stmt
+            .query_map([], |row| {
+                use base64::{engine::general_purpose, Engine as _};
+
+                // Decode password
+                let encoded_password: String = row.get(10)?;
+                let password = general_purpose::STANDARD
+                    .decode(&encoded_password)
                     .ok()
-                    .map(|dt| dt.into())
-            });
-            
-            Ok(crate::data::account::Account {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                email: row.get(2)?,
-                imap_server: row.get(3)?,
-                imap_port: row.get(4)?,
-                imap_use_tls: row.get(5)?,
-                smtp_server: row.get(6)?,
-                smtp_port: row.get(7)?,
-                smtp_use_tls: row.get(8)?,
-                username: row.get(9)?,
-                password,
-                enabled: row.get(11)?,
-                check_interval_minutes: row.get(12)?,
-                provider: row.get(13)?,
-                last_sync: last_sync_time,
-                color: row.get(15)?,
+                    .and_then(|bytes| String::from_utf8(bytes).ok())
+                    .unwrap_or_default();
+
+                // Parse last_sync
+                let last_sync: Option<String> = row.get(14)?;
+                let last_sync_time = last_sync.and_then(|s| {
+                    chrono::DateTime::parse_from_rfc3339(&s)
+                        .ok()
+                        .map(|dt| dt.into())
+                });
+
+                Ok(crate::data::account::Account {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    email: row.get(2)?,
+                    imap_server: row.get(3)?,
+                    imap_port: row.get(4)?,
+                    imap_use_tls: row.get(5)?,
+                    smtp_server: row.get(6)?,
+                    smtp_port: row.get(7)?,
+                    smtp_use_tls: row.get(8)?,
+                    username: row.get(9)?,
+                    password,
+                    enabled: row.get(11)?,
+                    check_interval_minutes: row.get(12)?,
+                    provider: row.get(13)?,
+                    last_sync: last_sync_time,
+                    color: row.get(15)?,
+                })
             })
-        }).map_err(|e| Error::Other(format!("Failed to query accounts: {}", e)))?;
-        
+            .map_err(|e| Error::Other(format!("Failed to query accounts: {}", e)))?;
+
         let mut result = Vec::new();
         for account in accounts {
-            result.push(account.map_err(|e| Error::Other(format!("Failed to parse account: {}", e)))?);
+            result.push(
+                account.map_err(|e| Error::Other(format!("Failed to parse account: {}", e)))?,
+            );
         }
-        
+
         Ok(result)
     }
-    
+
     /// Delete an account from the database
     pub fn delete_account(&self, account_id: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM accounts WHERE id = ?1",
-            params![account_id],
-        ).map_err(|e| Error::Other(format!("Failed to delete account: {}", e)))?;
-        
+        self.conn
+            .execute("DELETE FROM accounts WHERE id = ?1", params![account_id])
+            .map_err(|e| Error::Other(format!("Failed to delete account: {}", e)))?;
+
         Ok(())
     }
-    
+
     /// Update an account's last sync timestamp
     pub fn update_account_last_sync(&self, account_id: &str) -> Result<()> {
         use chrono::Utc;
-        
+
         let now = Utc::now().to_rfc3339();
-        
-        self.conn.execute(
-            "UPDATE accounts SET last_sync = ?1, updated_at = ?2 WHERE id = ?3",
-            params![&now, &now, account_id],
-        ).map_err(|e| Error::Other(format!("Failed to update last sync: {}", e)))?;
-        
+
+        self.conn
+            .execute(
+                "UPDATE accounts SET last_sync = ?1, updated_at = ?2 WHERE id = ?3",
+                params![&now, &now, account_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to update last sync: {}", e)))?;
+
         Ok(())
     }
 }
@@ -1883,19 +2111,19 @@ impl MessageCache {
 mod tests {
     use super::*;
     use std::env;
-    
+
     #[test]
     fn test_message_cache_creation() {
         let temp_dir = env::temp_dir().join("wixen_mail_test");
         let cache = MessageCache::new(temp_dir);
         assert!(cache.is_ok());
     }
-    
+
     #[test]
     fn test_folder_operations() {
         let temp_dir = env::temp_dir().join("wixen_mail_test_folders");
         let cache = MessageCache::new(temp_dir).unwrap();
-        
+
         let folder = CachedFolder {
             id: 0,
             account_id: "test@example.com".to_string(),
@@ -1905,20 +2133,20 @@ mod tests {
             unread_count: 5,
             total_count: 10,
         };
-        
+
         let id = cache.save_folder(&folder).unwrap();
         assert!(id > 0);
-        
+
         let retrieved = cache.get_folder("test@example.com", "INBOX").unwrap();
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().name, "INBOX");
     }
-    
+
     #[test]
     fn test_message_operations() {
         let temp_dir = env::temp_dir().join("wixen_mail_test_messages");
         let cache = MessageCache::new(temp_dir).unwrap();
-        
+
         // Create a folder first
         let folder = CachedFolder {
             id: 0,
@@ -1930,7 +2158,7 @@ mod tests {
             total_count: 0,
         };
         let folder_id = cache.save_folder(&folder).unwrap();
-        
+
         // Create a message
         let message = CachedMessage {
             id: 0,
@@ -1948,20 +2176,22 @@ mod tests {
             starred: false,
             deleted: false,
         };
-        
+
         let msg_id = cache.save_message(&message).unwrap();
         assert!(msg_id > 0);
-        
-        let messages = cache.get_messages_for_folder(folder_id, "test@example.com").unwrap();
+
+        let messages = cache
+            .get_messages_for_folder(folder_id, "test@example.com")
+            .unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].subject, "Test Subject");
     }
-    
+
     #[test]
     fn test_draft_operations() {
         let temp_dir = env::temp_dir().join("wixen_mail_test_drafts");
         let cache = MessageCache::new(temp_dir).unwrap();
-        
+
         let draft = CachedDraft {
             id: "draft-123".to_string(),
             account_id: "test@example.com".to_string(),
@@ -1973,30 +2203,30 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
-        
+
         // Save draft
         cache.save_draft(&draft).unwrap();
-        
+
         // Load draft
         let loaded = cache.load_draft("draft-123").unwrap();
         assert!(loaded.is_some());
         assert_eq!(loaded.unwrap().subject, "Draft Subject");
-        
+
         // Load all drafts
         let drafts = cache.load_drafts("test@example.com").unwrap();
         assert_eq!(drafts.len(), 1);
-        
+
         // Delete draft
         cache.delete_draft("draft-123").unwrap();
         let deleted = cache.load_draft("draft-123").unwrap();
         assert!(deleted.is_none());
     }
-    
+
     #[test]
     fn test_draft_update() {
         let temp_dir = env::temp_dir().join("wixen_mail_test_draft_update");
         let cache = MessageCache::new(temp_dir).unwrap();
-        
+
         let mut draft = CachedDraft {
             id: "draft-456".to_string(),
             account_id: "test@example.com".to_string(),
@@ -2008,15 +2238,15 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
-        
+
         // Save initial draft
         cache.save_draft(&draft).unwrap();
-        
+
         // Update draft
         draft.subject = "Updated Subject".to_string();
         draft.body = "Updated body".to_string();
         cache.save_draft(&draft).unwrap();
-        
+
         // Verify update
         let loaded = cache.load_draft("draft-456").unwrap();
         assert!(loaded.is_some());
@@ -2024,12 +2254,12 @@ mod tests {
         assert_eq!(loaded_draft.subject, "Updated Subject");
         assert_eq!(loaded_draft.body, "Updated body");
     }
-    
+
     #[test]
     fn test_tag_operations() {
         let temp_dir = env::temp_dir().join("wixen_mail_test_tags");
         let cache = MessageCache::new(temp_dir).unwrap();
-        
+
         // Create a tag
         let tag = Tag {
             id: "tag-work".to_string(),
@@ -2038,41 +2268,44 @@ mod tests {
             color: "#FF0000".to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
         };
-        
+
         cache.create_tag(&tag).unwrap();
-        
+
         // Get tag
         let loaded_tag = cache.get_tag("tag-work").unwrap();
         assert!(loaded_tag.is_some());
         assert_eq!(loaded_tag.unwrap().name, "Work");
-        
+
         // Get all tags for account
         let tags = cache.get_tags_for_account("test@example.com").unwrap();
         assert_eq!(tags.len(), 1);
-        
+
         // Update tag
         let mut updated_tag = tag.clone();
         updated_tag.name = "Work Projects".to_string();
         updated_tag.color = "#00FF00".to_string();
         cache.update_tag(&updated_tag).unwrap();
-        
+
         let loaded = cache.get_tag("tag-work").unwrap().unwrap();
         assert_eq!(loaded.name, "Work Projects");
         assert_eq!(loaded.color, "#00FF00");
-        
+
         // Delete tag
         cache.delete_tag("tag-work").unwrap();
         let deleted = cache.get_tag("tag-work").unwrap();
         assert!(deleted.is_none());
     }
-    
+
     #[test]
     fn test_message_tagging() {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_message_tags_{}", nanos));
         let cache = MessageCache::new(temp_dir).unwrap();
-        
+
         // Create folder
         let folder = CachedFolder {
             id: 0,
@@ -2084,7 +2317,7 @@ mod tests {
             total_count: 0,
         };
         let folder_id = cache.save_folder(&folder).unwrap();
-        
+
         // Create message
         let message = CachedMessage {
             id: 0,
@@ -2103,7 +2336,7 @@ mod tests {
             deleted: false,
         };
         let message_id = cache.save_message(&message).unwrap();
-        
+
         // Create tags
         let tag1 = Tag {
             id: "tag-important".to_string(),
@@ -2121,34 +2354,43 @@ mod tests {
         };
         cache.create_tag(&tag1).unwrap();
         cache.create_tag(&tag2).unwrap();
-        
+
         // Add tags to message
-        cache.add_tag_to_message(message_id, "tag-important").unwrap();
-        cache.add_tag_to_message(message_id, "tag-personal").unwrap();
-        
+        cache
+            .add_tag_to_message(message_id, "tag-important")
+            .unwrap();
+        cache
+            .add_tag_to_message(message_id, "tag-personal")
+            .unwrap();
+
         // Get tags for message
         let message_tags = cache.get_tags_for_message(message_id).unwrap();
         assert_eq!(message_tags.len(), 2);
-        
+
         // Get messages by tag
         let messages = cache.get_messages_by_tag("tag-important").unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].subject, "Test Message");
-        
+
         // Remove tag from message
-        cache.remove_tag_from_message(message_id, "tag-personal").unwrap();
+        cache
+            .remove_tag_from_message(message_id, "tag-personal")
+            .unwrap();
         let remaining_tags = cache.get_tags_for_message(message_id).unwrap();
         assert_eq!(remaining_tags.len(), 1);
         assert_eq!(remaining_tags[0].name, "Important");
     }
-    
+
     #[test]
     fn test_signature_operations() {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_signatures_{}", nanos));
         let cache = MessageCache::new(temp_dir).unwrap();
-        
+
         // Create a signature
         let signature = Signature {
             id: "sig-work".to_string(),
@@ -2159,23 +2401,25 @@ mod tests {
             is_default: true,
             created_at: chrono::Utc::now().to_rfc3339(),
         };
-        
+
         cache.create_signature(&signature).unwrap();
-        
+
         // Get signature
         let loaded_sig = cache.get_signature("sig-work").unwrap();
         assert!(loaded_sig.is_some());
         assert_eq!(loaded_sig.unwrap().name, "Work Signature");
-        
+
         // Get all signatures for account
-        let sigs = cache.get_signatures_for_account("test@example.com").unwrap();
+        let sigs = cache
+            .get_signatures_for_account("test@example.com")
+            .unwrap();
         assert_eq!(sigs.len(), 1);
-        
+
         // Get default signature
         let default_sig = cache.get_default_signature("test@example.com").unwrap();
         assert!(default_sig.is_some());
         assert_eq!(default_sig.unwrap().name, "Work Signature");
-        
+
         // Create another signature (non-default)
         let signature2 = Signature {
             id: "sig-personal".to_string(),
@@ -2187,39 +2431,44 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
         };
         cache.create_signature(&signature2).unwrap();
-        
+
         // Should have 2 signatures now
-        let all_sigs = cache.get_signatures_for_account("test@example.com").unwrap();
+        let all_sigs = cache
+            .get_signatures_for_account("test@example.com")
+            .unwrap();
         assert_eq!(all_sigs.len(), 2);
-        
+
         // Default should still be the first one
         let default = cache.get_default_signature("test@example.com").unwrap();
         assert!(default.is_some());
         assert_eq!(default.unwrap().id, "sig-work");
-        
+
         // Update signature
         let mut updated_sig = signature.clone();
         updated_sig.name = "Updated Work Signature".to_string();
         updated_sig.content_plain = "Regards,\nJohn Doe, CEO".to_string();
         cache.update_signature(&updated_sig).unwrap();
-        
+
         let loaded = cache.get_signature("sig-work").unwrap().unwrap();
         assert_eq!(loaded.name, "Updated Work Signature");
         assert!(loaded.content_plain.contains("CEO"));
-        
+
         // Delete signature
         cache.delete_signature("sig-work").unwrap();
         let deleted = cache.get_signature("sig-work").unwrap();
         assert!(deleted.is_none());
     }
-    
+
     #[test]
     fn test_signature_default_switching() {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_sig_default_{}", nanos));
         let cache = MessageCache::new(temp_dir).unwrap();
-        
+
         // Create first signature as default
         let sig1 = Signature {
             id: "sig-1".to_string(),
@@ -2231,7 +2480,7 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
         };
         cache.create_signature(&sig1).unwrap();
-        
+
         // Create second signature as default (should unset first)
         let sig2 = Signature {
             id: "sig-2".to_string(),
@@ -2243,22 +2492,22 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
         };
         cache.create_signature(&sig2).unwrap();
-        
+
         // Default should now be sig-2
         let default = cache.get_default_signature("test@example.com").unwrap();
         assert!(default.is_some());
         assert_eq!(default.unwrap().id, "sig-2");
-        
+
         // sig-1 should not be default anymore
         let sig1_loaded = cache.get_signature("sig-1").unwrap().unwrap();
         assert!(!sig1_loaded.is_default);
     }
-    
+
     #[test]
     fn test_account_persistence() {
         let temp_dir = env::temp_dir().join("wixen_mail_test_accounts");
         let cache = MessageCache::new(temp_dir).unwrap();
-        
+
         // Create an account
         let account = crate::data::account::Account {
             id: "acc-1".to_string(),
@@ -2278,16 +2527,16 @@ mod tests {
             last_sync: None,
             color: "#FF0000".to_string(),
         };
-        
+
         // Save account
         cache.save_account(&account).unwrap();
-        
+
         // Load accounts
         let accounts = cache.load_accounts().unwrap();
         assert_eq!(accounts.len(), 1);
         assert_eq!(accounts[0].email, "work@example.com");
         assert_eq!(accounts[0].password, "secret123"); // Verify password is decrypted
-        
+
         // Create another account
         let account2 = crate::data::account::Account {
             id: "acc-2".to_string(),
@@ -2307,30 +2556,33 @@ mod tests {
             last_sync: None,
             color: "#00FF00".to_string(),
         };
-        
+
         cache.save_account(&account2).unwrap();
-        
+
         // Load all accounts
         let all_accounts = cache.load_accounts().unwrap();
         assert_eq!(all_accounts.len(), 2);
-        
+
         // Update last sync
         cache.update_account_last_sync("acc-1").unwrap();
-        
+
         // Delete an account
         cache.delete_account("acc-2").unwrap();
         let remaining = cache.load_accounts().unwrap();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].id, "acc-1");
     }
-    
+
     #[test]
     fn test_account_data_isolation() {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_isolation_{}", nanos));
         let cache = MessageCache::new(temp_dir).unwrap();
-        
+
         let folder1 = CachedFolder {
             id: 0,
             account_id: "acc-1".to_string(),
@@ -2349,10 +2601,10 @@ mod tests {
             unread_count: 0,
             total_count: 0,
         };
-        
+
         let folder1_id = cache.save_folder(&folder1).unwrap();
         let folder2_id = cache.save_folder(&folder2).unwrap();
-        
+
         let msg1 = CachedMessage {
             id: 0,
             uid: 1,
@@ -2385,33 +2637,36 @@ mod tests {
             starred: false,
             deleted: false,
         };
-        
+
         cache.save_message(&msg1).unwrap();
         cache.save_message(&msg2).unwrap();
-        
+
         let folders1 = cache.get_folders_for_account("acc-1").unwrap();
         assert_eq!(folders1.len(), 1);
         assert_eq!(folders1[0].account_id, "acc-1");
-        
+
         let folders2 = cache.get_folders_for_account("acc-2").unwrap();
         assert_eq!(folders2.len(), 1);
         assert_eq!(folders2[0].account_id, "acc-2");
-        
+
         let messages1 = cache.get_messages_for_folder(folder1_id, "acc-1").unwrap();
         assert_eq!(messages1.len(), 1);
         assert_eq!(messages1[0].subject, "Account 1 Message");
-        
+
         let messages_cross = cache.get_messages_for_folder(folder1_id, "acc-2").unwrap();
         assert!(messages_cross.is_empty());
     }
-    
+
     #[test]
     fn test_filter_rule_operations() {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_filter_rules_{}", nanos));
         let cache = MessageCache::new(temp_dir).unwrap();
-        
+
         let mut rule = MessageFilterRule {
             id: "rule-1".to_string(),
             account_id: "test@example.com".to_string(),
@@ -2425,35 +2680,44 @@ mod tests {
             enabled: true,
             created_at: chrono::Utc::now().to_rfc3339(),
         };
-        
+
         cache.create_filter_rule(&rule).unwrap();
-        let rules = cache.get_filter_rules_for_account("test@example.com").unwrap();
+        let rules = cache
+            .get_filter_rules_for_account("test@example.com")
+            .unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].name, "Newsletter Cleanup");
-        
+
         rule.enabled = false;
         rule.match_type = "starts_with".to_string();
         rule.pattern = "promo".to_string();
         cache.update_filter_rule(&rule).unwrap();
-        
-        let updated = cache.get_filter_rules_for_account("test@example.com").unwrap();
+
+        let updated = cache
+            .get_filter_rules_for_account("test@example.com")
+            .unwrap();
         assert_eq!(updated.len(), 1);
         assert_eq!(updated[0].pattern, "promo");
         assert_eq!(updated[0].match_type, "starts_with");
         assert!(!updated[0].enabled);
-        
+
         cache.delete_filter_rule("rule-1").unwrap();
-        let empty = cache.get_filter_rules_for_account("test@example.com").unwrap();
+        let empty = cache
+            .get_filter_rules_for_account("test@example.com")
+            .unwrap();
         assert!(empty.is_empty());
     }
-    
+
     #[test]
     fn test_contact_operations() {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_contacts_{}", nanos));
         let cache = MessageCache::new(temp_dir).unwrap();
-        
+
         let contact = ContactEntry {
             id: "contact-1".to_string(),
             account_id: "test@example.com".to_string(),
@@ -2475,18 +2739,22 @@ mod tests {
             favorite: true,
             created_at: chrono::Utc::now().to_rfc3339(),
         };
-        
+
         cache.save_contact(&contact).unwrap();
         let all = cache.get_contacts_for_account("test@example.com").unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].email, "ada@example.com");
-        
-        let search = cache.search_contacts_for_account("test@example.com", "ada", 5).unwrap();
+
+        let search = cache
+            .search_contacts_for_account("test@example.com", "ada", 5)
+            .unwrap();
         assert_eq!(search.len(), 1);
-        
-        let wildcard_escape_results = cache.search_contacts_for_account("test@example.com", "%", 5).unwrap();
+
+        let wildcard_escape_results = cache
+            .search_contacts_for_account("test@example.com", "%", 5)
+            .unwrap();
         assert_eq!(wildcard_escape_results.len(), 0);
-        
+
         cache.delete_contact("contact-1").unwrap();
         let empty = cache.get_contacts_for_account("test@example.com").unwrap();
         assert!(empty.is_empty());
@@ -2495,7 +2763,10 @@ mod tests {
     #[test]
     fn test_vcard_import_export() {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_vcard_{}", nanos));
         let cache = MessageCache::new(temp_dir).unwrap();
 
@@ -2508,14 +2779,19 @@ ORG:US Navy
 PHOTO:https://example.com/grace.png
 END:VCARD";
 
-        let imported = cache.import_contacts_from_vcard("test@example.com", vcard).unwrap();
+        let imported = cache
+            .import_contacts_from_vcard("test@example.com", vcard)
+            .unwrap();
         assert_eq!(imported, 1);
 
         let contacts = cache.get_contacts_for_account("test@example.com").unwrap();
         assert_eq!(contacts.len(), 1);
         assert_eq!(contacts[0].name, "Grace Hopper");
         assert_eq!(contacts[0].company.as_deref(), Some("US Navy"));
-        assert_eq!(contacts[0].avatar_url.as_deref(), Some("https://example.com/grace.png"));
+        assert_eq!(
+            contacts[0].avatar_url.as_deref(),
+            Some("https://example.com/grace.png")
+        );
 
         let exported = cache.export_contacts_to_vcard("test@example.com").unwrap();
         assert!(exported.contains("FN:Grace Hopper"));
@@ -2525,7 +2801,10 @@ END:VCARD";
     #[test]
     fn test_auto_import_contacts_from_messages() {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_auto_import_{}", nanos));
         let cache = MessageCache::new(temp_dir).unwrap();
 
@@ -2558,7 +2837,9 @@ END:VCARD";
         };
         cache.save_message(&message).unwrap();
 
-        let imported = cache.auto_import_contacts_from_messages("test@example.com", Some("gmail")).unwrap();
+        let imported = cache
+            .auto_import_contacts_from_messages("test@example.com", Some("gmail"))
+            .unwrap();
         assert!(imported >= 3);
 
         let contacts = cache.get_contacts_for_account("test@example.com").unwrap();
@@ -2570,7 +2851,10 @@ END:VCARD";
     #[test]
     fn test_oauth_token_operations() {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_oauth_{}", nanos));
         let cache = MessageCache::new(temp_dir).unwrap();
 
@@ -2605,7 +2889,10 @@ END:VCARD";
     #[test]
     fn test_offline_outbox_queue_operations() {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_outbox_{}", nanos));
         let cache = MessageCache::new(temp_dir).unwrap();
 
@@ -2625,7 +2912,9 @@ END:VCARD";
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].subject, "Queued");
 
-        cache.update_outbox_failure("outbox-1", "network down").unwrap();
+        cache
+            .update_outbox_failure("outbox-1", "network down")
+            .unwrap();
         let loaded2 = cache.load_outbox_messages("acc-1").unwrap();
         assert_eq!(loaded2[0].attempt_count, 1);
         assert_eq!(loaded2[0].last_error.as_deref(), Some("network down"));

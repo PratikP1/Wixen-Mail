@@ -35,28 +35,29 @@ impl Database {
 
     /// Initialize database schema
     pub fn initialize(&self) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| crate::common::Error::Database("Failed to lock database connection".to_string()))?;
+        let conn = self.conn.lock().map_err(|_| {
+            crate::common::Error::Database("Failed to lock database connection".to_string())
+        })?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS app_metadata (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );",
         )
-        .map_err(|e| crate::common::Error::Database(format!("Failed to initialize schema: {}", e)))?;
+        .map_err(|e| {
+            crate::common::Error::Database(format!("Failed to initialize schema: {}", e))
+        })?;
         Ok(())
     }
 
     /// Execute a query
     pub fn execute(&self, query: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| crate::common::Error::Database("Failed to lock database connection".to_string()))?;
-        conn.execute_batch(query)
-            .map_err(|e| crate::common::Error::Database(format!("Failed to execute query: {}", e)))?;
+        let conn = self.conn.lock().map_err(|_| {
+            crate::common::Error::Database("Failed to lock database connection".to_string())
+        })?;
+        conn.execute_batch(query).map_err(|e| {
+            crate::common::Error::Database(format!("Failed to execute query: {}", e))
+        })?;
         Ok(())
     }
 }

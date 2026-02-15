@@ -1,8 +1,8 @@
-/// Account Management UI
-///
-/// Provides dialogs for managing multiple email accounts with full accessibility support.
+//! Account Management UI
+//!
+//! Provides dialogs for managing multiple email accounts with full accessibility support.
 
-use crate::data::account::{Account, AccountManager};
+use crate::data::account::Account;
 use crate::data::email_providers;
 use egui::{Color32, Context, RichText, Ui, Window};
 
@@ -18,7 +18,7 @@ pub enum AccountAction {
 }
 
 /// Account manager window state
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct AccountManagerWindow {
     /// Open state
     pub open: bool,
@@ -55,21 +55,6 @@ pub struct AccountEdit {
     pub check_interval_minutes: u32,
     pub color: String,
     pub provider: Option<String>,
-}
-
-impl Default for AccountManagerWindow {
-    fn default() -> Self {
-        Self {
-            open: false,
-            accounts: Vec::new(),
-            editing_account: None,
-            new_account: None,
-            active_account_id: None,
-            status: String::new(),
-            error: None,
-            show_password: false,
-        }
-    }
 }
 
 impl AccountManagerWindow {
@@ -164,7 +149,8 @@ impl AccountManagerWindow {
                                     ui.group(|ui| {
                                         ui.horizontal(|ui| {
                                             // Active indicator
-                                            if self.active_account_id.as_ref() == Some(&account.id) {
+                                            if self.active_account_id.as_ref() == Some(&account.id)
+                                            {
                                                 ui.label(RichText::new("⭐").size(16.0));
                                             } else {
                                                 ui.add_space(20.0);
@@ -179,23 +165,35 @@ impl AccountManagerWindow {
                                                 ui.label(RichText::new(&account.name).strong());
                                                 ui.label(&account.email);
                                                 if !account.enabled {
-                                                    ui.label(RichText::new("(Disabled)").italics().color(Color32::GRAY));
+                                                    ui.label(
+                                                        RichText::new("(Disabled)")
+                                                            .italics()
+                                                            .color(Color32::GRAY),
+                                                    );
                                                 }
                                             });
 
-                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                if ui.button("🗑 Delete").clicked() {
-                                                    action = AccountAction::Delete(account.id.clone());
-                                                }
-                                                if ui.button("✏ Edit").clicked() {
-                                                    self.start_edit_account(account);
-                                                }
-                                                if self.active_account_id.as_ref() != Some(&account.id) {
-                                                    if ui.button("⭐ Set Active").clicked() {
-                                                        action = AccountAction::SetActive(account.id.clone());
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    if ui.button("🗑 Delete").clicked() {
+                                                        action = AccountAction::Delete(
+                                                            account.id.clone(),
+                                                        );
                                                     }
-                                                }
-                                            });
+                                                    if ui.button("✏ Edit").clicked() {
+                                                        self.start_edit_account(account);
+                                                    }
+                                                    if self.active_account_id.as_ref()
+                                                        != Some(&account.id)
+                                                        && ui.button("⭐ Set Active").clicked()
+                                                    {
+                                                        action = AccountAction::SetActive(
+                                                            account.id.clone(),
+                                                        );
+                                                    }
+                                                },
+                                            );
                                         });
                                     });
                                 }
@@ -228,10 +226,19 @@ impl AccountManagerWindow {
     }
 
     /// Render the account creation/editing form
-    fn render_account_form(&mut self, ui: &mut Ui, edit: &mut AccountEdit, is_new: bool) -> AccountAction {
+    fn render_account_form(
+        &mut self,
+        ui: &mut Ui,
+        edit: &mut AccountEdit,
+        is_new: bool,
+    ) -> AccountAction {
         let mut action = AccountAction::None;
 
-        ui.heading(if is_new { "Add New Account" } else { "Edit Account" });
+        ui.heading(if is_new {
+            "Add New Account"
+        } else {
+            "Edit Account"
+        });
         ui.add_space(8.0);
 
         egui::ScrollArea::vertical()
@@ -250,10 +257,12 @@ impl AccountManagerWindow {
                 ui.horizontal(|ui| {
                     ui.label("Email Address:");
                     let response = ui.text_edit_singleline(&mut edit.email);
-                    
+
                     // Auto-detect provider
                     if response.changed() && !edit.email.is_empty() {
-                        if let Some(provider) = email_providers::detect_provider_from_email(&edit.email) {
+                        if let Some(provider) =
+                            email_providers::detect_provider_from_email(&edit.email)
+                        {
                             edit.imap_server = provider.imap_server;
                             edit.imap_port = provider.imap_port.to_string();
                             edit.imap_use_tls = provider.imap_tls;

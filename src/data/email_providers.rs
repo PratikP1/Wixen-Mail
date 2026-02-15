@@ -1,6 +1,6 @@
-/// Email provider presets for common services
-///
-/// Provides auto-configuration for popular email providers like Gmail, Outlook, etc.
+//! Email provider presets for common services
+//!
+//! Provides auto-configuration for popular email providers like Gmail, Outlook, etc.
 
 use crate::common::types::ServerConfig;
 
@@ -126,7 +126,7 @@ pub fn get_provider_by_name(name: &str) -> Option<EmailProvider> {
 /// Detect provider from email address
 pub fn detect_provider_from_email(email: &str) -> Option<EmailProvider> {
     let domain = email.split('@').nth(1)?;
-    
+
     match domain.to_lowercase().as_str() {
         "gmail.com" | "googlemail.com" => get_provider_by_name("gmail"),
         "outlook.com" | "hotmail.com" | "live.com" => get_provider_by_name("outlook"),

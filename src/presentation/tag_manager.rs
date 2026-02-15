@@ -1,6 +1,6 @@
-/// Tag Management UI
-///
-/// Provides dialogs for managing tags with full accessibility support.
+//! Tag Management UI
+//!
+//! Provides dialogs for managing tags with full accessibility support.
 
 use crate::data::message_cache::{MessageCache, Tag};
 use egui::{Color32, Context, RichText, Ui, Window};
@@ -151,23 +151,27 @@ impl TagManagerWindow {
                             for tag in &self.tags.clone() {
                                 ui.horizontal(|ui| {
                                     // Color indicator
-                                    let color = parse_hex_color(&tag.color).unwrap_or(Color32::GRAY);
+                                    let color =
+                                        parse_hex_color(&tag.color).unwrap_or(Color32::GRAY);
                                     ui.colored_label(color, "●");
-                                    
+
                                     // Tag name
                                     ui.label(&tag.name);
-                                    
-                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                        // Delete button
-                                        if ui.button("🗑 Delete").clicked() {
-                                            action = Some(TagAction::Delete(tag.id.clone()));
-                                        }
-                                        
-                                        // Edit button
-                                        if ui.button("✏ Edit").clicked() {
-                                            start_edit_tag_id = Some(tag.id.clone());
-                                        }
-                                    });
+
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            // Delete button
+                                            if ui.button("🗑 Delete").clicked() {
+                                                action = Some(TagAction::Delete(tag.id.clone()));
+                                            }
+
+                                            // Edit button
+                                            if ui.button("✏ Edit").clicked() {
+                                                start_edit_tag_id = Some(tag.id.clone());
+                                            }
+                                        },
+                                    );
                                 });
                                 ui.add_space(4.0);
                             }
@@ -179,7 +183,11 @@ impl TagManagerWindow {
 
                 // Create/Edit form
                 if self.new_tag.is_some() || self.editing_tag.is_some() {
-                    ui.heading(if self.editing_tag.is_some() { "Edit Tag" } else { "Create Tag" });
+                    ui.heading(if self.editing_tag.is_some() {
+                        "Edit Tag"
+                    } else {
+                        "Create Tag"
+                    });
                     ui.add_space(8.0);
 
                     // Clone edit data to avoid borrow issues
@@ -250,10 +258,7 @@ impl TagManagerWindow {
                                         }));
                                     }
                                 } else {
-                                    action = Some(TagAction::Create(
-                                        name.clone(),
-                                        color.clone(),
-                                    ));
+                                    action = Some(TagAction::Create(name.clone(), color.clone()));
                                 }
                                 self.cancel_edit();
                                 self.status = "Tag saved successfully".to_string();
@@ -305,7 +310,7 @@ pub enum TagAction {
 }
 
 /// Quick tag menu for messages
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct QuickTagMenu {
     /// Open state
     pub open: bool,
@@ -317,27 +322,21 @@ pub struct QuickTagMenu {
     pub applied_tags: Vec<Tag>,
 }
 
-impl Default for QuickTagMenu {
-    fn default() -> Self {
-        Self {
-            open: false,
-            message_id: None,
-            available_tags: Vec::new(),
-            applied_tags: Vec::new(),
-        }
-    }
-}
-
 impl QuickTagMenu {
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Open the quick tag menu for a message
-    pub fn open_for_message(&mut self, message_id: i64, account_id: &str, cache: &Option<MessageCache>) {
+    pub fn open_for_message(
+        &mut self,
+        message_id: i64,
+        account_id: &str,
+        cache: &Option<MessageCache>,
+    ) {
         self.open = true;
         self.message_id = Some(message_id);
-        
+
         // Load available tags and applied tags
         if let Some(cache) = cache {
             if let Ok(tags) = cache.get_tags_for_account(account_id) {
@@ -371,14 +370,15 @@ impl QuickTagMenu {
                 for tag in &self.available_tags {
                     let is_applied = self.applied_tags.iter().any(|t| t.id == tag.id);
                     let color = parse_hex_color(&tag.color).unwrap_or(Color32::GRAY);
-                    
+
                     ui.horizontal(|ui| {
                         ui.colored_label(color, "●");
-                        
+
                         if ui.checkbox(&mut is_applied.clone(), &tag.name).clicked() {
                             if is_applied {
                                 // Remove tag
-                                action = Some(QuickTagAction::RemoveTag(message_id, tag.id.clone()));
+                                action =
+                                    Some(QuickTagAction::RemoveTag(message_id, tag.id.clone()));
                             } else {
                                 // Add tag
                                 action = Some(QuickTagAction::AddTag(message_id, tag.id.clone()));
@@ -387,7 +387,7 @@ impl QuickTagMenu {
                     });
                 }
             }
-            
+
             ui.separator();
             if ui.button("Manage Tags...").clicked() {
                 action = Some(QuickTagAction::OpenManager);
@@ -430,7 +430,7 @@ pub fn render_tag_pills(ui: &mut Ui, tags: &[Tag]) {
         for tag in tags {
             let _color = parse_hex_color(&tag.color).unwrap_or(Color32::GRAY);
             let text = RichText::new(&tag.name).color(Color32::WHITE).small();
-            
+
             ui.label(text);
         }
     });
