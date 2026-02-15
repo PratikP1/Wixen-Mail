@@ -39,6 +39,9 @@ const PLACEHOLDER_FOLDER_ID: i64 = 0;
 const MAX_CONTACT_SUGGESTIONS: usize = 5;
 const MAX_OUTBOX_FLUSH_CONCURRENCY: usize = 4;
 const ATTACHMENT_PREVIEW_SUFFIX: &str = ".preview.txt";
+const LATEST_RELEASE_URL: &str = "https://github.com/PratikP1/Wixen-Mail/releases/latest";
+const RELEASE_WORKFLOW_URL: &str =
+    "https://github.com/PratikP1/Wixen-Mail/actions/workflows/release.yml";
 
 /// UI state for the integrated mail client
 pub struct UIState {
@@ -930,6 +933,20 @@ impl IntegratedUI {
     /// Render the main UI
     fn render_ui(&mut self, ctx: &egui::Context) {
         let mut account_switch_to: Option<String> = None;
+        let selected_message = self
+            .state
+            .selected_message
+            .and_then(|uid| {
+                self.state
+                    .messages
+                    .iter()
+                    .find(|message| message.uid == uid)
+            })
+            .cloned();
+        let folder_targets = Self::folder_targets_for_actions(
+            self.state.selected_folder.as_deref(),
+            &self.state.folders,
+        );
 
         // Menu bar
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
@@ -971,6 +988,77 @@ impl IntegratedUI {
                         ui.close_menu();
                     }
                 });
+
+                ui.menu_button(
+                    Self::traversal_menu_label(self.state.contact_manager.open),
+                    |ui| {
+                        if self.state.contact_manager.open {
+                            if ui.button("👥 Manage Contacts (Ctrl+Shift+C)").clicked() {
+                                self.state
+                                    .contact_manager
+                                    .open(self.state.account_config.email.clone());
+                                ui.close_menu();
+                            }
+                        } else if let Some(msg) = selected_message.as_ref() {
+                            if ui.button("📧 Reply").clicked() {
+                                self.state
+                                    .composition_window
+                                    .open_reply(msg.from.clone(), msg.subject.clone());
+                                ui.close_menu();
+                            }
+                            if ui.button("↪ Forward").clicked() {
+                                self.state.composition_window.open_forward(
+                                    msg.subject.clone(),
+                                    self.state.message_preview.clone(),
+                                );
+                                ui.close_menu();
+                            }
+                            ui.separator();
+                            if ui.button("🗑 Delete").clicked() {
+                                self.state.status_message =
+                                    format!("Deleted message: {}", msg.subject);
+                                ui.close_menu();
+                            }
+                            if ui.button("⭐ Toggle Star").clicked() {
+                                self.state.status_message =
+                                    format!("Toggled star for: {}", msg.subject);
+                                ui.close_menu();
+                            }
+                            if ui.button("📬 Mark as Unread").clicked() {
+                                self.state.status_message =
+                                    format!("Marked as unread: {}", msg.subject);
+                                ui.close_menu();
+                            }
+                            if !folder_targets.is_empty() {
+                                ui.separator();
+                                ui.menu_button("📂 Move to Folder", |ui| {
+                                    for folder in &folder_targets {
+                                        if ui.button(folder).clicked() {
+                                            self.state.status_message = format!(
+                                                "Moved '{}' to folder '{}'",
+                                                msg.subject, folder
+                                            );
+                                            ui.close_menu();
+                                        }
+                                    }
+                                });
+                                ui.menu_button("📄 Copy to Folder", |ui| {
+                                    for folder in &folder_targets {
+                                        if ui.button(folder).clicked() {
+                                            self.state.status_message = format!(
+                                                "Copied '{}' to folder '{}'",
+                                                msg.subject, folder
+                                            );
+                                            ui.close_menu();
+                                        }
+                                    }
+                                });
+                            }
+                        } else {
+                            ui.label("No message selected");
+                        }
+                    },
+                );
 
                 ui.menu_button("Tools", |ui| {
                     if ui.button("🏷 Manage Tags (Ctrl+T)").clicked() {
@@ -1050,6 +1138,14 @@ impl IntegratedUI {
                 ui.menu_button("Help", |ui| {
                     if ui.button("📖 Documentation (F1)").clicked() {
                         self.state.status_message = "Open docs: https://github.com/PratikP1/Wixen-Mail/blob/main/docs/USER_GUIDE.md".to_string();
+                        ui.close_menu();
+                    }
+                    if ui.button("🔄 Check for Updates").clicked() {
+                        self.state.status_message = Self::update_release_message();
+                        ui.close_menu();
+                    }
+                    if ui.button("🏗 Release Pipeline").clicked() {
+                        self.state.status_message = Self::update_workflow_message();
                         ui.close_menu();
                     }
                     if ui.button("⌨ Keyboard Shortcuts").clicked() {
@@ -1360,6 +1456,35 @@ impl IntegratedUI {
                                     if ui.button("📬 Mark as Unread").clicked() {
                                         self.state.status_message = format!("Marked as unread: {}", msg.subject);
                                         ui.close_menu();
+                                    }
+                                    let folder_targets = Self::folder_targets_for_actions(
+                                        self.state.selected_folder.as_deref(),
+                                        &self.state.folders,
+                                    );
+                                    if !folder_targets.is_empty() {
+                                        ui.separator();
+                                        ui.menu_button("📂 Move to Folder", |ui| {
+                                            for folder in &folder_targets {
+                                                if ui.button(folder).clicked() {
+                                                    self.state.status_message = format!(
+                                                        "Moved '{}' to folder '{}'",
+                                                        msg.subject, folder
+                                                    );
+                                                    ui.close_menu();
+                                                }
+                                            }
+                                        });
+                                        ui.menu_button("📄 Copy to Folder", |ui| {
+                                            for folder in &folder_targets {
+                                                if ui.button(folder).clicked() {
+                                                    self.state.status_message = format!(
+                                                        "Copied '{}' to folder '{}'",
+                                                        msg.subject, folder
+                                                    );
+                                                    ui.close_menu();
+                                                }
+                                            }
+                                        });
                                     }
 
                                     // Tag submenu
@@ -2404,6 +2529,33 @@ impl IntegratedUI {
             self.state.status_message = format!("Contact sort: {}", label);
             ui.close_menu();
         }
+    }
+
+    fn traversal_menu_label(contact_manager_open: bool) -> &'static str {
+        if contact_manager_open {
+            "Contacts"
+        } else {
+            "Message"
+        }
+    }
+
+    fn folder_targets_for_actions(
+        selected_folder: Option<&str>,
+        folders: &[String],
+    ) -> Vec<String> {
+        folders
+            .iter()
+            .filter(|folder| selected_folder != Some(folder.as_str()))
+            .cloned()
+            .collect()
+    }
+
+    fn update_release_message() -> String {
+        format!("Check latest release: {}", LATEST_RELEASE_URL)
+    }
+
+    fn update_workflow_message() -> String {
+        format!("Track setup executable builds: {}", RELEASE_WORKFLOW_URL)
     }
 
     fn sort_messages(messages: &mut [MessageItem], sort_option: MailSortOption) {
@@ -3675,5 +3827,34 @@ mod tests {
 
         IntegratedUI::sort_contacts(&mut contacts, ContactSortOption::FavoritesFirst);
         assert!(contacts[0].favorite);
+    }
+
+    #[test]
+    fn test_traversal_menu_label_switches_between_message_and_contacts() {
+        assert_eq!(IntegratedUI::traversal_menu_label(false), "Message");
+        assert_eq!(IntegratedUI::traversal_menu_label(true), "Contacts");
+    }
+
+    #[test]
+    fn test_folder_targets_for_actions_excludes_selected_folder() {
+        let folders = vec![
+            "Inbox".to_string(),
+            "Archive".to_string(),
+            "Sent".to_string(),
+        ];
+        let targets = IntegratedUI::folder_targets_for_actions(Some("Inbox"), &folders);
+        assert_eq!(targets, vec!["Archive".to_string(), "Sent".to_string()]);
+    }
+
+    #[test]
+    fn update_messages_point_to_release_and_workflow_urls() {
+        assert_eq!(
+            IntegratedUI::update_release_message(),
+            format!("Check latest release: {}", LATEST_RELEASE_URL)
+        );
+        assert_eq!(
+            IntegratedUI::update_workflow_message(),
+            format!("Track setup executable builds: {}", RELEASE_WORKFLOW_URL)
+        );
     }
 }
