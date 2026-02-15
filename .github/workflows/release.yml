@@ -84,7 +84,7 @@ jobs:
         run: cargo build --release --verbose
 
       - name: Build installer executable
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        uses: Minionguyjpro/Inno-Setup-Action@7547f78e92afc13352b946775483c5392b7fda10 # v1.2.5
         with:
           path: installer/Wixen-Mail-Setup.iss
 
