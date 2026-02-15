@@ -39,6 +39,9 @@ const PLACEHOLDER_FOLDER_ID: i64 = 0;
 const MAX_CONTACT_SUGGESTIONS: usize = 5;
 const MAX_OUTBOX_FLUSH_CONCURRENCY: usize = 4;
 const ATTACHMENT_PREVIEW_SUFFIX: &str = ".preview.txt";
+const LATEST_RELEASE_URL: &str = "https://github.com/PratikP1/Wixen-Mail/releases/latest";
+const RELEASE_WORKFLOW_URL: &str =
+    "https://github.com/PratikP1/Wixen-Mail/actions/workflows/release.yml";
 
 /// UI state for the integrated mail client
 pub struct UIState {
@@ -1135,6 +1138,14 @@ impl IntegratedUI {
                 ui.menu_button("Help", |ui| {
                     if ui.button("📖 Documentation (F1)").clicked() {
                         self.state.status_message = "Open docs: https://github.com/PratikP1/Wixen-Mail/blob/main/docs/USER_GUIDE.md".to_string();
+                        ui.close_menu();
+                    }
+                    if ui.button("🔄 Check for Updates").clicked() {
+                        self.state.status_message = Self::update_release_message();
+                        ui.close_menu();
+                    }
+                    if ui.button("🏗 Release Pipeline").clicked() {
+                        self.state.status_message = Self::update_workflow_message();
                         ui.close_menu();
                     }
                     if ui.button("⌨ Keyboard Shortcuts").clicked() {
@@ -2539,6 +2550,14 @@ impl IntegratedUI {
             .collect()
     }
 
+    fn update_release_message() -> String {
+        format!("Check latest release: {}", LATEST_RELEASE_URL)
+    }
+
+    fn update_workflow_message() -> String {
+        format!("Track setup executable builds: {}", RELEASE_WORKFLOW_URL)
+    }
+
     fn sort_messages(messages: &mut [MessageItem], sort_option: MailSortOption) {
         match sort_option {
             MailSortOption::DateNewestFirst => {
@@ -3825,5 +3844,17 @@ mod tests {
         ];
         let targets = IntegratedUI::folder_targets_for_actions(Some("Inbox"), &folders);
         assert_eq!(targets, vec!["Archive".to_string(), "Sent".to_string()]);
+    }
+
+    #[test]
+    fn test_update_messages_point_to_release_and_workflow_urls() {
+        assert_eq!(
+            IntegratedUI::update_release_message(),
+            format!("Check latest release: {}", LATEST_RELEASE_URL)
+        );
+        assert_eq!(
+            IntegratedUI::update_workflow_message(),
+            format!("Track setup executable builds: {}", RELEASE_WORKFLOW_URL)
+        );
     }
 }

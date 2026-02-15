@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  build-release-assets:
+    name: Build setup executables
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release --verbose
+
+      - name: Prepare setup executable artifacts
+        shell: pwsh
+        run: |
+          $tag = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "manual-${{ github.run_number }}" }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "target/release/wixen-mail.exe" "dist/Wixen-Mail-Setup-$tag.exe"
+          Compress-Archive -Path "target/release/wixen-mail.exe" -DestinationPath "dist/Wixen-Mail-$tag-windows.zip" -Force
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wixen-mail-release-assets
+          path: dist/*
+
+      - name: Publish GitHub release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Wixen-Mail-Setup-*.exe
+            dist/Wixen-Mail-*-windows.zip
