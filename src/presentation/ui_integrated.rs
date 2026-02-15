@@ -3847,7 +3847,7 @@ mod tests {
     }
 
     #[test]
-    fn test_update_messages_point_to_release_and_workflow_urls() {
+    fn update_messages_point_to_release_and_workflow_urls() {
         assert_eq!(
             IntegratedUI::update_release_message(),
             format!("Check latest release: {}", LATEST_RELEASE_URL)
