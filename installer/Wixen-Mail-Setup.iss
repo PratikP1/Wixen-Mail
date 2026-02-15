@@ -9,7 +9,7 @@ Compression=lzma
 SolidCompression=yes
 
 [Files]
-Source: "target\release\wixen-mail.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\target\release\wixen-mail.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Wixen Mail"; Filename: "{app}\wixen-mail.exe"
