@@ -425,7 +425,7 @@ mod tests {
         assert_eq!(account.name, "Primary Account");
         assert_eq!(account.imap_server, "imap.gmail.com");
         assert_eq!(account.imap_port, "993");
-        assert_eq!(account.enabled, true);
+        assert!(account.enabled);
         assert!(!account.id.is_empty()); // UUID generated
         assert_eq!(account.provider, Some("Gmail".to_string()));
     }
