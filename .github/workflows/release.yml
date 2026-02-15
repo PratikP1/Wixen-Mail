@@ -5,6 +5,16 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      release_level:
+        description: "Prerelease level for cargo release"
+        required: false
+        default: beta
+        type: choice
+        options:
+          - alpha
+          - beta
+          - rc
 
 env:
   CARGO_TERM_COLOR: always
@@ -67,7 +77,7 @@ jobs:
 
       - name: Create release version and tag
         run: >
-          cargo release beta --execute --no-confirm --no-publish
+          cargo release ${{ github.event.inputs.release_level || 'beta' }} --execute --no-confirm --no-publish
           --allow-branch main --tag-prefix v --push-remote origin
 
       - name: Capture release tag

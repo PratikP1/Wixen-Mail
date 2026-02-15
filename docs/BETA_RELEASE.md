@@ -9,6 +9,7 @@ Wixen Mail now has a dedicated release workflow:
 - Workflow file: `.github/workflows/release.yml`
 - GitHub Actions URL: `https://github.com/PratikP1/Wixen-Mail/actions/workflows/release.yml`
 - Trigger: push to `main` (or run manually with `workflow_dispatch`)
+- Manual run option: choose prerelease level input (`alpha`, `beta`, or `rc`; default `beta`)
 
 ## What the workflow produces
 
