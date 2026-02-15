@@ -244,7 +244,7 @@ impl ContactManagerWindow {
                             ui.label("No contacts found.");
                         } else {
                             for contact in &self.contacts {
-                                ui.group(|ui| {
+                                let response = ui.group(|ui| {
                                     ui.horizontal(|ui| {
                                         ui.label(if contact.favorite { "⭐" } else { "•" });
                                         if contact.avatar_url.is_some()
@@ -278,6 +278,16 @@ impl ContactManagerWindow {
                                                 Some(ContactAction::Delete(contact.id.clone()));
                                         }
                                     });
+                                });
+                                response.response.context_menu(|ui| {
+                                    if ui.button("✏ Edit").clicked() {
+                                        start_edit_contact_id = Some(contact.id.clone());
+                                        ui.close_menu();
+                                    }
+                                    if ui.button("🗑 Delete").clicked() {
+                                        action = Some(ContactAction::Delete(contact.id.clone()));
+                                        ui.close_menu();
+                                    }
                                 });
                             }
                         }
