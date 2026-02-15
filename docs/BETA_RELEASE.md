@@ -1,5 +1,7 @@
 # Beta Release and Setup Executables
 
+First beta tag: `v0.1.0-beta.1`
+
 ## Tag-driven release flow
 
 Wixen Mail now has a dedicated release workflow:
@@ -16,6 +18,11 @@ On Windows runners, the workflow builds release artifacts and publishes:
 - `Wixen-Mail-<tag>-windows.zip`
 
 For tag pushes, assets are attached to a GitHub Release automatically.
+
+## Changelog and installer source
+
+- Changelog: [`CHANGELOG.md`](../CHANGELOG.md)
+- Windows setup script: [`installer/Wixen-Mail-Setup.iss`](../installer/Wixen-Mail-Setup.iss)
 
 ## In-app update links
 
