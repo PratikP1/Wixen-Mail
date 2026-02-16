@@ -2030,13 +2030,14 @@ impl IntegratedUI {
                     ui.horizontal(|ui| {
                         if ui.button("✅ OK").clicked() {
                             self.state.error_message = None;
+                            self.announce_status("Error dialog closed");
                         }
                         if ui.button("📖 Help").clicked() {
                             ui.ctx().open_url(egui::OpenUrl {
                                 url: "https://github.com/PratikP1/Wixen-Mail/blob/main/docs/USER_GUIDE.md".to_string(),
                                 new_tab: true,
                             });
-                            self.state.status_message = "Opened help documentation".to_string();
+                            self.announce_status("Opened help documentation");
                         }
                     });
                 });
@@ -2259,6 +2260,7 @@ impl IntegratedUI {
 
                 if ui.button("✅ Save & Close").clicked() {
                     self.state.settings_open = false;
+                    self.announce_status("Settings saved and closed");
                 }
             });
     }
@@ -2394,6 +2396,7 @@ impl IntegratedUI {
                 ui.horizontal(|ui| {
                     if ui.button("🔍 Search").clicked() {
                         self.perform_advanced_search();
+                        self.announce_status(format!("{} messages found", self.state.search_results.len()));
                     }
 
                     if ui.button("🗑 Clear All").clicked() {
@@ -2408,6 +2411,7 @@ impl IntegratedUI {
                         self.state.search_starred_only = false;
                         self.state.search_results.clear();
                         self.state.search_contact_results.clear();
+                        self.announce_status("Search criteria cleared");
                     }
                 });
 
@@ -2882,34 +2886,34 @@ impl IntegratedUI {
 
                     match cache.create_tag(&tag) {
                         Ok(_) => {
-                            self.state.status_message = format!("Tag '{}' created", name);
                             self.state.tag_manager.status = "Tag created successfully".to_string();
+                            self.announce_success(format!("Tag '{}' created", name));
                         }
                         Err(e) => {
-                            self.state.error_message = Some(format!("Failed to create tag: {}", e));
                             self.state.tag_manager.error =
                                 Some(format!("Failed to create tag: {}", e));
+                            self.announce_error(format!("Failed to create tag: {}", e));
                         }
                     }
                 }
                 TagAction::Update(tag) => match cache.update_tag(&tag) {
                     Ok(_) => {
-                        self.state.status_message = format!("Tag '{}' updated", tag.name);
                         self.state.tag_manager.status = "Tag updated successfully".to_string();
+                        self.announce_success(format!("Tag '{}' updated", tag.name));
                     }
                     Err(e) => {
-                        self.state.error_message = Some(format!("Failed to update tag: {}", e));
                         self.state.tag_manager.error = Some(format!("Failed to update tag: {}", e));
+                        self.announce_error(format!("Failed to update tag: {}", e));
                     }
                 },
                 TagAction::Delete(tag_id) => match cache.delete_tag(&tag_id) {
                     Ok(_) => {
-                        self.state.status_message = "Tag deleted".to_string();
                         self.state.tag_manager.status = "Tag deleted successfully".to_string();
+                        self.announce_success("Tag deleted");
                     }
                     Err(e) => {
-                        self.state.error_message = Some(format!("Failed to delete tag: {}", e));
                         self.state.tag_manager.error = Some(format!("Failed to delete tag: {}", e));
+                        self.announce_error(format!("Failed to delete tag: {}", e));
                     }
                 },
             }
@@ -2922,35 +2926,35 @@ impl IntegratedUI {
             match action {
                 FilterRuleAction::Create(rule) => match cache.create_filter_rule(&rule) {
                     Ok(_) => {
-                        self.state.status_message = format!("Rule '{}' created", rule.name);
                         self.state.filter_manager.status = "Rule created successfully".to_string();
+                        self.announce_success(format!("Rule '{}' created", rule.name));
                     }
                     Err(e) => {
-                        self.state.error_message = Some(format!("Failed to create rule: {}", e));
                         self.state.filter_manager.error =
                             Some(format!("Failed to create rule: {}", e));
+                        self.announce_error(format!("Failed to create rule: {}", e));
                     }
                 },
                 FilterRuleAction::Update(rule) => match cache.update_filter_rule(&rule) {
                     Ok(_) => {
-                        self.state.status_message = format!("Rule '{}' updated", rule.name);
                         self.state.filter_manager.status = "Rule updated successfully".to_string();
+                        self.announce_success(format!("Rule '{}' updated", rule.name));
                     }
                     Err(e) => {
-                        self.state.error_message = Some(format!("Failed to update rule: {}", e));
                         self.state.filter_manager.error =
                             Some(format!("Failed to update rule: {}", e));
+                        self.announce_error(format!("Failed to update rule: {}", e));
                     }
                 },
                 FilterRuleAction::Delete(rule_id) => match cache.delete_filter_rule(&rule_id) {
                     Ok(_) => {
-                        self.state.status_message = "Rule deleted".to_string();
                         self.state.filter_manager.status = "Rule deleted successfully".to_string();
+                        self.announce_success("Rule deleted");
                     }
                     Err(e) => {
-                        self.state.error_message = Some(format!("Failed to delete rule: {}", e));
                         self.state.filter_manager.error =
                             Some(format!("Failed to delete rule: {}", e));
+                        self.announce_error(format!("Failed to delete rule: {}", e));
                     }
                 },
             }
@@ -2964,28 +2968,27 @@ impl IntegratedUI {
                 ContactAction::Create(contact) | ContactAction::Update(contact) => {
                     match cache.save_contact(&contact) {
                         Ok(_) => {
-                            self.state.status_message = format!("Contact '{}' saved", contact.name);
                             self.state.contact_manager.status =
                                 "Contact saved successfully".to_string();
+                            self.announce_success(format!("Contact '{}' saved", contact.name));
                         }
                         Err(e) => {
-                            self.state.error_message =
-                                Some(format!("Failed to save contact: {}", e));
                             self.state.contact_manager.error =
                                 Some(format!("Failed to save contact: {}", e));
+                            self.announce_error(format!("Failed to save contact: {}", e));
                         }
                     }
                 }
                 ContactAction::Delete(contact_id) => match cache.delete_contact(&contact_id) {
                     Ok(_) => {
-                        self.state.status_message = "Contact deleted".to_string();
                         self.state.contact_manager.status =
                             "Contact deleted successfully".to_string();
+                        self.announce_success("Contact deleted");
                     }
                     Err(e) => {
-                        self.state.error_message = Some(format!("Failed to delete contact: {}", e));
                         self.state.contact_manager.error =
                             Some(format!("Failed to delete contact: {}", e));
+                        self.announce_error(format!("Failed to delete contact: {}", e));
                     }
                 },
             }
@@ -2994,7 +2997,7 @@ impl IntegratedUI {
 
     fn handle_oauth_action(&mut self, action: OAuthAction) {
         let Some(cache) = &self.message_cache else {
-            self.state.error_message = Some("Database not available".to_string());
+            self.announce_error("Database not available");
             return;
         };
 
@@ -3008,16 +3011,14 @@ impl IntegratedUI {
                     let token = oauth_token_entry_from_set(account_id, provider.clone(), token_set);
                     match cache.save_oauth_token(&token) {
                         Ok(_) => {
-                            self.state.status_message =
-                                format!("OAuth token saved for provider '{}'", provider)
+                            self.announce_success(format!("OAuth token saved for provider '{}'", provider));
                         }
                         Err(e) => {
-                            self.state.error_message =
-                                Some(format!("Failed to save OAuth token: {}", e))
+                            self.announce_error(format!("Failed to save OAuth token: {}", e));
                         }
                     }
                 }
-                Err(e) => self.state.error_message = Some(format!("OAuth exchange failed: {}", e)),
+                Err(e) => self.announce_error(format!("OAuth exchange failed: {}", e)),
             },
             OAuthAction::RefreshToken {
                 account_id,
@@ -3025,7 +3026,7 @@ impl IntegratedUI {
             } => match cache.get_oauth_token(&account_id, &provider) {
                 Ok(Some(existing)) => {
                     let Some(refresh_token) = existing.refresh_token.clone() else {
-                        self.state.error_message = Some("No refresh token available".to_string());
+                        self.announce_error("No refresh token available");
                         return;
                     };
                     match OAuthService::refresh_access_token(&provider, &refresh_token) {
@@ -3034,24 +3035,21 @@ impl IntegratedUI {
                                 oauth_token_entry_from_set(account_id, provider.clone(), new_set);
                             token.id = existing.id;
                             if let Err(e) = cache.save_oauth_token(&token) {
-                                self.state.error_message =
-                                    Some(format!("Failed to store refreshed token: {}", e));
+                                self.announce_error(format!("Failed to store refreshed token: {}", e));
                             } else {
-                                self.state.status_message =
-                                    format!("OAuth token refreshed for '{}'", provider);
+                                self.announce_success(format!("OAuth token refreshed for '{}'", provider));
                             }
                         }
                         Err(e) => {
-                            self.state.error_message = Some(format!("OAuth refresh failed: {}", e))
+                            self.announce_error(format!("OAuth refresh failed: {}", e));
                         }
                     }
                 }
                 Ok(None) => {
-                    self.state.error_message =
-                        Some("No OAuth token found for account/provider".to_string())
+                    self.announce_error("No OAuth token found for account/provider");
                 }
                 Err(e) => {
-                    self.state.error_message = Some(format!("Failed to load OAuth token: {}", e))
+                    self.announce_error(format!("Failed to load OAuth token: {}", e));
                 }
             },
             OAuthAction::RevokeToken {
@@ -3059,10 +3057,10 @@ impl IntegratedUI {
                 provider,
             } => match cache.delete_oauth_token(&account_id, &provider) {
                 Ok(_) => {
-                    self.state.status_message = format!("OAuth token revoked for '{}'", provider)
+                    self.announce_success(format!("OAuth token revoked for '{}'", provider));
                 }
                 Err(e) => {
-                    self.state.error_message = Some(format!("Failed to revoke OAuth token: {}", e))
+                    self.announce_error(format!("Failed to revoke OAuth token: {}", e));
                 }
             },
         }
@@ -3085,44 +3083,40 @@ impl IntegratedUI {
 
                     match cache.create_signature(&signature) {
                         Ok(_) => {
-                            self.state.status_message = format!("Signature '{}' created", name);
                             self.state.signature_manager.status =
                                 "Signature created successfully".to_string();
+                            self.announce_success(format!("Signature '{}' created", name));
                         }
                         Err(e) => {
-                            self.state.error_message =
-                                Some(format!("Failed to create signature: {}", e));
                             self.state.signature_manager.error =
                                 Some(format!("Failed to create signature: {}", e));
+                            self.announce_error(format!("Failed to create signature: {}", e));
                         }
                     }
                 }
                 SignatureAction::Update(signature) => match cache.update_signature(&signature) {
                     Ok(_) => {
-                        self.state.status_message =
-                            format!("Signature '{}' updated", signature.name);
                         self.state.signature_manager.status =
                             "Signature updated successfully".to_string();
+                        self.announce_success(format!("Signature '{}' updated", signature.name));
                     }
                     Err(e) => {
-                        self.state.error_message =
-                            Some(format!("Failed to update signature: {}", e));
                         self.state.signature_manager.error =
                             Some(format!("Failed to update signature: {}", e));
+                        self.announce_error(format!("Failed to update signature: {}", e));
                     }
                 },
                 SignatureAction::Delete(signature_id) => {
                     match cache.delete_signature(&signature_id) {
                         Ok(_) => {
-                            self.state.status_message = "Signature deleted".to_string();
                             self.state.signature_manager.status =
                                 "Signature deleted successfully".to_string();
+                            self.announce_success("Signature deleted");
                         }
                         Err(e) => {
-                            self.state.error_message =
-                                Some(format!("Failed to delete signature: {}", e));
                             self.state.signature_manager.error =
                                 Some(format!("Failed to delete signature: {}", e));
+                            self.announce_error(format!("Failed to delete signature: {}", e));
                         }
                     }
                 }
@@ -3135,13 +3129,15 @@ impl IntegratedUI {
         match action {
             AccountAction::None => {}
             AccountAction::Create(account) => {
+                let mut success_msg = None;
+                let mut error_msg = None;
+
                 if let Some(ref cache) = self.message_cache {
                     match cache.save_account(&account) {
                         Ok(_) => {
-                            self.state.status_message =
-                                format!("Account '{}' created", account.name);
                             self.state.account_manager.status =
                                 format!("Account '{}' created successfully", account.name);
+                            success_msg = Some(format!("Account '{}' created", account.name));
                             // Reload accounts from database
                             if let Ok(accounts) = cache.load_accounts() {
                                 self.state.account_manager.accounts = accounts;
@@ -3157,23 +3153,31 @@ impl IntegratedUI {
                             self.state.account_manager.close();
                         }
                         Err(e) => {
-                            self.state.error_message =
-                                Some(format!("Failed to create account: {}", e));
                             self.state.account_manager.error = Some(format!("Error: {}", e));
+                            error_msg = Some(format!("Failed to create account: {}", e));
                         }
                     }
                 } else {
-                    self.state.error_message = Some("Database not available".to_string());
+                    error_msg = Some("Database not available".to_string());
+                }
+
+                // Announce after cache operations complete
+                if let Some(msg) = success_msg {
+                    self.announce_success(msg);
+                } else if let Some(msg) = error_msg {
+                    self.announce_error(msg);
                 }
             }
             AccountAction::Update(account) => {
+                let mut success_msg = None;
+                let mut error_msg = None;
+
                 if let Some(ref cache) = self.message_cache {
                     match cache.save_account(&account) {
                         Ok(_) => {
-                            self.state.status_message =
-                                format!("Account '{}' updated", account.name);
                             self.state.account_manager.status =
                                 format!("Account '{}' updated successfully", account.name);
+                            success_msg = Some(format!("Account '{}' updated", account.name));
                             // Reload accounts from database
                             if let Ok(accounts) = cache.load_accounts() {
                                 self.state.account_manager.accounts = accounts;
@@ -3184,16 +3188,25 @@ impl IntegratedUI {
                             self.state.account_manager.close();
                         }
                         Err(e) => {
-                            self.state.error_message =
-                                Some(format!("Failed to update account: {}", e));
                             self.state.account_manager.error = Some(format!("Error: {}", e));
+                            error_msg = Some(format!("Failed to update account: {}", e));
                         }
                     }
                 } else {
-                    self.state.error_message = Some("Database not available".to_string());
+                    error_msg = Some("Database not available".to_string());
+                }
+
+                // Announce after cache operations complete
+                if let Some(msg) = success_msg {
+                    self.announce_success(msg);
+                } else if let Some(msg) = error_msg {
+                    self.announce_error(msg);
                 }
             }
             AccountAction::Delete(account_id) => {
+                let mut success_msg = None;
+                let mut error_msg = None;
+
                 if let Some(cache) = self.message_cache.as_ref() {
                     let delete_result = cache.delete_account(&account_id);
                     match delete_result {
@@ -3209,8 +3222,8 @@ impl IntegratedUI {
                                 Self::oauth_provider_for_account(account)
                                     .map(|provider| (account_id.clone(), provider))
                             });
-                            self.state.status_message = "Account deleted successfully".to_string();
                             self.state.account_manager.status = "Account deleted".to_string();
+                            success_msg = Some("Account deleted successfully".to_string());
                             // Reload accounts from database
                             if let Ok(accounts) = cache.load_accounts() {
                                 self.state.account_manager.accounts = accounts;
@@ -3231,13 +3244,19 @@ impl IntegratedUI {
                             self.refresh_outbox_queue_count();
                         }
                         Err(e) => {
-                            self.state.error_message =
-                                Some(format!("Failed to delete account: {}", e));
                             self.state.account_manager.error = Some(format!("Error: {}", e));
+                            error_msg = Some(format!("Failed to delete account: {}", e));
                         }
                     }
                 } else {
-                    self.state.error_message = Some("Message cache not available".to_string());
+                    error_msg = Some("Message cache not available".to_string());
+                }
+
+                // Announce after cache operations complete
+                if let Some(msg) = success_msg {
+                    self.announce_success(msg);
+                } else if let Some(msg) = error_msg {
+                    self.announce_error(msg);
                 }
             }
             AccountAction::SetActive(account_id) => {
@@ -3251,7 +3270,7 @@ impl IntegratedUI {
                 {
                     self.switch_account(&account_id);
                 } else {
-                    self.state.error_message = Some("Account not found".to_string());
+                    self.announce_error("Account not found");
                 }
             }
             AccountAction::TestConnection(account_id) => {
