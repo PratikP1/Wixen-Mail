@@ -119,8 +119,7 @@ jobs:
           prerelease: true
           files: |
             dist/Wixen-Mail-Setup-*.exe
-            dist/wixen-mail-*.exe
+            dist/wixen-mail-v*.exe
             dist/Wixen-Mail-*-windows.zip
             CHANGELOG.md
           fail_on_unmatched_files: false
-          skip_existing: true
