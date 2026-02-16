@@ -78,7 +78,7 @@ jobs:
       - name: Create release version and tag
         run: >
           cargo release ${{ github.event.inputs.release_level || 'beta' }} --execute --no-confirm --no-publish
-          --allow-branch main --tag-prefix v --push-remote origin
+          --allow-branch main --push-remote origin
 
       - name: Capture release tag
         id: release_tag
