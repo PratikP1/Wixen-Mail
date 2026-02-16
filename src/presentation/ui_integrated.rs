@@ -134,6 +134,8 @@ pub struct UIState {
     pub mail_sort_option: MailSortOption,
     /// Contact list sort option
     pub contact_sort_option: ContactSortOption,
+    /// Track if initial focus has been set on app start
+    pub initial_focus_set: bool,
 }
 
 /// Message item for display
@@ -276,6 +278,7 @@ impl Default for UIState {
             selected_tag_filter: None,
             mail_sort_option: MailSortOption::DateNewestFirst,
             contact_sort_option: ContactSortOption::NameAsc,
+            initial_focus_set: false,
         }
     }
 }
@@ -992,7 +995,7 @@ impl IntegratedUI {
         // Menu bar
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
-                ui.menu_button("File", |ui| {
+                ui.menu_button("File (Alt+F)", |ui| {
                     if ui.button("🔌 Connect to Server").clicked() {
                         self.state.account_config_open = true;
                         ui.close_menu();
@@ -1023,7 +1026,7 @@ impl IntegratedUI {
                     }
                 });
 
-                ui.menu_button("Edit", |ui| {
+                ui.menu_button("Edit (Alt+E)", |ui| {
                     if ui.button("🔍 Advanced Search (Ctrl+Shift+F)").clicked() {
                         self.state.search_open = true;
                         ui.close_menu();
@@ -1101,7 +1104,7 @@ impl IntegratedUI {
                     },
                 );
 
-                ui.menu_button("Tools", |ui| {
+                ui.menu_button("Tools (Alt+T)", |ui| {
                     if ui.button("🏷 Manage Tags (Ctrl+T)").clicked() {
                         self.state.tag_manager.open(self.state.account_config.email.clone());
                         ui.close_menu();
@@ -1134,7 +1137,7 @@ impl IntegratedUI {
                     }
                 });
 
-                ui.menu_button("View", |ui| {
+                ui.menu_button("View (Alt+V)", |ui| {
                     if ui.checkbox(&mut self.state.thread_view_enabled, "🧵 Thread View").changed() {
                         ui.close_menu();
                     }
@@ -1176,7 +1179,7 @@ impl IntegratedUI {
                     }
                 });
 
-                ui.menu_button("Help", |ui| {
+                ui.menu_button("Help (Alt+H)", |ui| {
                     if ui.button("📖 Documentation (F1)").clicked() {
                         self.state.status_message = "Open docs: https://github.com/PratikP1/Wixen-Mail/blob/main/docs/USER_GUIDE.md".to_string();
                         ui.close_menu();
@@ -1277,6 +1280,7 @@ impl IntegratedUI {
                                 let selected = self.state.selected_folder.as_ref() == Some(&folder);
                                 if ui.selectable_label(selected, &folder).clicked() {
                                     self.state.selected_folder = Some(folder.clone());
+                                    self.announce_status(format!("Selected folder {}", folder));
                                     self.fetch_messages_for_folder(folder);
                                 }
                             }
@@ -1354,6 +1358,14 @@ impl IntegratedUI {
                 // Middle panel - Message list
                 ui.vertical(|ui| {
                     ui.set_width(400.0);
+
+                    // Set initial focus on message list (accessibility requirement)
+                    if !self.state.initial_focus_set && !self.state.messages.is_empty() {
+                        ui.ctx().memory_mut(|mem| mem.request_focus(egui::Id::new("message_list_scroll")));
+                        self.state.initial_focus_set = true;
+                        self.announce_status("Focus set on message list");
+                    }
+
                     ui.horizontal(|ui| {
                         ui.heading("📨 Messages");
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1371,6 +1383,7 @@ impl IntegratedUI {
 
                     // Performance optimization (Feature 6): Use ScrollArea with sensible defaults
                     egui::ScrollArea::vertical()
+                        .id_salt("message_list_scroll")
                         .auto_shrink([false; 2]) // Don't shrink to content
                         .max_height(f32::INFINITY) // Use all available space
                         .show(ui, |ui| {
@@ -1390,6 +1403,15 @@ impl IntegratedUI {
                                     if ui.selectable_label(selected, "").clicked() {
                                         self.state.selected_message = Some(msg.uid);
                                         self.state.current_attachments = msg.attachments.clone();
+
+                                        // Announce message selection to screen readers
+                                        let announcement = if !msg.read {
+                                            format!("Unread message from {} subject {}", msg.from, msg.subject)
+                                        } else {
+                                            format!("Message from {} subject {}", msg.from, msg.subject)
+                                        };
+                                        self.announce_status(announcement);
+
                                         if let Some(folder) = &self.state.selected_folder.clone() {
                                             self.fetch_message_body(folder.clone(), msg.uid);
                                         }
@@ -1758,6 +1780,8 @@ impl IntegratedUI {
                 let subject = self.state.composition_window.subject.clone();
                 let body = self.state.composition_window.body.clone();
 
+                self.announce_status("Sending email message");
+
                 // Delete draft if it exists
                 if let (Some(ref cache), Some(ref draft_id)) =
                     (&self.message_cache, &self.state.composition_window.draft_id)
@@ -1771,6 +1795,8 @@ impl IntegratedUI {
                 }
             }
             CompositionAction::SaveDraft => {
+                self.announce_status("Saving draft");
+
                 // Save draft to SQLite
                 if let Some(ref cache) = self.message_cache {
                     let account_id = if !self.state.account_config.username.is_empty() {
@@ -1784,16 +1810,20 @@ impl IntegratedUI {
                         Ok(_) => {
                             self.state.composition_window.mark_saved();
                             self.state.status_message = "Draft saved".to_string();
+                            self.announce_success("Draft saved successfully");
                         }
                         Err(e) => {
                             self.state.error_message = Some(format!("Failed to save draft: {}", e));
+                            self.announce_error(format!("Failed to save draft: {}", e));
                         }
                     }
                 } else {
                     self.state.status_message = "Draft saved (in memory)".to_string();
+                    self.announce_success("Draft saved in memory");
                 }
             }
             CompositionAction::Discard => {
+                self.announce_status("Composition window closed");
                 // Window closed, nothing to do
             }
             CompositionAction::None => {
@@ -1860,6 +1890,45 @@ impl IntegratedUI {
         // Handle tag/signature/account manager keyboard shortcuts
         let mut shortcut_account_switch: Option<String> = None;
         ctx.input(|i| {
+            // Menu mnemonics: Alt+F, Alt+E, Alt+T, Alt+V, Alt+H
+            if i.modifiers.alt && !i.modifiers.ctrl && !i.modifiers.shift {
+                if i.key_pressed(egui::Key::F) {
+                    // File menu - trigger account config
+                    self.state.account_config_open = true;
+                } else if i.key_pressed(egui::Key::E) {
+                    // Edit menu - trigger advanced search
+                    self.state.search_open = true;
+                } else if i.key_pressed(egui::Key::T) {
+                    // Tools menu - open tag manager
+                    self.state
+                        .tag_manager
+                        .open(self.state.account_config.email.clone());
+                } else if i.key_pressed(egui::Key::V) {
+                    // View menu - no default action (menu will open on Alt+V)
+                } else if i.key_pressed(egui::Key::H) {
+                    // Help menu - open documentation
+                    self.state.status_message = "Open docs: https://github.com/PratikP1/Wixen-Mail/blob/main/docs/USER_GUIDE.md".to_string();
+                }
+            }
+
+            // Escape key - close any open modal/dialog
+            if i.key_pressed(egui::Key::Escape) {
+                // Close all dialogs/modals
+                self.state.composition_window.close();
+                self.state.tag_manager.close();
+                self.state.contact_manager.close();
+                self.state.filter_manager.close();
+                self.state.signature_manager.close();
+                self.state.oauth_manager.close();
+                self.state.account_manager.close();
+                self.state.account_config_open = false;
+                self.state.search_open = false;
+                self.state.settings_open = false;
+                self.state.error_message = None;
+                self.state.beta_readiness_open = false;
+                self.announce_status("Closed dialog, focus returned to main window");
+            }
+
             // Tag manager shortcut: Ctrl+T
             if i.key_pressed(egui::Key::T) && i.modifiers.ctrl && !i.modifiers.shift {
                 self.state
