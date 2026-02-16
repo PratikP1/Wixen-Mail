@@ -122,3 +122,5 @@ jobs:
             dist/wixen-mail-*.exe
             dist/Wixen-Mail-*-windows.zip
             CHANGELOG.md
+          fail_on_unmatched_files: false
+          skip_existing: true
