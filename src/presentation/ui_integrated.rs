@@ -2396,7 +2396,10 @@ impl IntegratedUI {
                 ui.horizontal(|ui| {
                     if ui.button("🔍 Search").clicked() {
                         self.perform_advanced_search();
-                        self.announce_status(format!("{} messages found", self.state.search_results.len()));
+                        self.announce_status(format!(
+                            "{} messages found",
+                            self.state.search_results.len()
+                        ));
                     }
 
                     if ui.button("🗑 Clear All").clicked() {
@@ -3011,7 +3014,10 @@ impl IntegratedUI {
                     let token = oauth_token_entry_from_set(account_id, provider.clone(), token_set);
                     match cache.save_oauth_token(&token) {
                         Ok(_) => {
-                            self.announce_success(format!("OAuth token saved for provider '{}'", provider));
+                            self.announce_success(format!(
+                                "OAuth token saved for provider '{}'",
+                                provider
+                            ));
                         }
                         Err(e) => {
                             self.announce_error(format!("Failed to save OAuth token: {}", e));
@@ -3035,9 +3041,15 @@ impl IntegratedUI {
                                 oauth_token_entry_from_set(account_id, provider.clone(), new_set);
                             token.id = existing.id;
                             if let Err(e) = cache.save_oauth_token(&token) {
-                                self.announce_error(format!("Failed to store refreshed token: {}", e));
+                                self.announce_error(format!(
+                                    "Failed to store refreshed token: {}",
+                                    e
+                                ));
                             } else {
-                                self.announce_success(format!("OAuth token refreshed for '{}'", provider));
+                                self.announce_success(format!(
+                                    "OAuth token refreshed for '{}'",
+                                    provider
+                                ));
                             }
                         }
                         Err(e) => {
