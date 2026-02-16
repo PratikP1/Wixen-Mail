@@ -1,6 +1,6 @@
 [package]
 name = "wixen-mail"
-version = "0.1.1-beta.4"
+version = "0.1.1-beta.5"
 edition = "2021"
 authors = ["Pratik Patel"]
 description = "A fully accessible, light-weight mail client built with Rust and WXDragon"
