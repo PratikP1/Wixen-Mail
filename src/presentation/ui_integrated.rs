@@ -9,6 +9,7 @@ use crate::common::Result;
 use crate::data::account::Account;
 use crate::data::email_providers::{self, EmailProvider};
 use crate::data::message_cache::{CachedMessage, ContactEntry, MessageCache, Tag};
+use crate::presentation::accessibility::Accessibility;
 use crate::presentation::account_manager::{AccountAction, AccountManagerWindow};
 use crate::presentation::composition::{CompositionAction, CompositionWindow};
 use crate::presentation::contact_manager::{
@@ -133,6 +134,8 @@ pub struct UIState {
     pub mail_sort_option: MailSortOption,
     /// Contact list sort option
     pub contact_sort_option: ContactSortOption,
+    /// Track if initial focus has been set on app start
+    pub initial_focus_set: bool,
 }
 
 /// Message item for display
@@ -275,6 +278,7 @@ impl Default for UIState {
             selected_tag_filter: None,
             mail_sort_option: MailSortOption::DateNewestFirst,
             contact_sort_option: ContactSortOption::NameAsc,
+            initial_focus_set: false,
         }
     }
 }
@@ -291,6 +295,7 @@ pub struct IntegratedUI {
     ui_rx: Receiver<UIUpdate>,
     state: UIState,
     message_cache: Option<MessageCache>,
+    accessibility: Accessibility,
 }
 
 impl IntegratedUI {
@@ -320,6 +325,12 @@ impl IntegratedUI {
             }
         }
 
+        // Initialize accessibility layer
+        let accessibility = Accessibility::new()?;
+        accessibility.initialize().unwrap_or_else(|e| {
+            tracing::warn!("Failed to fully initialize accessibility: {}", e);
+        });
+
         let mut ui = Self {
             mail_controllers: HashMap::new(),
             outbox_flush_controllers: (0..MAX_OUTBOX_FLUSH_CONCURRENCY.max(1))
@@ -333,6 +344,7 @@ impl IntegratedUI {
             ui_rx,
             state,
             message_cache,
+            accessibility,
         };
 
         if let Some(active_id) = ui.active_account_id.clone() {
@@ -448,11 +460,11 @@ impl IntegratedUI {
                 self.state.status_message = format!("Error: {}", error);
             }
             UIUpdate::StatusUpdated(status) => {
-                self.state.status_message = status;
+                self.announce_status(status);
             }
             UIUpdate::EmailSent => {
                 self.state.composition_window.close();
-                self.state.status_message = "Email sent successfully".to_string();
+                self.announce_success("Email sent successfully");
             }
             UIUpdate::OutboxSendResult {
                 queue_id,
@@ -462,10 +474,10 @@ impl IntegratedUI {
                 if let Some(cache) = &self.message_cache {
                     if success {
                         let _ = cache.delete_outbox_message(&queue_id);
-                        self.state.status_message = "Queued email sent".to_string();
+                        self.announce_success("Queued email sent");
                     } else if let Some(err) = error {
                         let _ = cache.update_outbox_failure(&queue_id, &err);
-                        self.state.status_message = format!("Queued email failed: {}", err);
+                        self.announce_error(format!("Queued email failed: {}", err));
                     }
                 }
                 self.refresh_outbox_queue_count();
@@ -735,9 +747,42 @@ impl IntegratedUI {
         }
     }
 
+    /// Set status message and announce to screen readers
+    fn announce_status(&mut self, message: impl Into<String>) {
+        let msg = message.into();
+        self.state.status_message = msg.clone();
+        // Announce to screen readers with normal priority
+        let _ = self.accessibility.announce(
+            &msg,
+            crate::presentation::accessibility::announcements::Priority::Normal,
+        );
+    }
+
+    /// Announce error message to screen readers
+    fn announce_error(&mut self, message: impl Into<String>) {
+        let msg = message.into();
+        self.state.error_message = Some(msg.clone());
+        // Announce errors with high priority
+        let _ = self.accessibility.announce(
+            &msg,
+            crate::presentation::accessibility::announcements::Priority::High,
+        );
+    }
+
+    /// Announce success message to screen readers
+    fn announce_success(&mut self, message: impl Into<String>) {
+        let msg = message.into();
+        self.state.status_message = msg.clone();
+        // Announce success with high priority
+        let _ = self.accessibility.announce(
+            &msg,
+            crate::presentation::accessibility::announcements::Priority::High,
+        );
+    }
+
     fn queue_email_for_offline(&mut self, to: Vec<String>, subject: String, body: String) {
         if to.is_empty() {
-            self.state.error_message = Some("Cannot queue email: no valid recipients".to_string());
+            self.announce_error("Cannot queue email: no valid recipients");
             return;
         }
         if let Some(cache) = &self.message_cache {
@@ -754,17 +799,16 @@ impl IntegratedUI {
             };
             match cache.queue_outbox_message(&item) {
                 Ok(_) => {
-                    self.state.status_message = "Offline mode enabled: email queued".to_string();
+                    self.announce_success("Offline mode enabled: email queued");
                     self.state.composition_window.close();
                     self.refresh_outbox_queue_count();
                 }
                 Err(e) => {
-                    self.state.error_message =
-                        Some(format!("Failed to queue offline email: {}", e));
+                    self.announce_error(format!("Failed to queue offline email: {}", e));
                 }
             }
         } else {
-            self.state.error_message = Some("Message cache not available".to_string());
+            self.announce_error("Message cache not available");
         }
     }
 
@@ -951,7 +995,7 @@ impl IntegratedUI {
         // Menu bar
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
-                ui.menu_button("File", |ui| {
+                ui.menu_button("File (Alt+F)", |ui| {
                     if ui.button("🔌 Connect to Server").clicked() {
                         self.state.account_config_open = true;
                         ui.close_menu();
@@ -982,7 +1026,7 @@ impl IntegratedUI {
                     }
                 });
 
-                ui.menu_button("Edit", |ui| {
+                ui.menu_button("Edit (Alt+E)", |ui| {
                     if ui.button("🔍 Advanced Search (Ctrl+Shift+F)").clicked() {
                         self.state.search_open = true;
                         ui.close_menu();
@@ -1060,7 +1104,7 @@ impl IntegratedUI {
                     },
                 );
 
-                ui.menu_button("Tools", |ui| {
+                ui.menu_button("Tools (Alt+T)", |ui| {
                     if ui.button("🏷 Manage Tags (Ctrl+T)").clicked() {
                         self.state.tag_manager.open(self.state.account_config.email.clone());
                         ui.close_menu();
@@ -1093,7 +1137,7 @@ impl IntegratedUI {
                     }
                 });
 
-                ui.menu_button("View", |ui| {
+                ui.menu_button("View (Alt+V)", |ui| {
                     if ui.checkbox(&mut self.state.thread_view_enabled, "🧵 Thread View").changed() {
                         ui.close_menu();
                     }
@@ -1135,7 +1179,7 @@ impl IntegratedUI {
                     }
                 });
 
-                ui.menu_button("Help", |ui| {
+                ui.menu_button("Help (Alt+H)", |ui| {
                     if ui.button("📖 Documentation (F1)").clicked() {
                         self.state.status_message = "Open docs: https://github.com/PratikP1/Wixen-Mail/blob/main/docs/USER_GUIDE.md".to_string();
                         ui.close_menu();
@@ -1236,6 +1280,7 @@ impl IntegratedUI {
                                 let selected = self.state.selected_folder.as_ref() == Some(&folder);
                                 if ui.selectable_label(selected, &folder).clicked() {
                                     self.state.selected_folder = Some(folder.clone());
+                                    self.announce_status(format!("Selected folder {}", folder));
                                     self.fetch_messages_for_folder(folder);
                                 }
                             }
@@ -1313,6 +1358,14 @@ impl IntegratedUI {
                 // Middle panel - Message list
                 ui.vertical(|ui| {
                     ui.set_width(400.0);
+
+                    // Set initial focus on message list (accessibility requirement)
+                    if !self.state.initial_focus_set && !self.state.messages.is_empty() {
+                        ui.ctx().memory_mut(|mem| mem.request_focus(egui::Id::new("message_list_scroll")));
+                        self.state.initial_focus_set = true;
+                        self.announce_status("Focus set on message list");
+                    }
+
                     ui.horizontal(|ui| {
                         ui.heading("📨 Messages");
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1330,6 +1383,7 @@ impl IntegratedUI {
 
                     // Performance optimization (Feature 6): Use ScrollArea with sensible defaults
                     egui::ScrollArea::vertical()
+                        .id_salt("message_list_scroll")
                         .auto_shrink([false; 2]) // Don't shrink to content
                         .max_height(f32::INFINITY) // Use all available space
                         .show(ui, |ui| {
@@ -1349,6 +1403,15 @@ impl IntegratedUI {
                                     if ui.selectable_label(selected, "").clicked() {
                                         self.state.selected_message = Some(msg.uid);
                                         self.state.current_attachments = msg.attachments.clone();
+
+                                        // Announce message selection to screen readers
+                                        let announcement = if !msg.read {
+                                            format!("Unread message from {} subject {}", msg.from, msg.subject)
+                                        } else {
+                                            format!("Message from {} subject {}", msg.from, msg.subject)
+                                        };
+                                        self.announce_status(announcement);
+
                                         if let Some(folder) = &self.state.selected_folder.clone() {
                                             self.fetch_message_body(folder.clone(), msg.uid);
                                         }
@@ -1717,6 +1780,8 @@ impl IntegratedUI {
                 let subject = self.state.composition_window.subject.clone();
                 let body = self.state.composition_window.body.clone();
 
+                self.announce_status("Sending email message");
+
                 // Delete draft if it exists
                 if let (Some(ref cache), Some(ref draft_id)) =
                     (&self.message_cache, &self.state.composition_window.draft_id)
@@ -1730,6 +1795,8 @@ impl IntegratedUI {
                 }
             }
             CompositionAction::SaveDraft => {
+                self.announce_status("Saving draft");
+
                 // Save draft to SQLite
                 if let Some(ref cache) = self.message_cache {
                     let account_id = if !self.state.account_config.username.is_empty() {
@@ -1743,16 +1810,20 @@ impl IntegratedUI {
                         Ok(_) => {
                             self.state.composition_window.mark_saved();
                             self.state.status_message = "Draft saved".to_string();
+                            self.announce_success("Draft saved successfully");
                         }
                         Err(e) => {
                             self.state.error_message = Some(format!("Failed to save draft: {}", e));
+                            self.announce_error(format!("Failed to save draft: {}", e));
                         }
                     }
                 } else {
                     self.state.status_message = "Draft saved (in memory)".to_string();
+                    self.announce_success("Draft saved in memory");
                 }
             }
             CompositionAction::Discard => {
+                self.announce_status("Composition window closed");
                 // Window closed, nothing to do
             }
             CompositionAction::None => {
@@ -1819,6 +1890,45 @@ impl IntegratedUI {
         // Handle tag/signature/account manager keyboard shortcuts
         let mut shortcut_account_switch: Option<String> = None;
         ctx.input(|i| {
+            // Menu mnemonics: Alt+F, Alt+E, Alt+T, Alt+V, Alt+H
+            if i.modifiers.alt && !i.modifiers.ctrl && !i.modifiers.shift {
+                if i.key_pressed(egui::Key::F) {
+                    // File menu - trigger account config
+                    self.state.account_config_open = true;
+                } else if i.key_pressed(egui::Key::E) {
+                    // Edit menu - trigger advanced search
+                    self.state.search_open = true;
+                } else if i.key_pressed(egui::Key::T) {
+                    // Tools menu - open tag manager
+                    self.state
+                        .tag_manager
+                        .open(self.state.account_config.email.clone());
+                } else if i.key_pressed(egui::Key::V) {
+                    // View menu - no default action (menu will open on Alt+V)
+                } else if i.key_pressed(egui::Key::H) {
+                    // Help menu - open documentation
+                    self.state.status_message = "Open docs: https://github.com/PratikP1/Wixen-Mail/blob/main/docs/USER_GUIDE.md".to_string();
+                }
+            }
+
+            // Escape key - close any open modal/dialog
+            if i.key_pressed(egui::Key::Escape) {
+                // Close all dialogs/modals
+                self.state.composition_window.close();
+                self.state.tag_manager.close();
+                self.state.contact_manager.close();
+                self.state.filter_manager.close();
+                self.state.signature_manager.close();
+                self.state.oauth_manager.close();
+                self.state.account_manager.close();
+                self.state.account_config_open = false;
+                self.state.search_open = false;
+                self.state.settings_open = false;
+                self.state.error_message = None;
+                self.state.beta_readiness_open = false;
+                self.announce_status("Closed dialog, focus returned to main window");
+            }
+
             // Tag manager shortcut: Ctrl+T
             if i.key_pressed(egui::Key::T) && i.modifiers.ctrl && !i.modifiers.shift {
                 self.state
@@ -1920,13 +2030,14 @@ impl IntegratedUI {
                     ui.horizontal(|ui| {
                         if ui.button("✅ OK").clicked() {
                             self.state.error_message = None;
+                            self.announce_status("Error dialog closed");
                         }
                         if ui.button("📖 Help").clicked() {
                             ui.ctx().open_url(egui::OpenUrl {
                                 url: "https://github.com/PratikP1/Wixen-Mail/blob/main/docs/USER_GUIDE.md".to_string(),
                                 new_tab: true,
                             });
-                            self.state.status_message = "Opened help documentation".to_string();
+                            self.announce_status("Opened help documentation");
                         }
                     });
                 });
@@ -2149,6 +2260,7 @@ impl IntegratedUI {
 
                 if ui.button("✅ Save & Close").clicked() {
                     self.state.settings_open = false;
+                    self.announce_status("Settings saved and closed");
                 }
             });
     }
@@ -2284,6 +2396,7 @@ impl IntegratedUI {
                 ui.horizontal(|ui| {
                     if ui.button("🔍 Search").clicked() {
                         self.perform_advanced_search();
+                        self.announce_status(format!("{} messages found", self.state.search_results.len()));
                     }
 
                     if ui.button("🗑 Clear All").clicked() {
@@ -2298,6 +2411,7 @@ impl IntegratedUI {
                         self.state.search_starred_only = false;
                         self.state.search_results.clear();
                         self.state.search_contact_results.clear();
+                        self.announce_status("Search criteria cleared");
                     }
                 });
 
@@ -2772,34 +2886,34 @@ impl IntegratedUI {
 
                     match cache.create_tag(&tag) {
                         Ok(_) => {
-                            self.state.status_message = format!("Tag '{}' created", name);
                             self.state.tag_manager.status = "Tag created successfully".to_string();
+                            self.announce_success(format!("Tag '{}' created", name));
                         }
                         Err(e) => {
-                            self.state.error_message = Some(format!("Failed to create tag: {}", e));
                             self.state.tag_manager.error =
                                 Some(format!("Failed to create tag: {}", e));
+                            self.announce_error(format!("Failed to create tag: {}", e));
                         }
                     }
                 }
                 TagAction::Update(tag) => match cache.update_tag(&tag) {
                     Ok(_) => {
-                        self.state.status_message = format!("Tag '{}' updated", tag.name);
                         self.state.tag_manager.status = "Tag updated successfully".to_string();
+                        self.announce_success(format!("Tag '{}' updated", tag.name));
                     }
                     Err(e) => {
-                        self.state.error_message = Some(format!("Failed to update tag: {}", e));
                         self.state.tag_manager.error = Some(format!("Failed to update tag: {}", e));
+                        self.announce_error(format!("Failed to update tag: {}", e));
                     }
                 },
                 TagAction::Delete(tag_id) => match cache.delete_tag(&tag_id) {
                     Ok(_) => {
-                        self.state.status_message = "Tag deleted".to_string();
                         self.state.tag_manager.status = "Tag deleted successfully".to_string();
+                        self.announce_success("Tag deleted");
                     }
                     Err(e) => {
-                        self.state.error_message = Some(format!("Failed to delete tag: {}", e));
                         self.state.tag_manager.error = Some(format!("Failed to delete tag: {}", e));
+                        self.announce_error(format!("Failed to delete tag: {}", e));
                     }
                 },
             }
@@ -2812,35 +2926,35 @@ impl IntegratedUI {
             match action {
                 FilterRuleAction::Create(rule) => match cache.create_filter_rule(&rule) {
                     Ok(_) => {
-                        self.state.status_message = format!("Rule '{}' created", rule.name);
                         self.state.filter_manager.status = "Rule created successfully".to_string();
+                        self.announce_success(format!("Rule '{}' created", rule.name));
                     }
                     Err(e) => {
-                        self.state.error_message = Some(format!("Failed to create rule: {}", e));
                         self.state.filter_manager.error =
                             Some(format!("Failed to create rule: {}", e));
+                        self.announce_error(format!("Failed to create rule: {}", e));
                     }
                 },
                 FilterRuleAction::Update(rule) => match cache.update_filter_rule(&rule) {
                     Ok(_) => {
-                        self.state.status_message = format!("Rule '{}' updated", rule.name);
                         self.state.filter_manager.status = "Rule updated successfully".to_string();
+                        self.announce_success(format!("Rule '{}' updated", rule.name));
                     }
                     Err(e) => {
-                        self.state.error_message = Some(format!("Failed to update rule: {}", e));
                         self.state.filter_manager.error =
                             Some(format!("Failed to update rule: {}", e));
+                        self.announce_error(format!("Failed to update rule: {}", e));
                     }
                 },
                 FilterRuleAction::Delete(rule_id) => match cache.delete_filter_rule(&rule_id) {
                     Ok(_) => {
-                        self.state.status_message = "Rule deleted".to_string();
                         self.state.filter_manager.status = "Rule deleted successfully".to_string();
+                        self.announce_success("Rule deleted");
                     }
                     Err(e) => {
-                        self.state.error_message = Some(format!("Failed to delete rule: {}", e));
                         self.state.filter_manager.error =
                             Some(format!("Failed to delete rule: {}", e));
+                        self.announce_error(format!("Failed to delete rule: {}", e));
                     }
                 },
             }
@@ -2854,28 +2968,27 @@ impl IntegratedUI {
                 ContactAction::Create(contact) | ContactAction::Update(contact) => {
                     match cache.save_contact(&contact) {
                         Ok(_) => {
-                            self.state.status_message = format!("Contact '{}' saved", contact.name);
                             self.state.contact_manager.status =
                                 "Contact saved successfully".to_string();
+                            self.announce_success(format!("Contact '{}' saved", contact.name));
                         }
                         Err(e) => {
-                            self.state.error_message =
-                                Some(format!("Failed to save contact: {}", e));
                             self.state.contact_manager.error =
                                 Some(format!("Failed to save contact: {}", e));
+                            self.announce_error(format!("Failed to save contact: {}", e));
                         }
                     }
                 }
                 ContactAction::Delete(contact_id) => match cache.delete_contact(&contact_id) {
                     Ok(_) => {
-                        self.state.status_message = "Contact deleted".to_string();
                         self.state.contact_manager.status =
                             "Contact deleted successfully".to_string();
+                        self.announce_success("Contact deleted");
                     }
                     Err(e) => {
-                        self.state.error_message = Some(format!("Failed to delete contact: {}", e));
                         self.state.contact_manager.error =
                             Some(format!("Failed to delete contact: {}", e));
+                        self.announce_error(format!("Failed to delete contact: {}", e));
                     }
                 },
             }
@@ -2884,7 +2997,7 @@ impl IntegratedUI {
 
     fn handle_oauth_action(&mut self, action: OAuthAction) {
         let Some(cache) = &self.message_cache else {
-            self.state.error_message = Some("Database not available".to_string());
+            self.announce_error("Database not available");
             return;
         };
 
@@ -2898,16 +3011,14 @@ impl IntegratedUI {
                     let token = oauth_token_entry_from_set(account_id, provider.clone(), token_set);
                     match cache.save_oauth_token(&token) {
                         Ok(_) => {
-                            self.state.status_message =
-                                format!("OAuth token saved for provider '{}'", provider)
+                            self.announce_success(format!("OAuth token saved for provider '{}'", provider));
                         }
                         Err(e) => {
-                            self.state.error_message =
-                                Some(format!("Failed to save OAuth token: {}", e))
+                            self.announce_error(format!("Failed to save OAuth token: {}", e));
                         }
                     }
                 }
-                Err(e) => self.state.error_message = Some(format!("OAuth exchange failed: {}", e)),
+                Err(e) => self.announce_error(format!("OAuth exchange failed: {}", e)),
             },
             OAuthAction::RefreshToken {
                 account_id,
@@ -2915,7 +3026,7 @@ impl IntegratedUI {
             } => match cache.get_oauth_token(&account_id, &provider) {
                 Ok(Some(existing)) => {
                     let Some(refresh_token) = existing.refresh_token.clone() else {
-                        self.state.error_message = Some("No refresh token available".to_string());
+                        self.announce_error("No refresh token available");
                         return;
                     };
                     match OAuthService::refresh_access_token(&provider, &refresh_token) {
@@ -2924,24 +3035,21 @@ impl IntegratedUI {
                                 oauth_token_entry_from_set(account_id, provider.clone(), new_set);
                             token.id = existing.id;
                             if let Err(e) = cache.save_oauth_token(&token) {
-                                self.state.error_message =
-                                    Some(format!("Failed to store refreshed token: {}", e));
+                                self.announce_error(format!("Failed to store refreshed token: {}", e));
                             } else {
-                                self.state.status_message =
-                                    format!("OAuth token refreshed for '{}'", provider);
+                                self.announce_success(format!("OAuth token refreshed for '{}'", provider));
                             }
                         }
                         Err(e) => {
-                            self.state.error_message = Some(format!("OAuth refresh failed: {}", e))
+                            self.announce_error(format!("OAuth refresh failed: {}", e));
                         }
                     }
                 }
                 Ok(None) => {
-                    self.state.error_message =
-                        Some("No OAuth token found for account/provider".to_string())
+                    self.announce_error("No OAuth token found for account/provider");
                 }
                 Err(e) => {
-                    self.state.error_message = Some(format!("Failed to load OAuth token: {}", e))
+                    self.announce_error(format!("Failed to load OAuth token: {}", e));
                 }
             },
             OAuthAction::RevokeToken {
@@ -2949,10 +3057,10 @@ impl IntegratedUI {
                 provider,
             } => match cache.delete_oauth_token(&account_id, &provider) {
                 Ok(_) => {
-                    self.state.status_message = format!("OAuth token revoked for '{}'", provider)
+                    self.announce_success(format!("OAuth token revoked for '{}'", provider));
                 }
                 Err(e) => {
-                    self.state.error_message = Some(format!("Failed to revoke OAuth token: {}", e))
+                    self.announce_error(format!("Failed to revoke OAuth token: {}", e));
                 }
             },
         }
@@ -2975,44 +3083,40 @@ impl IntegratedUI {
 
                     match cache.create_signature(&signature) {
                         Ok(_) => {
-                            self.state.status_message = format!("Signature '{}' created", name);
                             self.state.signature_manager.status =
                                 "Signature created successfully".to_string();
+                            self.announce_success(format!("Signature '{}' created", name));
                         }
                         Err(e) => {
-                            self.state.error_message =
-                                Some(format!("Failed to create signature: {}", e));
                             self.state.signature_manager.error =
                                 Some(format!("Failed to create signature: {}", e));
+                            self.announce_error(format!("Failed to create signature: {}", e));
                         }
                     }
                 }
                 SignatureAction::Update(signature) => match cache.update_signature(&signature) {
                     Ok(_) => {
-                        self.state.status_message =
-                            format!("Signature '{}' updated", signature.name);
                         self.state.signature_manager.status =
                             "Signature updated successfully".to_string();
+                        self.announce_success(format!("Signature '{}' updated", signature.name));
                     }
                     Err(e) => {
-                        self.state.error_message =
-                            Some(format!("Failed to update signature: {}", e));
                         self.state.signature_manager.error =
                             Some(format!("Failed to update signature: {}", e));
+                        self.announce_error(format!("Failed to update signature: {}", e));
                     }
                 },
                 SignatureAction::Delete(signature_id) => {
                     match cache.delete_signature(&signature_id) {
                         Ok(_) => {
-                            self.state.status_message = "Signature deleted".to_string();
                             self.state.signature_manager.status =
                                 "Signature deleted successfully".to_string();
+                            self.announce_success("Signature deleted");
                         }
                         Err(e) => {
-                            self.state.error_message =
-                                Some(format!("Failed to delete signature: {}", e));
                             self.state.signature_manager.error =
                                 Some(format!("Failed to delete signature: {}", e));
+                            self.announce_error(format!("Failed to delete signature: {}", e));
                         }
                     }
                 }
@@ -3025,13 +3129,15 @@ impl IntegratedUI {
         match action {
             AccountAction::None => {}
             AccountAction::Create(account) => {
+                let mut success_msg = None;
+                let mut error_msg = None;
+
                 if let Some(ref cache) = self.message_cache {
                     match cache.save_account(&account) {
                         Ok(_) => {
-                            self.state.status_message =
-                                format!("Account '{}' created", account.name);
                             self.state.account_manager.status =
                                 format!("Account '{}' created successfully", account.name);
+                            success_msg = Some(format!("Account '{}' created", account.name));
                             // Reload accounts from database
                             if let Ok(accounts) = cache.load_accounts() {
                                 self.state.account_manager.accounts = accounts;
@@ -3047,23 +3153,31 @@ impl IntegratedUI {
                             self.state.account_manager.close();
                         }
                         Err(e) => {
-                            self.state.error_message =
-                                Some(format!("Failed to create account: {}", e));
                             self.state.account_manager.error = Some(format!("Error: {}", e));
+                            error_msg = Some(format!("Failed to create account: {}", e));
                         }
                     }
                 } else {
-                    self.state.error_message = Some("Database not available".to_string());
+                    error_msg = Some("Database not available".to_string());
+                }
+
+                // Announce after cache operations complete
+                if let Some(msg) = success_msg {
+                    self.announce_success(msg);
+                } else if let Some(msg) = error_msg {
+                    self.announce_error(msg);
                 }
             }
             AccountAction::Update(account) => {
+                let mut success_msg = None;
+                let mut error_msg = None;
+
                 if let Some(ref cache) = self.message_cache {
                     match cache.save_account(&account) {
                         Ok(_) => {
-                            self.state.status_message =
-                                format!("Account '{}' updated", account.name);
                             self.state.account_manager.status =
                                 format!("Account '{}' updated successfully", account.name);
+                            success_msg = Some(format!("Account '{}' updated", account.name));
                             // Reload accounts from database
                             if let Ok(accounts) = cache.load_accounts() {
                                 self.state.account_manager.accounts = accounts;
@@ -3074,16 +3188,25 @@ impl IntegratedUI {
                             self.state.account_manager.close();
                         }
                         Err(e) => {
-                            self.state.error_message =
-                                Some(format!("Failed to update account: {}", e));
                             self.state.account_manager.error = Some(format!("Error: {}", e));
+                            error_msg = Some(format!("Failed to update account: {}", e));
                         }
                     }
                 } else {
-                    self.state.error_message = Some("Database not available".to_string());
+                    error_msg = Some("Database not available".to_string());
+                }
+
+                // Announce after cache operations complete
+                if let Some(msg) = success_msg {
+                    self.announce_success(msg);
+                } else if let Some(msg) = error_msg {
+                    self.announce_error(msg);
                 }
             }
             AccountAction::Delete(account_id) => {
+                let mut success_msg = None;
+                let mut error_msg = None;
+
                 if let Some(cache) = self.message_cache.as_ref() {
                     let delete_result = cache.delete_account(&account_id);
                     match delete_result {
@@ -3099,8 +3222,8 @@ impl IntegratedUI {
                                 Self::oauth_provider_for_account(account)
                                     .map(|provider| (account_id.clone(), provider))
                             });
-                            self.state.status_message = "Account deleted successfully".to_string();
                             self.state.account_manager.status = "Account deleted".to_string();
+                            success_msg = Some("Account deleted successfully".to_string());
                             // Reload accounts from database
                             if let Ok(accounts) = cache.load_accounts() {
                                 self.state.account_manager.accounts = accounts;
@@ -3121,13 +3244,19 @@ impl IntegratedUI {
                             self.refresh_outbox_queue_count();
                         }
                         Err(e) => {
-                            self.state.error_message =
-                                Some(format!("Failed to delete account: {}", e));
                             self.state.account_manager.error = Some(format!("Error: {}", e));
+                            error_msg = Some(format!("Failed to delete account: {}", e));
                         }
                     }
                 } else {
-                    self.state.error_message = Some("Message cache not available".to_string());
+                    error_msg = Some("Message cache not available".to_string());
+                }
+
+                // Announce after cache operations complete
+                if let Some(msg) = success_msg {
+                    self.announce_success(msg);
+                } else if let Some(msg) = error_msg {
+                    self.announce_error(msg);
                 }
             }
             AccountAction::SetActive(account_id) => {
@@ -3141,7 +3270,7 @@ impl IntegratedUI {
                 {
                     self.switch_account(&account_id);
                 } else {
-                    self.state.error_message = Some("Account not found".to_string());
+                    self.announce_error("Account not found");
                 }
             }
             AccountAction::TestConnection(account_id) => {
