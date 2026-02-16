@@ -161,7 +161,13 @@ impl ConfigManager {
 
     /// Get the configuration directory
     fn get_config_dir() -> Result<PathBuf> {
-        let config_dir = dirs::config_dir()
+        let base_dir = if cfg!(windows) {
+            dirs::data_local_dir().or_else(dirs::config_dir)
+        } else {
+            dirs::config_dir()
+        };
+
+        let config_dir = base_dir
             .ok_or_else(|| Error::Config("Could not determine config directory".to_string()))?
             .join("wixen-mail");
 
@@ -325,6 +331,18 @@ mod tests {
     fn test_config_manager() {
         let manager = ConfigManager::new();
         assert!(manager.is_ok());
+    }
+
+    #[test]
+    fn test_config_manager_uses_app_directory() {
+        let config_dir = ConfigManager::get_config_dir().unwrap();
+        assert!(config_dir.ends_with("wixen-mail"));
+
+        if cfg!(windows) {
+            if let Some(base) = dirs::data_local_dir().or_else(dirs::config_dir) {
+                assert!(config_dir.starts_with(base));
+            }
+        }
     }
 
     #[test]

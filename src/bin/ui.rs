@@ -2,11 +2,16 @@
 //!
 //! This binary launches the graphical user interface for Wixen Mail.
 
-use wixen_mail::presentation::UI;
+use wixen_mail::{
+    common::logging::{init_logging, LoggerConfig},
+    presentation::UI,
+};
 
 fn main() {
     // Initialize logging
-    tracing_subscriber::fmt::init();
+    let _log_guard = init_logging(LoggerConfig::default())
+        .map_err(|e| eprintln!("Failed to initialize logging: {e}"))
+        .ok();
 
     tracing::info!("Starting Wixen Mail UI");
 

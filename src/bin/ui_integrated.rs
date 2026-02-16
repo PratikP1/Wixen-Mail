@@ -3,11 +3,16 @@
 //! This binary launches the fully integrated graphical user interface for Wixen Mail
 //! with real IMAP/SMTP connectivity.
 
-use wixen_mail::presentation::IntegratedUI;
+use wixen_mail::{
+    common::logging::{init_logging, LoggerConfig},
+    presentation::IntegratedUI,
+};
 
 fn main() {
     // Initialize logging
-    tracing_subscriber::fmt::init();
+    let _log_guard = init_logging(LoggerConfig::default())
+        .map_err(|e| eprintln!("Failed to initialize logging: {e}"))
+        .ok();
 
     tracing::info!("Starting Wixen Mail Integrated UI");
 
