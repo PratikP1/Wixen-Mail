@@ -9,11 +9,11 @@ Compression=lzma
 SolidCompression=yes
 
 [Files]
-Source: "..\target\release\wixen-mail.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\target\release\ui_integrated.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Wixen Mail"; Filename: "{app}\wixen-mail.exe"
-Name: "{autodesktop}\Wixen Mail"; Filename: "{app}\wixen-mail.exe"; Tasks: desktopicon
+Name: "{group}\Wixen Mail"; Filename: "{app}\ui_integrated.exe"
+Name: "{autodesktop}\Wixen Mail"; Filename: "{app}\ui_integrated.exe"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Additional icons:"
