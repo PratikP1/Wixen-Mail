@@ -9,6 +9,7 @@ use crate::common::Result;
 use crate::data::account::Account;
 use crate::data::email_providers::{self, EmailProvider};
 use crate::data::message_cache::{CachedMessage, ContactEntry, MessageCache, Tag};
+use crate::presentation::accessibility::Accessibility;
 use crate::presentation::account_manager::{AccountAction, AccountManagerWindow};
 use crate::presentation::composition::{CompositionAction, CompositionWindow};
 use crate::presentation::contact_manager::{
@@ -291,6 +292,7 @@ pub struct IntegratedUI {
     ui_rx: Receiver<UIUpdate>,
     state: UIState,
     message_cache: Option<MessageCache>,
+    accessibility: Accessibility,
 }
 
 impl IntegratedUI {
@@ -320,6 +322,12 @@ impl IntegratedUI {
             }
         }
 
+        // Initialize accessibility layer
+        let accessibility = Accessibility::new()?;
+        accessibility.initialize().unwrap_or_else(|e| {
+            tracing::warn!("Failed to fully initialize accessibility: {}", e);
+        });
+
         let mut ui = Self {
             mail_controllers: HashMap::new(),
             outbox_flush_controllers: (0..MAX_OUTBOX_FLUSH_CONCURRENCY.max(1))
@@ -333,6 +341,7 @@ impl IntegratedUI {
             ui_rx,
             state,
             message_cache,
+            accessibility,
         };
 
         if let Some(active_id) = ui.active_account_id.clone() {
@@ -448,11 +457,11 @@ impl IntegratedUI {
                 self.state.status_message = format!("Error: {}", error);
             }
             UIUpdate::StatusUpdated(status) => {
-                self.state.status_message = status;
+                self.announce_status(status);
             }
             UIUpdate::EmailSent => {
                 self.state.composition_window.close();
-                self.state.status_message = "Email sent successfully".to_string();
+                self.announce_success("Email sent successfully");
             }
             UIUpdate::OutboxSendResult {
                 queue_id,
@@ -462,10 +471,10 @@ impl IntegratedUI {
                 if let Some(cache) = &self.message_cache {
                     if success {
                         let _ = cache.delete_outbox_message(&queue_id);
-                        self.state.status_message = "Queued email sent".to_string();
+                        self.announce_success("Queued email sent");
                     } else if let Some(err) = error {
                         let _ = cache.update_outbox_failure(&queue_id, &err);
-                        self.state.status_message = format!("Queued email failed: {}", err);
+                        self.announce_error(format!("Queued email failed: {}", err));
                     }
                 }
                 self.refresh_outbox_queue_count();
@@ -735,9 +744,42 @@ impl IntegratedUI {
         }
     }
 
+    /// Set status message and announce to screen readers
+    fn announce_status(&mut self, message: impl Into<String>) {
+        let msg = message.into();
+        self.state.status_message = msg.clone();
+        // Announce to screen readers with normal priority
+        let _ = self.accessibility.announce(
+            &msg,
+            crate::presentation::accessibility::announcements::Priority::Normal,
+        );
+    }
+
+    /// Announce error message to screen readers
+    fn announce_error(&mut self, message: impl Into<String>) {
+        let msg = message.into();
+        self.state.error_message = Some(msg.clone());
+        // Announce errors with high priority
+        let _ = self.accessibility.announce(
+            &msg,
+            crate::presentation::accessibility::announcements::Priority::High,
+        );
+    }
+
+    /// Announce success message to screen readers
+    fn announce_success(&mut self, message: impl Into<String>) {
+        let msg = message.into();
+        self.state.status_message = msg.clone();
+        // Announce success with high priority
+        let _ = self.accessibility.announce(
+            &msg,
+            crate::presentation::accessibility::announcements::Priority::High,
+        );
+    }
+
     fn queue_email_for_offline(&mut self, to: Vec<String>, subject: String, body: String) {
         if to.is_empty() {
-            self.state.error_message = Some("Cannot queue email: no valid recipients".to_string());
+            self.announce_error("Cannot queue email: no valid recipients");
             return;
         }
         if let Some(cache) = &self.message_cache {
@@ -754,17 +796,16 @@ impl IntegratedUI {
             };
             match cache.queue_outbox_message(&item) {
                 Ok(_) => {
-                    self.state.status_message = "Offline mode enabled: email queued".to_string();
+                    self.announce_success("Offline mode enabled: email queued");
                     self.state.composition_window.close();
                     self.refresh_outbox_queue_count();
                 }
                 Err(e) => {
-                    self.state.error_message =
-                        Some(format!("Failed to queue offline email: {}", e));
+                    self.announce_error(format!("Failed to queue offline email: {}", e));
                 }
             }
         } else {
-            self.state.error_message = Some("Message cache not available".to_string());
+            self.announce_error("Message cache not available");
         }
     }
 
