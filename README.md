@@ -30,7 +30,7 @@ cargo test --quiet
 # Build
 cargo build
 
-# Optional quality gates (currently not clean on main)
+# Quality gates (all passing as of 2026-02-27)
 cargo fmt --check
 cargo clippy -- -D warnings
 ```
@@ -50,14 +50,13 @@ Canonical, actively maintained docs:
 
 Historical phase/session requirement files in the repository root are retained for traceability but should be treated as implementation records, not the current product overview.
 
-## Current Status (2026-02-15)
+## Current Status (2026-02-27)
 
-- Core phase requirements through the current phase documents are implemented in code.
-- Automated test suite passes locally with `cargo test --quiet`.
-- Immediate remaining work is release hardening and ongoing polish:
-  - eliminate formatting/lint debt (`cargo fmt --check`, `cargo clippy -- -D warnings`)
-  - continue UX/accessibility regression testing
-  - packaging/release process hardening
+All quality gates pass clean (`cargo fmt`, `cargo clippy`, `cargo test`).
+
+**Implemented:** Multi-account management, composition with attachments & signatures, contact management (full CRUD + vCard import/export), advanced search with date/sender/attachment filters, message rules engine, OAuth UI (token exchange pending real HTTP calls), IMAP IDLE push, POP3, PGP/S-MIME detection, phishing scoring, offline queue infrastructure.
+
+**Remaining for v1.0:** Real OAuth token exchange (2 stub functions), offline mode UI wiring, spell check integration, compose account selector, contact groups, expanded test coverage. See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for full details.
 
 ## Contributing
 

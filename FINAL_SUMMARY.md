@@ -155,10 +155,9 @@
 - **Documentation Files**: 15+
 
 ### Test Coverage
-- **Total Tests**: 80
-- **Passing**: 80/80 (100%)
-- **Test Types**: Unit, integration, component
-- **Coverage Areas**: All major modules
+- **Total Tests**: 2
+- **Passing**: 2/2 (100%)
+- **Note**: Test count reduced during refactoring; coverage expansion is a remaining task
 
 ### Dependencies
 - **Core**: tokio, serde, chrono
@@ -243,13 +242,13 @@ wixen-mail/
 14. **Async Operations** - Non-blocking UI throughout
 15. **Error Handling** - Comprehensive error messages
 
-### 🔄 Foundation Ready (UI Integration Needed)
-1. **Thread View** - Data models and backend ready
-2. **Advanced Search** - Backend implemented
-3. **Attachments** - Models and cache schema complete
-4. **Context Menus** - System framework in place
-5. **Filters** - Rule engine implemented
-6. **Contacts** - Manager structure ready
+### 🔄 Fully Implemented (UI + Backend)
+1. **Thread View** - Conversation grouping with visual indicators
+2. **Advanced Search** - Full-text search with date/sender/attachment/tag filters
+3. **Attachments** - File picker, add/remove, MIME types, size warnings
+4. **Context Menus** - Right-click actions on messages
+5. **Filters** - Rule engine with regex, actions, management UI
+6. **Contacts** - Full CRUD, search, vCard import/export, autocomplete
 
 ## Architecture Highlights
 
@@ -344,11 +343,11 @@ wixen-mail/
 - MailController: Integration tests
 - UI components: Basic tests
 
-### Test Results
-- All 80 tests passing
+### Test Results (2026-02-27)
+- 2/2 tests passing
 - Zero warnings in production code
-- Clean clippy lints
-- Formatted with rustfmt
+- Clean clippy lints (0 warnings)
+- Formatted with rustfmt (passes --check)
 
 ## How to Run
 
@@ -380,63 +379,25 @@ cargo run --bin ui_integrated
 - ✅ macOS
 - ✅ Linux
 
-## Additional Steps Needed
+## Remaining Steps
 
-### Immediate (Before v1.0 Beta)
-1. **UI Provider Selector** (2-3 days)
-   - Dropdown in account config
-   - Logo/icon for each provider
-   - One-click provider selection
+### Before v1.0 Release
+1. **OAuth HTTP token exchange** (1-2 days) - Replace mock stubs with real reqwest calls
+2. **Compose account selector** (1 day) - Dropdown to pick send-from account
+3. **Offline mode wiring** (3-5 days) - Connect queue infrastructure to UI and SMTP
+4. **Test coverage expansion** (ongoing) - Currently only 2 tests
+5. **Spell check integration** (2-3 days) - External library needed
+6. **Contact groups** (2-3 days) - Distribution list support
+7. **Preview before send** (1-2 days) - Rendered email preview
 
-2. **Thread View UI** (3-4 days)
-   - Group messages by conversation
-   - Expand/collapse threads
-   - Thread indicators in list
+**Estimated Time: 3-4 weeks to v1.0**
 
-3. **Attachment Viewer** (2-3 days)
-   - View attachments inline
-   - Save to disk
-   - Preview images and text files
-
-4. **Advanced Search UI** (2-3 days)
-   - Search dialog with filters
-   - Saved searches
-   - Search results view
-
-5. **Final Polish** (3-5 days)
-   - Performance optimization
-   - Error message improvements
-   - Loading indicators
-   - UI consistency pass
-   - Documentation review
-
-**Estimated Time: 2-3 weeks to v1.0 Beta**
-
-### Near-Term (v1.1-1.5)
-1. **OAuth 2.0 Support**
-   - Gmail OAuth
-   - Microsoft OAuth
-   - Token refresh handling
-
-2. **Enhanced Filters**
-   - UI for filter creation
-   - Filter testing
-   - Import/export filters
-
-3. **Tags and Labels**
-   - Custom tags
-   - Color coding
-   - Tag management UI
-
-4. **Multiple Accounts**
-   - Account switching
-   - Unified inbox
-   - Per-account settings
-
-5. **Export/Import**
-   - Export messages
-   - Import from Thunderbird
-   - Backup/restore
+### Post v1.0
+1. **Theme customization** - Dark mode, high contrast
+2. **Calendar integration** - CalDAV support
+3. **Windows installer** - MSI/NSIS packaging
+4. **Large mailbox optimization** - Virtual scrolling, 100K+ messages
+5. **Export/Import** - Thunderbird migration, backup/restore
 
 ### Long-Term (v2.0+)
 1. **Exchange Web Services (EWS)**
@@ -476,36 +437,17 @@ cargo run --bin ui_integrated
 4. ✅ Code formatted and linted
 5. ✅ Comprehensive commit history
 
-### Merge Strategy
-```bash
-# Ensure branch is up to date
-git checkout copilot/start-wixen-mail-project
-git fetch origin
-git pull origin copilot/start-wixen-mail-project
+### Branch Status
+All work has been merged to main. Development continues on main branch.
 
-# Create merge commit with summary
-git checkout main
-git merge --no-ff copilot/start-wixen-mail-project \
-  -m "Complete Wixen Mail implementation: Phases 0-3"
-
-# Push to main
-git push origin main
-```
-
-### Commit History Summary
+### Completed Phases
 - Phase 0: Project initialization and setup
 - Phase 1: Core architecture and configuration
-- Phase 2: Protocol implementation (IMAP/SMTP)
+- Phase 2: Protocol implementation (IMAP/SMTP/POP3)
 - Phase 3: UI integration and caching
 - Phase 4: HTML rendering and accessibility
 - Phase 5: Provider support and polish
-
-### Post-Merge
-1. Create v0.9.0-beta tag
-2. Update README with installation instructions
-3. Create release notes
-4. Announce beta availability
-5. Set up issue tracker for feedback
+- Phase 6-11: Contacts, OAuth UI, filters, search, composition, offline infrastructure, security
 
 ## Success Metrics
 
@@ -520,11 +462,12 @@ git push origin main
 - ✅ Professional documentation
 
 ### Quality Metrics
-- ✅ 80/80 tests passing (100%)
+- ✅ 2/2 tests passing (100%) - coverage expansion needed
 - ✅ Zero production warnings
 - ✅ Clean architecture maintained
 - ✅ WCAG 2.1 Level AA compliance
 - ✅ Security best practices followed
+- ✅ cargo fmt, clippy, test all pass clean
 
 ### User Experience
 - ✅ Easy provider setup
@@ -536,13 +479,13 @@ git push origin main
 
 ## Known Limitations
 
-### Current Version
-1. **OAuth Not Supported** - Use app passwords for now
+### Current Version (updated 2026-02-27)
+1. **OAuth token exchange uses mock stubs** - UI and token management are built; real HTTP calls to Google/Microsoft need to be wired in (2 functions)
 2. **EWS Not Implemented** - Use IMAP/SMTP for Exchange
-3. **No Calendar/Contacts Sync** - Email only
-4. **Single Account** - Multiple accounts need UI work
-5. **Basic Thread View** - Advanced threading pending
-6. **Limited Attachment Preview** - Save to disk works
+3. **No Calendar Sync** - Email only (contacts are fully managed locally)
+4. **Offline mode not fully wired** - Queue infrastructure exists but UI toggle and flush logic are not connected
+5. **Spell check not integrated** - Needs external library
+6. **Test coverage is light** - Only 2 automated tests; needs expansion
 
 ### Planned Improvements
 All limitations have planned implementations in the roadmap.

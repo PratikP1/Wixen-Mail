@@ -1,9 +1,11 @@
 # Wixen Mail - Project Roadmap
 
+_Last updated: 2026-02-27_
+
 ## Vision
 Wixen Mail aims to be a fully accessible, light-weight mail client built with Rust, providing a Thunderbird-like experience with first-class support for screen readers and keyboard navigation on Windows.
 
-## Phase 1: Foundation (Months 1-2)
+## Phase 1: Foundation (Complete)
 
 ### Project Setup
 - [x] Initialize Rust project with Cargo
@@ -19,194 +21,193 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [x] Create logging framework for debugging and diagnostics
 
 ### Accessibility Framework
-- [x] Research and integrate WXDragon UI library for Windows
+- [x] Integrate egui + AccessKit for Windows UIA
 - [x] Implement accessibility layer for screen reader support (NVDA, JAWS, Narrator)
-- [x] Define comprehensive keyboard shortcuts system
+- [x] Define comprehensive keyboard shortcuts system (25+)
 - [ ] Create accessibility testing framework
 - [x] Document accessibility features and keyboard commands
 
-## Phase 2: Mail Protocol Support (Months 3-4)
+## Phase 2: Mail Protocol Support (Complete)
 
 ### IMAP Implementation
-- [x] Implement IMAP4 protocol client
-- [ ] Support for IDLE (push notifications)
+- [x] Implement IMAP4rev1 async protocol client
+- [x] Support for IDLE (push notifications)
 - [x] Folder synchronization
 - [x] Message fetching and caching
-- [ ] Search functionality
+- [x] Search functionality (SQLite FTS)
 
 ### SMTP Implementation
-- [x] Implement SMTP client for sending emails
-- [x] Support for authentication (PLAIN, LOGIN, OAUTH2)
-- [x] Support for TLS/SSL encryption
-- [ ] Queue management for offline sending
+- [x] Implement SMTP client for sending emails (lettre)
+- [x] Support for authentication (PLAIN, LOGIN)
+- [x] Support for TLS/SSL/STARTTLS encryption
+- [x] Outbox queue infrastructure for offline sending
 
-### POP3 Support (Optional)
-- [ ] Implement POP3 protocol client
-- [ ] Message downloading and deletion management
+### POP3 Support
+- [x] Implement POP3 protocol client (full command surface)
+- [x] Message downloading and deletion management
 
-## Phase 3: User Interface (Months 5-6)
+## Phase 3: User Interface (Complete)
 
 ### Main Window Layout
 - [x] Design three-pane layout (folder tree, message list, message preview)
 - [x] Implement resizable panes with keyboard controls
 - [x] Create menu bar with full keyboard navigation
-- [ ] Implement toolbar with accessible buttons
+- [x] Context menus with quick actions
 
 ### Folder Management
 - [x] Display folder tree with keyboard navigation
-- [ ] Support for expanding/collapsing folders
-- [ ] Context menus for folder operations
-- [ ] Drag-and-drop support with keyboard alternatives
+- [x] Folder hierarchy with metadata
+- [x] Context menus for folder operations
 
 ### Message List View
 - [x] Display message list with sortable columns
-- [ ] Thread view support
-- [ ] Multi-selection with keyboard
-- [ ] Quick search/filter functionality
+- [x] Thread view with conversation grouping
 - [x] Unread/starred message indicators
+- [x] Quick search/filter functionality
 
 ### Message Reading Pane
 - [x] Plain text email rendering
-- [ ] HTML email rendering with accessibility
-- [ ] Plain text fallback
-- [ ] Attachment preview and management
-- [ ] Inline image display
-- [ ] Navigation between messages with keyboard
+- [x] HTML email rendering with sanitization (ammonia)
+- [x] Plain text fallback for screen readers
+- [x] Attachment display with metadata
+- [x] Navigation between messages with keyboard
 
-## Phase 4: Composition and Editing (Months 7-8)
+## Phase 4: Composition and Editing (Complete)
 
 ### Message Composition
-- [ ] Compose window with accessible editor
-- [ ] Rich text editing with keyboard controls
-- [ ] HTML and plain text modes
+- [x] Compose window with To/CC/BCC/Subject/Body
+- [x] HTML and plain text modes with toggle
+- [x] Formatting buttons (bold, italic, underline, link)
 - [ ] Spell checking integration
-- [ ] Draft auto-save functionality
+- [x] Draft auto-save functionality
+- [x] Email signatures (multiple per account)
 
 ### Contact Management
-- [ ] Address book integration
-- [ ] Auto-completion for recipients
+- [x] Full CRUD address book
+- [x] Auto-completion for recipients
 - [ ] Contact groups/distribution lists
-- [ ] Import/export contacts (vCard format)
+- [x] Import/export contacts (vCard 3.0 format)
+- [x] Search and filtering (fuzzy match)
 
 ### Attachments
-- [ ] Add/remove attachments with keyboard
-- [ ] Attachment size warnings
-- [ ] Drag-and-drop with keyboard alternatives
+- [x] Add/remove attachments with file picker
+- [x] Attachment size warnings (>10MB)
+- [x] MIME type detection
+- [ ] Drag-and-drop insertion
 - [ ] Inline image insertion
 
-## Phase 5: Advanced Features (Months 9-10)
+## Phase 5: Advanced Features (Complete)
 
 ### Search and Filtering
-- [ ] Global search across all folders
-- [ ] Advanced search filters
+- [x] Full-text search across all folders (SQLite FTS)
+- [x] Advanced search filters (date range, sender, recipient, attachments)
+- [x] Unread-only / starred-only filters
+- [x] Tag-based filtering
 - [ ] Saved search folders (virtual folders)
-- [ ] Quick filter toolbar
 
 ### Message Organization
-- [ ] Tagging system
+- [x] Tagging system
+- [x] Message flags and markers (read, starred, deleted)
 - [ ] Color coding
-- [ ] Message flags and markers
 - [ ] Folder favorites
 - [ ] Smart folders based on rules
 
 ### Email Rules and Filters
-- [ ] Message filtering engine
-- [ ] Rule-based actions (move, tag, delete, etc.)
+- [x] Message filtering engine with regex support
+- [x] Rule-based actions (move, tag, mark spam)
 - [ ] Spam filtering integration
-- [ ] Custom filter creation UI
+- [x] Filter management UI
 
 ### Security Features
-- [ ] PGP/GPG encryption support
-- [ ] S/MIME support
-- [ ] Digital signature verification
-- [ ] Phishing detection warnings
+- [x] PGP signature detection and status display
+- [x] S/MIME signature verification
+- [x] Digital signature verification
+- [x] Phishing detection with risk scoring
+- [x] AES-256-GCM credential encryption
+- [x] HTML sanitization (XSS protection)
 
-## Phase 6: Performance and Polish (Months 11-12)
+## Phase 6: OAuth & Multi-Account (In Progress)
 
-### Performance Optimization
-- [ ] Message caching strategy
-- [ ] Lazy loading for large mailboxes
-- [ ] Background synchronization
-- [ ] Memory optimization
-- [ ] Startup time optimization
+### OAuth 2.0 Authentication
+- [x] Authorization flow UI
+- [x] Provider-specific scopes (Gmail, Outlook)
+- [x] Token refresh logic
+- [x] Token persistence (SQLite)
+- [ ] Real HTTP token exchange (currently mock stubs)
+- [ ] Local callback server for OAuth redirect
 
-### Customization
-- [ ] Theme support
-- [ ] Customizable keyboard shortcuts
-- [ ] Layout preferences
-- [ ] Font and display settings
-- [ ] Notification preferences
+### Multiple Account Support
+- [x] Account management UI (add, update, delete, enable/disable)
+- [x] Account switcher with "Set Active" button
+- [x] Per-account data isolation
+- [x] 5 provider presets with auto-detection
+- [ ] Compose from specific account (dropdown selector)
+- [ ] Unified inbox across accounts
 
-### Testing and Quality Assurance
-- [ ] Unit test coverage (>80%)
+## Phase 7: Offline Mode & Polish (Planned)
+
+### Offline Mode
+- [x] SQLite message/folder/draft caching
+- [x] Outbox queue table with CRUD
+- [ ] Offline mode UI toggle
+- [ ] Queue flush to SMTP logic
+- [ ] Sync status indicators
+- [ ] Network status detection
+- [ ] Conflict resolution
+
+### Performance & Polish
+- [ ] Virtual scrolling for large mailboxes
+- [ ] Large mailbox testing (100K+ messages)
+- [ ] Memory profiling and optimization
+- [ ] Startup time optimization (<2 seconds)
+
+### Testing & Quality
+- [ ] Expand unit test coverage (currently 2 tests)
 - [ ] Integration tests for protocols
-- [ ] UI automation tests
-- [ ] Accessibility compliance testing
+- [ ] Accessibility compliance testing with screen readers
 - [ ] Performance benchmarking
-- [ ] Security audit
 
-### Documentation
-- [ ] User guide with accessibility focus
-- [ ] Developer documentation
-- [ ] API documentation
-- [ ] Keyboard shortcuts reference
-- [ ] Troubleshooting guide
+## Phase 8: Release Preparation (Planned)
 
-## Phase 7: Release Preparation (Month 13)
+### Packaging
+- [ ] Windows installer (MSI or NSIS)
+- [ ] Auto-update mechanism
+- [ ] Desktop shortcuts
 
 ### Beta Testing
 - [ ] Internal beta testing
-- [ ] Public beta program
+- [ ] Public beta program (screen reader users)
 - [ ] Bug tracking and triage
-- [ ] User feedback collection
 
-### Release
-- [ ] Version 1.0 release candidate
+### Documentation
+- [x] User guide with accessibility focus
+- [x] Keyboard shortcuts reference
+- [x] Provider setup guide
+- [x] Troubleshooting guide
 - [ ] Release notes and changelog
-- [ ] Installation packages (Windows)
-- [ ] Official website and documentation
-- [ ] Marketing and announcement
 
 ## Future Enhancements (Post 1.0)
 
-### Cross-Platform Support
-- [ ] Linux support
-- [ ] macOS support
-
 ### Additional Features
+- [ ] Theme customization (dark mode, high contrast)
 - [ ] Calendar integration (CalDAV)
-- [ ] Task management
-- [ ] RSS feed reader
-- [ ] Chat integration (XMPP/IRC)
+- [ ] Preview before send
+- [ ] Contact groups/distribution lists
+- [ ] Exchange Web Services (EWS)
+- [ ] Microsoft Graph API
+- [ ] JMAP protocol
 - [ ] Plugin/extension system
-- [ ] Multiple account profiles
-- [ ] Portable mode
 
-### Cloud Integration
-- [ ] Gmail integration
-- [ ] Outlook.com integration
-- [ ] iCloud integration
-- [ ] Other email service providers
-
-## Technical Debt and Maintenance
-- [ ] Regular dependency updates
-- [ ] Security patch management
-- [ ] Bug fix releases
-- [ ] Performance monitoring
-- [ ] User feedback incorporation
+### Cross-Platform
+- [ ] Linux support validation
+- [ ] macOS support validation
 
 ## Success Metrics
 - Fast startup time (< 2 seconds)
 - Low memory footprint (< 100MB idle)
 - 100% keyboard accessible
 - WCAG 2.1 Level AA compliance
-- Support for major screen readers
-- Active community engagement
+- Support for major screen readers (NVDA, JAWS, Narrator)
 
 ## Contributing
-We welcome contributions! Please see CONTRIBUTING.md for guidelines on how to contribute to Wixen Mail.
-
-## Community and Support
-- GitHub Issues for bug reports and feature requests
-- GitHub Discussions for questions and community support
-- Documentation wiki for guides and tutorials
+We welcome contributions! Please see CONTRIBUTING.md for guidelines.
