@@ -50,8 +50,8 @@
 ## Documentation
 - [ ] README updated (if applicable)
 - [ ] Code comments added/updated
-- [ ] ROADMAP updated (if applicable)
-- [ ] ACCESSIBILITY.md updated (if applicable)
+- [ ] docs/roadmap.md updated (if applicable)
+- [ ] docs/accessibility.md updated (if applicable)
 
 ## Checklist
 - [ ] My code follows the project's style guidelines

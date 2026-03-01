@@ -14,6 +14,6 @@ pub use accounts::AccountManager;
 pub use composition::CompositionManager;
 pub use contacts::ContactManager;
 pub use filters::FilterEngine;
-pub use mail_controller::MailController;
+pub use mail_controller::{MailController, SendEmailRequest};
 pub use messages::MessageManager;
 pub use search::SearchEngine;

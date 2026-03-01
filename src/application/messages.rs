@@ -6,6 +6,7 @@ use crate::common::{
     types::{Attachment, EmailAddress, Id, MessageBody},
     Result,
 };
+use crate::data::message_cache::CachedMessage;
 use chrono::{DateTime, Utc};
 
 /// Message flags
@@ -102,6 +103,48 @@ impl Message {
     pub fn add_tag(&mut self, tag: String) {
         if !self.tags.contains(&tag) {
             self.tags.push(tag);
+        }
+    }
+}
+
+impl From<CachedMessage> for Message {
+    fn from(cm: CachedMessage) -> Self {
+        let body = match (cm.body_plain, cm.body_html) {
+            (Some(plain), Some(html)) => MessageBody::Multipart { plain, html },
+            (Some(plain), None) => MessageBody::Plain(plain),
+            (None, Some(html)) => MessageBody::Html(html),
+            (None, None) => MessageBody::Plain(String::new()),
+        };
+
+        let date = cm
+            .date
+            .parse::<DateTime<Utc>>()
+            .unwrap_or_else(|_| Utc::now());
+
+        Self {
+            id: cm.id.to_string(),
+            account_id: String::new(),
+            folder_id: cm.folder_id.to_string(),
+            message_id: cm.message_id,
+            subject: cm.subject,
+            from: EmailAddress::new(cm.from_addr, None),
+            to: vec![EmailAddress::new(cm.to_addr, None)],
+            cc: cm
+                .cc
+                .map(|cc| vec![EmailAddress::new(cc, None)])
+                .unwrap_or_default(),
+            bcc: Vec::new(),
+            date,
+            body,
+            attachments: Vec::new(),
+            flags: MessageFlags {
+                read: cm.read,
+                starred: cm.starred,
+                deleted: cm.deleted,
+                answered: false,
+                draft: false,
+            },
+            tags: Vec::new(),
         }
     }
 }

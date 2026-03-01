@@ -2,8 +2,6 @@
 //!
 //! Bridges the UI with IMAP/SMTP protocols and manages mail operations.
 
-use crate::application::accounts::AccountManager;
-use crate::application::messages::MessageManager;
 use crate::common::{Error, Result};
 use crate::service::protocols::imap::{
     ImapClient, ImapConfig, ImapIdleEvent, ImapIdleHandle, ImapIdleOptions, ImapSession,
@@ -11,14 +9,23 @@ use crate::service::protocols::imap::{
 use crate::service::protocols::pop3::{Pop3Client, Pop3Config, Pop3Session};
 use crate::service::protocols::smtp::{Email, SmtpClient, SmtpConfig};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
+
+/// Parameters for sending an email via SMTP.
+#[derive(Debug, Clone)]
+pub struct SendEmailRequest {
+    pub server: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+    pub use_tls: bool,
+    pub to: Vec<String>,
+    pub subject: String,
+    pub body: String,
+}
 
 /// Mail controller for managing mail operations
 pub struct MailController {
-    #[allow(dead_code)]
-    account_manager: Arc<Mutex<AccountManager>>,
-    #[allow(dead_code)]
-    message_manager: Arc<Mutex<MessageManager>>,
     imap_session: Arc<Mutex<Option<ImapSession>>>,
     pop3_session: Arc<Mutex<Option<Pop3Session>>>,
     idle_handle: Arc<Mutex<Option<ImapIdleHandle>>>,
@@ -28,12 +35,28 @@ impl MailController {
     /// Create a new mail controller
     pub fn new() -> Self {
         Self {
-            account_manager: Arc::new(Mutex::new(AccountManager::new().unwrap())),
-            message_manager: Arc::new(Mutex::new(MessageManager::new().unwrap())),
             imap_session: Arc::new(Mutex::new(None)),
             pop3_session: Arc::new(Mutex::new(None)),
             idle_handle: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Lock and return the IMAP session guard, or error if not connected.
+    async fn require_imap(&self) -> Result<MutexGuard<'_, Option<ImapSession>>> {
+        let guard = self.imap_session.lock().await;
+        if guard.is_none() {
+            return Err(Error::Protocol("Not connected to IMAP server".into()));
+        }
+        Ok(guard)
+    }
+
+    /// Lock and return the POP3 session guard, or error if not connected.
+    async fn require_pop3(&self) -> Result<MutexGuard<'_, Option<Pop3Session>>> {
+        let guard = self.pop3_session.lock().await;
+        if guard.is_none() {
+            return Err(Error::Protocol("Not connected to POP3 server".into()));
+        }
+        Ok(guard)
     }
 
     /// Connect to IMAP server
@@ -64,145 +87,90 @@ impl MailController {
 
     /// Fetch folders from IMAP
     pub async fn fetch_folders(&self) -> Result<Vec<String>> {
-        let mut imap_session = self.imap_session.lock().await;
-
-        if let Some(session) = imap_session.as_mut() {
-            let folders = session.list_folders().await?;
-            Ok(folders.into_iter().map(|f| f.name).collect())
-        } else {
-            Err(Error::Other("Not connected to IMAP server".to_string()))
-        }
+        let mut guard = self.require_imap().await?;
+        let session = guard.as_mut().unwrap();
+        let folders = session.list_folders().await?;
+        Ok(folders.into_iter().map(|f| f.name).collect())
     }
 
     /// Fetch messages from a folder
     pub async fn fetch_messages(&self, folder: &str) -> Result<Vec<MessagePreview>> {
-        let mut imap_session = self.imap_session.lock().await;
+        let mut guard = self.require_imap().await?;
+        let session = guard.as_mut().unwrap();
+        let messages = session.fetch_messages(folder, None).await?;
 
-        if let Some(session) = imap_session.as_mut() {
-            let messages = session.fetch_messages(folder, None).await?;
-
-            Ok(messages
-                .into_iter()
-                .map(|m| MessagePreview {
-                    uid: m.uid,
-                    subject: m.subject,
-                    from: m.from,
-                    date: m.date,
-                    read: m.flags.contains(&"\\Seen".to_string()),
-                    starred: m.flags.contains(&"\\Flagged".to_string()),
-                })
-                .collect())
-        } else {
-            Err(Error::Other("Not connected to IMAP server".to_string()))
-        }
+        Ok(messages
+            .into_iter()
+            .map(|m| MessagePreview {
+                uid: m.uid,
+                subject: m.subject,
+                from: m.from,
+                date: m.date,
+                read: m.flags.contains(&"\\Seen".to_string()),
+                starred: m.flags.contains(&"\\Flagged".to_string()),
+            })
+            .collect())
     }
 
     /// Fetch message body
     pub async fn fetch_message_body(&self, folder: &str, uid: u32) -> Result<String> {
-        let mut imap_session = self.imap_session.lock().await;
-
-        if let Some(session) = imap_session.as_mut() {
-            session.fetch_message_body(folder, uid).await
-        } else {
-            Err(Error::Other("Not connected to IMAP server".to_string()))
-        }
+        let mut guard = self.require_imap().await?;
+        let session = guard.as_mut().unwrap();
+        session.fetch_message_body(folder, uid).await
     }
 
     /// Send an email via SMTP
-    #[allow(clippy::too_many_arguments)]
-    pub async fn send_email(
-        &self,
-        server: String,
-        port: u16,
-        username: String,
-        password: String,
-        use_tls: bool,
-        to: Vec<String>,
-        subject: String,
-        body: String,
-    ) -> Result<()> {
+    pub async fn send_email(&self, req: &SendEmailRequest) -> Result<()> {
         let config = SmtpConfig {
-            server,
-            port,
-            use_tls,
-            username: username.clone(),
+            server: req.server.clone(),
+            port: req.port,
+            use_tls: req.use_tls,
+            username: req.username.clone(),
         };
 
         let client = SmtpClient::new(config)?;
 
         let email = Email {
-            from: username,
+            from: req.username.clone(),
             from_name: None,
-            to,
+            to: req.to.clone(),
             cc: vec![],
             bcc: vec![],
-            subject,
-            body_text: body,
+            subject: req.subject.clone(),
+            body_text: req.body.clone(),
             body_html: None,
         };
 
-        client.send_email(email, &password).await?;
+        client.send_email(email, &req.password).await?;
         tracing::info!("Email sent successfully");
         Ok(())
     }
 
-    /// Send an email via SMTP for POP3-based accounts.
-    ///
-    /// POP3 only supports retrieval, so SMTP remains the transport for sending.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn send_email_for_pop3_account(
-        &self,
-        server: String,
-        port: u16,
-        username: String,
-        password: String,
-        use_tls: bool,
-        to: Vec<String>,
-        subject: String,
-        body: String,
-    ) -> Result<()> {
-        tracing::debug!("Sending via SMTP for POP3 account workflow");
-        self.send_email(server, port, username, password, use_tls, to, subject, body)
-            .await
-    }
-
     /// Mark message as read
     pub async fn mark_as_read(&self, folder: &str, uid: u32) -> Result<()> {
-        let mut imap_session = self.imap_session.lock().await;
-
-        if let Some(session) = imap_session.as_mut() {
-            session.mark_as_read(folder, uid).await?;
-            tracing::debug!("Marked message {} as read", uid);
-            Ok(())
-        } else {
-            Err(Error::Other("Not connected to IMAP server".to_string()))
-        }
+        let mut guard = self.require_imap().await?;
+        let session = guard.as_mut().unwrap();
+        session.mark_as_read(folder, uid).await?;
+        tracing::debug!("Marked message {} as read", uid);
+        Ok(())
     }
 
     /// Mark message as starred
     pub async fn toggle_starred(&self, folder: &str, uid: u32) -> Result<()> {
-        let mut imap_session = self.imap_session.lock().await;
-
-        if let Some(session) = imap_session.as_mut() {
-            session.toggle_flag(folder, uid, "\\Flagged").await?;
-            tracing::debug!("Toggled starred flag for message {}", uid);
-            Ok(())
-        } else {
-            Err(Error::Other("Not connected to IMAP server".to_string()))
-        }
+        let mut guard = self.require_imap().await?;
+        let session = guard.as_mut().unwrap();
+        session.toggle_flag(folder, uid, "\\Flagged").await?;
+        tracing::debug!("Toggled starred flag for message {}", uid);
+        Ok(())
     }
 
     /// Delete a message
     pub async fn delete_message(&self, folder: &str, uid: u32) -> Result<()> {
-        let mut imap_session = self.imap_session.lock().await;
-
-        if let Some(session) = imap_session.as_mut() {
-            session.delete_message(folder, uid).await?;
-            tracing::info!("Deleted message {}", uid);
-            Ok(())
-        } else {
-            Err(Error::Other("Not connected to IMAP server".to_string()))
-        }
+        let mut guard = self.require_imap().await?;
+        let session = guard.as_mut().unwrap();
+        session.delete_message(folder, uid).await?;
+        tracing::info!("Deleted message {}", uid);
+        Ok(())
     }
 
     /// Check if connected
@@ -236,40 +204,31 @@ impl MailController {
 
     /// Fetch message list from POP3 mailbox.
     pub async fn list_pop3_messages(&self) -> Result<Vec<Pop3MessagePreview>> {
-        let pop3_session = self.pop3_session.lock().await;
-        if let Some(session) = pop3_session.as_ref() {
-            let list = session.list().await?;
-            Ok(list
-                .into_iter()
-                .map(|m| Pop3MessagePreview {
-                    id: m.id,
-                    size: m.size,
-                    uidl: m.uidl,
-                })
-                .collect())
-        } else {
-            Err(Error::Other("Not connected to POP3 server".to_string()))
-        }
+        let guard = self.require_pop3().await?;
+        let session = guard.as_ref().unwrap();
+        let list = session.list().await?;
+        Ok(list
+            .into_iter()
+            .map(|m| Pop3MessagePreview {
+                id: m.id,
+                size: m.size,
+                uidl: m.uidl,
+            })
+            .collect())
     }
 
     /// Fetch full POP3 message body by message id.
     pub async fn fetch_pop3_message_body(&self, id: u32) -> Result<String> {
-        let pop3_session = self.pop3_session.lock().await;
-        if let Some(session) = pop3_session.as_ref() {
-            Ok(session.retr(id).await?.raw)
-        } else {
-            Err(Error::Other("Not connected to POP3 server".to_string()))
-        }
+        let guard = self.require_pop3().await?;
+        let session = guard.as_ref().unwrap();
+        Ok(session.retr(id).await?.raw)
     }
 
     /// Mark POP3 message for deletion.
     pub async fn delete_pop3_message(&self, id: u32) -> Result<()> {
-        let mut pop3_session = self.pop3_session.lock().await;
-        if let Some(session) = pop3_session.as_mut() {
-            session.dele(id).await
-        } else {
-            Err(Error::Other("Not connected to POP3 server".to_string()))
-        }
+        let mut guard = self.require_pop3().await?;
+        let session = guard.as_mut().unwrap();
+        session.dele(id).await
     }
 
     /// Check if POP3 session is connected.
@@ -284,10 +243,8 @@ impl MailController {
         folder: Option<String>,
         options: ImapIdleOptions,
     ) -> Result<tokio::sync::mpsc::UnboundedReceiver<ImapIdleEvent>> {
-        let mut imap_session = self.imap_session.lock().await;
-        let session = imap_session
-            .as_mut()
-            .ok_or_else(|| Error::Other("Not connected to IMAP server".to_string()))?;
+        let mut guard = self.require_imap().await?;
+        let session = guard.as_mut().unwrap();
         let (rx, handle) = session.start_idle_push_notifications(folder, options)?;
         let mut idle_handle = self.idle_handle.lock().await;
         if let Some(existing) = idle_handle.take() {
@@ -401,20 +358,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_send_email_for_pop3_uses_smtp_path() {
+    async fn test_send_email_uses_smtp() {
         let controller = MailController::new();
-        let result = controller
-            .send_email_for_pop3_account(
-                "smtp.example.com".to_string(),
-                587,
-                "test@example.com".to_string(),
-                "password".to_string(),
-                true,
-                vec!["to@example.com".to_string()],
-                "Hello".to_string(),
-                "Body".to_string(),
-            )
-            .await;
+        let req = SendEmailRequest {
+            server: "smtp.example.com".to_string(),
+            port: 587,
+            username: "test@example.com".to_string(),
+            password: "password".to_string(),
+            use_tls: true,
+            to: vec!["to@example.com".to_string()],
+            subject: "Hello".to_string(),
+            body: "Body".to_string(),
+        };
+        let result = controller.send_email(&req).await;
         assert!(result.is_err()); // expected in tests due placeholder/non-routable SMTP server
     }
 }

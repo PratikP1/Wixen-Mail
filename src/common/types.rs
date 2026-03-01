@@ -68,21 +68,17 @@ impl ServerConfig {
     }
 }
 
-/// Encrypted credentials
+/// Account credentials (plaintext in memory; encrypted at persistence boundary by MessageCache)
 #[derive(Debug, Clone)]
-pub struct EncryptedCredentials {
+pub struct Credentials {
     pub username: String,
-    pub encrypted_password: Vec<u8>,
+    pub password: String,
 }
 
-impl EncryptedCredentials {
-    /// Create new credentials (placeholder - encryption not yet implemented)
+impl Credentials {
+    /// Create new credentials
     pub fn new(username: String, password: String) -> Self {
-        Self {
-            username,
-            // TODO: Implement actual encryption using Windows DPAPI
-            encrypted_password: password.into_bytes(),
-        }
+        Self { username, password }
     }
 }
 
@@ -203,11 +199,10 @@ mod tests {
     }
 
     #[test]
-    fn test_encrypted_credentials() {
-        let creds =
-            EncryptedCredentials::new("user@example.com".to_string(), "password".to_string());
+    fn test_credentials() {
+        let creds = Credentials::new("user@example.com".to_string(), "password".to_string());
         assert_eq!(creds.username, "user@example.com");
-        assert!(!creds.encrypted_password.is_empty());
+        assert_eq!(creds.password, "password");
     }
 
     #[test]

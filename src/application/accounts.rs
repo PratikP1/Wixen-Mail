@@ -3,7 +3,7 @@
 //! Manages email accounts, credentials, and authentication.
 
 use crate::common::{
-    types::{AccountSettings, EncryptedCredentials, Id, Protocol, ServerConfig},
+    types::{AccountSettings, Credentials, Id, Protocol, ServerConfig},
     Result,
 };
 
@@ -16,7 +16,7 @@ pub struct Account {
     pub protocol: Protocol,
     pub incoming_server: ServerConfig,
     pub outgoing_server: ServerConfig,
-    pub credentials: EncryptedCredentials,
+    pub credentials: Credentials,
     pub settings: AccountSettings,
 }
 
@@ -28,7 +28,7 @@ impl Account {
         protocol: Protocol,
         incoming_server: ServerConfig,
         outgoing_server: ServerConfig,
-        credentials: EncryptedCredentials,
+        credentials: Credentials,
     ) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -46,7 +46,7 @@ impl Account {
     pub fn new_simple(name: String, email_address: String, protocol: Protocol) -> Self {
         let incoming = ServerConfig::new("imap.example.com".to_string(), 993, true);
         let outgoing = ServerConfig::new("smtp.example.com".to_string(), 587, true);
-        let credentials = EncryptedCredentials::new(email_address.clone(), "password".to_string());
+        let credentials = Credentials::new(email_address.clone(), "password".to_string());
 
         Self::new(
             name,
@@ -111,7 +111,7 @@ mod tests {
     fn test_account_with_full_config() {
         let incoming = ServerConfig::new("imap.gmail.com".to_string(), 993, true);
         let outgoing = ServerConfig::new("smtp.gmail.com".to_string(), 465, true);
-        let creds = EncryptedCredentials::new("user@gmail.com".to_string(), "pass".to_string());
+        let creds = Credentials::new("user@gmail.com".to_string(), "pass".to_string());
 
         let account = Account::new(
             "Gmail Account".to_string(),

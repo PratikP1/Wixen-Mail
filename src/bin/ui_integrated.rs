@@ -1,11 +1,11 @@
 //! Wixen Mail UI launcher with full IMAP/SMTP integration
 //!
-//! This binary launches the fully integrated graphical user interface for Wixen Mail
+//! This binary launches the wxdragon-based graphical user interface for Wixen Mail
 //! with real IMAP/SMTP connectivity.
 
 use wixen_mail::{
     common::logging::{init_logging, LoggerConfig},
-    presentation::IntegratedUI,
+    presentation::WxMailApp,
 };
 
 fn main() {
@@ -14,11 +14,11 @@ fn main() {
         .map_err(|e| eprintln!("Failed to initialize logging: {e}"))
         .ok();
 
-    tracing::info!("Starting Wixen Mail Integrated UI");
+    tracing::info!("Starting Wixen Mail with wxdragon UI");
 
-    // Create and run integrated UI
-    let ui = IntegratedUI::new().expect("Failed to create integrated UI");
-    if let Err(e) = ui.run() {
+    // Create and run wxdragon app
+    let app = WxMailApp::new().expect("Failed to create wxdragon app");
+    if let Err(e) = app.run() {
         eprintln!("UI error: {}", e);
         std::process::exit(1);
     }

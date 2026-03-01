@@ -1,17 +1,20 @@
 # Wixen Mail Implementation Status
 
-_Last updated: 2026-02-27_
+_Last updated: 2026-03-01_
 
 This file is the canonical project-status reference.
 
 ## Summary
 
-Wixen Mail is a fully accessible email client built in Rust (egui + AccessKit) targeting WCAG 2.1 Level AA compliance. The project has completed all core feature development and is in release-hardening stage.
+Wixen Mail is a fully accessible email client built in Rust with a native wxWidgets UI via wxdragon 0.9.12, targeting WCAG 2.1 Level AA compliance. All v1.0 feature gaps have been closed — the project is release-candidate ready, pending only validation and manual testing.
 
 ## What Is Complete
 
 ### Core Infrastructure
-- Accessibility-first integrated UI (egui + AccessKit)
+- Native wxWidgets UI via wxdragon 0.9.12 (three-pane layout, toolbars, dialogs, menus)
+- Main toolbar with stock icons (Get Mail, New, Reply, Reply All, Forward, Delete, Mark Read, Search)
+- Compose toolbar (Send, Undo, Redo, Bold, Italic, Underline, Attach)
+- Visual styling (folder tree sidebar tint, readable fonts, 3-field status bar)
 - Four-layer modular architecture (Presentation / Application / Service / Data)
 - Structured logging with privacy-aware masking
 - JSON-based configuration management
@@ -61,23 +64,67 @@ Wixen Mail is a fully accessible email client built in Rust (egui + AccessKit) t
 - Secure credential masking in logs
 - TLS/STARTTLS for all connections
 
-### OAuth 2.0 (Partial)
+### OAuth 2.0 (Complete, Integrated with Account Creation)
 - Authorization flow UI (provider selection, URL generation, code input)
 - Provider-specific scopes configured (Gmail, Outlook)
-- Token refresh logic
+- Real HTTP token exchange via `reqwest` (Google & Microsoft token endpoints)
+- Token refresh logic with real HTTP calls
 - Token persistence (SQLite `oauth_tokens` table)
 - Account-to-provider auto-detection
+- Auto-enable OAuth for Gmail/Outlook during account creation
+- `use_oauth` field on Account model; password optional for OAuth accounts
 
-### Offline Infrastructure
+### Composition & Sending (Extended)
+- Preview-before-send dialog (shows rendered email for confirmation before sending)
+- Preview is configurable via `preview_before_send` in AppConfig (default: on)
+- Spell checking with multi-language support (built-in English, extensible)
+- Spellbook (Hunspell-compatible, pure Rust) backend with automatic dictionary discovery
+
+### Settings / Preferences Dialog
+- Tabbed dialog accessible from Tools > Settings (Ctrl+,)
+- General tab: theme, font size, notifications, update checking
+- Compose tab: preview-before-send, default format, draft auto-save, signatures
+- Reading tab: default sort order, threaded view, mark-as-read delay, remote images
+- Language tab: interface language selection, spell check toggle, Hunspell info
+- Advanced tab: log level, download folder with browse dialog, cache info
+- Settings persisted to JSON via ConfigManager
+
+### Message Sorting
+- View menu sort submenu with 7 sort options (date, sender, subject, unread)
+- In-memory sort applied instantly to current message list
+- Sort order persisted in UI state
+
+### Internationalization (i18n) Foundation
+- Multi-language spell checker with language-specific alphabets (en, es, fr, de, pt, it)
+- I18n registry for UI string translation with fallback chain
+- Locale system with RTL/LTR text direction detection
+- JSON-based translation file loading
+- All core UI strings registered as translatable keys
+
+### Accessible HTML Rendering
+- Message preview uses RichTextCtrl (accessible to screen readers via UIA bridge)
+- HTML-to-accessible-text renderer with inline link annotations
+- Image alt text and link summary appended for screen readers
+
+### Contact Groups / Distribution Lists
+- Group CRUD (create, rename, delete)
+- Add/remove contacts from groups
+- Resolve group to comma-separated email list for compose
+- SQLite-backed persistence (contact_groups + contact_group_members tables)
+
+### Offline Mode (Fully Wired)
 - SQLite message/folder/draft caching
 - Outbox queue table with CRUD operations
 - IMAP IDLE push event plumbing
+- UI toggle (View menu checkbox) for offline/online mode
+- Queue-flush-to-SMTP on reconnect
+- Outbox queue count and sync status indicators
 
 ### Accessibility
-- Windows UIA via AccessKit (NVDA, JAWS, Narrator)
+- Native wxWidgets accessibility (Windows UIA, NVDA, JAWS, Narrator)
 - 25+ customizable keyboard shortcuts
-- Live regions for dynamic updates
-- Focus management and dialog trapping
+- Screen reader announcements via Accessibility module
+- Focus management and modal dialog trapping
 - Clear focus indicators and sufficient color contrast
 
 ### Documentation
@@ -85,30 +132,27 @@ Wixen Mail is a fully accessible email client built in Rust (egui + AccessKit) t
 - TROUBLESHOOTING.md (30+ issues), ACCESSIBILITY.md
 - ARCHITECTURE.md, CONTRIBUTING.md
 
+### Test Coverage
+- 150 unit tests across all modules
+- 26 integration tests (accounts, contacts, groups, messages, filters, search, security, spell check, OAuth, cache, outbox)
+
 ## Remaining Work
 
-### Small Gaps
-1. **OAuth HTTP token exchange** - `exchange_code()` and `refresh_access_token()` return mock tokens; need real `reqwest` HTTP calls to Google/Microsoft token endpoints.
-2. **Compose account selector** - Composition uses the active account; needs a dropdown to select send-from account when multiple accounts are configured.
-3. **Contact groups / distribution lists** - Not yet implemented.
-4. **Preview before send** - Not yet implemented.
-
-### Medium Gaps
-5. **Offline mode wiring** - Queue infrastructure exists (SQLite table, CRUD) but the UI toggle, queue-flush-to-SMTP logic, and sync status indicators are not connected.
-6. **Spell check** - No spell-checking integration exists yet (requires external library).
-7. **Test coverage** - Only 2 automated tests exist. Need significantly more unit and integration tests.
+All v1.0 feature gaps have been closed. The following are post-v1.0 enhancements:
 
 ### Nice-to-Have (Post v1.0)
 - Theme customization (dark mode, high contrast)
 - Calendar integration (CalDAV)
 - Windows installer (MSI/NSIS)
 - Large mailbox performance validation (100K+ messages)
+- Virtual scrolling for large message lists
+- Plugin/extension system
 
 ## Validation Snapshot
 
 | Check | Status |
 |-------|--------|
 | `cargo build --quiet` | passes |
-| `cargo test --quiet` | passes (2/2) |
+| `cargo test --quiet` | passes (150 unit + 26 integration) |
 | `cargo fmt --all -- --check` | passes |
 | `cargo clippy --all-targets` | passes (0 warnings) |

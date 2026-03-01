@@ -15,6 +15,8 @@ pub enum Error {
     Authentication(String),
     /// Protocol error (IMAP/SMTP/POP3)
     Protocol(String),
+    /// Security error (encryption/decryption/key management)
+    Security(String),
     /// IO error
     Io(std::io::Error),
     /// Generic error
@@ -37,6 +39,7 @@ impl fmt::Display for Error {
             Error::Network(msg) => write!(f, "Network error: {}", msg),
             Error::Authentication(msg) => write!(f, "Authentication error: {}", msg),
             Error::Protocol(msg) => write!(f, "Protocol error: {}", msg),
+            Error::Security(msg) => write!(f, "Security error: {}", msg),
             Error::Io(err) => write!(f, "IO error: {}", err),
             Error::Other(msg) => write!(f, "Error: {}", msg),
         }
@@ -74,5 +77,11 @@ mod tests {
     fn test_auth_alias() {
         let err = Error::auth("Invalid password".to_string());
         assert!(err.to_string().contains("Authentication error"));
+    }
+
+    #[test]
+    fn test_security_error() {
+        let err = Error::Security("Decryption failed".to_string());
+        assert!(err.to_string().contains("Security error"));
     }
 }

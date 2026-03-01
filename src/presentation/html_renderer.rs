@@ -114,10 +114,66 @@ impl HtmlRenderer {
         text.trim().to_string()
     }
 
-    /// Render HTML for egui display
+    /// Render HTML into an accessible text representation for RichTextCtrl.
     ///
-    /// Converts sanitized HTML to a format suitable for egui rendering.
-    /// Returns a structured representation for accessibility.
+    /// Produces plain text with link annotations and image descriptions
+    /// suitable for screen readers. Links are shown inline as "text [URL]".
+    pub fn render_for_accessibility(&self, html: &str) -> AccessibleRenderedContent {
+        let sanitized = self.sanitize_html(html);
+
+        // Replace links with accessible inline format: "text [URL]"
+        let with_links = link_re().replace_all(&sanitized, |caps: &regex::Captures| {
+            let href = caps.get(1).or_else(|| caps.get(2)).map(|m| m.as_str()).unwrap_or("");
+            let text = caps.get(3).map(|m| m.as_str()).unwrap_or("");
+            let clean_text = self.html_to_plain_text(text);
+            if let Some(safe_url) = Self::sanitize_url(href) {
+                if clean_text.trim() == safe_url.trim() {
+                    clean_text // Don't duplicate if link text is already the URL
+                } else {
+                    format!("{} [{}]", clean_text, safe_url)
+                }
+            } else {
+                clean_text
+            }
+        }).to_string();
+
+        // Replace images with alt text descriptions
+        let with_images = image_alt_re().replace_all(&with_links, |caps: &regex::Captures| {
+            let alt = caps.get(1).or_else(|| caps.get(2)).map(|m| m.as_str()).unwrap_or("image");
+            format!("[Image: {}]", alt)
+        }).to_string();
+
+        // Remove remaining img tags without alt text
+        let cleaned = img_tag_re().replace_all(&with_images, "[Image]").to_string();
+
+        let plain = self.html_to_plain_text(&cleaned);
+        let links = self.extract_link_texts(&sanitized);
+        let image_alt_texts = self.extract_image_alt_texts(&sanitized);
+
+        // Build link summary for the bottom of the message
+        let link_summary = if !links.is_empty() {
+            let mut summary = String::from("\n\n--- Links ---\n");
+            for (i, link) in links.iter().enumerate() {
+                summary.push_str(&format!("  {}. {} — {}\n", i + 1, link.text, link.url));
+            }
+            summary
+        } else {
+            String::new()
+        };
+
+        let accessible_text = format!("{}{}", plain, link_summary);
+
+        AccessibleRenderedContent {
+            accessible_text,
+            links,
+            image_alt_texts,
+        }
+    }
+
+    /// Render HTML into a structured representation.
+    ///
+    /// Sanitizes the HTML and returns plain text plus metadata
+    /// (links, images, headings) for accessibility.
     pub fn render_for_egui(&self, html: &str) -> RenderedContent {
         let sanitized = self.sanitize_html(html);
         let plain_text = self.html_to_plain_text(&sanitized);
@@ -226,6 +282,17 @@ impl Default for HtmlRenderer {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Accessible rendering of HTML content for RichTextCtrl / screen readers.
+#[derive(Debug, Clone)]
+pub struct AccessibleRenderedContent {
+    /// Full accessible text with link annotations and image descriptions
+    pub accessible_text: String,
+    /// Extracted safe links
+    pub links: Vec<LinkInfo>,
+    /// Image alt texts
+    pub image_alt_texts: Vec<String>,
 }
 
 /// Rendered HTML content with accessibility information

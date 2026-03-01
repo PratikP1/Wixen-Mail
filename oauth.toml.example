@@ -1,0 +1,23 @@
+# OAuth Client Credentials for Wixen Mail
+#
+# Copy this file to ~/.wixen-mail/oauth.toml and fill in your credentials.
+# Alternatively, set the environment variables listed below.
+#
+# DO NOT commit your actual credentials to the repository.
+#
+# ── Gmail ────────────────────────────────────────────────────────────────────
+# Register at: https://console.cloud.google.com/apis/credentials
+# Create an OAuth 2.0 Client ID (Desktop application type).
+# Env vars: WIXEN_GMAIL_CLIENT_ID, WIXEN_GMAIL_CLIENT_SECRET
+[gmail]
+client_id = ""
+client_secret = ""
+
+# ── Microsoft / Outlook ──────────────────────────────────────────────────────
+# Register at: https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps
+# Create a new registration → Authentication → Add "Mobile and desktop" platform
+# with redirect URI: http://localhost:8087/oauth/callback
+# Env vars: WIXEN_OUTLOOK_CLIENT_ID, WIXEN_OUTLOOK_CLIENT_SECRET
+[outlook]
+client_id = ""
+client_secret = ""

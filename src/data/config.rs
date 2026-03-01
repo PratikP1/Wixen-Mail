@@ -25,7 +25,20 @@ pub struct AppConfig {
     pub enable_notifications: bool,
     /// Log level
     pub log_level: String,
+    /// Show preview dialog before sending emails
+    #[serde(default = "default_true")]
+    pub preview_before_send: bool,
+    /// Spell-check language code (e.g. "en", "es", "fr", "de")
+    #[serde(default = "default_language")]
+    pub language: String,
+    /// Default sort order for message list
+    #[serde(default = "default_sort_order")]
+    pub default_sort_order: String,
 }
+
+fn default_true() -> bool { true }
+fn default_language() -> String { "en".to_string() }
+fn default_sort_order() -> String { "date_newest".to_string() }
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -37,6 +50,9 @@ impl Default for AppConfig {
             font_size: 12,
             enable_notifications: true,
             log_level: "info".to_string(),
+            preview_before_send: true,
+            language: "en".to_string(),
+            default_sort_order: "date_newest".to_string(),
         }
     }
 }

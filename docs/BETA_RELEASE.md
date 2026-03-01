@@ -23,7 +23,7 @@ Release notes are generated automatically by GitHub between tags and attached to
 
 ## Changelog and installer source
 
-- Changelog: [`CHANGELOG.md`](../CHANGELOG.md)
+- Changelog: [`CHANGELOG.md`](changelog.md)
 - Windows setup script: [`installer/Wixen-Mail-Setup.iss`](../installer/Wixen-Mail-Setup.iss)
 
 ## In-app update links
@@ -38,4 +38,4 @@ From **Help** menu:
 - Ensure branch protection on `main` requires the CI checks to pass before merge.
 - Merge the release workflow changes to `main`.
 - Trigger the release workflow once from `main` (push or `workflow_dispatch`) so `cargo release` creates the first beta tag and release.
-- Verify the generated release has all expected assets (`setup`, zipped binary, standalone binary, and `CHANGELOG.md`) and mark it as **Pre-release**.
+- Verify the generated release has all expected assets (`setup`, zipped binary, standalone binary, and `changelog.md`) and mark it as **Pre-release**.

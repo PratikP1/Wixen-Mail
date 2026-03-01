@@ -107,30 +107,71 @@ impl SecurityService {
     }
 
     fn load_or_create_key() -> Result<[u8; 32]> {
+        // On Windows, prefer OS credential store for the master key.
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(key) = Self::load_or_create_key_keyring() {
+                return Ok(key);
+            }
+            tracing::warn!("OS credential store unavailable, falling back to file-based key");
+        }
+
+        Self::load_or_create_key_file()
+    }
+
+    /// Store/retrieve master key via OS credential manager (Windows Credential Manager).
+    #[cfg(target_os = "windows")]
+    fn load_or_create_key_keyring() -> Result<[u8; 32]> {
+        let entry = keyring::Entry::new("wixen-mail", "master-key")
+            .map_err(|e| Error::Security(format!("Failed to access credential store: {}", e)))?;
+
+        // Try loading existing key
+        if let Ok(encoded) = entry.get_password() {
+            let decoded = STANDARD
+                .decode(encoded.trim())
+                .map_err(|e| Error::Security(format!("Failed decoding keyring key: {}", e)))?;
+            let key: [u8; 32] = decoded
+                .try_into()
+                .map_err(|_| Error::Security("Keyring key length is invalid".to_string()))?;
+            return Ok(key);
+        }
+
+        // Generate and store new key
+        let mut key = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut key);
+        let encoded = STANDARD.encode(key);
+        entry
+            .set_password(&encoded)
+            .map_err(|e| Error::Security(format!("Failed storing key in credential store: {}", e)))?;
+        Ok(key)
+    }
+
+    /// File-based key storage (Unix with 0o600 perms, fallback on Windows).
+    fn load_or_create_key_file() -> Result<[u8; 32]> {
         let path = Self::key_path()?;
         if path.exists() {
             let encoded = fs::read_to_string(&path)
-                .map_err(|e| Error::Other(format!("Failed reading security key: {}", e)))?;
+                .map_err(|e| Error::Security(format!("Failed reading security key: {}", e)))?;
             let decoded = STANDARD
                 .decode(encoded.trim())
-                .map_err(|e| Error::Other(format!("Failed decoding security key: {}", e)))?;
+                .map_err(|e| Error::Security(format!("Failed decoding security key: {}", e)))?;
             let key: [u8; 32] = decoded
                 .try_into()
-                .map_err(|_| Error::Other("Security key length is invalid".to_string()))?;
+                .map_err(|_| Error::Security("Security key length is invalid".to_string()))?;
             return Ok(key);
         }
 
         let mut key = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut key);
         let encoded = STANDARD.encode(key);
-        fs::write(&path, encoded)
-            .map_err(|e| Error::Other(format!("Failed writing security key: {}", e)))?;
+        fs::write(&path, &encoded)
+            .map_err(|e| Error::Security(format!("Failed writing security key: {}", e)))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let perms = std::fs::Permissions::from_mode(0o600);
             fs::set_permissions(&path, perms).map_err(|e| {
-                Error::Other(format!("Failed setting security key permissions: {}", e))
+                Error::Security(format!("Failed setting security key permissions: {}", e))
             })?;
         }
         Ok(key)
@@ -148,13 +189,13 @@ impl SecurityService {
     /// Uses AES-256-GCM with machine-local key derivation.
     pub fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
         let cipher = Aes256Gcm::new_from_slice(&self.key)
-            .map_err(|e| Error::Other(format!("Failed to initialize cipher: {}", e)))?;
+            .map_err(|e| Error::Security(format!("Failed to initialize cipher: {}", e)))?;
         let mut nonce_bytes = [0u8; AES_NONCE_LEN];
         rand::thread_rng().fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher
             .encrypt(nonce, data)
-            .map_err(|e| Error::Other(format!("Encryption failed: {}", e)))?;
+            .map_err(|e| Error::Security(format!("Encryption failed: {}", e)))?;
         let mut payload = nonce_bytes.to_vec();
         payload.extend_from_slice(&ciphertext);
         let encoded = STANDARD.encode(payload);
@@ -164,27 +205,27 @@ impl SecurityService {
     /// Decrypt data encrypted with `encrypt`.
     pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
         if data.is_empty() {
-            return Err(Error::Other("Cannot decrypt empty payload".to_string()));
+            return Err(Error::Security("Cannot decrypt empty payload".to_string()));
         }
         let text = std::str::from_utf8(data)
-            .map_err(|e| Error::Other(format!("Encrypted payload not valid UTF-8: {}", e)))?;
+            .map_err(|e| Error::Security(format!("Encrypted payload not valid UTF-8: {}", e)))?;
         let encoded = text
             .strip_prefix(ENCRYPTION_PREFIX)
-            .ok_or_else(|| Error::Other("Encrypted payload missing expected prefix".to_string()))?;
+            .ok_or_else(|| Error::Security("Encrypted payload missing expected prefix".to_string()))?;
         let decoded = STANDARD
             .decode(encoded)
-            .map_err(|e| Error::Other(format!("Encrypted payload decode failed: {}", e)))?;
+            .map_err(|e| Error::Security(format!("Encrypted payload decode failed: {}", e)))?;
         if decoded.len() <= AES_NONCE_LEN {
-            return Err(Error::Other(
+            return Err(Error::Security(
                 "Encrypted payload is too short for nonce/ciphertext".to_string(),
             ));
         }
         let (nonce_bytes, ciphertext) = decoded.split_at(AES_NONCE_LEN);
         let cipher = Aes256Gcm::new_from_slice(&self.key)
-            .map_err(|e| Error::Other(format!("Failed to initialize cipher: {}", e)))?;
+            .map_err(|e| Error::Security(format!("Failed to initialize cipher: {}", e)))?;
         cipher
             .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
-            .map_err(|e| Error::Other(format!("Decryption failed: {}", e)))
+            .map_err(|e| Error::Security(format!("Decryption failed: {}", e)))
     }
 
     /// Analyze a message for PGP/S-MIME and phishing signals.
@@ -360,14 +401,6 @@ impl SecurityService {
             40..=69 => PhishingRiskLevel::Medium,
             _ => PhishingRiskLevel::High,
         }
-    }
-}
-
-impl Default for SecurityService {
-    fn default() -> Self {
-        Self::new().expect(
-            "SecurityService default initialization failed: ensure config directory is writable",
-        )
     }
 }
 

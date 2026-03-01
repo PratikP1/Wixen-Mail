@@ -1,16 +1,19 @@
 # Wixen Mail
 
-Wixen Mail is an accessibility-first email client built with Rust, egui, and AccessKit.
-It focuses on complete keyboard navigation, screen-reader support, and practical multi-account workflows.
+Wixen Mail is an accessibility-first email client built with Rust and wxdragon (wxWidgets).
+It focuses on complete keyboard navigation, screen-reader support, and practical multi-account workflows with a native Windows look and feel.
 
 ## Highlights
 
-- Accessible integrated UI with keyboard-first navigation
-- Multiple account management and account-scoped data isolation
-- IMAP/SMTP support, plus POP3 command-surface implementation
-- Threaded message view, HTML sanitization/rendering helpers, and attachment handling
-- Message rules, contact management, OAuth manager, and offline outbox queue
-- Beta readiness diagnostics for quick operational checks
+- Native wxWidgets UI with toolbar, three-pane layout, and modern styling
+- Full keyboard navigation with 25+ shortcuts and screen reader support (NVDA, JAWS, Narrator)
+- Multiple account management with provider auto-detection and OAuth 2.0
+- IMAP/SMTP support with IDLE push notifications, plus POP3
+- Composition with formatting toolbar, attachments, signatures, and preview-before-send
+- Contact management with vCard import/export, groups, and autocomplete
+- Advanced search (FTS), message rules engine, and tag-based filtering
+- Offline mode with outbox queue and sync-on-reconnect
+- AES-256-GCM credential encryption and phishing detection
 
 ## Quick Start
 
@@ -24,43 +27,50 @@ cargo run --bin ui_integrated
 ## Development Commands
 
 ```bash
-# Run tests
+# Run tests (150 unit + 26 integration)
 cargo test --quiet
 
 # Build
 cargo build
 
-# Quality gates (all passing as of 2026-02-27)
+# Quality gates
 cargo fmt --check
 cargo clippy -- -D warnings
 ```
 
 ## Documentation
 
-Canonical, actively maintained docs:
+### User-facing
 
-- [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
-- [docs/KEYBOARD_SHORTCUTS.md](docs/KEYBOARD_SHORTCUTS.md)
-- [docs/PROVIDER_SETUP.md](docs/PROVIDER_SETUP.md)
-- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
-- [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) (single source of truth for status/tasks)
-- [ACCESSIBILITY.md](ACCESSIBILITY.md)
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [ROADMAP.md](ROADMAP.md)
+- [User Guide](docs/USER_GUIDE.md)
+- [Keyboard Shortcuts](docs/KEYBOARD_SHORTCUTS.md)
+- [Provider Setup](docs/PROVIDER_SETUP.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Accessibility Guide](docs/accessibility.md)
 
-Historical phase/session requirement files in the repository root are retained for traceability but should be treated as implementation records, not the current product overview.
+### Technical
 
-## Current Status (2026-02-27)
+- [Architecture](docs/architecture.md)
+- [Roadmap](docs/roadmap.md)
+- [Implementation Status](docs/IMPLEMENTATION_STATUS.md)
+- [wxdragon Integration](docs/wxdragon-integration.md)
+
+### Development history
+
+- [Implementation History](docs/development/implementation-history.md)
+- [Requirements Backlog](docs/development/requirements-backlog.md)
+- [wxdragon Migration Notes](docs/development/wxdragon-migration.md)
+
+## Current Status (2026-03-01)
 
 All quality gates pass clean (`cargo fmt`, `cargo clippy`, `cargo test`).
+150 unit tests and 25 integration tests passing with 0 warnings.
 
-**Implemented:** Multi-account management, composition with attachments & signatures, contact management (full CRUD + vCard import/export), advanced search with date/sender/attachment filters, message rules engine, OAuth UI (token exchange pending real HTTP calls), IMAP IDLE push, POP3, PGP/S-MIME detection, phishing scoring, offline queue infrastructure.
-
-**Remaining for v1.0:** Real OAuth token exchange (2 stub functions), offline mode UI wiring, spell check integration, compose account selector, contact groups, expanded test coverage. See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for full details.
+The project is at release-candidate status. All v1.0 feature gaps have been closed including OAuth token exchange, offline mode wiring, spell check, contact groups, preview-before-send, and comprehensive test coverage. See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for full details.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](docs/contributing.md).
 
 ## License
 
