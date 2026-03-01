@@ -54,32 +54,30 @@ Complete reference of all keyboard shortcuts in Wixen Mail for efficient, access
 | Search | `Ctrl+F` | Open search dialog |
 | Find Next | `F3` | Find next search result (when search is active) |
 
+### Focus Navigation
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Focus Inbox | `Ctrl+1` | Move focus to the message list / inbox |
+| Focus Toolbar | `Ctrl+\` | Move focus to the main toolbar |
+
 ### Account Management
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Open Account Manager | `Ctrl+M` | Open multiple account management window |
-| Switch to Account 1 | `Ctrl+1` | Switch to first enabled account |
-| Switch to Account 2 | `Ctrl+2` | Switch to second enabled account |
-| Switch to Account 3 | `Ctrl+3` | Switch to third enabled account |
-
-### Rules Management
-
-| Action | Shortcut | Description |
-|--------|----------|-------------|
-| Open Rules Manager | `Ctrl+Shift+E` | Open message filter rules manager |
+| Open Account Manager | `Ctrl+A` | Open multiple account management dialog |
 
 ### Contact Management
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Open Contact Manager | `Ctrl+Shift+C` | Open account contact/address book manager |
+| Open Contact Manager | `Ctrl+2` | Open contact / address book manager |
 
-### OAuth Management
+### Rules Management
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Open OAuth Manager | `Ctrl+Shift+O` | Open provider OAuth 2.0 manager |
+| Open Rules Manager | (menu only) | Open message filter rules manager |
 
 ### View Menu
 
@@ -129,6 +127,68 @@ Complete reference of all keyboard shortcuts in Wixen Mail for efficient, access
 | Select Folder | `↑` `↓` | Navigate folder list |
 | Open Folder | `Enter` | Load messages from selected folder |
 | Refresh Folder | `F5` | Reload current folder |
+
+### Contact Manager Dialog Accelerators
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Search contacts | `Alt+S` | Focus the search field (live search as you type) |
+| Add contact | `Alt+A` | Open Add Contact dialog |
+| Edit contact | `Alt+E` | Edit selected contact |
+| Delete contact | `Alt+D` | Delete selected contact |
+| Close | `Alt+C` | Close Contact Manager |
+
+### Contact Edit Dialog Accelerators
+
+**Basic Info tab:**
+
+| Field | Shortcut |
+|-------|----------|
+| Name | `Alt+N` |
+| Nickname | `Alt+K` |
+| Company | `Alt+C` |
+| Department | `Alt+D` |
+| Job Title | `Alt+J` |
+| Birthday | `Alt+B` |
+| Website | `Alt+W` |
+| Relationship | `Alt+R` |
+| Avatar URL | `Alt+A` |
+| Favorite | `Alt+F` |
+
+**Email & Phone tab:**
+
+| Action | Shortcut |
+|--------|----------|
+| Add Email | `Alt+A` |
+| Remove Email | `Alt+R` |
+| Add Phone | `Alt+P` |
+| Remove Phone | `Alt+V` |
+
+**Addresses tab:**
+
+| Action | Shortcut |
+|--------|----------|
+| Add Address | `Alt+A` |
+| Remove Address | `Alt+R` |
+
+**Notes & Custom tab:**
+
+| Action | Shortcut |
+|--------|----------|
+| Notes | `Alt+N` |
+| Add Field | `Alt+A` |
+| Remove Field | `Alt+R` |
+
+### Address Sub-Dialog Accelerators
+
+| Field | Shortcut | Notes |
+|-------|----------|-------|
+| Country | `Alt+C` | Dropdown — country selection drives region/code labels |
+| Type | `Alt+T` | Home/Work/Other dropdown |
+| Street | `Alt+S` | |
+| City | `Alt+I` | (C conflicts with Country) |
+| State/Province | varies | Label changes per country (e.g., State, Province, County) |
+| ZIP/Postal Code | varies | Label changes per country (e.g., ZIP, Postcode, PLZ) |
 
 ### Context Menu
 

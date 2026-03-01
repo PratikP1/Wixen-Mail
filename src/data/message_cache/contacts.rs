@@ -11,9 +11,11 @@ impl MessageCache {
         self.conn.execute(
             "INSERT INTO contacts
              (id, account_id, name, email, provider_contact_id, phone, company, job_title, website, address, birthday,
-              avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at, updated_at)
+              avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at, updated_at,
+              nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json)
              VALUES (COALESCE((SELECT id FROM contacts WHERE account_id = ?2 AND email = ?4), ?1), ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
-                    COALESCE((SELECT created_at FROM contacts WHERE account_id = ?2 AND email = ?4), ?19), ?20)
+                    COALESCE((SELECT created_at FROM contacts WHERE account_id = ?2 AND email = ?4), ?19), ?20,
+                    ?21, ?22, ?23, ?24, ?25, ?26, ?27)
              ON CONFLICT(account_id, email) DO UPDATE SET
                 name = excluded.name,
                 provider_contact_id = excluded.provider_contact_id,
@@ -30,7 +32,14 @@ impl MessageCache {
                 vcard_raw = excluded.vcard_raw,
                 notes = excluded.notes,
                 favorite = excluded.favorite,
-                updated_at = excluded.updated_at",
+                updated_at = excluded.updated_at,
+                nickname = excluded.nickname,
+                department = excluded.department,
+                relationship = excluded.relationship,
+                emails_json = excluded.emails_json,
+                phones_json = excluded.phones_json,
+                addresses_json = excluded.addresses_json,
+                custom_fields_json = excluded.custom_fields_json",
             params![
                 &contact.id, &contact.account_id, &contact.name, &contact.email,
                 &contact.provider_contact_id, &contact.phone, &contact.company,
@@ -38,6 +47,9 @@ impl MessageCache {
                 &contact.avatar_url, &contact.avatar_data_base64, &contact.source_provider,
                 &contact.last_synced_at, &contact.vcard_raw, &contact.notes,
                 &contact.favorite, &contact.created_at, &now,
+                &contact.nickname, &contact.department, &contact.relationship,
+                &contact.emails_json, &contact.phones_json, &contact.addresses_json,
+                &contact.custom_fields_json,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
         Ok(())
@@ -47,7 +59,8 @@ impl MessageCache {
     pub fn get_contacts_for_account(&self, account_id: &str) -> Result<Vec<ContactEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, account_id, name, email, provider_contact_id, phone, company, job_title, website, address, birthday,
-                    avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at
+                    avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
+                    nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json
              FROM contacts
              WHERE account_id = ?1
              ORDER BY favorite DESC, name ASC"
@@ -64,6 +77,10 @@ impl MessageCache {
                     source_provider: row.get(13)?, last_synced_at: row.get(14)?,
                     vcard_raw: row.get(15)?, notes: row.get(16)?,
                     favorite: row.get(17)?, created_at: row.get(18)?,
+                    nickname: row.get(19)?, department: row.get(20)?,
+                    relationship: row.get(21)?, emails_json: row.get(22)?,
+                    phones_json: row.get(23)?, addresses_json: row.get(24)?,
+                    custom_fields_json: row.get(25)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query contacts: {}", e)))?
@@ -87,14 +104,16 @@ impl MessageCache {
         let pattern = format!("%{}%", escaped);
         let mut stmt = self.conn.prepare(
             "SELECT id, account_id, name, email, provider_contact_id, phone, company, job_title, website, address, birthday,
-                    avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at
+                    avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
+                    nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json
              FROM contacts
              WHERE account_id = ?1
                AND (
                     LOWER(name) LIKE ?2 ESCAPE '!' OR
                     LOWER(email) LIKE ?2 ESCAPE '!' OR
                     LOWER(COALESCE(company, '')) LIKE ?2 ESCAPE '!' OR
-                    LOWER(COALESCE(phone, '')) LIKE ?2 ESCAPE '!'
+                    LOWER(COALESCE(phone, '')) LIKE ?2 ESCAPE '!' OR
+                    LOWER(COALESCE(nickname, '')) LIKE ?2 ESCAPE '!'
                )
              ORDER BY favorite DESC, name ASC
              LIMIT ?3"
@@ -111,6 +130,10 @@ impl MessageCache {
                     source_provider: row.get(13)?, last_synced_at: row.get(14)?,
                     vcard_raw: row.get(15)?, notes: row.get(16)?,
                     favorite: row.get(17)?, created_at: row.get(18)?,
+                    nickname: row.get(19)?, department: row.get(20)?,
+                    relationship: row.get(21)?, emails_json: row.get(22)?,
+                    phones_json: row.get(23)?, addresses_json: row.get(24)?,
+                    custom_fields_json: row.get(25)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to search contacts: {}", e)))?
@@ -172,6 +195,9 @@ impl MessageCache {
                             notes: Some("Imported automatically from message history".to_string()),
                             favorite: false,
                             created_at: chrono::Utc::now().to_rfc3339(),
+                            nickname: None, department: None, relationship: None,
+                            emails_json: None, phones_json: None, addresses_json: None,
+                            custom_fields_json: None,
                         };
                         match self.save_contact(&contact) {
                             Ok(_) => imported_count += 1,
@@ -211,21 +237,60 @@ impl MessageCache {
         for c in contacts {
             output.push_str("BEGIN:VCARD\r\nVERSION:3.0\r\n");
             output.push_str(&Self::fold_vcard_line(&format!("FN:{}", Self::escape_vcard_text(&c.name))));
-            output.push_str(&Self::fold_vcard_line(&format!("EMAIL:{}", Self::escape_vcard_text(&c.email))));
-            if let Some(phone) = c.phone {
-                output.push_str(&Self::fold_vcard_line(&format!("TEL:{}", Self::escape_vcard_text(&phone))));
+            if let Some(ref nick) = c.nickname {
+                output.push_str(&Self::fold_vcard_line(&format!("NICKNAME:{}", Self::escape_vcard_text(nick))));
             }
-            if let Some(company) = c.company {
-                output.push_str(&Self::fold_vcard_line(&format!("ORG:{}", Self::escape_vcard_text(&company))));
+            // Multi-value emails (fall back to primary if no JSON)
+            if let Some(ref json) = c.emails_json {
+                if let Ok(entries) = serde_json::from_str::<Vec<super::EmailEntry>>(json) {
+                    for e in &entries {
+                        output.push_str(&Self::fold_vcard_line(&format!("EMAIL;TYPE={}:{}", e.label.to_uppercase(), Self::escape_vcard_text(&e.address))));
+                    }
+                }
+            } else {
+                output.push_str(&Self::fold_vcard_line(&format!("EMAIL:{}", Self::escape_vcard_text(&c.email))));
             }
-            if let Some(job_title) = c.job_title {
-                output.push_str(&Self::fold_vcard_line(&format!("TITLE:{}", Self::escape_vcard_text(&job_title))));
+            // Multi-value phones (fall back to primary if no JSON)
+            if let Some(ref json) = c.phones_json {
+                if let Ok(entries) = serde_json::from_str::<Vec<super::PhoneEntry>>(json) {
+                    for p in &entries {
+                        output.push_str(&Self::fold_vcard_line(&format!("TEL;TYPE={}:{}", p.label.to_uppercase(), Self::escape_vcard_text(&p.number))));
+                    }
+                }
+            } else if let Some(ref phone) = c.phone {
+                output.push_str(&Self::fold_vcard_line(&format!("TEL:{}", Self::escape_vcard_text(phone))));
             }
-            if let Some(website) = c.website {
-                output.push_str(&Self::fold_vcard_line(&format!("URL:{}", Self::escape_vcard_text(&website))));
+            if let Some(ref company) = c.company {
+                output.push_str(&Self::fold_vcard_line(&format!("ORG:{}", Self::escape_vcard_text(company))));
             }
-            if let Some(address) = c.address {
-                let escaped_address = Self::escape_vcard_text(&address);
+            if let Some(ref dept) = c.department {
+                // ORG can include department as second component
+                if c.company.is_none() {
+                    output.push_str(&Self::fold_vcard_line(&format!("ORG:;{}", Self::escape_vcard_text(dept))));
+                }
+            }
+            if let Some(ref job_title) = c.job_title {
+                output.push_str(&Self::fold_vcard_line(&format!("TITLE:{}", Self::escape_vcard_text(job_title))));
+            }
+            if let Some(ref website) = c.website {
+                output.push_str(&Self::fold_vcard_line(&format!("URL:{}", Self::escape_vcard_text(website))));
+            }
+            // Multi-value addresses (fall back to primary if no JSON)
+            if let Some(ref json) = c.addresses_json {
+                if let Ok(entries) = serde_json::from_str::<Vec<super::AddressEntry>>(json) {
+                    for a in &entries {
+                        let structured = format!(";;{};{};{};{};{}",
+                            Self::escape_vcard_text(&a.street),
+                            Self::escape_vcard_text(&a.city),
+                            Self::escape_vcard_text(&a.state),
+                            Self::escape_vcard_text(&a.zip),
+                            Self::escape_vcard_text(&a.country),
+                        );
+                        output.push_str(&Self::fold_vcard_line(&format!("ADR;TYPE={}:{}", a.label.to_uppercase(), structured)));
+                    }
+                }
+            } else if let Some(ref address) = c.address {
+                let escaped_address = Self::escape_vcard_text(address);
                 let structured = if escaped_address.contains(';') {
                     escaped_address
                 } else {
@@ -233,17 +298,28 @@ impl MessageCache {
                 };
                 output.push_str(&Self::fold_vcard_line(&format!("ADR:{}", structured)));
             }
-            if let Some(birthday) = c.birthday {
-                output.push_str(&Self::fold_vcard_line(&format!("BDAY:{}", Self::escape_vcard_text(&birthday))));
+            if let Some(ref birthday) = c.birthday {
+                output.push_str(&Self::fold_vcard_line(&format!("BDAY:{}", Self::escape_vcard_text(birthday))));
             }
-            if let Some(photo_url) = c.avatar_url {
-                output.push_str(&Self::fold_vcard_line(&format!("PHOTO:{}", Self::escape_vcard_text(&photo_url))));
-            } else if let Some(photo_data) = c.avatar_data_base64 {
+            if let Some(ref rel) = c.relationship {
+                output.push_str(&Self::fold_vcard_line(&format!("X-RELATIONSHIP:{}", Self::escape_vcard_text(rel))));
+            }
+            if let Some(ref photo_url) = c.avatar_url {
+                output.push_str(&Self::fold_vcard_line(&format!("PHOTO:{}", Self::escape_vcard_text(photo_url))));
+            } else if let Some(ref photo_data) = c.avatar_data_base64 {
                 let compact_base64 = photo_data.chars().filter(|c| !c.is_whitespace()).collect::<String>();
                 output.push_str(&Self::fold_vcard_line(&format!("PHOTO;ENCODING=b:{}", compact_base64)));
             }
-            if let Some(notes) = c.notes {
-                output.push_str(&Self::fold_vcard_line(&format!("NOTE:{}", Self::escape_vcard_text(&notes))));
+            if let Some(ref notes) = c.notes {
+                output.push_str(&Self::fold_vcard_line(&format!("NOTE:{}", Self::escape_vcard_text(notes))));
+            }
+            // Custom fields as X-CUSTOM properties
+            if let Some(ref json) = c.custom_fields_json {
+                if let Ok(fields) = serde_json::from_str::<Vec<super::CustomFieldEntry>>(json) {
+                    for f in &fields {
+                        output.push_str(&Self::fold_vcard_line(&format!("X-CUSTOM-{}:{}", Self::escape_vcard_text(&f.label).to_uppercase().replace(' ', "-"), Self::escape_vcard_text(&f.value))));
+                    }
+                }
             }
             output.push_str("END:VCARD\r\n");
         }
@@ -383,7 +459,7 @@ impl MessageCache {
 
     fn contact_from_vcard_block(account_id: &str, block: &str) -> Option<ContactEntry> {
         let mut name = String::new();
-        let mut email = String::new();
+        let mut primary_email = String::new();
         let mut phone = None;
         let mut company = None;
         let mut job_title = None;
@@ -393,17 +469,36 @@ impl MessageCache {
         let mut notes = None;
         let mut avatar_url = None;
         let mut avatar_data_base64 = None;
+        let mut nickname = None;
+        // Collect multi-value entries
+        let mut emails: Vec<super::EmailEntry> = Vec::new();
+        let mut phones: Vec<super::PhoneEntry> = Vec::new();
+        let mut addresses: Vec<super::AddressEntry> = Vec::new();
 
         for line in Self::unfold_vcard_lines(block) {
             if let Some(value) = line.strip_prefix("FN:") {
                 name = Self::unescape_vcard_text(value.trim());
-            } else if line.starts_with("EMAIL") {
+            } else if line.starts_with("NICKNAME") {
                 if let Some((_, value)) = line.split_once(':') {
-                    email = Self::unescape_vcard_text(value.trim());
+                    nickname = Some(Self::unescape_vcard_text(value.trim()));
+                }
+            } else if line.starts_with("EMAIL") {
+                if let Some((prefix, value)) = line.split_once(':') {
+                    let addr = Self::unescape_vcard_text(value.trim());
+                    let label = Self::extract_vcard_type_param(prefix);
+                    emails.push(super::EmailEntry { label, address: addr.clone() });
+                    if primary_email.is_empty() {
+                        primary_email = addr;
+                    }
                 }
             } else if line.starts_with("TEL") {
-                if let Some((_, value)) = line.split_once(':') {
-                    phone = Some(Self::unescape_vcard_text(value.trim()));
+                if let Some((prefix, value)) = line.split_once(':') {
+                    let num = Self::unescape_vcard_text(value.trim());
+                    let label = Self::extract_vcard_type_param(prefix);
+                    phones.push(super::PhoneEntry { label, number: num.clone() });
+                    if phone.is_none() {
+                        phone = Some(num);
+                    }
                 }
             } else if line.starts_with("ORG") {
                 if let Some((_, value)) = line.split_once(':') {
@@ -418,8 +513,22 @@ impl MessageCache {
                     website = Some(Self::unescape_vcard_text(value.trim()));
                 }
             } else if line.starts_with("ADR") {
-                if let Some((_, value)) = line.split_once(':') {
-                    address = Some(Self::unescape_vcard_text(value.trim()));
+                if let Some((prefix, value)) = line.split_once(':') {
+                    let raw = Self::unescape_vcard_text(value.trim());
+                    let label = Self::extract_vcard_type_param(prefix);
+                    let parts: Vec<&str> = raw.split(';').collect();
+                    let addr_entry = super::AddressEntry {
+                        label,
+                        street: parts.get(2).unwrap_or(&"").to_string(),
+                        city: parts.get(3).unwrap_or(&"").to_string(),
+                        state: parts.get(4).unwrap_or(&"").to_string(),
+                        zip: parts.get(5).unwrap_or(&"").to_string(),
+                        country: parts.get(6).unwrap_or(&"").to_string(),
+                    };
+                    addresses.push(addr_entry);
+                    if address.is_none() {
+                        address = Some(raw);
+                    }
                 }
             } else if line.starts_with("BDAY") {
                 if let Some((_, value)) = line.split_once(':') {
@@ -440,17 +549,21 @@ impl MessageCache {
             }
         }
 
-        if email.is_empty() || !email.contains('@') {
+        if primary_email.is_empty() || !primary_email.contains('@') {
             return None;
         }
         if name.is_empty() {
-            name = Self::email_local_part_or_unknown(&email);
+            name = Self::email_local_part_or_unknown(&primary_email);
         }
+
+        let emails_json = if emails.is_empty() { None } else { serde_json::to_string(&emails).ok() };
+        let phones_json = if phones.is_empty() { None } else { serde_json::to_string(&phones).ok() };
+        let addresses_json = if addresses.is_empty() { None } else { serde_json::to_string(&addresses).ok() };
 
         Some(ContactEntry {
             id: uuid::Uuid::new_v4().to_string(),
             account_id: account_id.to_string(),
-            name, email,
+            name, email: primary_email,
             provider_contact_id: None, phone, company, job_title, website, address, birthday,
             avatar_url, avatar_data_base64,
             source_provider: Some("vcard".to_string()),
@@ -458,7 +571,26 @@ impl MessageCache {
             vcard_raw: Some(block.to_string()),
             notes, favorite: false,
             created_at: chrono::Utc::now().to_rfc3339(),
+            nickname, department: None, relationship: None,
+            emails_json, phones_json, addresses_json,
+            custom_fields_json: None,
         })
+    }
+
+    /// Extract the TYPE= parameter from a vCard property prefix (e.g., "TEL;TYPE=WORK" → "Work")
+    fn extract_vcard_type_param(prefix: &str) -> String {
+        for part in prefix.split(';') {
+            if let Some(val) = part.strip_prefix("TYPE=") {
+                // Title case the first word (e.g., "WORK" → "Work", "HOME" → "Home")
+                let lower = val.to_lowercase();
+                let mut chars = lower.chars();
+                return match chars.next() {
+                    None => "Other".to_string(),
+                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                };
+            }
+        }
+        "Other".to_string()
     }
 
     fn escape_vcard_text(value: &str) -> String {
@@ -563,6 +695,12 @@ mod tests {
             last_synced_at: Some(chrono::Utc::now().to_rfc3339()),
             vcard_raw: Some("BEGIN:VCARD...".to_string()), notes: Some("VIP".to_string()),
             favorite: true, created_at: chrono::Utc::now().to_rfc3339(),
+            nickname: Some("Ada".to_string()), department: Some("Mathematics".to_string()),
+            relationship: Some("Colleague".to_string()),
+            emails_json: Some(r#"[{"label":"Work","address":"ada@work.com"},{"label":"Personal","address":"ada@home.com"}]"#.to_string()),
+            phones_json: Some(r#"[{"label":"Mobile","number":"+1-555-0101"},{"label":"Home","number":"+1-555-0102"}]"#.to_string()),
+            addresses_json: Some(r#"[{"label":"Home","street":"123 Math St","city":"London","state":"","zip":"EC1A","country":"UK"}]"#.to_string()),
+            custom_fields_json: Some(r#"[{"label":"GitHub","value":"adalovelace"}]"#.to_string()),
         };
 
         cache.save_contact(&contact).unwrap();
@@ -607,7 +745,8 @@ END:VCARD";
 
         let exported = cache.export_contacts_to_vcard("test@example.com").unwrap();
         assert!(exported.contains("FN:Grace Hopper"));
-        assert!(exported.contains("EMAIL:grace@example.com"));
+        // Email is now exported with TYPE= label from emails_json
+        assert!(exported.contains("grace@example.com"));
     }
 
     #[test]

@@ -165,7 +165,7 @@ impl WxMailApp {
             frame.set_menu_bar(Self::build_menu_bar());
 
             // ── Main toolbar ─────────────────────────────────────────────
-            if let Some(toolbar) = frame.create_tool_bar(
+            let toolbar_handle = if let Some(toolbar) = frame.create_tool_bar(
                 Some(ToolBarStyle::Flat | ToolBarStyle::Text),
                 ID_ANY as Id,
             ) {
@@ -186,7 +186,10 @@ impl WxMailApp {
                 toolbar.add_separator();
                 toolbar.add_tool(ID_SEARCH, "Search", &bmp(ArtId::Find), "Search messages (Ctrl+F)");
                 toolbar.realize();
-            }
+                Some(toolbar)
+            } else {
+                None
+            };
 
             let status_bar = frame.create_status_bar(3, 0, ID_ANY as i32, "statusbar");
             status_bar.set_status_widths(&[-3, -1, -1]);
@@ -246,6 +249,35 @@ impl WxMailApp {
             outer.split_vertically(&folder_tree, &inner, FOLDER_W);
             panel_sizer.add(&outer, 1, SizerFlag::Expand | SizerFlag::All, 0);
             panel.set_sizer(panel_sizer, true);
+
+            // ── Keyboard shortcuts for focus navigation ──────────────────
+            panel.on_key_down({
+                let msg_list = msg_list;
+                let toolbar_handle = toolbar_handle.clone();
+                move |event| {
+                    if let WindowEventData::Keyboard(ref kbd) = event {
+                        let ctrl = kbd.control_down();
+                        let key = kbd.get_key_code().unwrap_or(0);
+                        match (ctrl, key) {
+                            // Ctrl+1 → focus inbox / message list
+                            (true, 49) => {
+                                msg_list.set_focus();
+                                return;
+                            }
+                            // Ctrl+\ → focus toolbar
+                            (true, 92) => {
+                                if let Some(ref tb) = toolbar_handle {
+                                    tb.set_focus();
+                                }
+                                return;
+                            }
+                            _ => {}
+                        }
+                    }
+                    // Pass unhandled keys through
+                    event.skip(true);
+                }
+            });
 
             // ── Folder selection ─────────────────────────────────────────
             folder_tree.on_selection_changed({
@@ -416,9 +448,9 @@ impl WxMailApp {
             .append_item(ID_DELETE, "&Delete\tDel", "Delete message")
             .build();
         let tools = Menu::builder()
-            .append_item(ID_ACCOUNT_MGR, "&Account Manager", "Manage email accounts")
+            .append_item(ID_ACCOUNT_MGR, "&Account Manager\tCtrl+A", "Manage email accounts")
             .append_separator()
-            .append_item(ID_CONTACT_MGR, "&Contact Manager", "Manage contacts")
+            .append_item(ID_CONTACT_MGR, "&Contact Manager\tCtrl+2", "Manage contacts")
             .append_item(ID_FILTER_MGR, "&Filter Manager", "Manage filter rules")
             .append_item(ID_TAG_MGR, "&Tag Manager", "Manage tags")
             .append_item(ID_SIG_MGR, "&Signature Manager", "Manage signatures")

@@ -35,7 +35,7 @@ impl From<ContactEntry> for Contact {
             id: ce.id,
             name: ce.name,
             email: EmailAddress::new(ce.email, None),
-            notes: ce.notes,
+            notes: if ce.notes.as_deref() == Some("") { None } else { ce.notes },
             group_ids: Vec::new(),
         }
     }

@@ -119,6 +119,41 @@ pub struct MessageFilterRule {
     pub created_at: String,
 }
 
+/// Typed phone number entry (stored as JSON array)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PhoneEntry {
+    /// Label: "Mobile", "Home", "Work", "Work Fax", "Home Fax", "Pager", "Other"
+    pub label: String,
+    pub number: String,
+}
+
+/// Typed email address entry (stored as JSON array)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EmailEntry {
+    /// Label: "Personal", "Work", "Other"
+    pub label: String,
+    pub address: String,
+}
+
+/// Structured physical address entry (stored as JSON array)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AddressEntry {
+    /// Label: "Home", "Work", "Other"
+    pub label: String,
+    pub street: String,
+    pub city: String,
+    pub state: String,
+    pub zip: String,
+    pub country: String,
+}
+
+/// User-defined custom field (stored as JSON array)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CustomFieldEntry {
+    pub label: String,
+    pub value: String,
+}
+
 /// Contact entry for account address book
 #[derive(Debug, Clone)]
 pub struct ContactEntry {
@@ -127,10 +162,12 @@ pub struct ContactEntry {
     pub name: String,
     pub email: String,
     pub provider_contact_id: Option<String>,
+    /// Primary phone (legacy single-value field)
     pub phone: Option<String>,
     pub company: Option<String>,
     pub job_title: Option<String>,
     pub website: Option<String>,
+    /// Primary address (legacy single-value field)
     pub address: Option<String>,
     pub birthday: Option<String>,
     pub avatar_url: Option<String>,
@@ -141,6 +178,18 @@ pub struct ContactEntry {
     pub notes: Option<String>,
     pub favorite: bool,
     pub created_at: String,
+    // ── Multi-value and extended fields ──────────────────────────────────────
+    pub nickname: Option<String>,
+    pub department: Option<String>,
+    pub relationship: Option<String>,
+    /// JSON array of `EmailEntry`
+    pub emails_json: Option<String>,
+    /// JSON array of `PhoneEntry`
+    pub phones_json: Option<String>,
+    /// JSON array of `AddressEntry`
+    pub addresses_json: Option<String>,
+    /// JSON array of `CustomFieldEntry`
+    pub custom_fields_json: Option<String>,
 }
 
 /// OAuth token set for an account/provider
@@ -515,6 +564,14 @@ impl MessageCache {
         self.ensure_column_exists("contacts", "source_provider", "TEXT")?;
         self.ensure_column_exists("contacts", "last_synced_at", "TEXT")?;
         self.ensure_column_exists("contacts", "vcard_raw", "TEXT")?;
+        // Multi-value / extended contact fields
+        self.ensure_column_exists("contacts", "nickname", "TEXT")?;
+        self.ensure_column_exists("contacts", "department", "TEXT")?;
+        self.ensure_column_exists("contacts", "relationship", "TEXT")?;
+        self.ensure_column_exists("contacts", "emails_json", "TEXT")?;
+        self.ensure_column_exists("contacts", "phones_json", "TEXT")?;
+        self.ensure_column_exists("contacts", "addresses_json", "TEXT")?;
+        self.ensure_column_exists("contacts", "custom_fields_json", "TEXT")?;
         self.ensure_column_exists("oauth_tokens", "token_type", "TEXT NOT NULL DEFAULT 'Bearer'")?;
         self.ensure_column_exists("oauth_tokens", "scope", "TEXT")?;
         self.ensure_column_exists("oauth_tokens", "expires_at", "TEXT")?;

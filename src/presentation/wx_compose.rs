@@ -119,7 +119,7 @@ pub fn show_compose_dialog_with_options(
 
     // Account selector
     let account_label = StaticText::builder(&dialog)
-        .with_label("From:")
+        .with_label("&From:")
         .build();
     let account_choice = Choice::builder(&dialog)
         .with_choices(account_names.iter().map(|s| s.to_string()).collect())
@@ -129,25 +129,25 @@ pub fn show_compose_dialog_with_options(
     fields_sizer.add(&account_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // To field
-    let to_label = StaticText::builder(&dialog).with_label("To:").build();
+    let to_label = StaticText::builder(&dialog).with_label("&To:").build();
     let to_field = TextCtrl::builder(&dialog).build();
     fields_sizer.add(&to_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
     fields_sizer.add(&to_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // CC field
-    let cc_label = StaticText::builder(&dialog).with_label("CC:").build();
+    let cc_label = StaticText::builder(&dialog).with_label("&CC:").build();
     let cc_field = TextCtrl::builder(&dialog).build();
     fields_sizer.add(&cc_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
     fields_sizer.add(&cc_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // BCC field
-    let bcc_label = StaticText::builder(&dialog).with_label("BCC:").build();
+    let bcc_label = StaticText::builder(&dialog).with_label("&BCC:").build();
     let bcc_field = TextCtrl::builder(&dialog).build();
     fields_sizer.add(&bcc_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
     fields_sizer.add(&bcc_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // Subject field
-    let subject_label = StaticText::builder(&dialog).with_label("Subject:").build();
+    let subject_label = StaticText::builder(&dialog).with_label("Su&bject:").build();
     let subject_field = TextCtrl::builder(&dialog).build();
     fields_sizer.add(&subject_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
     fields_sizer.add(&subject_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
@@ -159,7 +159,7 @@ pub fn show_compose_dialog_with_options(
 
     // Prominent Send button (Outlook-style — first in toolbar)
     let send_toolbar_btn = Button::builder(&dialog)
-        .with_label("Send")
+        .with_label("&Send")
         .with_id(ID_SEND)
         .with_size(Size::new(72, 30))
         .build();
@@ -168,12 +168,12 @@ pub fn show_compose_dialog_with_options(
 
     // Undo / Redo
     let undo_btn = Button::builder(&dialog)
-        .with_label("Undo")
+        .with_label("&Undo")
         .with_id(ID_UNDO)
         .with_size(Size::new(52, 28))
         .build();
     let redo_btn = Button::builder(&dialog)
-        .with_label("Redo")
+        .with_label("&Redo")
         .with_id(ID_REDO)
         .with_size(Size::new(52, 28))
         .build();
@@ -204,7 +204,7 @@ pub fn show_compose_dialog_with_options(
 
     // Attach
     let attach_btn = Button::builder(&dialog)
-        .with_label("Attach...")
+        .with_label("A&ttach...")
         .with_id(ID_ATTACH)
         .build();
     toolbar_sizer.add(&attach_btn, 0, SizerFlag::All, 2);
@@ -228,15 +228,15 @@ pub fn show_compose_dialog_with_options(
     let button_sizer = BoxSizer::builder(Orientation::Horizontal).build();
 
     let draft_btn = Button::builder(&dialog)
-        .with_label("Save Draft")
+        .with_label("Save &Draft")
         .with_id(ID_SAVE_DRAFT)
         .build();
     let discard_btn = Button::builder(&dialog)
-        .with_label("Discard")
+        .with_label("Disc&ard")
         .with_id(ID_DISCARD)
         .build();
     let cancel_btn = Button::builder(&dialog)
-        .with_label("Cancel")
+        .with_label("&Cancel")
         .with_id(ID_CANCEL)
         .build();
 
@@ -479,11 +479,11 @@ fn show_send_preview(
     // Buttons
     let btn_sizer = BoxSizer::builder(Orientation::Horizontal).build();
     let back_btn = Button::builder(&dlg)
-        .with_label("Go Back && Edit")
+        .with_label("&Go Back && Edit")
         .with_id(ID_GO_BACK)
         .build();
     let send_btn = Button::builder(&dlg)
-        .with_label("Confirm Send")
+        .with_label("Confirm &Send")
         .with_id(ID_CONFIRM_SEND)
         .build();
     btn_sizer.add(&back_btn, 0, SizerFlag::All, 4);

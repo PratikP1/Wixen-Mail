@@ -158,14 +158,14 @@ fn build_general_tab(
 
     // -- Notifications
     let notif_sec = section(panel, "Notifications");
-    let notif_cb = CheckBox::builder(panel).with_label("Enable new-mail notifications").build();
+    let notif_cb = CheckBox::builder(panel).with_label("Enable &new-mail notifications").build();
     notif_cb.set_value(config.enable_notifications);
     notif_sec.add(&notif_cb, 0, SizerFlag::All, 4);
     sizer.add_sizer(&notif_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     // -- Updates
     let upd_sec = section(panel, "Updates");
-    let update_cb = CheckBox::builder(panel).with_label("Check for updates on startup").build();
+    let update_cb = CheckBox::builder(panel).with_label("Check for &updates on startup").build();
     update_cb.set_value(config.check_updates);
     upd_sec.add(&update_cb, 0, SizerFlag::All, 4);
     sizer.add_sizer(&upd_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
@@ -180,7 +180,7 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> CheckBox {
 
     // -- Sending
     let send_sec = section(panel, "Sending");
-    let preview_cb = CheckBox::builder(panel).with_label("Show preview before sending").build();
+    let preview_cb = CheckBox::builder(panel).with_label("Show &preview before sending").build();
     preview_cb.set_value(config.preview_before_send);
     send_sec.add(&preview_cb, 0, SizerFlag::All, 4);
 
@@ -200,14 +200,14 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> CheckBox {
 
     // -- Drafts
     let draft_sec = section(panel, "Drafts");
-    let autosave_cb = CheckBox::builder(panel).with_label("Auto-save drafts every 60 seconds").build();
+    let autosave_cb = CheckBox::builder(panel).with_label("&Auto-save drafts every 60 seconds").build();
     autosave_cb.set_value(true);
     draft_sec.add(&autosave_cb, 0, SizerFlag::All, 4);
     sizer.add_sizer(&draft_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     // -- Signatures
     let sig_sec = section(panel, "Signatures");
-    let sig_cb = CheckBox::builder(panel).with_label("Automatically insert signature on new messages").build();
+    let sig_cb = CheckBox::builder(panel).with_label("Automatically insert &signature on new messages").build();
     sig_cb.set_value(true);
     sig_sec.add(&sig_cb, 0, SizerFlag::All, 4);
     sizer.add_sizer(&sig_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
@@ -244,7 +244,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> Choice {
     sort_row.add(&sort_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     list_sec.add_sizer(&sort_row, 0, SizerFlag::Expand, 0);
 
-    let thread_cb = CheckBox::builder(panel).with_label("Enable threaded view by default").build();
+    let thread_cb = CheckBox::builder(panel).with_label("Enable &threaded view by default").build();
     thread_cb.set_value(false);
     list_sec.add(&thread_cb, 0, SizerFlag::All, 4);
     sizer.add_sizer(&list_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
@@ -264,7 +264,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> Choice {
     markread_row.add(&markread_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     read_sec.add_sizer(&markread_row, 0, SizerFlag::Expand, 0);
 
-    let external_cb = CheckBox::builder(panel).with_label("Load remote images in messages").build();
+    let external_cb = CheckBox::builder(panel).with_label("Load remote &images in messages").build();
     external_cb.set_value(false);
     read_sec.add(&external_cb, 0, SizerFlag::All, 4);
 
@@ -304,11 +304,11 @@ fn build_language_tab(panel: &Panel, config: &AppConfig) -> Choice {
     // -- Spell Check
     let spell_sec = section(panel, "Spell Check");
 
-    let enable_spell = CheckBox::builder(panel).with_label("Enable spell checking in compose editor").build();
+    let enable_spell = CheckBox::builder(panel).with_label("&Enable spell checking in compose editor").build();
     enable_spell.set_value(true);
     spell_sec.add(&enable_spell, 0, SizerFlag::All, 4);
 
-    let autocorrect_cb = CheckBox::builder(panel).with_label("Show suggestions as you type").build();
+    let autocorrect_cb = CheckBox::builder(panel).with_label("Show su&ggestions as you type").build();
     autocorrect_cb.set_value(true);
     spell_sec.add(&autocorrect_cb, 0, SizerFlag::All, 4);
 
@@ -354,7 +354,7 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl) {
     let dl_label = StaticText::builder(panel).with_label("Download folder:").build();
     let dl_field = TextCtrl::builder(panel).build();
     dl_field.set_value(&config.download_folder.to_string_lossy());
-    let dl_browse = Button::builder(panel).with_label("Browse...").build();
+    let dl_browse = Button::builder(panel).with_label("&Browse...").build();
 
     dl_browse.on_click({
         let dl_field_clone = dl_field;

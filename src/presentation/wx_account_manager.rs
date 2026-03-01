@@ -50,12 +50,12 @@ pub fn show_account_manager_dialog(
     sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
     let btns = BoxSizer::builder(Orientation::Horizontal).build();
-    let add = Button::builder(&dlg).with_label("Add Account...").with_id(ID_ADD).build();
-    let edit = Button::builder(&dlg).with_label("Edit...").with_id(ID_EDIT).build();
-    let del = Button::builder(&dlg).with_label("Delete").with_id(ID_DELETE).build();
-    let active = Button::builder(&dlg).with_label("Set Active").with_id(ID_SET_ACTIVE).build();
-    let test = Button::builder(&dlg).with_label("Test Connection").with_id(ID_TEST).build();
-    let close = Button::builder(&dlg).with_label("Close").with_id(ID_OK).build();
+    let add = Button::builder(&dlg).with_label("&Add Account...").with_id(ID_ADD).build();
+    let edit = Button::builder(&dlg).with_label("&Edit...").with_id(ID_EDIT).build();
+    let del = Button::builder(&dlg).with_label("&Delete").with_id(ID_DELETE).build();
+    let active = Button::builder(&dlg).with_label("Set Acti&ve").with_id(ID_SET_ACTIVE).build();
+    let test = Button::builder(&dlg).with_label("&Test Connection").with_id(ID_TEST).build();
+    let close = Button::builder(&dlg).with_label("&Close").with_id(ID_OK).build();
     for b in [&add, &edit, &del, &active, &test] { btns.add(b, 0, SizerFlag::All, 4); }
     btns.add_spacer(16);
     btns.add(&close, 0, SizerFlag::All, 4);
@@ -213,8 +213,8 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
         c
     };
 
-    let name_f = tf("Account Name:", "");
-    let email_f = tf("Email Address:", "");
+    let name_f = tf("Account &Name:", "");
+    let email_f = tf("&Email Address:", "");
 
     // Auth hint — shown below email, tells user what will happen
     let auth_hint = {
@@ -228,19 +228,19 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
     };
 
     section("── IMAP Settings ──");
-    let imap_f = tf("IMAP Server:", "");
-    let imap_port_f = tf("IMAP Port:", "993");
-    let imap_tls = cb("Use TLS", true);
+    let imap_f = tf("&IMAP Server:", "");
+    let imap_port_f = tf("IMAP &Port:", "993");
+    let imap_tls = cb("Use &TLS", true);
 
     section("── SMTP Settings ──");
-    let smtp_f = tf("SMTP Server:", "");
-    let smtp_port_f = tf("SMTP Port:", "465");
-    let smtp_tls = cb("Use TLS", true);
+    let smtp_f = tf("&SMTP Server:", "");
+    let smtp_port_f = tf("SM&TP Port:", "465");
+    let smtp_tls = cb("Use TL&S", true);
 
     section("── Authentication ──");
-    let user_f = tf("Username:", "");
+    let user_f = tf("&Username:", "");
     let pass_f = {
-        let l = StaticText::builder(&dlg).with_label("Password:").build();
+        let l = StaticText::builder(&dlg).with_label("Pass&word:").build();
         let f = TextCtrl::builder(&dlg).with_style(TextCtrlStyle::Password).build();
         fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
         fields.add(&f, 1, SizerFlag::Expand | SizerFlag::All, 4);
@@ -248,8 +248,8 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
     };
 
     section("── Settings ──");
-    let interval_f = tf("Check Interval (min):", "5");
-    let enabled = cb("Enable this account", true);
+    let interval_f = tf("Check &Interval (min):", "5");
+    let enabled = cb("Ena&ble this account", true);
 
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 4);
 

@@ -159,6 +159,12 @@ pub enum Action {
     // Account management
     CheckMail,
     SwitchAccount,
+    OpenAccountManager,
+    OpenContactManager,
+
+    // Focus navigation
+    FocusInbox,
+    FocusToolbar,
 
     // Custom action
     Custom(String),
@@ -205,6 +211,10 @@ impl fmt::Display for Action {
             Action::DeleteFolder => write!(f, "Delete Folder"),
             Action::CheckMail => write!(f, "Check Mail"),
             Action::SwitchAccount => write!(f, "Switch Account"),
+            Action::OpenAccountManager => write!(f, "Open Account Manager"),
+            Action::OpenContactManager => write!(f, "Open Contact Manager"),
+            Action::FocusInbox => write!(f, "Focus Inbox"),
+            Action::FocusToolbar => write!(f, "Focus Toolbar"),
             Action::Custom(name) => write!(f, "{}", name),
         }
     }
@@ -316,6 +326,26 @@ impl ShortcutManager {
         self.register(
             KeyboardShortcut::new(vec![], Key::FunctionKey(9)),
             Action::CheckMail,
+        );
+
+        // Account / Contact managers
+        self.register(
+            KeyboardShortcut::simple(Modifier::Ctrl, Key::Character('a')),
+            Action::OpenAccountManager,
+        );
+        self.register(
+            KeyboardShortcut::simple(Modifier::Ctrl, Key::Character('2')),
+            Action::OpenContactManager,
+        );
+
+        // Focus navigation
+        self.register(
+            KeyboardShortcut::simple(Modifier::Ctrl, Key::Character('1')),
+            Action::FocusInbox,
+        );
+        self.register(
+            KeyboardShortcut::simple(Modifier::Ctrl, Key::Character('\\')),
+            Action::FocusToolbar,
         );
     }
 
