@@ -119,6 +119,9 @@ pub struct WxUIState {
     pub contacts: Vec<ContactItem>,
     pub notes: Vec<NoteItem>,
     pub reminders: Vec<ReminderItem>,
+    /// Which note the editor is currently showing, so a save knows what it is
+    /// writing back to.
+    pub selected_note_id: Option<String>,
 }
 
 impl Default for WxUIState {
@@ -142,6 +145,7 @@ impl Default for WxUIState {
             contacts: Vec::new(),
             notes: Vec::new(),
             reminders: Vec::new(),
+            selected_note_id: None,
         }
     }
 }
@@ -236,6 +240,17 @@ impl WxMailApp {
                 .build();
 
             frame.set_menu_bar(Self::build_menu_bar());
+
+            // Restore the stored mute preference before anything can speak.
+            {
+                let mut mgr = crate::data::config::ConfigManager::default();
+                let muted = mgr
+                    .load()
+                    .map(|()| mgr.app_config().mute_message_reading)
+                    .unwrap_or(false);
+                a11y.set_content_muted(muted);
+                sync_menu_check(&frame, ID_MUTE_CONTENT, muted);
+            }
             if let Some(item) = frame
                 .get_menu_bar()
                 .and_then(|bar| bar.find_item(ID_THREAD_VIEW))
@@ -248,14 +263,14 @@ impl WxMailApp {
                 frame.create_tool_bar(Some(ToolBarStyle::Flat | ToolBarStyle::Text), ID_ANY as Id)
             {
                 set_accessible_name(&toolbar, "Mail actions");
-                // Falls back to a blank 16x16 bitmap when the theme has no
-                // icon for a tool. Both failing means a 16x16 allocation was
-                // refused, which is a dead process rather than a case worth
-                // threading an Option through every add_tool call for.
+                // A missing icon is cosmetic: the tools keep their labels,
+                // which is what a screen reader announces. Falls back through
+                // a blank bitmap to the null bitmap, which cannot fail, so a
+                // themeless system degrades instead of refusing to start.
                 let bmp = |art: ArtId| -> Bitmap {
                     ArtProvider::get_bitmap(art, ArtClient::Toolbar, None)
                         .or_else(|| Bitmap::new(16, 16))
-                        .expect("a 16x16 bitmap allocation cannot fail on a live process")
+                        .unwrap_or_else(Bitmap::null_bitmap)
                 };
                 toolbar.add_tool(
                     ID_CHECK_MAIL,
@@ -890,17 +905,37 @@ impl WxMailApp {
                 let title_input = notes_cp.title_input;
                 let body_input = notes_cp.body_input;
                 let state = state.clone();
+                let note_cache = message_cache.clone();
                 move |event| {
                     let idx = event.get_item_index() as usize;
-                    let note = state.lock().ok().and_then(|s| s.notes.get(idx).cloned());
-                    match note {
-                        Some(n) => {
-                            title_input.set_value(&n.title);
-                            body_input.set_value(&n.body_preview);
+                    let selected = lock_state(&state).notes.get(idx).cloned();
+                    match selected {
+                        Some(item) => {
+                            // The list carries a truncated preview, so the
+                            // editor reads the note back in full. Showing the
+                            // preview here would silently discard the rest of
+                            // the note the moment anyone saved.
+                            let full = note_cache
+                                .as_ref()
+                                .and_then(|cache| cache.get_note(&item.id).ok().flatten());
+                            match full {
+                                Some(note) => {
+                                    title_input.set_value(&note.title);
+                                    body_input.set_value(&note.body);
+                                    lock_state(&state).selected_note_id = Some(note.id);
+                                }
+                                None => {
+                                    title_input.set_value(&item.title);
+                                    body_input.set_value("");
+                                    lock_state(&state).selected_note_id = None;
+                                    tracing::warn!("Note {} could not be read back", item.id);
+                                }
+                            }
                         }
                         None => {
                             title_input.set_value("");
                             body_input.set_value("");
+                            lock_state(&state).selected_note_id = None;
                         }
                     }
                 }
@@ -925,6 +960,66 @@ impl WxMailApp {
                         &text.replace('\n', ", "),
                         crate::presentation::accessibility::announcements::Priority::Low,
                     );
+                }
+            });
+
+            // Notes: write the editor back to the cache
+            notes_cp.btn_save.on_click({
+                let title_input = notes_cp.title_input;
+                let body_input = notes_cp.body_input;
+                let state = state.clone();
+                let a11y = a11y.clone();
+                let save_cache = message_cache.clone();
+                let save_tx = ui_tx.clone();
+                move |_| {
+                    let Some(cache) = save_cache.as_ref() else {
+                        return;
+                    };
+                    let (note_id, account_id) = {
+                        let s = lock_state(&state);
+                        (s.selected_note_id.clone(), s.active_account_id.clone())
+                    };
+                    let (Some(note_id), Some(account_id)) = (note_id, account_id) else {
+                        let _ = a11y.announce(
+                            "Select a note before saving",
+                            crate::presentation::accessibility::announcements::Priority::High,
+                        );
+                        return;
+                    };
+
+                    // Re-read first so fields this editor does not show, such
+                    // as the folder and the pin, survive the write.
+                    let existing = cache.get_note(&note_id).ok().flatten();
+                    let Some(mut note) = existing else {
+                        let _ = a11y.announce(
+                            "That note no longer exists",
+                            crate::presentation::accessibility::announcements::Priority::High,
+                        );
+                        return;
+                    };
+                    note.account_id = account_id;
+                    note.title = title_input.get_value();
+                    note.body = body_input.get_value();
+                    note.updated_at = chrono::Local::now().to_rfc3339();
+
+                    match cache.save_note(&note) {
+                        Ok(()) => {
+                            let _ = a11y.announce(
+                                "Note saved",
+                                crate::presentation::accessibility::announcements::Priority::Normal,
+                            );
+                            // Refresh so the list shows the new title and time.
+                            let account = lock_state(&state).active_account_id.clone();
+                            load_module_data(PimModule::Notes, &save_cache, account, &save_tx);
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to save note {}: {}", note.id, e);
+                            let _ = a11y.announce(
+                                &format!("Could not save the note: {}", e),
+                                crate::presentation::accessibility::announcements::Priority::Urgent,
+                            );
+                        }
+                    }
                 }
             });
 
@@ -1098,6 +1193,7 @@ impl WxMailApp {
                             // Confirm through the interface channel, which mute
                             // never silences, so the toggle is never silent.
                             sync_menu_check(&frame, ID_MUTE_CONTENT, muted);
+                            persist_mute_preference(muted);
                             let _ = a11y.announce(
                                 if muted {
                                     "Message reading muted"
@@ -1775,6 +1871,24 @@ fn load_module_data(
 fn sync_menu_check(frame: &Frame, id: Id, checked: bool) {
     if let Some(menu_bar) = frame.get_menu_bar() {
         menu_bar.check_item(id, checked);
+    }
+}
+
+/// Store the mute preference so it survives a restart.
+///
+/// Someone who works in a shared room should not have to switch mail reading
+/// off again every session. A failure here is logged rather than surfaced: the
+/// toggle itself has already taken effect, so the session is correct even if
+/// the preference does not stick.
+fn persist_mute_preference(muted: bool) {
+    let mut mgr = crate::data::config::ConfigManager::default();
+    if let Err(e) = mgr.load() {
+        tracing::warn!("Mute preference not saved, config unreadable: {}", e);
+        return;
+    }
+    mgr.app_config_mut().mute_message_reading = muted;
+    if let Err(e) = mgr.save() {
+        tracing::warn!("Mute preference not saved: {}", e);
     }
 }
 

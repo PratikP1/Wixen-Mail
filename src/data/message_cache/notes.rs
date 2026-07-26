@@ -172,6 +172,35 @@ impl MessageCache {
         Ok(notes)
     }
 
+    /// Load one note in full, including its body.
+    ///
+    /// The list carries only a short preview so it stays quick to arrow
+    /// through, so the editor has to come back here for the real content.
+    /// Returns `None` when the note no longer exists.
+    pub fn get_note(&self, note_id: &str) -> Result<Option<NoteEntry>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, account_id, folder_id, title, body, format, pinned,
+                        created_at, updated_at
+                 FROM notes WHERE id = ?1",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare note query: {}", e)))?;
+
+        let mut rows = stmt
+            .query_map(rusqlite::params![note_id], Self::map_note_row)
+            .map_err(|e| Error::Other(format!("Failed to query note: {}", e)))?;
+
+        match rows.next() {
+            Some(row) => {
+                Ok(Some(row.map_err(|e| {
+                    Error::Other(format!("Failed to read note row: {}", e))
+                })?))
+            }
+            None => Ok(None),
+        }
+    }
+
     /// Delete a note.
     pub fn delete_note(&self, note_id: &str) -> Result<()> {
         self.conn
@@ -319,5 +348,65 @@ mod tests {
         let results = cache.search_notes("acct-1", "bread").unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].title, "Grocery List");
+    }
+
+    #[test]
+    fn test_get_note_returns_the_full_body() {
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        let body = "line one
+line two
+"
+        .repeat(40);
+        cache
+            .save_note(&NoteEntry {
+                id: "n1".into(),
+                account_id: "acct-1".into(),
+                folder_id: Some(folder.id.clone()),
+                title: "Long note".into(),
+                body: body.clone(),
+                format: "plain".into(),
+                pinned: false,
+                created_at: "2026-01-01".into(),
+                updated_at: "2026-01-01".into(),
+            })
+            .unwrap();
+
+        let loaded = cache.get_note("n1").unwrap().expect("note should exist");
+        // The list preview is truncated on purpose; the editor must not be.
+        assert_eq!(loaded.body, body);
+        assert_eq!(loaded.title, "Long note");
+    }
+
+    #[test]
+    fn test_get_note_returns_none_when_missing() {
+        let cache = test_cache();
+        assert!(cache.get_note("does-not-exist").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_saving_a_note_twice_updates_rather_than_duplicates() {
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        let mut note = NoteEntry {
+            id: "n1".into(),
+            account_id: "acct-1".into(),
+            folder_id: Some(folder.id.clone()),
+            title: "Draft".into(),
+            body: "first".into(),
+            format: "plain".into(),
+            pinned: false,
+            created_at: "2026-01-01".into(),
+            updated_at: "2026-01-01".into(),
+        };
+        cache.save_note(&note).unwrap();
+        note.body = "edited".into();
+        note.title = "Final".into();
+        cache.save_note(&note).unwrap();
+
+        assert_eq!(cache.get_all_notes_for_account("acct-1").unwrap().len(), 1);
+        let loaded = cache.get_note("n1").unwrap().unwrap();
+        assert_eq!(loaded.body, "edited");
+        assert_eq!(loaded.title, "Final");
     }
 }

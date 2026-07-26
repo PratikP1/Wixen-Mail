@@ -15,6 +15,8 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 - **Message delete and read-toggle** now reach the cache. Both actions were already in the context menu with nothing behind them.
 - **The calendar, contacts, reminders, tasks, and notes panels now show your data.** Opening a module reads its records from the local cache and fills the panel. Every one of these panels previously rendered empty in a running build no matter what was stored, because nothing connected the storage to the display.
 - **Default containers are created on first use**, so a new account opens with a calendar, a task list, and a note folder rather than empty sidebars.
+- **Notes can be edited and saved.** Selecting a note loads its full body rather than the truncated list preview, and a Save Note button writes it back. Fields the editor does not show, such as the folder and the pin, are preserved through a save.
+- **Muting message reading is remembered** across restarts, so working in a shared room does not mean switching it off again every session.
 - **Crash log** at `crash.log` under the local app data directory. Panics and startup failures also show a message box.
 - **Accessibility CI**: a non-blocking Axe.Windows UI Automation scan on every pull request. It covers roughly half of WCAG and does not replace NVDA testing.
 - **Announcements are paced.** The queue drops repeats, lets a progress counter supersede its own earlier steps, caps how many announcements can be waiting, and caps how many are spoken per second. Urgent announcements are never held back. Anything dropped is counted and reported rather than vanishing silently.
@@ -45,9 +47,7 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Known limitations
 
-- Notes carry a body preview rather than the full body, so the note editor shows the preview. Editing a note and saving it is not wired up.
 - Threaded view appears in the View menu and is disabled, because threading is not implemented. It is left visible so its absence is discoverable rather than silently missing.
-- Muting message reading does not survive a restart. It is a session setting, not a stored preference.
 - Five accessibility scan findings remain, all inside WebView2's own accessibility tree (`Chrome_WidgetWin_1`, `BrowserRootView`, and three container views). They are not this application's controls and cannot be named or positioned from here.
 
 ## [0.1.0-alpha.9] - 2026-03-05

@@ -34,6 +34,12 @@ pub struct AppConfig {
     /// Default sort order for message list
     #[serde(default = "default_sort_order")]
     pub default_sort_order: String,
+    /// Whether message text is read aloud.
+    ///
+    /// Kept across restarts because someone who works in a shared room needs
+    /// mail to stay quiet without switching it off again every session.
+    #[serde(default)]
+    pub mute_message_reading: bool,
     /// Calendar default view: "agenda", "day", "week", "month"
     #[serde(default = "default_calendar_view")]
     pub calendar_default_view: String,
@@ -72,6 +78,7 @@ impl Default for AppConfig {
             check_updates: true,
             theme: "default".to_string(),
             font_size: 12,
+            mute_message_reading: false,
             enable_notifications: true,
             log_level: "info".to_string(),
             preview_before_send: true,

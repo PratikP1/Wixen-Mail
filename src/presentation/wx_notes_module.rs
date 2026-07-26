@@ -7,6 +7,7 @@ use wxdragon::prelude::*;
 pub struct NotesPanelHandles {
     pub panel: Panel,
     pub btn_new: Button,
+    pub btn_save: Button,
     pub note_list: ListCtrl,
     pub title_input: TextCtrl,
     pub body_input: TextCtrl,
@@ -53,8 +54,16 @@ pub fn build_notes_panel(parent: &Panel) -> NotesPanelHandles {
         .build();
 
     set_accessible_name(&body_input, "Note body");
+
+    // Without this the editor accepts typing and throws it away on the next
+    // selection, which is worse than being read-only.
+    let btn_save = Button::builder(&editor_panel)
+        .with_label("&Save Note")
+        .build();
+
     editor_sizer.add(&title_input, 0, SizerFlag::Expand | SizerFlag::All, 4);
     editor_sizer.add(&body_input, 1, SizerFlag::Expand | SizerFlag::All, 4);
+    editor_sizer.add(&btn_save, 0, SizerFlag::All, 4);
     editor_panel.set_sizer(editor_sizer, true);
 
     sizer.add(&list_panel, 1, SizerFlag::Expand | SizerFlag::All, 2);
@@ -64,6 +73,7 @@ pub fn build_notes_panel(parent: &Panel) -> NotesPanelHandles {
     NotesPanelHandles {
         panel,
         btn_new,
+        btn_save,
         note_list,
         title_input,
         body_input,
