@@ -3,7 +3,7 @@
 //! Main application window using wxdragon (wxWidgets bindings).
 //! Native Windows UI with first-class accessibility support.
 
-use crate::application::mail_controller::MailController;
+use crate::application::mail_controller::{MailController, SendEmailRequest};
 use crate::common::Result;
 use crate::data::account::Account;
 use crate::data::message_cache::MessageCache;
@@ -2387,7 +2387,16 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
 
 /// Flush all queued outbox messages (attempt to send via SMTP).
 fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
-    let account_id = state.lock().ok().and_then(|s| s.active_account_id.clone());
+    // The account travels with the task: sending needs its SMTP settings and
+    // credentials, and the UI state cannot be locked from inside the runtime.
+    let (account_id, account) = {
+        let s = lock_state(state);
+        let id = s.active_account_id.clone();
+        let account = id
+            .as_ref()
+            .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned());
+        (id, account)
+    };
     let tx = tx.clone();
     let cache_dir = dirs::cache_dir().map(|d| d.join("wixen-mail"));
 
@@ -2411,6 +2420,14 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
         };
 
         let aid = account_id.as_deref().unwrap_or("default");
+        let Some(account) = account else {
+            let _ = tx
+                .send(UIUpdate::ErrorOccurred(
+                    "No account is selected, so there is nothing to send from".into(),
+                ))
+                .await;
+            return;
+        };
         let queued = match cache.load_outbox_messages(aid) {
             Ok(msgs) => msgs,
             Err(e) => {
@@ -2439,26 +2456,42 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
         let mut sent = 0usize;
         let mut failed = 0usize;
 
+        let controller = MailController::new();
+
         for msg in &queued {
-            // Attempt SMTP send via MailController
-            // For now, record the attempt and report result through the channel
-            let result_ok = false; // Placeholder: real send would go through MailController
-            if result_ok {
-                let _ = cache.delete_outbox_message(&msg.id);
-                sent += 1;
-            } else {
-                let _ = cache.update_outbox_failure(&msg.id, "SMTP send not yet wired");
-                failed += 1;
+            // A message the account cannot send is a configuration problem, not
+            // a transport failure, and saying which is the difference between a
+            // fixable error and a mystery.
+            let outcome = match SendEmailRequest::from_queued(msg, &account) {
+                Some(request) => controller
+                    .send_email(&request)
+                    .await
+                    .map_err(|e| e.to_string()),
+                None if account.use_oauth => Err(
+                    "This account signs in with OAuth, which sending does not support yet"
+                        .to_string(),
+                ),
+                None => {
+                    Err("Check the account's SMTP server, port, and recipient address".to_string())
+                }
+            };
+
+            match &outcome {
+                Ok(()) => {
+                    let _ = cache.delete_outbox_message(&msg.id);
+                    sent += 1;
+                }
+                Err(reason) => {
+                    let _ = cache.update_outbox_failure(&msg.id, reason);
+                    failed += 1;
+                }
             }
+
             let _ = tx
                 .send(UIUpdate::OutboxSendResult {
                     queue_id: msg.id.clone(),
-                    success: result_ok,
-                    error: if result_ok {
-                        None
-                    } else {
-                        Some("SMTP send pending full wiring".into())
-                    },
+                    success: outcome.is_ok(),
+                    error: outcome.err(),
                 })
                 .await;
         }

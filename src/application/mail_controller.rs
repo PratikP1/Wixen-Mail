@@ -24,6 +24,45 @@ pub struct SendEmailRequest {
     pub body: String,
 }
 
+impl SendEmailRequest {
+    /// Build a send request from a queued message and the account it belongs to.
+    ///
+    /// Returns `None` when the account cannot send: a port that is not a number,
+    /// no SMTP server, or OAuth, which the SMTP layer has no XOAUTH2 support for
+    /// yet. Refusing here is deliberate. Handing a bad request to the transport
+    /// produces a failure the user cannot act on, while a `None` lets the caller
+    /// say which account is misconfigured and why.
+    pub fn from_queued(
+        queued: &crate::data::message_cache::QueuedOutboxMessage,
+        account: &crate::data::account::Account,
+    ) -> Option<Self> {
+        if account.use_oauth || account.smtp_server.trim().is_empty() {
+            return None;
+        }
+        let port: u16 = account.smtp_port.trim().parse().ok()?;
+        let recipients: Vec<String> = queued
+            .to_addr
+            .split([',', ';'])
+            .map(|addr| addr.trim().to_string())
+            .filter(|addr| !addr.is_empty())
+            .collect();
+        if recipients.is_empty() {
+            return None;
+        }
+
+        Some(Self {
+            server: account.smtp_server.clone(),
+            port,
+            username: account.username.clone(),
+            password: account.password.clone(),
+            use_tls: account.smtp_use_tls,
+            to: recipients,
+            subject: queued.subject.clone(),
+            body: queued.body.clone(),
+        })
+    }
+}
+
 /// Mail controller for managing mail operations
 pub struct MailController {
     imap_session: Arc<Mutex<Option<ImapSession>>>,
@@ -377,5 +416,120 @@ mod tests {
         };
         let result = controller.send_email(&req).await;
         assert!(result.is_err()); // expected in tests due placeholder/non-routable SMTP server
+    }
+}
+
+#[cfg(test)]
+mod send_request_tests {
+    use super::*;
+    use crate::data::account::Account;
+    use crate::data::message_cache::QueuedOutboxMessage;
+
+    fn account() -> Account {
+        Account {
+            id: "a1".into(),
+            name: "Work".into(),
+            email: "me@example.com".into(),
+            imap_server: "imap.example.com".into(),
+            imap_port: "993".into(),
+            imap_use_tls: true,
+            smtp_server: "smtp.example.com".into(),
+            smtp_port: "587".into(),
+            smtp_use_tls: true,
+            username: "me@example.com".into(),
+            password: "hunter2".into(),
+            use_oauth: false,
+            oauth_access_token: String::new(),
+            oauth_refresh_token: String::new(),
+            oauth_token_expires_at: None,
+            enabled: true,
+            check_interval_minutes: 5,
+            provider: None,
+            color: String::new(),
+            last_sync: None,
+        }
+    }
+
+    fn queued(to: &str) -> QueuedOutboxMessage {
+        QueuedOutboxMessage {
+            id: "q1".into(),
+            account_id: "a1".into(),
+            to_addr: to.into(),
+            subject: "Quarterly report".into(),
+            body: "Attached.".into(),
+            attempt_count: 0,
+            last_error: None,
+            created_at: "2026-07-26".into(),
+        }
+    }
+
+    #[test]
+    fn test_builds_a_request_from_an_ordinary_account() {
+        let req = SendEmailRequest::from_queued(&queued("you@example.com"), &account())
+            .expect("should build");
+        assert_eq!(req.server, "smtp.example.com");
+        assert_eq!(req.port, 587);
+        assert_eq!(req.to, vec!["you@example.com"]);
+        assert_eq!(req.subject, "Quarterly report");
+        assert!(req.use_tls);
+    }
+
+    #[test]
+    fn test_splits_multiple_recipients() {
+        let req =
+            SendEmailRequest::from_queued(&queued("a@example.com, b@example.com"), &account())
+                .expect("should build");
+        assert_eq!(req.to, vec!["a@example.com", "b@example.com"]);
+    }
+
+    #[test]
+    fn test_accepts_semicolon_separated_recipients() {
+        let req =
+            SendEmailRequest::from_queued(&queued("a@example.com; b@example.com"), &account())
+                .expect("should build");
+        assert_eq!(req.to.len(), 2);
+    }
+
+    #[test]
+    fn test_ignores_empty_recipient_slots() {
+        let req =
+            SendEmailRequest::from_queued(&queued("a@example.com,, ,b@example.com"), &account())
+                .expect("should build");
+        assert_eq!(req.to, vec!["a@example.com", "b@example.com"]);
+    }
+
+    #[test]
+    fn test_refuses_a_message_with_no_recipients() {
+        assert!(SendEmailRequest::from_queued(&queued("  ,  "), &account()).is_none());
+    }
+
+    #[test]
+    fn test_refuses_a_non_numeric_port() {
+        let mut acct = account();
+        acct.smtp_port = "not-a-port".into();
+        assert!(SendEmailRequest::from_queued(&queued("you@example.com"), &acct).is_none());
+    }
+
+    #[test]
+    fn test_refuses_a_port_outside_the_valid_range() {
+        let mut acct = account();
+        acct.smtp_port = "70000".into();
+        assert!(SendEmailRequest::from_queued(&queued("you@example.com"), &acct).is_none());
+    }
+
+    #[test]
+    fn test_refuses_an_account_with_no_smtp_server() {
+        let mut acct = account();
+        acct.smtp_server = "   ".into();
+        assert!(SendEmailRequest::from_queued(&queued("you@example.com"), &acct).is_none());
+    }
+
+    #[test]
+    fn test_refuses_oauth_accounts_until_xoauth2_exists() {
+        // The SMTP layer authenticates with a password. Handing it an access
+        // token would fail at the server with an error the user cannot act on.
+        let mut acct = account();
+        acct.use_oauth = true;
+        assert!(SendEmailRequest::from_queued(&queued("you@example.com"), &acct).is_none());
     }
 }

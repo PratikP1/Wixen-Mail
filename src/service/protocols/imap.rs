@@ -82,7 +82,16 @@ impl ImapIdleHandle {
     }
 }
 
-/// IMAP client (placeholder for full async implementation)
+/// IMAP client. **Not implemented.**
+///
+/// Every method here returns fabricated data and performs no network I/O. It
+/// exists so the layers above it compile and can be developed, not so anything
+/// can read mail.
+///
+/// Nothing in the user interface may be wired to this. Showing these mock
+/// folders and messages in the window would present invented mail as the
+/// user's own, which is worse than showing nothing at all. Wire the UI to it
+/// when it speaks IMAP, and not before.
 ///
 /// Note: This is a placeholder implementation. Full IMAP support will be added
 /// using a mature async IMAP library or custom implementation.

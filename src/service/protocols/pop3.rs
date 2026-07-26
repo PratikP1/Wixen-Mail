@@ -1,5 +1,9 @@
 //! POP3 protocol client
 //!
+//! **Not implemented.** Like the IMAP module, every call here returns
+//! fabricated data and performs no network I/O. The user interface must not be
+//! wired to it: invented mail shown as real mail is worse than an empty window.
+//!
 //! Handles POP3 protocol for receiving email.
 
 use crate::common::Result;
