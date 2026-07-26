@@ -7,7 +7,7 @@ use crate::common::{Error, Result};
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use rand::RngCore;
+use rand::Rng;
 use regex::Regex;
 use std::fs;
 use std::path::PathBuf;
@@ -138,7 +138,7 @@ impl SecurityService {
 
         // Generate and store new key
         let mut key = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut key);
+        rand::rng().fill_bytes(&mut key);
         let encoded = STANDARD.encode(key);
         entry.set_password(&encoded).map_err(|e| {
             Error::Security(format!("Failed storing key in credential store: {}", e))
@@ -162,7 +162,7 @@ impl SecurityService {
         }
 
         let mut key = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut key);
+        rand::rng().fill_bytes(&mut key);
         let encoded = STANDARD.encode(key);
         fs::write(&path, &encoded)
             .map_err(|e| Error::Security(format!("Failed writing security key: {}", e)))?;
@@ -191,7 +191,7 @@ impl SecurityService {
         let cipher = Aes256Gcm::new_from_slice(&self.key)
             .map_err(|e| Error::Security(format!("Failed to initialize cipher: {}", e)))?;
         let mut nonce_bytes = [0u8; AES_NONCE_LEN];
-        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        rand::rng().fill_bytes(&mut nonce_bytes);
         // aes-gcm 0.11 deprecated Array::from_slice in favour of TryFrom,
         // which surfaces a wrong-length nonce as an error rather than a panic.
         let nonce = Nonce::try_from(&nonce_bytes[..])
