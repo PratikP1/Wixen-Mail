@@ -5,6 +5,10 @@
 use ammonia::clean;
 use std::sync::OnceLock;
 
+// The patterns below are literals compiled once. An `expect` here can only fire
+// if one of them is edited into something invalid, which every test in this
+// module would catch on the first run.
+
 const SAFE_URL_SCHEMES: [&str; 3] = ["http://", "https://", "mailto:"];
 
 fn html_tag_re() -> &'static regex::Regex {
@@ -175,7 +179,7 @@ impl HtmlRenderer {
         let link_summary = if !links.is_empty() {
             let mut summary = String::from("\n\n--- Links ---\n");
             for (i, link) in links.iter().enumerate() {
-                summary.push_str(&format!("  {}. {} — {}\n", i + 1, link.text, link.url));
+                summary.push_str(&format!("  {}. {}: {}\n", i + 1, link.text, link.url));
             }
             summary
         } else {

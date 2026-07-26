@@ -42,6 +42,11 @@ impl MailController {
     }
 
     /// Lock and return the IMAP session guard, or error if not connected.
+    ///
+    /// Callers unwrap the Option this yields. That is sound because the guard
+    /// still holds the lock, so nothing can clear the session between this
+    /// check and their use of it. Keep the check and the lock together if this
+    /// is ever refactored.
     async fn require_imap(&self) -> Result<MutexGuard<'_, Option<ImapSession>>> {
         let guard = self.imap_session.lock().await;
         if guard.is_none() {

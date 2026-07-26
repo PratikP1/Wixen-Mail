@@ -43,7 +43,7 @@ pub fn build_calendar_panel(parent: &Panel) -> CalendarPanelHandles {
 
     // Date heading
     let date_label = StaticText::builder(&panel)
-        .with_label("Calendar — Select an account to view events")
+        .with_label("Calendar. Select an account to view events")
         .build();
 
     // Event list

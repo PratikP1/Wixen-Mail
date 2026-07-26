@@ -401,7 +401,7 @@ pub fn wait_for_redirect_code(expected_state: Option<&str>, timeout_secs: u64) -
                     );
                     let _ = request.respond(response);
                     return Err(Error::Authentication(
-                        "CSRF state mismatch — possible interception".to_string(),
+                        "CSRF state mismatch, the response may have been intercepted".to_string(),
                     ));
                 }
             }

@@ -153,17 +153,20 @@ pub fn show_account_manager_dialog(
                         match run_oauth_flow(&mut a) {
                             OAuthFlowResult::Authorized => {
                                 status.set_label(&format!(
-                                    "Account added — authorized for {}",
+                                    "Account added, authorized for {}",
                                     a.email
                                 ));
                             }
                             OAuthFlowResult::NoCreds => {
                                 status.set_label(
-                                    "Account added — OAuth credentials not configured. See ~/.wixen-mail/oauth.toml"
+                                    "Account added. OAuth credentials are not configured; see ~/.wixen-mail/oauth.toml"
                                 );
                             }
                             OAuthFlowResult::Failed(msg) => {
-                                status.set_label(&format!("Account added — auth error: {}", msg));
+                                status.set_label(&format!(
+                                    "Account added, but authorization failed: {}",
+                                    msg
+                                ));
                             }
                         }
                     } else {
@@ -182,16 +185,16 @@ pub fn show_account_manager_dialog(
                         if u.use_oauth && u.oauth_access_token.is_empty() {
                             match run_oauth_flow(&mut u) {
                                 OAuthFlowResult::Authorized => {
-                                    status.set_label("Account updated — authorized");
+                                    status.set_label("Account updated and authorized");
                                 }
                                 OAuthFlowResult::NoCreds => {
                                     status.set_label(
-                                        "Account updated — OAuth credentials not configured",
+                                        "Account updated. OAuth credentials are not configured",
                                     );
                                 }
                                 OAuthFlowResult::Failed(msg) => {
                                     status.set_label(&format!(
-                                        "Account updated — auth error: {}",
+                                        "Account updated, but authorization failed: {}",
                                         msg
                                     ));
                                 }
@@ -379,7 +382,7 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
         enabled.set_value(a.enabled);
         // Show hint for existing accounts
         if a.use_oauth {
-            auth_hint.set_label("(Gmail/Microsoft — browser authorization on save)");
+            auth_hint.set_label("(Gmail and Microsoft authorize in the browser on save)");
         }
     }
 
@@ -399,14 +402,14 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
                 // Update the auth hint
                 let d = domain.to_lowercase();
                 if d == "gmail.com" || d == "googlemail.com" {
-                    auth_hint.set_label("Google account — browser sign-in will open automatically");
+                    auth_hint.set_label("Google account. Browser sign-in will open automatically");
                 } else if d == "outlook.com"
                     || d == "hotmail.com"
                     || d == "live.com"
                     || d == "msn.com"
                 {
                     auth_hint
-                        .set_label("Microsoft account — browser sign-in will open automatically");
+                        .set_label("Microsoft account. Browser sign-in will open automatically");
                 } else {
                     auth_hint.set_label("");
                 }

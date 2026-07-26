@@ -242,10 +242,14 @@ impl WxMailApp {
                 frame.create_tool_bar(Some(ToolBarStyle::Flat | ToolBarStyle::Text), ID_ANY as Id)
             {
                 set_accessible_name(&toolbar, "Mail actions");
+                // Falls back to a blank 16x16 bitmap when the theme has no
+                // icon for a tool. Both failing means a 16x16 allocation was
+                // refused, which is a dead process rather than a case worth
+                // threading an Option through every add_tool call for.
                 let bmp = |art: ArtId| -> Bitmap {
                     ArtProvider::get_bitmap(art, ArtClient::Toolbar, None)
                         .or_else(|| Bitmap::new(16, 16))
-                        .expect("toolbar bitmap")
+                        .expect("a 16x16 bitmap allocation cannot fail on a live process")
                 };
                 toolbar.add_tool(
                     ID_CHECK_MAIL,
@@ -364,10 +368,13 @@ impl WxMailApp {
             let folder_tree = TreeCtrl::builder(&mail_sidebar).build();
             set_accessible_name(&folder_tree, "Mail folders");
             folder_tree.set_background_color(Colour::rgb(245, 245, 250));
-            let root_id = folder_tree
-                .add_root("Mail Folders", None, None)
-                .expect("tree root");
-            folder_tree.expand(&root_id);
+            // A tree without its root is a degraded folder pane, not a
+            // reason to refuse to start.
+            if let Some(root_id) = folder_tree.add_root("Mail Folders", None, None) {
+                folder_tree.expand(&root_id);
+            } else {
+                tracing::error!("Folder tree root could not be created");
+            }
             mail_sb_sizer.add(&folder_tree, 1, SizerFlag::Expand | SizerFlag::All, 0);
             mail_sidebar.set_sizer(mail_sb_sizer, true);
 
@@ -713,7 +720,7 @@ impl WxMailApp {
                 let label = cal_cp.date_label;
                 move |_| {
                     let today = chrono::Local::now().format("%A, %B %e, %Y").to_string();
-                    label.set_label(&format!("Today — {}", today));
+                    label.set_label(&format!("Today, {}", today));
                     tracing::info!("Calendar: jumped to today");
                 }
             });
@@ -1293,7 +1300,7 @@ impl WxMailApp {
             // ── Intercept close event for diagnostics ─────────────────
             frame.on_close({
                 move |_event| {
-                    tracing::info!("Frame on_close fired — window is closing");
+                    tracing::info!("Frame on_close fired, window is closing");
                     frame.destroy();
                 }
             });
@@ -1310,7 +1317,7 @@ impl WxMailApp {
                     let n = tick_count.get() + 1;
                     tick_count.set(n);
                     if n == 1 {
-                        tracing::info!("First timer tick — event loop is running");
+                        tracing::info!("First timer tick, event loop is running");
                     }
                     while let Ok(update) = ui_rx.try_recv() {
                         handle_update(
@@ -1346,7 +1353,7 @@ impl WxMailApp {
 
             tracing::info!("UI setup complete, showing main frame");
             frame.show(true);
-            tracing::info!("Main frame shown — entering event loop");
+            tracing::info!("Main frame shown, entering event loop");
         });
 
         // wxdragon::main blocks until the window is closed. If it returns

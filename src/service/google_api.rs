@@ -274,10 +274,16 @@ impl Default for GoogleApiClient {
 impl GoogleApiClient {
     pub fn new() -> Self {
         Self {
+            // Building a client can fail if the TLS backend will not
+            // initialise. A default client still works, just without the
+            // timeout, which beats panicking inside a constructor.
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
                 .build()
-                .expect("reqwest client"),
+                .unwrap_or_else(|e| {
+                    tracing::warn!("Google client kept default timeouts: {}", e);
+                    reqwest::Client::new()
+                }),
         }
     }
 
