@@ -144,15 +144,20 @@ pub fn init_logging(config: LoggerConfig) -> Result<WorkerGuard, Box<dyn std::er
 
 /// Mask email address for privacy
 pub fn mask_email(email: &str) -> String {
-    if let Some(at_pos) = email.find('@') {
-        let (local, domain) = email.split_at(at_pos);
-        if local.len() > 2 {
-            format!("{}***{}", &local[..2], domain)
-        } else {
-            format!("***{}", domain)
-        }
+    let Some(at_pos) = email.find('@') else {
+        return "***@***".to_string();
+    };
+    let (local, domain) = email.split_at(at_pos);
+
+    // Counted in characters, not bytes. RFC 6531 allows a non-ASCII local
+    // part, and "aé" is three bytes, so taking two bytes would cut the é in
+    // half and panic. This runs on every logged send.
+    let mut chars = local.chars();
+    let prefix: String = chars.by_ref().take(2).collect();
+    if chars.next().is_some() {
+        format!("{}***{}", prefix, domain)
     } else {
-        "***@***".to_string()
+        format!("***{}", domain)
     }
 }
 
@@ -192,6 +197,38 @@ mod tests {
         assert_eq!(mask_email("user@example.com"), "us***@example.com");
         assert_eq!(mask_email("a@example.com"), "***@example.com");
         assert_eq!(mask_email("test"), "***@***");
+    }
+
+    #[test]
+    fn test_mask_email_handles_internationalised_addresses() {
+        // RFC 6531 allows non-ASCII local parts, and "aé" is three bytes, so
+        // taking the first two bytes lands inside the é. Masking runs on every
+        // logged send, so this crashed on a legitimate address.
+        assert_eq!(mask_email("a\u{e9}b@example.com"), "a\u{e9}***@example.com");
+        assert_eq!(
+            mask_email("\u{4f60}\u{597d}@example.com"),
+            "***@example.com"
+        );
+        assert_eq!(
+            mask_email("\u{4f60}\u{597d}\u{4e16}@example.com"),
+            "\u{4f60}\u{597d}***@example.com"
+        );
+    }
+
+    #[test]
+    fn test_mask_email_never_panics_on_odd_input() {
+        for address in [
+            "",
+            "@",
+            "@example.com",
+            "user@",
+            "\u{e9}@\u{e9}",
+            "\u{feff}@x",
+            "a\u{0}b@example.com",
+            "@@@",
+        ] {
+            let _ = mask_email(address);
+        }
     }
 
     #[test]

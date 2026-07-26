@@ -15,10 +15,8 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 - **Message delete and read-toggle** now reach the cache. Both actions were already in the context menu with nothing behind them.
 - **Crash log** at `crash.log` under the local app data directory. Panics and startup failures also show a message box.
 - **Accessibility CI**: a non-blocking Axe.Windows UI Automation scan on every pull request. It covers roughly half of WCAG and does not replace NVDA testing.
-
 - **Announcements are paced.** The queue drops repeats, lets a progress counter supersede its own earlier steps, caps how many announcements can be waiting, and caps how many are spoken per second. Urgent announcements are never held back. Anything dropped is counted and reported rather than vanishing silently.
 - **Mute for message reading** (`Ctrl+Shift+M`, also under View). Stops message text being read aloud without silencing status and error announcements, so muting before a screen share does not cost you your error messages.
-
 
 ### Security
 
@@ -33,7 +31,7 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 - Reminders group in the sidebar by urgency: overdue, today, upcoming, no due date, and completed.
 - The contacts detail pane lists only fields that have a value, so a screen reader no longer reads out labels with nothing after them.
 - Log files are written with a `.log` suffix. Daily rotation had been producing extensionless names that Windows would not open on a double-click.
-- Version renumbered to `0.1.0-alpha.9` to match this changelog. The `0.1.1-beta.9` tag had jumped ahead of a codebase that is still pre-beta.
+- Version is `0.1.0-alpha.10`, continuing the alpha line. Two beta tags were cut by accident and have been withdrawn; the codebase is still pre-beta.
 
 ### Fixed
 
