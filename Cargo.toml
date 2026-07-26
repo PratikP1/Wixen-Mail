@@ -19,7 +19,7 @@ toml = "1.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"
-dirs = "5.0"
+dirs = "6.0"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -32,13 +32,13 @@ mail-parser = "0.9"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 
 # UI Framework — wxdragon (wxWidgets bindings)
-wxdragon = { version = "=0.9.14", features = ["aui", "richtext", "webview"] }
+wxdragon = { version = "=0.9.17", features = ["aui", "richtext", "webview"] }
 
 # Database for persistent caching
 rusqlite = { version = "0.32", features = ["bundled"] }
 
 # Encoding / security
-base64 = "0.22"
+base64 = "0.23"
 ammonia = "4.0"
 regex = "1.11"
 html-escape = "0.2"
