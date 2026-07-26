@@ -577,7 +577,11 @@ fn show_send_preview(
         if let Some(url) = event.get_string() {
             if url != "about:blank" && !url.starts_with("about:") {
                 event.event.event.veto();
-                let _ = open::that(&url);
+                if let Some(safe) = crate::presentation::HtmlRenderer::safe_external_url(&url) {
+                    let _ = open::that(&safe);
+                } else {
+                    tracing::warn!("Refused to open unsafe URL from message: {}", url);
+                }
             }
         }
     });

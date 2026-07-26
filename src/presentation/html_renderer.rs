@@ -138,7 +138,7 @@ impl HtmlRenderer {
                     .unwrap_or("");
                 let text = caps.get(3).map(|m| m.as_str()).unwrap_or("");
                 let clean_text = self.html_to_plain_text(text);
-                if let Some(safe_url) = Self::sanitize_url(href) {
+                if let Some(safe_url) = Self::safe_external_url(href) {
                     if clean_text.trim() == safe_url.trim() {
                         clean_text // Don't duplicate if link text is already the URL
                     } else {
@@ -233,7 +233,7 @@ impl HtmlRenderer {
 
         for cap in link_re().captures_iter(html) {
             if let (Some(href), Some(text)) = (cap.get(1).or_else(|| cap.get(2)), cap.get(3)) {
-                if let Some(safe_url) = Self::sanitize_url(href.as_str()) {
+                if let Some(safe_url) = Self::safe_external_url(href.as_str()) {
                     links.push(LinkInfo {
                         url: safe_url,
                         text: self.html_to_plain_text(text.as_str()),
@@ -284,8 +284,18 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
         )
     }
 
-    /// Convert supported URL schemes to safe navigable values.
-    fn sanitize_url(url: &str) -> Option<String> {
+    /// The only URLs this application will hand to the operating system.
+    ///
+    /// Returns the URL when it is safe to open externally, `None` otherwise.
+    /// Everything a message body offers has to pass through here first.
+    ///
+    /// Opening a URL calls the platform's shell handler, which on Windows will
+    /// launch executables, reach UNC paths across the network, and invoke any
+    /// protocol handler that happens to be registered on that machine. None of
+    /// that is a decision the sender of an email gets to make, so this allows a
+    /// known set of schemes and refuses everything else rather than trying to
+    /// enumerate what is dangerous.
+    pub fn safe_external_url(url: &str) -> Option<String> {
         let trimmed = url.trim();
         let lower = trimmed.to_ascii_lowercase();
         if trimmed.chars().any(|c| c.is_control()) {
@@ -731,6 +741,126 @@ mod tests {
                     seed,
                     link.url
                 );
+            }
+        }
+    }
+
+    // ── External URL policy ─────────────────────────────────────────────
+    //
+    // Clicking a link in a message hands the URL to the operating system's
+    // shell handler. On Windows that will launch executables, open UNC paths
+    // across the network, and invoke any registered protocol handler. The
+    // sender of an email must not be able to reach any of that.
+
+    #[test]
+    fn test_safe_external_url_allows_ordinary_web_links() {
+        for url in [
+            "https://example.com/report",
+            "http://example.com",
+            "mailto:ada@example.com",
+        ] {
+            assert!(
+                HtmlRenderer::safe_external_url(url).is_some(),
+                "{} should be openable",
+                url
+            );
+        }
+    }
+
+    #[test]
+    fn test_safe_external_url_refuses_local_files() {
+        for url in [
+            "file:///C:/Windows/System32/calc.exe",
+            "file://localhost/etc/passwd",
+            "FILE:///C:/Windows/System32/calc.exe",
+        ] {
+            assert!(
+                HtmlRenderer::safe_external_url(url).is_none(),
+                "{} must never reach the shell",
+                url
+            );
+        }
+    }
+
+    #[test]
+    fn test_safe_external_url_refuses_unc_and_bare_paths() {
+        for url in [
+            r"\\evil.example\share\payload.exe",
+            r"C:\Windows\System32\calc.exe",
+            "//evil.example/share/payload.exe",
+        ] {
+            assert!(
+                HtmlRenderer::safe_external_url(url).is_none(),
+                "{} must never reach the shell",
+                url
+            );
+        }
+    }
+
+    #[test]
+    fn test_safe_external_url_refuses_script_and_data_schemes() {
+        for url in [
+            "javascript:alert(1)",
+            "JaVaScRiPt:alert(1)",
+            "vbscript:msgbox(1)",
+            "data:text/html;base64,PHNjcmlwdD4=",
+        ] {
+            assert!(
+                HtmlRenderer::safe_external_url(url).is_none(),
+                "{} must never reach the shell",
+                url
+            );
+        }
+    }
+
+    #[test]
+    fn test_safe_external_url_refuses_other_registered_handlers() {
+        // Anything the platform happens to have registered is an attack
+        // surface we did not choose. Allow a known set, refuse the rest.
+        for url in [
+            "ms-msdt:/id PCWDiagnostic",
+            "search-ms:query=x",
+            "shell:startup",
+            "vscode://file/C:/x",
+            "smb://evil.example/share",
+        ] {
+            assert!(
+                HtmlRenderer::safe_external_url(url).is_none(),
+                "{} must never reach the shell",
+                url
+            );
+        }
+    }
+
+    #[test]
+    fn test_safe_external_url_refuses_control_characters() {
+        // A newline can split a command line once the value is passed on.
+        assert!(HtmlRenderer::safe_external_url("https://example.com\n/x").is_none());
+        assert!(HtmlRenderer::safe_external_url("https://example.com\u{0}").is_none());
+    }
+
+    #[test]
+    fn test_safe_external_url_refuses_userinfo_phishing() {
+        // "https://apple.com@evil.example" reads as Apple and goes to evil.
+        assert!(HtmlRenderer::safe_external_url("https://apple.com@evil.example").is_none());
+    }
+
+    #[test]
+    fn test_fuzz_no_fuzzed_body_yields_an_openable_dangerous_url() {
+        for seed in 0..4000u64 {
+            let body = fuzz_body(seed);
+            for link in HtmlRenderer::new().extract_link_texts(&body) {
+                if let Some(openable) = HtmlRenderer::safe_external_url(&link.url) {
+                    let lower = openable.to_ascii_lowercase();
+                    assert!(
+                        lower.starts_with("http://")
+                            || lower.starts_with("https://")
+                            || lower.starts_with("mailto:"),
+                        "seed {} produced openable {:?}",
+                        seed,
+                        openable
+                    );
+                }
             }
         }
     }

@@ -460,7 +460,13 @@ impl WxMailApp {
                     if let Some(url) = event.get_string() {
                         if url != "about:blank" && !url.starts_with("about:") {
                             event.event.event.veto();
-                            let _ = open::that(&url);
+                            // The sender of a message does not get to choose
+                            // what this machine opens.
+                            if let Some(safe) = HtmlRenderer::safe_external_url(&url) {
+                                let _ = open::that(&safe);
+                            } else {
+                                tracing::warn!("Refused to open unsafe URL from message: {}", url);
+                            }
                         }
                     }
                 });
@@ -469,7 +475,11 @@ impl WxMailApp {
                 preview.on_new_window(|event: WebViewEventData| {
                     if let Some(url) = event.get_string() {
                         event.event.event.veto();
-                        let _ = open::that(&url);
+                        if let Some(safe) = HtmlRenderer::safe_external_url(&url) {
+                            let _ = open::that(&safe);
+                        } else {
+                            tracing::warn!("Refused to open unsafe URL from message: {}", url);
+                        }
                     }
                 });
 
@@ -492,7 +502,19 @@ impl WxMailApp {
                     let state = state.clone();
                     move |event: WebViewEventData| {
                         if let Some(json) = event.get_string() {
-                            let href = extract_json_string(&json, "href");
+                            // serde_json handles the escaping that a hand
+                            // rolled scan does not, and the href is a value the
+                            // sender controls, so it is validated before it is
+                            // stored for the menu handlers to act on.
+                            let href = serde_json::from_str::<serde_json::Value>(&json)
+                                .ok()
+                                .and_then(|value| {
+                                    value
+                                        .get("href")
+                                        .and_then(|h| h.as_str())
+                                        .map(str::to_string)
+                                })
+                                .and_then(|href| HtmlRenderer::safe_external_url(&href));
                             let has_link = href.is_some();
 
                             let mut menu = Menu::builder()
@@ -1102,7 +1124,11 @@ impl WxMailApp {
                         _ if id == ID_CTX_SAVE_LINK => {
                             if let Ok(s) = state.lock() {
                                 if let Some(ref href) = s.context_link_href {
-                                    let _ = open::that(href);
+                                    if let Some(safe) = HtmlRenderer::safe_external_url(href) {
+                                        let _ = open::that(&safe);
+                                    } else {
+                                        tracing::warn!("Refused to open unsafe link: {}", href);
+                                    }
                                 }
                             }
                         }
@@ -2418,16 +2444,6 @@ fn sort_messages(messages: &mut [MessageItem], order: MailSortOption) {
         }
         MailSortOption::UnreadFirst => messages.sort_by_key(|a| a.read),
     }
-}
-
-/// Extract a string value from a simple JSON object by key name.
-/// Avoids pulling in a full JSON parser for this single use case.
-fn extract_json_string(json: &str, key: &str) -> Option<String> {
-    let needle = format!("\"{}\":\"", key);
-    let start = json.find(&needle)? + needle.len();
-    let rest = &json[start..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
 }
 
 // ── Standalone Dialogs ──────────────────────────────────────────────────────
