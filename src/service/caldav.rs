@@ -402,13 +402,19 @@ fn extract_xml_value(xml: &str, tag: &str) -> Option<String> {
 fn extract_ical_property(ical: &str, property: &str) -> Option<String> {
     for line in ical.lines() {
         let line = line.trim();
-        // Handle properties with parameters (e.g., DTSTART;VALUE=DATE:20260305)
-        if line.starts_with(property) {
-            if let Some(colon_pos) = line.find(':') {
-                let value = line[colon_pos + 1..].trim().to_string();
-                if !value.is_empty() {
-                    return Some(value);
-                }
+        let Some(rest) = line.strip_prefix(property) else {
+            continue;
+        };
+        // A property name is followed by ':' or by ';' introducing parameters,
+        // as in DTSTART;VALUE=DATE:20260305. Without this check a request for
+        // SUMMARY is also satisfied by a crafted SUMMARYX line.
+        if !rest.starts_with(':') && !rest.starts_with(';') {
+            continue;
+        }
+        if let Some(colon) = rest.find(':') {
+            let value = rest[colon + 1..].trim();
+            if !value.is_empty() {
+                return Some(value.to_string());
             }
         }
     }
@@ -421,40 +427,37 @@ fn normalize_ical_datetime(dt: &str) -> String {
     if dt.contains('-') && dt.contains(':') {
         return dt.to_string();
     }
+    // The formats below are fixed-width ASCII, and the offsets are byte
+    // offsets. Confirm the shape before slicing: a feed that sent a multibyte
+    // character across one of these boundaries used to panic the parser, and
+    // the value comes off the network.
+    let bytes = dt.as_bytes();
+    let all_digits = |slice: &[u8]| !slice.is_empty() && slice.iter().all(u8::is_ascii_digit);
+
     // YYYYMMDD → YYYY-MM-DD
-    if dt.len() == 8 {
+    if bytes.len() == 8 && all_digits(bytes) {
         return format!("{}-{}-{}", &dt[0..4], &dt[4..6], &dt[6..8]);
     }
-    // YYYYMMDDTHHmmSS or YYYYMMDDTHHmmSSZ
-    if dt.len() >= 15 && dt.contains('T') {
-        let date_part = &dt[0..8];
-        let time_part = &dt[9..];
-        let formatted_date = format!(
-            "{}-{}-{}",
-            &date_part[0..4],
-            &date_part[4..6],
-            &date_part[6..8]
-        );
-        let has_z = time_part.ends_with('Z');
-        let time_digits = if has_z {
-            &time_part[..time_part.len() - 1]
+
+    // YYYYMMDDTHHmmSS, optionally with a trailing Z
+    if bytes.len() >= 15 && bytes[8] == b'T' && all_digits(&bytes[..8]) {
+        let has_z = bytes[bytes.len() - 1] == b'Z';
+        let time = if has_z {
+            &bytes[9..bytes.len() - 1]
         } else {
-            time_part
+            &bytes[9..]
         };
-        if time_digits.len() >= 6 {
-            let formatted_time = format!(
-                "{}:{}:{}",
-                &time_digits[0..2],
-                &time_digits[2..4],
-                &time_digits[4..6]
-            );
+        if time.len() >= 6 && all_digits(&time[..6]) {
+            let date = format!("{}-{}-{}", &dt[0..4], &dt[4..6], &dt[6..8]);
+            let clock = format!("{}:{}:{}", &dt[9..11], &dt[11..13], &dt[13..15]);
             return if has_z {
-                format!("{}T{}Z", formatted_date, formatted_time)
+                format!("{}T{}Z", date, clock)
             } else {
-                format!("{}T{}", formatted_date, formatted_time)
+                format!("{}T{}", date, clock)
             };
         }
     }
+
     dt.to_string()
 }
 
@@ -599,5 +602,149 @@ mod tests {
             Some("My Calendar".to_string())
         );
         assert_eq!(extract_xml_value(xml, "d:missing"), None);
+    }
+
+    // ── Hostile calendar data ───────────────────────────────────────────
+    //
+    // An .ics feed is fetched over the network from a URL the user subscribed
+    // to once. Everything in it is attacker controlled if that server is.
+
+    #[test]
+    fn test_normalize_datetime_survives_multibyte_input() {
+        // "abc€de" is exactly 8 bytes and 6 characters, so a byte slice at
+        // index 4 lands in the middle of the euro sign.
+        assert_eq!(normalize_ical_datetime("abc\u{20ac}de"), "abc\u{20ac}de");
+    }
+
+    #[test]
+    fn test_normalize_datetime_survives_multibyte_in_the_long_form() {
+        // 15+ bytes containing T, with a multibyte character straddling the
+        // date/time split.
+        let hostile = format!("abcdefg\u{20ac}T{}", "1".repeat(8));
+        assert_eq!(normalize_ical_datetime(&hostile), hostile);
+    }
+
+    #[test]
+    fn test_normalize_datetime_handles_ordinary_values() {
+        assert_eq!(normalize_ical_datetime("20260101"), "2026-01-01");
+        assert_eq!(
+            normalize_ical_datetime("20260101T143000Z"),
+            "2026-01-01T14:30:00Z"
+        );
+        assert_eq!(
+            normalize_ical_datetime("20260101T143000"),
+            "2026-01-01T14:30:00"
+        );
+        assert_eq!(
+            normalize_ical_datetime("2026-01-01T14:30:00Z"),
+            "2026-01-01T14:30:00Z"
+        );
+    }
+
+    #[test]
+    fn test_normalize_datetime_leaves_nondigits_alone() {
+        // Eight characters that are not a date must not be reformatted into
+        // something that looks like one.
+        assert_eq!(normalize_ical_datetime("notadate"), "notadate");
+    }
+
+    #[test]
+    fn test_property_lookup_requires_a_real_property_name() {
+        // "SUMMARY" must not be satisfied by "SUMMARYX", or a crafted feed can
+        // feed values into fields that were never asked for.
+        let ical = "BEGIN:VEVENT\r\nSUMMARYX:injected\r\nSUMMARY:real subject\r\nEND:VEVENT";
+        assert_eq!(
+            extract_ical_property(ical, "SUMMARY").as_deref(),
+            Some("real subject")
+        );
+    }
+
+    #[test]
+    fn test_property_lookup_accepts_parameters() {
+        let ical = "BEGIN:VEVENT\r\nDTSTART;VALUE=DATE:20260101\r\nEND:VEVENT";
+        assert_eq!(
+            extract_ical_property(ical, "DTSTART").as_deref(),
+            Some("20260101")
+        );
+    }
+
+    #[test]
+    fn test_property_lookup_returns_none_when_absent() {
+        assert!(extract_ical_property("BEGIN:VEVENT\r\nEND:VEVENT", "SUMMARY").is_none());
+    }
+
+    /// Deterministic generator so a failure is reproducible from its seed.
+    struct Lcg(u64);
+
+    impl Lcg {
+        fn next(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            self.0
+        }
+
+        fn pick<'a, T>(&mut self, items: &'a [T]) -> &'a T {
+            &items[(self.next() % items.len() as u64) as usize]
+        }
+    }
+
+    fn fuzz_ical(seed: u64) -> String {
+        let mut rng = Lcg(seed);
+        let pieces = [
+            "BEGIN:VCALENDAR",
+            "BEGIN:VEVENT",
+            "END:VEVENT",
+            "END:VCALENDAR",
+            "UID:",
+            "SUMMARY:",
+            "SUMMARYX:",
+            "DTSTART;VALUE=DATE:",
+            "DTSTART:",
+            "DTEND:",
+            "STATUS:",
+            "LOCATION:",
+            "DESCRIPTION:",
+            // Values chosen to straddle char boundaries at the byte offsets
+            // the parser slices at.
+            "abc\u{20ac}de",
+            "abcdefg\u{20ac}T11111111",
+            "\u{20ac}\u{20ac}\u{20ac}\u{20ac}",
+            "20260101",
+            "20260101T143000Z",
+            "\r\n",
+            "\n",
+            ":",
+            ";",
+            "\0",
+            "\u{feff}",
+            "",
+        ];
+        let mut out = String::new();
+        for _ in 0..(rng.next() % 40 + 1) {
+            out.push_str(rng.pick(&pieces));
+        }
+        out
+    }
+
+    #[test]
+    fn test_fuzz_ical_parsing_never_panics() {
+        for seed in 0..5000u64 {
+            let data = fuzz_ical(seed);
+            let _ = parse_ical_vevent(&data, "https://example.com/c/1.ics", None);
+            let _ = extract_ical_property(&data, "SUMMARY");
+            let _ = normalize_ical_datetime(&data);
+        }
+    }
+
+    #[test]
+    fn test_fuzz_xml_parsing_never_panics() {
+        for seed in 0..5000u64 {
+            let data = fuzz_ical(seed);
+            let _ = parse_propfind_calendars(&data, "https://example.com/dav/");
+            let _ = parse_report_events(&data, "https://example.com/dav/c/");
+            let _ = extract_xml_value(&data, "d:href");
+        }
     }
 }
