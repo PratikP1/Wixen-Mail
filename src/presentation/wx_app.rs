@@ -240,7 +240,7 @@ impl WxMailApp {
             let toolbar_handle = if let Some(toolbar) =
                 frame.create_tool_bar(Some(ToolBarStyle::Flat | ToolBarStyle::Text), ID_ANY as Id)
             {
-                set_accessible_name(&toolbar, "Main toolbar");
+                set_accessible_name(&toolbar, "Mail actions");
                 let bmp = |art: ArtId| -> Bitmap {
                     ArtProvider::get_bitmap(art, ArtClient::Toolbar, None)
                         .or_else(|| Bitmap::new(16, 16))
