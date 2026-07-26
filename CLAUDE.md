@@ -97,8 +97,14 @@ Every commit builds, passes tests, and passes lint. These are the same four chec
 clippy is enforced with `-D warnings`, so a warning is a build failure:
 
 ```bash
-cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test --all-targets && cargo build --release
+bash scripts/check.sh
 ```
+
+Use the script rather than running the four commands by hand. Cargo shares build
+fingerprints between `check`, `build`, `test`, and `clippy`, so a clippy run that
+follows a build can be treated as fresh and report success without linting
+anything. That has already put a clippy failure on `main` after a local run
+reported clean. The script touches `src/lib.rs` first to force the work.
 
 Never silence a lint with `#[allow(...)]` to get a commit through. Fix the code, or if the lint is
 genuinely wrong for this case, add the allow with a comment saying why.

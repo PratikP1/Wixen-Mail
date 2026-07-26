@@ -426,6 +426,164 @@ impl std::fmt::Display for ConnectionStatus {
     }
 }
 
+// ── Cache entries to display items ───────────────────────────────────────────
+//
+// The panels are fed from the local cache, so every stored record needs a
+// display form. These conversions are the only thing between a row in SQLite
+// and something a screen reader can announce.
+
+/// Longest note preview shown in the list column, in characters.
+///
+/// The preview is read out while arrowing through notes, so it has to be short
+/// enough to skim and long enough to tell two notes apart.
+pub const NOTE_PREVIEW_CHARS: usize = 80;
+
+impl CalendarContainerItem {
+    /// Build a display item from a stored calendar.
+    pub fn from_entry(entry: &crate::data::message_cache::CalendarContainer) -> Self {
+        Self {
+            id: entry.id.clone(),
+            name: entry.name.clone(),
+            color: entry.color.clone(),
+            // A calendar with no provider was made here rather than synced.
+            provider: entry
+                .source_provider
+                .clone()
+                .unwrap_or_else(|| "local".to_string()),
+            is_visible: entry.is_visible,
+            is_default: entry.is_default,
+            is_read_only: entry.is_read_only,
+        }
+    }
+}
+
+impl CalendarEventItem {
+    /// Build a display item from a stored event.
+    pub fn from_entry(entry: &crate::data::message_cache::CalendarEventEntry) -> Self {
+        // An all-day event keeps its dates in separate columns. Reading the
+        // datetime column for one would announce a time it does not have.
+        let (start, end) = if entry.is_all_day {
+            (
+                entry
+                    .start_date
+                    .clone()
+                    .unwrap_or_else(|| entry.start_datetime.clone()),
+                entry
+                    .end_date
+                    .clone()
+                    .unwrap_or_else(|| entry.end_datetime.clone()),
+            )
+        } else {
+            (entry.start_datetime.clone(), entry.end_datetime.clone())
+        };
+
+        Self {
+            id: entry.id.clone(),
+            summary: entry.summary.clone(),
+            start,
+            end,
+            location: entry.location.clone().unwrap_or_default(),
+            is_all_day: entry.is_all_day,
+            status: entry.status.clone(),
+            provider: entry
+                .source_provider
+                .clone()
+                .unwrap_or_else(|| "local".to_string()),
+            calendar_id: entry.calendar_id.clone(),
+            calendar_name: None,
+            calendar_color: None,
+        }
+    }
+}
+
+impl ReminderItem {
+    /// Build a display item from a stored reminder.
+    pub fn from_entry(entry: &crate::data::message_cache::ReminderEntry) -> Self {
+        Self {
+            id: entry.id.clone(),
+            title: entry.title.clone(),
+            description: entry.description.clone(),
+            due_datetime: entry.due_datetime.clone(),
+            is_completed: entry.is_completed,
+            priority: entry.priority.clone(),
+        }
+    }
+}
+
+impl TaskListItem {
+    /// Build a display item from a stored task list.
+    ///
+    /// The count comes from the caller, which already has the tasks loaded.
+    pub fn from_entry(
+        entry: &crate::data::message_cache::TaskListEntry,
+        task_count: usize,
+    ) -> Self {
+        Self {
+            id: entry.id.clone(),
+            name: entry.name.clone(),
+            color: entry.color.clone(),
+            task_count,
+        }
+    }
+}
+
+impl TaskItem {
+    /// Build a display item from a stored task.
+    pub fn from_entry(entry: &crate::data::message_cache::TaskEntry) -> Self {
+        Self {
+            id: entry.id.clone(),
+            title: entry.title.clone(),
+            description: entry.description.clone(),
+            due_date: entry.due_date.clone(),
+            is_completed: entry.is_completed,
+            priority: entry.priority.clone(),
+            task_list_id: entry.task_list_id.clone(),
+            parent_task_id: entry.parent_task_id.clone(),
+        }
+    }
+}
+
+impl NoteFolderItem {
+    /// Build a display item from a stored note folder.
+    pub fn from_entry(
+        entry: &crate::data::message_cache::NoteFolderEntry,
+        note_count: usize,
+    ) -> Self {
+        Self {
+            id: entry.id.clone(),
+            name: entry.name.clone(),
+            note_count,
+        }
+    }
+}
+
+impl NoteItem {
+    /// Build a display item from a stored note.
+    pub fn from_entry(entry: &crate::data::message_cache::NoteEntry) -> Self {
+        Self {
+            id: entry.id.clone(),
+            title: entry.title.clone(),
+            body_preview: note_preview(&entry.body),
+            pinned: entry.pinned,
+            updated_at: entry.updated_at.clone(),
+            folder_id: entry.folder_id.clone(),
+        }
+    }
+}
+
+/// Condense a note body into one short line for the list column.
+///
+/// Counted in characters rather than bytes, because a note body is free text
+/// and truncating multibyte content by byte offset would panic.
+fn note_preview(body: &str) -> String {
+    let single_line = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    if single_line.chars().count() <= NOTE_PREVIEW_CHARS {
+        return single_line;
+    }
+    let truncated: String = single_line.chars().take(NOTE_PREVIEW_CHARS).collect();
+    format!("{}\u{2026}", truncated)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -679,5 +837,224 @@ mod tests {
         assert_eq!(item.phone, "");
         assert_eq!(item.company, "");
         assert!(!item.favorite);
+    }
+
+    // ── Cache entries to display items ──────────────────────────────────
+    //
+    // These are the conversions that carry stored records into the panels.
+    // Without them the panels render and stay empty forever.
+
+    use crate::data::message_cache::{
+        CalendarContainer, CalendarEventEntry, NoteEntry, NoteFolderEntry, ReminderEntry,
+        TaskEntry, TaskListEntry,
+    };
+
+    fn calendar_container() -> CalendarContainer {
+        CalendarContainer {
+            id: "cal-1".into(),
+            account_id: "a1".into(),
+            name: "Work".into(),
+            color: "#4285F4".into(),
+            source_provider: Some("caldav".into()),
+            caldav_url: None,
+            subscription_url: None,
+            is_default: true,
+            is_visible: true,
+            is_read_only: false,
+            display_order: 0,
+            etag: None,
+            ctag: None,
+            sync_token: None,
+            refresh_interval_minutes: None,
+            created_at: "2026-01-01".into(),
+            updated_at: "2026-01-01".into(),
+        }
+    }
+
+    fn calendar_event() -> CalendarEventEntry {
+        CalendarEventEntry {
+            id: "e1".into(),
+            account_id: "a1".into(),
+            provider_event_id: None,
+            calendar_id: Some("cal-1".into()),
+            summary: "Standup".into(),
+            description: None,
+            location: Some("Room 2".into()),
+            start_datetime: "2026-07-26T09:00:00Z".into(),
+            end_datetime: "2026-07-26T09:15:00Z".into(),
+            start_date: None,
+            end_date: None,
+            is_all_day: false,
+            time_zone: None,
+            status: "confirmed".into(),
+            recurrence_rule: None,
+            source_provider: Some("caldav".into()),
+            etag: None,
+            web_link: None,
+            show_as: "busy".into(),
+            last_modified_remote: None,
+            last_synced_at: None,
+            attendees_json: None,
+            reminders_json: None,
+            created_at: "2026-01-01".into(),
+            updated_at: "2026-01-01".into(),
+        }
+    }
+
+    #[test]
+    fn test_calendar_container_item_from_entry() {
+        let item = CalendarContainerItem::from_entry(&calendar_container());
+        assert_eq!(item.id, "cal-1");
+        assert_eq!(item.name, "Work");
+        assert_eq!(item.provider, "caldav");
+        assert!(item.is_default);
+        assert!(item.is_visible);
+        assert!(!item.is_read_only);
+    }
+
+    #[test]
+    fn test_calendar_container_item_without_a_provider_reads_as_local() {
+        let mut entry = calendar_container();
+        entry.source_provider = None;
+        assert_eq!(CalendarContainerItem::from_entry(&entry).provider, "local");
+    }
+
+    #[test]
+    fn test_calendar_event_item_from_entry() {
+        let item = CalendarEventItem::from_entry(&calendar_event());
+        assert_eq!(item.summary, "Standup");
+        assert_eq!(item.start, "2026-07-26T09:00:00Z");
+        assert_eq!(item.location, "Room 2");
+        assert!(!item.is_all_day);
+        assert_eq!(item.calendar_id.as_deref(), Some("cal-1"));
+    }
+
+    #[test]
+    fn test_all_day_event_uses_its_date_fields() {
+        // An all-day event stores YYYY-MM-DD separately. Showing the datetime
+        // field instead would announce a time the event does not have.
+        let mut entry = calendar_event();
+        entry.is_all_day = true;
+        entry.start_date = Some("2026-07-26".into());
+        entry.end_date = Some("2026-07-27".into());
+        let item = CalendarEventItem::from_entry(&entry);
+        assert!(item.is_all_day);
+        assert_eq!(item.start, "2026-07-26");
+        assert_eq!(item.end, "2026-07-27");
+    }
+
+    #[test]
+    fn test_reminder_item_from_entry() {
+        let entry = ReminderEntry {
+            id: "r1".into(),
+            account_id: "a1".into(),
+            title: "Call the dentist".into(),
+            description: Some("about the filling".into()),
+            due_datetime: Some("2026-07-26T09:00:00Z".into()),
+            is_completed: false,
+            priority: "high".into(),
+            repeat_rule: None,
+            related_event_id: None,
+            created_at: "2026-01-01".into(),
+            updated_at: "2026-01-01".into(),
+        };
+        let item = ReminderItem::from_entry(&entry);
+        assert_eq!(item.title, "Call the dentist");
+        assert_eq!(item.priority, "high");
+        assert!(!item.is_completed);
+        assert_eq!(item.due_datetime.as_deref(), Some("2026-07-26T09:00:00Z"));
+    }
+
+    #[test]
+    fn test_task_list_item_carries_its_count() {
+        let entry = TaskListEntry {
+            id: "tl1".into(),
+            account_id: "a1".into(),
+            name: "Groceries".into(),
+            color: "#4285F4".into(),
+            display_order: 0,
+            created_at: "2026-01-01".into(),
+        };
+        let item = TaskListItem::from_entry(&entry, 4);
+        assert_eq!(item.name, "Groceries");
+        assert_eq!(item.task_count, 4);
+    }
+
+    #[test]
+    fn test_task_item_from_entry() {
+        let entry = TaskEntry {
+            id: "t1".into(),
+            account_id: "a1".into(),
+            task_list_id: Some("tl1".into()),
+            title: "Buy milk".into(),
+            description: None,
+            due_date: Some("2026-07-26".into()),
+            is_completed: true,
+            completed_at: Some("2026-07-25".into()),
+            priority: "normal".into(),
+            display_order: 0,
+            parent_task_id: None,
+            created_at: "2026-01-01".into(),
+            updated_at: "2026-01-01".into(),
+        };
+        let item = TaskItem::from_entry(&entry);
+        assert_eq!(item.title, "Buy milk");
+        assert!(item.is_completed);
+        assert_eq!(item.task_list_id.as_deref(), Some("tl1"));
+    }
+
+    #[test]
+    fn test_note_folder_item_carries_its_count() {
+        let entry = NoteFolderEntry {
+            id: "nf1".into(),
+            account_id: "a1".into(),
+            name: "Ideas".into(),
+            display_order: 0,
+            created_at: "2026-01-01".into(),
+        };
+        assert_eq!(NoteFolderItem::from_entry(&entry, 9).note_count, 9);
+    }
+
+    fn note(body: &str) -> NoteEntry {
+        NoteEntry {
+            id: "n1".into(),
+            account_id: "a1".into(),
+            folder_id: Some("nf1".into()),
+            title: "Shopping".into(),
+            body: body.into(),
+            format: "plain".into(),
+            pinned: true,
+            created_at: "2026-01-01".into(),
+            updated_at: "2026-07-26".into(),
+        }
+    }
+
+    #[test]
+    fn test_note_item_from_entry() {
+        let item = NoteItem::from_entry(&note("milk, eggs"));
+        assert_eq!(item.title, "Shopping");
+        assert_eq!(item.body_preview, "milk, eggs");
+        assert!(item.pinned);
+        assert_eq!(item.updated_at, "2026-07-26");
+    }
+
+    #[test]
+    fn test_note_preview_is_bounded_and_single_line() {
+        // The preview goes in a list column and is read out during
+        // navigation. A whole note there would be unusable.
+        let item = NoteItem::from_entry(&note(&format!("first line\nsecond{}", "x".repeat(500))));
+        assert!(
+            item.body_preview.chars().count() <= NOTE_PREVIEW_CHARS + 1,
+            "preview was {} characters",
+            item.body_preview.chars().count()
+        );
+        assert!(!item.body_preview.contains('\n'), "preview spans lines");
+    }
+
+    #[test]
+    fn test_note_preview_counts_characters_not_bytes() {
+        // Truncating a multibyte body by byte offset would panic.
+        let item = NoteItem::from_entry(&note(&"\u{4f60}".repeat(400)));
+        assert!(item.body_preview.chars().count() <= NOTE_PREVIEW_CHARS + 1);
     }
 }

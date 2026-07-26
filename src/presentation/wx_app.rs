@@ -644,6 +644,8 @@ impl WxMailApp {
                 let content_panels = content_panels.clone();
                 let state = state.clone();
                 let a11y = a11y.clone();
+                let switch_cache = message_cache.clone();
+                let switch_tx = ui_tx.clone();
                 move |module: PimModule| {
                     let idx = module.index();
                     // Hide all, show target
@@ -688,6 +690,11 @@ impl WxMailApp {
                         &format!("Switched to {}", label),
                         crate::presentation::accessibility::announcements::Priority::Normal,
                     );
+
+                    // Fill the panel that was just shown. Without this the
+                    // module opens empty however much is stored.
+                    let account_id = lock_state(&state).active_account_id.clone();
+                    load_module_data(module, &switch_cache, account_id, &switch_tx);
                 }
             };
 
@@ -1569,6 +1576,168 @@ fn lock_state(state: &Arc<StdMutex<WxUIState>>) -> std::sync::MutexGuard<'_, WxU
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Read a module's records out of the cache and send them to the UI.
+///
+/// Every panel outside mail was built, wired to a `UIUpdate` variant, and then
+/// left with nothing that ever sent one, so five of the six modules rendered
+/// empty in a running build no matter what was stored. This is the path that
+/// closes that gap: it runs when a module is opened and pushes what the cache
+/// holds into the panel that displays it.
+///
+/// Failures are announced rather than swallowed. A panel that is empty because
+/// the read failed looks exactly like a panel that is empty because there is
+/// nothing to show, and those are not the same thing to someone who cannot see
+/// the window.
+///
+/// Runs on the UI thread rather than in a task: `MessageCache` wraps a rusqlite
+/// connection and is not `Sync`. The channel is unbounded, so sending never
+/// blocks.
+fn load_module_data(
+    module: PimModule,
+    cache: &Option<Arc<MessageCache>>,
+    account_id: Option<String>,
+    tx: &Sender<UIUpdate>,
+) {
+    let Some(cache) = cache.as_ref() else {
+        return;
+    };
+    let Some(account_id) = account_id else {
+        // No account yet, so there is nothing stored to show. Mail says so
+        // through its own status line; the other panels would just be blank.
+        return;
+    };
+    let mut updates: Vec<UIUpdate> = Vec::new();
+    let mut failures: Vec<String> = Vec::new();
+
+    match module {
+        PimModule::Mail => return,
+        PimModule::Calendar => {
+            // A fresh account has no containers, so the sidebar would be empty
+            // even with everything else wired. These are idempotent.
+            if let Err(e) = cache.ensure_default_calendar(&account_id) {
+                failures.push(format!("default calendar: {}", e));
+            }
+            match cache.get_calendars_for_account(&account_id) {
+                Ok(containers) => updates.push(UIUpdate::CalendarContainersLoaded(
+                    containers
+                        .iter()
+                        .map(CalendarContainerItem::from_entry)
+                        .collect(),
+                )),
+                Err(e) => failures.push(format!("calendars: {}", e)),
+            }
+            match cache.get_all_events_for_account(&account_id) {
+                Ok(events) => updates.push(UIUpdate::CalendarEventsLoaded(
+                    events.iter().map(CalendarEventItem::from_entry).collect(),
+                )),
+                Err(e) => failures.push(format!("events: {}", e)),
+            }
+        }
+        PimModule::Contacts => {
+            match cache.get_contacts_for_account(&account_id) {
+                Ok(contacts) => updates.push(UIUpdate::ContactsLoaded(
+                    contacts.iter().map(ContactItem::from_entry).collect(),
+                )),
+                Err(e) => failures.push(format!("contacts: {}", e)),
+            }
+            match cache.load_contact_groups(&account_id) {
+                Ok(groups) => updates.push(UIUpdate::ContactGroupsLoaded(
+                    groups
+                        .iter()
+                        .map(|g| ContactGroupItem {
+                            id: g.id.clone(),
+                            name: g.name.clone(),
+                            member_count: g.member_ids.len(),
+                        })
+                        .collect(),
+                )),
+                Err(e) => failures.push(format!("contact groups: {}", e)),
+            }
+        }
+        PimModule::Reminders => match cache.get_reminders_for_account(&account_id) {
+            Ok(reminders) => updates.push(UIUpdate::RemindersLoaded(
+                reminders.iter().map(ReminderItem::from_entry).collect(),
+            )),
+            Err(e) => failures.push(format!("reminders: {}", e)),
+        },
+        PimModule::Tasks => {
+            if let Err(e) = cache.ensure_default_task_list(&account_id) {
+                failures.push(format!("default task list: {}", e));
+            }
+            let tasks = match cache.get_all_tasks_for_account(&account_id) {
+                Ok(tasks) => tasks,
+                Err(e) => {
+                    failures.push(format!("tasks: {}", e));
+                    Vec::new()
+                }
+            };
+            match cache.get_task_lists_for_account(&account_id) {
+                Ok(lists) => updates.push(UIUpdate::TaskListsLoaded(
+                    lists
+                        .iter()
+                        .map(|list| {
+                            let count = tasks
+                                .iter()
+                                .filter(|t| t.task_list_id.as_deref() == Some(list.id.as_str()))
+                                .count();
+                            TaskListItem::from_entry(list, count)
+                        })
+                        .collect(),
+                )),
+                Err(e) => failures.push(format!("task lists: {}", e)),
+            }
+            updates.push(UIUpdate::TasksLoaded(
+                tasks.iter().map(TaskItem::from_entry).collect(),
+            ));
+        }
+        PimModule::Notes => {
+            if let Err(e) = cache.ensure_default_note_folder(&account_id) {
+                failures.push(format!("default note folder: {}", e));
+            }
+            let notes = match cache.get_all_notes_for_account(&account_id) {
+                Ok(notes) => notes,
+                Err(e) => {
+                    failures.push(format!("notes: {}", e));
+                    Vec::new()
+                }
+            };
+            match cache.get_note_folders_for_account(&account_id) {
+                Ok(folders) => updates.push(UIUpdate::NoteFoldersLoaded(
+                    folders
+                        .iter()
+                        .map(|folder| {
+                            let count = notes
+                                .iter()
+                                .filter(|n| n.folder_id.as_deref() == Some(folder.id.as_str()))
+                                .count();
+                            NoteFolderItem::from_entry(folder, count)
+                        })
+                        .collect(),
+                )),
+                Err(e) => failures.push(format!("note folders: {}", e)),
+            }
+            updates.push(UIUpdate::NotesLoaded(
+                notes.iter().map(NoteItem::from_entry).collect(),
+            ));
+        }
+    }
+
+    for update in updates {
+        let _ = tx.try_send(update);
+    }
+
+    for failure in &failures {
+        tracing::error!("Failed to load {} data: {}", module.label(), failure);
+    }
+    if !failures.is_empty() {
+        let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+            "Could not load {}: {}",
+            module.label().replace('&', ""),
+            failures.join("; ")
+        )));
+    }
+}
+
 /// Send a simple status update through the async channel.
 fn send_status(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, msg: &str) {
     let tx = tx.clone();
@@ -1630,13 +1799,13 @@ fn open_compose(
 /// Handle Account Manager dialog result.
 fn handle_account_mgr(frame: &Frame, state: &Arc<StdMutex<WxUIState>>) {
     let (accounts, active_id) = {
-        let s = lock_state(&state);
+        let s = lock_state(state);
         (s.accounts.clone(), s.active_account_id.clone())
     };
     if let AccountManagerAction::Updated(new) =
         wx_account_manager::show_account_manager_dialog(frame, &accounts, active_id.as_deref())
     {
-        let mut s = lock_state(&state);
+        let mut s = lock_state(state);
         if !new.is_empty() {
             if s.active_account_id
                 .as_ref()
@@ -2419,7 +2588,7 @@ fn apply_sort(
     order: MailSortOption,
 ) {
     let sorted = {
-        let mut s = lock_state(&state);
+        let mut s = lock_state(state);
         s.sort_order = order;
         let mut msgs = s.messages.clone();
         sort_messages(&mut msgs, order);
@@ -2682,6 +2851,191 @@ mod tests {
         let mut recovered = lock_state(&state);
         recovered.status_message = "still alive".to_string();
         assert_eq!(recovered.status_message, "still alive");
+    }
+
+    // ── Module data actually reaches the panels ─────────────────────────
+    //
+    // Every one of these UIUpdate variants was handled by the UI and sent by
+    // nothing, so the modules rendered empty whatever was stored. These tests
+    // assert the path from a row in SQLite to an update on the channel.
+
+    // MessageCache wraps a rusqlite connection and is not Sync, so the Arc
+    // buys sharing between closures on the UI thread rather than thread
+    // safety. Production holds it the same way; this mirrors it deliberately.
+    #[allow(clippy::arc_with_non_send_sync)]
+    fn test_cache() -> (tempfile::TempDir, Option<Arc<MessageCache>>) {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("cache");
+        (dir, Some(Arc::new(cache)))
+    }
+
+    fn drain(rx: &async_channel::Receiver<UIUpdate>) -> Vec<UIUpdate> {
+        let mut out = Vec::new();
+        while let Ok(update) = rx.try_recv() {
+            out.push(update);
+        }
+        out
+    }
+
+    #[test]
+    fn test_notes_module_sends_its_records_to_the_ui() {
+        let (_dir, cache) = test_cache();
+        let (tx, rx) = async_channel::unbounded();
+        let account = "acct-1";
+
+        let folder = cache
+            .as_ref()
+            .unwrap()
+            .ensure_default_note_folder(account)
+            .unwrap();
+        cache
+            .as_ref()
+            .unwrap()
+            .save_note(&crate::data::message_cache::NoteEntry {
+                id: "n1".into(),
+                account_id: account.into(),
+                folder_id: Some(folder.id.clone()),
+                title: "Shopping".into(),
+                body: "milk, eggs".into(),
+                format: "plain".into(),
+                pinned: false,
+                created_at: "2026-01-01".into(),
+                updated_at: "2026-07-26".into(),
+            })
+            .unwrap();
+
+        load_module_data(PimModule::Notes, &cache, Some(account.to_string()), &tx);
+
+        let updates = drain(&rx);
+        let notes = updates
+            .iter()
+            .find_map(|u| match u {
+                UIUpdate::NotesLoaded(items) => Some(items),
+                _ => None,
+            })
+            .expect("NotesLoaded was never sent");
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].title, "Shopping");
+
+        let folders = updates
+            .iter()
+            .find_map(|u| match u {
+                UIUpdate::NoteFoldersLoaded(items) => Some(items),
+                _ => None,
+            })
+            .expect("NoteFoldersLoaded was never sent");
+        assert_eq!(
+            folders[0].note_count, 1,
+            "folder count must reflect its notes"
+        );
+    }
+
+    #[test]
+    fn test_tasks_module_sends_lists_and_their_counts() {
+        let (_dir, cache) = test_cache();
+        let (tx, rx) = async_channel::unbounded();
+        let account = "acct-1";
+        let list = cache
+            .as_ref()
+            .unwrap()
+            .ensure_default_task_list(account)
+            .unwrap();
+        cache
+            .as_ref()
+            .unwrap()
+            .save_task(&crate::data::message_cache::TaskEntry {
+                id: "t1".into(),
+                account_id: account.into(),
+                task_list_id: Some(list.id.clone()),
+                title: "Buy milk".into(),
+                description: None,
+                due_date: None,
+                is_completed: false,
+                completed_at: None,
+                priority: "normal".into(),
+                display_order: 0,
+                parent_task_id: None,
+                created_at: "2026-01-01".into(),
+                updated_at: "2026-01-01".into(),
+            })
+            .unwrap();
+
+        load_module_data(PimModule::Tasks, &cache, Some(account.to_string()), &tx);
+
+        let updates = drain(&rx);
+        assert!(updates
+            .iter()
+            .any(|u| matches!(u, UIUpdate::TasksLoaded(items) if items.len() == 1)));
+        assert!(updates
+            .iter()
+            .any(|u| matches!(u, UIUpdate::TaskListsLoaded(items) if items[0].task_count == 1)));
+    }
+
+    #[test]
+    fn test_reminders_module_sends_its_records() {
+        let (_dir, cache) = test_cache();
+        let (tx, rx) = async_channel::unbounded();
+        let account = "acct-1";
+        cache
+            .as_ref()
+            .unwrap()
+            .save_reminder(&crate::data::message_cache::ReminderEntry {
+                id: "r1".into(),
+                account_id: account.into(),
+                title: "Call the dentist".into(),
+                description: None,
+                due_datetime: None,
+                is_completed: false,
+                priority: "normal".into(),
+                repeat_rule: None,
+                related_event_id: None,
+                created_at: "2026-01-01".into(),
+                updated_at: "2026-01-01".into(),
+            })
+            .unwrap();
+
+        load_module_data(PimModule::Reminders, &cache, Some(account.to_string()), &tx);
+
+        assert!(drain(&rx)
+            .iter()
+            .any(|u| matches!(u, UIUpdate::RemindersLoaded(items) if items.len() == 1)));
+    }
+
+    #[test]
+    fn test_calendar_module_creates_a_default_calendar_for_a_new_account() {
+        // A brand new account has no containers, so without this the sidebar
+        // stays empty however much else is wired.
+        let (_dir, cache) = test_cache();
+        let (tx, rx) = async_channel::unbounded();
+
+        load_module_data(PimModule::Calendar, &cache, Some("fresh".to_string()), &tx);
+
+        assert!(drain(&rx)
+            .iter()
+            .any(|u| matches!(u, UIUpdate::CalendarContainersLoaded(items) if !items.is_empty())));
+    }
+
+    #[test]
+    fn test_mail_module_is_left_to_its_own_loading_path() {
+        let (_dir, cache) = test_cache();
+        let (tx, rx) = async_channel::unbounded();
+        load_module_data(PimModule::Mail, &cache, Some("acct-1".to_string()), &tx);
+        assert!(drain(&rx).is_empty());
+    }
+
+    #[test]
+    fn test_no_account_means_no_updates_rather_than_a_panic() {
+        let (_dir, cache) = test_cache();
+        let (tx, rx) = async_channel::unbounded();
+        load_module_data(PimModule::Notes, &cache, None, &tx);
+        assert!(drain(&rx).is_empty());
+    }
+
+    #[test]
+    fn test_missing_cache_means_no_updates_rather_than_a_panic() {
+        let (tx, rx) = async_channel::unbounded();
+        load_module_data(PimModule::Notes, &None, Some("acct-1".to_string()), &tx);
+        assert!(drain(&rx).is_empty());
     }
 
     #[test]
