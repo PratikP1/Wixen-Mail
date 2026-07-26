@@ -38,6 +38,7 @@ const WIN_H: i32 = 800;
 const FOLDER_W: i32 = 220;
 
 // Menu IDs
+const ID_MUTE_CONTENT: Id = ID_HIGHEST + 78;
 const ID_CHECK_MAIL: Id = ID_HIGHEST + 1;
 const ID_NEW_MESSAGE: Id = ID_HIGHEST + 2;
 const ID_QUIT: Id = ID_HIGHEST + 3;
@@ -1005,10 +1006,9 @@ impl WxMailApp {
                             if !s.message_preview.is_empty() {
                                 let renderer = HtmlRenderer::new();
                                 let plain = renderer.html_to_plain_text(&s.message_preview);
-                                let _ = a11y.announce(
-                                    &plain,
-                                    crate::presentation::accessibility::announcements::Priority::Normal,
-                                );
+                                // Message text, not interface chatter: this is
+                                // what mute has to be able to stop.
+                                let _ = a11y.announce_content(&plain);
                             }
                         }
                     }
@@ -1042,6 +1042,20 @@ impl WxMailApp {
                                 inner.split_horizontally(&msg_list, &preview, 300);
                                 preview_visible.set(true);
                             }
+                        }
+                        _ if id == ID_MUTE_CONTENT => {
+                            let muted = !a11y.is_content_muted();
+                            a11y.set_content_muted(muted);
+                            // Confirm through the interface channel, which mute
+                            // never silences, so the toggle is never silent.
+                            let _ = a11y.announce(
+                                if muted {
+                                    "Message reading muted"
+                                } else {
+                                    "Message reading unmuted"
+                                },
+                                crate::presentation::accessibility::announcements::Priority::High,
+                            );
                         }
                         _ if id == ID_VIEW_MODULE_BUTTONS => {
                             let visible = btn_panel.is_shown();
@@ -1273,6 +1287,11 @@ impl WxMailApp {
                             },
                         );
                     }
+
+                    // The queue paces itself, so a burst leaves a remainder
+                    // behind. Without this tick nothing would collect it and
+                    // those announcements would never be spoken.
+                    let _ = a11y.flush_announcements();
                 }
             });
             timer.start(POLL_MS, false);
@@ -1397,6 +1416,12 @@ impl WxMailApp {
                 ID_VIEW_MODULE_BUTTONS,
                 "&Module Buttons\tAlt+3",
                 "Toggle the module navigation buttons",
+            )
+            .append_separator()
+            .append_check_item(
+                ID_MUTE_CONTENT,
+                "&Mute Message Reading	Ctrl+Shift+M",
+                "Stop reading message text aloud. Status and error announcements continue.",
             )
             .append_separator()
             .append_check_item(
@@ -1648,7 +1673,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
             let msg = format!("{} folders loaded", folders.len());
             frame.set_status_text(&msg, 0);
-            let _ = a11y.announce(&msg, Priority::Low);
+            let _ = a11y.announce_topic(&msg, Priority::Low, "folders");
         }
         UIUpdate::MessagesLoaded(messages) => {
             if let Ok(mut s) = state.lock() {
@@ -1665,7 +1690,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let unread = messages.iter().filter(|m| !m.read).count();
             let msg = format!("{} messages, {} unread", messages.len(), unread);
             frame.set_status_text(&msg, 0);
-            let _ = a11y.announce(&msg, Priority::Normal);
+            let _ = a11y.announce_topic(&msg, Priority::Normal, "messages");
         }
         UIUpdate::MessageBodyLoaded(body) => {
             if let Ok(mut s) = state.lock() {
@@ -1780,7 +1805,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
             let msg = format!("{} calendar events loaded", events.len());
             frame.set_status_text(&msg, 0);
-            let _ = a11y.announce(&msg, Priority::Low);
+            let _ = a11y.announce_topic(&msg, Priority::Low, "calendar-events");
         }
         UIUpdate::CalendarSyncComplete {
             created,
@@ -1832,7 +1857,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
             let msg = format!("{} calendars loaded", containers.len());
             frame.set_status_text(&msg, 0);
-            let _ = a11y.announce(&msg, Priority::Low);
+            let _ = a11y.announce_topic(&msg, Priority::Low, "calendars");
         }
         UIUpdate::RemindersLoaded(reminders) => {
             if let Ok(mut s) = state.lock() {
@@ -1871,7 +1896,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
 
             let msg = format!("{} reminders loaded", reminders.len());
             frame.set_status_text(&msg, 0);
-            let _ = a11y.announce(&msg, Priority::Low);
+            let _ = a11y.announce_topic(&msg, Priority::Low, "reminders");
         }
         UIUpdate::TaskListsLoaded(lists) => {
             pim.tasks_tree.delete_all_items();
@@ -1898,7 +1923,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
             let msg = format!("{} tasks loaded", tasks.len());
             frame.set_status_text(&msg, 0);
-            let _ = a11y.announce(&msg, Priority::Low);
+            let _ = a11y.announce_topic(&msg, Priority::Low, "tasks");
         }
         UIUpdate::NoteFoldersLoaded(folders) => {
             pim.notes_tree.delete_all_items();
@@ -1927,7 +1952,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
             let msg = format!("{} notes loaded", notes.len());
             frame.set_status_text(&msg, 0);
-            let _ = a11y.announce(&msg, Priority::Low);
+            let _ = a11y.announce_topic(&msg, Priority::Low, "notes");
         }
         UIUpdate::ContactsLoaded(contacts) => {
             if let Ok(mut s) = state.lock() {
@@ -1943,7 +1968,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
             let msg = format!("{} contacts loaded", contacts.len());
             frame.set_status_text(&msg, 0);
-            let _ = a11y.announce(&msg, Priority::Low);
+            let _ = a11y.announce_topic(&msg, Priority::Low, "contacts");
         }
         UIUpdate::ContactGroupsLoaded(groups) => {
             pim.contacts_tree.delete_all_items();

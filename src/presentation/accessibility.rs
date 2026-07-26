@@ -103,7 +103,10 @@ impl Accessibility {
         }
         self.set_focus("folder_tree")?;
         self.announcements
-            .announce("Accessibility initialized", announcements::Priority::Normal)?;
+            .push(announcements::Announcement::interface(
+                "Accessibility initialized",
+                announcements::Priority::Normal,
+            ))?;
         self.flush_announcements()?;
         Ok(())
     }
@@ -129,9 +132,14 @@ impl Accessibility {
             .get_node(element_id)?
             .map(|node| node.name)
             .unwrap_or_else(|| element_id.to_string());
-        self.announcements.announce(
-            &format!("Focus moved to {}", focus_label),
-            announcements::Priority::Low,
+        // Focus moves constantly while navigating, so they share a topic:
+        // the latest one supersedes the rest instead of queueing behind them.
+        self.announcements.push(
+            announcements::Announcement::interface(
+                format!("Focus moved to {}", focus_label),
+                announcements::Priority::Low,
+            )
+            .with_topic("focus"),
         )?;
         Ok(())
     }
@@ -150,10 +158,49 @@ impl Accessibility {
         Ok(())
     }
 
-    /// Queue and flush announcement through native bridge.
+    /// Queue an announcement about the application and speak what is due now.
+    ///
+    /// The queue paces itself, so a burst leaves a remainder behind. The UI
+    /// timer calls `flush_announcements` to pick that up.
     pub fn announce(&self, text: &str, priority: announcements::Priority) -> Result<()> {
-        self.announcements.announce(text, priority)?;
+        self.announcements
+            .push(announcements::Announcement::interface(text, priority))?;
         self.flush_announcements()
+    }
+
+    /// Queue an announcement that supersedes earlier ones on the same topic.
+    ///
+    /// Use for anything that updates in place, such as a message count that
+    /// climbs during a sync. Only the latest value is worth hearing.
+    pub fn announce_topic(
+        &self,
+        text: &str,
+        priority: announcements::Priority,
+        topic: &str,
+    ) -> Result<()> {
+        self.announcements
+            .push(announcements::Announcement::interface(text, priority).with_topic(topic))?;
+        self.flush_announcements()
+    }
+
+    /// Read message content aloud. Silenced when content is muted.
+    pub fn announce_content(&self, text: &str) -> Result<()> {
+        self.announcements
+            .push(announcements::Announcement::content(text))?;
+        self.flush_announcements()
+    }
+
+    /// Stop or resume reading message content aloud.
+    ///
+    /// Interface announcements keep working, so muting before a screen share
+    /// does not also cost the user their error messages.
+    pub fn set_content_muted(&self, muted: bool) {
+        self.announcements.set_muted(muted);
+    }
+
+    /// Whether message content is currently silenced.
+    pub fn is_content_muted(&self) -> bool {
+        self.announcements.is_muted()
     }
 
     /// Emit live region update.
@@ -166,9 +213,12 @@ impl Accessibility {
         self.screen_reader.announce(text)
     }
 
-    /// Flush queued announcements in priority order.
+    /// Speak whatever the queue will release now, most important first.
+    ///
+    /// Called both after queueing and from the UI timer, so announcements held
+    /// back by the rate limit are picked up rather than stranded.
     pub fn flush_announcements(&self) -> Result<()> {
-        while let Some(message) = self.announcements.pop_next()? {
+        for message in self.announcements.drain(std::time::Instant::now())? {
             self.screen_reader.announce(&message)?;
         }
         Ok(())
@@ -242,13 +292,22 @@ mod tests {
         const GLOBAL_REGION_ID: &str = "global";
         let a11y = Accessibility::new().unwrap();
         a11y.announcements
-            .announce("normal", announcements::Priority::Normal)
+            .push(announcements::Announcement::interface(
+                "normal",
+                announcements::Priority::Normal,
+            ))
             .unwrap();
         a11y.announcements
-            .announce("urgent", announcements::Priority::Urgent)
+            .push(announcements::Announcement::interface(
+                "urgent",
+                announcements::Priority::Urgent,
+            ))
             .unwrap();
         a11y.announcements
-            .announce("high", announcements::Priority::High)
+            .push(announcements::Announcement::interface(
+                "high",
+                announcements::Priority::High,
+            ))
             .unwrap();
 
         a11y.flush_announcements().unwrap();

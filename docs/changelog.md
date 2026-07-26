@@ -16,6 +16,9 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 - **Crash log** at `crash.log` under the local app data directory. Panics and startup failures also show a message box.
 - **Accessibility CI**: a non-blocking Axe.Windows UI Automation scan on every pull request. It covers roughly half of WCAG and does not replace NVDA testing.
 
+- **Announcements are paced.** The queue drops repeats, lets a progress counter supersede its own earlier steps, caps how many announcements can be waiting, and caps how many are spoken per second. Urgent announcements are never held back. Anything dropped is counted and reported rather than vanishing silently.
+- **Mute for message reading** (`Ctrl+Shift+M`, also under View). Stops message text being read aloud without silencing status and error announcements, so muting before a screen share does not cost you your error messages.
+
 ### Changed
 
 - Reminders group in the sidebar by urgency: overdue, today, upcoming, no due date, and completed.

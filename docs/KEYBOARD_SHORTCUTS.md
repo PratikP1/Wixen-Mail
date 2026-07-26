@@ -32,6 +32,12 @@ and focus moves to that module's content area.
 | Tasks | `Ctrl+Shift+5` | Switch to the tasks module |
 | Notes | `Ctrl+Shift+6` | Switch to the notes module |
 
+### Speech Control
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Mute Message Reading | `Ctrl+Shift+M` | Stop reading message text aloud. Status and error announcements keep working, so muting before a screen share does not cost you your error messages. |
+
 ### Application Control
 
 | Action | Shortcut | Description |
