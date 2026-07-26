@@ -3,11 +3,10 @@
 Wixen Mail is an accessibility-first email client built with Rust and wxdragon (wxWidgets).
 It focuses on complete keyboard navigation, screen-reader support, and practical multi-account workflows with a native Windows look and feel.
 
-## What it aims to be
-
-See [status](#status) before reading this as a list of finished features.
-
 ## Highlights
+
+Read [Status](#status) first. This list describes what the project is for, not
+what is finished.
 
 - Native wxWidgets UI with toolbar, three-pane layout, and modern styling
 - Keyboard navigation throughout, and an accessibility layer built for NVDA, JAWS and Narrator (not yet verified against a live screen reader)
@@ -31,15 +30,21 @@ cargo run --bin ui_integrated
 ## Development Commands
 
 ```bash
-# Run tests (150 unit + 26 integration)
-cargo test --quiet
+# The four checks CI runs, in the same order
+bash scripts/check.sh
+```
 
-# Build
+Use the script rather than the four commands separately. Cargo shares build
+fingerprints between `check`, `build`, `test`, and `clippy`, so a clippy run
+after a build can be treated as fresh and report success without linting
+anything. The script touches `src/lib.rs` first to force the work.
+
+```bash
+# Just the tests (394 unit, 30 integration)
+cargo test --all-targets
+
+# Just a build
 cargo build
-
-# Quality gates
-cargo fmt --check
-cargo clippy -- -D warnings
 ```
 
 ## Documentation
@@ -65,7 +70,7 @@ cargo clippy -- -D warnings
 - [Requirements Backlog](docs/development/requirements-backlog.md)
 - [wxdragon Migration Notes](docs/development/wxdragon-migration.md)
 
-## Current Status (2026-03-01)
+## Status
 
 All quality gates pass clean (`cargo fmt`, `cargo clippy`, `cargo test`).
 150 unit tests and 25 integration tests passing with 0 warnings.
