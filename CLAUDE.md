@@ -4,6 +4,57 @@ A fully accessible, lightweight mail and personal information client built with 
 wxdragon (wxWidgets bindings). Windows-first. Screen reader users are the primary audience,
 not an afterthought.
 
+## Guiding Principles
+
+The project answers four questions; let them judge every change. **What is it for?** Making
+correspondence and personal information legible to people who cannot see it. Messages,
+folders, threads, read state, attachments, events, contacts, tasks, notes, and reminders
+declared to the platform accessibility API as structured facts, so a screen reader user
+works through a full inbox rather than reconstructing it. **What does it strengthen?** Their
+independence, and the idea that the *application* declares its meaning instead of the screen
+reader inferring it from a rendered DOM. Open protocols too: IMAP, SMTP, CalDAV, and
+iCalendar deserve a client as open as they are. **What does it replace?** Outlook,
+Thunderbird, and webmail, technically usable with a screen reader and painful in practice.
+Not the screen reader, not the mail server, and not Wixen Terminal; those are complements.
+**What does it allow to be done poorly?** That question is the source of these guardrails.
+A rich accessibility surface makes it easy to mistake *structure present* for *experience
+good*, and easier still to mistake a call that looks like accessibility for one that is.
+
+Guardrails (each exists because we got it wrong here at least once):
+
+1. **No feature is done until it runs in production.** Compiling and passing tests is not
+   done. It is done when a non-test path reaches it and it is exercised end to end. Check
+   reachability before claiming completion. (All eight PIM update variants were handled in
+   the UI and sent by nothing; five modules rendered empty in every build.)
+2. **Accessibility isn't done until a screen reader confirms it.** Tests prove structure;
+   only a real NVDA or Narrator run proves experience, and the automated scan covers about
+   half of WCAG. Worse, a call can look like accessibility and not be one. (Sixteen widgets
+   were "named" with `set_name()`, which sets an internal wxWidgets identifier and never
+   reaches the accessibility tree. It compiled and passed 324 tests.)
+3. **No stubs presented as complete.** If something cannot be finished, say so and gate it.
+   Never ship code that looks done and does nothing. (The note editor filled itself with
+   "Note 1" and "(Note content loaded here)" on every selection.)
+4. **A check nobody reads is worse than no check.** CI failing for months while looking
+   maintained, or a scan reporting success while its scan step errored, buys false
+   confidence. When a check can fail two ways, make it say which. (Both happened.)
+5. **Feedback must be distinct and bounded.** Announcements and audio cues must be
+   distinguishable from their siblings and must not flood under a syncing mailbox. Content
+   read aloud needs controls and a fast mute, because private mail gets spoken in rooms.
+6. **Untrusted input stays untrusted.** Message bodies come from strangers. Sanitizing them
+   is security; preserving their heading structure and link text is accessibility. Neither
+   excuses dropping the other.
+7. **Publishing happens on purpose.** Anything that tags, releases, or pushes outward is
+   triggered deliberately, never as a side effect. (A push to `main` cut two releases nobody
+   asked for and promoted an alpha to beta.)
+8. **Prefer few things excellent over many adequate.** For any new subsystem ask whether it
+   is wired, exercised end to end, and raises the bar for the whole, or only adds surface.
+   (Six modules shipped at once with one of them working.)
+9. **Don't silently absorb upstream failures.** Where this papers over a sender's missing
+   alt text, a provider's broken MIME, or a dependency with no accessible name, say so. The
+   goal is a better ecosystem, not hidden gaps nobody is pressured to fix.
+
+Fuller rationale in [docs/principles.md](docs/principles.md).
+
 <!-- BEGIN GUARDRAILS (managed by /setup-guardrails) -->
 
 ## Guardrails
@@ -86,6 +137,9 @@ assistive technology. Structure present is not experience good.
   what happened, why, and what to do next. Do not make the user re-enter information they already
   gave (3.3.7), and do not require a memory or transcription test to authenticate (3.3.8).
 - **Hearing.** Every audio cue has a visible equivalent. Never signal something by sound alone.
+  Mail carries audio and video as attachments and embedded media: surface any captions or
+  transcript the sender provided, and say plainly when none exists rather than presenting the
+  media as though it were accessible.
 - **Vestibular and photosensitivity.** Honor the system reduced-motion setting. Nothing flashes more
   than three times per second.
 
@@ -106,6 +160,22 @@ workflows, `cognitive-accessibility` for language and flow, `contrast-master` fo
 - Commits, PR descriptions, issue comments, code review: invoke `writing-style`. Direct and brief,
   why over what.
 - User-visible changes get a `docs/changelog.md` entry under `[Unreleased]` in the same commit.
+
+### Working style
+
+Apply the skill that fits the task without being asked. `tdd` and `elegant-code` on every coding
+task. `writing-craft` or `writing-style` on prose. `dead-code-hunter` after a feature.
+`naming-review`, `commit-hygiene`, `defensive-boundaries`, `dependency-audit`, and
+`root-cause-investigator` as they fit.
+
+Report outcomes faithfully. If tests fail, say so and show the output. If a step was skipped or
+gated, say that. If something is done and verified, say it plainly. A feature that compiles but
+was never reached is not implemented, and reporting it as implemented is the failure mode this
+whole file exists to prevent.
+
+Do not silently absorb upstream failures. Where this codebase papers over a broken or
+inaccessible dependency, a sender's missing alt text, or a provider's malformed data, note it so
+the gap stays visible.
 
 ### Project rules
 
