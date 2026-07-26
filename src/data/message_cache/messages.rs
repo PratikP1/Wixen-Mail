@@ -269,4 +269,99 @@ mod tests {
         let messages_cross = cache.get_messages_for_folder(folder1_id, "acc-2").unwrap();
         assert!(messages_cross.is_empty());
     }
+
+    #[test]
+    fn test_delete_message_marks_deleted() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_delete_{}", nanos));
+        let cache = MessageCache::new(temp_dir, None).unwrap();
+
+        let folder = CachedFolder {
+            id: 0,
+            account_id: "test".to_string(),
+            name: "INBOX".to_string(),
+            path: "INBOX".to_string(),
+            folder_type: "Inbox".to_string(),
+            unread_count: 0,
+            total_count: 0,
+        };
+        let folder_id = cache.save_folder(&folder).unwrap();
+
+        let msg = CachedMessage {
+            id: 0,
+            uid: 1,
+            folder_id,
+            message_id: "msg-del@test".to_string(),
+            subject: "Delete me".to_string(),
+            from_addr: "a@b.com".to_string(),
+            to_addr: "c@d.com".to_string(),
+            cc: None,
+            date: "2026-01-01".to_string(),
+            body_plain: Some("Body".to_string()),
+            body_html: None,
+            read: false,
+            starred: false,
+            deleted: false,
+        };
+        let msg_id = cache.save_message(&msg).unwrap();
+
+        cache.delete_message(msg_id).unwrap();
+        let fetched = cache.get_message(msg_id).unwrap().unwrap();
+        assert!(fetched.deleted);
+    }
+
+    #[test]
+    fn test_update_message_flags_marks_read_starred() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_flags_{}", nanos));
+        let cache = MessageCache::new(temp_dir, None).unwrap();
+
+        let folder = CachedFolder {
+            id: 0,
+            account_id: "test".to_string(),
+            name: "INBOX".to_string(),
+            path: "INBOX".to_string(),
+            folder_type: "Inbox".to_string(),
+            unread_count: 0,
+            total_count: 0,
+        };
+        let folder_id = cache.save_folder(&folder).unwrap();
+
+        let msg = CachedMessage {
+            id: 0,
+            uid: 1,
+            folder_id,
+            message_id: "msg-flags@test".to_string(),
+            subject: "Flag me".to_string(),
+            from_addr: "a@b.com".to_string(),
+            to_addr: "c@d.com".to_string(),
+            cc: None,
+            date: "2026-01-01".to_string(),
+            body_plain: Some("Body".to_string()),
+            body_html: None,
+            read: false,
+            starred: false,
+            deleted: false,
+        };
+        let msg_id = cache.save_message(&msg).unwrap();
+
+        cache.update_message_flags(msg_id, true, true).unwrap();
+        let fetched = cache.get_message(msg_id).unwrap().unwrap();
+        assert!(fetched.read);
+        assert!(fetched.starred);
+
+        // Toggle back
+        cache.update_message_flags(msg_id, false, false).unwrap();
+        let fetched = cache.get_message(msg_id).unwrap().unwrap();
+        assert!(!fetched.read);
+        assert!(!fetched.starred);
+    }
 }

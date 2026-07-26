@@ -186,6 +186,20 @@ impl MessageManager {
         }
         Ok(())
     }
+
+    /// Delete a message by ID
+    pub fn delete_message(&mut self, id: &str) -> Result<()> {
+        self.messages.retain(|m| m.id != id);
+        Ok(())
+    }
+
+    /// Toggle read/unread status
+    pub fn toggle_read(&mut self, id: &str) -> Result<()> {
+        if let Some(msg) = self.messages.iter_mut().find(|m| m.id == id) {
+            msg.flags.read = !msg.flags.read;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -276,5 +290,49 @@ mod tests {
 
         let msg = manager.get_message(&id).unwrap();
         assert!(msg.flags.read);
+    }
+
+    #[test]
+    fn test_delete_message_removes_it() {
+        let mut manager = MessageManager::new().unwrap();
+        let from = EmailAddress::new("sender@example.com".to_string(), None);
+        let to = vec![EmailAddress::new("recipient@example.com".to_string(), None)];
+        let msg = Message::new_simple("Test".to_string(), from, to, "Body".to_string());
+        let id = msg.id.clone();
+
+        manager.add_message(msg).unwrap();
+        assert_eq!(manager.get_messages().len(), 1);
+
+        manager.delete_message(&id).unwrap();
+        assert_eq!(manager.get_messages().len(), 0);
+        assert!(manager.get_message(&id).is_none());
+    }
+
+    #[test]
+    fn test_delete_nonexistent_message_is_noop() {
+        let mut manager = MessageManager::new().unwrap();
+        let from = EmailAddress::new("sender@example.com".to_string(), None);
+        let to = vec![EmailAddress::new("recipient@example.com".to_string(), None)];
+        let msg = Message::new_simple("Test".to_string(), from, to, "Body".to_string());
+        manager.add_message(msg).unwrap();
+
+        manager.delete_message("nonexistent-id").unwrap();
+        assert_eq!(manager.get_messages().len(), 1);
+    }
+
+    #[test]
+    fn test_toggle_read_unread() {
+        let mut manager = MessageManager::new().unwrap();
+        let from = EmailAddress::new("sender@example.com".to_string(), None);
+        let to = vec![EmailAddress::new("recipient@example.com".to_string(), None)];
+        let msg = Message::new_simple("Test".to_string(), from, to, "Body".to_string());
+        let id = msg.id.clone();
+        manager.add_message(msg).unwrap();
+
+        assert!(!manager.get_message(&id).unwrap().flags.read);
+        manager.mark_as_read(&id).unwrap();
+        assert!(manager.get_message(&id).unwrap().flags.read);
+        manager.toggle_read(&id).unwrap();
+        assert!(!manager.get_message(&id).unwrap().flags.read);
     }
 }
