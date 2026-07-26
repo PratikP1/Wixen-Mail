@@ -192,7 +192,11 @@ impl SecurityService {
             .map_err(|e| Error::Security(format!("Failed to initialize cipher: {}", e)))?;
         let mut nonce_bytes = [0u8; AES_NONCE_LEN];
         rand::thread_rng().fill_bytes(&mut nonce_bytes);
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        // aes-gcm 0.11 deprecated Array::from_slice in favour of TryFrom,
+        // which surfaces a wrong-length nonce as an error rather than a panic.
+        let nonce = Nonce::try_from(&nonce_bytes[..])
+            .map_err(|_| Error::Security("Nonce is the wrong length".to_string()))?;
+        let nonce = &nonce;
         let ciphertext = cipher
             .encrypt(nonce, data)
             .map_err(|e| Error::Security(format!("Encryption failed: {}", e)))?;
@@ -223,8 +227,10 @@ impl SecurityService {
         let (nonce_bytes, ciphertext) = decoded.split_at(AES_NONCE_LEN);
         let cipher = Aes256Gcm::new_from_slice(&self.key)
             .map_err(|e| Error::Security(format!("Failed to initialize cipher: {}", e)))?;
+        let nonce = Nonce::try_from(nonce_bytes)
+            .map_err(|_| Error::Security("Stored nonce is the wrong length".to_string()))?;
         cipher
-            .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
+            .decrypt(&nonce, ciphertext)
             .map_err(|e| Error::Security(format!("Decryption failed: {}", e)))
     }
 

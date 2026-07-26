@@ -42,7 +42,7 @@ base64 = "0.23"
 ammonia = "4.0"
 regex = "1.11"
 html-escape = "0.2"
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 rand = "0.8"
 
 # Spell checking (Hunspell-compatible, pure Rust)
@@ -64,8 +64,8 @@ keyring = "3"
 url = "2"
 
 # CalDAV / iCalendar support
-icalendar = "0.16"
-quick-xml = "0.37"
+icalendar = "0.17"
+quick-xml = "0.41"
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
