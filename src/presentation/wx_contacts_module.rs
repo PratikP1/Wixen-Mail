@@ -30,6 +30,7 @@ pub fn build_contacts_panel(parent: &Panel) -> ContactsPanelHandles {
     let search_sizer = BoxSizer::builder(Orientation::Horizontal).build();
     let search_label = StaticText::builder(&panel).with_label("&Search:").build();
     let search_input = TextCtrl::builder(&panel).build();
+    search_input.set_name("Search contacts");
     search_sizer.add(
         &search_label,
         0,
@@ -42,6 +43,7 @@ pub fn build_contacts_panel(parent: &Panel) -> ContactsPanelHandles {
     let contact_list = ListCtrl::builder(&panel)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
+    contact_list.set_name("Contacts");
     contact_list.insert_column(0, "Name", ListColumnFormat::Left, 200);
     contact_list.insert_column(1, "Email", ListColumnFormat::Left, 250);
     contact_list.insert_column(2, "Phone", ListColumnFormat::Left, 150);
@@ -75,6 +77,7 @@ pub fn build_contacts_sidebar(parent: &Panel) -> ContactsSidebarHandles {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     let tree = TreeCtrl::builder(&panel).build();
+    tree.set_name("Contact groups");
     if let Some(root) = tree.add_root("Contacts", None, None) {
         tree.append_item(&root, "All Contacts", None, None);
         tree.append_item(&root, "Favorites", None, None);

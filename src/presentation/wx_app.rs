@@ -239,6 +239,7 @@ impl WxMailApp {
             let toolbar_handle = if let Some(toolbar) =
                 frame.create_tool_bar(Some(ToolBarStyle::Flat | ToolBarStyle::Text), ID_ANY as Id)
             {
+                toolbar.set_name("Main toolbar");
                 let bmp = |art: ArtId| -> Bitmap {
                     ArtProvider::get_bitmap(art, ArtClient::Toolbar, None)
                         .or_else(|| Bitmap::new(16, 16))
@@ -359,6 +360,7 @@ impl WxMailApp {
             let mail_sidebar = Panel::builder(&left_panel).build();
             let mail_sb_sizer = BoxSizer::builder(Orientation::Vertical).build();
             let folder_tree = TreeCtrl::builder(&mail_sidebar).build();
+            folder_tree.set_name("Mail folders");
             folder_tree.set_background_color(Colour::rgb(245, 245, 250));
             let root_id = folder_tree
                 .add_root("Mail Folders", None, None)
@@ -419,6 +421,7 @@ impl WxMailApp {
                     ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules,
                 )
                 .build();
+            msg_list.set_name("Messages");
             if let Some(list_font) = Font::new_with_details(
                 10,
                 FontFamily::Swiss.as_i32(),
