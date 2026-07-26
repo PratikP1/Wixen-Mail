@@ -295,8 +295,6 @@ impl WxMailApp {
 
             // ── Keyboard shortcuts for focus navigation ──────────────────
             panel.on_key_down({
-                let msg_list = msg_list;
-                let toolbar_handle = toolbar_handle.clone();
                 move |event| {
                     if let WindowEventData::Keyboard(ref kbd) = event {
                         let ctrl = kbd.control_down();
@@ -327,7 +325,6 @@ impl WxMailApp {
                 let state = state.clone();
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
-                let folder_tree = folder_tree;
                 move |event| {
                     if let Some(item) = event.get_item() {
                         if let Some(name) = folder_tree.get_item_text(&item) {
@@ -372,7 +369,6 @@ impl WxMailApp {
 
             // ── Menu events ─────────────────────────────────────────────
             frame.on_menu({
-                let frame = frame;
                 let state = state.clone();
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
@@ -728,7 +724,7 @@ fn handle_account_mgr(frame: &Frame, state: &Arc<StdMutex<WxUIState>>) {
         if !new.is_empty() {
             if s.active_account_id
                 .as_ref()
-                .map_or(true, |id| !new.iter().any(|a| &a.id == id))
+                .is_none_or(|id| !new.iter().any(|a| &a.id == id))
             {
                 s.active_account_id = Some(new[0].id.clone());
             }
@@ -1004,19 +1000,15 @@ fn sort_messages(messages: &mut [MessageItem], order: MailSortOption) {
     match order {
         MailSortOption::DateNewestFirst => messages.sort_by(|a, b| b.date.cmp(&a.date)),
         MailSortOption::DateOldestFirst => messages.sort_by(|a, b| a.date.cmp(&b.date)),
-        MailSortOption::SenderAZ => {
-            messages.sort_by(|a, b| a.from.to_lowercase().cmp(&b.from.to_lowercase()))
-        }
+        MailSortOption::SenderAZ => messages.sort_by_key(|a| a.from.to_lowercase()),
         MailSortOption::SenderZA => {
-            messages.sort_by(|a, b| b.from.to_lowercase().cmp(&a.from.to_lowercase()))
+            messages.sort_by_key(|a| std::cmp::Reverse(a.from.to_lowercase()))
         }
-        MailSortOption::SubjectAZ => {
-            messages.sort_by(|a, b| a.subject.to_lowercase().cmp(&b.subject.to_lowercase()))
-        }
+        MailSortOption::SubjectAZ => messages.sort_by_key(|a| a.subject.to_lowercase()),
         MailSortOption::SubjectZA => {
-            messages.sort_by(|a, b| b.subject.to_lowercase().cmp(&a.subject.to_lowercase()))
+            messages.sort_by_key(|a| std::cmp::Reverse(a.subject.to_lowercase()))
         }
-        MailSortOption::UnreadFirst => messages.sort_by(|a, b| a.read.cmp(&b.read)),
+        MailSortOption::UnreadFirst => messages.sort_by_key(|a| a.read),
     }
 }
 

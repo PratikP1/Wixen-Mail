@@ -200,11 +200,6 @@ pub fn show_oauth_dialog(
 
     // Wire Generate URL button using OAuthService
     gen_btn.on_click({
-        let url_field = url_field;
-        let prov_choice = prov_choice;
-        let client_field = client_field;
-        let redirect_field = redirect_field;
-        let status_text = status_text;
         move |_| {
             let provider_display = prov_choice.get_string_selection().unwrap_or_default();
             let client_id = client_field.get_value();

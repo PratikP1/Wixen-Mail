@@ -342,21 +342,18 @@ pub fn show_compose_dialog_with_options(
 
     // ── Wire formatting button events ────────────────────────────────────
     bold_btn.on_click({
-        let body_editor = body_editor;
         move |_| {
             body_editor.apply_bold_to_selection();
         }
     });
 
     italic_btn.on_click({
-        let body_editor = body_editor;
         move |_| {
             body_editor.apply_italic_to_selection();
         }
     });
 
     underline_btn.on_click({
-        let body_editor = body_editor;
         move |_| {
             body_editor.apply_underline_to_selection();
         }
@@ -364,7 +361,6 @@ pub fn show_compose_dialog_with_options(
 
     // Send button (in toolbar) closes dialog with ID_SEND
     send_toolbar_btn.on_click({
-        let dialog = dialog;
         move |_| {
             dialog.end_modal(ID_SEND);
         }
@@ -372,13 +368,11 @@ pub fn show_compose_dialog_with_options(
 
     // Undo / Redo
     undo_btn.on_click({
-        let body_editor = body_editor;
         move |_| {
             body_editor.undo();
         }
     });
     redo_btn.on_click({
-        let body_editor = body_editor;
         move |_| {
             body_editor.redo();
         }
@@ -386,7 +380,6 @@ pub fn show_compose_dialog_with_options(
 
     // Save Draft
     draft_btn.on_click({
-        let dialog = dialog;
         move |_| {
             dialog.end_modal(ID_SAVE_DRAFT);
         }
@@ -394,7 +387,6 @@ pub fn show_compose_dialog_with_options(
 
     // Discard
     discard_btn.on_click({
-        let dialog = dialog;
         move |_| {
             dialog.end_modal(ID_DISCARD);
         }
@@ -402,7 +394,6 @@ pub fn show_compose_dialog_with_options(
 
     // Cancel
     cancel_btn.on_click({
-        let dialog = dialog;
         move |_| {
             dialog.end_modal(ID_CANCEL);
         }

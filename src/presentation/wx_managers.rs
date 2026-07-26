@@ -51,20 +51,33 @@ fn get_choice_string(choice: &Choice) -> Option<String> {
 
 // ── Generic Manager Dialog Loop ────────────────────────────────────────────
 
+/// The chrome every manager dialog shares: the dialog, its sizer, the item
+/// list, and the status line that announces changes.
+struct ManagerChrome<'a> {
+    dialog: &'a Dialog,
+    main_sizer: &'a BoxSizer,
+    list: &'a ListCtrl,
+    status_text: &'a StaticText,
+}
+
 /// Run the standard Add/Edit/Delete modal loop shared by all manager dialogs.
 ///
 /// Returns `true` if any changes were made.
 fn run_manager_loop<T: Clone>(
-    dialog: &Dialog,
-    main_sizer: &BoxSizer,
-    list: &ListCtrl,
-    status_text: &StaticText,
+    chrome: ManagerChrome<'_>,
     working: &mut Vec<T>,
     populate: impl Fn(&ListCtrl, &[T]),
     add_fn: impl Fn(&Dialog) -> Option<T>,
     edit_fn: impl Fn(&Dialog, &T) -> Option<T>,
     name_fn: impl Fn(&T) -> String,
 ) -> bool {
+    let ManagerChrome {
+        dialog,
+        main_sizer,
+        list,
+        status_text,
+    } = chrome;
+
     // Create and attach buttons
     let add_btn = Button::builder(dialog)
         .with_label("&Add...")
@@ -1146,7 +1159,7 @@ fn refresh_addr_list(list: &ListCtrl, items: &[AddressItem]) {
         list.insert_item(idx, &a.label, None);
         list.set_item_text_by_column(idx, 1, &a.street);
         list.set_item_text_by_column(idx, 2, &a.city);
-        list.set_item_text_by_column(idx, 3, &format!("{} {}", a.state, a.zip).trim().to_string());
+        list.set_item_text_by_column(idx, 3, format!("{} {}", a.state, a.zip).trim());
         list.set_item_text_by_column(idx, 4, &a.country);
     }
 }
@@ -1531,10 +1544,12 @@ pub fn show_filter_manager_dialog(parent: &Frame, rules: &[FilterRule]) -> Filte
 
     let mut working = rules.to_vec();
     let changed = run_manager_loop(
-        &dialog,
-        &sizer,
-        &list,
-        &status,
+        ManagerChrome {
+            dialog: &dialog,
+            main_sizer: &sizer,
+            list: &list,
+            status_text: &status,
+        },
         &mut working,
         populate_filters,
         |d| show_filter_edit(d, None),
@@ -1759,10 +1774,12 @@ pub fn show_tag_manager_dialog(parent: &Frame, tags: &[TagEntry]) -> TagManagerA
 
     let mut working = tags.to_vec();
     let changed = run_manager_loop(
-        &dialog,
-        &sizer,
-        &list,
-        &status,
+        ManagerChrome {
+            dialog: &dialog,
+            main_sizer: &sizer,
+            list: &list,
+            status_text: &status,
+        },
         &mut working,
         populate_tags,
         |d| show_tag_edit(d, None),
@@ -1910,10 +1927,12 @@ pub fn show_signature_manager_dialog(
 
     let mut working = signatures.to_vec();
     let changed = run_manager_loop(
-        &dialog,
-        &sizer,
-        &list,
-        &status,
+        ManagerChrome {
+            dialog: &dialog,
+            main_sizer: &sizer,
+            list: &list,
+            status_text: &status,
+        },
         &mut working,
         populate_sigs,
         |d| show_sig_edit(d, None),

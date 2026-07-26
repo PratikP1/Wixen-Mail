@@ -96,7 +96,8 @@ pub struct SpellError {
 /// The active spell-checking backend.
 enum Backend {
     /// Hunspell-compatible dictionary via the `spellbook` crate.
-    Spellbook(spellbook::Dictionary),
+    /// Boxed because a loaded dictionary dwarfs the built-in word list.
+    Spellbook(Box<spellbook::Dictionary>),
     /// Lightweight built-in word list (English only).
     Builtin(HashSet<String>),
 }
@@ -191,7 +192,7 @@ impl SpellChecker {
             .unwrap_or_else(|| "abcdefghijklmnopqrstuvwxyz".to_string());
 
         Ok(Self {
-            backend: Backend::Spellbook(dict),
+            backend: Backend::Spellbook(Box::new(dict)),
             custom_words: HashSet::new(),
             language: lang_code.to_string(),
             alphabet,
@@ -362,7 +363,7 @@ fn try_load_spellbook(hunspell_name: &str, search_paths: &[PathBuf]) -> Option<B
                             hunspell_name,
                             dir.display()
                         );
-                        return Some(Backend::Spellbook(dict));
+                        return Some(Backend::Spellbook(Box::new(dict)));
                     }
                 }
             }

@@ -523,8 +523,7 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         .get_value()
         .parse::<u32>()
         .unwrap_or(base.font_size)
-        .max(8)
-        .min(72);
+        .clamp(8, 72);
     cfg.enable_notifications = w.notifications.get_value();
     cfg.check_updates = w.check_updates.get_value();
 

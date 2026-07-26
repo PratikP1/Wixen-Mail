@@ -385,13 +385,6 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
 
     // Auto-detect provider and update hint on email change
     email_f.on_text_changed({
-        let imap_f = imap_f;
-        let smtp_f = smtp_f;
-        let imap_port_f = imap_port_f;
-        let smtp_port_f = smtp_port_f;
-        let user_f = user_f;
-        let email_f = email_f;
-        let auth_hint = auth_hint;
         move |_| {
             let email = email_f.get_value();
             if let Some(domain) = email.split('@').nth(1) {
