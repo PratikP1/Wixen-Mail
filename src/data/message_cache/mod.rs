@@ -4,6 +4,7 @@
 //! Split into domain-specific sub-modules for maintainability.
 
 mod accounts;
+pub mod bodies;
 mod calendar;
 pub mod calendars;
 mod contacts;
@@ -398,7 +399,13 @@ impl MessageCache {
 
         // Performance pragmas for large mailboxes
         conn.execute_batch(
-            "PRAGMA journal_mode=WAL;
+            // foreign_keys is off by default in SQLite, so every ON DELETE
+            // CASCADE in this schema was decorative: deleting a folder left its
+            // messages behind, and deleting a message left its attachments and
+            // body. Enforcement applies to new writes only, so an existing
+            // database with orphans opens fine and simply stops adding more.
+            "PRAGMA foreign_keys=ON;
+             PRAGMA journal_mode=WAL;
              PRAGMA synchronous=NORMAL;
              PRAGMA cache_size=-8000;",
         )
@@ -406,6 +413,15 @@ impl MessageCache {
 
         let cache = Self { conn, security };
         cache.initialize_schema()?;
+
+        // Databases written by earlier versions keep bodies inline in the
+        // messages table. Move them across on open so the space is reclaimed
+        // and the listing queries stop reading them. A failure here is not
+        // fatal: the bodies are still readable where they are, and the next
+        // open tries again.
+        if let Err(e) = cache.migrate_inline_bodies() {
+            tracing::warn!("Could not move inline message bodies: {}", e);
+        }
 
         Ok(cache)
     }
@@ -875,6 +891,19 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to create notes table: {}", e)))?;
 
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS message_bodies (
+                message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+                body_plain TEXT,
+                body_html TEXT,
+                bytes INTEGER NOT NULL DEFAULT 0,
+                last_read_at TEXT NOT NULL
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create message_bodies table: {}", e)))?;
+
         // Schema migrations
         self.ensure_column_exists("calendar_events", "calendar_id", "TEXT")?;
         self.ensure_column_exists(
@@ -932,6 +961,7 @@ impl MessageCache {
             "CREATE INDEX IF NOT EXISTS idx_reminders_account ON reminders(account_id, due_datetime)",
             "CREATE INDEX IF NOT EXISTS idx_tasks_account ON tasks(account_id, task_list_id)",
             "CREATE INDEX IF NOT EXISTS idx_notes_account ON notes(account_id, folder_id)",
+            "CREATE INDEX IF NOT EXISTS idx_message_bodies_lru ON message_bodies(last_read_at)",
         ];
         for idx in indexes {
             self.conn

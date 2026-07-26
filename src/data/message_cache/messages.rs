@@ -38,8 +38,11 @@ impl MessageCache {
         account_id: &str,
     ) -> Result<Vec<CachedMessage>> {
         let mut stmt = self.conn.prepare(
+            // NULL in place of the bodies: a listing shows subjects, and
+            // pulling body text through to render one is what made this table
+            // unusable at scale.
             "SELECT m.id, m.uid, m.folder_id, m.message_id, m.subject, m.from_addr, m.to_addr, m.cc, m.date,
-                    m.body_plain, m.body_html, m.read, m.starred, m.deleted
+                    NULL, NULL, m.read, m.starred, m.deleted
              FROM messages m
              INNER JOIN folders f ON m.folder_id = f.id
              WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
@@ -77,9 +80,14 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, uid, folder_id, message_id, subject, from_addr, to_addr, cc, date,
-                    body_plain, body_html, read, starred, deleted
-             FROM messages WHERE id = ?1",
+                // Opening one message is the path that wants a body, so this
+                // is the query that joins to the body cache. A message with no
+                // cached body reads as None, which means fetch it.
+                "SELECT m.id, m.uid, m.folder_id, m.message_id, m.subject, m.from_addr, m.to_addr,
+                    m.cc, m.date, b.body_plain, b.body_html, m.read, m.starred, m.deleted
+             FROM messages m
+             LEFT JOIN message_bodies b ON b.message_id = m.id
+             WHERE m.id = ?1",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
 
@@ -128,6 +136,16 @@ impl MessageCache {
                 params![message_id],
             )
             .map_err(|e| Error::Other(format!("Failed to delete message: {}", e)))?;
+
+        // This is a soft delete, matching IMAP's deleted flag, so no foreign
+        // key cascade fires. Drop the cached body anyway: nobody reads a
+        // deleted message, and it can be fetched again if it is undeleted.
+        self.conn
+            .execute(
+                "DELETE FROM message_bodies WHERE message_id = ?1",
+                params![message_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to drop deleted message body: {}", e)))?;
 
         Ok(())
     }
