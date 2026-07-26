@@ -17,6 +17,21 @@ Complete reference of all keyboard shortcuts in Wixen Mail for efficient, access
 
 ## All Shortcuts by Category
 
+### Module Navigation
+
+Wixen Mail holds six modules in one window. These shortcuts switch between them
+from anywhere in the main window. The module name is announced on each switch,
+and focus moves to that module's content area.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Mail | `Ctrl+Shift+1` | Switch to the mail module |
+| Contacts | `Ctrl+Shift+2` | Switch to the contacts module |
+| Calendar | `Ctrl+Shift+3` | Switch to the calendar module |
+| Reminders | `Ctrl+Shift+4` | Switch to the reminders module |
+| Tasks | `Ctrl+Shift+5` | Switch to the tasks module |
+| Notes | `Ctrl+Shift+6` | Switch to the notes module |
+
 ### Application Control
 
 | Action | Shortcut | Description |
@@ -42,9 +57,12 @@ Complete reference of all keyboard shortcuts in Wixen Mail for efficient, access
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Connect to Server | (none) | Open account configuration dialog |
-| New Message | `Ctrl+N` | Open composition window for new message |
-| Settings | `Ctrl+,` | Open settings dialog |
+| New > Message | `Ctrl+N` | Open composition window (File > New > Message) |
+| New > Contact | (none) | Open Contact Manager (File > New > Contact) |
+| New > Account | (none) | Open Account Manager (File > New > Account) |
+| Save | `Ctrl+S` | Save current draft |
+| Save As | (none) | Save message or attachment to file |
+| Check Mail | `F9` | Check for new messages |
 | Quit | `Ctrl+Q` | Exit the application |
 
 ### Edit Menu
@@ -111,14 +129,31 @@ Complete reference of all keyboard shortcuts in Wixen Mail for efficient, access
 
 ### Composition Window
 
+**Keyboard shortcuts:**
+
 | Action | Shortcut | Description |
 |--------|----------|-------------|
 | Send Message | `Ctrl+Enter` | Send the current message |
 | Save Draft | `Ctrl+S` | Save message as draft |
-| Bold Text | `Ctrl+B` | Make selected text bold (when implemented) |
-| Italic Text | `Ctrl+I` | Make selected text italic (when implemented) |
-| Underline Text | `Ctrl+U` | Underline selected text (when implemented) |
+| Bold Text | `Ctrl+B` | Toggle bold on selection |
+| Italic Text | `Ctrl+I` | Toggle italic on selection |
+| Underline Text | `Ctrl+U` | Toggle underline on selection |
+| Undo | `Ctrl+Z` | Undo last edit |
+| Redo | `Ctrl+Y` | Redo last undo |
 | Close Window | `Esc` | Close composition window without sending |
+
+**Field accelerators (Alt+key):**
+
+| Field / Action | Shortcut |
+|----------------|----------|
+| From | `Alt+F` |
+| To | `Alt+T` |
+| CC | `Alt+C` |
+| BCC | `Alt+B` |
+| Subject | `Alt+S` |
+| Save Draft | `Alt+D` |
+| Discard | `Alt+A` |
+| Cancel | `Alt+L` |
 
 ### Folder Actions
 
