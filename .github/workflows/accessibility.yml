@@ -1,0 +1,128 @@
+name: Accessibility
+
+# Automated UI Automation scanning of the running application.
+#
+# This catches roughly half of accessibility defects: missing or empty accessible
+# names, wrong control types, unreachable elements, contrast failures the scanner
+# can measure. It does not replace testing with NVDA, JAWS, or Narrator. A clean
+# scan means the structure is present, not that the experience is good.
+#
+# The job is non-blocking on purpose. Treat its findings as a work queue, not a
+# gate, and read the uploaded report rather than the pass/fail badge.
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  uia-scan:
+    name: UI Automation scan
+    runs-on: windows-latest
+    continue-on-error: true
+
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo index
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-a11y-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Build application
+      run: cargo build --release --verbose
+
+    - name: Install Axe.Windows CLI
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        New-Item -ItemType Directory -Force tools/axe-windows | Out-Null
+        $release = Invoke-RestMethod 'https://api.github.com/repos/microsoft/axe-windows/releases/latest'
+        $asset = $release.assets | Where-Object { $_.name -like 'AxeWindowsCLI*.zip' } | Select-Object -First 1
+        if (-not $asset) { throw 'No AxeWindowsCLI zip in the latest axe-windows release' }
+        Invoke-WebRequest $asset.browser_download_url -OutFile axe-cli.zip
+        Expand-Archive axe-cli.zip -DestinationPath tools/axe-windows -Force
+        Write-Host "Installed $($asset.name)"
+
+    - name: Scan the running application
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        New-Item -ItemType Directory -Force a11y-results | Out-Null
+
+        # Point the app at a throwaway profile so the scan never touches real
+        # user data and always starts from the same first-run state.
+        $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'a11y-profile'
+        New-Item -ItemType Directory -Force $env:LOCALAPPDATA | Out-Null
+
+        $app = Start-Process -FilePath 'target/release/wixen-mail.exe' -PassThru
+        try {
+          # wxWidgets needs a moment to realise the frame and publish its
+          # UI Automation tree. Poll rather than guess at a fixed sleep.
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Get-Date) -lt $deadline -and $app.MainWindowHandle -eq 0) {
+            Start-Sleep -Milliseconds 500
+            $app.Refresh()
+          }
+          if ($app.MainWindowHandle -eq 0) { throw 'Main window never appeared within 60s' }
+
+          & tools/axe-windows/AxeWindowsCLI.exe `
+            --processid $app.Id `
+            --outputdirectory a11y-results `
+            --verbosity verbose
+        }
+        finally {
+          if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
+        }
+
+    - name: Summarise findings
+      if: always()
+      shell: pwsh
+      run: |
+        $results = Get-ChildItem a11y-results -Filter *.a11ytest -ErrorAction SilentlyContinue
+        if (-not $results) {
+          Add-Content $env:GITHUB_STEP_SUMMARY '## Accessibility scan'
+          Add-Content $env:GITHUB_STEP_SUMMARY 'No scan output was produced. Check the scan step log.'
+          exit 0
+        }
+        Add-Content $env:GITHUB_STEP_SUMMARY '## Accessibility scan'
+        Add-Content $env:GITHUB_STEP_SUMMARY ''
+        Add-Content $env:GITHUB_STEP_SUMMARY "Produced $($results.Count) result file(s). Download the ``accessibility-scan-results`` artifact and open it with the Accessibility Insights for Windows viewer."
+        Add-Content $env:GITHUB_STEP_SUMMARY ''
+        Add-Content $env:GITHUB_STEP_SUMMARY 'This scan covers about half of WCAG. It is not a substitute for testing with NVDA.'
+
+    - name: Upload scan results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: accessibility-scan-results
+        path: a11y-results/
+        if-no-files-found: warn
