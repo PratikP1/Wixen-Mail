@@ -21,6 +21,12 @@ target
 #.idea/
 
 
+# Secrets — never commit OAuth credentials or keys
+oauth.toml
+client_secret*.json
+*.key
+.env
+
 # Added by cargo
 
 /target
