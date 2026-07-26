@@ -37,8 +37,15 @@ pub fn show_account_manager_dialog(
 
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
-    let header = StaticText::builder(&dlg).with_label("Configured Email Accounts:").build();
-    sizer.add(&header, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top, 8);
+    let header = StaticText::builder(&dlg)
+        .with_label("Configured Email Accounts:")
+        .build();
+    sizer.add(
+        &header,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
+        8,
+    );
 
     let list = ListCtrl::builder(&dlg)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
@@ -50,19 +57,44 @@ pub fn show_account_manager_dialog(
     sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
     let btns = BoxSizer::builder(Orientation::Horizontal).build();
-    let add = Button::builder(&dlg).with_label("&Add Account...").with_id(ID_ADD).build();
-    let edit = Button::builder(&dlg).with_label("&Edit...").with_id(ID_EDIT).build();
-    let del = Button::builder(&dlg).with_label("&Delete").with_id(ID_DELETE).build();
-    let active = Button::builder(&dlg).with_label("Set Acti&ve").with_id(ID_SET_ACTIVE).build();
-    let test = Button::builder(&dlg).with_label("&Test Connection").with_id(ID_TEST).build();
-    let close = Button::builder(&dlg).with_label("&Close").with_id(ID_OK).build();
-    for b in [&add, &edit, &del, &active, &test] { btns.add(b, 0, SizerFlag::All, 4); }
+    let add = Button::builder(&dlg)
+        .with_label("&Add Account...")
+        .with_id(ID_ADD)
+        .build();
+    let edit = Button::builder(&dlg)
+        .with_label("&Edit...")
+        .with_id(ID_EDIT)
+        .build();
+    let del = Button::builder(&dlg)
+        .with_label("&Delete")
+        .with_id(ID_DELETE)
+        .build();
+    let active = Button::builder(&dlg)
+        .with_label("Set Acti&ve")
+        .with_id(ID_SET_ACTIVE)
+        .build();
+    let test = Button::builder(&dlg)
+        .with_label("&Test Connection")
+        .with_id(ID_TEST)
+        .build();
+    let close = Button::builder(&dlg)
+        .with_label("&Close")
+        .with_id(ID_OK)
+        .build();
+    for b in [&add, &edit, &del, &active, &test] {
+        btns.add(b, 0, SizerFlag::All, 4);
+    }
     btns.add_spacer(16);
     btns.add(&close, 0, SizerFlag::All, 4);
     sizer.add_sizer(&btns, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
 
     let status = StaticText::builder(&dlg).with_label(" ").build();
-    sizer.add(&status, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, 8);
+    sizer.add(
+        &status,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom,
+        8,
+    );
     dlg.set_sizer(sizer, true);
 
     let mut working = accounts.to_vec();
@@ -70,18 +102,50 @@ pub fn show_account_manager_dialog(
     let mut changed = false;
     populate(&list, &working, active_id.as_deref());
 
-    add.on_click({ let d = dlg; move |_| { d.end_modal(ID_ADD); } });
-    edit.on_click({ let d = dlg; move |_| { d.end_modal(ID_EDIT); } });
-    del.on_click({ let d = dlg; move |_| { d.end_modal(ID_DELETE); } });
-    active.on_click({ let d = dlg; move |_| { d.end_modal(ID_SET_ACTIVE); } });
-    test.on_click({ let d = dlg; move |_| { d.end_modal(ID_TEST); } });
-    close.on_click({ let d = dlg; move |_| { d.end_modal(ID_OK); } });
+    add.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_ADD);
+        }
+    });
+    edit.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_EDIT);
+        }
+    });
+    del.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_DELETE);
+        }
+    });
+    active.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_SET_ACTIVE);
+        }
+    });
+    test.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_TEST);
+        }
+    });
+    close.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    });
 
     loop {
         match dlg.show_modal() {
             r if r == ID_ADD => {
                 if let Some(mut a) = show_edit(&dlg, None) {
-                    if working.is_empty() { active_id = Some(a.id.clone()); }
+                    if working.is_empty() {
+                        active_id = Some(a.id.clone());
+                    }
 
                     // OAuth is automatic — if this is a Gmail/Microsoft account,
                     // the browser launches right now.
@@ -121,10 +185,15 @@ pub fn show_account_manager_dialog(
                                     status.set_label("Account updated — authorized");
                                 }
                                 OAuthFlowResult::NoCreds => {
-                                    status.set_label("Account updated — OAuth credentials not configured");
+                                    status.set_label(
+                                        "Account updated — OAuth credentials not configured",
+                                    );
                                 }
                                 OAuthFlowResult::Failed(msg) => {
-                                    status.set_label(&format!("Account updated — auth error: {}", msg));
+                                    status.set_label(&format!(
+                                        "Account updated — auth error: {}",
+                                        msg
+                                    ));
                                 }
                             }
                         } else {
@@ -134,7 +203,9 @@ pub fn show_account_manager_dialog(
                         changed = true;
                         populate(&list, &working, active_id.as_deref());
                     }
-                } else { status.set_label("Select an account to edit"); }
+                } else {
+                    status.set_label("Select an account to edit");
+                }
             }
             r if r == ID_DELETE => {
                 if let Some(idx) = get_selected(&list) {
@@ -144,7 +215,12 @@ pub fn show_account_manager_dialog(
                     if working[idx].use_oauth {
                         if let Some(prov) = OAuthService::detect_provider(&working[idx].email) {
                             if let Some(creds) = oauth_credentials::credentials_for(&prov) {
-                                let mgr = AuthManager::new(&rid, &prov, &creds.client_id, &creds.client_secret);
+                                let mgr = AuthManager::new(
+                                    &rid,
+                                    &prov,
+                                    &creds.client_id,
+                                    &creds.client_secret,
+                                );
                                 mgr.revoke_stored_tokens();
                             }
                         }
@@ -156,7 +232,9 @@ pub fn show_account_manager_dialog(
                     }
                     populate(&list, &working, active_id.as_deref());
                     status.set_label(&format!("Deleted: {}", name));
-                } else { status.set_label("Select an account to delete"); }
+                } else {
+                    status.set_label("Select an account to delete");
+                }
             }
             r if r == ID_SET_ACTIVE => {
                 if let Some(idx) = get_selected(&list) {
@@ -164,31 +242,49 @@ pub fn show_account_manager_dialog(
                     changed = true;
                     populate(&list, &working, active_id.as_deref());
                     status.set_label(&format!("Active: {}", working[idx].name));
-                } else { status.set_label("Select an account"); }
+                } else {
+                    status.set_label("Select an account");
+                }
             }
             r if r == ID_TEST => {
                 if let Some(idx) = get_selected(&list) {
-                    status.set_label(&format!("Testing {}... (not yet implemented)", working[idx].imap_server));
-                } else { status.set_label("Select an account to test"); }
+                    status.set_label(&format!(
+                        "Testing {}... (not yet implemented)",
+                        working[idx].imap_server
+                    ));
+                } else {
+                    status.set_label("Select an account to test");
+                }
             }
             _ => break,
         }
     }
 
-    if changed { AccountManagerAction::Updated(working) } else { AccountManagerAction::None }
+    if changed {
+        AccountManagerAction::Updated(working)
+    } else {
+        AccountManagerAction::None
+    }
 }
 
 // ── Account Edit Sub-Dialog ─────────────────────────────────────────────────
 
 fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
-    let title = if existing.is_some() { "Edit Account" } else { "Add Account" };
+    let title = if existing.is_some() {
+        "Edit Account"
+    } else {
+        "Add Account"
+    };
     let dlg = Dialog::builder(parent, title)
         .with_size(480, 480)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
         .build();
 
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
-    let fields = FlexGridSizer::builder(0, 2).with_vgap(6).with_hgap(8).build();
+    let fields = FlexGridSizer::builder(0, 2)
+        .with_vgap(6)
+        .with_hgap(8)
+        .build();
     fields.add_growable_col(1, 1);
 
     let tf = |label: &str, default: &str| -> TextCtrl {
@@ -219,9 +315,7 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
     // Auth hint — shown below email, tells user what will happen
     let auth_hint = {
         let l = StaticText::builder(&dlg).with_label("").build();
-        let h = StaticText::builder(&dlg)
-            .with_label("")
-            .build();
+        let h = StaticText::builder(&dlg).with_label("").build();
         fields.add(&l, 0, SizerFlag::All, 4);
         fields.add(&h, 0, SizerFlag::Expand | SizerFlag::All, 4);
         h
@@ -241,7 +335,9 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
     let user_f = tf("&Username:", "");
     let pass_f = {
         let l = StaticText::builder(&dlg).with_label("Pass&word:").build();
-        let f = TextCtrl::builder(&dlg).with_style(TextCtrlStyle::Password).build();
+        let f = TextCtrl::builder(&dlg)
+            .with_style(TextCtrlStyle::Password)
+            .build();
         fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
         fields.add(&f, 1, SizerFlag::Expand | SizerFlag::All, 4);
         f
@@ -254,8 +350,14 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     let btn_row = BoxSizer::builder(Orientation::Horizontal).build();
-    let ok = Button::builder(&dlg).with_label("OK").with_id(ID_OK).build();
-    let cancel = Button::builder(&dlg).with_label("Cancel").with_id(ID_CANCEL).build();
+    let ok = Button::builder(&dlg)
+        .with_label("OK")
+        .with_id(ID_OK)
+        .build();
+    let cancel = Button::builder(&dlg)
+        .with_label("Cancel")
+        .with_id(ID_CANCEL)
+        .build();
     btn_row.add_spacer(0);
     btn_row.add(&ok, 0, SizerFlag::All, 4);
     btn_row.add(&cancel, 0, SizerFlag::All, 4);
@@ -283,9 +385,12 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
 
     // Auto-detect provider and update hint on email change
     email_f.on_text_changed({
-        let imap_f = imap_f; let smtp_f = smtp_f;
-        let imap_port_f = imap_port_f; let smtp_port_f = smtp_port_f;
-        let user_f = user_f; let email_f = email_f;
+        let imap_f = imap_f;
+        let smtp_f = smtp_f;
+        let imap_port_f = imap_port_f;
+        let smtp_port_f = smtp_port_f;
+        let user_f = user_f;
+        let email_f = email_f;
         let auth_hint = auth_hint;
         move |_| {
             let email = email_f.get_value();
@@ -302,10 +407,13 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
                 let d = domain.to_lowercase();
                 if d == "gmail.com" || d == "googlemail.com" {
                     auth_hint.set_label("Google account — browser sign-in will open automatically");
-                } else if d == "outlook.com" || d == "hotmail.com"
-                    || d == "live.com" || d == "msn.com"
+                } else if d == "outlook.com"
+                    || d == "hotmail.com"
+                    || d == "live.com"
+                    || d == "msn.com"
                 {
-                    auth_hint.set_label("Microsoft account — browser sign-in will open automatically");
+                    auth_hint
+                        .set_label("Microsoft account — browser sign-in will open automatically");
                 } else {
                     auth_hint.set_label("");
                 }
@@ -313,29 +421,45 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
         }
     });
 
-    ok.on_click({ let d = dlg; move |_| { d.end_modal(ID_OK); } });
-    cancel.on_click({ let d = dlg; move |_| { d.end_modal(ID_CANCEL); } });
+    ok.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    });
+    cancel.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_CANCEL);
+        }
+    });
 
     if dlg.show_modal() == ID_OK {
         let interval: u32 = interval_f.get_value().parse().unwrap_or(5).clamp(1, 60);
         let email_val = email_f.get_value();
         let is_oauth = requires_oauth(&email_val);
 
-        let provider = email_val.split('@').nth(1).and_then(|domain| {
-            match domain.to_lowercase().as_str() {
-                "gmail.com" | "googlemail.com" => Some("Gmail".to_string()),
-                "outlook.com" | "hotmail.com" | "live.com" | "msn.com" => Some("Outlook".to_string()),
-                "yahoo.com" | "ymail.com" => Some("Yahoo".to_string()),
-                "icloud.com" | "mac.com" | "me.com" => Some("iCloud".to_string()),
-                "aol.com" => Some("AOL".to_string()),
-                "zoho.com" => Some("Zoho".to_string()),
-                "protonmail.com" | "pm.me" | "proton.me" => Some("ProtonMail".to_string()),
-                _ => None,
-            }
-        });
+        let provider =
+            email_val
+                .split('@')
+                .nth(1)
+                .and_then(|domain| match domain.to_lowercase().as_str() {
+                    "gmail.com" | "googlemail.com" => Some("Gmail".to_string()),
+                    "outlook.com" | "hotmail.com" | "live.com" | "msn.com" => {
+                        Some("Outlook".to_string())
+                    }
+                    "yahoo.com" | "ymail.com" => Some("Yahoo".to_string()),
+                    "icloud.com" | "mac.com" | "me.com" => Some("iCloud".to_string()),
+                    "aol.com" => Some("AOL".to_string()),
+                    "zoho.com" => Some("Zoho".to_string()),
+                    "protonmail.com" | "pm.me" | "proton.me" => Some("ProtonMail".to_string()),
+                    _ => None,
+                });
 
         Some(Account {
-            id: existing.map(|a| a.id.clone()).unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            id: existing
+                .map(|a| a.id.clone())
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
             name: name_f.get_value(),
             email: email_val,
             provider,
@@ -348,12 +472,18 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
             username: user_f.get_value(),
             password: pass_f.get_value(),
             use_oauth: is_oauth,
-            oauth_access_token: existing.map(|a| a.oauth_access_token.clone()).unwrap_or_default(),
-            oauth_refresh_token: existing.map(|a| a.oauth_refresh_token.clone()).unwrap_or_default(),
+            oauth_access_token: existing
+                .map(|a| a.oauth_access_token.clone())
+                .unwrap_or_default(),
+            oauth_refresh_token: existing
+                .map(|a| a.oauth_refresh_token.clone())
+                .unwrap_or_default(),
             oauth_token_expires_at: existing.and_then(|a| a.oauth_token_expires_at.clone()),
             enabled: enabled.get_value(),
             check_interval_minutes: interval,
-            color: existing.map(|a| a.color.clone()).unwrap_or_else(|| "#4A90E2".into()),
+            color: existing
+                .map(|a| a.color.clone())
+                .unwrap_or_else(|| "#4A90E2".into()),
             last_sync: existing.and_then(|a| a.last_sync),
         })
     } else {
@@ -419,9 +549,13 @@ fn populate(list: &ListCtrl, accounts: &[Account], active_id: Option<&str>) {
         list.insert_item(idx, &a.name, None);
         list.set_item_text_by_column(idx, 1, &a.email);
         list.set_item_text_by_column(idx, 2, &a.imap_server);
-        let status = if !a.enabled { "Disabled" }
-            else if active_id == Some(a.id.as_str()) { "★ Active" }
-            else { "Enabled" };
+        let status = if !a.enabled {
+            "Disabled"
+        } else if active_id == Some(a.id.as_str()) {
+            "★ Active"
+        } else {
+            "Enabled"
+        };
         list.set_item_text_by_column(idx, 3, status);
     }
 }
@@ -429,9 +563,13 @@ fn populate(list: &ListCtrl, accounts: &[Account], active_id: Option<&str>) {
 fn detect_provider(domain: &str) -> (&str, &str, &str, &str) {
     match domain.to_lowercase().as_str() {
         "gmail.com" | "googlemail.com" => ("imap.gmail.com", "smtp.gmail.com", "993", "465"),
-        "outlook.com" | "hotmail.com" | "live.com" | "msn.com" => ("outlook.office365.com", "smtp.office365.com", "993", "587"),
+        "outlook.com" | "hotmail.com" | "live.com" | "msn.com" => {
+            ("outlook.office365.com", "smtp.office365.com", "993", "587")
+        }
         "yahoo.com" | "ymail.com" => ("imap.mail.yahoo.com", "smtp.mail.yahoo.com", "993", "465"),
-        "icloud.com" | "mac.com" | "me.com" => ("imap.mail.me.com", "smtp.mail.me.com", "993", "587"),
+        "icloud.com" | "mac.com" | "me.com" => {
+            ("imap.mail.me.com", "smtp.mail.me.com", "993", "587")
+        }
         "aol.com" => ("imap.aol.com", "smtp.aol.com", "993", "465"),
         "zoho.com" => ("imap.zoho.com", "smtp.zoho.com", "993", "465"),
         "protonmail.com" | "pm.me" | "proton.me" => ("127.0.0.1", "127.0.0.1", "1143", "1025"),

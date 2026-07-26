@@ -61,10 +61,7 @@ pub enum ComposeMode {
         quoted_body: String,
     },
     /// Forward a message
-    Forward {
-        subject: String,
-        body: String,
-    },
+    Forward { subject: String, body: String },
     /// Edit an existing draft
     Draft(CompositionData),
 }
@@ -104,7 +101,9 @@ pub fn show_compose_dialog_with_options(
 
     let dialog = Dialog::builder(parent, title)
         .with_size(850, 700)
-        .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder | DialogStyle::MaximizeBox)
+        .with_style(
+            DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder | DialogStyle::MaximizeBox,
+        )
         .build();
 
     // ── Layout ───────────────────────────────────────────────────────────
@@ -118,38 +117,61 @@ pub fn show_compose_dialog_with_options(
     fields_sizer.add_growable_col(1, 1);
 
     // Account selector
-    let account_label = StaticText::builder(&dialog)
-        .with_label("&From:")
-        .build();
+    let account_label = StaticText::builder(&dialog).with_label("&From:").build();
     let account_choice = Choice::builder(&dialog)
         .with_choices(account_names.iter().map(|s| s.to_string()).collect())
         .with_selection(Some(active_account_index))
         .build();
-    fields_sizer.add(&account_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields_sizer.add(
+        &account_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields_sizer.add(&account_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // To field
     let to_label = StaticText::builder(&dialog).with_label("&To:").build();
     let to_field = TextCtrl::builder(&dialog).build();
-    fields_sizer.add(&to_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields_sizer.add(
+        &to_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields_sizer.add(&to_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // CC field
     let cc_label = StaticText::builder(&dialog).with_label("&CC:").build();
     let cc_field = TextCtrl::builder(&dialog).build();
-    fields_sizer.add(&cc_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields_sizer.add(
+        &cc_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields_sizer.add(&cc_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // BCC field
     let bcc_label = StaticText::builder(&dialog).with_label("&BCC:").build();
     let bcc_field = TextCtrl::builder(&dialog).build();
-    fields_sizer.add(&bcc_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields_sizer.add(
+        &bcc_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields_sizer.add(&bcc_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // Subject field
     let subject_label = StaticText::builder(&dialog).with_label("Su&bject:").build();
     let subject_field = TextCtrl::builder(&dialog).build();
-    fields_sizer.add(&subject_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields_sizer.add(
+        &subject_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields_sizer.add(&subject_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     main_sizer.add_sizer(&fields_sizer, 0, SizerFlag::Expand | SizerFlag::All, 4);
@@ -209,7 +231,12 @@ pub fn show_compose_dialog_with_options(
         .build();
     toolbar_sizer.add(&attach_btn, 0, SizerFlag::All, 2);
 
-    main_sizer.add_sizer(&toolbar_sizer, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right, 8);
+    main_sizer.add_sizer(
+        &toolbar_sizer,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
+        8,
+    );
 
     // -- Rich text body --
     let body_editor = RichTextCtrl::builder(&dialog)
@@ -222,7 +249,12 @@ pub fn show_compose_dialog_with_options(
     let attachment_label = StaticText::builder(&dialog)
         .with_label("No attachments")
         .build();
-    main_sizer.add(&attachment_label, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right, 8);
+    main_sizer.add(
+        &attachment_label,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
+        8,
+    );
 
     // -- Action buttons (Send is in toolbar above) --
     let button_sizer = BoxSizer::builder(Orientation::Horizontal).build();
@@ -436,7 +468,10 @@ fn show_send_preview(
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // Header summary
-    let hdr = FlexGridSizer::builder(0, 2).with_vgap(2).with_hgap(8).build();
+    let hdr = FlexGridSizer::builder(0, 2)
+        .with_vgap(2)
+        .with_hgap(8)
+        .build();
     hdr.add_growable_col(1, 1);
 
     let from_display = data
@@ -467,7 +502,12 @@ fn show_send_preview(
     let sep = StaticText::builder(&dlg)
         .with_label("────────────────────────────────────────")
         .build();
-    sizer.add(&sep, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right, 8);
+    sizer.add(
+        &sep,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
+        8,
+    );
 
     // Body preview (read-only)
     let body_preview = TextCtrl::builder(&dlg)
@@ -495,11 +535,15 @@ fn show_send_preview(
 
     send_btn.on_click({
         let d = dlg;
-        move |_| { d.end_modal(ID_CONFIRM_SEND); }
+        move |_| {
+            d.end_modal(ID_CONFIRM_SEND);
+        }
     });
     back_btn.on_click({
         let d = dlg;
-        move |_| { d.end_modal(ID_GO_BACK); }
+        move |_| {
+            d.end_modal(ID_GO_BACK);
+        }
     });
 
     if dlg.show_modal() == ID_CONFIRM_SEND {

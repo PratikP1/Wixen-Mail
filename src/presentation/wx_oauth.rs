@@ -60,8 +60,15 @@ pub fn show_oauth_dialog(
     let acct_choice = Choice::builder(&dialog)
         .with_choices(account_names.iter().map(|s| s.to_string()).collect())
         .build();
-    if !account_names.is_empty() { acct_choice.set_selection(0); }
-    fields.add(&acct_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    if !account_names.is_empty() {
+        acct_choice.set_selection(0);
+    }
+    fields.add(
+        &acct_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields.add(&acct_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // Provider selector
@@ -69,30 +76,58 @@ pub fn show_oauth_dialog(
     let prov_choice = Choice::builder(&dialog)
         .with_choices(providers.iter().map(|s| s.to_string()).collect())
         .build();
-    if !providers.is_empty() { prov_choice.set_selection(0); }
-    fields.add(&prov_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    if !providers.is_empty() {
+        prov_choice.set_selection(0);
+    }
+    fields.add(
+        &prov_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields.add(&prov_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // Client ID
-    let client_label = StaticText::builder(&dialog).with_label("Client ID:").build();
+    let client_label = StaticText::builder(&dialog)
+        .with_label("Client ID:")
+        .build();
     let client_field = TextCtrl::builder(&dialog).build();
-    fields.add(&client_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields.add(
+        &client_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields.add(&client_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // Client Secret
-    let secret_label = StaticText::builder(&dialog).with_label("Client Secret:").build();
+    let secret_label = StaticText::builder(&dialog)
+        .with_label("Client Secret:")
+        .build();
     let secret_field = TextCtrl::builder(&dialog)
         .with_style(TextCtrlStyle::Password)
         .build();
-    fields.add(&secret_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields.add(
+        &secret_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields.add(&secret_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // Redirect URI
-    let redirect_label = StaticText::builder(&dialog).with_label("Redirect URI:").build();
+    let redirect_label = StaticText::builder(&dialog)
+        .with_label("Redirect URI:")
+        .build();
     let redirect_field = TextCtrl::builder(&dialog)
         .with_value("http://localhost/oauth/callback")
         .build();
-    fields.add(&redirect_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields.add(
+        &redirect_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields.add(&redirect_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     main_sizer.add_sizer(&fields, 0, SizerFlag::Expand | SizerFlag::All, 8);
@@ -112,7 +147,12 @@ pub fn show_oauth_dialog(
     let url_field = TextCtrl::builder(&dialog)
         .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::ReadOnly)
         .build();
-    main_sizer.add(&url_field, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right, 8);
+    main_sizer.add(
+        &url_field,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
+        8,
+    );
 
     // Step 2: Enter authorization code
     let step2_label = StaticText::builder(&dialog)
@@ -121,7 +161,12 @@ pub fn show_oauth_dialog(
     main_sizer.add(&step2_label, 0, SizerFlag::Left | SizerFlag::All, 8);
 
     let code_field = TextCtrl::builder(&dialog).build();
-    main_sizer.add(&code_field, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right, 8);
+    main_sizer.add(
+        &code_field,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
+        8,
+    );
 
     // Action buttons
     let action_sizer = BoxSizer::builder(Orientation::Horizontal).build();
@@ -194,10 +239,30 @@ pub fn show_oauth_dialog(
         }
     });
 
-    exchange_btn.on_click({ let d = dialog; move |_| { d.end_modal(ID_EXCHANGE_CODE); } });
-    refresh_btn.on_click({ let d = dialog; move |_| { d.end_modal(ID_REFRESH_TOKEN); } });
-    revoke_btn.on_click({ let d = dialog; move |_| { d.end_modal(ID_REVOKE_TOKEN); } });
-    close_btn.on_click({ let d = dialog; move |_| { d.end_modal(ID_OK); } });
+    exchange_btn.on_click({
+        let d = dialog;
+        move |_| {
+            d.end_modal(ID_EXCHANGE_CODE);
+        }
+    });
+    refresh_btn.on_click({
+        let d = dialog;
+        move |_| {
+            d.end_modal(ID_REFRESH_TOKEN);
+        }
+    });
+    revoke_btn.on_click({
+        let d = dialog;
+        move |_| {
+            d.end_modal(ID_REVOKE_TOKEN);
+        }
+    });
+    close_btn.on_click({
+        let d = dialog;
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    });
 
     // Modal loop
     loop {

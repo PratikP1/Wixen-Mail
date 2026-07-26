@@ -30,9 +30,14 @@ impl MessageCache {
         let rows = stmt
             .query_map(params![account_id], |row| {
                 Ok(QueuedOutboxMessage {
-                    id: row.get(0)?, account_id: row.get(1)?, to_addr: row.get(2)?,
-                    subject: row.get(3)?, body: row.get(4)?, attempt_count: row.get(5)?,
-                    last_error: row.get(6)?, created_at: row.get(7)?,
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    to_addr: row.get(2)?,
+                    subject: row.get(3)?,
+                    body: row.get(4)?,
+                    attempt_count: row.get(5)?,
+                    last_error: row.get(6)?,
+                    created_at: row.get(7)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query outbox messages: {}", e)))?
@@ -71,14 +76,21 @@ mod tests {
 
     #[test]
     fn test_offline_outbox_queue_operations() {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_outbox_{}", nanos));
         let cache = MessageCache::new(temp_dir, None).unwrap();
 
         let item = QueuedOutboxMessage {
-            id: "outbox-1".to_string(), account_id: "acc-1".to_string(),
-            to_addr: "user@example.com".to_string(), subject: "Queued".to_string(),
-            body: "Queued body".to_string(), attempt_count: 0, last_error: None,
+            id: "outbox-1".to_string(),
+            account_id: "acc-1".to_string(),
+            to_addr: "user@example.com".to_string(),
+            subject: "Queued".to_string(),
+            body: "Queued body".to_string(),
+            attempt_count: 0,
+            last_error: None,
             created_at: chrono::Utc::now().to_rfc3339(),
         };
         cache.queue_outbox_message(&item).unwrap();
@@ -87,7 +99,9 @@ mod tests {
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].subject, "Queued");
 
-        cache.update_outbox_failure("outbox-1", "network down").unwrap();
+        cache
+            .update_outbox_failure("outbox-1", "network down")
+            .unwrap();
         let loaded2 = cache.load_outbox_messages("acc-1").unwrap();
         assert_eq!(loaded2[0].attempt_count, 1);
         assert_eq!(loaded2[0].last_error.as_deref(), Some("network down"));

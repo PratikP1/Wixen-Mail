@@ -122,29 +122,43 @@ impl HtmlRenderer {
         let sanitized = self.sanitize_html(html);
 
         // Replace links with accessible inline format: "text [URL]"
-        let with_links = link_re().replace_all(&sanitized, |caps: &regex::Captures| {
-            let href = caps.get(1).or_else(|| caps.get(2)).map(|m| m.as_str()).unwrap_or("");
-            let text = caps.get(3).map(|m| m.as_str()).unwrap_or("");
-            let clean_text = self.html_to_plain_text(text);
-            if let Some(safe_url) = Self::sanitize_url(href) {
-                if clean_text.trim() == safe_url.trim() {
-                    clean_text // Don't duplicate if link text is already the URL
+        let with_links = link_re()
+            .replace_all(&sanitized, |caps: &regex::Captures| {
+                let href = caps
+                    .get(1)
+                    .or_else(|| caps.get(2))
+                    .map(|m| m.as_str())
+                    .unwrap_or("");
+                let text = caps.get(3).map(|m| m.as_str()).unwrap_or("");
+                let clean_text = self.html_to_plain_text(text);
+                if let Some(safe_url) = Self::sanitize_url(href) {
+                    if clean_text.trim() == safe_url.trim() {
+                        clean_text // Don't duplicate if link text is already the URL
+                    } else {
+                        format!("{} [{}]", clean_text, safe_url)
+                    }
                 } else {
-                    format!("{} [{}]", clean_text, safe_url)
+                    clean_text
                 }
-            } else {
-                clean_text
-            }
-        }).to_string();
+            })
+            .to_string();
 
         // Replace images with alt text descriptions
-        let with_images = image_alt_re().replace_all(&with_links, |caps: &regex::Captures| {
-            let alt = caps.get(1).or_else(|| caps.get(2)).map(|m| m.as_str()).unwrap_or("image");
-            format!("[Image: {}]", alt)
-        }).to_string();
+        let with_images = image_alt_re()
+            .replace_all(&with_links, |caps: &regex::Captures| {
+                let alt = caps
+                    .get(1)
+                    .or_else(|| caps.get(2))
+                    .map(|m| m.as_str())
+                    .unwrap_or("image");
+                format!("[Image: {}]", alt)
+            })
+            .to_string();
 
         // Remove remaining img tags without alt text
-        let cleaned = img_tag_re().replace_all(&with_images, "[Image]").to_string();
+        let cleaned = img_tag_re()
+            .replace_all(&with_images, "[Image]")
+            .to_string();
 
         let plain = self.html_to_plain_text(&cleaned);
         let links = self.extract_link_texts(&sanitized);

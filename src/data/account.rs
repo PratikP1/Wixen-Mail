@@ -263,7 +263,10 @@ impl AccountManager {
     pub fn add_account(&mut self, account: Account) -> Result<String, String> {
         account.validate()?;
         if self.accounts.iter().any(|a| a.email == account.email) {
-            return Err(format!("Account with email {} already exists", account.email));
+            return Err(format!(
+                "Account with email {} already exists",
+                account.email
+            ));
         }
         let id = account.id.clone();
         self.accounts.push(account);
@@ -275,14 +278,20 @@ impl AccountManager {
 
     pub fn update_account(&mut self, account: Account) -> Result<(), String> {
         account.validate()?;
-        let index = self.accounts.iter().position(|a| a.id == account.id)
+        let index = self
+            .accounts
+            .iter()
+            .position(|a| a.id == account.id)
             .ok_or_else(|| "Account not found".to_string())?;
         self.accounts[index] = account;
         Ok(())
     }
 
     pub fn delete_account(&mut self, id: &str) -> Result<(), String> {
-        let index = self.accounts.iter().position(|a| a.id == id)
+        let index = self
+            .accounts
+            .iter()
+            .position(|a| a.id == id)
             .ok_or_else(|| "Account not found".to_string())?;
         self.accounts.remove(index);
         if self.active_account_id.as_ref() == Some(&id.to_string()) {
@@ -304,7 +313,8 @@ impl AccountManager {
     }
 
     pub fn set_account_enabled(&mut self, id: &str, enabled: bool) -> Result<(), String> {
-        let account = self.get_account_mut(id)
+        let account = self
+            .get_account_mut(id)
             .ok_or_else(|| "Account not found".to_string())?;
         account.enabled = enabled;
         Ok(())

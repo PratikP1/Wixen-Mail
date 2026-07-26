@@ -11,7 +11,13 @@ impl MessageCache {
             .execute(
                 "INSERT INTO tags (id, account_id, name, color, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![&tag.id, &tag.account_id, &tag.name, &tag.color, &tag.created_at],
+                params![
+                    &tag.id,
+                    &tag.account_id,
+                    &tag.name,
+                    &tag.color,
+                    &tag.created_at
+                ],
             )
             .map_err(|e| Error::Other(format!("Failed to create tag: {}", e)))?;
         Ok(())
@@ -219,42 +225,65 @@ mod tests {
 
     #[test]
     fn test_message_tagging() {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_message_tags_{}", nanos));
         let cache = MessageCache::new(temp_dir, None).unwrap();
 
         let folder = CachedFolder {
-            id: 0, account_id: "test@example.com".to_string(),
-            name: "INBOX".to_string(), path: "INBOX".to_string(),
-            folder_type: "inbox".to_string(), unread_count: 0, total_count: 0,
+            id: 0,
+            account_id: "test@example.com".to_string(),
+            name: "INBOX".to_string(),
+            path: "INBOX".to_string(),
+            folder_type: "inbox".to_string(),
+            unread_count: 0,
+            total_count: 0,
         };
         let folder_id = cache.save_folder(&folder).unwrap();
 
         let message = CachedMessage {
-            id: 0, uid: 1, folder_id,
-            message_id: "msg-1@example.com".to_string(), subject: "Test Message".to_string(),
-            from_addr: "sender@example.com".to_string(), to_addr: "recipient@example.com".to_string(),
-            cc: None, date: chrono::Utc::now().to_rfc3339(),
-            body_plain: Some("Test body".to_string()), body_html: None,
-            read: false, starred: false, deleted: false,
+            id: 0,
+            uid: 1,
+            folder_id,
+            message_id: "msg-1@example.com".to_string(),
+            subject: "Test Message".to_string(),
+            from_addr: "sender@example.com".to_string(),
+            to_addr: "recipient@example.com".to_string(),
+            cc: None,
+            date: chrono::Utc::now().to_rfc3339(),
+            body_plain: Some("Test body".to_string()),
+            body_html: None,
+            read: false,
+            starred: false,
+            deleted: false,
         };
         let message_id = cache.save_message(&message).unwrap();
 
         let tag1 = Tag {
-            id: "tag-important".to_string(), account_id: "test@example.com".to_string(),
-            name: "Important".to_string(), color: "#FF0000".to_string(),
+            id: "tag-important".to_string(),
+            account_id: "test@example.com".to_string(),
+            name: "Important".to_string(),
+            color: "#FF0000".to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
         };
         let tag2 = Tag {
-            id: "tag-personal".to_string(), account_id: "test@example.com".to_string(),
-            name: "Personal".to_string(), color: "#00FF00".to_string(),
+            id: "tag-personal".to_string(),
+            account_id: "test@example.com".to_string(),
+            name: "Personal".to_string(),
+            color: "#00FF00".to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
         };
         cache.create_tag(&tag1).unwrap();
         cache.create_tag(&tag2).unwrap();
 
-        cache.add_tag_to_message(message_id, "tag-important").unwrap();
-        cache.add_tag_to_message(message_id, "tag-personal").unwrap();
+        cache
+            .add_tag_to_message(message_id, "tag-important")
+            .unwrap();
+        cache
+            .add_tag_to_message(message_id, "tag-personal")
+            .unwrap();
 
         let message_tags = cache.get_tags_for_message(message_id).unwrap();
         assert_eq!(message_tags.len(), 2);
@@ -263,7 +292,9 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].subject, "Test Message");
 
-        cache.remove_tag_from_message(message_id, "tag-personal").unwrap();
+        cache
+            .remove_tag_from_message(message_id, "tag-personal")
+            .unwrap();
         let remaining_tags = cache.get_tags_for_message(message_id).unwrap();
         assert_eq!(remaining_tags.len(), 1);
         assert_eq!(remaining_tags[0].name, "Important");

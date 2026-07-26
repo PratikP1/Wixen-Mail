@@ -283,25 +283,37 @@ fn test_filter_regex_match() {
         .unwrap();
 
     let msg_match = CachedMessage {
-        id: 1, uid: 1, folder_id: 1,
+        id: 1,
+        uid: 1,
+        folder_id: 1,
         message_id: "m1".to_string(),
         subject: "Your INV-12345 is ready".to_string(),
         from_addr: "billing@co.com".to_string(),
         to_addr: "me@co.com".to_string(),
-        cc: None, date: "2026-01-01".to_string(),
-        body_plain: None, body_html: None,
-        read: false, starred: false, deleted: false,
+        cc: None,
+        date: "2026-01-01".to_string(),
+        body_plain: None,
+        body_html: None,
+        read: false,
+        starred: false,
+        deleted: false,
     };
 
     let msg_no_match = CachedMessage {
-        id: 2, uid: 2, folder_id: 1,
+        id: 2,
+        uid: 2,
+        folder_id: 1,
         message_id: "m2".to_string(),
         subject: "Your order #123 is ready".to_string(),
         from_addr: "billing@co.com".to_string(),
         to_addr: "me@co.com".to_string(),
-        cc: None, date: "2026-01-01".to_string(),
-        body_plain: None, body_html: None,
-        read: false, starred: false, deleted: false,
+        cc: None,
+        date: "2026-01-01".to_string(),
+        body_plain: None,
+        body_html: None,
+        read: false,
+        starred: false,
+        deleted: false,
     };
 
     assert_eq!(engine.evaluate_message(&msg_match).len(), 1);
@@ -313,26 +325,55 @@ fn test_filter_regex_match() {
 #[test]
 fn test_search_across_folders() {
     let engine = SearchEngine::new().unwrap();
-    engine.index_text(Some("INBOX".to_string()), "Invoice from Acme Corp".to_string()).unwrap();
-    engine.index_text(Some("INBOX".to_string()), "Meeting notes for Monday".to_string()).unwrap();
-    engine.index_text(Some("Sent".to_string()), "Re: Invoice from Acme Corp".to_string()).unwrap();
-    engine.index_text(Some("Drafts".to_string()), "Draft: invoice template".to_string()).unwrap();
+    engine
+        .index_text(
+            Some("INBOX".to_string()),
+            "Invoice from Acme Corp".to_string(),
+        )
+        .unwrap();
+    engine
+        .index_text(
+            Some("INBOX".to_string()),
+            "Meeting notes for Monday".to_string(),
+        )
+        .unwrap();
+    engine
+        .index_text(
+            Some("Sent".to_string()),
+            "Re: Invoice from Acme Corp".to_string(),
+        )
+        .unwrap();
+    engine
+        .index_text(
+            Some("Drafts".to_string()),
+            "Draft: invoice template".to_string(),
+        )
+        .unwrap();
 
     // Search all folders
     let results = engine
-        .search(&SearchQuery { text: "invoice".to_string(), folder: None })
+        .search(&SearchQuery {
+            text: "invoice".to_string(),
+            folder: None,
+        })
         .unwrap();
     assert_eq!(results.len(), 3);
 
     // Search specific folder
     let results = engine
-        .search(&SearchQuery { text: "invoice".to_string(), folder: Some("INBOX".to_string()) })
+        .search(&SearchQuery {
+            text: "invoice".to_string(),
+            folder: Some("INBOX".to_string()),
+        })
         .unwrap();
     assert_eq!(results.len(), 1);
 
     // Empty query
     let results = engine
-        .search(&SearchQuery { text: "".to_string(), folder: None })
+        .search(&SearchQuery {
+            text: "".to_string(),
+            folder: None,
+        })
         .unwrap();
     assert!(results.is_empty());
 }
@@ -370,7 +411,10 @@ fn test_phishing_no_risk_normal_email() {
         )
         .unwrap();
 
-    assert_eq!(report.phishing_risk, wixen_mail::service::security::PhishingRiskLevel::None);
+    assert_eq!(
+        report.phishing_risk,
+        wixen_mail::service::security::PhishingRiskLevel::None
+    );
     assert_eq!(report.phishing_score, 0);
     assert!(report.phishing_indicators.is_empty());
 }
@@ -527,7 +571,9 @@ fn test_message_cache_outbox_queue() {
     assert_eq!(queued[0].subject, "Queued message");
 
     // Record failure
-    cache.update_outbox_failure("q-1", "Connection refused").unwrap();
+    cache
+        .update_outbox_failure("q-1", "Connection refused")
+        .unwrap();
     let queued = cache.load_outbox_messages("acct-1").unwrap();
     assert_eq!(queued[0].attempt_count, 1);
     assert_eq!(queued[0].last_error, Some("Connection refused".to_string()));

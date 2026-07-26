@@ -69,17 +69,31 @@ impl MessageCache {
         let contacts = stmt
             .query_map(params![account_id], |row| {
                 Ok(ContactEntry {
-                    id: row.get(0)?, account_id: row.get(1)?, name: row.get(2)?,
-                    email: row.get(3)?, provider_contact_id: row.get(4)?,
-                    phone: row.get(5)?, company: row.get(6)?, job_title: row.get(7)?,
-                    website: row.get(8)?, address: row.get(9)?, birthday: row.get(10)?,
-                    avatar_url: row.get(11)?, avatar_data_base64: row.get(12)?,
-                    source_provider: row.get(13)?, last_synced_at: row.get(14)?,
-                    vcard_raw: row.get(15)?, notes: row.get(16)?,
-                    favorite: row.get(17)?, created_at: row.get(18)?,
-                    nickname: row.get(19)?, department: row.get(20)?,
-                    relationship: row.get(21)?, emails_json: row.get(22)?,
-                    phones_json: row.get(23)?, addresses_json: row.get(24)?,
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    email: row.get(3)?,
+                    provider_contact_id: row.get(4)?,
+                    phone: row.get(5)?,
+                    company: row.get(6)?,
+                    job_title: row.get(7)?,
+                    website: row.get(8)?,
+                    address: row.get(9)?,
+                    birthday: row.get(10)?,
+                    avatar_url: row.get(11)?,
+                    avatar_data_base64: row.get(12)?,
+                    source_provider: row.get(13)?,
+                    last_synced_at: row.get(14)?,
+                    vcard_raw: row.get(15)?,
+                    notes: row.get(16)?,
+                    favorite: row.get(17)?,
+                    created_at: row.get(18)?,
+                    nickname: row.get(19)?,
+                    department: row.get(20)?,
+                    relationship: row.get(21)?,
+                    emails_json: row.get(22)?,
+                    phones_json: row.get(23)?,
+                    addresses_json: row.get(24)?,
                     custom_fields_json: row.get(25)?,
                 })
             })
@@ -122,17 +136,31 @@ impl MessageCache {
         let contacts = stmt
             .query_map(params![account_id, pattern, limit as i64], |row| {
                 Ok(ContactEntry {
-                    id: row.get(0)?, account_id: row.get(1)?, name: row.get(2)?,
-                    email: row.get(3)?, provider_contact_id: row.get(4)?,
-                    phone: row.get(5)?, company: row.get(6)?, job_title: row.get(7)?,
-                    website: row.get(8)?, address: row.get(9)?, birthday: row.get(10)?,
-                    avatar_url: row.get(11)?, avatar_data_base64: row.get(12)?,
-                    source_provider: row.get(13)?, last_synced_at: row.get(14)?,
-                    vcard_raw: row.get(15)?, notes: row.get(16)?,
-                    favorite: row.get(17)?, created_at: row.get(18)?,
-                    nickname: row.get(19)?, department: row.get(20)?,
-                    relationship: row.get(21)?, emails_json: row.get(22)?,
-                    phones_json: row.get(23)?, addresses_json: row.get(24)?,
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    email: row.get(3)?,
+                    provider_contact_id: row.get(4)?,
+                    phone: row.get(5)?,
+                    company: row.get(6)?,
+                    job_title: row.get(7)?,
+                    website: row.get(8)?,
+                    address: row.get(9)?,
+                    birthday: row.get(10)?,
+                    avatar_url: row.get(11)?,
+                    avatar_data_base64: row.get(12)?,
+                    source_provider: row.get(13)?,
+                    last_synced_at: row.get(14)?,
+                    vcard_raw: row.get(15)?,
+                    notes: row.get(16)?,
+                    favorite: row.get(17)?,
+                    created_at: row.get(18)?,
+                    nickname: row.get(19)?,
+                    department: row.get(20)?,
+                    relationship: row.get(21)?,
+                    emails_json: row.get(22)?,
+                    phones_json: row.get(23)?,
+                    addresses_json: row.get(24)?,
                     custom_fields_json: row.get(25)?,
                 })
             })
@@ -149,12 +177,15 @@ impl MessageCache {
         source_provider: Option<&str>,
     ) -> Result<usize> {
         let mut imported_count = 0usize;
-        let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT m.from_addr, m.to_addr, m.cc
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT DISTINCT m.from_addr, m.to_addr, m.cc
              FROM messages m
              INNER JOIN folders f ON m.folder_id = f.id
              WHERE f.account_id = ?1 AND m.deleted = 0",
-        ).map_err(|e| Error::Other(format!("Failed to prepare auto-import query: {}", e)))?;
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare auto-import query: {}", e)))?;
 
         let rows = stmt
             .query_map(params![account_id], |row| {
@@ -186,24 +217,35 @@ impl MessageCache {
                                 name
                             },
                             email,
-                            provider_contact_id: None, phone: None, company: None,
-                            job_title: None, website: None, address: None, birthday: None,
-                            avatar_url: None, avatar_data_base64: None,
+                            provider_contact_id: None,
+                            phone: None,
+                            company: None,
+                            job_title: None,
+                            website: None,
+                            address: None,
+                            birthday: None,
+                            avatar_url: None,
+                            avatar_data_base64: None,
                             source_provider: source_provider.map(|p| p.to_string()),
                             last_synced_at: Some(chrono::Utc::now().to_rfc3339()),
                             vcard_raw: None,
                             notes: Some("Imported automatically from message history".to_string()),
                             favorite: false,
                             created_at: chrono::Utc::now().to_rfc3339(),
-                            nickname: None, department: None, relationship: None,
-                            emails_json: None, phones_json: None, addresses_json: None,
+                            nickname: None,
+                            department: None,
+                            relationship: None,
+                            emails_json: None,
+                            phones_json: None,
+                            addresses_json: None,
                             custom_fields_json: None,
                         };
                         match self.save_contact(&contact) {
                             Ok(_) => imported_count += 1,
                             Err(e) => tracing::warn!(
                                 "Auto-import skipped contact '{}': {}",
-                                contact.email, e
+                                contact.email,
+                                e
                             ),
                         }
                     }
@@ -236,57 +278,94 @@ impl MessageCache {
         let mut output = String::new();
         for c in contacts {
             output.push_str("BEGIN:VCARD\r\nVERSION:3.0\r\n");
-            output.push_str(&Self::fold_vcard_line(&format!("FN:{}", Self::escape_vcard_text(&c.name))));
+            output.push_str(&Self::fold_vcard_line(&format!(
+                "FN:{}",
+                Self::escape_vcard_text(&c.name)
+            )));
             if let Some(ref nick) = c.nickname {
-                output.push_str(&Self::fold_vcard_line(&format!("NICKNAME:{}", Self::escape_vcard_text(nick))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "NICKNAME:{}",
+                    Self::escape_vcard_text(nick)
+                )));
             }
             // Multi-value emails (fall back to primary if no JSON)
             if let Some(ref json) = c.emails_json {
                 if let Ok(entries) = serde_json::from_str::<Vec<super::EmailEntry>>(json) {
                     for e in &entries {
-                        output.push_str(&Self::fold_vcard_line(&format!("EMAIL;TYPE={}:{}", e.label.to_uppercase(), Self::escape_vcard_text(&e.address))));
+                        output.push_str(&Self::fold_vcard_line(&format!(
+                            "EMAIL;TYPE={}:{}",
+                            e.label.to_uppercase(),
+                            Self::escape_vcard_text(&e.address)
+                        )));
                     }
                 }
             } else {
-                output.push_str(&Self::fold_vcard_line(&format!("EMAIL:{}", Self::escape_vcard_text(&c.email))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "EMAIL:{}",
+                    Self::escape_vcard_text(&c.email)
+                )));
             }
             // Multi-value phones (fall back to primary if no JSON)
             if let Some(ref json) = c.phones_json {
                 if let Ok(entries) = serde_json::from_str::<Vec<super::PhoneEntry>>(json) {
                     for p in &entries {
-                        output.push_str(&Self::fold_vcard_line(&format!("TEL;TYPE={}:{}", p.label.to_uppercase(), Self::escape_vcard_text(&p.number))));
+                        output.push_str(&Self::fold_vcard_line(&format!(
+                            "TEL;TYPE={}:{}",
+                            p.label.to_uppercase(),
+                            Self::escape_vcard_text(&p.number)
+                        )));
                     }
                 }
             } else if let Some(ref phone) = c.phone {
-                output.push_str(&Self::fold_vcard_line(&format!("TEL:{}", Self::escape_vcard_text(phone))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "TEL:{}",
+                    Self::escape_vcard_text(phone)
+                )));
             }
             if let Some(ref company) = c.company {
-                output.push_str(&Self::fold_vcard_line(&format!("ORG:{}", Self::escape_vcard_text(company))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "ORG:{}",
+                    Self::escape_vcard_text(company)
+                )));
             }
             if let Some(ref dept) = c.department {
                 // ORG can include department as second component
                 if c.company.is_none() {
-                    output.push_str(&Self::fold_vcard_line(&format!("ORG:;{}", Self::escape_vcard_text(dept))));
+                    output.push_str(&Self::fold_vcard_line(&format!(
+                        "ORG:;{}",
+                        Self::escape_vcard_text(dept)
+                    )));
                 }
             }
             if let Some(ref job_title) = c.job_title {
-                output.push_str(&Self::fold_vcard_line(&format!("TITLE:{}", Self::escape_vcard_text(job_title))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "TITLE:{}",
+                    Self::escape_vcard_text(job_title)
+                )));
             }
             if let Some(ref website) = c.website {
-                output.push_str(&Self::fold_vcard_line(&format!("URL:{}", Self::escape_vcard_text(website))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "URL:{}",
+                    Self::escape_vcard_text(website)
+                )));
             }
             // Multi-value addresses (fall back to primary if no JSON)
             if let Some(ref json) = c.addresses_json {
                 if let Ok(entries) = serde_json::from_str::<Vec<super::AddressEntry>>(json) {
                     for a in &entries {
-                        let structured = format!(";;{};{};{};{};{}",
+                        let structured = format!(
+                            ";;{};{};{};{};{}",
                             Self::escape_vcard_text(&a.street),
                             Self::escape_vcard_text(&a.city),
                             Self::escape_vcard_text(&a.state),
                             Self::escape_vcard_text(&a.zip),
                             Self::escape_vcard_text(&a.country),
                         );
-                        output.push_str(&Self::fold_vcard_line(&format!("ADR;TYPE={}:{}", a.label.to_uppercase(), structured)));
+                        output.push_str(&Self::fold_vcard_line(&format!(
+                            "ADR;TYPE={}:{}",
+                            a.label.to_uppercase(),
+                            structured
+                        )));
                     }
                 }
             } else if let Some(ref address) = c.address {
@@ -299,25 +378,49 @@ impl MessageCache {
                 output.push_str(&Self::fold_vcard_line(&format!("ADR:{}", structured)));
             }
             if let Some(ref birthday) = c.birthday {
-                output.push_str(&Self::fold_vcard_line(&format!("BDAY:{}", Self::escape_vcard_text(birthday))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "BDAY:{}",
+                    Self::escape_vcard_text(birthday)
+                )));
             }
             if let Some(ref rel) = c.relationship {
-                output.push_str(&Self::fold_vcard_line(&format!("X-RELATIONSHIP:{}", Self::escape_vcard_text(rel))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "X-RELATIONSHIP:{}",
+                    Self::escape_vcard_text(rel)
+                )));
             }
             if let Some(ref photo_url) = c.avatar_url {
-                output.push_str(&Self::fold_vcard_line(&format!("PHOTO:{}", Self::escape_vcard_text(photo_url))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "PHOTO:{}",
+                    Self::escape_vcard_text(photo_url)
+                )));
             } else if let Some(ref photo_data) = c.avatar_data_base64 {
-                let compact_base64 = photo_data.chars().filter(|c| !c.is_whitespace()).collect::<String>();
-                output.push_str(&Self::fold_vcard_line(&format!("PHOTO;ENCODING=b:{}", compact_base64)));
+                let compact_base64 = photo_data
+                    .chars()
+                    .filter(|c| !c.is_whitespace())
+                    .collect::<String>();
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "PHOTO;ENCODING=b:{}",
+                    compact_base64
+                )));
             }
             if let Some(ref notes) = c.notes {
-                output.push_str(&Self::fold_vcard_line(&format!("NOTE:{}", Self::escape_vcard_text(notes))));
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "NOTE:{}",
+                    Self::escape_vcard_text(notes)
+                )));
             }
             // Custom fields as X-CUSTOM properties
             if let Some(ref json) = c.custom_fields_json {
                 if let Ok(fields) = serde_json::from_str::<Vec<super::CustomFieldEntry>>(json) {
                     for f in &fields {
-                        output.push_str(&Self::fold_vcard_line(&format!("X-CUSTOM-{}:{}", Self::escape_vcard_text(&f.label).to_uppercase().replace(' ', "-"), Self::escape_vcard_text(&f.value))));
+                        output.push_str(&Self::fold_vcard_line(&format!(
+                            "X-CUSTOM-{}:{}",
+                            Self::escape_vcard_text(&f.label)
+                                .to_uppercase()
+                                .replace(' ', "-"),
+                            Self::escape_vcard_text(&f.value)
+                        )));
                     }
                 }
             }
@@ -338,11 +441,19 @@ impl MessageCache {
 
     /// Create a new contact group
     pub fn create_contact_group(&self, group: &ContactGroup) -> Result<()> {
-        self.conn.execute(
-            "INSERT INTO contact_groups (id, account_id, name, description, created_at)
+        self.conn
+            .execute(
+                "INSERT INTO contact_groups (id, account_id, name, description, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![&group.id, &group.account_id, &group.name, &group.description, &group.created_at],
-        ).map_err(|e| Error::Other(format!("Failed to create contact group: {}", e)))?;
+                params![
+                    &group.id,
+                    &group.account_id,
+                    &group.name,
+                    &group.description,
+                    &group.created_at
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create contact group: {}", e)))?;
         Ok(())
     }
 
@@ -352,15 +463,20 @@ impl MessageCache {
             "SELECT id, account_id, name, description, created_at FROM contact_groups WHERE account_id = ?1 ORDER BY name"
         ).map_err(|e| Error::Other(format!("Failed to prepare contact groups query: {}", e)))?;
 
-        let groups = stmt.query_map(params![account_id], |row| {
-            Ok(ContactGroup {
-                id: row.get(0)?, account_id: row.get(1)?, name: row.get(2)?,
-                description: row.get(3)?, created_at: row.get(4)?,
-                member_ids: Vec::new(),
+        let groups = stmt
+            .query_map(params![account_id], |row| {
+                Ok(ContactGroup {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    description: row.get(3)?,
+                    created_at: row.get(4)?,
+                    member_ids: Vec::new(),
+                })
             })
-        }).map_err(|e| Error::Other(format!("Failed to query contact groups: {}", e)))?
-          .collect::<std::result::Result<Vec<_>, _>>()
-          .map_err(|e| Error::Other(format!("Failed to collect contact groups: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to query contact groups: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect contact groups: {}", e)))?;
 
         let mut result = groups;
         for group in &mut result {
@@ -371,18 +487,28 @@ impl MessageCache {
 
     /// Update a contact group
     pub fn update_contact_group(&self, group: &ContactGroup) -> Result<()> {
-        self.conn.execute(
-            "UPDATE contact_groups SET name = ?2, description = ?3 WHERE id = ?1",
-            params![&group.id, &group.name, &group.description],
-        ).map_err(|e| Error::Other(format!("Failed to update contact group: {}", e)))?;
+        self.conn
+            .execute(
+                "UPDATE contact_groups SET name = ?2, description = ?3 WHERE id = ?1",
+                params![&group.id, &group.name, &group.description],
+            )
+            .map_err(|e| Error::Other(format!("Failed to update contact group: {}", e)))?;
         Ok(())
     }
 
     /// Delete a contact group and its memberships
     pub fn delete_contact_group(&self, group_id: &str) -> Result<()> {
-        self.conn.execute("DELETE FROM contact_group_members WHERE group_id = ?1", params![group_id])
+        self.conn
+            .execute(
+                "DELETE FROM contact_group_members WHERE group_id = ?1",
+                params![group_id],
+            )
             .map_err(|e| Error::Other(format!("Failed to delete group members: {}", e)))?;
-        self.conn.execute("DELETE FROM contact_groups WHERE id = ?1", params![group_id])
+        self.conn
+            .execute(
+                "DELETE FROM contact_groups WHERE id = ?1",
+                params![group_id],
+            )
             .map_err(|e| Error::Other(format!("Failed to delete contact group: {}", e)))?;
         Ok(())
     }
@@ -399,19 +525,23 @@ impl MessageCache {
 
     /// Remove a contact from a group
     pub fn remove_contact_from_group(&self, group_id: &str, contact_id: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM contact_group_members WHERE group_id = ?1 AND contact_id = ?2",
-            params![group_id, contact_id],
-        ).map_err(|e| Error::Other(format!("Failed to remove member from group: {}", e)))?;
+        self.conn
+            .execute(
+                "DELETE FROM contact_group_members WHERE group_id = ?1 AND contact_id = ?2",
+                params![group_id, contact_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to remove member from group: {}", e)))?;
         Ok(())
     }
 
     fn load_group_member_ids(&self, group_id: &str) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT contact_id FROM contact_group_members WHERE group_id = ?1"
-        ).map_err(|e| Error::Other(format!("Failed to prepare group members query: {}", e)))?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT contact_id FROM contact_group_members WHERE group_id = ?1")
+            .map_err(|e| Error::Other(format!("Failed to prepare group members query: {}", e)))?;
 
-        let ids = stmt.query_map(params![group_id], |row| row.get(0))
+        let ids = stmt
+            .query_map(params![group_id], |row| row.get(0))
             .map_err(|e| Error::Other(format!("Failed to query group members: {}", e)))?
             .collect::<std::result::Result<Vec<String>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect group members: {}", e)))?;
@@ -420,14 +550,18 @@ impl MessageCache {
 
     /// Resolve a contact group to email addresses
     pub fn resolve_group_emails(&self, group_id: &str) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT c.email FROM contacts c
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT c.email FROM contacts c
              INNER JOIN contact_group_members m ON c.id = m.contact_id
              WHERE m.group_id = ?1
-             ORDER BY c.name"
-        ).map_err(|e| Error::Other(format!("Failed to resolve group emails: {}", e)))?;
+             ORDER BY c.name",
+            )
+            .map_err(|e| Error::Other(format!("Failed to resolve group emails: {}", e)))?;
 
-        let emails = stmt.query_map(params![group_id], |row| row.get(0))
+        let emails = stmt
+            .query_map(params![group_id], |row| row.get(0))
             .map_err(|e| Error::Other(format!("Failed to query group emails: {}", e)))?
             .collect::<std::result::Result<Vec<String>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect group emails: {}", e)))?;
@@ -486,7 +620,10 @@ impl MessageCache {
                 if let Some((prefix, value)) = line.split_once(':') {
                     let addr = Self::unescape_vcard_text(value.trim());
                     let label = Self::extract_vcard_type_param(prefix);
-                    emails.push(super::EmailEntry { label, address: addr.clone() });
+                    emails.push(super::EmailEntry {
+                        label,
+                        address: addr.clone(),
+                    });
                     if primary_email.is_empty() {
                         primary_email = addr;
                     }
@@ -495,7 +632,10 @@ impl MessageCache {
                 if let Some((prefix, value)) = line.split_once(':') {
                     let num = Self::unescape_vcard_text(value.trim());
                     let label = Self::extract_vcard_type_param(prefix);
-                    phones.push(super::PhoneEntry { label, number: num.clone() });
+                    phones.push(super::PhoneEntry {
+                        label,
+                        number: num.clone(),
+                    });
                     if phone.is_none() {
                         phone = Some(num);
                     }
@@ -556,23 +696,48 @@ impl MessageCache {
             name = Self::email_local_part_or_unknown(&primary_email);
         }
 
-        let emails_json = if emails.is_empty() { None } else { serde_json::to_string(&emails).ok() };
-        let phones_json = if phones.is_empty() { None } else { serde_json::to_string(&phones).ok() };
-        let addresses_json = if addresses.is_empty() { None } else { serde_json::to_string(&addresses).ok() };
+        let emails_json = if emails.is_empty() {
+            None
+        } else {
+            serde_json::to_string(&emails).ok()
+        };
+        let phones_json = if phones.is_empty() {
+            None
+        } else {
+            serde_json::to_string(&phones).ok()
+        };
+        let addresses_json = if addresses.is_empty() {
+            None
+        } else {
+            serde_json::to_string(&addresses).ok()
+        };
 
         Some(ContactEntry {
             id: uuid::Uuid::new_v4().to_string(),
             account_id: account_id.to_string(),
-            name, email: primary_email,
-            provider_contact_id: None, phone, company, job_title, website, address, birthday,
-            avatar_url, avatar_data_base64,
+            name,
+            email: primary_email,
+            provider_contact_id: None,
+            phone,
+            company,
+            job_title,
+            website,
+            address,
+            birthday,
+            avatar_url,
+            avatar_data_base64,
             source_provider: Some("vcard".to_string()),
             last_synced_at: Some(chrono::Utc::now().to_rfc3339()),
             vcard_raw: Some(block.to_string()),
-            notes, favorite: false,
+            notes,
+            favorite: false,
             created_at: chrono::Utc::now().to_rfc3339(),
-            nickname, department: None, relationship: None,
-            emails_json, phones_json, addresses_json,
+            nickname,
+            department: None,
+            relationship: None,
+            emails_json,
+            phones_json,
+            addresses_json,
             custom_fields_json: None,
         })
     }
@@ -612,7 +777,10 @@ impl MessageCache {
                         ';' => out.push(';'),
                         ',' => out.push(','),
                         '\\' => out.push('\\'),
-                        other => { out.push('\\'); out.push(other); }
+                        other => {
+                            out.push('\\');
+                            out.push(other);
+                        }
                     }
                 } else {
                     out.push('\\');
@@ -679,7 +847,10 @@ mod tests {
 
     #[test]
     fn test_contact_operations() {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_contacts_{}", nanos));
         let cache = MessageCache::new(temp_dir, None).unwrap();
 
@@ -708,10 +879,14 @@ mod tests {
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].email, "ada@example.com");
 
-        let search = cache.search_contacts_for_account("test@example.com", "ada", 5).unwrap();
+        let search = cache
+            .search_contacts_for_account("test@example.com", "ada", 5)
+            .unwrap();
         assert_eq!(search.len(), 1);
 
-        let wildcard_escape_results = cache.search_contacts_for_account("test@example.com", "%", 5).unwrap();
+        let wildcard_escape_results = cache
+            .search_contacts_for_account("test@example.com", "%", 5)
+            .unwrap();
         assert_eq!(wildcard_escape_results.len(), 0);
 
         cache.delete_contact("contact-1").unwrap();
@@ -721,7 +896,10 @@ mod tests {
 
     #[test]
     fn test_vcard_import_export() {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_vcard_{}", nanos));
         let cache = MessageCache::new(temp_dir, None).unwrap();
 
@@ -734,14 +912,19 @@ ORG:US Navy
 PHOTO:https://example.com/grace.png
 END:VCARD";
 
-        let imported = cache.import_contacts_from_vcard("test@example.com", vcard).unwrap();
+        let imported = cache
+            .import_contacts_from_vcard("test@example.com", vcard)
+            .unwrap();
         assert_eq!(imported, 1);
 
         let contacts = cache.get_contacts_for_account("test@example.com").unwrap();
         assert_eq!(contacts.len(), 1);
         assert_eq!(contacts[0].name, "Grace Hopper");
         assert_eq!(contacts[0].company.as_deref(), Some("US Navy"));
-        assert_eq!(contacts[0].avatar_url.as_deref(), Some("https://example.com/grace.png"));
+        assert_eq!(
+            contacts[0].avatar_url.as_deref(),
+            Some("https://example.com/grace.png")
+        );
 
         let exported = cache.export_contacts_to_vcard("test@example.com").unwrap();
         assert!(exported.contains("FN:Grace Hopper"));
@@ -751,30 +934,45 @@ END:VCARD";
 
     #[test]
     fn test_auto_import_contacts_from_messages() {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_auto_import_{}", nanos));
         let cache = MessageCache::new(temp_dir, None).unwrap();
 
         let folder = CachedFolder {
-            id: 0, account_id: "test@example.com".to_string(),
-            name: "INBOX".to_string(), path: "INBOX".to_string(),
-            folder_type: "Inbox".to_string(), unread_count: 0, total_count: 0,
+            id: 0,
+            account_id: "test@example.com".to_string(),
+            name: "INBOX".to_string(),
+            path: "INBOX".to_string(),
+            folder_type: "Inbox".to_string(),
+            unread_count: 0,
+            total_count: 0,
         };
         let folder_id = cache.save_folder(&folder).unwrap();
 
         let message = CachedMessage {
-            id: 0, uid: 1, folder_id,
-            message_id: "msg-auto-1".to_string(), subject: "Welcome".to_string(),
+            id: 0,
+            uid: 1,
+            folder_id,
+            message_id: "msg-auto-1".to_string(),
+            subject: "Welcome".to_string(),
             from_addr: "Grace Hopper <grace@example.com>".to_string(),
             to_addr: "ada@example.com, alan@example.com".to_string(),
             cc: Some("Katherine Johnson <katherine@example.com>".to_string()),
             date: chrono::Utc::now().to_rfc3339(),
-            body_plain: Some("Hello".to_string()), body_html: None,
-            read: false, starred: false, deleted: false,
+            body_plain: Some("Hello".to_string()),
+            body_html: None,
+            read: false,
+            starred: false,
+            deleted: false,
         };
         cache.save_message(&message).unwrap();
 
-        let imported = cache.auto_import_contacts_from_messages("test@example.com", Some("gmail")).unwrap();
+        let imported = cache
+            .auto_import_contacts_from_messages("test@example.com", Some("gmail"))
+            .unwrap();
         assert!(imported >= 3);
 
         let contacts = cache.get_contacts_for_account("test@example.com").unwrap();

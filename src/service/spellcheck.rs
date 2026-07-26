@@ -144,20 +144,19 @@ impl SpellChecker {
             .map(|l| l.hunspell_name.clone())
             .unwrap_or_else(|| format!("{lang_code}_{}", lang_code.to_uppercase()));
 
-        let backend = try_load_spellbook(&hunspell_name, &search_paths)
-            .unwrap_or_else(|| {
-                // Fallback: built-in word list (English only)
-                let mut dict = HashSet::with_capacity(15_000);
-                if lang_code == "en" {
-                    for word in CORE_ENGLISH_WORDS.split('\n') {
-                        let w = word.trim().to_lowercase();
-                        if !w.is_empty() {
-                            dict.insert(w);
-                        }
+        let backend = try_load_spellbook(&hunspell_name, &search_paths).unwrap_or_else(|| {
+            // Fallback: built-in word list (English only)
+            let mut dict = HashSet::with_capacity(15_000);
+            if lang_code == "en" {
+                for word in CORE_ENGLISH_WORDS.split('\n') {
+                    let w = word.trim().to_lowercase();
+                    if !w.is_empty() {
+                        dict.insert(w);
                     }
                 }
-                Backend::Builtin(dict)
-            });
+            }
+            Backend::Builtin(dict)
+        });
 
         Self {
             backend,
@@ -172,7 +171,11 @@ impl SpellChecker {
     ///
     /// This is the preferred API when you already have the dictionary data
     /// (e.g. bundled in the application or fetched from the network).
-    pub fn from_hunspell_data(lang_code: &str, aff_content: &str, dic_content: &str) -> Result<Self, String> {
+    pub fn from_hunspell_data(
+        lang_code: &str,
+        aff_content: &str,
+        dic_content: &str,
+    ) -> Result<Self, String> {
         // spellbook::Dictionary requires 'static lifetime, so we leak the strings.
         // This is acceptable because dictionaries live for the application lifetime.
         let aff: &'static str = Box::leak(aff_content.to_string().into_boxed_str());
@@ -278,10 +281,8 @@ impl SpellChecker {
             Backend::Builtin(set) => {
                 let lower = word.to_lowercase();
                 let edits = generate_edits(&lower, &self.alphabet);
-                let mut candidates: Vec<String> = edits
-                    .into_iter()
-                    .filter(|e| set.contains(e))
-                    .collect();
+                let mut candidates: Vec<String> =
+                    edits.into_iter().filter(|e| set.contains(e)).collect();
                 candidates.sort();
                 candidates.dedup();
                 candidates.truncate(max);
@@ -378,7 +379,10 @@ fn is_number_or_special(s: &str) -> bool {
         return true;
     }
     let lower = s.to_lowercase();
-    if lower.chars().all(|c| c.is_ascii_digit() || c == '.' || c == ',' || c == '-') {
+    if lower
+        .chars()
+        .all(|c| c.is_ascii_digit() || c == '.' || c == ',' || c == '-')
+    {
         return true;
     }
     if lower.contains('@') && lower.contains('.') {
@@ -399,7 +403,9 @@ fn generate_edits(word: &str, alphabet: &str) -> Vec<String> {
     for i in 0..n {
         let mut s = String::with_capacity(n - 1);
         for (j, &c) in chars.iter().enumerate() {
-            if j != i { s.push(c); }
+            if j != i {
+                s.push(c);
+            }
         }
         edits.push(s);
     }
@@ -421,10 +427,14 @@ fn generate_edits(word: &str, alphabet: &str) -> Vec<String> {
         for c in alphabet.chars() {
             let mut s = String::with_capacity(n + 1);
             for (j, &ch) in chars.iter().enumerate() {
-                if j == i { s.push(c); }
+                if j == i {
+                    s.push(c);
+                }
                 s.push(ch);
             }
-            if i == n { s.push(c); }
+            if i == n {
+                s.push(c);
+            }
             edits.push(s);
         }
     }
@@ -475,7 +485,12 @@ impl Locale {
             ("it", _) => "Italian".to_string(),
             _ => code.to_string(),
         };
-        Self { language_code: lang, country_code: country, display_name: display, direction }
+        Self {
+            language_code: lang,
+            country_code: country,
+            display_name: display,
+            direction,
+        }
     }
 }
 
@@ -487,13 +502,19 @@ pub struct I18n {
 
 impl I18n {
     pub fn new() -> Self {
-        let mut i18n = Self { active_locale: Locale::from_code("en"), translations: HashMap::new() };
+        let mut i18n = Self {
+            active_locale: Locale::from_code("en"),
+            translations: HashMap::new(),
+        };
         i18n.register_english_defaults();
         i18n
     }
 
     pub fn with_locale(code: &str) -> Self {
-        let mut i18n = Self { active_locale: Locale::from_code(code), translations: HashMap::new() };
+        let mut i18n = Self {
+            active_locale: Locale::from_code(code),
+            translations: HashMap::new(),
+        };
         i18n.register_english_defaults();
         i18n
     }
@@ -501,25 +522,44 @@ impl I18n {
     fn register_english_defaults(&mut self) {
         let mut en = HashMap::new();
         for (k, v) in [
-            ("menu.file", "File"), ("menu.edit", "Edit"), ("menu.view", "View"),
-            ("menu.message", "Message"), ("menu.tools", "Tools"), ("menu.help", "Help"),
-            ("action.send", "Send"), ("action.save_draft", "Save Draft"),
-            ("action.cancel", "Cancel"), ("action.ok", "OK"), ("action.delete", "Delete"),
-            ("action.reply", "Reply"), ("action.reply_all", "Reply All"),
-            ("action.forward", "Forward"), ("action.search", "Search"),
-            ("status.ready", "Ready"), ("status.checking_mail", "Checking for new mail..."),
-            ("status.sending", "Sending..."), ("status.offline", "Offline mode"),
-            ("status.online", "Online"), ("status.connected", "Connected"),
+            ("menu.file", "File"),
+            ("menu.edit", "Edit"),
+            ("menu.view", "View"),
+            ("menu.message", "Message"),
+            ("menu.tools", "Tools"),
+            ("menu.help", "Help"),
+            ("action.send", "Send"),
+            ("action.save_draft", "Save Draft"),
+            ("action.cancel", "Cancel"),
+            ("action.ok", "OK"),
+            ("action.delete", "Delete"),
+            ("action.reply", "Reply"),
+            ("action.reply_all", "Reply All"),
+            ("action.forward", "Forward"),
+            ("action.search", "Search"),
+            ("status.ready", "Ready"),
+            ("status.checking_mail", "Checking for new mail..."),
+            ("status.sending", "Sending..."),
+            ("status.offline", "Offline mode"),
+            ("status.online", "Online"),
+            ("status.connected", "Connected"),
             ("status.disconnected", "Disconnected"),
-            ("compose.to", "To:"), ("compose.cc", "CC:"), ("compose.bcc", "BCC:"),
-            ("compose.subject", "Subject:"), ("compose.from", "From:"),
+            ("compose.to", "To:"),
+            ("compose.cc", "CC:"),
+            ("compose.bcc", "BCC:"),
+            ("compose.subject", "Subject:"),
+            ("compose.from", "From:"),
             ("spellcheck.no_errors", "No spelling errors found"),
             ("spellcheck.errors_found", "Spelling errors found"),
             ("spellcheck.add_to_dictionary", "Add to Dictionary"),
-            ("spellcheck.ignore", "Ignore"), ("spellcheck.ignore_all", "Ignore All"),
-            ("settings.title", "Settings"), ("settings.general", "General"),
-            ("settings.compose", "Compose"), ("settings.reading", "Reading"),
-            ("settings.language", "Language"), ("settings.advanced", "Advanced"),
+            ("spellcheck.ignore", "Ignore"),
+            ("spellcheck.ignore_all", "Ignore All"),
+            ("settings.title", "Settings"),
+            ("settings.general", "General"),
+            ("settings.compose", "Compose"),
+            ("settings.reading", "Reading"),
+            ("settings.language", "Language"),
+            ("settings.advanced", "Advanced"),
         ] {
             en.insert(k.into(), v.into());
         }
@@ -530,7 +570,11 @@ impl I18n {
         self.translations.insert(lang_code.to_string(), strings);
     }
 
-    pub fn load_translations_file(&mut self, lang_code: &str, path: &Path) -> std::io::Result<usize> {
+    pub fn load_translations_file(
+        &mut self,
+        lang_code: &str,
+        path: &Path,
+    ) -> std::io::Result<usize> {
         let content = std::fs::read_to_string(path)?;
         let map: HashMap<String, String> = serde_json::from_str(&content)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -539,15 +583,23 @@ impl I18n {
         Ok(count)
     }
 
-    pub fn set_locale(&mut self, code: &str) { self.active_locale = Locale::from_code(code); }
-    pub fn locale(&self) -> &Locale { &self.active_locale }
+    pub fn set_locale(&mut self, code: &str) {
+        self.active_locale = Locale::from_code(code);
+    }
+    pub fn locale(&self) -> &Locale {
+        &self.active_locale
+    }
 
     pub fn t(&self, string_id: &str) -> String {
         if let Some(table) = self.translations.get(&self.active_locale.language_code) {
-            if let Some(s) = table.get(string_id) { return s.clone(); }
+            if let Some(s) = table.get(string_id) {
+                return s.clone();
+            }
         }
         if let Some(en) = self.translations.get("en") {
-            if let Some(s) = en.get(string_id) { return s.clone(); }
+            if let Some(s) = en.get(string_id) {
+                return s.clone();
+            }
         }
         string_id.to_string()
     }
@@ -563,7 +615,9 @@ impl I18n {
 }
 
 impl Default for I18n {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -619,7 +673,9 @@ mod tests {
         let langs = supported_languages();
         assert!(langs.len() >= 6);
         assert!(langs.iter().any(|l| l.code == "en"));
-        for l in &langs { assert!(!l.hunspell_name.is_empty()); }
+        for l in &langs {
+            assert!(!l.hunspell_name.is_empty());
+        }
     }
 
     #[test]

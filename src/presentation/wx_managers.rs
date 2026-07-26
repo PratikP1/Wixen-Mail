@@ -17,7 +17,11 @@ const ID_MGR_DELETE: Id = ID_HIGHEST + 302;
 /// Get selected item index from a ListCtrl (-1 means none).
 pub(crate) fn get_selected(list: &ListCtrl) -> Option<usize> {
     let sel = list.get_first_selected_item();
-    if sel >= 0 { Some(sel as usize) } else { None }
+    if sel >= 0 {
+        Some(sel as usize)
+    } else {
+        None
+    }
 }
 
 /// Add a label + TextCtrl row to a FlexGridSizer. Returns the TextCtrl.
@@ -62,10 +66,22 @@ fn run_manager_loop<T: Clone>(
     name_fn: impl Fn(&T) -> String,
 ) -> bool {
     // Create and attach buttons
-    let add_btn = Button::builder(dialog).with_label("&Add...").with_id(ID_MGR_ADD).build();
-    let edit_btn = Button::builder(dialog).with_label("&Edit...").with_id(ID_MGR_EDIT).build();
-    let del_btn = Button::builder(dialog).with_label("&Delete").with_id(ID_MGR_DELETE).build();
-    let close_btn = Button::builder(dialog).with_label("&Close").with_id(ID_OK).build();
+    let add_btn = Button::builder(dialog)
+        .with_label("&Add...")
+        .with_id(ID_MGR_ADD)
+        .build();
+    let edit_btn = Button::builder(dialog)
+        .with_label("&Edit...")
+        .with_id(ID_MGR_EDIT)
+        .build();
+    let del_btn = Button::builder(dialog)
+        .with_label("&Delete")
+        .with_id(ID_MGR_DELETE)
+        .build();
+    let close_btn = Button::builder(dialog)
+        .with_label("&Close")
+        .with_id(ID_OK)
+        .build();
 
     let btn_sizer = BoxSizer::builder(Orientation::Horizontal).build();
     btn_sizer.add(&add_btn, 0, SizerFlag::All, 4);
@@ -78,10 +94,30 @@ fn run_manager_loop<T: Clone>(
     main_sizer.add(status_text, 0, SizerFlag::Expand | SizerFlag::All, 4);
     dialog.set_sizer(*main_sizer, true);
 
-    add_btn.on_click({ let d = *dialog; move |_| { d.end_modal(ID_MGR_ADD); } });
-    edit_btn.on_click({ let d = *dialog; move |_| { d.end_modal(ID_MGR_EDIT); } });
-    del_btn.on_click({ let d = *dialog; move |_| { d.end_modal(ID_MGR_DELETE); } });
-    close_btn.on_click({ let d = *dialog; move |_| { d.end_modal(ID_OK); } });
+    add_btn.on_click({
+        let d = *dialog;
+        move |_| {
+            d.end_modal(ID_MGR_ADD);
+        }
+    });
+    edit_btn.on_click({
+        let d = *dialog;
+        move |_| {
+            d.end_modal(ID_MGR_EDIT);
+        }
+    });
+    del_btn.on_click({
+        let d = *dialog;
+        move |_| {
+            d.end_modal(ID_MGR_DELETE);
+        }
+    });
+    close_btn.on_click({
+        let d = *dialog;
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    });
 
     populate(list, working);
     let mut changed = false;
@@ -126,7 +162,12 @@ fn run_manager_loop<T: Clone>(
 }
 
 /// Create the standard manager dialog shell: dialog + sizer + list + status.
-fn make_shell(parent: &Frame, title: &str, w: i32, h: i32) -> (Dialog, BoxSizer, ListCtrl, StaticText) {
+fn make_shell(
+    parent: &Frame,
+    title: &str,
+    w: i32,
+    h: i32,
+) -> (Dialog, BoxSizer, ListCtrl, StaticText) {
     let dialog = Dialog::builder(parent, title)
         .with_size(w, h)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
@@ -205,7 +246,10 @@ pub struct ContactEntry {
 impl ContactEntry {
     /// Primary email (first in list, or empty)
     pub fn primary_email(&self) -> &str {
-        self.emails.first().map(|e| e.address.as_str()).unwrap_or("")
+        self.emails
+            .first()
+            .map(|e| e.address.as_str())
+            .unwrap_or("")
     }
     /// Primary phone (first in list, or empty)
     pub fn primary_phone(&self) -> &str {
@@ -222,39 +266,142 @@ pub enum ContactManagerAction {
 // ── Label constants for dropdowns ────────────────────────────────────────────
 
 const EMAIL_LABELS: &[&str] = &["Personal", "Work", "Other"];
-const PHONE_LABELS: &[&str] = &["Mobile", "Home", "Work", "Work Fax", "Home Fax", "Pager", "Other"];
+const PHONE_LABELS: &[&str] = &[
+    "Mobile", "Home", "Work", "Work Fax", "Home Fax", "Pager", "Other",
+];
 const ADDRESS_LABELS: &[&str] = &["Home", "Work", "Other"];
 
 // ── Country Data ────────────────────────────────────────────────────────────
 
 /// Comprehensive country list for address entry (alphabetical)
 const COUNTRIES: &[&str] = &[
-    "Afghanistan", "Albania", "Algeria", "Andorra", "Angola",
-    "Argentina", "Armenia", "Australia", "Austria", "Azerbaijan",
-    "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus",
-    "Belgium", "Belize", "Bolivia", "Bosnia and Herzegovina", "Botswana",
-    "Brazil", "Brunei", "Bulgaria", "Cambodia", "Cameroon",
-    "Canada", "Chile", "China", "Colombia", "Costa Rica",
-    "Croatia", "Cuba", "Cyprus", "Czech Republic", "Denmark",
-    "Dominican Republic", "Ecuador", "Egypt", "El Salvador", "Estonia",
-    "Ethiopia", "Finland", "France", "Georgia", "Germany",
-    "Ghana", "Greece", "Guatemala", "Honduras", "Hong Kong",
-    "Hungary", "Iceland", "India", "Indonesia", "Iran",
-    "Iraq", "Ireland", "Israel", "Italy", "Jamaica",
-    "Japan", "Jordan", "Kazakhstan", "Kenya", "Kuwait",
-    "Latvia", "Lebanon", "Libya", "Lithuania", "Luxembourg",
-    "Malaysia", "Mexico", "Moldova", "Monaco", "Mongolia",
-    "Morocco", "Mozambique", "Myanmar", "Nepal", "Netherlands",
-    "New Zealand", "Nicaragua", "Nigeria", "North Korea", "Norway",
-    "Oman", "Pakistan", "Panama", "Paraguay", "Peru",
-    "Philippines", "Poland", "Portugal", "Qatar", "Romania",
-    "Russia", "Saudi Arabia", "Senegal", "Serbia", "Singapore",
-    "Slovakia", "Slovenia", "South Africa", "South Korea", "Spain",
-    "Sri Lanka", "Sudan", "Sweden", "Switzerland", "Syria",
-    "Taiwan", "Tanzania", "Thailand", "Tunisia", "Turkey",
-    "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom", "United States",
-    "Uruguay", "Uzbekistan", "Venezuela", "Vietnam", "Yemen",
-    "Zambia", "Zimbabwe",
+    "Afghanistan",
+    "Albania",
+    "Algeria",
+    "Andorra",
+    "Angola",
+    "Argentina",
+    "Armenia",
+    "Australia",
+    "Austria",
+    "Azerbaijan",
+    "Bahamas",
+    "Bahrain",
+    "Bangladesh",
+    "Barbados",
+    "Belarus",
+    "Belgium",
+    "Belize",
+    "Bolivia",
+    "Bosnia and Herzegovina",
+    "Botswana",
+    "Brazil",
+    "Brunei",
+    "Bulgaria",
+    "Cambodia",
+    "Cameroon",
+    "Canada",
+    "Chile",
+    "China",
+    "Colombia",
+    "Costa Rica",
+    "Croatia",
+    "Cuba",
+    "Cyprus",
+    "Czech Republic",
+    "Denmark",
+    "Dominican Republic",
+    "Ecuador",
+    "Egypt",
+    "El Salvador",
+    "Estonia",
+    "Ethiopia",
+    "Finland",
+    "France",
+    "Georgia",
+    "Germany",
+    "Ghana",
+    "Greece",
+    "Guatemala",
+    "Honduras",
+    "Hong Kong",
+    "Hungary",
+    "Iceland",
+    "India",
+    "Indonesia",
+    "Iran",
+    "Iraq",
+    "Ireland",
+    "Israel",
+    "Italy",
+    "Jamaica",
+    "Japan",
+    "Jordan",
+    "Kazakhstan",
+    "Kenya",
+    "Kuwait",
+    "Latvia",
+    "Lebanon",
+    "Libya",
+    "Lithuania",
+    "Luxembourg",
+    "Malaysia",
+    "Mexico",
+    "Moldova",
+    "Monaco",
+    "Mongolia",
+    "Morocco",
+    "Mozambique",
+    "Myanmar",
+    "Nepal",
+    "Netherlands",
+    "New Zealand",
+    "Nicaragua",
+    "Nigeria",
+    "North Korea",
+    "Norway",
+    "Oman",
+    "Pakistan",
+    "Panama",
+    "Paraguay",
+    "Peru",
+    "Philippines",
+    "Poland",
+    "Portugal",
+    "Qatar",
+    "Romania",
+    "Russia",
+    "Saudi Arabia",
+    "Senegal",
+    "Serbia",
+    "Singapore",
+    "Slovakia",
+    "Slovenia",
+    "South Africa",
+    "South Korea",
+    "Spain",
+    "Sri Lanka",
+    "Sudan",
+    "Sweden",
+    "Switzerland",
+    "Syria",
+    "Taiwan",
+    "Tanzania",
+    "Thailand",
+    "Tunisia",
+    "Turkey",
+    "Uganda",
+    "Ukraine",
+    "United Arab Emirates",
+    "United Kingdom",
+    "United States",
+    "Uruguay",
+    "Uzbekistan",
+    "Venezuela",
+    "Vietnam",
+    "Yemen",
+    "Zambia",
+    "Zimbabwe",
 ];
 
 /// Get the default country based on the system locale.
@@ -351,7 +498,10 @@ fn get_address_field_labels(country: &str) -> (&'static str, &'static str) {
 
 // ── Contact Manager — Custom Loop with Live Search ──────────────────────────
 
-pub fn show_contact_manager_dialog(parent: &Frame, contacts: &[ContactEntry]) -> ContactManagerAction {
+pub fn show_contact_manager_dialog(
+    parent: &Frame,
+    contacts: &[ContactEntry],
+) -> ContactManagerAction {
     let dialog = Dialog::builder(parent, "Contact Manager")
         .with_size(700, 500)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
@@ -362,9 +512,19 @@ pub fn show_contact_manager_dialog(parent: &Frame, contacts: &[ContactEntry]) ->
     let search_row = BoxSizer::builder(Orientation::Horizontal).build();
     let search_lbl = StaticText::builder(&dialog).with_label("&Search:").build();
     let search_f = TextCtrl::builder(&dialog).build();
-    search_row.add(&search_lbl, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    search_row.add(
+        &search_lbl,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     search_row.add(&search_f, 1, SizerFlag::Expand | SizerFlag::All, 4);
-    sizer.add_sizer(&search_row, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top, 4);
+    sizer.add_sizer(
+        &search_row,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
+        4,
+    );
 
     // ── Contact list ────────────────────────────────────────────────
     let list = ListCtrl::builder(&dialog)
@@ -377,10 +537,22 @@ pub fn show_contact_manager_dialog(parent: &Frame, contacts: &[ContactEntry]) ->
     sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // ── Buttons ─────────────────────────────────────────────────────
-    let add_btn = Button::builder(&dialog).with_label("&Add...").with_id(ID_MGR_ADD).build();
-    let edit_btn = Button::builder(&dialog).with_label("&Edit...").with_id(ID_MGR_EDIT).build();
-    let del_btn = Button::builder(&dialog).with_label("&Delete").with_id(ID_MGR_DELETE).build();
-    let close_btn = Button::builder(&dialog).with_label("&Close").with_id(ID_OK).build();
+    let add_btn = Button::builder(&dialog)
+        .with_label("&Add...")
+        .with_id(ID_MGR_ADD)
+        .build();
+    let edit_btn = Button::builder(&dialog)
+        .with_label("&Edit...")
+        .with_id(ID_MGR_EDIT)
+        .build();
+    let del_btn = Button::builder(&dialog)
+        .with_label("&Delete")
+        .with_id(ID_MGR_DELETE)
+        .build();
+    let close_btn = Button::builder(&dialog)
+        .with_label("&Close")
+        .with_id(ID_OK)
+        .build();
     let btn_sizer = BoxSizer::builder(Orientation::Horizontal).build();
     btn_sizer.add(&add_btn, 0, SizerFlag::All, 4);
     btn_sizer.add(&edit_btn, 0, SizerFlag::All, 4);
@@ -414,10 +586,30 @@ pub fn show_contact_manager_dialog(parent: &Frame, contacts: &[ContactEntry]) ->
     });
 
     // ── Button handlers ─────────────────────────────────────────────
-    add_btn.on_click({ let d = dialog; move |_| { d.end_modal(ID_MGR_ADD); } });
-    edit_btn.on_click({ let d = dialog; move |_| { d.end_modal(ID_MGR_EDIT); } });
-    del_btn.on_click({ let d = dialog; move |_| { d.end_modal(ID_MGR_DELETE); } });
-    close_btn.on_click({ let d = dialog; move |_| { d.end_modal(ID_OK); } });
+    add_btn.on_click({
+        let d = dialog;
+        move |_| {
+            d.end_modal(ID_MGR_ADD);
+        }
+    });
+    edit_btn.on_click({
+        let d = dialog;
+        move |_| {
+            d.end_modal(ID_MGR_EDIT);
+        }
+    });
+    del_btn.on_click({
+        let d = dialog;
+        move |_| {
+            d.end_modal(ID_MGR_DELETE);
+        }
+    });
+    close_btn.on_click({
+        let d = dialog;
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    });
 
     // Set focus to search field for accessibility
     search_f.set_focus();
@@ -483,7 +675,11 @@ pub fn show_contact_manager_dialog(parent: &Frame, contacts: &[ContactEntry]) ->
     }
 
     let result = working.borrow().clone();
-    if changed { ContactManagerAction::Updated(result) } else { ContactManagerAction::None }
+    if changed {
+        ContactManagerAction::Updated(result)
+    } else {
+        ContactManagerAction::None
+    }
 }
 
 /// Populate the contact list with optional search filtering.
@@ -545,7 +741,11 @@ fn add_panel_field(parent: &Panel, sizer: &FlexGridSizer, label: &str) -> TextCt
 }
 
 fn show_contact_edit(parent: &Dialog, existing: Option<&ContactEntry>) -> Option<ContactEntry> {
-    let title = if existing.is_some() { "Edit Contact" } else { "Add Contact" };
+    let title = if existing.is_some() {
+        "Edit Contact"
+    } else {
+        "Add Contact"
+    };
     let dlg = Dialog::builder(parent, title)
         .with_size(560, 580)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
@@ -559,7 +759,10 @@ fn show_contact_edit(parent: &Dialog, existing: Option<&ContactEntry>) -> Option
     //   J(Job Title), B(Birthday), W(Website), R(Relationship), A(Avatar), F(Favorite)
     let basic_panel = Panel::builder(&notebook).build();
     let basic_sizer = BoxSizer::builder(Orientation::Vertical).build();
-    let basic_fields = FlexGridSizer::builder(0, 2).with_vgap(4).with_hgap(8).build();
+    let basic_fields = FlexGridSizer::builder(0, 2)
+        .with_vgap(4)
+        .with_hgap(8)
+        .build();
     basic_fields.add_growable_col(1, 1);
 
     let name_f = add_panel_field(&basic_panel, &basic_fields, "&Name:");
@@ -573,7 +776,9 @@ fn show_contact_edit(parent: &Dialog, existing: Option<&ContactEntry>) -> Option
     let avatar_f = add_panel_field(&basic_panel, &basic_fields, "&Avatar URL:");
 
     let fav_spacer = StaticText::builder(&basic_panel).with_label("").build();
-    let fav_check = CheckBox::builder(&basic_panel).with_label("&Favorite").build();
+    let fav_check = CheckBox::builder(&basic_panel)
+        .with_label("&Favorite")
+        .build();
     basic_fields.add(&fav_spacer, 0, SizerFlag::All, 4);
     basic_fields.add(&fav_check, 0, SizerFlag::All, 4);
 
@@ -587,8 +792,15 @@ fn show_contact_edit(parent: &Dialog, existing: Option<&ContactEntry>) -> Option
     let contact_sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // Email section
-    let email_label = StaticText::builder(&contact_panel).with_label("Email Addresses:").build();
-    contact_sizer.add(&email_label, 0, SizerFlag::Left | SizerFlag::Top | SizerFlag::Right, 8);
+    let email_label = StaticText::builder(&contact_panel)
+        .with_label("Email Addresses:")
+        .build();
+    contact_sizer.add(
+        &email_label,
+        0,
+        SizerFlag::Left | SizerFlag::Top | SizerFlag::Right,
+        8,
+    );
     let email_list = ListCtrl::builder(&contact_panel)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
@@ -596,15 +808,28 @@ fn show_contact_edit(parent: &Dialog, existing: Option<&ContactEntry>) -> Option
     email_list.insert_column(1, "Address", ListColumnFormat::Left, 300);
     contact_sizer.add(&email_list, 1, SizerFlag::Expand | SizerFlag::All, 4);
     let email_btn_row = BoxSizer::builder(Orientation::Horizontal).build();
-    let add_email_btn = Button::builder(&contact_panel).with_label("&Add Email...").with_id(ID_ADD_EMAIL).build();
-    let del_email_btn = Button::builder(&contact_panel).with_label("&Remove Email").with_id(ID_DEL_EMAIL).build();
+    let add_email_btn = Button::builder(&contact_panel)
+        .with_label("&Add Email...")
+        .with_id(ID_ADD_EMAIL)
+        .build();
+    let del_email_btn = Button::builder(&contact_panel)
+        .with_label("&Remove Email")
+        .with_id(ID_DEL_EMAIL)
+        .build();
     email_btn_row.add(&add_email_btn, 0, SizerFlag::All, 4);
     email_btn_row.add(&del_email_btn, 0, SizerFlag::All, 4);
     contact_sizer.add_sizer(&email_btn_row, 0, SizerFlag::Left, 4);
 
     // Phone section
-    let phone_label = StaticText::builder(&contact_panel).with_label("Phone Numbers:").build();
-    contact_sizer.add(&phone_label, 0, SizerFlag::Left | SizerFlag::Top | SizerFlag::Right, 8);
+    let phone_label = StaticText::builder(&contact_panel)
+        .with_label("Phone Numbers:")
+        .build();
+    contact_sizer.add(
+        &phone_label,
+        0,
+        SizerFlag::Left | SizerFlag::Top | SizerFlag::Right,
+        8,
+    );
     let phone_list = ListCtrl::builder(&contact_panel)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
@@ -612,8 +837,14 @@ fn show_contact_edit(parent: &Dialog, existing: Option<&ContactEntry>) -> Option
     phone_list.insert_column(1, "Number", ListColumnFormat::Left, 300);
     contact_sizer.add(&phone_list, 1, SizerFlag::Expand | SizerFlag::All, 4);
     let phone_btn_row = BoxSizer::builder(Orientation::Horizontal).build();
-    let add_phone_btn = Button::builder(&contact_panel).with_label("Add &Phone...").with_id(ID_ADD_PHONE).build();
-    let del_phone_btn = Button::builder(&contact_panel).with_label("Remo&ve Phone").with_id(ID_DEL_PHONE).build();
+    let add_phone_btn = Button::builder(&contact_panel)
+        .with_label("Add &Phone...")
+        .with_id(ID_ADD_PHONE)
+        .build();
+    let del_phone_btn = Button::builder(&contact_panel)
+        .with_label("Remo&ve Phone")
+        .with_id(ID_DEL_PHONE)
+        .build();
     phone_btn_row.add(&add_phone_btn, 0, SizerFlag::All, 4);
     phone_btn_row.add(&del_phone_btn, 0, SizerFlag::All, 4);
     contact_sizer.add_sizer(&phone_btn_row, 0, SizerFlag::Left, 4);
@@ -625,8 +856,15 @@ fn show_contact_edit(parent: &Dialog, existing: Option<&ContactEntry>) -> Option
     // Accelerators: A(Add Address), R(Remove Address)
     let addr_panel = Panel::builder(&notebook).build();
     let addr_sizer = BoxSizer::builder(Orientation::Vertical).build();
-    let addr_label = StaticText::builder(&addr_panel).with_label("Physical Addresses:").build();
-    addr_sizer.add(&addr_label, 0, SizerFlag::Left | SizerFlag::Top | SizerFlag::Right, 8);
+    let addr_label = StaticText::builder(&addr_panel)
+        .with_label("Physical Addresses:")
+        .build();
+    addr_sizer.add(
+        &addr_label,
+        0,
+        SizerFlag::Left | SizerFlag::Top | SizerFlag::Right,
+        8,
+    );
     let addr_list = ListCtrl::builder(&addr_panel)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
@@ -637,8 +875,14 @@ fn show_contact_edit(parent: &Dialog, existing: Option<&ContactEntry>) -> Option
     addr_list.insert_column(4, "Country", ListColumnFormat::Left, 80);
     addr_sizer.add(&addr_list, 1, SizerFlag::Expand | SizerFlag::All, 4);
     let addr_btn_row = BoxSizer::builder(Orientation::Horizontal).build();
-    let add_addr_btn = Button::builder(&addr_panel).with_label("&Add Address...").with_id(ID_ADD_ADDR).build();
-    let del_addr_btn = Button::builder(&addr_panel).with_label("&Remove Address").with_id(ID_DEL_ADDR).build();
+    let add_addr_btn = Button::builder(&addr_panel)
+        .with_label("&Add Address...")
+        .with_id(ID_ADD_ADDR)
+        .build();
+    let del_addr_btn = Button::builder(&addr_panel)
+        .with_label("&Remove Address")
+        .with_id(ID_DEL_ADDR)
+        .build();
     addr_btn_row.add(&add_addr_btn, 0, SizerFlag::All, 4);
     addr_btn_row.add(&del_addr_btn, 0, SizerFlag::All, 4);
     addr_sizer.add_sizer(&addr_btn_row, 0, SizerFlag::Left, 4);
@@ -649,14 +893,18 @@ fn show_contact_edit(parent: &Dialog, existing: Option<&ContactEntry>) -> Option
     // Accelerators: N(Notes), A(Add Field), R(Remove Field)
     let notes_panel = Panel::builder(&notebook).build();
     let notes_sizer = BoxSizer::builder(Orientation::Vertical).build();
-    let notes_label = StaticText::builder(&notes_panel).with_label("&Notes:").build();
+    let notes_label = StaticText::builder(&notes_panel)
+        .with_label("&Notes:")
+        .build();
     notes_sizer.add(&notes_label, 0, SizerFlag::Left | SizerFlag::Top, 8);
     let notes_f = TextCtrl::builder(&notes_panel)
         .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
         .build();
     notes_sizer.add(&notes_f, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
-    let custom_label = StaticText::builder(&notes_panel).with_label("Custom Fields:").build();
+    let custom_label = StaticText::builder(&notes_panel)
+        .with_label("Custom Fields:")
+        .build();
     notes_sizer.add(&custom_label, 0, SizerFlag::Left | SizerFlag::Top, 8);
     let custom_list = ListCtrl::builder(&notes_panel)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
@@ -665,8 +913,14 @@ fn show_contact_edit(parent: &Dialog, existing: Option<&ContactEntry>) -> Option
     custom_list.insert_column(1, "Value", ListColumnFormat::Left, 300);
     notes_sizer.add(&custom_list, 1, SizerFlag::Expand | SizerFlag::All, 4);
     let custom_btn_row = BoxSizer::builder(Orientation::Horizontal).build();
-    let add_custom_btn = Button::builder(&notes_panel).with_label("&Add Field...").with_id(ID_ADD_CUSTOM).build();
-    let del_custom_btn = Button::builder(&notes_panel).with_label("&Remove Field").with_id(ID_DEL_CUSTOM).build();
+    let add_custom_btn = Button::builder(&notes_panel)
+        .with_label("&Add Field...")
+        .with_id(ID_ADD_CUSTOM)
+        .build();
+    let del_custom_btn = Button::builder(&notes_panel)
+        .with_label("&Remove Field")
+        .with_id(ID_DEL_CUSTOM)
+        .build();
     custom_btn_row.add(&add_custom_btn, 0, SizerFlag::All, 4);
     custom_btn_row.add(&del_custom_btn, 0, SizerFlag::All, 4);
     notes_sizer.add_sizer(&custom_btn_row, 0, SizerFlag::Left, 4);
@@ -678,8 +932,14 @@ fn show_contact_edit(parent: &Dialog, existing: Option<&ContactEntry>) -> Option
     // ── OK / Cancel ──────────────────────────────────────────────────────
     let btn_row = BoxSizer::builder(Orientation::Horizontal).build();
     btn_row.add_spacer(0);
-    let ok = Button::builder(&dlg).with_label("OK").with_id(ID_OK).build();
-    let cancel = Button::builder(&dlg).with_label("Cancel").with_id(ID_CANCEL).build();
+    let ok = Button::builder(&dlg)
+        .with_label("OK")
+        .with_id(ID_OK)
+        .build();
+    let cancel = Button::builder(&dlg)
+        .with_label("Cancel")
+        .with_id(ID_CANCEL)
+        .build();
     btn_row.add(&ok, 0, SizerFlag::All, 4);
     btn_row.add(&cancel, 0, SizerFlag::All, 4);
     root.add_sizer(&btn_row, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
@@ -717,16 +977,66 @@ fn show_contact_edit(parent: &Dialog, existing: Option<&ContactEntry>) -> Option
     refresh_custom_list(&custom_list, &custom_data.borrow());
 
     // ── Button handlers (use end_modal with custom IDs) ──────────────────
-    ok.on_click({ let d = dlg; move |_| { d.end_modal(ID_OK); } });
-    cancel.on_click({ let d = dlg; move |_| { d.end_modal(ID_CANCEL); } });
-    add_email_btn.on_click({ let d = dlg; move |_| { d.end_modal(ID_ADD_EMAIL); } });
-    del_email_btn.on_click({ let d = dlg; move |_| { d.end_modal(ID_DEL_EMAIL); } });
-    add_phone_btn.on_click({ let d = dlg; move |_| { d.end_modal(ID_ADD_PHONE); } });
-    del_phone_btn.on_click({ let d = dlg; move |_| { d.end_modal(ID_DEL_PHONE); } });
-    add_addr_btn.on_click({ let d = dlg; move |_| { d.end_modal(ID_ADD_ADDR); } });
-    del_addr_btn.on_click({ let d = dlg; move |_| { d.end_modal(ID_DEL_ADDR); } });
-    add_custom_btn.on_click({ let d = dlg; move |_| { d.end_modal(ID_ADD_CUSTOM); } });
-    del_custom_btn.on_click({ let d = dlg; move |_| { d.end_modal(ID_DEL_CUSTOM); } });
+    ok.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    });
+    cancel.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_CANCEL);
+        }
+    });
+    add_email_btn.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_ADD_EMAIL);
+        }
+    });
+    del_email_btn.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_DEL_EMAIL);
+        }
+    });
+    add_phone_btn.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_ADD_PHONE);
+        }
+    });
+    del_phone_btn.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_DEL_PHONE);
+        }
+    });
+    add_addr_btn.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_ADD_ADDR);
+        }
+    });
+    del_addr_btn.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_DEL_ADDR);
+        }
+    });
+    add_custom_btn.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_ADD_CUSTOM);
+        }
+    });
+    del_custom_btn.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_DEL_CUSTOM);
+        }
+    });
 
     // ── Modal loop (handle sub-list actions before OK/Cancel) ────────────
     loop {
@@ -786,7 +1096,9 @@ fn show_contact_edit(parent: &Dialog, existing: Option<&ContactEntry>) -> Option
                     continue;
                 }
                 return Some(ContactEntry {
-                    id: existing.map(|c| c.id.clone()).unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                    id: existing
+                        .map(|c| c.id.clone())
+                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                     name: contact_name,
                     nickname: nick_f.get_value(),
                     company: company_f.get_value(),
@@ -850,9 +1162,14 @@ fn refresh_custom_list(list: &ListCtrl, items: &[CustomFieldItem]) {
 // ── Sub-dialogs for adding multi-value entries ───────────────────────────────
 
 fn show_email_sub_dialog(parent: &Dialog, _existing: Option<&EmailItem>) -> Option<EmailItem> {
-    let dlg = Dialog::builder(parent, "Add Email Address").with_size(400, 200).build();
+    let dlg = Dialog::builder(parent, "Add Email Address")
+        .with_size(400, 200)
+        .build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
-    let fields = FlexGridSizer::builder(0, 2).with_vgap(4).with_hgap(8).build();
+    let fields = FlexGridSizer::builder(0, 2)
+        .with_vgap(4)
+        .with_hgap(8)
+        .build();
     fields.add_growable_col(1, 1);
 
     // Accelerators: T(Type), A(Address) — first letters, no conflicts
@@ -860,7 +1177,12 @@ fn show_email_sub_dialog(parent: &Dialog, _existing: Option<&EmailItem>) -> Opti
     let type_choices: Vec<String> = EMAIL_LABELS.iter().map(|s| s.to_string()).collect();
     let type_choice = Choice::builder(&dlg).with_choices(type_choices).build();
     type_choice.set_selection(0);
-    fields.add(&type_lbl, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields.add(
+        &type_lbl,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields.add(&type_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     let addr_f = add_field(&dlg, &fields, "&Address:");
@@ -868,19 +1190,37 @@ fn show_email_sub_dialog(parent: &Dialog, _existing: Option<&EmailItem>) -> Opti
 
     let btn_row = BoxSizer::builder(Orientation::Horizontal).build();
     btn_row.add_spacer(0);
-    let ok = Button::builder(&dlg).with_label("OK").with_id(ID_OK).build();
-    let cancel = Button::builder(&dlg).with_label("Cancel").with_id(ID_CANCEL).build();
+    let ok = Button::builder(&dlg)
+        .with_label("OK")
+        .with_id(ID_OK)
+        .build();
+    let cancel = Button::builder(&dlg)
+        .with_label("Cancel")
+        .with_id(ID_CANCEL)
+        .build();
     btn_row.add(&ok, 0, SizerFlag::All, 4);
     btn_row.add(&cancel, 0, SizerFlag::All, 4);
     sizer.add_sizer(&btn_row, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
     dlg.set_sizer(sizer, true);
 
-    ok.on_click({ let d = dlg; move |_| { d.end_modal(ID_OK); } });
-    cancel.on_click({ let d = dlg; move |_| { d.end_modal(ID_CANCEL); } });
+    ok.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    });
+    cancel.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_CANCEL);
+        }
+    });
 
     if dlg.show_modal() == ID_OK {
         let addr = addr_f.get_value();
-        if addr.trim().is_empty() { return None; }
+        if addr.trim().is_empty() {
+            return None;
+        }
         Some(EmailItem {
             label: get_choice_string(&type_choice).unwrap_or_else(|| "Other".to_string()),
             address: addr,
@@ -891,9 +1231,14 @@ fn show_email_sub_dialog(parent: &Dialog, _existing: Option<&EmailItem>) -> Opti
 }
 
 fn show_phone_sub_dialog(parent: &Dialog, _existing: Option<&PhoneItem>) -> Option<PhoneItem> {
-    let dlg = Dialog::builder(parent, "Add Phone Number").with_size(400, 200).build();
+    let dlg = Dialog::builder(parent, "Add Phone Number")
+        .with_size(400, 200)
+        .build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
-    let fields = FlexGridSizer::builder(0, 2).with_vgap(4).with_hgap(8).build();
+    let fields = FlexGridSizer::builder(0, 2)
+        .with_vgap(4)
+        .with_hgap(8)
+        .build();
     fields.add_growable_col(1, 1);
 
     // Accelerators: T(Type), N(Number) — first letters, no conflicts
@@ -901,7 +1246,12 @@ fn show_phone_sub_dialog(parent: &Dialog, _existing: Option<&PhoneItem>) -> Opti
     let type_choices: Vec<String> = PHONE_LABELS.iter().map(|s| s.to_string()).collect();
     let type_choice = Choice::builder(&dlg).with_choices(type_choices).build();
     type_choice.set_selection(0);
-    fields.add(&type_lbl, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields.add(
+        &type_lbl,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields.add(&type_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     let num_f = add_field(&dlg, &fields, "&Number:");
@@ -909,19 +1259,37 @@ fn show_phone_sub_dialog(parent: &Dialog, _existing: Option<&PhoneItem>) -> Opti
 
     let btn_row = BoxSizer::builder(Orientation::Horizontal).build();
     btn_row.add_spacer(0);
-    let ok = Button::builder(&dlg).with_label("OK").with_id(ID_OK).build();
-    let cancel = Button::builder(&dlg).with_label("Cancel").with_id(ID_CANCEL).build();
+    let ok = Button::builder(&dlg)
+        .with_label("OK")
+        .with_id(ID_OK)
+        .build();
+    let cancel = Button::builder(&dlg)
+        .with_label("Cancel")
+        .with_id(ID_CANCEL)
+        .build();
     btn_row.add(&ok, 0, SizerFlag::All, 4);
     btn_row.add(&cancel, 0, SizerFlag::All, 4);
     sizer.add_sizer(&btn_row, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
     dlg.set_sizer(sizer, true);
 
-    ok.on_click({ let d = dlg; move |_| { d.end_modal(ID_OK); } });
-    cancel.on_click({ let d = dlg; move |_| { d.end_modal(ID_CANCEL); } });
+    ok.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    });
+    cancel.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_CANCEL);
+        }
+    });
 
     if dlg.show_modal() == ID_OK {
         let num = num_f.get_value();
-        if num.trim().is_empty() { return None; }
+        if num.trim().is_empty() {
+            return None;
+        }
         Some(PhoneItem {
             label: get_choice_string(&type_choice).unwrap_or_else(|| "Other".to_string()),
             number: num,
@@ -931,10 +1299,18 @@ fn show_phone_sub_dialog(parent: &Dialog, _existing: Option<&PhoneItem>) -> Opti
     }
 }
 
-fn show_address_sub_dialog(parent: &Dialog, _existing: Option<&AddressItem>) -> Option<AddressItem> {
-    let dlg = Dialog::builder(parent, "Add Address").with_size(440, 380).build();
+fn show_address_sub_dialog(
+    parent: &Dialog,
+    _existing: Option<&AddressItem>,
+) -> Option<AddressItem> {
+    let dlg = Dialog::builder(parent, "Add Address")
+        .with_size(440, 380)
+        .build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
-    let fields = FlexGridSizer::builder(0, 2).with_vgap(4).with_hgap(8).build();
+    let fields = FlexGridSizer::builder(0, 2)
+        .with_vgap(4)
+        .with_hgap(8)
+        .build();
     fields.add_growable_col(1, 1);
 
     // ── Country dropdown FIRST — drives field labels ─────────────────
@@ -946,7 +1322,12 @@ fn show_address_sub_dialog(parent: &Dialog, _existing: Option<&AddressItem>) -> 
     // Default to system locale country
     let default_country = get_default_country();
     select_choice_by_string(&country_choice, default_country);
-    fields.add(&country_lbl, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields.add(
+        &country_lbl,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields.add(&country_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // ── Address type ─────────────────────────────────────────────────
@@ -954,7 +1335,12 @@ fn show_address_sub_dialog(parent: &Dialog, _existing: Option<&AddressItem>) -> 
     let type_choices: Vec<String> = ADDRESS_LABELS.iter().map(|s| s.to_string()).collect();
     let type_choice = Choice::builder(&dlg).with_choices(type_choices).build();
     type_choice.set_selection(0);
-    fields.add(&type_lbl, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields.add(
+        &type_lbl,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields.add(&type_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // ── Address fields ───────────────────────────────────────────────
@@ -964,14 +1350,28 @@ fn show_address_sub_dialog(parent: &Dialog, _existing: Option<&AddressItem>) -> 
     // Region and code labels are dynamic — set based on selected country
     let (initial_region_label, initial_code_label) = get_address_field_labels(default_country);
 
-    let region_lbl = StaticText::builder(&dlg).with_label(initial_region_label).build();
+    let region_lbl = StaticText::builder(&dlg)
+        .with_label(initial_region_label)
+        .build();
     let region_f = TextCtrl::builder(&dlg).build();
-    fields.add(&region_lbl, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields.add(
+        &region_lbl,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields.add(&region_f, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
-    let code_lbl = StaticText::builder(&dlg).with_label(initial_code_label).build();
+    let code_lbl = StaticText::builder(&dlg)
+        .with_label(initial_code_label)
+        .build();
     let code_f = TextCtrl::builder(&dlg).build();
-    fields.add(&code_lbl, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields.add(
+        &code_lbl,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields.add(&code_f, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 8);
@@ -991,38 +1391,65 @@ fn show_address_sub_dialog(parent: &Dialog, _existing: Option<&AddressItem>) -> 
 
     let btn_row = BoxSizer::builder(Orientation::Horizontal).build();
     btn_row.add_spacer(0);
-    let ok = Button::builder(&dlg).with_label("OK").with_id(ID_OK).build();
-    let cancel = Button::builder(&dlg).with_label("Cancel").with_id(ID_CANCEL).build();
+    let ok = Button::builder(&dlg)
+        .with_label("OK")
+        .with_id(ID_OK)
+        .build();
+    let cancel = Button::builder(&dlg)
+        .with_label("Cancel")
+        .with_id(ID_CANCEL)
+        .build();
     btn_row.add(&ok, 0, SizerFlag::All, 4);
     btn_row.add(&cancel, 0, SizerFlag::All, 4);
     sizer.add_sizer(&btn_row, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
     dlg.set_sizer(sizer, true);
 
-    ok.on_click({ let d = dlg; move |_| { d.end_modal(ID_OK); } });
-    cancel.on_click({ let d = dlg; move |_| { d.end_modal(ID_CANCEL); } });
+    ok.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    });
+    cancel.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_CANCEL);
+        }
+    });
 
     if dlg.show_modal() == ID_OK {
         let street = street_f.get_value();
         let city = city_f.get_value();
         // Allow at least street or city
-        if street.trim().is_empty() && city.trim().is_empty() { return None; }
+        if street.trim().is_empty() && city.trim().is_empty() {
+            return None;
+        }
         Some(AddressItem {
             label: get_choice_string(&type_choice).unwrap_or_else(|| "Other".to_string()),
             street,
             city,
             state: region_f.get_value(),
             zip: code_f.get_value(),
-            country: get_choice_string(&country_choice).unwrap_or_else(|| default_country.to_string()),
+            country: get_choice_string(&country_choice)
+                .unwrap_or_else(|| default_country.to_string()),
         })
     } else {
         None
     }
 }
 
-fn show_custom_field_sub_dialog(parent: &Dialog, _existing: Option<&CustomFieldItem>) -> Option<CustomFieldItem> {
-    let dlg = Dialog::builder(parent, "Add Custom Field").with_size(400, 200).build();
+fn show_custom_field_sub_dialog(
+    parent: &Dialog,
+    _existing: Option<&CustomFieldItem>,
+) -> Option<CustomFieldItem> {
+    let dlg = Dialog::builder(parent, "Add Custom Field")
+        .with_size(400, 200)
+        .build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
-    let fields = FlexGridSizer::builder(0, 2).with_vgap(4).with_hgap(8).build();
+    let fields = FlexGridSizer::builder(0, 2)
+        .with_vgap(4)
+        .with_hgap(8)
+        .build();
     fields.add_growable_col(1, 1);
 
     // Accelerators: L(Label), V(Value) — first letters, no conflicts
@@ -1032,20 +1459,38 @@ fn show_custom_field_sub_dialog(parent: &Dialog, _existing: Option<&CustomFieldI
 
     let btn_row = BoxSizer::builder(Orientation::Horizontal).build();
     btn_row.add_spacer(0);
-    let ok = Button::builder(&dlg).with_label("OK").with_id(ID_OK).build();
-    let cancel = Button::builder(&dlg).with_label("Cancel").with_id(ID_CANCEL).build();
+    let ok = Button::builder(&dlg)
+        .with_label("OK")
+        .with_id(ID_OK)
+        .build();
+    let cancel = Button::builder(&dlg)
+        .with_label("Cancel")
+        .with_id(ID_CANCEL)
+        .build();
     btn_row.add(&ok, 0, SizerFlag::All, 4);
     btn_row.add(&cancel, 0, SizerFlag::All, 4);
     sizer.add_sizer(&btn_row, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
     dlg.set_sizer(sizer, true);
 
-    ok.on_click({ let d = dlg; move |_| { d.end_modal(ID_OK); } });
-    cancel.on_click({ let d = dlg; move |_| { d.end_modal(ID_CANCEL); } });
+    ok.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    });
+    cancel.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_CANCEL);
+        }
+    });
 
     if dlg.show_modal() == ID_OK {
         let label = label_f.get_value();
         let value = value_f.get_value();
-        if label.trim().is_empty() { return None; }
+        if label.trim().is_empty() {
+            return None;
+        }
         Some(CustomFieldItem { label, value })
     } else {
         None
@@ -1086,14 +1531,22 @@ pub fn show_filter_manager_dialog(parent: &Frame, rules: &[FilterRule]) -> Filte
 
     let mut working = rules.to_vec();
     let changed = run_manager_loop(
-        &dialog, &sizer, &list, &status, &mut working,
+        &dialog,
+        &sizer,
+        &list,
+        &status,
+        &mut working,
         populate_filters,
         |d| show_filter_edit(d, None),
         |d, r| show_filter_edit(d, Some(r)),
         |r| r.name.clone(),
     );
 
-    if changed { FilterManagerAction::Updated(working) } else { FilterManagerAction::None }
+    if changed {
+        FilterManagerAction::Updated(working)
+    } else {
+        FilterManagerAction::None
+    }
 }
 
 fn populate_filters(list: &ListCtrl, rules: &[FilterRule]) {
@@ -1101,50 +1554,104 @@ fn populate_filters(list: &ListCtrl, rules: &[FilterRule]) {
     for (i, r) in rules.iter().enumerate() {
         let idx = i as i64;
         list.insert_item(idx, &r.name, None);
-        list.set_item_text_by_column(idx, 1, &format!("{} {} '{}'", r.field, r.match_type, r.pattern));
-        let action = if r.action_value.is_empty() { r.action_type.clone() } else { format!("{} ({})", r.action_type, r.action_value) };
+        list.set_item_text_by_column(
+            idx,
+            1,
+            &format!("{} {} '{}'", r.field, r.match_type, r.pattern),
+        );
+        let action = if r.action_value.is_empty() {
+            r.action_type.clone()
+        } else {
+            format!("{} ({})", r.action_type, r.action_value)
+        };
         list.set_item_text_by_column(idx, 2, &action);
         list.set_item_text_by_column(idx, 3, if r.enabled { "Active" } else { "Disabled" });
     }
 }
 
 fn show_filter_edit(parent: &Dialog, existing: Option<&FilterRule>) -> Option<FilterRule> {
-    let title = if existing.is_some() { "Edit Filter Rule" } else { "Add Filter Rule" };
+    let title = if existing.is_some() {
+        "Edit Filter Rule"
+    } else {
+        "Add Filter Rule"
+    };
     let dlg = Dialog::builder(parent, title).with_size(480, 440).build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
-    let fields = FlexGridSizer::builder(0, 2).with_vgap(4).with_hgap(8).build();
+    let fields = FlexGridSizer::builder(0, 2)
+        .with_vgap(4)
+        .with_hgap(8)
+        .build();
     fields.add_growable_col(1, 1);
 
     // Accelerators: N(Name), F(Field), T(Type), P(Pattern), C(Case),
     //   A(Action), V(Value), E(Enabled) — all first letters
     let name_f = add_field(&dlg, &fields, "Rule &Name:");
 
-    let field_label = StaticText::builder(&dlg).with_label("Match &Field:").build();
+    let field_label = StaticText::builder(&dlg)
+        .with_label("Match &Field:")
+        .build();
     let field_choices: Vec<String> = ["subject", "from", "to", "cc", "body_plain", "date"]
-        .iter().map(|s| s.to_string()).collect();
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     let field_choice = Choice::builder(&dlg).with_choices(field_choices).build();
-    fields.add(&field_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields.add(
+        &field_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields.add(&field_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     let match_label = StaticText::builder(&dlg).with_label("Match &Type:").build();
-    let match_choices: Vec<String> = ["contains", "not_contains", "equals", "starts_with", "ends_with", "regex"]
-        .iter().map(|s| s.to_string()).collect();
+    let match_choices: Vec<String> = [
+        "contains",
+        "not_contains",
+        "equals",
+        "starts_with",
+        "ends_with",
+        "regex",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
     let match_choice = Choice::builder(&dlg).with_choices(match_choices).build();
-    fields.add(&match_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields.add(
+        &match_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields.add(&match_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     let pattern_f = add_field(&dlg, &fields, "&Pattern:");
 
     let cs_label = StaticText::builder(&dlg).with_label("").build();
-    let cs_check = CheckBox::builder(&dlg).with_label("&Case Sensitive").build();
+    let cs_check = CheckBox::builder(&dlg)
+        .with_label("&Case Sensitive")
+        .build();
     fields.add(&cs_label, 0, SizerFlag::All, 4);
     fields.add(&cs_check, 0, SizerFlag::All, 4);
 
     let action_label = StaticText::builder(&dlg).with_label("&Action:").build();
-    let action_choices: Vec<String> = ["mark_as_read", "mark_as_unread", "star", "delete", "move_to_folder", "add_tag"]
-        .iter().map(|s| s.to_string()).collect();
+    let action_choices: Vec<String> = [
+        "mark_as_read",
+        "mark_as_unread",
+        "star",
+        "delete",
+        "move_to_folder",
+        "add_tag",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
     let action_choice = Choice::builder(&dlg).with_choices(action_choices).build();
-    fields.add(&action_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields.add(
+        &action_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields.add(&action_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     let action_value_f = add_field(&dlg, &fields, "Action &Value:");
@@ -1158,8 +1665,14 @@ fn show_filter_edit(parent: &Dialog, existing: Option<&FilterRule>) -> Option<Fi
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
     let btn_row = BoxSizer::builder(Orientation::Horizontal).build();
-    let ok = Button::builder(&dlg).with_label("OK").with_id(ID_OK).build();
-    let cancel = Button::builder(&dlg).with_label("Cancel").with_id(ID_CANCEL).build();
+    let ok = Button::builder(&dlg)
+        .with_label("OK")
+        .with_id(ID_OK)
+        .build();
+    let cancel = Button::builder(&dlg)
+        .with_label("Cancel")
+        .with_id(ID_CANCEL)
+        .build();
     btn_row.add_spacer(0);
     btn_row.add(&ok, 0, SizerFlag::All, 4);
     btn_row.add(&cancel, 0, SizerFlag::All, 4);
@@ -1177,12 +1690,24 @@ fn show_filter_edit(parent: &Dialog, existing: Option<&FilterRule>) -> Option<Fi
         en_check.set_value(r.enabled);
     }
 
-    ok.on_click({ let d = dlg; move |_| { d.end_modal(ID_OK); } });
-    cancel.on_click({ let d = dlg; move |_| { d.end_modal(ID_CANCEL); } });
+    ok.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    });
+    cancel.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_CANCEL);
+        }
+    });
 
     if dlg.show_modal() == ID_OK {
         Some(FilterRule {
-            id: existing.map(|r| r.id.clone()).unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            id: existing
+                .map(|r| r.id.clone())
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
             name: name_f.get_value(),
             field: get_choice_string(&field_choice).unwrap_or_default(),
             match_type: get_choice_string(&match_choice).unwrap_or_default(),
@@ -1215,8 +1740,14 @@ pub enum TagManagerAction {
 }
 
 const TAG_COLORS: &[(&str, &str)] = &[
-    ("Red", "#E53935"), ("Orange", "#FB8C00"), ("Yellow", "#FDD835"), ("Green", "#43A047"),
-    ("Blue", "#1E88E5"), ("Purple", "#8E24AA"), ("Pink", "#D81B60"), ("Gray", "#757575"),
+    ("Red", "#E53935"),
+    ("Orange", "#FB8C00"),
+    ("Yellow", "#FDD835"),
+    ("Green", "#43A047"),
+    ("Blue", "#1E88E5"),
+    ("Purple", "#8E24AA"),
+    ("Pink", "#D81B60"),
+    ("Gray", "#757575"),
 ];
 
 pub fn show_tag_manager_dialog(parent: &Frame, tags: &[TagEntry]) -> TagManagerAction {
@@ -1228,14 +1759,22 @@ pub fn show_tag_manager_dialog(parent: &Frame, tags: &[TagEntry]) -> TagManagerA
 
     let mut working = tags.to_vec();
     let changed = run_manager_loop(
-        &dialog, &sizer, &list, &status, &mut working,
+        &dialog,
+        &sizer,
+        &list,
+        &status,
+        &mut working,
         populate_tags,
         |d| show_tag_edit(d, None),
         |d, t| show_tag_edit(d, Some(t)),
         |t| t.name.clone(),
     );
 
-    if changed { TagManagerAction::Updated(working) } else { TagManagerAction::None }
+    if changed {
+        TagManagerAction::Updated(working)
+    } else {
+        TagManagerAction::None
+    }
 }
 
 fn populate_tags(list: &ListCtrl, tags: &[TagEntry]) {
@@ -1243,7 +1782,8 @@ fn populate_tags(list: &ListCtrl, tags: &[TagEntry]) {
     for (i, t) in tags.iter().enumerate() {
         let idx = i as i64;
         list.insert_item(idx, &t.name, None);
-        let color_name = TAG_COLORS.iter()
+        let color_name = TAG_COLORS
+            .iter()
             .find(|(_, hex)| *hex == t.color)
             .map(|(name, _)| *name)
             .unwrap_or(&t.color);
@@ -1252,27 +1792,48 @@ fn populate_tags(list: &ListCtrl, tags: &[TagEntry]) {
 }
 
 fn show_tag_edit(parent: &Dialog, existing: Option<&TagEntry>) -> Option<TagEntry> {
-    let title = if existing.is_some() { "Edit Tag" } else { "Add Tag" };
+    let title = if existing.is_some() {
+        "Edit Tag"
+    } else {
+        "Add Tag"
+    };
     let dlg = Dialog::builder(parent, title).with_size(350, 250).build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
-    let fields = FlexGridSizer::builder(0, 2).with_vgap(4).with_hgap(8).build();
+    let fields = FlexGridSizer::builder(0, 2)
+        .with_vgap(4)
+        .with_hgap(8)
+        .build();
     fields.add_growable_col(1, 1);
 
     // Accelerators: N(Name), C(Color) — first letters, no conflicts
     let name_f = add_field(&dlg, &fields, "Tag &Name:");
 
     let color_label = StaticText::builder(&dlg).with_label("&Color:").build();
-    let color_choices: Vec<String> = TAG_COLORS.iter().map(|(name, _)| name.to_string()).collect();
+    let color_choices: Vec<String> = TAG_COLORS
+        .iter()
+        .map(|(name, _)| name.to_string())
+        .collect();
     let color_choice = Choice::builder(&dlg).with_choices(color_choices).build();
     color_choice.set_selection(0);
-    fields.add(&color_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    fields.add(
+        &color_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
     fields.add(&color_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
     let btn_row = BoxSizer::builder(Orientation::Horizontal).build();
-    let ok = Button::builder(&dlg).with_label("OK").with_id(ID_OK).build();
-    let cancel = Button::builder(&dlg).with_label("Cancel").with_id(ID_CANCEL).build();
+    let ok = Button::builder(&dlg)
+        .with_label("OK")
+        .with_id(ID_OK)
+        .build();
+    let cancel = Button::builder(&dlg)
+        .with_label("Cancel")
+        .with_id(ID_CANCEL)
+        .build();
     btn_row.add_spacer(0);
     btn_row.add(&ok, 0, SizerFlag::All, 4);
     btn_row.add(&cancel, 0, SizerFlag::All, 4);
@@ -1286,14 +1847,29 @@ fn show_tag_edit(parent: &Dialog, existing: Option<&TagEntry>) -> Option<TagEntr
         }
     }
 
-    ok.on_click({ let d = dlg; move |_| { d.end_modal(ID_OK); } });
-    cancel.on_click({ let d = dlg; move |_| { d.end_modal(ID_CANCEL); } });
+    ok.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    });
+    cancel.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_CANCEL);
+        }
+    });
 
     if dlg.show_modal() == ID_OK {
         let color_idx = color_choice.get_selection().unwrap_or(0) as usize;
-        let color = TAG_COLORS.get(color_idx).map(|(_, hex)| hex.to_string()).unwrap_or_else(|| "#1E88E5".to_string());
+        let color = TAG_COLORS
+            .get(color_idx)
+            .map(|(_, hex)| hex.to_string())
+            .unwrap_or_else(|| "#1E88E5".to_string());
         Some(TagEntry {
-            id: existing.map(|t| t.id.clone()).unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            id: existing
+                .map(|t| t.id.clone())
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
             name: name_f.get_value(),
             color,
         })
@@ -1321,7 +1897,10 @@ pub enum SignatureManagerAction {
     Updated(Vec<SignatureEntry>),
 }
 
-pub fn show_signature_manager_dialog(parent: &Frame, signatures: &[SignatureEntry]) -> SignatureManagerAction {
+pub fn show_signature_manager_dialog(
+    parent: &Frame,
+    signatures: &[SignatureEntry],
+) -> SignatureManagerAction {
     let (dialog, sizer, list, status) = make_shell(parent, "Signature Manager", 550, 450);
 
     list.insert_column(0, "Name", ListColumnFormat::Left, 200);
@@ -1331,7 +1910,11 @@ pub fn show_signature_manager_dialog(parent: &Frame, signatures: &[SignatureEntr
 
     let mut working = signatures.to_vec();
     let changed = run_manager_loop(
-        &dialog, &sizer, &list, &status, &mut working,
+        &dialog,
+        &sizer,
+        &list,
+        &status,
+        &mut working,
         populate_sigs,
         |d| show_sig_edit(d, None),
         |d, s| show_sig_edit(d, Some(s)),
@@ -1343,7 +1926,9 @@ pub fn show_signature_manager_dialog(parent: &Frame, signatures: &[SignatureEntr
         let mut saw_default = false;
         for s in working.iter_mut().rev() {
             if s.is_default {
-                if saw_default { s.is_default = false; }
+                if saw_default {
+                    s.is_default = false;
+                }
                 saw_default = true;
             }
         }
@@ -1365,37 +1950,63 @@ fn populate_sigs(list: &ListCtrl, sigs: &[SignatureEntry]) {
 }
 
 fn show_sig_edit(parent: &Dialog, existing: Option<&SignatureEntry>) -> Option<SignatureEntry> {
-    let title = if existing.is_some() { "Edit Signature" } else { "Add Signature" };
+    let title = if existing.is_some() {
+        "Edit Signature"
+    } else {
+        "Add Signature"
+    };
     let dlg = Dialog::builder(parent, title).with_size(500, 420).build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
-    let fields = FlexGridSizer::builder(0, 2).with_vgap(4).with_hgap(8).build();
+    let fields = FlexGridSizer::builder(0, 2)
+        .with_vgap(4)
+        .with_hgap(8)
+        .build();
     fields.add_growable_col(1, 1);
 
     // Accelerators: N(Name), D(Default), S(Signature/plain), H(HTML) — first letters
     let name_f = add_field(&dlg, &fields, "&Name:");
 
     let def_label = StaticText::builder(&dlg).with_label("").build();
-    let def_check = CheckBox::builder(&dlg).with_label("&Default signature").build();
+    let def_check = CheckBox::builder(&dlg)
+        .with_label("&Default signature")
+        .build();
     fields.add(&def_label, 0, SizerFlag::All, 4);
     fields.add(&def_check, 0, SizerFlag::All, 4);
 
-    sizer.add_sizer(&fields, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top, 8);
+    sizer.add_sizer(
+        &fields,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
+        8,
+    );
 
-    let plain_label = StaticText::builder(&dlg).with_label("&Signature (plain text):").build();
+    let plain_label = StaticText::builder(&dlg)
+        .with_label("&Signature (plain text):")
+        .build();
     sizer.add(&plain_label, 0, SizerFlag::Left | SizerFlag::All, 8);
     let content_f = TextCtrl::builder(&dlg)
         .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
         .build();
     sizer.add(&content_f, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
-    let html_label = StaticText::builder(&dlg).with_label("&HTML version (optional):").build();
+    let html_label = StaticText::builder(&dlg)
+        .with_label("&HTML version (optional):")
+        .build();
     sizer.add(&html_label, 0, SizerFlag::Left | SizerFlag::All, 8);
-    let html_f = TextCtrl::builder(&dlg).with_style(TextCtrlStyle::MultiLine).build();
+    let html_f = TextCtrl::builder(&dlg)
+        .with_style(TextCtrlStyle::MultiLine)
+        .build();
     sizer.add(&html_f, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
     let btn_row = BoxSizer::builder(Orientation::Horizontal).build();
-    let ok = Button::builder(&dlg).with_label("OK").with_id(ID_OK).build();
-    let cancel = Button::builder(&dlg).with_label("Cancel").with_id(ID_CANCEL).build();
+    let ok = Button::builder(&dlg)
+        .with_label("OK")
+        .with_id(ID_OK)
+        .build();
+    let cancel = Button::builder(&dlg)
+        .with_label("Cancel")
+        .with_id(ID_CANCEL)
+        .build();
     btn_row.add_spacer(0);
     btn_row.add(&ok, 0, SizerFlag::All, 4);
     btn_row.add(&cancel, 0, SizerFlag::All, 4);
@@ -1411,16 +2022,32 @@ fn show_sig_edit(parent: &Dialog, existing: Option<&SignatureEntry>) -> Option<S
         def_check.set_value(s.is_default);
     }
 
-    ok.on_click({ let d = dlg; move |_| { d.end_modal(ID_OK); } });
-    cancel.on_click({ let d = dlg; move |_| { d.end_modal(ID_CANCEL); } });
+    ok.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    });
+    cancel.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_CANCEL);
+        }
+    });
 
     if dlg.show_modal() == ID_OK {
         let html_val = html_f.get_value();
         Some(SignatureEntry {
-            id: existing.map(|s| s.id.clone()).unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            id: existing
+                .map(|s| s.id.clone())
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
             name: name_f.get_value(),
             content_plain: content_f.get_value(),
-            content_html: if html_val.trim().is_empty() { None } else { Some(html_val) },
+            content_html: if html_val.trim().is_empty() {
+                None
+            } else {
+                Some(html_val)
+            },
             is_default: def_check.get_value(),
         })
     } else {

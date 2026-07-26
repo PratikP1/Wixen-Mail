@@ -140,9 +140,9 @@ impl SecurityService {
         let mut key = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut key);
         let encoded = STANDARD.encode(key);
-        entry
-            .set_password(&encoded)
-            .map_err(|e| Error::Security(format!("Failed storing key in credential store: {}", e)))?;
+        entry.set_password(&encoded).map_err(|e| {
+            Error::Security(format!("Failed storing key in credential store: {}", e))
+        })?;
         Ok(key)
     }
 
@@ -209,9 +209,9 @@ impl SecurityService {
         }
         let text = std::str::from_utf8(data)
             .map_err(|e| Error::Security(format!("Encrypted payload not valid UTF-8: {}", e)))?;
-        let encoded = text
-            .strip_prefix(ENCRYPTION_PREFIX)
-            .ok_or_else(|| Error::Security("Encrypted payload missing expected prefix".to_string()))?;
+        let encoded = text.strip_prefix(ENCRYPTION_PREFIX).ok_or_else(|| {
+            Error::Security("Encrypted payload missing expected prefix".to_string())
+        })?;
         let decoded = STANDARD
             .decode(encoded)
             .map_err(|e| Error::Security(format!("Encrypted payload decode failed: {}", e)))?;

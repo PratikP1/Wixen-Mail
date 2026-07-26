@@ -34,10 +34,17 @@ impl MessageCache {
         let rules = stmt
             .query_map(params![account_id], |row| {
                 Ok(MessageFilterRule {
-                    id: row.get(0)?, account_id: row.get(1)?, name: row.get(2)?,
-                    field: row.get(3)?, match_type: row.get(4)?, pattern: row.get(5)?,
-                    case_sensitive: row.get(6)?, action_type: row.get(7)?,
-                    action_value: row.get(8)?, enabled: row.get(9)?, created_at: row.get(10)?,
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    field: row.get(3)?,
+                    match_type: row.get(4)?,
+                    pattern: row.get(5)?,
+                    case_sensitive: row.get(6)?,
+                    action_type: row.get(7)?,
+                    action_value: row.get(8)?,
+                    enabled: row.get(9)?,
+                    created_at: row.get(10)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query filter rules: {}", e)))?
@@ -65,7 +72,10 @@ impl MessageCache {
     /// Delete a message filter rule by ID
     pub fn delete_filter_rule(&self, rule_id: &str) -> Result<()> {
         self.conn
-            .execute("DELETE FROM message_filter_rules WHERE id = ?1", params![rule_id])
+            .execute(
+                "DELETE FROM message_filter_rules WHERE id = ?1",
+                params![rule_id],
+            )
             .map_err(|e| Error::Other(format!("Failed to delete filter rule: {}", e)))?;
         Ok(())
     }
@@ -79,21 +89,31 @@ mod tests {
 
     #[test]
     fn test_filter_rule_operations() {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_filter_rules_{}", nanos));
         let cache = MessageCache::new(temp_dir, None).unwrap();
 
         let mut rule = MessageFilterRule {
-            id: "rule-1".to_string(), account_id: "test@example.com".to_string(),
-            name: "Newsletter Cleanup".to_string(), field: "subject".to_string(),
-            match_type: "contains".to_string(), pattern: "newsletter".to_string(),
-            case_sensitive: false, action_type: "move_to_folder".to_string(),
-            action_value: Some("Archive".to_string()), enabled: true,
+            id: "rule-1".to_string(),
+            account_id: "test@example.com".to_string(),
+            name: "Newsletter Cleanup".to_string(),
+            field: "subject".to_string(),
+            match_type: "contains".to_string(),
+            pattern: "newsletter".to_string(),
+            case_sensitive: false,
+            action_type: "move_to_folder".to_string(),
+            action_value: Some("Archive".to_string()),
+            enabled: true,
             created_at: chrono::Utc::now().to_rfc3339(),
         };
 
         cache.create_filter_rule(&rule).unwrap();
-        let rules = cache.get_filter_rules_for_account("test@example.com").unwrap();
+        let rules = cache
+            .get_filter_rules_for_account("test@example.com")
+            .unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].name, "Newsletter Cleanup");
 
@@ -102,12 +122,16 @@ mod tests {
         rule.pattern = "promo".to_string();
         cache.update_filter_rule(&rule).unwrap();
 
-        let updated = cache.get_filter_rules_for_account("test@example.com").unwrap();
+        let updated = cache
+            .get_filter_rules_for_account("test@example.com")
+            .unwrap();
         assert_eq!(updated[0].pattern, "promo");
         assert!(!updated[0].enabled);
 
         cache.delete_filter_rule("rule-1").unwrap();
-        let empty = cache.get_filter_rules_for_account("test@example.com").unwrap();
+        let empty = cache
+            .get_filter_rules_for_account("test@example.com")
+            .unwrap();
         assert!(empty.is_empty());
     }
 }

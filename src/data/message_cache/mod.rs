@@ -276,8 +276,9 @@ impl MessageCache {
         if let Some(ref sec) = self.security {
             if stored.starts_with("WXM2:") {
                 let decrypted = sec.decrypt(stored.as_bytes())?;
-                return String::from_utf8(decrypted)
-                    .map_err(|e| Error::Security(format!("Decrypted value not valid UTF-8: {}", e)));
+                return String::from_utf8(decrypted).map_err(|e| {
+                    Error::Security(format!("Decrypted value not valid UTF-8: {}", e))
+                });
             }
         }
         // Fall back to base64 decode (legacy data or no SecurityService)
@@ -521,7 +522,12 @@ impl MessageCache {
             )",
                 [],
             )
-            .map_err(|e| Error::Other(format!("Failed to create contact_group_members table: {}", e)))?;
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to create contact_group_members table: {}",
+                    e
+                ))
+            })?;
 
         self.conn
             .execute(
@@ -550,8 +556,16 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to create accounts table: {}", e)))?;
 
         // Schema migrations
-        self.ensure_column_exists("message_filter_rules", "match_type", "TEXT NOT NULL DEFAULT 'contains'")?;
-        self.ensure_column_exists("message_filter_rules", "case_sensitive", "BOOLEAN DEFAULT 0")?;
+        self.ensure_column_exists(
+            "message_filter_rules",
+            "match_type",
+            "TEXT NOT NULL DEFAULT 'contains'",
+        )?;
+        self.ensure_column_exists(
+            "message_filter_rules",
+            "case_sensitive",
+            "BOOLEAN DEFAULT 0",
+        )?;
         self.ensure_column_exists("contacts", "provider_contact_id", "TEXT")?;
         self.ensure_column_exists("contacts", "phone", "TEXT")?;
         self.ensure_column_exists("contacts", "company", "TEXT")?;
@@ -572,7 +586,11 @@ impl MessageCache {
         self.ensure_column_exists("contacts", "phones_json", "TEXT")?;
         self.ensure_column_exists("contacts", "addresses_json", "TEXT")?;
         self.ensure_column_exists("contacts", "custom_fields_json", "TEXT")?;
-        self.ensure_column_exists("oauth_tokens", "token_type", "TEXT NOT NULL DEFAULT 'Bearer'")?;
+        self.ensure_column_exists(
+            "oauth_tokens",
+            "token_type",
+            "TEXT NOT NULL DEFAULT 'Bearer'",
+        )?;
         self.ensure_column_exists("oauth_tokens", "scope", "TEXT")?;
         self.ensure_column_exists("oauth_tokens", "expires_at", "TEXT")?;
 

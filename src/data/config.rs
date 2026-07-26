@@ -36,9 +36,15 @@ pub struct AppConfig {
     pub default_sort_order: String,
 }
 
-fn default_true() -> bool { true }
-fn default_language() -> String { "en".to_string() }
-fn default_sort_order() -> String { "date_newest".to_string() }
+fn default_true() -> bool {
+    true
+}
+fn default_language() -> String {
+    "en".to_string()
+}
+fn default_sort_order() -> String {
+    "date_newest".to_string()
+}
 
 impl Default for AppConfig {
     fn default() -> Self {

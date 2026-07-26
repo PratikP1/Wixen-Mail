@@ -103,13 +103,18 @@ mod tests {
 
     #[test]
     fn test_oauth_token_operations() {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let temp_dir = env::temp_dir().join(format!("wixen_mail_test_oauth_{}", nanos));
         let cache = MessageCache::new(temp_dir, None).unwrap();
 
         let token = OAuthTokenEntry {
-            id: "oauth-1".to_string(), account_id: "acc-1".to_string(),
-            provider: "gmail".to_string(), access_token: "access-token-1".to_string(),
+            id: "oauth-1".to_string(),
+            account_id: "acc-1".to_string(),
+            provider: "gmail".to_string(),
+            access_token: "access-token-1".to_string(),
             refresh_token: Some("refresh-token-1".to_string()),
             token_type: "Bearer".to_string(),
             scope: Some("imap smtp contacts".to_string()),

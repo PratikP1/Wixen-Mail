@@ -205,34 +205,58 @@ mod tests {
         let cache = MessageCache::new(temp_dir, None).unwrap();
 
         let folder1 = CachedFolder {
-            id: 0, account_id: "acc-1".to_string(),
-            name: "INBOX".to_string(), path: "INBOX".to_string(),
-            folder_type: "Inbox".to_string(), unread_count: 0, total_count: 0,
+            id: 0,
+            account_id: "acc-1".to_string(),
+            name: "INBOX".to_string(),
+            path: "INBOX".to_string(),
+            folder_type: "Inbox".to_string(),
+            unread_count: 0,
+            total_count: 0,
         };
         let folder2 = CachedFolder {
-            id: 0, account_id: "acc-2".to_string(),
-            name: "INBOX".to_string(), path: "INBOX".to_string(),
-            folder_type: "Inbox".to_string(), unread_count: 0, total_count: 0,
+            id: 0,
+            account_id: "acc-2".to_string(),
+            name: "INBOX".to_string(),
+            path: "INBOX".to_string(),
+            folder_type: "Inbox".to_string(),
+            unread_count: 0,
+            total_count: 0,
         };
 
         let folder1_id = cache.save_folder(&folder1).unwrap();
         let folder2_id = cache.save_folder(&folder2).unwrap();
 
         let msg1 = CachedMessage {
-            id: 0, uid: 1, folder_id: folder1_id,
-            message_id: "msg-1@acc1".to_string(), subject: "Account 1 Message".to_string(),
-            from_addr: "a1@example.com".to_string(), to_addr: "user@example.com".to_string(),
-            cc: None, date: "2024-01-01".to_string(),
-            body_plain: Some("Body 1".to_string()), body_html: None,
-            read: false, starred: false, deleted: false,
+            id: 0,
+            uid: 1,
+            folder_id: folder1_id,
+            message_id: "msg-1@acc1".to_string(),
+            subject: "Account 1 Message".to_string(),
+            from_addr: "a1@example.com".to_string(),
+            to_addr: "user@example.com".to_string(),
+            cc: None,
+            date: "2024-01-01".to_string(),
+            body_plain: Some("Body 1".to_string()),
+            body_html: None,
+            read: false,
+            starred: false,
+            deleted: false,
         };
         let msg2 = CachedMessage {
-            id: 0, uid: 2, folder_id: folder2_id,
-            message_id: "msg-1@acc2".to_string(), subject: "Account 2 Message".to_string(),
-            from_addr: "a2@example.com".to_string(), to_addr: "user@example.com".to_string(),
-            cc: None, date: "2024-01-01".to_string(),
-            body_plain: Some("Body 2".to_string()), body_html: None,
-            read: false, starred: false, deleted: false,
+            id: 0,
+            uid: 2,
+            folder_id: folder2_id,
+            message_id: "msg-1@acc2".to_string(),
+            subject: "Account 2 Message".to_string(),
+            from_addr: "a2@example.com".to_string(),
+            to_addr: "user@example.com".to_string(),
+            cc: None,
+            date: "2024-01-01".to_string(),
+            body_plain: Some("Body 2".to_string()),
+            body_html: None,
+            read: false,
+            starred: false,
+            deleted: false,
         };
 
         cache.save_message(&msg1).unwrap();

@@ -141,18 +141,26 @@ mod tests {
         let cache = MessageCache::new(temp_dir, None).unwrap();
 
         let account = crate::data::account::Account {
-            id: "acc-1".to_string(), name: "Work Account".to_string(),
+            id: "acc-1".to_string(),
+            name: "Work Account".to_string(),
             email: "work@example.com".to_string(),
-            imap_server: "imap.example.com".to_string(), imap_port: "993".to_string(),
+            imap_server: "imap.example.com".to_string(),
+            imap_port: "993".to_string(),
             imap_use_tls: true,
-            smtp_server: "smtp.example.com".to_string(), smtp_port: "465".to_string(),
+            smtp_server: "smtp.example.com".to_string(),
+            smtp_port: "465".to_string(),
             smtp_use_tls: true,
-            username: "work@example.com".to_string(), password: "secret123".to_string(),
-            enabled: true, check_interval_minutes: 5,
-            provider: Some("Gmail".to_string()), last_sync: None,
+            username: "work@example.com".to_string(),
+            password: "secret123".to_string(),
+            enabled: true,
+            check_interval_minutes: 5,
+            provider: Some("Gmail".to_string()),
+            last_sync: None,
             color: "#FF0000".to_string(),
-            use_oauth: false, oauth_access_token: String::new(),
-            oauth_refresh_token: String::new(), oauth_token_expires_at: None,
+            use_oauth: false,
+            oauth_access_token: String::new(),
+            oauth_refresh_token: String::new(),
+            oauth_token_expires_at: None,
         };
 
         cache.save_account(&account).unwrap();
@@ -163,18 +171,26 @@ mod tests {
         assert_eq!(accounts[0].password, "secret123");
 
         let account2 = crate::data::account::Account {
-            id: "acc-2".to_string(), name: "Personal Account".to_string(),
+            id: "acc-2".to_string(),
+            name: "Personal Account".to_string(),
             email: "personal@example.com".to_string(),
-            imap_server: "imap.gmail.com".to_string(), imap_port: "993".to_string(),
+            imap_server: "imap.gmail.com".to_string(),
+            imap_port: "993".to_string(),
             imap_use_tls: true,
-            smtp_server: "smtp.gmail.com".to_string(), smtp_port: "465".to_string(),
+            smtp_server: "smtp.gmail.com".to_string(),
+            smtp_port: "465".to_string(),
             smtp_use_tls: true,
-            username: "personal@example.com".to_string(), password: "password456".to_string(),
-            enabled: false, check_interval_minutes: 10,
-            provider: Some("Gmail".to_string()), last_sync: None,
+            username: "personal@example.com".to_string(),
+            password: "password456".to_string(),
+            enabled: false,
+            check_interval_minutes: 10,
+            provider: Some("Gmail".to_string()),
+            last_sync: None,
             color: "#00FF00".to_string(),
-            use_oauth: false, oauth_access_token: String::new(),
-            oauth_refresh_token: String::new(), oauth_token_expires_at: None,
+            use_oauth: false,
+            oauth_access_token: String::new(),
+            oauth_refresh_token: String::new(),
+            oauth_token_expires_at: None,
         };
 
         cache.save_account(&account2).unwrap();

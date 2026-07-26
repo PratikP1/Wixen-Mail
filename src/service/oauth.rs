@@ -13,8 +13,8 @@
 
 use crate::common::{Error, Result};
 use oauth2::{
-    basic::BasicClient, AuthUrl, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
-    RedirectUrl, Scope, TokenUrl,
+    basic::BasicClient, AuthUrl, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl,
+    Scope, TokenUrl,
 };
 use serde::{Deserialize, Serialize};
 
@@ -77,8 +77,7 @@ impl OAuthService {
                 name: "outlook".to_string(),
                 auth_url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
                     .to_string(),
-                token_url: "https://login.microsoftonline.com/common/oauth2/v2.0/token"
-                    .to_string(),
+                token_url: "https://login.microsoftonline.com/common/oauth2/v2.0/token".to_string(),
                 default_scopes: vec![
                     "offline_access".to_string(),
                     "https://outlook.office.com/IMAP.AccessAsUser.All".to_string(),
@@ -96,15 +95,16 @@ impl OAuthService {
 
     /// Detect provider from email domain.
     pub fn detect_provider(email: &str) -> Option<String> {
-        email.split('@').nth(1).and_then(|domain| {
-            match domain.to_lowercase().as_str() {
+        email
+            .split('@')
+            .nth(1)
+            .and_then(|domain| match domain.to_lowercase().as_str() {
                 "gmail.com" | "googlemail.com" => Some("gmail".to_string()),
                 "outlook.com" | "hotmail.com" | "live.com" | "msn.com" => {
                     Some("outlook".to_string())
                 }
                 _ => None,
-            }
-        })
+            })
     }
 
     /// Build an `oauth2::BasicClient` for the given provider.
@@ -290,10 +290,7 @@ pub fn local_redirect_uri() -> String {
 ///
 /// `expected_state` — if provided, the `state` query param must match.
 /// `timeout_secs` — how long to wait before giving up (default 120).
-pub fn wait_for_redirect_code(
-    expected_state: Option<&str>,
-    timeout_secs: u64,
-) -> Result<String> {
+pub fn wait_for_redirect_code(expected_state: Option<&str>, timeout_secs: u64) -> Result<String> {
     let addr = format!("0.0.0.0:{}", REDIRECT_PORT);
     let server = tiny_http::Server::http(&addr).map_err(|e| {
         Error::Network(format!(
@@ -324,9 +321,8 @@ pub fn wait_for_redirect_code(
         };
 
         let url_str = format!("http://localhost{}", request.url());
-        let parsed = url::Url::parse(&url_str).map_err(|e| {
-            Error::Authentication(format!("Failed to parse redirect URL: {}", e))
-        })?;
+        let parsed = url::Url::parse(&url_str)
+            .map_err(|e| Error::Authentication(format!("Failed to parse redirect URL: {}", e)))?;
 
         // Extract query parameters
         let params: std::collections::HashMap<_, _> = parsed.query_pairs().collect();
@@ -341,8 +337,11 @@ pub fn wait_for_redirect_code(
                 "<html><body><h2>Authorization Failed</h2><p>{}: {}</p><p>You can close this tab.</p></body></html>",
                 err, desc
             );
-            let response = tiny_http::Response::from_string(html)
-                .with_header("Content-Type: text/html".parse::<tiny_http::Header>().unwrap());
+            let response = tiny_http::Response::from_string(html).with_header(
+                "Content-Type: text/html"
+                    .parse::<tiny_http::Header>()
+                    .unwrap(),
+            );
             let _ = request.respond(response);
             return Err(Error::Authentication(format!("{}: {}", err, desc)));
         }
@@ -362,10 +361,11 @@ pub fn wait_for_redirect_code(
             if let Some(state) = params.get("state") {
                 if state.as_ref() != expected {
                     let html = "<html><body><h2>State Mismatch</h2><p>CSRF state does not match. Authorization aborted.</p></body></html>";
-                    let response = tiny_http::Response::from_string(html)
-                        .with_header(
-                            "Content-Type: text/html".parse::<tiny_http::Header>().unwrap(),
-                        );
+                    let response = tiny_http::Response::from_string(html).with_header(
+                        "Content-Type: text/html"
+                            .parse::<tiny_http::Header>()
+                            .unwrap(),
+                    );
                     let _ = request.respond(response);
                     return Err(Error::Authentication(
                         "CSRF state mismatch — possible interception".to_string(),
@@ -381,8 +381,11 @@ pub fn wait_for_redirect_code(
             "<p>You have been authorized. You can close this tab and return to Wixen Mail.</p>",
             "</body></html>"
         );
-        let response = tiny_http::Response::from_string(html)
-            .with_header("Content-Type: text/html".parse::<tiny_http::Header>().unwrap());
+        let response = tiny_http::Response::from_string(html).with_header(
+            "Content-Type: text/html"
+                .parse::<tiny_http::Header>()
+                .unwrap(),
+        );
         let _ = request.respond(response);
 
         tracing::info!("OAuth authorization code received");
@@ -407,12 +410,7 @@ pub struct AuthManager {
 }
 
 impl AuthManager {
-    pub fn new(
-        account_id: &str,
-        provider: &str,
-        client_id: &str,
-        client_secret: &str,
-    ) -> Self {
+    pub fn new(account_id: &str, provider: &str, client_id: &str, client_secret: &str) -> Self {
         Self {
             account_id: account_id.to_string(),
             provider: provider.to_string(),
@@ -434,13 +432,12 @@ impl AuthManager {
         let redirect_uri = local_redirect_uri();
 
         // Step 1: Build the auth URL with PKCE
-        let (auth_url, csrf_token, pkce_verifier) =
-            OAuthService::build_authorization_url_pkce(
-                &self.provider,
-                &self.client_id,
-                &self.client_secret,
-                &redirect_uri,
-            )?;
+        let (auth_url, csrf_token, pkce_verifier) = OAuthService::build_authorization_url_pkce(
+            &self.provider,
+            &self.client_id,
+            &self.client_secret,
+            &redirect_uri,
+        )?;
 
         // Step 2: Open browser
         if let Err(e) = open::that(&auth_url) {
@@ -453,11 +450,10 @@ impl AuthManager {
 
         // Step 3: Wait for redirect (blocking — run in spawn_blocking from async context)
         let csrf_state = csrf_token.secret().clone();
-        let code = tokio::task::spawn_blocking(move || {
-            wait_for_redirect_code(Some(&csrf_state), 120)
-        })
-        .await
-        .map_err(|e| Error::Other(format!("Join error: {}", e)))??;
+        let code =
+            tokio::task::spawn_blocking(move || wait_for_redirect_code(Some(&csrf_state), 120))
+                .await
+                .map_err(|e| Error::Other(format!("Join error: {}", e)))??;
 
         // Step 4: Exchange the code with PKCE verifier
         let tokens = OAuthService::exchange_code_with_pkce(
@@ -485,13 +481,9 @@ impl AuthManager {
 
         // Check expiry (refresh proactively if within 5 minutes of expiration)
         let needs_refresh = match &tokens.expires_at {
-            Some(ts) => {
-                chrono::DateTime::parse_from_rfc3339(ts)
-                    .map(|dt| {
-                        dt < chrono::Utc::now() + chrono::TimeDelta::minutes(5)
-                    })
-                    .unwrap_or(true)
-            }
+            Some(ts) => chrono::DateTime::parse_from_rfc3339(ts)
+                .map(|dt| dt < chrono::Utc::now() + chrono::TimeDelta::minutes(5))
+                .unwrap_or(true),
             None => false,
         };
 
@@ -581,9 +573,9 @@ async fn post_token_request(url: &str, params: &[(&str, &str)]) -> Result<OAuthT
 
     if !status.is_success() {
         if let Ok(err) = serde_json::from_str::<TokenErrorResponse>(&body) {
-            let msg = err.error_description.unwrap_or_else(|| {
-                err.error.unwrap_or_else(|| format!("HTTP {}", status))
-            });
+            let msg = err
+                .error_description
+                .unwrap_or_else(|| err.error.unwrap_or_else(|| format!("HTTP {}", status)));
             return Err(Error::Authentication(msg));
         }
         return Err(Error::Authentication(format!(
@@ -595,9 +587,9 @@ async fn post_token_request(url: &str, params: &[(&str, &str)]) -> Result<OAuthT
     let token: TokenResponse = serde_json::from_str(&body)
         .map_err(|e| Error::Authentication(format!("Invalid token response: {}", e)))?;
 
-    let expires_at = token.expires_in.map(|secs| {
-        (chrono::Utc::now() + chrono::TimeDelta::seconds(secs)).to_rfc3339()
-    });
+    let expires_at = token
+        .expires_in
+        .map(|secs| (chrono::Utc::now() + chrono::TimeDelta::seconds(secs)).to_rfc3339());
 
     Ok(OAuthTokenSet {
         access_token: token.access_token,
