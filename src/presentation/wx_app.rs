@@ -1167,6 +1167,7 @@ impl WxMailApp {
                 let runtime = runtime.clone();
                 let do_switch = do_switch_module.clone();
                 let a11y = a11y.clone();
+                let message_cache = message_cache.clone();
                 move |event| {
                     let id = event.get_id();
                     match id {
@@ -1261,18 +1262,18 @@ impl WxMailApp {
                         }
                         _ if id == ID_QUIT => frame.close(false),
                         _ if id == ID_CHECK_MAIL => send_status(&ui_tx, &runtime, "Checking for new mail..."),
-                        _ if id == ID_NEW_MESSAGE => open_compose(&frame, &state, &ui_tx, &runtime, ComposeMode::New),
+                        _ if id == ID_NEW_MESSAGE => open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, ComposeMode::New),
                         _ if id == ID_REPLY => {
                             let (to, subj, body) = msg_info(&state);
-                            open_compose(&frame, &state, &ui_tx, &runtime, ComposeMode::Reply { to, subject: subj, quoted_body: body });
+                            open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, ComposeMode::Reply { to, subject: subj, quoted_body: body });
                         }
                         _ if id == ID_REPLY_ALL => {
                             let (to, subj, body) = msg_info(&state);
-                            open_compose(&frame, &state, &ui_tx, &runtime, ComposeMode::ReplyAll { to, cc: String::new(), subject: subj, quoted_body: body });
+                            open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, ComposeMode::ReplyAll { to, cc: String::new(), subject: subj, quoted_body: body });
                         }
                         _ if id == ID_FORWARD => {
                             let (_to, subj, body) = msg_info(&state);
-                            open_compose(&frame, &state, &ui_tx, &runtime, ComposeMode::Forward { subject: subj, body });
+                            open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, ComposeMode::Forward { subject: subj, body });
                         }
                         _ if id == ID_DELETE => {
                             let deleted = {
@@ -1920,6 +1921,7 @@ fn open_compose(
     state: &Arc<StdMutex<WxUIState>>,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
+    cache: &Option<Arc<MessageCache>>,
     mode: ComposeMode,
 ) {
     let (names, active) = state
@@ -1937,17 +1939,65 @@ fn open_compose(
 
     match wx_compose::show_compose_dialog(frame, mode, &names, active) {
         ComposeResult::Send(data) => {
-            let tx = tx.clone();
-            let to = data.to.clone();
-            rt.spawn(async move {
-                let _ = tx
-                    .send(UIUpdate::StatusUpdated(format!("Sending to {}...", to)))
-                    .await;
-            });
+            // Queue first, then flush. Nothing used to reach the outbox at all,
+            // so pressing Send only ever produced a status line. Queueing also
+            // means a send that fails is retried rather than lost.
+            match queue_for_sending(state, cache, &data) {
+                Ok(recipient) => {
+                    send_status(tx, rt, &format!("Sending to {}...", recipient));
+                    flush_outbox(state, tx, rt);
+                }
+                Err(reason) => {
+                    let tx = tx.clone();
+                    rt.spawn(async move {
+                        let _ = tx.send(UIUpdate::ErrorOccurred(reason)).await;
+                    });
+                }
+            }
         }
-        ComposeResult::SaveDraft(_data) => send_status(tx, rt, "Draft saved"),
+        ComposeResult::SaveDraft(_data) => send_status(tx, rt, "Draft saving is not implemented"),
         ComposeResult::Cancelled => {}
     }
+}
+
+/// Put a composed message in the outbox so it can be sent.
+///
+/// Returns the recipient on success, or a reason the message could not be
+/// queued. Queueing rather than sending directly means a failure is retried on
+/// the next flush instead of being lost with the dialog.
+fn queue_for_sending(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    data: &wx_compose::ComposeData,
+) -> std::result::Result<String, String> {
+    let Some(cache) = cache.as_ref() else {
+        return Err("No message store is available, so the message cannot be queued".to_string());
+    };
+    let account_id = lock_state(state)
+        .active_account_id
+        .clone()
+        .ok_or_else(|| "Select an account before sending".to_string())?;
+
+    let recipient = data.to.trim();
+    if recipient.is_empty() {
+        return Err("Add at least one recipient before sending".to_string());
+    }
+
+    let queued = crate::data::message_cache::QueuedOutboxMessage {
+        id: uuid::Uuid::new_v4().to_string(),
+        account_id,
+        to_addr: recipient.to_string(),
+        subject: data.subject.clone(),
+        body: data.body.clone(),
+        attempt_count: 0,
+        last_error: None,
+        created_at: chrono::Local::now().to_rfc3339(),
+    };
+
+    cache
+        .queue_outbox_message(&queued)
+        .map_err(|e| format!("Could not queue the message: {}", e))?;
+    Ok(recipient.to_string())
 }
 
 /// Handle Account Manager dialog result.
