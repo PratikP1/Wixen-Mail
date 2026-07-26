@@ -73,6 +73,7 @@ jobs:
         Write-Host "Installed $($asset.name)"
 
     - name: Scan the running application
+      id: scan
       shell: pwsh
       run: |
         $ErrorActionPreference = 'Stop'
@@ -96,10 +97,27 @@ jobs:
           }
           if ($app.MainWindowHandle -eq 0) { throw 'Main window never appeared within 60s' }
 
-          & tools/axe-windows/AxeWindowsCLI.exe `
+          # Axe exits non-zero both when it finds violations and when it fails
+          # to scan at all, so the exit code alone cannot tell those apart.
+          # Whether it wrote a result file is what distinguishes them.
+          $PSNativeCommandUseErrorActionPreference = $false
+          $output = & tools/axe-windows/AxeWindowsCLI.exe `
             --processid $app.Id `
             --outputdirectory $outDir `
-            --verbosity verbose
+            --verbosity verbose 2>&1
+          $output | Out-String | Write-Host
+
+          if (-not (Get-ChildItem $outDir -Filter *.a11ytest -ErrorAction SilentlyContinue)) {
+            throw "Axe.Windows produced no result file, so the scan itself failed. Exit code $LASTEXITCODE."
+          }
+
+          # "8 errors were found" / "No errors were found"
+          $summary = ($output | Select-String -Pattern '(\d+) errors? were found|No errors were found' | Select-Object -First 1)
+          $count = if ($summary -and $summary.Matches[0].Groups[1].Success) {
+            [int]$summary.Matches[0].Groups[1].Value
+          } else { 0 }
+          "violations=$count" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Scan completed with $count violation(s)."
         }
         finally {
           if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
@@ -110,16 +128,22 @@ jobs:
       shell: pwsh
       run: |
         $results = Get-ChildItem a11y-results -Filter *.a11ytest -ErrorAction SilentlyContinue
-        if (-not $results) {
-          Add-Content $env:GITHUB_STEP_SUMMARY '## Accessibility scan'
-          Add-Content $env:GITHUB_STEP_SUMMARY 'No scan output was produced. Check the scan step log.'
-          exit 0
-        }
         Add-Content $env:GITHUB_STEP_SUMMARY '## Accessibility scan'
         Add-Content $env:GITHUB_STEP_SUMMARY ''
-        Add-Content $env:GITHUB_STEP_SUMMARY "Produced $($results.Count) result file(s). Download the ``accessibility-scan-results`` artifact and open it with the Accessibility Insights for Windows viewer."
+        if (-not $results) {
+          Add-Content $env:GITHUB_STEP_SUMMARY 'The scan did not run. No result file was produced, so this is a broken scan rather than a clean one. Check the scan step log.'
+          exit 0
+        }
+        $count = '${{ steps.scan.outputs.violations }}'
+        if ($count -eq '0') {
+          Add-Content $env:GITHUB_STEP_SUMMARY 'No violations found by the automated scan.'
+        } else {
+          Add-Content $env:GITHUB_STEP_SUMMARY "**$count violation(s) found.** The scan step log lists each one with its control type and class name."
+        }
         Add-Content $env:GITHUB_STEP_SUMMARY ''
-        Add-Content $env:GITHUB_STEP_SUMMARY 'This scan covers about half of WCAG. It is not a substitute for testing with NVDA.'
+        Add-Content $env:GITHUB_STEP_SUMMARY 'Download the `accessibility-scan-results` artifact and open it with Accessibility Insights for Windows to inspect them.'
+        Add-Content $env:GITHUB_STEP_SUMMARY ''
+        Add-Content $env:GITHUB_STEP_SUMMARY 'This scan covers about half of WCAG. A clean result means the structure is present, not that the experience is good. It is not a substitute for testing with NVDA.'
 
     - name: Upload scan results
       if: always()
