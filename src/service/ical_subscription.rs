@@ -137,4 +137,105 @@ END:VCALENDAR"#;
         let events = parse_ics(ics).unwrap();
         assert!(events.is_empty());
     }
+
+    // ── Hostile subscription feeds ──────────────────────────────────────
+    //
+    // A subscribed .ics URL is fetched on a timer from a server the user
+    // trusted once. Everything it returns is attacker controlled if that
+    // server is, and it is parsed without anyone looking at it.
+
+    /// Deterministic generator so a failure is reproducible from its seed.
+    struct IcsLcg(u64);
+
+    impl IcsLcg {
+        fn next(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            self.0
+        }
+    }
+
+    fn fuzz_feed(seed: u64) -> String {
+        let pieces = [
+            "BEGIN:VCALENDAR",
+            "BEGIN:VEVENT",
+            "END:VEVENT",
+            "END:VCALENDAR",
+            "BEGIN:VEVENT\r\nBEGIN:VEVENT",
+            "UID:",
+            "SUMMARY:",
+            "DTSTART;VALUE=DATE:",
+            "DTSTART:",
+            "DTEND:",
+            "20260101",
+            "20260101T143000Z",
+            "abc\u{20ac}de",
+            "\u{feff}",
+            "\0",
+            "\r\n",
+            "\n",
+            ":",
+            ";",
+            "",
+        ];
+        let mut rng = IcsLcg(seed);
+        let mut out = String::new();
+        for _ in 0..(rng.next() % 60 + 1) {
+            out.push_str(pieces[(rng.next() % pieces.len() as u64) as usize]);
+        }
+        out
+    }
+
+    #[test]
+    fn test_fuzz_feed_parsing_never_panics() {
+        for seed in 0..5000u64 {
+            let _ = parse_ics(&fuzz_feed(seed));
+        }
+    }
+
+    #[test]
+    fn test_fuzz_feed_parsing_always_terminates() {
+        // The splitter advances past each END:VEVENT. A feed that opens events
+        // it never closes, or nests them, must not leave it scanning forever.
+        for seed in 0..2000u64 {
+            let feed = fuzz_feed(seed);
+            let events = parse_ics(&feed).unwrap_or_default();
+            // One event needs at least a BEGIN and an END, so it cannot produce
+            // more events than that bound allows.
+            assert!(
+                events.len() <= feed.matches("END:VEVENT").count(),
+                "seed {} produced more events than the feed closed",
+                seed
+            );
+        }
+    }
+
+    #[test]
+    fn test_unterminated_event_is_ignored_rather_than_guessed_at() {
+        let feed = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:x\r\nSUMMARY:Never closed";
+        assert!(parse_ics(feed).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_event_without_a_uid_is_skipped() {
+        // A UID is how an event is matched on the next sync. Without one there
+        // is no way to update or delete it later, so it is not stored.
+        let feed =
+            "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Anonymous\r\nEND:VEVENT\r\nEND:VCALENDAR";
+        assert!(parse_ics(feed).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_multiple_events_are_all_returned() {
+        let feed = "BEGIN:VCALENDAR\r\n\
+                    BEGIN:VEVENT\r\nUID:a\r\nSUMMARY:First\r\nDTSTART:20260101T090000Z\r\nEND:VEVENT\r\n\
+                    BEGIN:VEVENT\r\nUID:b\r\nSUMMARY:Second\r\nDTSTART:20260102T090000Z\r\nEND:VEVENT\r\n\
+                    END:VCALENDAR";
+        let events = parse_ics(feed).unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].uid, "a");
+        assert_eq!(events[1].uid, "b");
+    }
 }

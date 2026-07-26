@@ -160,6 +160,13 @@ impl Account {
             return Err("Username is required".to_string());
         }
 
+        // Ports are held as text because they come straight from a form. This
+        // is the only place that can explain a bad one in terms of the field
+        // the user typed it into; everything downstream sees a parse failure
+        // with no idea which port it came from.
+        validate_port("IMAP", &self.imap_port)?;
+        validate_port("SMTP", &self.smtp_port)?;
+
         // OAuth accounts don't require a password
         if !self.use_oauth && self.password.is_empty() {
             return Err("Password is required".to_string());
@@ -327,6 +334,25 @@ impl Default for AccountManager {
     }
 }
 
+/// Check one port field, naming it in any complaint.
+///
+/// Port 0 is rejected along with everything unparseable: it means "any free
+/// port" to the operating system, which is never what someone meant to type
+/// into a mail server field.
+fn validate_port(label: &str, value: &str) -> Result<(), String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(format!("{} port is required", label));
+    }
+    match trimmed.parse::<u16>() {
+        Ok(0) | Err(_) => Err(format!(
+            "{} port must be a number between 1 and 65535, not \"{}\"",
+            label, trimmed
+        )),
+        Ok(_) => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -463,5 +489,94 @@ mod tests {
         assert_eq!(account.email, "user@gmail.com");
         assert!(account.use_oauth);
         assert_eq!(account.provider, Some("Gmail".to_string()));
+    }
+
+    // ── Port validation ─────────────────────────────────────────────────
+
+    fn valid_account() -> Account {
+        let mut a = Account::new("Work".to_string(), "me@example.com".to_string());
+        a.imap_server = "imap.example.com".to_string();
+        a.smtp_server = "smtp.example.com".to_string();
+        a.username = "me@example.com".to_string();
+        a.password = "hunter2".to_string();
+        a.imap_port = "993".to_string();
+        a.smtp_port = "587".to_string();
+        a
+    }
+
+    #[test]
+    fn test_valid_account_passes() {
+        assert!(valid_account().validate().is_ok());
+    }
+
+    #[test]
+    fn test_rejects_a_non_numeric_port() {
+        // Caught here or not at all: nothing downstream can explain "abc" to
+        // the user in terms of the field they typed it into.
+        let mut a = valid_account();
+        a.imap_port = "not-a-port".to_string();
+        assert!(a.validate().is_err());
+
+        let mut a = valid_account();
+        a.smtp_port = "\u{ff15}\u{ff18}\u{ff17}".to_string();
+        assert!(a.validate().is_err());
+    }
+
+    #[test]
+    fn test_rejects_a_port_out_of_range() {
+        let mut a = valid_account();
+        a.imap_port = "70000".to_string();
+        assert!(a.validate().is_err());
+
+        let mut a = valid_account();
+        a.smtp_port = "0".to_string();
+        assert!(a.validate().is_err());
+    }
+
+    #[test]
+    fn test_rejects_an_empty_port() {
+        let mut a = valid_account();
+        a.smtp_port = "   ".to_string();
+        assert!(a.validate().is_err());
+    }
+
+    #[test]
+    fn test_port_error_names_the_field() {
+        let mut a = valid_account();
+        a.smtp_port = "abc".to_string();
+        let err = a.validate().unwrap_err();
+        assert!(
+            err.to_lowercase().contains("smtp"),
+            "the message must say which port: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_fuzz_validation_never_panics() {
+        let noise = [
+            "",
+            " ",
+            "0",
+            "-1",
+            "65535",
+            "65536",
+            "99999999999999999999",
+            "\u{4f60}",
+            "\u{0}",
+            "993\n",
+            "+993",
+            "0x3e1",
+            "993 ",
+            "\u{feff}993",
+        ];
+        for imap in noise {
+            for smtp in noise {
+                let mut a = valid_account();
+                a.imap_port = imap.to_string();
+                a.smtp_port = smtp.to_string();
+                let _ = a.validate();
+            }
+        }
     }
 }
