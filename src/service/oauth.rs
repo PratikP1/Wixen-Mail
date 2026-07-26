@@ -70,7 +70,8 @@ impl OAuthService {
                 token_url: "https://oauth2.googleapis.com/token".to_string(),
                 default_scopes: vec![
                     "https://mail.google.com/".to_string(),
-                    "https://www.googleapis.com/auth/contacts.readonly".to_string(),
+                    "https://www.googleapis.com/auth/contacts".to_string(),
+                    "https://www.googleapis.com/auth/calendar".to_string(),
                 ],
             },
             OAuthProvider {
@@ -82,6 +83,8 @@ impl OAuthService {
                     "offline_access".to_string(),
                     "https://outlook.office.com/IMAP.AccessAsUser.All".to_string(),
                     "https://outlook.office.com/SMTP.Send".to_string(),
+                    "https://graph.microsoft.com/Contacts.ReadWrite".to_string(),
+                    "https://graph.microsoft.com/Calendars.ReadWrite".to_string(),
                 ],
             },
         ]
@@ -108,10 +111,12 @@ impl OAuthService {
     }
 
     /// Build an `oauth2::BasicClient` for the given provider.
+    ///
+    /// `client_secret` is `None` for public clients (e.g. Microsoft desktop apps).
     pub fn build_client(
         provider: &OAuthProvider,
         client_id: &str,
-        client_secret: &str,
+        client_secret: Option<&str>,
         redirect_uri: &str,
     ) -> Result<BasicClient> {
         let auth_url = AuthUrl::new(provider.auth_url.clone())
@@ -121,9 +126,11 @@ impl OAuthService {
         let redirect = RedirectUrl::new(redirect_uri.to_string())
             .map_err(|e| Error::Authentication(format!("Invalid redirect URI: {}", e)))?;
 
+        let secret = client_secret.map(|s| ClientSecret::new(s.to_string()));
+
         let client = BasicClient::new(
             ClientId::new(client_id.to_string()),
-            Some(ClientSecret::new(client_secret.to_string())),
+            secret,
             auth_url,
             Some(token_url),
         )
@@ -138,7 +145,7 @@ impl OAuthService {
     pub fn build_authorization_url_pkce(
         provider: &str,
         client_id: &str,
-        client_secret: &str,
+        client_secret: Option<&str>,
         redirect_uri: &str,
     ) -> Result<(String, CsrfToken, oauth2::PkceCodeVerifier)> {
         let p = Self::provider_by_name(provider).ok_or_else(|| {
@@ -192,7 +199,7 @@ impl OAuthService {
         provider: &str,
         code: &str,
         client_id: &str,
-        client_secret: &str,
+        client_secret: Option<&str>,
         redirect_uri: &str,
     ) -> Result<OAuthTokenSet> {
         Self::exchange_code_with_pkce(provider, code, client_id, client_secret, redirect_uri, None)
@@ -204,7 +211,7 @@ impl OAuthService {
         provider: &str,
         code: &str,
         client_id: &str,
-        client_secret: &str,
+        client_secret: Option<&str>,
         redirect_uri: &str,
         pkce_verifier: Option<String>,
     ) -> Result<OAuthTokenSet> {
@@ -221,9 +228,11 @@ impl OAuthService {
             ("grant_type", "authorization_code".to_string()),
             ("code", code.to_string()),
             ("client_id", client_id.to_string()),
-            ("client_secret", client_secret.to_string()),
             ("redirect_uri", redirect_uri.to_string()),
         ];
+        if let Some(secret) = client_secret {
+            params.push(("client_secret", secret.to_string()));
+        }
         if let Some(verifier) = pkce_verifier {
             params.push(("code_verifier", verifier));
         }
@@ -237,7 +246,25 @@ impl OAuthService {
         provider: &str,
         refresh_token: &str,
         client_id: &str,
-        client_secret: &str,
+        client_secret: Option<&str>,
+    ) -> Result<OAuthTokenSet> {
+        Self::refresh_with_scopes(provider, refresh_token, client_id, client_secret, &[]).await
+    }
+
+    /// Refresh with specific scopes, yielding a resource-specific access token.
+    ///
+    /// Microsoft v2.0 issues resource-specific access tokens. A single refresh
+    /// token covers all consented scopes, but you must request the specific
+    /// scopes you need at refresh time to get a token for that resource.
+    ///
+    /// For Google, this is unnecessary — one access token works for all scopes.
+    /// Pass an empty slice to use the default (all originally consented scopes).
+    pub async fn refresh_with_scopes(
+        provider: &str,
+        refresh_token: &str,
+        client_id: &str,
+        client_secret: Option<&str>,
+        scopes: &[&str],
     ) -> Result<OAuthTokenSet> {
         let p = Self::provider_by_name(provider).ok_or_else(|| {
             Error::Authentication(format!("Unsupported OAuth provider: {}", provider))
@@ -248,14 +275,20 @@ impl OAuthService {
             ));
         }
 
-        let params = [
-            ("grant_type", "refresh_token"),
-            ("refresh_token", refresh_token),
-            ("client_id", client_id),
-            ("client_secret", client_secret),
+        let mut params = vec![
+            ("grant_type", "refresh_token".to_string()),
+            ("refresh_token", refresh_token.to_string()),
+            ("client_id", client_id.to_string()),
         ];
+        if let Some(secret) = client_secret {
+            params.push(("client_secret", secret.to_string()));
+        }
+        if !scopes.is_empty() {
+            params.push(("scope", scopes.join(" ")));
+        }
 
-        let mut result = post_token_request(&p.token_url, &params).await?;
+        let params_ref: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let mut result = post_token_request(&p.token_url, &params_ref).await?;
         if result.refresh_token.is_none() {
             result.refresh_token = Some(refresh_token.to_string());
         }
@@ -406,16 +439,22 @@ pub struct AuthManager {
     provider: String,
     /// Client credentials.
     client_id: String,
-    client_secret: String,
+    /// `None` for public clients (Microsoft desktop apps using PKCE only).
+    client_secret: Option<String>,
 }
 
 impl AuthManager {
-    pub fn new(account_id: &str, provider: &str, client_id: &str, client_secret: &str) -> Self {
+    pub fn new(
+        account_id: &str,
+        provider: &str,
+        client_id: &str,
+        client_secret: Option<&str>,
+    ) -> Self {
         Self {
             account_id: account_id.to_string(),
             provider: provider.to_string(),
             client_id: client_id.to_string(),
-            client_secret: client_secret.to_string(),
+            client_secret: client_secret.map(|s| s.to_string()),
         }
     }
 
@@ -435,7 +474,7 @@ impl AuthManager {
         let (auth_url, csrf_token, pkce_verifier) = OAuthService::build_authorization_url_pkce(
             &self.provider,
             &self.client_id,
-            &self.client_secret,
+            self.client_secret.as_deref(),
             &redirect_uri,
         )?;
 
@@ -460,7 +499,7 @@ impl AuthManager {
             &self.provider,
             &code,
             &self.client_id,
-            &self.client_secret,
+            self.client_secret.as_deref(),
             &redirect_uri,
             Some(pkce_verifier.secret().to_string()),
         )
@@ -500,7 +539,7 @@ impl AuthManager {
                 &self.provider,
                 refresh_token,
                 &self.client_id,
-                &self.client_secret,
+                self.client_secret.as_deref(),
             )
             .await?;
 
@@ -509,6 +548,50 @@ impl AuthManager {
         }
 
         Ok(tokens.access_token)
+    }
+
+    /// Get a valid Microsoft Graph API token.
+    ///
+    /// Microsoft v2.0 issues resource-specific tokens. The main token stored in
+    /// the keychain is for Outlook (IMAP/SMTP). This method uses the refresh
+    /// token to obtain a separate access token scoped to `graph.microsoft.com`.
+    ///
+    /// For Google accounts, this falls back to `get_valid_token()` since a
+    /// single Google token covers all `googleapis.com` resources.
+    pub async fn get_valid_graph_token(&self) -> Result<String> {
+        if self.provider.eq_ignore_ascii_case("gmail") {
+            return self.get_valid_token().await;
+        }
+
+        let tokens = self.load_tokens()?;
+        let refresh_token = tokens
+            .refresh_token
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                Error::Authentication(
+                    "No refresh token available for Graph API. Re-authorize the account."
+                        .to_string(),
+                )
+            })?;
+
+        let graph_scopes = &[
+            "https://graph.microsoft.com/Contacts.ReadWrite",
+            "https://graph.microsoft.com/Calendars.ReadWrite",
+        ];
+
+        let new_tokens = OAuthService::refresh_with_scopes(
+            &self.provider,
+            refresh_token,
+            &self.client_id,
+            self.client_secret.as_deref(),
+            graph_scopes,
+        )
+        .await?;
+
+        // Do NOT overwrite the stored keychain token — that one is for IMAP/SMTP.
+        // The Graph token is short-lived and used immediately.
+        Ok(new_tokens.access_token)
     }
 
     /// Store tokens in the OS keychain.
@@ -672,21 +755,63 @@ mod tests {
         assert!(url.contains("access_type=offline"));
     }
 
+    #[test]
+    fn test_gmail_scopes_include_contacts_and_calendar() {
+        let p = OAuthService::provider_by_name("gmail").unwrap();
+        let scopes_str = p.default_scopes.join(" ");
+        assert!(scopes_str.contains("auth/contacts"));
+        assert!(scopes_str.contains("auth/calendar"));
+    }
+
+    #[test]
+    fn test_outlook_scopes_include_graph() {
+        let p = OAuthService::provider_by_name("outlook").unwrap();
+        let scopes_str = p.default_scopes.join(" ");
+        assert!(scopes_str.contains("graph.microsoft.com/Contacts.ReadWrite"));
+        assert!(scopes_str.contains("graph.microsoft.com/Calendars.ReadWrite"));
+        assert!(scopes_str.contains("IMAP.AccessAsUser.All"));
+        assert!(scopes_str.contains("SMTP.Send"));
+    }
+
+    #[test]
+    fn test_build_client_no_secret() {
+        let p = OAuthService::provider_by_name("outlook").unwrap();
+        let result = OAuthService::build_client(&p, "test-id", None, "http://localhost/cb");
+        assert!(
+            result.is_ok(),
+            "Public client (no secret) should build successfully"
+        );
+    }
+
     #[tokio::test]
     async fn test_exchange_code_rejects_empty() {
-        let result = OAuthService::exchange_code("gmail", "", "id", "secret", "uri").await;
+        let result = OAuthService::exchange_code("gmail", "", "id", Some("secret"), "uri").await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_refresh_rejects_empty() {
-        let result = OAuthService::refresh_access_token("gmail", "", "id", "secret").await;
+        let result = OAuthService::refresh_access_token("gmail", "", "id", Some("secret")).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_exchange_code_rejects_unknown_provider() {
-        let result = OAuthService::exchange_code("unknown", "code", "id", "secret", "uri").await;
+        let result =
+            OAuthService::exchange_code("unknown", "code", "id", Some("secret"), "uri").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_refresh_with_scopes_rejects_empty_token() {
+        let result = OAuthService::refresh_with_scopes(
+            "outlook",
+            "",
+            "id",
+            None,
+            &["https://graph.microsoft.com/Contacts.ReadWrite"],
+        )
+        .await;
         assert!(result.is_err());
     }
 

@@ -219,7 +219,7 @@ pub fn show_account_manager_dialog(
                                     &rid,
                                     &prov,
                                     &creds.client_id,
-                                    &creds.client_secret,
+                                    creds.client_secret.as_deref(),
                                 );
                                 mgr.revoke_stored_tokens();
                             }
@@ -510,7 +510,7 @@ fn run_oauth_flow(account: &mut Account) -> OAuthFlowResult {
         &account.id,
         &provider,
         &creds.client_id,
-        &creds.client_secret,
+        creds.client_secret.as_deref(),
     );
 
     let result = {

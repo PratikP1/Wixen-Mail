@@ -18,7 +18,8 @@
 //!
 //! [outlook]
 //! client_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-//! client_secret = "xxxx"
+//! client_secret = ""                                    # empty for public clients
+//! tenant_id = "common"                                  # or a specific tenant UUID
 //! ```
 
 use serde::Deserialize;
@@ -28,7 +29,10 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub struct ClientCredentials {
     pub client_id: String,
-    pub client_secret: String,
+    /// `None` for public clients (e.g. Microsoft desktop apps using PKCE only).
+    pub client_secret: Option<String>,
+    /// Microsoft tenant ID. Defaults to `"common"` (any account) if absent.
+    pub tenant_id: Option<String>,
 }
 
 /// TOML file layout.
@@ -42,6 +46,7 @@ struct OAuthToml {
 struct ProviderEntry {
     client_id: Option<String>,
     client_secret: Option<String>,
+    tenant_id: Option<String>,
 }
 
 /// Return credentials for the given provider, or `None` if unconfigured.
@@ -55,7 +60,7 @@ pub fn credentials_for(provider: &str) -> Option<ClientCredentials> {
 }
 
 fn resolve_gmail() -> Option<ClientCredentials> {
-    // 1. Environment variables
+    // 1. Environment variables — Google always requires client_secret
     if let (Ok(id), Ok(secret)) = (
         std::env::var("WIXEN_GMAIL_CLIENT_ID"),
         std::env::var("WIXEN_GMAIL_CLIENT_SECRET"),
@@ -63,7 +68,8 @@ fn resolve_gmail() -> Option<ClientCredentials> {
         if !id.is_empty() && !secret.is_empty() {
             return Some(ClientCredentials {
                 client_id: id,
-                client_secret: secret,
+                client_secret: Some(secret),
+                tenant_id: None,
             });
         }
     }
@@ -73,15 +79,14 @@ fn resolve_gmail() -> Option<ClientCredentials> {
         return Some(cred);
     }
 
-    // 3. Compile-time defaults (set via build environment or .cargo/config.toml)
-    //    These will be empty strings if the env vars were not set at compile time,
-    //    so the check below filters that out.
+    // 3. Compile-time defaults
     let id = option_env!("WIXEN_GMAIL_CLIENT_ID_DEFAULT").unwrap_or("");
     let secret = option_env!("WIXEN_GMAIL_CLIENT_SECRET_DEFAULT").unwrap_or("");
     if !id.is_empty() && !secret.is_empty() {
         return Some(ClientCredentials {
             client_id: id.to_string(),
-            client_secret: secret.to_string(),
+            client_secret: Some(secret.to_string()),
+            tenant_id: None,
         });
     }
 
@@ -89,15 +94,19 @@ fn resolve_gmail() -> Option<ClientCredentials> {
 }
 
 fn resolve_outlook() -> Option<ClientCredentials> {
-    // 1. Environment variables
-    if let (Ok(id), Ok(secret)) = (
-        std::env::var("WIXEN_OUTLOOK_CLIENT_ID"),
-        std::env::var("WIXEN_OUTLOOK_CLIENT_SECRET"),
-    ) {
-        if !id.is_empty() && !secret.is_empty() {
+    // 1. Environment variables — client_secret optional for public clients
+    if let Ok(id) = std::env::var("WIXEN_OUTLOOK_CLIENT_ID") {
+        if !id.is_empty() {
+            let secret = std::env::var("WIXEN_OUTLOOK_CLIENT_SECRET")
+                .ok()
+                .filter(|s| !s.is_empty());
+            let tenant = std::env::var("WIXEN_OUTLOOK_TENANT_ID")
+                .ok()
+                .filter(|s| !s.is_empty());
             return Some(ClientCredentials {
                 client_id: id,
                 client_secret: secret,
+                tenant_id: tenant,
             });
         }
     }
@@ -109,11 +118,14 @@ fn resolve_outlook() -> Option<ClientCredentials> {
 
     // 3. Compile-time defaults
     let id = option_env!("WIXEN_OUTLOOK_CLIENT_ID_DEFAULT").unwrap_or("");
-    let secret = option_env!("WIXEN_OUTLOOK_CLIENT_SECRET_DEFAULT").unwrap_or("");
-    if !id.is_empty() && !secret.is_empty() {
+    if !id.is_empty() {
+        let secret = option_env!("WIXEN_OUTLOOK_CLIENT_SECRET_DEFAULT")
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
         return Some(ClientCredentials {
             client_id: id.to_string(),
-            client_secret: secret.to_string(),
+            client_secret: secret,
+            tenant_id: None,
         });
     }
 
@@ -137,12 +149,29 @@ fn load_from_toml(provider: &str) -> Option<ClientCredentials> {
     };
 
     let id = entry.client_id.filter(|s| !s.is_empty())?;
-    let secret = entry.client_secret.filter(|s| !s.is_empty())?;
 
-    Some(ClientCredentials {
-        client_id: id,
-        client_secret: secret,
-    })
+    match provider {
+        "gmail" => {
+            // Google requires client_secret
+            let secret = entry.client_secret.filter(|s| !s.is_empty())?;
+            Some(ClientCredentials {
+                client_id: id,
+                client_secret: Some(secret),
+                tenant_id: None,
+            })
+        }
+        "outlook" => {
+            // Microsoft: client_secret optional (public client), tenant_id optional
+            let secret = entry.client_secret.filter(|s| !s.is_empty());
+            let tenant = entry.tenant_id.filter(|s| !s.is_empty());
+            Some(ClientCredentials {
+                client_id: id,
+                client_secret: secret,
+                tenant_id: tenant,
+            })
+        }
+        _ => None,
+    }
 }
 
 /// Check whether credentials are available for a provider.
@@ -166,5 +195,29 @@ mod tests {
         // We mainly verify it doesn't panic.
         let _ = credentials_for("gmail");
         let _ = credentials_for("outlook");
+    }
+
+    #[test]
+    fn test_gmail_credentials_have_secret() {
+        // If Gmail credentials resolve, they must have a client_secret.
+        if let Some(cred) = credentials_for("gmail") {
+            assert!(
+                cred.client_secret.is_some(),
+                "Gmail must have client_secret"
+            );
+            assert!(cred.tenant_id.is_none(), "Gmail should not have tenant_id");
+        }
+    }
+
+    #[test]
+    fn test_outlook_allows_no_secret() {
+        // Verify the struct can represent a public client.
+        let cred = ClientCredentials {
+            client_id: "test-id".to_string(),
+            client_secret: None,
+            tenant_id: Some("common".to_string()),
+        };
+        assert!(cred.client_secret.is_none());
+        assert_eq!(cred.tenant_id.as_deref(), Some("common"));
     }
 }
