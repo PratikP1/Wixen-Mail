@@ -236,6 +236,12 @@ impl WxMailApp {
                 .build();
 
             frame.set_menu_bar(Self::build_menu_bar());
+            if let Some(item) = frame
+                .get_menu_bar()
+                .and_then(|bar| bar.find_item(ID_THREAD_VIEW))
+            {
+                item.enable(false);
+            }
 
             // ── Main toolbar ─────────────────────────────────────────────
             let toolbar_handle = if let Some(toolbar) =
@@ -1074,6 +1080,7 @@ impl WxMailApp {
                             let visible = left_panel.is_shown();
                             left_panel.show(!visible);
                             panel.layout();
+                            sync_menu_check(&frame, ID_VIEW_FOLDER_PANE, !visible);
                         }
                         _ if id == ID_VIEW_PREVIEW_PANE => {
                             if preview_visible.get() {
@@ -1083,12 +1090,14 @@ impl WxMailApp {
                                 inner.split_horizontally(&msg_list, &preview, 300);
                                 preview_visible.set(true);
                             }
+                            sync_menu_check(&frame, ID_VIEW_PREVIEW_PANE, preview_visible.get());
                         }
                         _ if id == ID_MUTE_CONTENT => {
                             let muted = !a11y.is_content_muted();
                             a11y.set_content_muted(muted);
                             // Confirm through the interface channel, which mute
                             // never silences, so the toggle is never silent.
+                            sync_menu_check(&frame, ID_MUTE_CONTENT, muted);
                             let _ = a11y.announce(
                                 if muted {
                                     "Message reading muted"
@@ -1101,6 +1110,7 @@ impl WxMailApp {
                         _ if id == ID_VIEW_MODULE_BUTTONS => {
                             let visible = btn_panel.is_shown();
                             btn_panel.show(!visible);
+                            sync_menu_check(&frame, ID_VIEW_MODULE_BUTTONS, !visible);
                             left_panel.layout();
                         }
                         // Module navigation (Go menu + sidebar buttons)
@@ -1277,6 +1287,7 @@ impl WxMailApp {
                                 s.offline_mode = !s.offline_mode;
                                 s.offline_mode
                             };
+                            sync_menu_check(&frame, ID_OFFLINE_MODE, new_mode);
                             let label = if new_mode { "Offline mode enabled - outgoing mail will be queued" } else { "Online mode - outgoing mail will be sent immediately" };
                             send_status(&ui_tx, &runtime, label);
                         }
@@ -1472,6 +1483,9 @@ impl WxMailApp {
                 "Stop reading message text aloud. Status and error announcements continue.",
             )
             .append_separator()
+            // Threading is not implemented. The item stays visible and
+            // disabled rather than pretending to work: a screen reader
+            // announces a disabled item as unavailable, which is the truth.
             .append_check_item(
                 ID_THREAD_VIEW,
                 "&Thread View\tCtrl+T",
@@ -1750,6 +1764,17 @@ fn load_module_data(
             module.label().replace('&', ""),
             failures.join("; ")
         )));
+    }
+}
+
+/// Put a check menu item's state where the screen reader will find it.
+///
+/// A check item announces "checked" or "unchecked" from its own state, so an
+/// item whose state is never updated tells the user the opposite of the truth
+/// half the time. Toggling behaviour without calling this is a silent lie.
+fn sync_menu_check(frame: &Frame, id: Id, checked: bool) {
+    if let Some(menu_bar) = frame.get_menu_bar() {
+        menu_bar.check_item(id, checked);
     }
 }
 

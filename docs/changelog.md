@@ -13,6 +13,8 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 - **Storage for the new modules** in the existing encrypted cache: calendars, calendar events, reminders, task lists, tasks, note folders, and notes.
 - **Calendar display settings**: default view, weekend visibility, first day of the week, and reminder lead time.
 - **Message delete and read-toggle** now reach the cache. Both actions were already in the context menu with nothing behind them.
+- **The calendar, contacts, reminders, tasks, and notes panels now show your data.** Opening a module reads its records from the local cache and fills the panel. Every one of these panels previously rendered empty in a running build no matter what was stored, because nothing connected the storage to the display.
+- **Default containers are created on first use**, so a new account opens with a calendar, a task list, and a note folder rather than empty sidebars.
 - **Crash log** at `crash.log` under the local app data directory. Panics and startup failures also show a message box.
 - **Accessibility CI**: a non-blocking Axe.Windows UI Automation scan on every pull request. It covers roughly half of WCAG and does not replace NVDA testing.
 - **Announcements are paced.** The queue drops repeats, lets a progress counter supersede its own earlier steps, caps how many announcements can be waiting, and caps how many are spoken per second. Urgent announcements are never held back. Anything dropped is counted and reported rather than vanishing silently.
@@ -36,12 +38,17 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 ### Fixed
 
 - The note editor filled the title and body with placeholder text on every selection. It now shows the selected note.
+- **Check menu items never reflected their state.** Folder pane, preview pane, module buttons, mute, and offline mode all announced "checked" or "unchecked" from a state nothing updated, so a screen reader was told the opposite of the truth half the time.
+- **Em-dashes removed from spoken text.** Sixteen user-facing strings used them, and screen readers announce them inconsistently depending on the user's punctuation level.
+- A poisoned lock no longer takes the window down or silently discards an update. Every access to the shared UI state now recovers and carries on.
 - Restored a green build. Formatting and clippy checks had been failing since the architecture overhaul, independent of any feature work.
 
 ### Known limitations
 
-- Nothing loads data into the calendar, contacts, reminders, tasks, or notes panels yet. The storage, sync clients, and managers are in place and the panels render, but no code path sends the loaded records to the UI, so the panels stay empty in a running build.
-- Notes carry a body preview rather than the full body, so the note editor shows the preview. Saving edits is not wired up.
+- Notes carry a body preview rather than the full body, so the note editor shows the preview. Editing a note and saving it is not wired up.
+- Threaded view appears in the View menu and is disabled, because threading is not implemented. It is left visible so its absence is discoverable rather than silently missing.
+- Muting message reading does not survive a restart. It is a session setting, not a stored preference.
+- Five accessibility scan findings remain, all inside WebView2's own accessibility tree (`Chrome_WidgetWin_1`, `BrowserRootView`, and three container views). They are not this application's controls and cannot be named or positioned from here.
 
 ## [0.1.0-alpha.9] - 2026-03-05
 
