@@ -17,6 +17,12 @@ pub enum Error {
     Protocol(String),
     /// Security error (encryption/decryption/key management)
     Security(String),
+    /// REST API error from an external provider (Google, Microsoft)
+    Api {
+        status: u16,
+        provider: String,
+        message: String,
+    },
     /// IO error
     Io(std::io::Error),
     /// Generic error
@@ -40,6 +46,17 @@ impl fmt::Display for Error {
             Error::Authentication(msg) => write!(f, "Authentication error: {}", msg),
             Error::Protocol(msg) => write!(f, "Protocol error: {}", msg),
             Error::Security(msg) => write!(f, "Security error: {}", msg),
+            Error::Api {
+                status,
+                provider,
+                message,
+            } => {
+                write!(
+                    f,
+                    "API error from {} (HTTP {}): {}",
+                    provider, status, message
+                )
+            }
             Error::Io(err) => write!(f, "IO error: {}", err),
             Error::Other(msg) => write!(f, "Error: {}", msg),
         }
@@ -83,5 +100,18 @@ mod tests {
     fn test_security_error() {
         let err = Error::Security("Decryption failed".to_string());
         assert!(err.to_string().contains("Security error"));
+    }
+
+    #[test]
+    fn test_api_error() {
+        let err = Error::Api {
+            status: 403,
+            provider: "google".to_string(),
+            message: "Forbidden".to_string(),
+        };
+        let display = err.to_string();
+        assert!(display.contains("google"));
+        assert!(display.contains("403"));
+        assert!(display.contains("Forbidden"));
     }
 }
