@@ -1,0 +1,32 @@
+# Advisories this project has looked at and consciously accepted.
+#
+# Everything listed here is a decision with a reason and an exit condition.
+# Anything NOT listed fails the build, which is the point: the job exists to
+# catch the next advisory, not to be silenced wholesale. Review this list when
+# the dependencies it names are upgraded.
+
+[advisories]
+ignore = [
+    # quick-xml denial of service, reached only through wxdragon-macros.
+    # That is a proc macro: it runs at compile time and never sees network
+    # data, so neither issue is reachable in a shipped binary. The quick-xml
+    # that parses CalDAV responses is a separate, fixed 0.41.
+    # Clears when wxdragon updates its macro crate.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+
+    # rustls-webpki 0.101.7, pinned by oauth2 4 -> reqwest 0.11 -> rustls 0.21.
+    # These are runtime reachable and affect certificate validation on the
+    # OAuth token endpoints. Accepted only because the fix is the oauth2 5
+    # migration, which changes client construction and token exchange and has
+    # to be verified against a live account rather than shipped on a green
+    # compile. Tracked as the next dependency task; remove these three the day
+    # that lands.
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+    "RUSTSEC-2026-0104",
+
+    # Unmaintained transitive crates, no known vulnerability.
+    "RUSTSEC-2024-0436",
+    "RUSTSEC-2025-0134",
+]

@@ -125,6 +125,10 @@ jobs:
     - name: Audit dependencies
       # Advisories reach this project through transitive dependencies, so a
       # green build says nothing about them. This is the check that does.
+      #
+      # Accepted advisories live in .cargo/audit.toml with a reason and an
+      # exit condition each. Anything not on that list fails here, which is
+      # the whole point of the job.
       run: cargo audit
 
   build:
