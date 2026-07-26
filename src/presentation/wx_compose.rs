@@ -3,8 +3,12 @@
 //! Provides a modal dialog for composing, replying to, and forwarding emails.
 //! Uses RichTextCtrl for the message body with formatting toolbar support.
 
+use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::ui_types::CompositionData;
+use wxdragon::event::webview_events::WebViewEventData;
+use wxdragon::event::WebViewEvents;
 use wxdragon::prelude::*;
+use wxdragon::widgets::{WebView, WebViewBackend};
 
 // ── Formatting toolbar IDs ──────────────────────────────────────────────────
 
@@ -66,6 +70,45 @@ pub enum ComposeMode {
     Draft(CompositionData),
 }
 
+/// Format a reply subject line — prepends "Re: " unless already present.
+pub fn format_reply_subject(subject: &str) -> String {
+    if subject.starts_with("Re: ") {
+        subject.to_string()
+    } else {
+        format!("Re: {}", subject)
+    }
+}
+
+/// Format a forward subject line — prepends "Fwd: " unless already present.
+pub fn format_forward_subject(subject: &str) -> String {
+    if subject.starts_with("Fwd: ") {
+        subject.to_string()
+    } else {
+        format!("Fwd: {}", subject)
+    }
+}
+
+/// Format a quoted body for reply.
+pub fn format_reply_body(quoted_body: &str) -> String {
+    format!("\n\n--- Original Message ---\n{}", quoted_body)
+}
+
+/// Format a forwarded body.
+pub fn format_forward_body(body: &str) -> String {
+    format!("\n\n---------- Forwarded message ----------\n{}", body)
+}
+
+/// Title for the compose dialog based on mode.
+pub fn compose_title(mode: &ComposeMode) -> &'static str {
+    match mode {
+        ComposeMode::New => "Compose New Message",
+        ComposeMode::Reply { .. } => "Reply",
+        ComposeMode::ReplyAll { .. } => "Reply All",
+        ComposeMode::Forward { .. } => "Forward",
+        ComposeMode::Draft(_) => "Edit Draft",
+    }
+}
+
 /// Show the composition dialog modally and return the user's action.
 ///
 /// This creates a Dialog with:
@@ -91,13 +134,7 @@ pub fn show_compose_dialog_with_options(
     preview_before_send: bool,
 ) -> ComposeResult {
     // ── Create Dialog ────────────────────────────────────────────────────
-    let title = match &mode {
-        ComposeMode::New => "Compose New Message",
-        ComposeMode::Reply { .. } => "Reply",
-        ComposeMode::ReplyAll { .. } => "Reply All",
-        ComposeMode::Forward { .. } => "Forward",
-        ComposeMode::Draft(_) => "Edit Draft",
-    };
+    let title = compose_title(&mode);
 
     let dialog = Dialog::builder(parent, title)
         .with_size(850, 700)
@@ -164,7 +201,7 @@ pub fn show_compose_dialog_with_options(
     fields_sizer.add(&bcc_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // Subject field
-    let subject_label = StaticText::builder(&dialog).with_label("Su&bject:").build();
+    let subject_label = StaticText::builder(&dialog).with_label("&Subject:").build();
     let subject_field = TextCtrl::builder(&dialog).build();
     fields_sizer.add(
         &subject_label,
@@ -181,44 +218,50 @@ pub fn show_compose_dialog_with_options(
 
     // Prominent Send button (Outlook-style — first in toolbar)
     let send_toolbar_btn = Button::builder(&dialog)
-        .with_label("&Send")
+        .with_label("Send")
         .with_id(ID_SEND)
         .with_size(Size::new(72, 30))
         .build();
+    send_toolbar_btn.set_name("Send message (Ctrl+Enter)");
     toolbar_sizer.add(&send_toolbar_btn, 0, SizerFlag::All, 2);
     toolbar_sizer.add_spacer(12);
 
     // Undo / Redo
     let undo_btn = Button::builder(&dialog)
-        .with_label("&Undo")
+        .with_label("Undo")
         .with_id(ID_UNDO)
         .with_size(Size::new(52, 28))
         .build();
+    undo_btn.set_name("Undo (Ctrl+Z)");
     let redo_btn = Button::builder(&dialog)
-        .with_label("&Redo")
+        .with_label("Redo")
         .with_id(ID_REDO)
         .with_size(Size::new(52, 28))
         .build();
+    redo_btn.set_name("Redo (Ctrl+Y)");
     toolbar_sizer.add(&undo_btn, 0, SizerFlag::All, 2);
     toolbar_sizer.add(&redo_btn, 0, SizerFlag::All, 2);
     toolbar_sizer.add_spacer(12);
 
-    // Formatting: Bold, Italic, Underline
+    // Formatting: Bold, Italic, Underline — accessible labels for screen readers
     let bold_btn = Button::builder(&dialog)
         .with_label("B")
         .with_id(ID_BOLD)
         .with_size(Size::new(32, 28))
         .build();
+    bold_btn.set_name("Bold (Ctrl+B)");
     let italic_btn = Button::builder(&dialog)
         .with_label("I")
         .with_id(ID_ITALIC)
         .with_size(Size::new(32, 28))
         .build();
+    italic_btn.set_name("Italic (Ctrl+I)");
     let underline_btn = Button::builder(&dialog)
         .with_label("U")
         .with_id(ID_UNDERLINE)
         .with_size(Size::new(32, 28))
         .build();
+    underline_btn.set_name("Underline (Ctrl+U)");
     toolbar_sizer.add(&bold_btn, 0, SizerFlag::All, 2);
     toolbar_sizer.add(&italic_btn, 0, SizerFlag::All, 2);
     toolbar_sizer.add(&underline_btn, 0, SizerFlag::All, 2);
@@ -226,10 +269,20 @@ pub fn show_compose_dialog_with_options(
 
     // Attach
     let attach_btn = Button::builder(&dialog)
-        .with_label("A&ttach...")
+        .with_label("Attach...")
         .with_id(ID_ATTACH)
         .build();
+    attach_btn.set_name("Attach file");
     toolbar_sizer.add(&attach_btn, 0, SizerFlag::All, 2);
+
+    // Remove all toolbar buttons from tab order — accessible via keyboard shortcuts
+    send_toolbar_btn.set_can_focus(false);
+    undo_btn.set_can_focus(false);
+    redo_btn.set_can_focus(false);
+    bold_btn.set_can_focus(false);
+    italic_btn.set_can_focus(false);
+    underline_btn.set_can_focus(false);
+    attach_btn.set_can_focus(false);
 
     main_sizer.add_sizer(
         &toolbar_sizer,
@@ -242,6 +295,7 @@ pub fn show_compose_dialog_with_options(
     let body_editor = RichTextCtrl::builder(&dialog)
         .with_style(RichTextCtrlStyle::MultiLine | RichTextCtrlStyle::WordWrap)
         .build();
+    body_editor.set_name("Message body");
 
     main_sizer.add(&body_editor, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
@@ -268,7 +322,7 @@ pub fn show_compose_dialog_with_options(
         .with_id(ID_DISCARD)
         .build();
     let cancel_btn = Button::builder(&dialog)
-        .with_label("&Cancel")
+        .with_label("Cance&l")
         .with_id(ID_CANCEL)
         .build();
 
@@ -290,13 +344,8 @@ pub fn show_compose_dialog_with_options(
             quoted_body,
         } => {
             to_field.set_value(to);
-            let subj = if subject.starts_with("Re: ") {
-                subject.clone()
-            } else {
-                format!("Re: {}", subject)
-            };
-            subject_field.set_value(&subj);
-            body_editor.set_value(&format!("\n\n--- Original Message ---\n{}", quoted_body));
+            subject_field.set_value(&format_reply_subject(subject));
+            body_editor.set_value(&format_reply_body(quoted_body));
             body_editor.set_insertion_point(0);
         }
         ComposeMode::ReplyAll {
@@ -307,28 +356,14 @@ pub fn show_compose_dialog_with_options(
         } => {
             to_field.set_value(to);
             cc_field.set_value(cc);
-            let subj = if subject.starts_with("Re: ") {
-                subject.clone()
-            } else {
-                format!("Re: {}", subject)
-            };
-            subject_field.set_value(&subj);
-            body_editor.set_value(&format!("\n\n--- Original Message ---\n{}", quoted_body));
+            subject_field.set_value(&format_reply_subject(subject));
+            body_editor.set_value(&format_reply_body(quoted_body));
             body_editor.set_insertion_point(0);
         }
         ComposeMode::Forward { subject, body } => {
-            let subj = if subject.starts_with("Fwd: ") {
-                subject.clone()
-            } else {
-                format!("Fwd: {}", subject)
-            };
-            subject_field.set_value(&subj);
-            body_editor.set_value(&format!(
-                "\n\n---------- Forwarded message ----------\n{}",
-                body
-            ));
+            subject_field.set_value(&format_forward_subject(subject));
+            body_editor.set_value(&format_forward_body(body));
             body_editor.set_insertion_point(0);
-            // Focus the To field since user needs to fill it
             to_field.set_focus();
         }
         ComposeMode::Draft(data) => {
@@ -363,6 +398,32 @@ pub fn show_compose_dialog_with_options(
     send_toolbar_btn.on_click({
         move |_| {
             dialog.end_modal(ID_SEND);
+        }
+    });
+
+    // Ctrl+Enter → Send from body editor
+    body_editor.on_key_down({
+        move |event| {
+            if let WindowEventData::Keyboard(ref kb) = event {
+                if kb.event.control_down() && kb.event.get_key_code() == Some(13) {
+                    dialog.end_modal(ID_SEND);
+                    return;
+                }
+            }
+            event.skip(true);
+        }
+    });
+
+    // Ctrl+Enter → Send from any other focused control (dialog-level fallback)
+    dialog.on_key_down({
+        move |event| {
+            if let WindowEventData::Keyboard(ref kb) = event {
+                if kb.event.control_down() && kb.event.get_key_code() == Some(13) {
+                    dialog.end_modal(ID_SEND);
+                    return;
+                }
+            }
+            event.skip(true);
         }
     });
 
@@ -500,11 +561,27 @@ fn show_send_preview(
         8,
     );
 
-    // Body preview (read-only)
-    let body_preview = TextCtrl::builder(&dlg)
-        .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::ReadOnly)
-        .with_value(&data.body)
+    // Body preview (WebView — renders HTML formatting)
+    let body_preview = WebView::builder(&dlg)
+        .with_backend(WebViewBackend::Edge)
         .build();
+    body_preview.set_name("Message preview");
+    body_preview.enable_context_menu(false);
+    body_preview.enable_access_to_dev_tools(false);
+    let renderer = HtmlRenderer::new();
+    let html = renderer.wrap_for_webview(&data.body);
+    body_preview.set_page(&html, "about:blank");
+
+    // Block navigation in preview — open links in default browser
+    body_preview.on_navigating(|event: WebViewEventData| {
+        if let Some(url) = event.get_string() {
+            if url != "about:blank" && !url.starts_with("about:") {
+                event.event.event.veto();
+                let _ = open::that(&url);
+            }
+        }
+    });
+
     sizer.add(&body_preview, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
     // Buttons
@@ -541,5 +618,88 @@ fn show_send_preview(
         PreviewDecision::ConfirmSend
     } else {
         PreviewDecision::GoBack
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_reply_subject_prepends_re() {
+        assert_eq!(format_reply_subject("Hello"), "Re: Hello");
+    }
+
+    #[test]
+    fn test_reply_subject_no_double_re() {
+        assert_eq!(format_reply_subject("Re: Hello"), "Re: Hello");
+    }
+
+    #[test]
+    fn test_forward_subject_prepends_fwd() {
+        assert_eq!(format_forward_subject("Hello"), "Fwd: Hello");
+    }
+
+    #[test]
+    fn test_forward_subject_no_double_fwd() {
+        assert_eq!(format_forward_subject("Fwd: Hello"), "Fwd: Hello");
+    }
+
+    #[test]
+    fn test_reply_body_adds_quote_header() {
+        let body = format_reply_body("Original text");
+        assert!(body.contains("--- Original Message ---"));
+        assert!(body.contains("Original text"));
+        assert!(body.starts_with("\n\n"));
+    }
+
+    #[test]
+    fn test_forward_body_adds_forward_header() {
+        let body = format_forward_body("Forwarded text");
+        assert!(body.contains("---------- Forwarded message ----------"));
+        assert!(body.contains("Forwarded text"));
+    }
+
+    #[test]
+    fn test_compose_title_for_each_mode() {
+        assert_eq!(compose_title(&ComposeMode::New), "Compose New Message");
+        assert_eq!(
+            compose_title(&ComposeMode::Reply {
+                to: String::new(),
+                subject: String::new(),
+                quoted_body: String::new(),
+            }),
+            "Reply"
+        );
+        assert_eq!(
+            compose_title(&ComposeMode::ReplyAll {
+                to: String::new(),
+                cc: String::new(),
+                subject: String::new(),
+                quoted_body: String::new(),
+            }),
+            "Reply All"
+        );
+        assert_eq!(
+            compose_title(&ComposeMode::Forward {
+                subject: String::new(),
+                body: String::new(),
+            }),
+            "Forward"
+        );
+        assert_eq!(
+            compose_title(&ComposeMode::Draft(CompositionData::default())),
+            "Edit Draft"
+        );
+    }
+
+    #[test]
+    fn test_reply_subject_empty_string() {
+        assert_eq!(format_reply_subject(""), "Re: ");
+    }
+
+    #[test]
+    fn test_forward_subject_empty_string() {
+        assert_eq!(format_forward_subject(""), "Fwd: ");
     }
 }

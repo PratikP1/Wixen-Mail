@@ -34,6 +34,11 @@ struct SettingsWidgets {
     sort_order: Choice,
     // Language
     language: Choice,
+    // Calendar & PIM
+    cal_default_view: Choice,
+    cal_show_weekends: CheckBox,
+    cal_first_day: Choice,
+    default_reminder: TextCtrl,
     // Advanced
     log_level: Choice,
     download_folder: TextCtrl,
@@ -85,7 +90,13 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
     let language = build_language_tab(&lang_panel, config);
     notebook.add_page(&lang_panel, "Language", false, None);
 
-    // ── Tab 5: Advanced
+    // ── Tab 5: Calendar & PIM
+    let pim_panel = Panel::builder(&notebook).build();
+    let (cal_default_view, cal_show_weekends, cal_first_day, default_reminder) =
+        build_calendar_pim_tab(&pim_panel, config);
+    notebook.add_page(&pim_panel, "Calendar && PIM", false, None);
+
+    // ── Tab 6: Advanced
     let advanced_panel = Panel::builder(&notebook).build();
     let (log_level, download_folder) = build_advanced_tab(&advanced_panel, config);
     notebook.add_page(&advanced_panel, "Advanced", false, None);
@@ -130,6 +141,10 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         preview_before_send,
         sort_order,
         language,
+        cal_default_view,
+        cal_show_weekends,
+        cal_first_day,
+        default_reminder,
         log_level,
         download_folder,
     };
@@ -424,6 +439,101 @@ fn build_language_tab(panel: &Panel, config: &AppConfig) -> Choice {
     lang_choice
 }
 
+/// Calendar & PIM settings: default view, weekends, first day, reminder time.
+fn build_calendar_pim_tab(
+    panel: &Panel,
+    config: &AppConfig,
+) -> (Choice, CheckBox, Choice, TextCtrl) {
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    // -- Calendar View
+    let view_sec = section(panel, "Calendar");
+
+    let view_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let view_label = StaticText::builder(panel)
+        .with_label("Default &view:")
+        .build();
+    let view_choices: Vec<String> = ["Agenda", "Day", "Week", "Month"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let view_idx: u32 = match config.calendar_default_view.as_str() {
+        "day" => 1,
+        "week" => 2,
+        "month" => 3,
+        _ => 0,
+    };
+    let view_choice = Choice::builder(panel)
+        .with_choices(view_choices)
+        .with_selection(Some(view_idx))
+        .build();
+    view_row.add(
+        &view_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    view_row.add(&view_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+    view_sec.add_sizer(&view_row, 0, SizerFlag::Expand, 0);
+
+    let weekends_cb = CheckBox::builder(panel)
+        .with_label("Show &weekends")
+        .build();
+    weekends_cb.set_value(config.calendar_show_weekends);
+    view_sec.add(&weekends_cb, 0, SizerFlag::All, 4);
+
+    let first_day_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let first_day_label = StaticText::builder(panel)
+        .with_label("&First day of week:")
+        .build();
+    let day_choices: Vec<String> = ["Sunday", "Monday", "Saturday"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let day_idx: u32 = match config.calendar_first_day_of_week {
+        1 => 1,
+        6 => 2,
+        _ => 0,
+    };
+    let first_day_choice = Choice::builder(panel)
+        .with_choices(day_choices)
+        .with_selection(Some(day_idx))
+        .build();
+    first_day_row.add(
+        &first_day_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    first_day_row.add(&first_day_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+    view_sec.add_sizer(&first_day_row, 0, SizerFlag::Expand, 0);
+
+    sizer.add_sizer(&view_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    // -- Reminders
+    let rem_sec = section(panel, "Reminders");
+
+    let rem_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let rem_label = StaticText::builder(panel)
+        .with_label("Default &reminder (minutes):")
+        .build();
+    let rem_field = TextCtrl::builder(panel).build();
+    rem_field.set_value(&config.default_reminder_minutes.to_string());
+    rem_row.add(
+        &rem_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    rem_row.add(&rem_field, 0, SizerFlag::All, 4);
+    rem_sec.add_sizer(&rem_row, 0, SizerFlag::Expand, 0);
+
+    sizer.add_sizer(&rem_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    panel.set_sizer(sizer, true);
+    (view_choice, weekends_cb, first_day_choice, rem_field)
+}
+
 /// Advanced: log level, download folder, cache info.
 fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
@@ -548,6 +658,27 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     if idx < languages.len() {
         cfg.language = languages[idx].code.clone();
     }
+
+    // Calendar & PIM
+    cfg.calendar_default_view = match sel(&w.cal_default_view) {
+        1 => "day",
+        2 => "week",
+        3 => "month",
+        _ => "agenda",
+    }
+    .to_string();
+    cfg.calendar_show_weekends = w.cal_show_weekends.get_value();
+    cfg.calendar_first_day_of_week = match sel(&w.cal_first_day) {
+        1 => 1,
+        2 => 6,
+        _ => 0,
+    };
+    cfg.default_reminder_minutes = w
+        .default_reminder
+        .get_value()
+        .parse::<u32>()
+        .unwrap_or(base.default_reminder_minutes)
+        .min(1440);
 
     // Advanced
     cfg.log_level = match sel(&w.log_level) {

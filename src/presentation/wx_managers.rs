@@ -11,6 +11,7 @@ use wxdragon::prelude::*;
 const ID_MGR_ADD: Id = ID_HIGHEST + 300;
 const ID_MGR_EDIT: Id = ID_HIGHEST + 301;
 const ID_MGR_DELETE: Id = ID_HIGHEST + 302;
+const ID_MGR_SYNC: Id = ID_HIGHEST + 303;
 
 // ── Shared Helpers ─────────────────────────────────────────────────────────
 
@@ -274,6 +275,7 @@ impl ContactEntry {
 pub enum ContactManagerAction {
     None,
     Updated(Vec<ContactEntry>),
+    SyncRequested,
 }
 
 // ── Label constants for dropdowns ────────────────────────────────────────────
@@ -488,7 +490,8 @@ fn get_default_country() -> &'static str {
 ///
 /// Returns (region_label, code_label).
 /// Accelerators avoid conflicts with &Country(C), &Type(T), &Street(S), C&ity(I).
-fn get_address_field_labels(country: &str) -> (&'static str, &'static str) {
+/// Country-aware address field labels for contact editor.
+pub(crate) fn get_address_field_labels(country: &str) -> (&'static str, &'static str) {
     match country {
         "United States" => ("St&ate:", "&ZIP Code:"),
         "United Kingdom" => ("Co&unty:", "&Postcode:"),
@@ -562,6 +565,10 @@ pub fn show_contact_manager_dialog(
         .with_label("&Delete")
         .with_id(ID_MGR_DELETE)
         .build();
+    let sync_btn = Button::builder(&dialog)
+        .with_label("S&ync")
+        .with_id(ID_MGR_SYNC)
+        .build();
     let close_btn = Button::builder(&dialog)
         .with_label("&Close")
         .with_id(ID_OK)
@@ -570,6 +577,8 @@ pub fn show_contact_manager_dialog(
     btn_sizer.add(&add_btn, 0, SizerFlag::All, 4);
     btn_sizer.add(&edit_btn, 0, SizerFlag::All, 4);
     btn_sizer.add(&del_btn, 0, SizerFlag::All, 4);
+    btn_sizer.add_spacer(16);
+    btn_sizer.add(&sync_btn, 0, SizerFlag::All, 4);
     btn_sizer.add_spacer(16);
     btn_sizer.add(&close_btn, 0, SizerFlag::All, 4);
     sizer.add_sizer(&btn_sizer, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
@@ -615,6 +624,12 @@ pub fn show_contact_manager_dialog(
         let d = dialog;
         move |_| {
             d.end_modal(ID_MGR_DELETE);
+        }
+    });
+    sync_btn.on_click({
+        let d = dialog;
+        move |_| {
+            d.end_modal(ID_MGR_SYNC);
         }
     });
     close_btn.on_click({
@@ -682,6 +697,9 @@ pub fn show_contact_manager_dialog(
                 } else {
                     status.set_label("Select a contact to delete");
                 }
+            }
+            r if r == ID_MGR_SYNC => {
+                return ContactManagerAction::SyncRequested;
             }
             _ => break,
         }
@@ -753,7 +771,15 @@ fn add_panel_field(parent: &Panel, sizer: &FlexGridSizer, label: &str) -> TextCt
     field
 }
 
-fn show_contact_edit(parent: &Dialog, existing: Option<&ContactEntry>) -> Option<ContactEntry> {
+/// Open the Add Contact dialog directly (for File > New > Contact).
+pub fn show_new_contact_dialog(parent: &Frame) -> Option<ContactEntry> {
+    show_contact_edit(parent, None)
+}
+
+fn show_contact_edit(
+    parent: &dyn WxWidget,
+    existing: Option<&ContactEntry>,
+) -> Option<ContactEntry> {
     let title = if existing.is_some() {
         "Edit Contact"
     } else {
@@ -2071,5 +2097,81 @@ fn show_sig_edit(parent: &Dialog, existing: Option<&SignatureEntry>) -> Option<S
         })
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_address_labels_us() {
+        let (region, code) = get_address_field_labels("United States");
+        assert!(region.contains("ate"));
+        assert!(code.contains("ZIP"));
+    }
+
+    #[test]
+    fn test_address_labels_uk() {
+        let (region, code) = get_address_field_labels("United Kingdom");
+        assert!(region.contains("unty"));
+        assert!(code.contains("Postcode"));
+    }
+
+    #[test]
+    fn test_address_labels_japan() {
+        let (region, code) = get_address_field_labels("Japan");
+        assert!(region.contains("fecture"));
+        assert!(code.contains("Postal"));
+    }
+
+    #[test]
+    fn test_address_labels_germany() {
+        let (region, code) = get_address_field_labels("Germany");
+        assert!(region.contains("Land"));
+        assert!(code.contains("PLZ"));
+    }
+
+    #[test]
+    fn test_address_labels_ireland() {
+        let (region, code) = get_address_field_labels("Ireland");
+        assert!(region.contains("unty"));
+        assert!(code.contains("Eircode"));
+    }
+
+    #[test]
+    fn test_address_labels_unknown_country_uses_default() {
+        let (region, code) = get_address_field_labels("Narnia");
+        assert!(region.contains("Province"));
+        assert!(code.contains("Postal"));
+    }
+
+    #[test]
+    fn test_address_labels_all_countries_return_non_empty() {
+        let countries = [
+            "United States",
+            "United Kingdom",
+            "Canada",
+            "Australia",
+            "Japan",
+            "Germany",
+            "Austria",
+            "Switzerland",
+            "France",
+            "Brazil",
+            "India",
+            "South Korea",
+            "China",
+            "Italy",
+            "Spain",
+            "Mexico",
+            "Ireland",
+            "Netherlands",
+        ];
+        for country in &countries {
+            let (region, code) = get_address_field_labels(country);
+            assert!(!region.is_empty(), "Empty region for {}", country);
+            assert!(!code.is_empty(), "Empty code for {}", country);
+        }
     }
 }

@@ -238,6 +238,45 @@ impl HtmlRenderer {
         links
     }
 
+    /// Wrap sanitized HTML in a full document for WebView display.
+    ///
+    /// Applies readable typography, dark-mode support, image containment,
+    /// and blockquote styling. Plain-text bodies are wrapped in `<pre>`.
+    pub fn wrap_for_webview(&self, body: &str) -> String {
+        let is_html = body.contains('<') && body.contains('>');
+        let content = if is_html {
+            self.sanitize_html(body)
+        } else {
+            format!(
+                "<pre style=\"white-space:pre-wrap;font-family:inherit\">{}</pre>",
+                html_escape::encode_text(body)
+            )
+        };
+
+        format!(
+            r#"<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+body {{
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 14px; line-height: 1.6;
+    color: #1a1a1a; background: #ffffff;
+    margin: 12px; word-wrap: break-word;
+}}
+a {{ color: #0066cc; }}
+img {{ max-width: 100%; height: auto; }}
+pre, code {{ background: #f5f5f5; padding: 2px 4px; border-radius: 3px; }}
+blockquote {{ border-left: 3px solid #ccc; margin-left: 0; padding-left: 12px; color: #555; }}
+table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
+@media (prefers-color-scheme: dark) {{
+    body {{ background: #1e1e1e; color: #d4d4d4; }}
+    a {{ color: #569cd6; }} pre, code {{ background: #2d2d2d; }}
+    blockquote {{ border-color: #555; color: #999; }}
+}}
+</style></head><body>{}</body></html>"#,
+            content
+        )
+    }
+
     /// Convert supported URL schemes to safe navigable values.
     fn sanitize_url(url: &str) -> Option<String> {
         let trimmed = url.trim();
@@ -405,6 +444,34 @@ mod tests {
         assert!(!content.has_images);
         assert!(content.has_links);
         assert_eq!(content.links.len(), 1);
+    }
+
+    #[test]
+    fn test_wrap_for_webview_html() {
+        let renderer = HtmlRenderer::new();
+        let html = "<p>Hello <strong>World</strong></p>";
+        let wrapped = renderer.wrap_for_webview(html);
+        assert!(wrapped.contains("<!DOCTYPE html>"));
+        assert!(wrapped.contains("Segoe UI"));
+        assert!(wrapped.contains("<p>Hello <strong>World</strong></p>"));
+    }
+
+    #[test]
+    fn test_wrap_for_webview_plain_text() {
+        let renderer = HtmlRenderer::new();
+        let text = "Just plain text, no HTML.";
+        let wrapped = renderer.wrap_for_webview(text);
+        assert!(wrapped.contains("<pre"));
+        assert!(wrapped.contains("Just plain text, no HTML."));
+    }
+
+    #[test]
+    fn test_wrap_for_webview_strips_scripts() {
+        let renderer = HtmlRenderer::new();
+        let html = "<p>Safe</p><script>alert('xss')</script>";
+        let wrapped = renderer.wrap_for_webview(html);
+        assert!(wrapped.contains("Safe"));
+        assert!(!wrapped.contains("<script"));
     }
 
     #[test]

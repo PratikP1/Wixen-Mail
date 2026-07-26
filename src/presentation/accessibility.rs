@@ -43,6 +43,19 @@ impl Accessibility {
         self.keyboard
             .register_shortcut("Ctrl+F", "search_messages")?;
         self.keyboard.register_shortcut("F1", "open_help")?;
+        // Module navigation shortcuts
+        self.keyboard
+            .register_shortcut("Ctrl+Shift+1", "switch_to_mail")?;
+        self.keyboard
+            .register_shortcut("Ctrl+Shift+2", "switch_to_contacts")?;
+        self.keyboard
+            .register_shortcut("Ctrl+Shift+3", "switch_to_calendar")?;
+        self.keyboard
+            .register_shortcut("Ctrl+Shift+4", "switch_to_reminders")?;
+        self.keyboard
+            .register_shortcut("Ctrl+Shift+5", "switch_to_tasks")?;
+        self.keyboard
+            .register_shortcut("Ctrl+Shift+6", "switch_to_notes")?;
         self.register_node(automation::AutomationNode {
             id: "main_window".to_string(),
             parent_id: None,
@@ -65,6 +78,28 @@ impl Accessibility {
                 ..automation::AutomationState::default()
             },
         })?;
+        // Register module panel nodes
+        let modules = [
+            ("module_mail", "Mail"),
+            ("module_contacts", "Contacts"),
+            ("module_calendar", "Calendar"),
+            ("module_reminders", "Reminders"),
+            ("module_tasks", "Tasks"),
+            ("module_notes", "Notes"),
+        ];
+        for (id, name) in modules {
+            self.register_node(automation::AutomationNode {
+                id: id.to_string(),
+                parent_id: Some("main_window".to_string()),
+                role: automation::AutomationRole::Pane,
+                name: name.to_string(),
+                description: Some(format!("{} module panel", name)),
+                state: automation::AutomationState {
+                    enabled: true,
+                    ..automation::AutomationState::default()
+                },
+            })?;
+        }
         self.set_focus("folder_tree")?;
         self.announcements
             .announce("Accessibility initialized", announcements::Priority::Normal)?;

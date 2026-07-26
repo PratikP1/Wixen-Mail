@@ -11,6 +11,7 @@ use crate::presentation::accessibility::Accessibility;
 use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::ui_types::*;
 use crate::presentation::wx_account_manager::{self, AccountManagerAction};
+use crate::presentation::wx_calendar;
 use crate::presentation::wx_compose::{self, ComposeMode, ComposeResult};
 use crate::presentation::wx_managers;
 use crate::presentation::wx_settings;
@@ -21,7 +22,12 @@ use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex as TokioMutex;
+use wxdragon::event::webview_events::WebViewEventData;
+use wxdragon::event::window_events::WindowEvents;
+use wxdragon::event::WebViewEvents;
 use wxdragon::prelude::*;
+use wxdragon::widgets::list_ctrl::ListCtrlEventData;
+use wxdragon::widgets::{WebView, WebViewBackend, WebViewUserScriptInjectionTime};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -57,7 +63,35 @@ const ID_SORT_SENDER_ZA: Id = ID_HIGHEST + 33;
 const ID_SORT_SUBJECT_AZ: Id = ID_HIGHEST + 34;
 const ID_SORT_SUBJECT_ZA: Id = ID_HIGHEST + 35;
 const ID_SORT_UNREAD_FIRST: Id = ID_HIGHEST + 36;
+const ID_SAVE: Id = ID_HIGHEST + 20;
+const ID_SAVE_AS: Id = ID_HIGHEST + 21;
+const ID_NEW_CONTACT: Id = ID_HIGHEST + 22;
+const ID_NEW_ACCOUNT: Id = ID_HIGHEST + 23;
 const ID_SETTINGS: Id = ID_HIGHEST + 40;
+const ID_CALENDAR: Id = ID_HIGHEST + 41;
+const ID_SYNC_CONTACTS: Id = ID_HIGHEST + 42;
+const ID_SYNC_CALENDAR: Id = ID_HIGHEST + 43;
+// Context menu IDs for WebView
+const ID_CTX_SELECT_ALL: Id = ID_HIGHEST + 50;
+const ID_CTX_COPY_LINK: Id = ID_HIGHEST + 51;
+const ID_CTX_SAVE_LINK: Id = ID_HIGHEST + 52;
+// Module navigation IDs
+const ID_MODULE_MAIL: Id = ID_HIGHEST + 60;
+const ID_MODULE_CONTACTS: Id = ID_HIGHEST + 61;
+const ID_MODULE_CALENDAR: Id = ID_HIGHEST + 62;
+const ID_MODULE_REMINDERS: Id = ID_HIGHEST + 63;
+const ID_MODULE_TASKS: Id = ID_HIGHEST + 64;
+const ID_MODULE_NOTES: Id = ID_HIGHEST + 65;
+// View toggle IDs
+const ID_VIEW_FOLDER_PANE: Id = ID_HIGHEST + 75;
+const ID_VIEW_PREVIEW_PANE: Id = ID_HIGHEST + 76;
+const ID_VIEW_MODULE_BUTTONS: Id = ID_HIGHEST + 77;
+// New item creation IDs
+const ID_NEW_CALENDAR: Id = ID_HIGHEST + 70;
+const ID_NEW_EVENT: Id = ID_HIGHEST + 71;
+const ID_NEW_REMINDER: Id = ID_HIGHEST + 72;
+const ID_NEW_TASK: Id = ID_HIGHEST + 73;
+const ID_NEW_NOTE: Id = ID_HIGHEST + 74;
 
 // ── UI State ─────────────────────────────────────────────────────────────────
 
@@ -76,6 +110,13 @@ pub struct WxUIState {
     pub offline_mode: bool,
     pub outbox_count: usize,
     pub sort_order: MailSortOption,
+    pub context_link_href: Option<String>,
+    pub active_module: PimModule,
+    /// PIM items currently shown, kept so selection handlers can read the
+    /// real record rather than re-deriving it from the list widget.
+    pub contacts: Vec<ContactItem>,
+    pub notes: Vec<NoteItem>,
+    pub reminders: Vec<ReminderItem>,
 }
 
 impl Default for WxUIState {
@@ -94,8 +135,33 @@ impl Default for WxUIState {
             offline_mode: false,
             outbox_count: 0,
             sort_order: MailSortOption::DateNewestFirst,
+            context_link_href: None,
+            active_module: PimModule::Mail,
+            contacts: Vec::new(),
+            notes: Vec::new(),
+            reminders: Vec::new(),
         }
     }
+}
+
+/// References to PIM module display widgets, used by handle_update to populate data.
+struct PimPanelRefs {
+    // Calendar
+    cal_event_list: ListCtrl,
+    cal_date_label: StaticText,
+    cal_tree: TreeCtrl,
+    // Contacts
+    contact_list: ListCtrl,
+    contacts_tree: TreeCtrl,
+    // Reminders
+    reminder_list: ListCtrl,
+    reminders_tree: TreeCtrl,
+    // Tasks
+    task_list: ListCtrl,
+    tasks_tree: TreeCtrl,
+    // Notes
+    note_list: ListCtrl,
+    notes_tree: TreeCtrl,
 }
 
 // ── WxMailApp ───────────────────────────────────────────────────────────────
@@ -155,8 +221,13 @@ impl WxMailApp {
         let ui_tx = self.ui_tx.clone();
         let runtime = self.runtime.clone();
         let a11y = Arc::new(self.accessibility);
+        let message_cache = self.message_cache.map(Arc::new);
 
-        let _ = wxdragon::main(move |_| {
+        tracing::info!("Starting wxdragon event loop");
+
+        let wx_result = wxdragon::main(move |_| {
+            tracing::info!("wxdragon on_init callback entered");
+
             let frame = Frame::builder()
                 .with_title("Wixen Mail")
                 .with_size(Size::new(WIN_W, WIN_H))
@@ -236,21 +307,112 @@ impl WxMailApp {
             frame.set_status_text("Disconnected", 1);
             frame.set_status_text("", 2);
 
-            // ── Three-pane layout ────────────────────────────────────────
+            // ── Module-switchable layout ──────────────────────────────────
+            //
+            // +--left-pane--(220px)--+---right-pane-(content)--------+
+            // | [Module buttons 2x3] | (active module content panel) |
+            // |-----------------------|                               |
+            // | Context sidebar       |                               |
+            // | (changes per module)  |                               |
+            // +-----------------------+-------------------------------+
             let panel = Panel::builder(&frame).build();
             let panel_sizer = BoxSizer::builder(Orientation::Horizontal).build();
 
-            let outer = SplitterWindow::builder(&panel).build();
-            outer.set_minimum_pane_size(150);
-            let inner = SplitterWindow::builder(&outer).build();
-            inner.set_minimum_pane_size(100);
+            // ── Left pane: module buttons + context sidebar ───────
+            let left_panel = Panel::builder(&panel).build();
+            left_panel.set_background_color(Colour::rgb(240, 240, 245));
+            let left_sizer = BoxSizer::builder(Orientation::Vertical).build();
 
-            let folder_tree = TreeCtrl::builder(&outer).build();
+            // Module navigation buttons (2x3 grid) — wrapped in a panel for show/hide
+            let btn_panel = Panel::builder(&left_panel).build();
+            let btn_panel_sizer = BoxSizer::builder(Orientation::Vertical).build();
+            let btn_grid = FlexGridSizer::builder(3, 2)
+                .with_vgap(2)
+                .with_hgap(2)
+                .build();
+            let module_defs: [(Id, &str, PimModule); 6] = [
+                (ID_MODULE_MAIL, "&Mail", PimModule::Mail),
+                (ID_MODULE_CONTACTS, "&Contacts", PimModule::Contacts),
+                (ID_MODULE_CALENDAR, "Ca&lendar", PimModule::Calendar),
+                (ID_MODULE_REMINDERS, "&Reminders", PimModule::Reminders),
+                (ID_MODULE_TASKS, "&Tasks", PimModule::Tasks),
+                (ID_MODULE_NOTES, "&Notes", PimModule::Notes),
+            ];
+            let mut module_buttons: Vec<(Button, PimModule)> = Vec::new();
+            for &(id, label, module) in &module_defs {
+                let btn = Button::builder(&btn_panel)
+                    .with_label(label)
+                    .with_id(id)
+                    .build();
+                btn_grid.add(&btn, 1, SizerFlag::Expand | SizerFlag::All, 1);
+                module_buttons.push((btn, module));
+            }
+            btn_grid.add_growable_col(0, 1);
+            btn_grid.add_growable_col(1, 1);
+            btn_panel_sizer.add_sizer(&btn_grid, 0, SizerFlag::Expand | SizerFlag::All, 0);
+            btn_panel.set_sizer(btn_panel_sizer, true);
+            btn_panel.show(false); // hidden by default
+            left_sizer.add(&btn_panel, 0, SizerFlag::Expand | SizerFlag::All, 4);
+
+            // Context sidebars — one per module, only active one visible
+            // Mail sidebar: folder tree
+            let mail_sidebar = Panel::builder(&left_panel).build();
+            let mail_sb_sizer = BoxSizer::builder(Orientation::Vertical).build();
+            let folder_tree = TreeCtrl::builder(&mail_sidebar).build();
             folder_tree.set_background_color(Colour::rgb(245, 245, 250));
             let root_id = folder_tree
                 .add_root("Mail Folders", None, None)
                 .expect("tree root");
             folder_tree.expand(&root_id);
+            mail_sb_sizer.add(&folder_tree, 1, SizerFlag::Expand | SizerFlag::All, 0);
+            mail_sidebar.set_sizer(mail_sb_sizer, true);
+
+            // Calendar sidebar
+            let cal_sb =
+                crate::presentation::wx_calendar_module::build_calendar_sidebar(&left_panel);
+            cal_sb.panel.show(false);
+            let cal_sidebar = cal_sb.panel;
+
+            // Contacts sidebar
+            let contacts_sb =
+                crate::presentation::wx_contacts_module::build_contacts_sidebar(&left_panel);
+            contacts_sb.panel.show(false);
+            let contacts_sidebar = contacts_sb.panel;
+
+            // Reminders sidebar
+            let reminders_sb =
+                crate::presentation::wx_reminders_module::build_reminders_sidebar(&left_panel);
+            reminders_sb.panel.show(false);
+            let reminders_sidebar = reminders_sb.panel;
+
+            // Tasks sidebar
+            let tasks_sb = crate::presentation::wx_tasks_module::build_tasks_sidebar(&left_panel);
+            tasks_sb.panel.show(false);
+            let tasks_sidebar = tasks_sb.panel;
+
+            // Notes sidebar
+            let notes_sb = crate::presentation::wx_notes_module::build_notes_sidebar(&left_panel);
+            notes_sb.panel.show(false);
+            let notes_sidebar = notes_sb.panel;
+
+            // Add all sidebars (only mail is visible by default)
+            left_sizer.add(&mail_sidebar, 1, SizerFlag::Expand | SizerFlag::All, 0);
+            left_sizer.add(&cal_sidebar, 1, SizerFlag::Expand | SizerFlag::All, 0);
+            left_sizer.add(&contacts_sidebar, 1, SizerFlag::Expand | SizerFlag::All, 0);
+            left_sizer.add(&reminders_sidebar, 1, SizerFlag::Expand | SizerFlag::All, 0);
+            left_sizer.add(&tasks_sidebar, 1, SizerFlag::Expand | SizerFlag::All, 0);
+            left_sizer.add(&notes_sidebar, 1, SizerFlag::Expand | SizerFlag::All, 0);
+            left_panel.set_sizer(left_sizer, true);
+
+            // ── Right pane: module content panels ─────────────────
+            let right_panel = Panel::builder(&panel).build();
+            let right_sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+            // Mail content panel (default visible)
+            let mail_content = Panel::builder(&right_panel).build();
+            let mail_content_sizer = BoxSizer::builder(Orientation::Vertical).build();
+            let inner = SplitterWindow::builder(&mail_content).build();
+            inner.set_minimum_pane_size(100);
 
             let msg_list = ListCtrl::builder(&inner)
                 .with_style(
@@ -272,44 +434,503 @@ impl WxMailApp {
             msg_list.insert_column(2, "Date", ListColumnFormat::Left, 150);
             msg_list.insert_column(3, "Status", ListColumnFormat::Centre, 60);
 
-            // RichTextCtrl for message preview — supports formatted content and is
-            // accessible to screen readers via the wxWidgets UIA bridge.
-            let preview = RichTextCtrl::builder(&inner)
-                .with_style(RichTextCtrlStyle::MultiLine | RichTextCtrlStyle::ReadOnly)
+            tracing::info!("Message list created, setting up WebView");
+
+            // WebView for message preview — renders HTML emails with Edge WebView2
+            let webview_available = WebView::is_backend_available(WebViewBackend::Edge);
+            tracing::info!("WebView2 Edge backend available: {}", webview_available);
+            let preview = WebView::builder(&inner)
+                .with_backend(WebViewBackend::Edge)
                 .build();
-            if let Some(preview_font) = Font::new_with_details(
-                11,
-                FontFamily::Roman.as_i32(),
-                FontStyle::Normal.as_i32(),
-                FontWeight::Normal.as_i32(),
-                false,
-                "",
-            ) {
-                preview.set_font(&preview_font);
+            preview.set_name("Email preview");
+            tracing::info!("WebView widget created");
+
+            // Only configure advanced WebView2 features when the backend is available
+            if webview_available {
+                preview.enable_context_menu(false);
+                preview.enable_access_to_dev_tools(false);
+
+                // Block all navigation — open links in default browser instead
+                preview.on_navigating(|event: WebViewEventData| {
+                    if let Some(url) = event.get_string() {
+                        if url != "about:blank" && !url.starts_with("about:") {
+                            event.event.event.veto();
+                            let _ = open::that(&url);
+                        }
+                    }
+                });
+
+                // Block new window requests
+                preview.on_new_window(|event: WebViewEventData| {
+                    if let Some(url) = event.get_string() {
+                        event.event.event.veto();
+                        let _ = open::that(&url);
+                    }
+                });
+
+                // Custom context menu via JS injection
+                preview.add_script_message_handler("contextMenu");
+                preview.add_user_script(
+                    r#"document.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    var link = e.target.closest('a');
+    var data = { x: e.clientX, y: e.clientY };
+    if (link) { data.href = link.href; data.text = link.textContent; }
+    window.contextMenu.postMessage(JSON.stringify(data));
+});"#,
+                    WebViewUserScriptInjectionTime::AtDocumentStart,
+                );
+
+                // Handle context menu messages from JS — store link href in state,
+                // show popup menu, let events bubble to frame.on_menu handler.
+                preview.on_script_message_received({
+                    let state = state.clone();
+                    move |event: WebViewEventData| {
+                        if let Some(json) = event.get_string() {
+                            let href = extract_json_string(&json, "href");
+                            let has_link = href.is_some();
+
+                            let mut menu = Menu::builder()
+                                .append_item(ID_CTX_SELECT_ALL, "Select &All", "Select all content")
+                                .build();
+                            if has_link {
+                                menu.append_separator();
+                                menu.append(
+                                    ID_CTX_COPY_LINK,
+                                    "&Copy Link",
+                                    "Copy link to clipboard",
+                                    ItemKind::Normal,
+                                );
+                                menu.append(
+                                    ID_CTX_SAVE_LINK,
+                                    "Save Link &As...",
+                                    "Save link target",
+                                    ItemKind::Normal,
+                                );
+                            }
+
+                            // Store link href for the menu handler to read
+                            if let Ok(mut s) = state.lock() {
+                                s.context_link_href = href;
+                            }
+                            // popup_menu blocks; menu events bubble to frame.on_menu
+                            preview.popup_menu(&mut menu, None);
+                            // Clean up after menu is dismissed
+                            if let Ok(mut s) = state.lock() {
+                                s.context_link_href = None;
+                            }
+                        }
+                    }
+                });
+
+                // Load initial blank page
+                let renderer = HtmlRenderer::new();
+                let blank = renderer.wrap_for_webview("Select a message to view.");
+                preview.set_page(&blank, "about:blank");
             }
 
-            inner.split_horizontally(&msg_list, &preview, 300);
-            outer.split_vertically(&folder_tree, &inner, FOLDER_W);
-            panel_sizer.add(&outer, 1, SizerFlag::Expand | SizerFlag::All, 0);
+            // Start with preview hidden (user can toggle via View > Preview Pane)
+            inner.initialize(&msg_list);
+            mail_content_sizer.add(&inner, 1, SizerFlag::Expand | SizerFlag::All, 0);
+            mail_content.set_sizer(mail_content_sizer, true);
+
+            // Calendar content panel
+            let cal_cp =
+                crate::presentation::wx_calendar_module::build_calendar_panel(&right_panel);
+            cal_cp.panel.show(false);
+            let cal_content = cal_cp.panel;
+
+            // Contacts content panel
+            let contacts_cp =
+                crate::presentation::wx_contacts_module::build_contacts_panel(&right_panel);
+            contacts_cp.panel.show(false);
+            let contacts_content = contacts_cp.panel;
+
+            // Reminders content panel
+            let reminders_cp =
+                crate::presentation::wx_reminders_module::build_reminders_panel(&right_panel);
+            reminders_cp.panel.show(false);
+            let reminders_content = reminders_cp.panel;
+
+            // Tasks content panel
+            let tasks_cp = crate::presentation::wx_tasks_module::build_tasks_panel(&right_panel);
+            tasks_cp.panel.show(false);
+            let tasks_content = tasks_cp.panel;
+
+            // Notes content panel
+            let notes_cp = crate::presentation::wx_notes_module::build_notes_panel(&right_panel);
+            notes_cp.panel.show(false);
+            let notes_content = notes_cp.panel;
+
+            // Capture PIM panel refs for handle_update before buttons consume handles
+            let pim_refs = PimPanelRefs {
+                cal_event_list: cal_cp.event_list,
+                cal_date_label: cal_cp.date_label,
+                cal_tree: cal_sb.tree,
+                contact_list: contacts_cp.contact_list,
+                contacts_tree: contacts_sb.tree,
+                reminder_list: reminders_cp.reminder_list,
+                reminders_tree: reminders_sb.tree,
+                task_list: tasks_cp.task_list,
+                tasks_tree: tasks_sb.tree,
+                note_list: notes_cp.note_list,
+                notes_tree: notes_sb.tree,
+            };
+
+            // Add all content panels to right sizer (only mail visible)
+            right_sizer.add(&mail_content, 1, SizerFlag::Expand | SizerFlag::All, 0);
+            right_sizer.add(&cal_content, 1, SizerFlag::Expand | SizerFlag::All, 0);
+            right_sizer.add(&contacts_content, 1, SizerFlag::Expand | SizerFlag::All, 0);
+            right_sizer.add(&reminders_content, 1, SizerFlag::Expand | SizerFlag::All, 0);
+            right_sizer.add(&tasks_content, 1, SizerFlag::Expand | SizerFlag::All, 0);
+            right_sizer.add(&notes_content, 1, SizerFlag::Expand | SizerFlag::All, 0);
+            right_panel.set_sizer(right_sizer, true);
+
+            // Assemble main panel: left (FOLDER_W) + right (expanding)
+            left_panel.set_min_size(Size::new(FOLDER_W, -1));
+            panel_sizer.add(&left_panel, 0, SizerFlag::Expand | SizerFlag::All, 0);
+            panel_sizer.add(&right_panel, 1, SizerFlag::Expand | SizerFlag::All, 0);
             panel.set_sizer(panel_sizer, true);
 
-            // ── Keyboard shortcuts for focus navigation ──────────────────
+            // ── Module switching helper ──────────────────────────────────
+            // Collect sidebar and content panel references for switching
+            let sidebar_panels: Vec<Panel> = vec![
+                mail_sidebar,
+                cal_sidebar,
+                contacts_sidebar,
+                reminders_sidebar,
+                tasks_sidebar,
+                notes_sidebar,
+            ];
+            let content_panels: Vec<Panel> = vec![
+                mail_content,
+                cal_content,
+                contacts_content,
+                reminders_content,
+                tasks_content,
+                notes_content,
+            ];
+
+            // Module switch function — updates panels, title bar, status, screen reader
+            let do_switch_module = {
+                let sidebar_panels = sidebar_panels.clone();
+                let content_panels = content_panels.clone();
+                let state = state.clone();
+                let a11y = a11y.clone();
+                move |module: PimModule| {
+                    let idx = module.index();
+                    // Hide all, show target
+                    for (i, sp) in sidebar_panels.iter().enumerate() {
+                        sp.show(i == idx);
+                    }
+                    for (i, cp) in content_panels.iter().enumerate() {
+                        cp.show(i == idx);
+                    }
+                    // Re-layout
+                    for sp in &sidebar_panels {
+                        if let Some(p) = sp.get_parent() {
+                            p.layout()
+                        }
+                    }
+                    for cp in &content_panels {
+                        if let Some(p) = cp.get_parent() {
+                            p.layout()
+                        }
+                    }
+                    // Update state and build context-aware title
+                    let label = module.label().replace('&', "");
+                    let title = {
+                        let mut s = state.lock().unwrap();
+                        s.active_module = module;
+                        // Build title: "Inbox - Mail - Wixen Mail" or "Calendar - Wixen Mail"
+                        match module {
+                            PimModule::Mail => {
+                                if let Some(ref folder) = s.selected_folder {
+                                    format!("{} - Mail - Wixen Mail", folder)
+                                } else {
+                                    "Mail - Wixen Mail".to_string()
+                                }
+                            }
+                            _ => format!("{} - Wixen Mail", label),
+                        }
+                    };
+                    frame.set_title(&title);
+                    frame.set_status_text(&label, 2);
+                    // Announce to screen reader
+                    let _ = a11y.announce(
+                        &format!("Switched to {}", label),
+                        crate::presentation::accessibility::announcements::Priority::Normal,
+                    );
+                }
+            };
+
+            // ── Module button click handlers ─────────────────────────────
+            for (btn, module) in module_buttons {
+                let do_switch = do_switch_module.clone();
+                btn.on_click(move |_| {
+                    do_switch(module);
+                });
+            }
+
+            // ── Calendar panel button handlers ──────────────────────────
+            cal_cp.btn_today.on_click({
+                let label = cal_cp.date_label;
+                move |_| {
+                    let today = chrono::Local::now().format("%A, %B %e, %Y").to_string();
+                    label.set_label(&format!("Today — {}", today));
+                    tracing::info!("Calendar: jumped to today");
+                }
+            });
+            cal_cp.btn_prev.on_click({
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                move |_| {
+                    send_status(&ui_tx, &runtime, "Calendar: previous period");
+                }
+            });
+            cal_cp.btn_next.on_click({
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                move |_| {
+                    send_status(&ui_tx, &runtime, "Calendar: next period");
+                }
+            });
+
+            // Calendar sidebar buttons
+            cal_sb.btn_new.on_click({
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                move |_| {
+                    send_status(&ui_tx, &runtime, "New Calendar: use File > New > Calendar");
+                }
+            });
+            cal_sb.btn_manage.on_click({
+                move |_| {
+                    wx_calendar::show_calendar_dialog(&frame, &[]);
+                }
+            });
+
+            // ── Contacts panel button handlers ──────────────────────────
+            contacts_cp.search_input.on_text_changed({
+                let search_input = contacts_cp.search_input;
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                move |_| {
+                    let query = search_input.get_value();
+                    if query.len() >= 2 {
+                        send_status(
+                            &ui_tx,
+                            &runtime,
+                            &format!("Searching contacts: {}...", query),
+                        );
+                    }
+                }
+            });
+
+            // Contacts sidebar buttons
+            contacts_sb.btn_new_group.on_click({
+                let a11y = a11y.clone();
+                move |_| {
+                    show_new_item_dialog(&frame, "Contact Group", &a11y);
+                }
+            });
+            contacts_sb.btn_import.on_click({
+                let message_cache = message_cache.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                let a11y = a11y.clone();
+                move |_| {
+                    let dlg = DirDialog::builder(&frame, "Select folder with .vcf files", "").build();
+                    if dlg.show_modal() == ID_OK {
+                        if let Some(path) = dlg.get_path() {
+                            if let Some(ref cache) = message_cache {
+                                // Try to read .vcf file from the selected path
+                                let vcf_path = std::path::Path::new(&path);
+                                let mut imported = 0usize;
+                                if vcf_path.is_file() {
+                                    if let Ok(data) = std::fs::read_to_string(vcf_path) {
+                                        imported = cache.import_contacts_from_vcard("default", &data).unwrap_or(0);
+                                    }
+                                } else if vcf_path.is_dir() {
+                                    if let Ok(entries) = std::fs::read_dir(vcf_path) {
+                                        for entry in entries.flatten() {
+                                            if entry.path().extension().map(|e| e == "vcf").unwrap_or(false) {
+                                                if let Ok(data) = std::fs::read_to_string(entry.path()) {
+                                                    imported += cache.import_contacts_from_vcard("default", &data).unwrap_or(0);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                let msg = format!("Imported {} contacts", imported);
+                                send_status(&ui_tx, &runtime, &msg);
+                                let _ = a11y.announce(&msg, crate::presentation::accessibility::announcements::Priority::Normal);
+                            } else {
+                                send_status(&ui_tx, &runtime, "No cache available for import");
+                            }
+                        }
+                    }
+                }
+            });
+            contacts_sb.btn_export.on_click({
+                let message_cache = message_cache.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                let a11y = a11y.clone();
+                move |_| {
+                    if let Some(ref cache) = message_cache {
+                        match cache.export_contacts_to_vcard("default") {
+                            Ok(vcard_data) => {
+                                let dlg = DirDialog::builder(&frame, "Select export folder", "").build();
+                                if dlg.show_modal() == ID_OK {
+                                    if let Some(path) = dlg.get_path() {
+                                        let file_path = std::path::Path::new(&path).join("contacts.vcf");
+                                        match std::fs::write(&file_path, &vcard_data) {
+                                            Ok(_) => {
+                                                let msg = format!("Contacts exported to {}", file_path.display());
+                                                send_status(&ui_tx, &runtime, &msg);
+                                                let _ = a11y.announce(&msg, crate::presentation::accessibility::announcements::Priority::Normal);
+                                            }
+                                            Err(e) => {
+                                                send_status(&ui_tx, &runtime, &format!("Export failed: {}", e));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                send_status(&ui_tx, &runtime, &format!("Export failed: {}", e));
+                            }
+                        }
+                    } else {
+                        send_status(&ui_tx, &runtime, "No cache available for export");
+                    }
+                }
+            });
+
+            // ── Reminders panel button handlers ─────────────────────────
+            reminders_cp.btn_new.on_click({
+                let a11y = a11y.clone();
+                move |_| {
+                    show_new_item_dialog(&frame, "Reminder", &a11y);
+                }
+            });
+
+            // ── Tasks panel button handlers ─────────────────────────────
+            tasks_cp.btn_new.on_click({
+                let a11y = a11y.clone();
+                move |_| {
+                    show_new_item_dialog(&frame, "Task", &a11y);
+                }
+            });
+            tasks_sb.btn_new_list.on_click({
+                let a11y = a11y.clone();
+                move |_| {
+                    show_new_item_dialog(&frame, "Task List", &a11y);
+                }
+            });
+
+            // ── Notes panel button handlers ─────────────────────────────
+            notes_cp.btn_new.on_click({
+                let a11y = a11y.clone();
+                move |_| {
+                    show_new_item_dialog(&frame, "Note", &a11y);
+                }
+            });
+            notes_cp.note_list.on_item_selected({
+                let title_input = notes_cp.title_input;
+                let body_input = notes_cp.body_input;
+                let state = state.clone();
+                move |event| {
+                    let idx = event.get_item_index() as usize;
+                    let note = state.lock().ok().and_then(|s| s.notes.get(idx).cloned());
+                    match note {
+                        Some(n) => {
+                            title_input.set_value(&n.title);
+                            body_input.set_value(&n.body_preview);
+                        }
+                        None => {
+                            title_input.set_value("");
+                            body_input.set_value("");
+                        }
+                    }
+                }
+            });
+
+            // Contacts: show the selected contact's details
+            contacts_cp.contact_list.on_item_selected({
+                let detail_label = contacts_cp.detail_label;
+                let state = state.clone();
+                let a11y = a11y.clone();
+                move |event| {
+                    let idx = event.get_item_index() as usize;
+                    let contact = state.lock().ok().and_then(|s| s.contacts.get(idx).cloned());
+                    let text = match &contact {
+                        Some(c) => c.detail_text(),
+                        None => ContactItem::no_selection_text().to_string(),
+                    };
+                    detail_label.set_label(&text);
+                    // The label is not focused, so announce it or the change
+                    // is silent for screen reader users.
+                    let _ = a11y.announce(
+                        &text.replace('\n', ", "),
+                        crate::presentation::accessibility::announcements::Priority::Low,
+                    );
+                }
+            });
+
+            // Notes sidebar button
+            notes_sb.btn_new_folder.on_click({
+                let a11y = a11y.clone();
+                move |_| {
+                    show_new_item_dialog(&frame, "Note Folder", &a11y);
+                }
+            });
+
+            // ── Keyboard shortcuts for module navigation ─────────────────
             panel.on_key_down({
+                let do_switch = do_switch_module.clone();
                 move |event| {
                     if let WindowEventData::Keyboard(ref kbd) = event {
                         let ctrl = kbd.control_down();
+                        let shift = kbd.shift_down();
                         let key = kbd.get_key_code().unwrap_or(0);
-                        match (ctrl, key) {
-                            // Ctrl+1 → focus inbox / message list
-                            (true, 49) => {
-                                msg_list.set_focus();
+                        match (ctrl, shift, key) {
+                            // Ctrl+Shift+1..6 → switch modules
+                            (true, true, 49) => {
+                                do_switch(PimModule::Mail);
+                                return;
+                            }
+                            (true, true, 50) => {
+                                do_switch(PimModule::Contacts);
+                                return;
+                            }
+                            (true, true, 51) => {
+                                do_switch(PimModule::Calendar);
+                                return;
+                            }
+                            (true, true, 52) => {
+                                do_switch(PimModule::Reminders);
+                                return;
+                            }
+                            (true, true, 53) => {
+                                do_switch(PimModule::Tasks);
+                                return;
+                            }
+                            (true, true, 54) => {
+                                do_switch(PimModule::Notes);
                                 return;
                             }
                             // Ctrl+\ → focus toolbar
-                            (true, 92) => {
+                            (true, false, 92) => {
                                 if let Some(ref tb) = toolbar_handle {
                                     tb.set_focus();
                                 }
+                                return;
+                            }
+                            // Ctrl+1 → focus message list (Mail module)
+                            (true, false, 49) => {
+                                msg_list.set_focus();
                                 return;
                             }
                             _ => {}
@@ -334,6 +955,8 @@ impl WxMailApp {
                             if let Ok(mut s) = state.lock() {
                                 s.selected_folder = Some(name.clone());
                             }
+                            // Update title bar with folder context
+                            frame.set_title(&format!("{} - Mail - Wixen Mail", name));
                             let tx = ui_tx.clone();
                             runtime.spawn(async move {
                                 let _ = tx
@@ -367,90 +990,220 @@ impl WxMailApp {
                 }
             });
 
+            // ── Spacebar read-aloud ─────────────────────────────────────
+            msg_list.on_key_down({
+                let state = state.clone();
+                let a11y = a11y.clone();
+                move |event: ListCtrlEventData| {
+                    // Spacebar (key code 32) — read current message aloud via screen reader
+                    if event.get_key_code() == Some(32) {
+                        if let Ok(s) = state.lock() {
+                            if !s.message_preview.is_empty() {
+                                let renderer = HtmlRenderer::new();
+                                let plain = renderer.html_to_plain_text(&s.message_preview);
+                                let _ = a11y.announce(
+                                    &plain,
+                                    crate::presentation::accessibility::announcements::Priority::Normal,
+                                );
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Track preview-split state (starts unsplit / hidden)
+            let preview_visible = std::cell::Cell::new(false);
+
             // ── Menu events ─────────────────────────────────────────────
             frame.on_menu({
                 let state = state.clone();
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
+                let do_switch = do_switch_module.clone();
+                let a11y = a11y.clone();
                 move |event| {
                     let id = event.get_id();
                     match id {
+                        // ── View toggles ──────────────────────────────────
+                        _ if id == ID_VIEW_FOLDER_PANE => {
+                            let visible = left_panel.is_shown();
+                            left_panel.show(!visible);
+                            panel.layout();
+                        }
+                        _ if id == ID_VIEW_PREVIEW_PANE => {
+                            if preview_visible.get() {
+                                inner.unsplit(Some(&preview));
+                                preview_visible.set(false);
+                            } else {
+                                inner.split_horizontally(&msg_list, &preview, 300);
+                                preview_visible.set(true);
+                            }
+                        }
+                        _ if id == ID_VIEW_MODULE_BUTTONS => {
+                            let visible = btn_panel.is_shown();
+                            btn_panel.show(!visible);
+                            left_panel.layout();
+                        }
+                        // Module navigation (Go menu + sidebar buttons)
+                        _ if id == ID_MODULE_MAIL => do_switch(PimModule::Mail),
+                        _ if id == ID_MODULE_CONTACTS => do_switch(PimModule::Contacts),
+                        _ if id == ID_MODULE_CALENDAR => do_switch(PimModule::Calendar),
+                        _ if id == ID_MODULE_REMINDERS => do_switch(PimModule::Reminders),
+                        _ if id == ID_MODULE_TASKS => do_switch(PimModule::Tasks),
+                        _ if id == ID_MODULE_NOTES => do_switch(PimModule::Notes),
+                        // New item creation (File > New submenu)
+                        _ if id == ID_NEW_CALENDAR => {
+                            do_switch(PimModule::Calendar);
+                            show_new_item_dialog(&frame, "Calendar", &a11y);
+                        }
+                        _ if id == ID_NEW_EVENT => {
+                            do_switch(PimModule::Calendar);
+                            show_new_item_dialog(&frame, "Event", &a11y);
+                        }
+                        _ if id == ID_NEW_REMINDER => {
+                            do_switch(PimModule::Reminders);
+                            show_new_item_dialog(&frame, "Reminder", &a11y);
+                        }
+                        _ if id == ID_NEW_TASK => {
+                            do_switch(PimModule::Tasks);
+                            show_new_item_dialog(&frame, "Task", &a11y);
+                        }
+                        _ if id == ID_NEW_NOTE => {
+                            do_switch(PimModule::Notes);
+                            show_new_item_dialog(&frame, "Note", &a11y);
+                        }
+                        // Context menu actions from WebView popup
+                        _ if id == ID_CTX_SELECT_ALL => { preview.select_all(); }
+                        _ if id == ID_CTX_COPY_LINK => {
+                            if let Ok(s) = state.lock() {
+                                if let Some(ref href) = s.context_link_href {
+                                    Clipboard::get().set_text(href);
+                                }
+                            }
+                        }
+                        _ if id == ID_CTX_SAVE_LINK => {
+                            if let Ok(s) = state.lock() {
+                                if let Some(ref href) = s.context_link_href {
+                                    let _ = open::that(href);
+                                }
+                            }
+                        }
                         _ if id == ID_QUIT => frame.close(false),
-                        _ if id == ID_CHECK_MAIL => {
-                            send_status(&ui_tx, &runtime, "Checking for new mail...")
-                        }
-                        _ if id == ID_NEW_MESSAGE => {
-                            open_compose(&frame, &state, &ui_tx, &runtime, ComposeMode::New)
-                        }
+                        _ if id == ID_CHECK_MAIL => send_status(&ui_tx, &runtime, "Checking for new mail..."),
+                        _ if id == ID_NEW_MESSAGE => open_compose(&frame, &state, &ui_tx, &runtime, ComposeMode::New),
                         _ if id == ID_REPLY => {
                             let (to, subj, body) = msg_info(&state);
-                            open_compose(
-                                &frame,
-                                &state,
-                                &ui_tx,
-                                &runtime,
-                                ComposeMode::Reply {
-                                    to,
-                                    subject: subj,
-                                    quoted_body: body,
-                                },
-                            );
+                            open_compose(&frame, &state, &ui_tx, &runtime, ComposeMode::Reply { to, subject: subj, quoted_body: body });
                         }
                         _ if id == ID_REPLY_ALL => {
                             let (to, subj, body) = msg_info(&state);
-                            open_compose(
-                                &frame,
-                                &state,
-                                &ui_tx,
-                                &runtime,
-                                ComposeMode::ReplyAll {
-                                    to,
-                                    cc: String::new(),
-                                    subject: subj,
-                                    quoted_body: body,
-                                },
-                            );
+                            open_compose(&frame, &state, &ui_tx, &runtime, ComposeMode::ReplyAll { to, cc: String::new(), subject: subj, quoted_body: body });
                         }
                         _ if id == ID_FORWARD => {
                             let (_to, subj, body) = msg_info(&state);
-                            open_compose(
-                                &frame,
-                                &state,
-                                &ui_tx,
-                                &runtime,
-                                ComposeMode::Forward {
-                                    subject: subj,
-                                    body,
-                                },
-                            );
+                            open_compose(&frame, &state, &ui_tx, &runtime, ComposeMode::Forward { subject: subj, body });
                         }
-                        _ if id == ID_DELETE => tracing::info!("Delete requested"),
-                        _ if id == ID_MARK_READ => tracing::info!("Mark Read requested"),
+                        _ if id == ID_DELETE => {
+                            let deleted = {
+                                let mut s = state.lock().unwrap();
+                                if let Some(idx) = s.selected_message_index {
+                                    if idx < s.messages.len() {
+                                        let msg = s.messages.remove(idx);
+                                        let list_idx = idx as i64;
+                                        // Adjust selection
+                                        if s.messages.is_empty() {
+                                            s.selected_message_index = None;
+                                        } else if idx >= s.messages.len() {
+                                            s.selected_message_index = Some(s.messages.len() - 1);
+                                        }
+                                        Some((msg.message_id, msg.subject.clone(), list_idx))
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            };
+                            if let Some((cache_id, subject, list_idx)) = deleted {
+                                msg_list.delete_item(list_idx);
+                                let announce_msg = format!("Message deleted: {}", subject);
+                                let tx = ui_tx.clone();
+                                runtime.spawn(async move {
+                                    let _ = tx.send(UIUpdate::MessageDeletedFromCache(cache_id)).await;
+                                    let _ = tx.send(UIUpdate::StatusUpdated(format!("Deleted: {}", subject))).await;
+                                });
+                                let _ = a11y.announce(
+                                    &announce_msg,
+                                    crate::presentation::accessibility::announcements::Priority::Normal,
+                                );
+                            } else {
+                                send_status(&ui_tx, &runtime, "No message selected to delete");
+                            }
+                        }
+                        _ if id == ID_MARK_READ => {
+                            let toggled = {
+                                let mut s = state.lock().unwrap();
+                                if let Some(idx) = s.selected_message_index {
+                                    if idx < s.messages.len() {
+                                        s.messages[idx].read = !s.messages[idx].read;
+                                        let msg = &s.messages[idx];
+                                        Some((msg.message_id, msg.read, msg.subject.clone()))
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            };
+                            if let Some((cache_id, new_read, subject)) = toggled {
+                                let label = if new_read { "read" } else { "unread" };
+                                let announce_msg = format!("Marked as {}: {}", label, subject);
+                                let tx = ui_tx.clone();
+                                runtime.spawn(async move {
+                                    let _ = tx.send(UIUpdate::MessageReadToggled(cache_id, new_read)).await;
+                                    let _ = tx.send(UIUpdate::StatusUpdated(format!("Marked {}: {}", label, subject))).await;
+                                });
+                                let _ = a11y.announce(
+                                    &announce_msg,
+                                    crate::presentation::accessibility::announcements::Priority::Normal,
+                                );
+                            } else {
+                                send_status(&ui_tx, &runtime, "No message selected");
+                            }
+                        }
                         _ if id == ID_SEARCH => {
                             if let Some(q) = show_search_dialog(&frame) {
                                 let tx = ui_tx.clone();
                                 runtime.spawn(async move {
-                                    let _ = tx
-                                        .send(UIUpdate::StatusUpdated(format!(
-                                            "Searching: {}...",
-                                            q
-                                        )))
-                                        .await;
+                                    let _ = tx.send(UIUpdate::StatusUpdated(format!("Searching: {}...", q))).await;
                                 });
                             }
                         }
                         _ if id == ID_ACCOUNT_MGR => handle_account_mgr(&frame, &state),
+                        _ if id == ID_NEW_CONTACT => { wx_managers::show_new_contact_dialog(&frame); }
+                        _ if id == ID_NEW_ACCOUNT => handle_account_mgr(&frame, &state),
+                        _ if id == ID_SAVE => send_status(&ui_tx, &runtime, "No active draft to save"),
+                        _ if id == ID_SAVE_AS => send_status(&ui_tx, &runtime, "Save As: no message selected"),
                         _ if id == ID_CONTACT_MGR => {
-                            wx_managers::show_contact_manager_dialog(&frame, &[]);
+                            let result = wx_managers::show_contact_manager_dialog(&frame, &[]);
+                            if matches!(result, wx_managers::ContactManagerAction::SyncRequested) {
+                                send_status(&ui_tx, &runtime, "Contacts sync requested...");
+                                spawn_contacts_sync(&state, &ui_tx, &runtime);
+                            }
                         }
-                        _ if id == ID_FILTER_MGR => {
-                            wx_managers::show_filter_manager_dialog(&frame, &[]);
+                        _ if id == ID_FILTER_MGR => { wx_managers::show_filter_manager_dialog(&frame, &[]); }
+                        _ if id == ID_TAG_MGR => { wx_managers::show_tag_manager_dialog(&frame, &[]); }
+                        _ if id == ID_SIG_MGR => { wx_managers::show_signature_manager_dialog(&frame, &[]); }
+                        _ if id == ID_CALENDAR => {
+                            wx_calendar::show_calendar_dialog(&frame, &[]);
                         }
-                        _ if id == ID_TAG_MGR => {
-                            wx_managers::show_tag_manager_dialog(&frame, &[]);
+                        _ if id == ID_SYNC_CONTACTS => {
+                            send_status(&ui_tx, &runtime, "Contacts sync requested...");
+                            spawn_contacts_sync(&state, &ui_tx, &runtime);
                         }
-                        _ if id == ID_SIG_MGR => {
-                            wx_managers::show_signature_manager_dialog(&frame, &[]);
+                        _ if id == ID_SYNC_CALENDAR => {
+                            send_status(&ui_tx, &runtime, "Calendar sync requested...");
+                            spawn_calendar_sync(&state, &ui_tx, &runtime);
                         }
                         _ if id == ID_SETTINGS => handle_settings(&frame, &ui_tx, &runtime),
                         _ if id == ID_OFFLINE_MODE => {
@@ -459,41 +1212,31 @@ impl WxMailApp {
                                 s.offline_mode = !s.offline_mode;
                                 s.offline_mode
                             };
-                            let label = if new_mode {
-                                "Offline mode enabled - outgoing mail will be queued"
-                            } else {
-                                "Online mode - outgoing mail will be sent immediately"
-                            };
+                            let label = if new_mode { "Offline mode enabled - outgoing mail will be queued" } else { "Online mode - outgoing mail will be sent immediately" };
                             send_status(&ui_tx, &runtime, label);
                         }
                         _ if id == ID_FLUSH_OUTBOX => {
                             send_status(&ui_tx, &runtime, "Flushing outbox queue...");
                             flush_outbox(&state, &ui_tx, &runtime);
                         }
-                        _ if id == ID_SORT_DATE_NEWEST => {
-                            apply_sort(&state, &ui_tx, &runtime, MailSortOption::DateNewestFirst)
-                        }
-                        _ if id == ID_SORT_DATE_OLDEST => {
-                            apply_sort(&state, &ui_tx, &runtime, MailSortOption::DateOldestFirst)
-                        }
-                        _ if id == ID_SORT_SENDER_AZ => {
-                            apply_sort(&state, &ui_tx, &runtime, MailSortOption::SenderAZ)
-                        }
-                        _ if id == ID_SORT_SENDER_ZA => {
-                            apply_sort(&state, &ui_tx, &runtime, MailSortOption::SenderZA)
-                        }
-                        _ if id == ID_SORT_SUBJECT_AZ => {
-                            apply_sort(&state, &ui_tx, &runtime, MailSortOption::SubjectAZ)
-                        }
-                        _ if id == ID_SORT_SUBJECT_ZA => {
-                            apply_sort(&state, &ui_tx, &runtime, MailSortOption::SubjectZA)
-                        }
-                        _ if id == ID_SORT_UNREAD_FIRST => {
-                            apply_sort(&state, &ui_tx, &runtime, MailSortOption::UnreadFirst)
-                        }
+                        _ if id == ID_SORT_DATE_NEWEST => apply_sort(&state, &ui_tx, &runtime, MailSortOption::DateNewestFirst),
+                        _ if id == ID_SORT_DATE_OLDEST => apply_sort(&state, &ui_tx, &runtime, MailSortOption::DateOldestFirst),
+                        _ if id == ID_SORT_SENDER_AZ => apply_sort(&state, &ui_tx, &runtime, MailSortOption::SenderAZ),
+                        _ if id == ID_SORT_SENDER_ZA => apply_sort(&state, &ui_tx, &runtime, MailSortOption::SenderZA),
+                        _ if id == ID_SORT_SUBJECT_AZ => apply_sort(&state, &ui_tx, &runtime, MailSortOption::SubjectAZ),
+                        _ if id == ID_SORT_SUBJECT_ZA => apply_sort(&state, &ui_tx, &runtime, MailSortOption::SubjectZA),
+                        _ if id == ID_SORT_UNREAD_FIRST => apply_sort(&state, &ui_tx, &runtime, MailSortOption::UnreadFirst),
                         _ if id == ID_ABOUT => show_about_dialog(&frame),
                         _ => tracing::debug!("Unhandled menu ID: {:?}", id),
                     }
+                }
+            });
+
+            // ── Intercept close event for diagnostics ─────────────────
+            frame.on_close({
+                move |_event| {
+                    tracing::info!("Frame on_close fired — window is closing");
+                    frame.destroy();
                 }
             });
 
@@ -503,16 +1246,27 @@ impl WxMailApp {
                 let state = state.clone();
                 let ui_rx = ui_rx.clone();
                 let a11y = a11y.clone();
+                let message_cache = message_cache.clone();
+                let tick_count = std::cell::Cell::new(0u64);
                 move |_| {
+                    let n = tick_count.get() + 1;
+                    tick_count.set(n);
+                    if n == 1 {
+                        tracing::info!("First timer tick — event loop is running");
+                    }
                     while let Ok(update) = ui_rx.try_recv() {
                         handle_update(
                             &update,
-                            &state,
-                            &folder_tree,
-                            &msg_list,
-                            &preview,
-                            &frame,
-                            &a11y,
+                            UpdateTargets {
+                                state: &state,
+                                folder_tree: &folder_tree,
+                                msg_list: &msg_list,
+                                preview: &preview,
+                                frame: &frame,
+                                a11y: &a11y,
+                                pim: &pim_refs,
+                                message_cache: &message_cache,
+                            },
                         );
                     }
                 }
@@ -526,26 +1280,62 @@ impl WxMailApp {
                 }
             }
 
+            tracing::info!("UI setup complete, showing main frame");
             frame.show(true);
+            tracing::info!("Main frame shown — entering event loop");
         });
 
-        Ok(())
+        // wxdragon::main blocks until the window is closed. If it returns
+        // immediately, something went wrong during initialization.
+        match wx_result {
+            Ok(()) => {
+                tracing::info!("wxdragon event loop exited normally");
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!("wxdragon event loop failed: {}", e);
+                Err(crate::common::Error::Other(format!(
+                    "UI framework error: {}",
+                    e
+                )))
+            }
+        }
     }
 
     fn build_menu_bar() -> MenuBar {
-        let file = Menu::builder()
-            .append_item(ID_CHECK_MAIL, "Check &Mail\tF9", "Check for new messages")
+        // ── "New" submenu (expanded for all PIM modules) ────────────
+        let new_sub = Menu::builder()
             .append_item(
                 ID_NEW_MESSAGE,
-                "&New Message\tCtrl+N",
-                "Compose a new message",
+                "&Message\tCtrl+N",
+                "Compose a new email message",
             )
+            .append_separator()
+            .append_item(ID_NEW_EVENT, "&Event", "Create a calendar event")
+            .append_item(ID_NEW_REMINDER, "&Reminder", "Create a reminder")
+            .append_item(ID_NEW_TASK, "Tas&k", "Create a task")
+            .append_item(ID_NEW_NOTE, "N&ote", "Create a note")
+            .append_separator()
+            .append_item(ID_NEW_CONTACT, "Co&ntact", "Create a new contact")
+            .append_item(ID_NEW_ACCOUNT, "&Account", "Open Account Manager")
+            .build();
+
+        let file = Menu::builder()
+            .append_item(ID_SAVE, "&Save\tCtrl+S", "Save current work")
+            .append_item(ID_SAVE_AS, "Save &As...", "Save to a file")
+            .append_separator()
+            .append_item(ID_CHECK_MAIL, "Check &Mail\tF9", "Check for new messages")
             .append_separator()
             .append_item(ID_QUIT, "&Quit\tCtrl+Q", "Exit Wixen Mail")
             .build();
+        // Insert New submenu at top of File menu
+        file.prepend_separator();
+        file.prepend_submenu(new_sub, "&New", "Create a new item");
+
         let edit = Menu::builder()
             .append_item(ID_SEARCH, "&Search\tCtrl+F", "Search messages")
             .build();
+
         // Sort submenu
         let sort_menu = Menu::builder()
             .append_radio_item(
@@ -587,23 +1377,76 @@ impl WxMailApp {
                 "Show unread messages first",
             )
             .build();
+
         let view = Menu::builder()
+            .append_check_item(
+                ID_VIEW_FOLDER_PANE,
+                "&Folder Pane\tAlt+1",
+                "Toggle the folder / sidebar pane",
+            )
+            .append_check_item(
+                ID_VIEW_PREVIEW_PANE,
+                "&Preview Pane\tAlt+2",
+                "Toggle the message preview pane",
+            )
+            .append_check_item(
+                ID_VIEW_MODULE_BUTTONS,
+                "&Module Buttons\tAlt+3",
+                "Toggle the module navigation buttons",
+            )
+            .append_separator()
             .append_check_item(
                 ID_THREAD_VIEW,
                 "&Thread View\tCtrl+T",
                 "Toggle threaded view",
             )
             .append_separator()
-            .append_separator() // placeholder — we insert the submenu below
             .append_check_item(
                 ID_OFFLINE_MODE,
                 "&Offline Mode",
                 "Toggle offline mode (queue outgoing mail)",
             )
             .build();
-        // Insert the sort sub-menu (MenuBuilder doesn't have append_sub_menu,
-        // but the built Menu does).
+        // Set default check states: folder pane on, preview off, buttons off
+        view.check_item(ID_VIEW_FOLDER_PANE, true);
+        view.check_item(ID_VIEW_PREVIEW_PANE, false);
+        view.check_item(ID_VIEW_MODULE_BUTTONS, false);
         view.append_submenu(sort_menu, "&Sort Messages", "Change message sort order");
+
+        // ── "Go" menu — module navigation ──────────────────────────
+        let go_menu = Menu::builder()
+            .append_item(
+                ID_MODULE_MAIL,
+                "&Mail\tCtrl+Shift+1",
+                "Switch to Mail module",
+            )
+            .append_item(
+                ID_MODULE_CONTACTS,
+                "&Contacts\tCtrl+Shift+2",
+                "Switch to Contacts module",
+            )
+            .append_item(
+                ID_MODULE_CALENDAR,
+                "Ca&lendar\tCtrl+Shift+3",
+                "Switch to Calendar module",
+            )
+            .append_item(
+                ID_MODULE_REMINDERS,
+                "&Reminders\tCtrl+Shift+4",
+                "Switch to Reminders module",
+            )
+            .append_item(
+                ID_MODULE_TASKS,
+                "&Tasks\tCtrl+Shift+5",
+                "Switch to Tasks module",
+            )
+            .append_item(
+                ID_MODULE_NOTES,
+                "&Notes\tCtrl+Shift+6",
+                "Switch to Notes module",
+            )
+            .build();
+
         let message = Menu::builder()
             .append_item(ID_REPLY, "&Reply\tCtrl+R", "Reply to sender")
             .append_item(ID_REPLY_ALL, "Reply &All\tCtrl+Shift+R", "Reply to all")
@@ -612,6 +1455,7 @@ impl WxMailApp {
             .append_item(ID_MARK_READ, "Mark as &Read", "Mark as read")
             .append_item(ID_DELETE, "&Delete\tDel", "Delete message")
             .build();
+
         let tools = Menu::builder()
             .append_item(
                 ID_ACCOUNT_MGR,
@@ -620,13 +1464,15 @@ impl WxMailApp {
             )
             .append_separator()
             .append_item(
-                ID_CONTACT_MGR,
-                "&Contact Manager\tCtrl+2",
-                "Manage contacts",
+                ID_SYNC_CONTACTS,
+                "Sync C&ontacts",
+                "Sync contacts with cloud providers",
             )
-            .append_item(ID_FILTER_MGR, "&Filter Manager", "Manage filter rules")
-            .append_item(ID_TAG_MGR, "&Tag Manager", "Manage tags")
-            .append_item(ID_SIG_MGR, "&Signature Manager", "Manage signatures")
+            .append_item(
+                ID_SYNC_CALENDAR,
+                "Sync Calen&dar",
+                "Sync calendar with cloud providers",
+            )
             .append_separator()
             .append_item(
                 ID_FLUSH_OUTBOX,
@@ -636,6 +1482,7 @@ impl WxMailApp {
             .append_separator()
             .append_item(ID_SETTINGS, "&Settings\tCtrl+,", "Application preferences")
             .build();
+
         let help = Menu::builder()
             .append_item(ID_ABOUT, "&About\tF1", "About Wixen Mail")
             .build();
@@ -644,6 +1491,7 @@ impl WxMailApp {
             .append(file, "&File")
             .append(edit, "&Edit")
             .append(view, "&View")
+            .append(go_menu, "&Go")
             .append(message, "&Message")
             .append(tools, "&Tools")
             .append(help, "&Help")
@@ -756,16 +1604,31 @@ fn handle_settings(frame: &Frame, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
     }
 }
 
+/// The widgets and shared state a `UIUpdate` may need to touch.
+struct UpdateTargets<'a> {
+    state: &'a Arc<StdMutex<WxUIState>>,
+    folder_tree: &'a TreeCtrl,
+    msg_list: &'a ListCtrl,
+    preview: &'a WebView,
+    frame: &'a Frame,
+    a11y: &'a Accessibility,
+    pim: &'a PimPanelRefs,
+    message_cache: &'a Option<Arc<MessageCache>>,
+}
+
 /// Process a single UIUpdate, updating widgets + accessibility.
-fn handle_update(
-    update: &UIUpdate,
-    state: &Arc<StdMutex<WxUIState>>,
-    folder_tree: &TreeCtrl,
-    msg_list: &ListCtrl,
-    preview: &RichTextCtrl,
-    frame: &Frame,
-    a11y: &Accessibility,
-) {
+fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
+    let UpdateTargets {
+        state,
+        folder_tree,
+        msg_list,
+        preview,
+        frame,
+        a11y,
+        pim,
+        message_cache,
+    } = targets;
+
     use crate::presentation::accessibility::announcements::Priority;
     match update {
         UIUpdate::FoldersLoaded(folders) => {
@@ -805,13 +1668,8 @@ fn handle_update(
                 s.message_preview = body.clone();
             }
             let renderer = HtmlRenderer::new();
-            let is_html = body.contains('<') && body.contains('>');
-            if is_html {
-                let rendered = renderer.render_for_accessibility(body);
-                preview.set_value(&rendered.accessible_text);
-            } else {
-                preview.set_value(body);
-            }
+            let html = renderer.wrap_for_webview(body);
+            preview.set_page(&html, "about:blank");
         }
         UIUpdate::ConnectionStatusChanged(status) => {
             if let Ok(mut s) = state.lock() {
@@ -869,6 +1727,254 @@ fn handle_update(
             let msg = format!("Outbox flush: {} sent, {} failed", sent, failed);
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce(&msg, Priority::Normal);
+        }
+        UIUpdate::ContactsSyncComplete {
+            created,
+            updated,
+            deleted,
+            errors,
+        } => {
+            let msg = format!(
+                "Contacts sync: {} created, {} updated, {} deleted{}",
+                created,
+                updated,
+                deleted,
+                if errors.is_empty() {
+                    String::new()
+                } else {
+                    format!(", {} errors", errors.len())
+                },
+            );
+            frame.set_status_text(&msg, 0);
+            let _ = a11y.announce(&msg, Priority::Normal);
+            for err in errors {
+                tracing::warn!("Contacts sync error: {}", err);
+            }
+        }
+        UIUpdate::CalendarEventsLoaded(events) => {
+            pim.cal_date_label.set_label(&calendar_range_label(events));
+            pim.cal_event_list.delete_all_items();
+            for (i, e) in events.iter().enumerate() {
+                let idx = i as i64;
+                let time = if e.is_all_day {
+                    "All day".to_string()
+                } else {
+                    e.start.clone()
+                };
+                pim.cal_event_list.insert_item(idx, &time, None);
+                pim.cal_event_list
+                    .set_item_text_by_column(idx, 1, &e.summary);
+                pim.cal_event_list.set_item_text_by_column(
+                    idx,
+                    2,
+                    e.calendar_name.as_deref().unwrap_or(""),
+                );
+                pim.cal_event_list
+                    .set_item_text_by_column(idx, 3, &e.location);
+                pim.cal_event_list
+                    .set_item_text_by_column(idx, 4, &e.status);
+            }
+            let msg = format!("{} calendar events loaded", events.len());
+            frame.set_status_text(&msg, 0);
+            let _ = a11y.announce(&msg, Priority::Low);
+        }
+        UIUpdate::CalendarSyncComplete {
+            created,
+            updated,
+            deleted,
+            errors,
+        } => {
+            let msg = format!(
+                "Calendar sync: {} created, {} updated, {} deleted{}",
+                created,
+                updated,
+                deleted,
+                if errors.is_empty() {
+                    String::new()
+                } else {
+                    format!(", {} errors", errors.len())
+                },
+            );
+            frame.set_status_text(&msg, 0);
+            let _ = a11y.announce(&msg, Priority::Normal);
+            for err in errors {
+                tracing::warn!("Calendar sync error: {}", err);
+            }
+        }
+        UIUpdate::CalendarEventSaved(id) => {
+            let msg = format!("Calendar event saved: {}", id);
+            frame.set_status_text(&msg, 0);
+        }
+        UIUpdate::CalendarEventDeleted(id) => {
+            let msg = format!("Calendar event deleted: {}", id);
+            frame.set_status_text(&msg, 0);
+        }
+        UIUpdate::ModuleChanged(module) => {
+            let label = module.label().replace('&', "");
+            frame.set_status_text(&label, 2);
+        }
+        UIUpdate::CalendarContainersLoaded(containers) => {
+            pim.cal_tree.delete_all_items();
+            if let Some(root) = pim.cal_tree.add_root("All Calendars", None, None) {
+                for c in containers {
+                    let label = if c.is_visible {
+                        format!("[x] {}", c.name)
+                    } else {
+                        format!("[ ] {}", c.name)
+                    };
+                    pim.cal_tree.append_item(&root, &label, None, None);
+                }
+                pim.cal_tree.expand(&root);
+            }
+            let msg = format!("{} calendars loaded", containers.len());
+            frame.set_status_text(&msg, 0);
+            let _ = a11y.announce(&msg, Priority::Low);
+        }
+        UIUpdate::RemindersLoaded(reminders) => {
+            if let Ok(mut s) = state.lock() {
+                s.reminders = reminders.clone();
+            }
+            pim.reminder_list.delete_all_items();
+            for (i, r) in reminders.iter().enumerate() {
+                let idx = i as i64;
+                let done = if r.is_completed { "Done" } else { "" };
+                pim.reminder_list.insert_item(idx, done, None);
+                pim.reminder_list.set_item_text_by_column(idx, 1, &r.title);
+                pim.reminder_list.set_item_text_by_column(
+                    idx,
+                    2,
+                    r.due_datetime.as_deref().unwrap_or("No due date"),
+                );
+                pim.reminder_list
+                    .set_item_text_by_column(idx, 3, &r.priority);
+            }
+
+            // Sidebar groups reminders by urgency, matching how the tasks and
+            // notes sidebars group their own items.
+            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+            pim.reminders_tree.delete_all_items();
+            if let Some(root) = pim.reminders_tree.add_root("Reminders", None, None) {
+                for bucket in ReminderBucket::ALL {
+                    let count = reminders
+                        .iter()
+                        .filter(|r| r.bucket(&today) == bucket)
+                        .count();
+                    let label = format!("{} ({})", bucket.label(), count);
+                    pim.reminders_tree.append_item(&root, &label, None, None);
+                }
+                pim.reminders_tree.expand(&root);
+            }
+
+            let msg = format!("{} reminders loaded", reminders.len());
+            frame.set_status_text(&msg, 0);
+            let _ = a11y.announce(&msg, Priority::Low);
+        }
+        UIUpdate::TaskListsLoaded(lists) => {
+            pim.tasks_tree.delete_all_items();
+            if let Some(root) = pim.tasks_tree.add_root("Task Lists", None, None) {
+                for l in lists {
+                    let label = format!("{} ({})", l.name, l.task_count);
+                    pim.tasks_tree.append_item(&root, &label, None, None);
+                }
+                pim.tasks_tree.expand(&root);
+            }
+            let msg = format!("{} task lists loaded", lists.len());
+            frame.set_status_text(&msg, 0);
+        }
+        UIUpdate::TasksLoaded(tasks) => {
+            pim.task_list.delete_all_items();
+            for (i, t) in tasks.iter().enumerate() {
+                let idx = i as i64;
+                let done = if t.is_completed { "Done" } else { "" };
+                pim.task_list.insert_item(idx, done, None);
+                pim.task_list.set_item_text_by_column(idx, 1, &t.title);
+                pim.task_list
+                    .set_item_text_by_column(idx, 2, t.due_date.as_deref().unwrap_or(""));
+                pim.task_list.set_item_text_by_column(idx, 3, &t.priority);
+            }
+            let msg = format!("{} tasks loaded", tasks.len());
+            frame.set_status_text(&msg, 0);
+            let _ = a11y.announce(&msg, Priority::Low);
+        }
+        UIUpdate::NoteFoldersLoaded(folders) => {
+            pim.notes_tree.delete_all_items();
+            if let Some(root) = pim.notes_tree.add_root("Note Folders", None, None) {
+                for f in folders {
+                    let label = format!("{} ({})", f.name, f.note_count);
+                    pim.notes_tree.append_item(&root, &label, None, None);
+                }
+                pim.notes_tree.expand(&root);
+            }
+        }
+        UIUpdate::NotesLoaded(notes) => {
+            if let Ok(mut s) = state.lock() {
+                s.notes = notes.clone();
+            }
+            pim.note_list.delete_all_items();
+            for (i, n) in notes.iter().enumerate() {
+                let idx = i as i64;
+                let title = if n.pinned {
+                    format!("* {}", n.title)
+                } else {
+                    n.title.clone()
+                };
+                pim.note_list.insert_item(idx, &title, None);
+                pim.note_list.set_item_text_by_column(idx, 1, &n.updated_at);
+            }
+            let msg = format!("{} notes loaded", notes.len());
+            frame.set_status_text(&msg, 0);
+            let _ = a11y.announce(&msg, Priority::Low);
+        }
+        UIUpdate::ContactsLoaded(contacts) => {
+            if let Ok(mut s) = state.lock() {
+                s.contacts = contacts.clone();
+            }
+            pim.contact_list.delete_all_items();
+            for (i, c) in contacts.iter().enumerate() {
+                let idx = i as i64;
+                pim.contact_list.insert_item(idx, &c.name, None);
+                pim.contact_list.set_item_text_by_column(idx, 1, &c.email);
+                pim.contact_list.set_item_text_by_column(idx, 2, &c.phone);
+                pim.contact_list.set_item_text_by_column(idx, 3, &c.company);
+            }
+            let msg = format!("{} contacts loaded", contacts.len());
+            frame.set_status_text(&msg, 0);
+            let _ = a11y.announce(&msg, Priority::Low);
+        }
+        UIUpdate::ContactGroupsLoaded(groups) => {
+            pim.contacts_tree.delete_all_items();
+            if let Some(root) = pim.contacts_tree.add_root("Contacts", None, None) {
+                pim.contacts_tree
+                    .append_item(&root, "All Contacts", None, None);
+                pim.contacts_tree
+                    .append_item(&root, "Favorites", None, None);
+                for g in groups {
+                    let label = format!("{} ({})", g.name, g.member_count);
+                    pim.contacts_tree.append_item(&root, &label, None, None);
+                }
+                pim.contacts_tree.expand(&root);
+            }
+        }
+        UIUpdate::MessageDeletedFromCache(cache_id) => {
+            if let Some(ref cache) = message_cache {
+                if let Err(e) = cache.delete_message(*cache_id) {
+                    tracing::error!("Failed to delete message {} from cache: {}", cache_id, e);
+                }
+            }
+        }
+        UIUpdate::MessageReadToggled(cache_id, new_read) => {
+            if let Some(ref cache) = message_cache {
+                // Preserve starred state — read the current value first
+                let starred = cache
+                    .get_message(*cache_id)
+                    .ok()
+                    .flatten()
+                    .map(|m| m.starred)
+                    .unwrap_or(false);
+                if let Err(e) = cache.update_message_flags(*cache_id, *new_read, starred) {
+                    tracing::error!("Failed to update flags for message {}: {}", cache_id, e);
+                }
+            }
         }
     }
 }
@@ -964,6 +2070,279 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
     });
 }
 
+/// Spawn contacts sync on a blocking thread (MessageCache is not Send).
+fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
+    let tx = tx.clone();
+    let account_id = state.lock().ok().and_then(|s| s.active_account_id.clone());
+    let handle = rt.handle().clone();
+
+    rt.spawn_blocking(move || {
+        let aid = account_id.as_deref().unwrap_or("default");
+        let cache_dir = dirs::cache_dir().map(|d| d.join("wixen-mail"));
+        let Some(dir) = cache_dir else {
+            handle.block_on(async {
+                let _ = tx
+                    .send(UIUpdate::ErrorOccurred(
+                        "No cache directory available".into(),
+                    ))
+                    .await;
+            });
+            return;
+        };
+        let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
+            Ok(c) => c,
+            Err(e) => {
+                handle.block_on(async {
+                    let _ = tx
+                        .send(UIUpdate::ErrorOccurred(format!("Cache error: {}", e)))
+                        .await;
+                });
+                return;
+            }
+        };
+
+        let mut total_created = 0usize;
+        let mut total_updated = 0usize;
+        let mut total_deleted = 0usize;
+        let mut total_errors = Vec::new();
+
+        // Try Google contacts sync
+        let google_client = crate::service::google_api::GoogleApiClient::new();
+        if let Some(gmail_creds) = crate::service::oauth_credentials::credentials_for("gmail") {
+            let auth = crate::service::oauth::AuthManager::new(
+                aid,
+                "gmail",
+                &gmail_creds.client_id,
+                gmail_creds.client_secret.as_deref(),
+            );
+            match handle.block_on(auth.get_valid_token()) {
+                Ok(token) => {
+                    match handle.block_on(crate::application::contacts_sync::sync_google_contacts(
+                        &cache,
+                        &google_client,
+                        &token,
+                        aid,
+                    )) {
+                        Ok(result) => {
+                            total_created += result.created_local + result.created_remote;
+                            total_updated += result.updated_local + result.updated_remote;
+                            total_deleted += result.deleted_local + result.deleted_remote;
+                            total_errors.extend(result.errors);
+                        }
+                        Err(e) => total_errors.push(format!("Google contacts: {}", e)),
+                    }
+                }
+                Err(e) => total_errors.push(format!("Google auth: {}", e)),
+            }
+        }
+
+        // Try Microsoft contacts sync
+        let ms_client = crate::service::microsoft_graph::MsGraphClient::new();
+        if let Some(outlook_creds) = crate::service::oauth_credentials::credentials_for("outlook") {
+            let auth = crate::service::oauth::AuthManager::new(
+                aid,
+                "outlook",
+                &outlook_creds.client_id,
+                outlook_creds.client_secret.as_deref(),
+            );
+            match handle.block_on(auth.get_valid_graph_token()) {
+                Ok(token) => {
+                    match handle.block_on(
+                        crate::application::contacts_sync::sync_microsoft_contacts(
+                            &cache, &ms_client, &token, aid,
+                        ),
+                    ) {
+                        Ok(result) => {
+                            total_created += result.created_local + result.created_remote;
+                            total_updated += result.updated_local + result.updated_remote;
+                            total_deleted += result.deleted_local + result.deleted_remote;
+                            total_errors.extend(result.errors);
+                        }
+                        Err(e) => total_errors.push(format!("Microsoft contacts: {}", e)),
+                    }
+                }
+                Err(e) => total_errors.push(format!("Microsoft auth: {}", e)),
+            }
+        }
+
+        handle.block_on(async {
+            let _ = tx
+                .send(UIUpdate::ContactsSyncComplete {
+                    created: total_created,
+                    updated: total_updated,
+                    deleted: total_deleted,
+                    errors: total_errors,
+                })
+                .await;
+        });
+    });
+}
+
+/// Spawn calendar sync on a blocking thread (MessageCache is not Send).
+fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
+    let tx = tx.clone();
+    let account_id = state.lock().ok().and_then(|s| s.active_account_id.clone());
+    let handle = rt.handle().clone();
+
+    rt.spawn_blocking(move || {
+        let aid = account_id.as_deref().unwrap_or("default");
+        let cache_dir = dirs::cache_dir().map(|d| d.join("wixen-mail"));
+        let Some(dir) = cache_dir else {
+            handle.block_on(async {
+                let _ = tx
+                    .send(UIUpdate::ErrorOccurred(
+                        "No cache directory available".into(),
+                    ))
+                    .await;
+            });
+            return;
+        };
+        let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
+            Ok(c) => c,
+            Err(e) => {
+                handle.block_on(async {
+                    let _ = tx
+                        .send(UIUpdate::ErrorOccurred(format!("Cache error: {}", e)))
+                        .await;
+                });
+                return;
+            }
+        };
+
+        let mut total_created = 0usize;
+        let mut total_updated = 0usize;
+        let mut total_deleted = 0usize;
+        let mut total_errors = Vec::new();
+
+        // Try Google calendar sync
+        let google_client = crate::service::google_api::GoogleApiClient::new();
+        if let Some(gmail_creds) = crate::service::oauth_credentials::credentials_for("gmail") {
+            let auth = crate::service::oauth::AuthManager::new(
+                aid,
+                "gmail",
+                &gmail_creds.client_id,
+                gmail_creds.client_secret.as_deref(),
+            );
+            match handle.block_on(auth.get_valid_token()) {
+                Ok(token) => {
+                    match handle.block_on(crate::application::calendar::sync_google_calendar(
+                        &cache,
+                        &google_client,
+                        &token,
+                        aid,
+                    )) {
+                        Ok(result) => {
+                            total_created += result.created;
+                            total_updated += result.updated;
+                            total_deleted += result.deleted;
+                            total_errors.extend(result.errors);
+                        }
+                        Err(e) => total_errors.push(format!("Google calendar: {}", e)),
+                    }
+                }
+                Err(e) => total_errors.push(format!("Google auth: {}", e)),
+            }
+        }
+
+        // Try Microsoft calendar sync
+        let ms_client = crate::service::microsoft_graph::MsGraphClient::new();
+        if let Some(outlook_creds) = crate::service::oauth_credentials::credentials_for("outlook") {
+            let auth = crate::service::oauth::AuthManager::new(
+                aid,
+                "outlook",
+                &outlook_creds.client_id,
+                outlook_creds.client_secret.as_deref(),
+            );
+            match handle.block_on(auth.get_valid_graph_token()) {
+                Ok(token) => {
+                    match handle.block_on(crate::application::calendar::sync_microsoft_calendar(
+                        &cache, &ms_client, &token, aid,
+                    )) {
+                        Ok(result) => {
+                            total_created += result.created;
+                            total_updated += result.updated;
+                            total_deleted += result.deleted;
+                            total_errors.extend(result.errors);
+                        }
+                        Err(e) => total_errors.push(format!("Microsoft calendar: {}", e)),
+                    }
+                }
+                Err(e) => total_errors.push(format!("Microsoft auth: {}", e)),
+            }
+        }
+
+        // CalDAV calendar sync
+        let calendars = cache.get_calendars_for_account(aid).unwrap_or_default();
+        let caldav_client = crate::service::caldav::CalDavClient::new();
+        for cal in calendars
+            .iter()
+            .filter(|c| c.source_provider.as_deref() == Some("caldav"))
+        {
+            // Retrieve credentials from OS keychain (same pattern as OAuth)
+            let service = format!("wixen-mail-caldav-{}", cal.id);
+            let username: String = keyring::Entry::new(&service, "username")
+                .ok()
+                .and_then(|e| e.get_password().ok())
+                .unwrap_or_default();
+            let password: String = keyring::Entry::new(&service, "password")
+                .ok()
+                .and_then(|e| e.get_password().ok())
+                .unwrap_or_default();
+            if !username.is_empty() && !password.is_empty() {
+                match handle.block_on(crate::application::caldav_sync::sync_caldav_calendar(
+                    &cache,
+                    &caldav_client,
+                    cal,
+                    aid,
+                    &username,
+                    &password,
+                )) {
+                    Ok(result) => {
+                        total_created += result.created;
+                        total_updated += result.updated;
+                        total_deleted += result.deleted;
+                        total_errors.extend(result.errors);
+                    }
+                    Err(e) => total_errors.push(format!("CalDAV sync ({}): {}", cal.name, e)),
+                }
+            }
+        }
+
+        // ICS subscription calendar refresh
+        let ical_client = crate::service::ical_subscription::ICalSubscriptionClient::new();
+        for cal in calendars
+            .iter()
+            .filter(|c| c.source_provider.as_deref() == Some("subscription"))
+        {
+            match handle.block_on(crate::application::caldav_sync::refresh_subscription(
+                &cache,
+                &ical_client,
+                cal,
+                aid,
+            )) {
+                Ok(result) => {
+                    total_created += result.created;
+                    total_updated += result.updated;
+                    total_deleted += result.deleted;
+                    total_errors.extend(result.errors);
+                }
+                Err(e) => total_errors.push(format!("Subscription refresh ({}): {}", cal.name, e)),
+            }
+        }
+
+        handle.block_on(async {
+            let _ = tx
+                .send(UIUpdate::CalendarSyncComplete {
+                    created: total_created,
+                    updated: total_updated,
+                    deleted: total_deleted,
+                    errors: total_errors,
+                })
+                .await;
+        });
+    });
+}
+
 /// Apply a sort order to the current message list and re-render.
 fn apply_sort(
     state: &Arc<StdMutex<WxUIState>>,
@@ -1012,6 +2391,16 @@ fn sort_messages(messages: &mut [MessageItem], order: MailSortOption) {
     }
 }
 
+/// Extract a string value from a simple JSON object by key name.
+/// Avoids pulling in a full JSON parser for this single use case.
+fn extract_json_string(json: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{}\":\"", key);
+    let start = json.find(&needle)? + needle.len();
+    let rest = &json[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
 // ── Standalone Dialogs ──────────────────────────────────────────────────────
 
 fn show_about_dialog(parent: &Frame) {
@@ -1020,16 +2409,17 @@ fn show_about_dialog(parent: &Frame) {
         .build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
+    let version_text = format!("Version {}", env!("CARGO_PKG_VERSION"));
     for (text, top) in [
-        ("Wixen Mail", 20),
-        ("Version 0.1.1-beta.8", 4),
+        ("Wixen Mail".to_string(), 20),
+        (version_text, 4),
         (
-            "A modern, accessible email client\nbuilt with Rust and wxWidgets.",
+            "A modern, accessible email client\nbuilt with Rust and wxWidgets.".to_string(),
             8,
         ),
-        ("Copyright 2024-2026 Wixen Mail Contributors", 4),
+        ("Copyright 2024-2026 Wixen Mail Contributors".to_string(), 4),
     ] {
-        let label = StaticText::builder(&dlg).with_label(text).build();
+        let label = StaticText::builder(&dlg).with_label(&text).build();
         sizer.add(
             &label,
             0,
@@ -1140,5 +2530,74 @@ fn show_search_dialog(parent: &Frame) -> Option<String> {
         }
     } else {
         None
+    }
+}
+
+/// Show a dialog to create a new PIM item (Event, Reminder, Task, Note, etc.).
+///
+/// Presents a simple title-entry dialog and announces the result via screen reader.
+fn show_new_item_dialog(frame: &Frame, item_type: &str, a11y: &Arc<Accessibility>) {
+    let dlg = Dialog::builder(frame, &format!("New {}", item_type))
+        .with_size(400, 180)
+        .build();
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    let fields = FlexGridSizer::builder(0, 2)
+        .with_vgap(4)
+        .with_hgap(8)
+        .build();
+    fields.add_growable_col(1, 1);
+
+    let title_label = StaticText::builder(&dlg)
+        .with_label(&format!("{} &title:", item_type))
+        .build();
+    let title_field = TextCtrl::builder(&dlg).build();
+    fields.add(
+        &title_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&title_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 8);
+
+    let btns = BoxSizer::builder(Orientation::Horizontal).build();
+    let ok = Button::builder(&dlg)
+        .with_label("Create")
+        .with_id(ID_OK)
+        .build();
+    let cancel = Button::builder(&dlg)
+        .with_label("Cancel")
+        .with_id(ID_CANCEL)
+        .build();
+    btns.add_spacer(0);
+    btns.add(&ok, 0, SizerFlag::All, 4);
+    btns.add(&cancel, 0, SizerFlag::All, 4);
+    sizer.add_sizer(&btns, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
+    dlg.set_sizer(sizer, true);
+
+    ok.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    });
+    cancel.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_CANCEL);
+        }
+    });
+
+    if dlg.show_modal() == ID_OK {
+        let title = title_field.get_value();
+        if !title.trim().is_empty() {
+            tracing::info!("New {} created: {}", item_type, title);
+            let _ = a11y.announce(
+                &format!("{} '{}' created", item_type, title),
+                crate::presentation::accessibility::announcements::Priority::Normal,
+            );
+        }
     }
 }
