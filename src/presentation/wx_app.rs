@@ -667,7 +667,7 @@ impl WxMailApp {
                     // Update state and build context-aware title
                     let label = module.label().replace('&', "");
                     let title = {
-                        let mut s = state.lock().unwrap();
+                        let mut s = lock_state(&state);
                         s.active_module = module;
                         // Build title: "Inbox - Mail - Wixen Mail" or "Calendar - Wixen Mail"
                         match module {
@@ -1149,7 +1149,7 @@ impl WxMailApp {
                         }
                         _ if id == ID_DELETE => {
                             let deleted = {
-                                let mut s = state.lock().unwrap();
+                                let mut s = lock_state(&state);
                                 if let Some(idx) = s.selected_message_index {
                                     if idx < s.messages.len() {
                                         let msg = s.messages.remove(idx);
@@ -1186,7 +1186,7 @@ impl WxMailApp {
                         }
                         _ if id == ID_MARK_READ => {
                             let toggled = {
-                                let mut s = state.lock().unwrap();
+                                let mut s = lock_state(&state);
                                 if let Some(idx) = s.selected_message_index {
                                     if idx < s.messages.len() {
                                         s.messages[idx].read = !s.messages[idx].read;
@@ -1252,7 +1252,7 @@ impl WxMailApp {
                         _ if id == ID_SETTINGS => handle_settings(&frame, &ui_tx, &runtime),
                         _ if id == ID_OFFLINE_MODE => {
                             let new_mode = {
-                                let mut s = state.lock().unwrap();
+                                let mut s = lock_state(&state);
                                 s.offline_mode = !s.offline_mode;
                                 s.offline_mode
                             };
@@ -1556,6 +1556,19 @@ impl WxMailApp {
 
 // ── Free Functions (avoid monomorphization bloat from Self:: methods) ────────
 
+/// Lock the shared UI state, recovering if an earlier panic poisoned it.
+///
+/// `lock().unwrap()` turns one panic into a dead window: the mutex stays
+/// poisoned, so every later lock panics too and the user loses the whole
+/// application rather than one action. `WxUIState` is plain data with no
+/// invariant spanning fields, so the worst a recovered lock carries forward is
+/// a half-applied update, which is a better outcome than losing the session.
+fn lock_state(state: &Arc<StdMutex<WxUIState>>) -> std::sync::MutexGuard<'_, WxUIState> {
+    state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Send a simple status update through the async channel.
 fn send_status(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, msg: &str) {
     let tx = tx.clone();
@@ -1617,13 +1630,13 @@ fn open_compose(
 /// Handle Account Manager dialog result.
 fn handle_account_mgr(frame: &Frame, state: &Arc<StdMutex<WxUIState>>) {
     let (accounts, active_id) = {
-        let s = state.lock().unwrap();
+        let s = lock_state(&state);
         (s.accounts.clone(), s.active_account_id.clone())
     };
     if let AccountManagerAction::Updated(new) =
         wx_account_manager::show_account_manager_dialog(frame, &accounts, active_id.as_deref())
     {
-        let mut s = state.lock().unwrap();
+        let mut s = lock_state(&state);
         if !new.is_empty() {
             if s.active_account_id
                 .as_ref()
@@ -2406,7 +2419,7 @@ fn apply_sort(
     order: MailSortOption,
 ) {
     let sorted = {
-        let mut s = state.lock().unwrap();
+        let mut s = lock_state(&state);
         s.sort_order = order;
         let mut msgs = s.messages.clone();
         sort_messages(&mut msgs, order);
@@ -2644,5 +2657,37 @@ fn show_new_item_dialog(frame: &Frame, item_type: &str, a11y: &Arc<Accessibility
                 crate::presentation::accessibility::announcements::Priority::Normal,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lock_state_survives_a_poisoned_mutex() {
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+
+        // Panic while holding the lock, which is what poisons it.
+        let poisoner = Arc::clone(&state);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.lock().unwrap();
+            panic!("simulated panic while holding the UI state lock");
+        })
+        .join();
+
+        assert!(state.lock().is_err(), "the mutex should now be poisoned");
+
+        // The window has to keep working after one action panicked.
+        let mut recovered = lock_state(&state);
+        recovered.status_message = "still alive".to_string();
+        assert_eq!(recovered.status_message, "still alive");
+    }
+
+    #[test]
+    fn test_lock_state_returns_the_same_state() {
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        lock_state(&state).outbox_count = 7;
+        assert_eq!(lock_state(&state).outbox_count, 7);
     }
 }
