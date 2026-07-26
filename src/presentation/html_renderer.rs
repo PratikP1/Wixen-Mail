@@ -69,13 +69,20 @@ impl HtmlRenderer {
         }
     }
 
-    /// Sanitize HTML content for safe display
+    /// Sanitize HTML content for safe display.
     ///
-    /// This removes potentially dangerous HTML/JavaScript while preserving
-    /// safe formatting and structure.
+    /// Removes dangerous markup while preserving the formatting and structure
+    /// a screen reader navigates by: headings, lists, tables, link text, and
+    /// alt text all survive.
+    ///
+    /// The result is always safe to embed in a document. That matters in plain
+    /// text mode, where `html_to_plain_text` strips tags and *then* decodes
+    /// entities, so a body containing `&lt;script&gt;` comes back out as live
+    /// markup. Correct as plain text, and an injection the moment it is placed
+    /// in the WebView, so it is escaped here.
     pub fn sanitize_html(&self, html: &str) -> String {
         if self.plain_text_only {
-            return self.html_to_plain_text(html);
+            return html_escape::encode_text(&self.html_to_plain_text(html)).to_string();
         }
 
         clean(html)
@@ -482,5 +489,249 @@ mod tests {
         let links = renderer.extract_link_texts(html);
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].url, "mailto:test@example.com");
+    }
+
+    // ── Hostile input ───────────────────────────────────────────────────
+    //
+    // Message bodies arrive from strangers. Everything below is an assertion
+    // about what a sender must not be able to make this client do.
+
+    /// Snippets that have all been used against real mail clients.
+    const HOSTILE: &[&str] = &[
+        "<script>alert(1)</script>",
+        "&lt;script&gt;alert(1)&lt;/script&gt;",
+        "&amp;lt;script&amp;gt;alert(1)&amp;lt;/script&amp;gt;",
+        "<img src=x onerror=alert(1)>",
+        "<a href=\"javascript:alert(1)\">click</a>",
+        "<a href=\"JaVaScRiPt:alert(1)\">click</a>",
+        "<a href=\"data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==\">x</a>",
+        "<iframe src=\"https://evil.example\"></iframe>",
+        "<svg/onload=alert(1)>",
+        "<body onload=alert(1)>",
+        "<object data=\"evil.swf\"></object>",
+        "<embed src=\"evil.swf\">",
+        "<form action=\"https://evil.example\"><input name=p></form>",
+        "<meta http-equiv=refresh content=\"0;url=https://evil.example\">",
+        "<base href=\"https://evil.example/\">",
+        "<link rel=stylesheet href=\"https://evil.example/x.css\">",
+    ];
+
+    /// The invariants that must hold for anything placed in the WebView.
+    fn assert_no_live_markup(rendered: &str, label: &str) {
+        let lower = rendered.to_ascii_lowercase();
+        // The document template itself contains <style> and <meta>, so only
+        // inspect the part of the document the sender controls.
+        let body = lower.split("<body>").nth(1).unwrap_or(&lower).to_string();
+        for forbidden in [
+            "<script",
+            "javascript:",
+            "onerror=",
+            "onload=",
+            "<iframe",
+            "<object",
+            "<embed",
+            "<meta",
+            "<base",
+            "<link",
+            "<form",
+        ] {
+            assert!(
+                !body.contains(forbidden),
+                "{}: sender controlled body contains {:?}\n{}",
+                label,
+                forbidden,
+                body
+            );
+        }
+    }
+
+    #[test]
+    fn test_hostile_bodies_never_reach_the_webview_as_markup() {
+        let renderer = HtmlRenderer::new();
+        for html in HOSTILE {
+            assert_no_live_markup(&renderer.wrap_for_webview(html), html);
+        }
+    }
+
+    #[test]
+    fn test_hostile_bodies_are_inert_in_plain_text_mode_too() {
+        // Plain text mode strips tags and then decodes entities, which turns
+        // "&lt;script&gt;" back into "<script>". That is correct as plain
+        // text and unsafe the moment it is placed in an HTML document.
+        let renderer = HtmlRenderer::plain_text_only();
+        for html in HOSTILE {
+            assert_no_live_markup(&renderer.wrap_for_webview(html), html);
+        }
+    }
+
+    #[test]
+    fn test_sanitize_output_is_safe_to_embed() {
+        let renderer = HtmlRenderer::plain_text_only();
+        let sanitized = renderer.sanitize_html("&lt;script&gt;alert(1)&lt;/script&gt;");
+        assert!(
+            !sanitized.to_ascii_lowercase().contains("<script"),
+            "sanitize_html must return something safe to embed, got: {}",
+            sanitized
+        );
+    }
+
+    // ── Accessibility survives sanitizing ───────────────────────────────
+    //
+    // Stripping hostile markup must not also strip the structure a screen
+    // reader navigates by. Security that costs the user their headings is
+    // not a good trade.
+
+    #[test]
+    fn test_heading_structure_survives_sanitizing() {
+        let renderer = HtmlRenderer::new();
+        let html = "<h1>Quarterly report</h1><h2>Revenue</h2><p>Up.</p>";
+        let safe = renderer.sanitize_html(html);
+        assert!(safe.contains("<h1"), "h1 lost: {}", safe);
+        assert!(safe.contains("<h2"), "h2 lost: {}", safe);
+    }
+
+    #[test]
+    fn test_link_text_survives_sanitizing() {
+        let renderer = HtmlRenderer::new();
+        let safe = renderer.sanitize_html("<a href=\"https://example.com\">Quarterly report</a>");
+        assert!(
+            safe.contains("Quarterly report"),
+            "link text lost: {}",
+            safe
+        );
+        assert!(safe.contains("https://example.com"), "href lost: {}", safe);
+    }
+
+    #[test]
+    fn test_list_structure_survives_sanitizing() {
+        let renderer = HtmlRenderer::new();
+        let safe = renderer.sanitize_html("<ul><li>one</li><li>two</li></ul>");
+        assert!(safe.contains("<ul"), "list lost: {}", safe);
+        assert!(safe.contains("<li"), "list items lost: {}", safe);
+    }
+
+    #[test]
+    fn test_table_structure_survives_sanitizing() {
+        let renderer = HtmlRenderer::new();
+        let safe =
+            renderer.sanitize_html("<table><tr><th>Month</th></tr><tr><td>May</td></tr></table>");
+        assert!(safe.contains("<table"), "table lost: {}", safe);
+        assert!(safe.contains("<th"), "header cell lost: {}", safe);
+    }
+
+    #[test]
+    fn test_image_alt_text_survives_sanitizing() {
+        let renderer = HtmlRenderer::new();
+        let safe =
+            renderer.sanitize_html("<img src=\"https://example.com/x.png\" alt=\"Revenue chart\">");
+        assert!(safe.contains("Revenue chart"), "alt text lost: {}", safe);
+    }
+
+    // ── Fuzzing ─────────────────────────────────────────────────────────
+
+    /// Deterministic generator, so any failure is reproducible from the seed
+    /// printed in the assertion message.
+    struct Lcg(u64);
+
+    impl Lcg {
+        fn next(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            self.0
+        }
+
+        fn pick<'a, T>(&mut self, items: &'a [T]) -> &'a T {
+            &items[(self.next() % items.len() as u64) as usize]
+        }
+    }
+
+    /// Splice hostile snippets together with the characters that break naive
+    /// parsers: unbalanced brackets, quotes, nulls, and direction overrides.
+    fn fuzz_body(seed: u64) -> String {
+        let mut rng = Lcg(seed);
+        let noise = [
+            "<",
+            ">",
+            "\"",
+            "'",
+            "&",
+            "\0",
+            "\n",
+            "\t",
+            "/",
+            "=",
+            " ",
+            "\\",
+            "&#0;",
+            "&#x3c;",
+            "&NewLine;",
+            "\u{feff}",
+            "\u{202e}",
+            "%3cscript%3e",
+        ];
+        let mut body = String::new();
+        for _ in 0..(rng.next() % 12 + 1) {
+            if rng.next().is_multiple_of(2) {
+                body.push_str(rng.pick(HOSTILE));
+            }
+            for _ in 0..(rng.next() % 6) {
+                body.push_str(rng.pick(&noise));
+            }
+        }
+        body
+    }
+
+    #[test]
+    fn test_fuzz_webview_body_stays_inert() {
+        for seed in 0..4000u64 {
+            let body = fuzz_body(seed);
+            let rendered = HtmlRenderer::new().wrap_for_webview(&body);
+            assert_no_live_markup(&rendered, &format!("seed {}", seed));
+        }
+    }
+
+    #[test]
+    fn test_fuzz_plain_text_mode_stays_inert() {
+        for seed in 0..4000u64 {
+            let body = fuzz_body(seed);
+            let rendered = HtmlRenderer::plain_text_only().wrap_for_webview(&body);
+            assert_no_live_markup(&rendered, &format!("seed {}", seed));
+        }
+    }
+
+    #[test]
+    fn test_fuzz_renderer_never_panics() {
+        // Every entry point a message body can reach.
+        for seed in 0..4000u64 {
+            let body = fuzz_body(seed);
+            let renderer = HtmlRenderer::new();
+            let _ = renderer.sanitize_html(&body);
+            let _ = renderer.html_to_plain_text(&body);
+            let _ = renderer.render_for_accessibility(&body);
+            let _ = renderer.render_for_egui(&body);
+            let _ = renderer.extract_image_alt_texts(&body);
+            let _ = renderer.extract_link_texts(&body);
+            let _ = renderer.wrap_for_webview(&body);
+        }
+    }
+
+    #[test]
+    fn test_fuzz_extracted_links_are_always_safe_schemes() {
+        for seed in 0..4000u64 {
+            let body = fuzz_body(seed);
+            for link in HtmlRenderer::new().extract_link_texts(&body) {
+                let scheme = link.url.to_ascii_lowercase();
+                assert!(
+                    !scheme.starts_with("javascript:")
+                        && !scheme.starts_with("data:")
+                        && !scheme.starts_with("vbscript:"),
+                    "seed {} produced a navigable {:?}",
+                    seed,
+                    link.url
+                );
+            }
+        }
     }
 }
