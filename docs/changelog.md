@@ -58,15 +58,15 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 ## [0.1.0-alpha.9] - 2026-03-05
 
 ### Added
-- **Edge WebView2 email preview** — replaced plain-text RichTextCtrl with a full HTML renderer powered by Edge WebView2 (`wxdragon` WebView widget). Emails now display formatting, colors, images, links, and quoted replies correctly.
-- **Compose send preview uses WebView** — the "Review before send" dialog now renders the message body with full HTML formatting instead of plain text.
-- **Spacebar read-aloud** — pressing Space on the message list reads the current email aloud through the screen reader (strips HTML to plain text via `HtmlRenderer::html_to_plain_text`).
-- **Custom WebView context menu** — right-click on the email preview shows a native popup menu with Select All, Copy Link (on links), and Save Link As (on links). Implemented via JS-to-Rust bridge (`add_script_message_handler`).
-- **Dark mode CSS** — email preview automatically adapts to the system color scheme via `prefers-color-scheme: dark`.
+- **Edge WebView2 email preview**: replaced plain-text RichTextCtrl with a full HTML renderer powered by Edge WebView2 (`wxdragon` WebView widget). Emails now display formatting, colors, images, links, and quoted replies correctly.
+- **Compose send preview uses WebView**: the "Review before send" dialog now renders the message body with full HTML formatting instead of plain text.
+- **Spacebar read-aloud**: pressing Space on the message list reads the current email aloud through the screen reader (strips HTML to plain text via `HtmlRenderer::html_to_plain_text`).
+- **Custom WebView context menu**: right-click on the email preview shows a native popup menu with Select All, Copy Link (on links), and Save Link As (on links). Implemented via JS-to-Rust bridge (`add_script_message_handler`).
+- **Dark mode CSS**: email preview automatically adapts to the system color scheme via `prefers-color-scheme: dark`.
 
 ### Changed
 - Email preview pane switched from `RichTextCtrl` to `WebView` with Edge backend
-- `HtmlRenderer` gains `wrap_for_webview()` — wraps sanitized HTML in a styled document template with responsive typography (Segoe UI, 14px, 1.6 line-height)
+- `HtmlRenderer` gains `wrap_for_webview()`, which wraps sanitized HTML in a styled document template with responsive typography (Segoe UI, 14px, 1.6 line-height)
 
 ### Security
 - All navigation inside the WebView is blocked; clicked links open in the default browser via `open::that()`

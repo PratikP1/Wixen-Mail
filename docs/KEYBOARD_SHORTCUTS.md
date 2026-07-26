@@ -233,7 +233,7 @@ and focus moves to that module's content area.
 
 | Field | Shortcut | Notes |
 |-------|----------|-------|
-| Country | `Alt+C` | Dropdown — country selection drives region/code labels |
+| Country | `Alt+C` | Dropdown; country selection drives region/code labels |
 | Type | `Alt+T` | Home/Work/Other dropdown |
 | Street | `Alt+S` | |
 | City | `Alt+I` | (C conflicts with Country) |

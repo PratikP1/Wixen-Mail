@@ -3,12 +3,16 @@
 Wixen Mail is an accessibility-first email client built with Rust and wxdragon (wxWidgets).
 It focuses on complete keyboard navigation, screen-reader support, and practical multi-account workflows with a native Windows look and feel.
 
+## What it aims to be
+
+See [status](#status) before reading this as a list of finished features.
+
 ## Highlights
 
 - Native wxWidgets UI with toolbar, three-pane layout, and modern styling
-- Full keyboard navigation with 25+ shortcuts and screen reader support (NVDA, JAWS, Narrator)
+- Keyboard navigation throughout, and an accessibility layer built for NVDA, JAWS and Narrator (not yet verified against a live screen reader)
 - Multiple account management with provider auto-detection and OAuth 2.0
-- IMAP/SMTP support with IDLE push notifications, plus POP3
+- SMTP sending over TLS, with an outbox that retries rather than losing a failed send
 - Composition with formatting toolbar, attachments, signatures, and preview-before-send
 - Contact management with vCard import/export, groups, and autocomplete
 - Advanced search (FTS), message rules engine, and tag-based filtering
@@ -66,7 +70,15 @@ cargo clippy -- -D warnings
 All quality gates pass clean (`cargo fmt`, `cargo clippy`, `cargo test`).
 150 unit tests and 25 integration tests passing with 0 warnings.
 
-The project is at release-candidate status. All v1.0 feature gaps have been closed including OAuth token exchange, offline mode wiring, spell check, contact groups, preview-before-send, and comprehensive test coverage. See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for full details.
+The project is pre-beta, at `0.1.0-alpha.10`. **It can send mail and it cannot
+receive mail:** the IMAP and POP3 modules perform no network I/O yet, and nothing
+in the window is wired to them, because showing invented folders as your own mail
+would be worse than showing none.
+
+What does work: sending, local storage for contacts, calendars, tasks, notes and
+reminders with their panels, and the accessibility layer. See
+[docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md), which is written
+to be believed rather than to sell the project.
 
 ## Contributing
 
