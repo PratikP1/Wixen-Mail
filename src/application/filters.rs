@@ -4,7 +4,7 @@
 
 use crate::common::Result;
 use crate::data::message_cache::{CachedMessage, MessageFilterRule};
-use regex::Regex;
+use regex::RegexBuilder;
 
 /// Filter action types
 #[derive(Debug, Clone)]
@@ -121,7 +121,13 @@ impl FilterEngine {
             "is_not_empty" => !lhs.trim().is_empty(),
             "is_true" => lhs == "true",
             "is_false" => lhs == "false",
-            "regex" => match Regex::new(&rule.pattern) {
+            // Built from the rule's own pattern rather than the pre-lowercased
+            // `rhs`, because lowercasing a pattern would corrupt escapes like
+            // \S and \W. Case folding belongs to the regex engine.
+            "regex" => match RegexBuilder::new(&rule.pattern)
+                .case_insensitive(!rule.case_sensitive)
+                .build()
+            {
                 Ok(regex) => regex.is_match(target_text),
                 Err(e) => {
                     tracing::warn!(
@@ -259,5 +265,106 @@ mod tests {
         let actions = engine.evaluate_message(&message);
         assert_eq!(actions.len(), 1);
         assert!(matches!(actions[0], FilterAction::Star));
+    }
+
+    // ── Rule matching ───────────────────────────────────────────────────
+
+    fn rule(match_type: &str, pattern: &str, case_sensitive: bool) -> FilterRule {
+        FilterRule {
+            id: "r1".into(),
+            name: "test rule".into(),
+            field: "subject".into(),
+            match_type: match_type.into(),
+            pattern: pattern.into(),
+            case_sensitive,
+            action: FilterAction::Star,
+            enabled: true,
+        }
+    }
+
+    fn message_with_subject(subject: &str) -> CachedMessage {
+        CachedMessage {
+            id: 1,
+            uid: 1,
+            folder_id: 1,
+            message_id: String::new(),
+            subject: subject.into(),
+            from_addr: "sender@example.com".into(),
+            to_addr: "me@example.com".into(),
+            cc: None,
+            date: String::new(),
+            body_plain: None,
+            body_html: None,
+            read: false,
+            starred: false,
+            deleted: false,
+        }
+    }
+
+    #[test]
+    fn test_case_insensitive_regex_actually_ignores_case() {
+        // A rule marked case-insensitive has to behave that way for every
+        // match type, or the checkbox is lying to the user.
+        let matched = FilterEngine::matches(
+            &rule("regex", "URGENT", false),
+            &message_with_subject("this is urgent"),
+        );
+        assert!(matched, "case-insensitive regex rule did not ignore case");
+    }
+
+    #[test]
+    fn test_case_sensitive_regex_respects_case() {
+        assert!(!FilterEngine::matches(
+            &rule("regex", "URGENT", true),
+            &message_with_subject("this is urgent")
+        ));
+        assert!(FilterEngine::matches(
+            &rule("regex", "URGENT", true),
+            &message_with_subject("this is URGENT")
+        ));
+    }
+
+    #[test]
+    fn test_case_insensitive_contains_ignores_case() {
+        assert!(FilterEngine::matches(
+            &rule("contains", "URGENT", false),
+            &message_with_subject("this is urgent")
+        ));
+    }
+
+    #[test]
+    fn test_invalid_regex_does_not_match_and_does_not_panic() {
+        assert!(!FilterEngine::matches(
+            &rule("regex", "([unclosed", false),
+            &message_with_subject("anything")
+        ));
+    }
+
+    #[test]
+    fn test_unknown_match_type_never_matches() {
+        assert!(!FilterEngine::matches(
+            &rule("wishful_thinking", "x", false),
+            &message_with_subject("x")
+        ));
+    }
+
+    #[test]
+    fn test_regex_matching_a_hostile_subject_terminates() {
+        // The regex crate is linear time by construction, so this is a
+        // regression guard rather than a fix: if anyone swaps in a
+        // backtracking engine, this is where it shows up.
+        let subject = "a".repeat(5_000);
+        assert!(FilterEngine::matches(
+            &rule("regex", "(a+)+$", false),
+            &message_with_subject(&subject)
+        ));
+    }
+
+    #[test]
+    fn test_anchored_regex_sees_the_whole_field() {
+        assert!(FilterEngine::matches(
+            &rule("regex", "^Invoice #\\d+$", true),
+            &message_with_subject("Invoice #4021")
+        ));
     }
 }
