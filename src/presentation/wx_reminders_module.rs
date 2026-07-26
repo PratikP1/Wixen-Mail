@@ -1,5 +1,6 @@
 //! Reminders module panel — view and manage reminders.
 
+use crate::presentation::accessibility::names::set_accessible_name;
 use wxdragon::prelude::*;
 
 /// Handles to interactive elements in the reminders content panel.
@@ -29,7 +30,7 @@ pub fn build_reminders_panel(parent: &Panel) -> RemindersPanelHandles {
     let reminder_list = ListCtrl::builder(&panel)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
-    reminder_list.set_name("Reminders");
+    set_accessible_name(&reminder_list, "Reminders");
     reminder_list.insert_column(0, "Done", ListColumnFormat::Centre, 50);
     reminder_list.insert_column(1, "Title", ListColumnFormat::Left, 300);
     reminder_list.insert_column(2, "Due", ListColumnFormat::Left, 180);
@@ -52,7 +53,7 @@ pub fn build_reminders_sidebar(parent: &Panel) -> RemindersSidebarHandles {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     let tree = TreeCtrl::builder(&panel).build();
-    tree.set_name("Reminder groups");
+    set_accessible_name(&tree, "Reminder groups");
     if let Some(root) = tree.add_root("Reminders", None, None) {
         tree.append_item(&root, "Upcoming", None, None);
         tree.append_item(&root, "Today", None, None);

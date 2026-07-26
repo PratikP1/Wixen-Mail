@@ -1,5 +1,6 @@
 //! Notes module panel — view and manage notes with folder organization.
 
+use crate::presentation::accessibility::names::set_accessible_name;
 use wxdragon::prelude::*;
 
 /// Handles to interactive elements in the notes content panel.
@@ -32,7 +33,7 @@ pub fn build_notes_panel(parent: &Panel) -> NotesPanelHandles {
     let note_list = ListCtrl::builder(&list_panel)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
-    note_list.set_name("Notes");
+    set_accessible_name(&note_list, "Notes");
     note_list.insert_column(0, "Title", ListColumnFormat::Left, 200);
     note_list.insert_column(1, "Last Modified", ListColumnFormat::Left, 150);
 
@@ -46,12 +47,12 @@ pub fn build_notes_panel(parent: &Panel) -> NotesPanelHandles {
 
     let title_input = TextCtrl::builder(&editor_panel).build();
 
-    title_input.set_name("Note title");
+    set_accessible_name(&title_input, "Note title");
     let body_input = TextCtrl::builder(&editor_panel)
         .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
         .build();
 
-    body_input.set_name("Note body");
+    set_accessible_name(&body_input, "Note body");
     editor_sizer.add(&title_input, 0, SizerFlag::Expand | SizerFlag::All, 4);
     editor_sizer.add(&body_input, 1, SizerFlag::Expand | SizerFlag::All, 4);
     editor_panel.set_sizer(editor_sizer, true);
@@ -75,7 +76,7 @@ pub fn build_notes_sidebar(parent: &Panel) -> NotesSidebarHandles {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     let tree = TreeCtrl::builder(&panel).build();
-    tree.set_name("Note folders");
+    set_accessible_name(&tree, "Note folders");
     if let Some(root) = tree.add_root("Note Folders", None, None) {
         tree.append_item(&root, "All Notes", None, None);
         tree.expand(&root);

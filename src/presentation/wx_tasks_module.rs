@@ -1,5 +1,6 @@
 //! Tasks module panel — view and manage tasks and task lists.
 
+use crate::presentation::accessibility::names::set_accessible_name;
 use wxdragon::prelude::*;
 
 /// Handles to interactive elements in the tasks content panel.
@@ -30,7 +31,7 @@ pub fn build_tasks_panel(parent: &Panel) -> TasksPanelHandles {
     let task_list = ListCtrl::builder(&panel)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
-    task_list.set_name("Tasks");
+    set_accessible_name(&task_list, "Tasks");
     task_list.insert_column(0, "Done", ListColumnFormat::Centre, 50);
     task_list.insert_column(1, "Title", ListColumnFormat::Left, 300);
     task_list.insert_column(2, "Due Date", ListColumnFormat::Left, 120);
@@ -53,7 +54,7 @@ pub fn build_tasks_sidebar(parent: &Panel) -> TasksSidebarHandles {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     let tree = TreeCtrl::builder(&panel).build();
-    tree.set_name("Task lists");
+    set_accessible_name(&tree, "Task lists");
     if let Some(root) = tree.add_root("Task Lists", None, None) {
         tree.append_item(&root, "My Tasks", None, None);
         tree.expand(&root);

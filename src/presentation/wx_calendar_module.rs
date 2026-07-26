@@ -4,6 +4,7 @@
 //! It provides a calendar container tree in the sidebar and an event list
 //! in the content area.
 
+use crate::presentation::accessibility::names::set_accessible_name;
 use wxdragon::prelude::*;
 
 /// Handles to interactive elements in the calendar content panel.
@@ -49,7 +50,7 @@ pub fn build_calendar_panel(parent: &Panel) -> CalendarPanelHandles {
     let event_list = ListCtrl::builder(&panel)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
-    event_list.set_name("Calendar events");
+    set_accessible_name(&event_list, "Calendar events");
     event_list.insert_column(0, "Time", ListColumnFormat::Left, 120);
     event_list.insert_column(1, "Summary", ListColumnFormat::Left, 300);
     event_list.insert_column(2, "Calendar", ListColumnFormat::Left, 120);
@@ -81,7 +82,7 @@ pub fn build_calendar_sidebar(parent: &Panel) -> CalendarSidebarHandles {
     let label = StaticText::builder(&panel).with_label("Calendars").build();
 
     let tree = TreeCtrl::builder(&panel).build();
-    tree.set_name("Calendars");
+    set_accessible_name(&tree, "Calendars");
     if let Some(root) = tree.add_root("All Calendars", None, None) {
         tree.append_item(&root, "My Calendar", None, None);
         tree.expand(&root);

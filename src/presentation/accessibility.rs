@@ -7,6 +7,7 @@ pub mod announcements;
 pub mod automation;
 pub mod focus;
 pub mod keyboard;
+pub mod names;
 pub mod screen_reader;
 pub mod shortcuts;
 
