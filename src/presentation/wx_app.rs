@@ -537,13 +537,15 @@ impl WxMailApp {
                             }
 
                             // Store link href for the menu handler to read
-                            if let Ok(mut s) = state.lock() {
+                            {
+                                let mut s = lock_state(&state);
                                 s.context_link_href = href;
                             }
                             // popup_menu blocks; menu events bubble to frame.on_menu
                             preview.popup_menu(&mut menu, None);
                             // Clean up after menu is dismissed
-                            if let Ok(mut s) = state.lock() {
+                            {
+                                let mut s = lock_state(&state);
                                 s.context_link_href = None;
                             }
                         }
@@ -986,7 +988,8 @@ impl WxMailApp {
                             if name == "Mail Folders" {
                                 return;
                             }
-                            if let Ok(mut s) = state.lock() {
+                            {
+                                let mut s = lock_state(&state);
                                 s.selected_folder = Some(name.clone());
                             }
                             // Update title bar with folder context
@@ -1009,7 +1012,8 @@ impl WxMailApp {
                 let runtime = runtime.clone();
                 move |event| {
                     let idx = event.get_item_index() as usize;
-                    if let Ok(mut s) = state.lock() {
+                    {
+                        let mut s = lock_state(&state);
                         s.selected_message_index = Some(idx);
                     }
                     let tx = ui_tx.clone();
@@ -1031,7 +1035,8 @@ impl WxMailApp {
                 move |event: ListCtrlEventData| {
                     // Spacebar (key code 32) — read current message aloud via screen reader
                     if event.get_key_code() == Some(32) {
-                        if let Ok(s) = state.lock() {
+                        {
+                            let s = lock_state(&state);
                             if !s.message_preview.is_empty() {
                                 let renderer = HtmlRenderer::new();
                                 let plain = renderer.html_to_plain_text(&s.message_preview);
@@ -1122,14 +1127,16 @@ impl WxMailApp {
                         // Context menu actions from WebView popup
                         _ if id == ID_CTX_SELECT_ALL => { preview.select_all(); }
                         _ if id == ID_CTX_COPY_LINK => {
-                            if let Ok(s) = state.lock() {
+                            {
+                        let s = lock_state(&state);
                                 if let Some(ref href) = s.context_link_href {
                                     Clipboard::get().set_text(href);
                                 }
                             }
                         }
                         _ if id == ID_CTX_SAVE_LINK => {
-                            if let Ok(s) = state.lock() {
+                            {
+                        let s = lock_state(&state);
                                 if let Some(ref href) = s.context_link_href {
                                     if let Some(safe) = HtmlRenderer::safe_external_url(href) {
                                         let _ = open::that(&safe);
@@ -1330,7 +1337,8 @@ impl WxMailApp {
             timer.start(POLL_MS, false);
 
             // ── Initial status ──────────────────────────────────────────
-            if let Ok(s) = state.lock() {
+            {
+                let s = lock_state(&state);
                 if let Some(a) = s.accounts.first() {
                     frame.set_status_text(&format!("Account: {}", a.email), 1);
                 }
@@ -1869,7 +1877,8 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
     use crate::presentation::accessibility::announcements::Priority;
     match update {
         UIUpdate::FoldersLoaded(folders) => {
-            if let Ok(mut s) = state.lock() {
+            {
+                let mut s = lock_state(state);
                 s.folders = folders.clone();
             }
             folder_tree.delete_all_items();
@@ -1884,7 +1893,8 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let _ = a11y.announce_topic(&msg, Priority::Low, "folders");
         }
         UIUpdate::MessagesLoaded(messages) => {
-            if let Ok(mut s) = state.lock() {
+            {
+                let mut s = lock_state(state);
                 s.messages = messages.clone();
             }
             msg_list.delete_all_items();
@@ -1901,7 +1911,8 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let _ = a11y.announce_topic(&msg, Priority::Normal, "messages");
         }
         UIUpdate::MessageBodyLoaded(body) => {
-            if let Ok(mut s) = state.lock() {
+            {
+                let mut s = lock_state(state);
                 s.message_preview = body.clone();
             }
             let renderer = HtmlRenderer::new();
@@ -1909,13 +1920,15 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             preview.set_page(&html, "about:blank");
         }
         UIUpdate::ConnectionStatusChanged(status) => {
-            if let Ok(mut s) = state.lock() {
+            {
+                let mut s = lock_state(state);
                 s.connection_status = status.clone();
             }
             frame.set_status_text(&status.to_string(), 1);
         }
         UIUpdate::ErrorOccurred(error) => {
-            if let Ok(mut s) = state.lock() {
+            {
+                let mut s = lock_state(state);
                 s.error_message = Some(error.clone());
             }
             let msg = format!("Error: {}", error);
@@ -1923,7 +1936,8 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let _ = a11y.announce(&msg, Priority::High);
         }
         UIUpdate::StatusUpdated(status) => {
-            if let Ok(mut s) = state.lock() {
+            {
+                let mut s = lock_state(state);
                 s.status_message = status.clone();
             }
             frame.set_status_text(status, 0);
@@ -1946,14 +1960,16 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
         }
         UIUpdate::OfflineModeChanged(enabled) => {
-            if let Ok(mut s) = state.lock() {
+            {
+                let mut s = lock_state(state);
                 s.offline_mode = *enabled;
             }
             let msg = if *enabled { "Offline mode" } else { "Online" };
             frame.set_status_text(msg, 1);
         }
         UIUpdate::OutboxQueueCount(count) => {
-            if let Ok(mut s) = state.lock() {
+            {
+                let mut s = lock_state(state);
                 s.outbox_count = *count;
             }
             if *count > 0 {
@@ -2068,7 +2084,8 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let _ = a11y.announce_topic(&msg, Priority::Low, "calendars");
         }
         UIUpdate::RemindersLoaded(reminders) => {
-            if let Ok(mut s) = state.lock() {
+            {
+                let mut s = lock_state(state);
                 s.reminders = reminders.clone();
             }
             pim.reminder_list.delete_all_items();
@@ -2144,7 +2161,8 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
         }
         UIUpdate::NotesLoaded(notes) => {
-            if let Ok(mut s) = state.lock() {
+            {
+                let mut s = lock_state(state);
                 s.notes = notes.clone();
             }
             pim.note_list.delete_all_items();
@@ -2163,7 +2181,8 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let _ = a11y.announce_topic(&msg, Priority::Low, "notes");
         }
         UIUpdate::ContactsLoaded(contacts) => {
-            if let Ok(mut s) = state.lock() {
+            {
+                let mut s = lock_state(state);
                 s.contacts = contacts.clone();
             }
             pim.contact_list.delete_all_items();
