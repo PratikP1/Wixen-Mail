@@ -296,16 +296,34 @@ impl OAuthService {
     }
 
     pub fn is_expired(expires_at: Option<&str>) -> bool {
+        Self::expires_within(expires_at, chrono::TimeDelta::zero())
+    }
+
+    /// Whether a token expires inside `margin`, so it should be refreshed now.
+    ///
+    /// Fails closed. A timestamp that cannot be read is treated as expired,
+    /// because the alternative is a dead token that looks valid forever: the
+    /// client never refreshes, every call comes back 401, and there is nothing
+    /// to tell the user. Refreshing a token that did not need it costs one
+    /// request.
+    ///
+    /// A missing expiry is not the same thing. Some providers do not send one,
+    /// and refreshing on every single call because of that would be its own
+    /// failure, so `None` is reported as not expiring.
+    pub fn expires_within(expires_at: Option<&str>, margin: chrono::TimeDelta) -> bool {
         let Some(ts) = expires_at else {
             return false;
         };
         chrono::DateTime::parse_from_rfc3339(ts)
-            .map(|dt| dt < chrono::Utc::now())
-            .unwrap_or(false)
+            .map(|expiry| expiry < chrono::Utc::now() + margin)
+            .unwrap_or(true)
     }
 }
 
 // ── Local Redirect Server ───────────────────────────────────────────────────
+
+/// How long before expiry a token is refreshed, in minutes.
+const REFRESH_MARGIN_MINUTES: i64 = 5;
 
 /// The local redirect listener port.
 const REDIRECT_PORT: u16 = 8087;
@@ -519,12 +537,10 @@ impl AuthManager {
         let tokens = self.load_tokens()?;
 
         // Check expiry (refresh proactively if within 5 minutes of expiration)
-        let needs_refresh = match &tokens.expires_at {
-            Some(ts) => chrono::DateTime::parse_from_rfc3339(ts)
-                .map(|dt| dt < chrono::Utc::now() + chrono::TimeDelta::minutes(5))
-                .unwrap_or(true),
-            None => false,
-        };
+        let needs_refresh = OAuthService::expires_within(
+            tokens.expires_at.as_deref(),
+            chrono::TimeDelta::minutes(REFRESH_MARGIN_MINUTES),
+        );
 
         if needs_refresh {
             let refresh_token = tokens.refresh_token.as_deref().unwrap_or("");
@@ -730,6 +746,130 @@ mod tests {
         let uri = local_redirect_uri();
         assert!(uri.starts_with("http://localhost:"));
         assert!(uri.contains("/oauth/callback"));
+    }
+
+    // ── Token expiry ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_unparseable_expiry_counts_as_expired() {
+        // Failing open here means a corrupted timestamp makes a dead token look
+        // valid forever: the client never refreshes and every call 401s with
+        // nothing to tell the user. If the expiry cannot be read, refresh.
+        for ts in [
+            "not-a-timestamp",
+            "",
+            "2026-13-45T99:99:99Z",
+            "1753500000",
+            "\u{4f60}\u{597d}",
+            "2026-07-26",
+        ] {
+            assert!(
+                OAuthService::is_expired(Some(ts)),
+                "{:?} should be treated as expired",
+                ts
+            );
+        }
+    }
+
+    #[test]
+    fn test_absent_expiry_is_not_treated_as_expired() {
+        // No recorded expiry is different from an unreadable one. Refreshing on
+        // every call because a provider does not send expires_in would be its
+        // own failure.
+        assert!(!OAuthService::is_expired(None));
+    }
+
+    #[test]
+    fn test_expiry_in_the_past_and_future() {
+        let future = (chrono::Utc::now() + chrono::TimeDelta::hours(1)).to_rfc3339();
+        let past = (chrono::Utc::now() - chrono::TimeDelta::hours(1)).to_rfc3339();
+        assert!(!OAuthService::is_expired(Some(&future)));
+        assert!(OAuthService::is_expired(Some(&past)));
+    }
+
+    #[test]
+    fn test_expires_within_refreshes_proactively() {
+        let soon = (chrono::Utc::now() + chrono::TimeDelta::minutes(2)).to_rfc3339();
+        let later = (chrono::Utc::now() + chrono::TimeDelta::hours(2)).to_rfc3339();
+        let margin = chrono::TimeDelta::minutes(5);
+        assert!(
+            OAuthService::expires_within(Some(&soon), margin),
+            "a token expiring inside the margin should refresh early"
+        );
+        assert!(!OAuthService::expires_within(Some(&later), margin));
+    }
+
+    #[test]
+    fn test_expires_within_also_fails_closed() {
+        assert!(OAuthService::expires_within(
+            Some("garbage"),
+            chrono::TimeDelta::minutes(5)
+        ));
+    }
+
+    /// Deterministic generator so a failure is reproducible from its seed.
+    struct ExpiryLcg(u64);
+
+    impl ExpiryLcg {
+        fn next(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            self.0
+        }
+    }
+
+    #[test]
+    fn test_fuzz_expiry_parsing_never_panics() {
+        let pieces = [
+            "2026",
+            "-",
+            "07",
+            "T",
+            ":",
+            "Z",
+            "+",
+            "99",
+            "\u{4f60}",
+            "\0",
+            " ",
+            "e",
+            "9999999999999999999999",
+            "-0000",
+            ".999999999",
+            "\u{feff}",
+        ];
+        let mut rng = ExpiryLcg(1);
+        for _ in 0..5000 {
+            let mut ts = String::new();
+            for _ in 0..(rng.next() % 12) {
+                ts.push_str(pieces[(rng.next() % pieces.len() as u64) as usize]);
+            }
+            // Must never panic, and must never call a garbage value valid.
+            let expired = OAuthService::is_expired(Some(&ts));
+            if chrono::DateTime::parse_from_rfc3339(&ts).is_err() {
+                assert!(expired, "unreadable {:?} was treated as valid", ts);
+            }
+        }
+    }
+
+    #[test]
+    fn test_fuzz_authorization_url_never_panics() {
+        let pieces = [
+            "gmail", "outlook", "", "\0", "\u{4f60}", "://", "?", "&", "#", " ",
+        ];
+        let mut rng = ExpiryLcg(7);
+        for _ in 0..2000 {
+            let pick = |rng: &mut ExpiryLcg| {
+                pieces[(rng.next() % pieces.len() as u64) as usize].to_string()
+            };
+            let provider = pick(&mut rng);
+            let client = pick(&mut rng);
+            let redirect = pick(&mut rng);
+            let state = pick(&mut rng);
+            let _ = OAuthService::build_authorization_url(&provider, &client, &redirect, &state);
+        }
     }
 
     #[test]
