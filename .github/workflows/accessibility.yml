@@ -76,7 +76,9 @@ jobs:
       shell: pwsh
       run: |
         $ErrorActionPreference = 'Stop'
-        New-Item -ItemType Directory -Force a11y-results | Out-Null
+        # Axe.Windows rejects a relative --outputdirectory.
+        $outDir = Join-Path (Get-Location) 'a11y-results'
+        New-Item -ItemType Directory -Force $outDir | Out-Null
 
         # Point the app at a throwaway profile so the scan never touches real
         # user data and always starts from the same first-run state.
@@ -96,7 +98,7 @@ jobs:
 
           & tools/axe-windows/AxeWindowsCLI.exe `
             --processid $app.Id `
-            --outputdirectory a11y-results `
+            --outputdirectory $outDir `
             --verbosity verbose
         }
         finally {
