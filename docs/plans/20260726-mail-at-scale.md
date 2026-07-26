@@ -83,9 +83,26 @@ all of it is the "structure present, experience poor" failure in another costume
 
 ## Fetching
 
-**First sync.** `UID FETCH 1:* (UID FLAGS INTERNALDATE RFC822.SIZE ENVELOPE
-BODYSTRUCTURE)` in chunks of 500 to 1000, newest first. Newest first is the whole
-point: the inbox becomes usable after the first chunk instead of after the last.
+**First sync, phase one.** `UID FETCH 1:* (UID FLAGS INTERNALDATE RFC822.SIZE
+ENVELOPE BODYSTRUCTURE)` in chunks of 500 to 1000, newest first. Newest first is
+the whole point: the inbox becomes usable after the first chunk instead of after
+the last.
+
+**First sync, phase two: snippets.** The snippet column needs the first couple of
+kilobytes of body text, which the envelope does not carry. It can be requested in
+the same command as `BODY.PEEK[1]<0.2048>`, but two kilobytes across two hundred
+thousand messages is four hundred megabytes before the list is usable, so it does
+not belong in phase one.
+
+Snippets are backfilled in the background, newest first, once envelopes have
+landed. Rows show an empty snippet until theirs arrives and then update in place.
+Empty means "not fetched yet" rather than "no body", and the column must not
+imply otherwise.
+
+Storing the whole envelope matters more than showing it. A column backed by data
+already captured can be switched on later for nothing; a column needing data we
+did not store costs a full resync. So capture correspondent, to, cc, size, every
+flag, and attachment structure whether or not they are visible.
 
 **Incremental.** Keep `UIDVALIDITY`, the highest seen UID, and `HIGHESTMODSEQ`
 per folder. New mail is `UID FETCH <highest+1>:*`. Flag changes come from
@@ -161,8 +178,9 @@ outright, and column reordering is the classic place applications ignore it.
 
 ### Sorting
 
-Header clicks sort, for people using a mouse. The keyboard path is the **View,
-Sort By** submenu, with one radio item per column and two more for direction.
+Every column sorts both ways. Header clicks sort and toggle direction for people
+using a mouse. The keyboard path is the **View, Sort By** submenu, with one radio
+item per column and two more for ascending and descending.
 Radio items matter: a screen reader announces which one is selected, so the
 current sort is discoverable rather than remembered.
 
@@ -172,6 +190,57 @@ keystrokes, no chord, no contortion.
 After any change the application announces the result in full, for example
 "Sorted by date, newest first". The sort indicator is also set on the header for
 sighted users.
+
+### Which columns exist
+
+Everything the envelope provides is stored. What is *shown* is a much smaller
+set, because in virtual mode a row's accessible name is assembled from its
+visible columns. Six visible columns means a screen reader reads six fields per
+message while arrowing through an inbox, which is the difference between skimming
+and wading. **Column visibility is the verbosity dial**, not a cosmetic
+preference, and that is why it gets a dialog of its own.
+
+For the same reason the flags are separate narrow columns rather than one merged
+"Status". A single column reading "unread, flagged, attachment" costs all three on
+every row. Separate ones let someone keep unread and drop the rest.
+
+Default visible set, sorted by received, newest first:
+
+| Column | Why it earns a place |
+|--------|----------------------|
+| Unread | The one piece of state that changes what you do next |
+| Attachment | Changes whether the message can be dealt with right now |
+| Subject | |
+| Correspondent | From in most folders, To in Sent and Drafts |
+| Received | Server arrival time |
+| Snippet | Often removes the need to open the message at all |
+
+Available and off by default: sent date, to, cc, size, flagged, answered,
+forwarded, draft, tags, age, folder, account, thread.
+
+**Correspondent rather than From.** In Sent and Drafts a From column is your own
+address on every row, which is noise when it is read aloud a thousand times.
+
+**Received rather than sent date.** The sent date is set by the sender and is
+routinely wrong. Sorting by it puts forged-date spam permanently at the top.
+
+### Per folder defaults
+
+Layout is stored per account and per folder kind, because the useful set genuinely
+differs:
+
+| Folder kind | Default columns |
+|-------------|-----------------|
+| Inbox and generic | Unread, attachment, subject, correspondent, received, snippet |
+| Sent | Attachment, subject, correspondent, sent date, snippet |
+| Drafts | Attachment, subject, correspondent, saved date, snippet |
+
+Unread is dropped from Sent and Drafts: it carries no information there, and a
+column identical on every row is pure verbosity. The date column is whichever date
+means something for that folder.
+
+A user's own changes override the default for that account and folder kind.
+Resetting returns to it.
 
 ### Order and visibility
 
