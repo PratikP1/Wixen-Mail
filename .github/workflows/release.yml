@@ -1,20 +1,20 @@
 name: Release
 
+# Releases are cut deliberately, never as a side effect of pushing.
+# A push to main used to trigger this workflow, which meant any merge
+# bumped the version and published a tag with nobody deciding to.
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       release_level:
-        description: "Prerelease level for cargo release"
-        required: false
-        default: beta
+        description: "How to bump the version. Use 'release' to drop the prerelease suffix and cut a final version."
+        required: true
         type: choice
         options:
           - alpha
           - beta
           - rc
+          - release
 
 env:
   CARGO_TERM_COLOR: always
@@ -30,7 +30,6 @@ jobs:
   quality-gate:
     name: Release Quality Gate
     runs-on: windows-latest
-    if: github.actor != 'github-actions[bot]'
 
     steps:
       - name: Checkout code
@@ -53,7 +52,6 @@ jobs:
   build-release-assets:
     name: Build setup executables
     needs: quality-gate
-    if: github.actor != 'github-actions[bot]'
     runs-on: windows-latest
 
     steps:
@@ -77,7 +75,7 @@ jobs:
 
       - name: Create release version and tag
         run: >
-          cargo release ${{ github.event.inputs.release_level || 'beta' }} --execute --no-confirm --no-publish
+          cargo release ${{ inputs.release_level }} --execute --no-confirm --no-publish
           --allow-branch main --push-remote origin
 
       - name: Capture release tag
@@ -86,6 +84,10 @@ jobs:
         run: |
           $tag = (git describe --tags --abbrev=0).Trim()
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          # Alpha, beta, and rc are prereleases. A bare version is a real release.
+          $prerelease = if ($tag -match '-(alpha|beta|rc)') { 'true' } else { 'false' }
+          "prerelease=$prerelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Publishing $tag with prerelease=$prerelease"
 
       - name: Build release binary
         run: cargo build --release --verbose
@@ -116,10 +118,10 @@ jobs:
           tag_name: ${{ steps.release_tag.outputs.tag }}
           name: ${{ steps.release_tag.outputs.tag }}
           generate_release_notes: true
-          prerelease: true
+          prerelease: ${{ steps.release_tag.outputs.prerelease }}
           files: |
             dist/Wixen-Mail-Setup-*.exe
             dist/wixen-mail-v*.exe
             dist/Wixen-Mail-*-windows.zip
-            CHANGELOG.md
+            docs/changelog.md
           fail_on_unmatched_files: false

@@ -121,4 +121,23 @@ workflows, `cognitive-accessibility` for language and flow, `contrast-master` fo
   `CREATE TABLE IF NOT EXISTS` and columns with `ensure_column_exists`. Never drop or rename a column
   that shipped.
 
+### Versioning and releases
+
+Bump the version in `Cargo.toml` as substantive changes land, in the same commit as the change. Do
+not let the version sit still through a stretch of real work and then jump at release time. A bug
+fix or a docs pass does not need a bump; a new feature, a schema change, or a behaviour change does.
+
+`docs/changelog.md` is the record. Every user-visible change gets an entry under `[Unreleased]` in
+the commit that makes it, and honest "Known limitations" notes belong there too. A feature list that
+implies something works when it does not is worse than no entry.
+
+Releases are cut deliberately. The Release workflow runs only on manual dispatch, never on push, and
+you pick the level (`alpha`, `beta`, `rc`, or `release`) when you dispatch it. It then bumps from
+whatever version it finds, commits that bump back to `main`, and tags. Since it computes the next
+version from the current one, check what is in `Cargo.toml` before dispatching so the level you pick
+lands where you expect.
+
+`alpha`, `beta`, and `rc` publish as GitHub prereleases. Only `release` publishes as a full release,
+and it should only be used when the version genuinely is feature-complete and tested.
+
 <!-- END GUARDRAILS -->
