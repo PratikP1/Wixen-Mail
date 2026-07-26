@@ -4,15 +4,20 @@
 //! Split into domain-specific sub-modules for maintainability.
 
 mod accounts;
+mod calendar;
+pub mod calendars;
 mod contacts;
 mod drafts;
 mod filters;
 mod folders;
 mod messages;
+pub mod notes;
 mod oauth;
 mod outbox;
+pub mod reminders;
 mod signatures;
 mod tags;
+pub mod tasks;
 
 use crate::common::{Error, Result};
 use crate::service::security::SecurityService;
@@ -229,6 +234,153 @@ pub struct ContactGroup {
     pub created_at: String,
     /// Members (populated on load)
     pub member_ids: Vec<String>,
+}
+
+/// Calendar container — represents a whole calendar (local, service, CalDAV, subscription)
+#[derive(Debug, Clone)]
+pub struct CalendarContainer {
+    pub id: String,
+    pub account_id: String,
+    pub name: String,
+    pub color: String,
+    /// "local", "gmail", "outlook", "caldav", "subscription"
+    pub source_provider: Option<String>,
+    pub caldav_url: Option<String>,
+    pub subscription_url: Option<String>,
+    pub is_default: bool,
+    pub is_visible: bool,
+    pub is_read_only: bool,
+    pub display_order: i32,
+    pub etag: Option<String>,
+    pub ctag: Option<String>,
+    pub sync_token: Option<String>,
+    pub refresh_interval_minutes: Option<i32>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Calendar event entry for local cache
+#[derive(Debug, Clone)]
+pub struct CalendarEventEntry {
+    pub id: String,
+    pub account_id: String,
+    pub provider_event_id: Option<String>,
+    /// References calendars.id — which calendar container this event belongs to
+    pub calendar_id: Option<String>,
+    pub summary: String,
+    pub description: Option<String>,
+    pub location: Option<String>,
+    /// RFC 3339 datetime for timed events
+    pub start_datetime: String,
+    pub end_datetime: String,
+    /// "YYYY-MM-DD" for all-day events
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+    pub is_all_day: bool,
+    pub time_zone: Option<String>,
+    /// "confirmed", "tentative", "cancelled"
+    pub status: String,
+    pub recurrence_rule: Option<String>,
+    /// "gmail" or "outlook"
+    pub source_provider: Option<String>,
+    pub etag: Option<String>,
+    pub web_link: Option<String>,
+    /// "busy", "free", "tentative", "oof"
+    pub show_as: String,
+    pub last_modified_remote: Option<String>,
+    pub last_synced_at: Option<String>,
+    /// JSON-serialized attendees
+    pub attendees_json: Option<String>,
+    /// JSON-serialized reminders
+    pub reminders_json: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Reminder entry
+#[derive(Debug, Clone)]
+pub struct ReminderEntry {
+    pub id: String,
+    pub account_id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub due_datetime: Option<String>,
+    pub is_completed: bool,
+    pub priority: String,
+    pub repeat_rule: Option<String>,
+    pub related_event_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Task list entry (container for tasks)
+#[derive(Debug, Clone)]
+pub struct TaskListEntry {
+    pub id: String,
+    pub account_id: String,
+    pub name: String,
+    pub color: String,
+    pub display_order: i32,
+    pub created_at: String,
+}
+
+/// Task entry
+#[derive(Debug, Clone)]
+pub struct TaskEntry {
+    pub id: String,
+    pub account_id: String,
+    pub task_list_id: Option<String>,
+    pub title: String,
+    pub description: Option<String>,
+    pub due_date: Option<String>,
+    pub is_completed: bool,
+    pub completed_at: Option<String>,
+    pub priority: String,
+    pub display_order: i32,
+    pub parent_task_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Note folder entry (container for notes)
+#[derive(Debug, Clone)]
+pub struct NoteFolderEntry {
+    pub id: String,
+    pub account_id: String,
+    pub name: String,
+    pub display_order: i32,
+    pub created_at: String,
+}
+
+/// Note entry
+#[derive(Debug, Clone)]
+pub struct NoteEntry {
+    pub id: String,
+    pub account_id: String,
+    pub folder_id: Option<String>,
+    pub title: String,
+    pub body: String,
+    pub format: String,
+    pub pinned: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Sync state tracker for incremental sync (Google sync tokens, MS delta links)
+#[derive(Debug, Clone)]
+pub struct SyncState {
+    pub id: String,
+    pub account_id: String,
+    /// "contacts" or "calendar"
+    pub sync_type: String,
+    /// "gmail" or "outlook"
+    pub provider: String,
+    /// Google sync token
+    pub sync_token: Option<String>,
+    /// Microsoft delta link
+    pub delta_link: Option<String>,
+    pub last_full_sync: Option<String>,
+    pub last_incremental_sync: Option<String>,
 }
 
 impl MessageCache {
@@ -531,6 +683,56 @@ impl MessageCache {
 
         self.conn
             .execute(
+                "CREATE TABLE IF NOT EXISTS calendar_events (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                provider_event_id TEXT,
+                summary TEXT NOT NULL,
+                description TEXT,
+                location TEXT,
+                start_datetime TEXT NOT NULL,
+                end_datetime TEXT NOT NULL,
+                start_date TEXT,
+                end_date TEXT,
+                is_all_day BOOLEAN DEFAULT 0,
+                time_zone TEXT,
+                status TEXT DEFAULT 'confirmed',
+                recurrence_rule TEXT,
+                source_provider TEXT,
+                etag TEXT,
+                web_link TEXT,
+                show_as TEXT DEFAULT 'busy',
+                last_modified_remote TEXT,
+                last_synced_at TEXT,
+                attendees_json TEXT,
+                reminders_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(account_id, provider_event_id)
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create calendar_events table: {}", e)))?;
+
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS sync_state (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                sync_type TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                sync_token TEXT,
+                delta_link TEXT,
+                last_full_sync TEXT,
+                last_incremental_sync TEXT,
+                UNIQUE(account_id, sync_type, provider)
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create sync_state table: {}", e)))?;
+
+        self.conn
+            .execute(
                 "CREATE TABLE IF NOT EXISTS accounts (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -555,7 +757,126 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to create accounts table: {}", e)))?;
 
+        // ── Calendar containers ──────────────────────────────────────
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS calendars (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                color TEXT DEFAULT '#4285F4',
+                source_provider TEXT,
+                caldav_url TEXT,
+                subscription_url TEXT,
+                is_default BOOLEAN DEFAULT 0,
+                is_visible BOOLEAN DEFAULT 1,
+                is_read_only BOOLEAN DEFAULT 0,
+                display_order INTEGER DEFAULT 0,
+                etag TEXT,
+                ctag TEXT,
+                sync_token TEXT,
+                refresh_interval_minutes INTEGER,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(account_id, name, source_provider)
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create calendars table: {}", e)))?;
+
+        // ── Reminders ───────────────────────────────────────────────────
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS reminders (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                due_datetime TEXT,
+                is_completed BOOLEAN DEFAULT 0,
+                priority TEXT DEFAULT 'normal',
+                repeat_rule TEXT,
+                related_event_id TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create reminders table: {}", e)))?;
+
+        // ── Task lists ──────────────────────────────────────────────────
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS task_lists (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                color TEXT DEFAULT '#4285F4',
+                display_order INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                UNIQUE(account_id, name)
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create task_lists table: {}", e)))?;
+
+        // ── Tasks ───────────────────────────────────────────────────────
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS tasks (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                task_list_id TEXT REFERENCES task_lists(id),
+                title TEXT NOT NULL,
+                description TEXT,
+                due_date TEXT,
+                is_completed BOOLEAN DEFAULT 0,
+                completed_at TEXT,
+                priority TEXT DEFAULT 'normal',
+                display_order INTEGER DEFAULT 0,
+                parent_task_id TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create tasks table: {}", e)))?;
+
+        // ── Note folders ────────────────────────────────────────────────
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS note_folders (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                display_order INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                UNIQUE(account_id, name)
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create note_folders table: {}", e)))?;
+
+        // ── Notes ───────────────────────────────────────────────────────
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS notes (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                folder_id TEXT REFERENCES note_folders(id),
+                title TEXT NOT NULL,
+                body TEXT NOT NULL DEFAULT '',
+                format TEXT DEFAULT 'plain',
+                pinned BOOLEAN DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create notes table: {}", e)))?;
+
         // Schema migrations
+        self.ensure_column_exists("calendar_events", "calendar_id", "TEXT")?;
         self.ensure_column_exists(
             "message_filter_rules",
             "match_type",
@@ -603,6 +924,14 @@ impl MessageCache {
             "CREATE INDEX IF NOT EXISTS idx_contacts_account_email ON contacts(account_id, email)",
             "CREATE INDEX IF NOT EXISTS idx_oauth_tokens_account_provider ON oauth_tokens(account_id, provider)",
             "CREATE INDEX IF NOT EXISTS idx_outbox_queue_account_created ON outbox_queue(account_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_calendar_events_account_dates ON calendar_events(account_id, start_datetime, end_datetime)",
+            "CREATE INDEX IF NOT EXISTS idx_calendar_events_provider_id ON calendar_events(account_id, provider_event_id)",
+            "CREATE INDEX IF NOT EXISTS idx_sync_state_account ON sync_state(account_id, sync_type, provider)",
+            "CREATE INDEX IF NOT EXISTS idx_calendars_account ON calendars(account_id)",
+            "CREATE INDEX IF NOT EXISTS idx_calendar_events_calendar_id ON calendar_events(calendar_id)",
+            "CREATE INDEX IF NOT EXISTS idx_reminders_account ON reminders(account_id, due_datetime)",
+            "CREATE INDEX IF NOT EXISTS idx_tasks_account ON tasks(account_id, task_list_id)",
+            "CREATE INDEX IF NOT EXISTS idx_notes_account ON notes(account_id, folder_id)",
         ];
         for idx in indexes {
             self.conn

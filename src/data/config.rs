@@ -34,6 +34,18 @@ pub struct AppConfig {
     /// Default sort order for message list
     #[serde(default = "default_sort_order")]
     pub default_sort_order: String,
+    /// Calendar default view: "agenda", "day", "week", "month"
+    #[serde(default = "default_calendar_view")]
+    pub calendar_default_view: String,
+    /// Show weekends in calendar views
+    #[serde(default = "default_true")]
+    pub calendar_show_weekends: bool,
+    /// First day of week: 0 = Sunday, 1 = Monday
+    #[serde(default)]
+    pub calendar_first_day_of_week: u8,
+    /// Default reminder lead-time in minutes (e.g. 15 = remind 15 min before)
+    #[serde(default = "default_reminder_minutes")]
+    pub default_reminder_minutes: u32,
 }
 
 fn default_true() -> bool {
@@ -44,6 +56,12 @@ fn default_language() -> String {
 }
 fn default_sort_order() -> String {
     "date_newest".to_string()
+}
+fn default_calendar_view() -> String {
+    "agenda".to_string()
+}
+fn default_reminder_minutes() -> u32 {
+    15
 }
 
 impl Default for AppConfig {
@@ -59,6 +77,10 @@ impl Default for AppConfig {
             preview_before_send: true,
             language: "en".to_string(),
             default_sort_order: "date_newest".to_string(),
+            calendar_default_view: "agenda".to_string(),
+            calendar_show_weekends: true,
+            calendar_first_day_of_week: 0,
+            default_reminder_minutes: 15,
         }
     }
 }
@@ -418,5 +440,81 @@ mod tests {
         let retrieved = manager.get_account_config("acc-1");
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().name, "Test");
+    }
+
+    #[test]
+    fn test_app_config_defaults_complete() {
+        let config = AppConfig::default();
+        assert_eq!(config.language, "en");
+        assert_eq!(config.default_sort_order, "date_newest");
+        assert_eq!(config.calendar_default_view, "agenda");
+        assert!(config.calendar_show_weekends);
+        assert_eq!(config.calendar_first_day_of_week, 0);
+        assert_eq!(config.default_reminder_minutes, 15);
+        assert!(config.preview_before_send);
+        assert_eq!(config.log_level, "info");
+        assert!(config.check_updates);
+    }
+
+    #[test]
+    fn test_app_config_validates_valid_log_levels() {
+        let valid = ["error", "warn", "info", "debug", "trace"];
+        for level in &valid {
+            let config = AppConfig {
+                log_level: level.to_string(),
+                ..Default::default()
+            };
+            assert!(config.validate().is_ok(), "Expected {} to be valid", level);
+        }
+    }
+
+    #[test]
+    fn test_app_config_font_size_boundaries() {
+        let cases = [(8, true), (72, true), (7, false), (73, false)];
+
+        for (font_size, expect_valid) in cases {
+            let config = AppConfig {
+                font_size,
+                ..Default::default()
+            };
+            assert_eq!(
+                config.validate().is_ok(),
+                expect_valid,
+                "Expected font size {} validity to be {}",
+                font_size,
+                expect_valid
+            );
+        }
+    }
+
+    #[test]
+    fn test_account_config_check_interval_boundaries() {
+        let mut config = AccountConfig::new("a".to_string(), "A".to_string());
+
+        config.check_interval_minutes = 1;
+        assert!(config.validate().is_ok());
+
+        config.check_interval_minutes = 1440;
+        assert!(config.validate().is_ok());
+
+        config.check_interval_minutes = 0;
+        assert!(config.validate().is_err());
+
+        config.check_interval_minutes = 1441;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_app_config_serialization_round_trip() {
+        let config = AppConfig::default();
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.theme, config.theme);
+        assert_eq!(deserialized.font_size, config.font_size);
+        assert_eq!(deserialized.language, config.language);
+        assert_eq!(
+            deserialized.calendar_default_view,
+            config.calendar_default_view
+        );
     }
 }
