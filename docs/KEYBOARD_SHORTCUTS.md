@@ -148,6 +148,15 @@ and focus moves to that module's content area.
 | Redo | `Ctrl+Y` | Redo last undo |
 | Close Window | `Esc` | Close composition window without sending |
 
+**Button accelerators (Alt+key):**
+
+| Button | Shortcut |
+|--------|----------|
+| Send | `Alt+N` |
+| Undo | `Alt+U` |
+| Redo | `Alt+R` |
+| Attach File | `Alt+I` |
+
 **Field accelerators (Alt+key):**
 
 | Field / Action | Shortcut |
@@ -258,6 +267,11 @@ and focus moves to that module's content area.
 | Navigate Attachments | `Tab` | Move between attachments in preview pane |
 
 ### Dialog Navigation
+
+OK and Cancel buttons carry no `Alt` mnemonic anywhere in the application. They
+use the standard dialog identifiers, so `Enter` activates OK and `Esc` activates
+Cancel from anywhere in the dialog. Adding mnemonics as well would compete with
+the field accelerators for letters without making anything more reachable.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|

@@ -218,7 +218,7 @@ pub fn show_compose_dialog_with_options(
 
     // Prominent Send button (Outlook-style — first in toolbar)
     let send_toolbar_btn = Button::builder(&dialog)
-        .with_label("Send")
+        .with_label("Se&nd")
         .with_id(ID_SEND)
         .with_size(Size::new(72, 30))
         .build();
@@ -228,13 +228,13 @@ pub fn show_compose_dialog_with_options(
 
     // Undo / Redo
     let undo_btn = Button::builder(&dialog)
-        .with_label("Undo")
+        .with_label("&Undo")
         .with_id(ID_UNDO)
         .with_size(Size::new(52, 28))
         .build();
     undo_btn.set_name("Undo (Ctrl+Z)");
     let redo_btn = Button::builder(&dialog)
-        .with_label("Redo")
+        .with_label("&Redo")
         .with_id(ID_REDO)
         .with_size(Size::new(52, 28))
         .build();
@@ -269,7 +269,7 @@ pub fn show_compose_dialog_with_options(
 
     // Attach
     let attach_btn = Button::builder(&dialog)
-        .with_label("Attach...")
+        .with_label("Attach F&ile...")
         .with_id(ID_ATTACH)
         .build();
     attach_btn.set_name("Attach file");

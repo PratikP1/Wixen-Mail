@@ -139,7 +139,7 @@ pub fn show_oauth_dialog(
     main_sizer.add(&step1_label, 0, SizerFlag::Left | SizerFlag::All, 8);
 
     let gen_btn = Button::builder(&dialog)
-        .with_label("Generate URL")
+        .with_label("&Generate URL")
         .with_id(ID_GENERATE_URL)
         .build();
     main_sizer.add(&gen_btn, 0, SizerFlag::Left | SizerFlag::All, 8);
@@ -171,19 +171,19 @@ pub fn show_oauth_dialog(
     // Action buttons
     let action_sizer = BoxSizer::builder(Orientation::Horizontal).build();
     let exchange_btn = Button::builder(&dialog)
-        .with_label("Exchange Code")
+        .with_label("&Exchange Code")
         .with_id(ID_EXCHANGE_CODE)
         .build();
     let refresh_btn = Button::builder(&dialog)
-        .with_label("Refresh Token")
+        .with_label("&Refresh Token")
         .with_id(ID_REFRESH_TOKEN)
         .build();
     let revoke_btn = Button::builder(&dialog)
-        .with_label("Revoke Token")
+        .with_label("Re&voke Token")
         .with_id(ID_REVOKE_TOKEN)
         .build();
     let close_btn = Button::builder(&dialog)
-        .with_label("Close")
+        .with_label("&Close")
         .with_id(ID_OK)
         .build();
     action_sizer.add(&exchange_btn, 0, SizerFlag::All, 4);

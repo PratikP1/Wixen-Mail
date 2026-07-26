@@ -2920,7 +2920,7 @@ fn show_search_dialog(parent: &Frame) -> Option<String> {
 
     let btns = BoxSizer::builder(Orientation::Horizontal).build();
     let search = Button::builder(&dlg)
-        .with_label("Search")
+        .with_label("&Search")
         .with_id(ID_OK)
         .build();
     let cancel = Button::builder(&dlg)
@@ -2989,7 +2989,7 @@ fn show_new_item_dialog(frame: &Frame, item_type: &str, a11y: &Arc<Accessibility
 
     let btns = BoxSizer::builder(Orientation::Horizontal).build();
     let ok = Button::builder(&dlg)
-        .with_label("Create")
+        .with_label("C&reate")
         .with_id(ID_OK)
         .build();
     let cancel = Button::builder(&dlg)
