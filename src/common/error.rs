@@ -124,9 +124,7 @@ pub fn redact_provider_message(body: &str) -> String {
             // Past the separator, then to the end of the value. The value ends
             // at whatever punctuation the surrounding format uses.
             let rest = &body[index + key.len()..];
-            let end = rest
-                .find(|c: char| c == ',' || c == '&' || c == '}' || c == '\n' || c == '<')
-                .unwrap_or(rest.len());
+            let end = rest.find([',', '&', '}', '\n', '<']).unwrap_or(rest.len());
             index += key.len() + end;
             continue;
         }
