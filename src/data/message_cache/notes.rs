@@ -226,13 +226,13 @@ impl MessageCache {
 
     /// Search notes by title or body.
     pub fn search_notes(&self, account_id: &str, query: &str) -> Result<Vec<NoteEntry>> {
-        let pattern = format!("%{}%", query);
+        let pattern = super::like_pattern(query);
         let mut stmt = self
             .conn
             .prepare(
                 "SELECT id, account_id, folder_id, title, body, format, pinned,
                         created_at, updated_at
-                 FROM notes WHERE account_id = ?1 AND (title LIKE ?2 OR body LIKE ?2)
+                 FROM notes WHERE account_id = ?1 AND (title LIKE ?2 ESCAPE '!' OR body LIKE ?2 ESCAPE '!')
                  ORDER BY pinned DESC, updated_at DESC",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare note search: {}", e)))?;

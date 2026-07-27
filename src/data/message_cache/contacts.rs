@@ -110,12 +110,7 @@ impl MessageCache {
         query: &str,
         limit: usize,
     ) -> Result<Vec<ContactEntry>> {
-        let escaped = query
-            .to_lowercase()
-            .replace('!', "!!")
-            .replace('%', "!%")
-            .replace('_', "!_");
-        let pattern = format!("%{}%", escaped);
+        let pattern = super::like_pattern(query);
         let mut stmt = self.conn.prepare(
             "SELECT id, account_id, name, email, provider_contact_id, phone, company, job_title, website, address, birthday,
                     avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,

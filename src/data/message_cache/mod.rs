@@ -26,6 +26,28 @@ use crate::service::security::SecurityService;
 use rusqlite::Connection;
 use std::path::PathBuf;
 
+/// Turn a user's search text into a `LIKE` pattern that matches it literally.
+///
+/// `%` and `_` are wildcards in `LIKE`, so searching notes for "100%" matched
+/// every note starting with "100", and searching tasks for "a_b" matched "axb".
+/// Someone looking for a literal percentage or an identifier with an underscore
+/// got results they did not ask for and no way to tell why.
+///
+/// The escape character itself is escaped first, or a query containing one
+/// would neutralise the escaping that follows.
+///
+/// Use with `ESCAPE '!'` in the statement, which is the half a caller can
+/// forget: this returns the pattern, and the query has to name the same
+/// character.
+pub fn like_pattern(query: &str) -> String {
+    let escaped = query
+        .to_lowercase()
+        .replace('!', "!!")
+        .replace('%', "!%")
+        .replace('_', "!_");
+    format!("%{}%", escaped)
+}
+
 /// Message cache using SQLite
 pub struct MessageCache {
     conn: Connection,
@@ -1028,6 +1050,40 @@ impl MessageCache {
 
 #[cfg(test)]
 mod tests {
+    use super::like_pattern;
+
+    #[test]
+    fn test_a_search_for_a_percent_sign_does_not_become_a_wildcard() {
+        // Searching notes for "100%" matched every note starting with "100",
+        // and there was no way for the user to tell why.
+        let pattern = like_pattern("100%");
+        assert_eq!(pattern, "%100!%%");
+    }
+
+    #[test]
+    fn test_a_search_for_an_underscore_does_not_match_any_character() {
+        // "a_b" matched "axb" before this.
+        assert_eq!(like_pattern("a_b"), "%a!_b%");
+    }
+
+    #[test]
+    fn test_the_escape_character_itself_is_escaped_first() {
+        // Otherwise a query containing it neutralises the escaping that
+        // follows, which is the classic way this fix gets written wrongly.
+        assert_eq!(like_pattern("!%"), "%!!!%%");
+    }
+
+    #[test]
+    fn test_a_search_is_case_insensitive() {
+        assert_eq!(like_pattern("MiXeD"), "%mixed%");
+    }
+
+    #[test]
+    fn test_an_empty_search_matches_everything_rather_than_nothing() {
+        // An empty box means "no filter", which is what a bare pair of
+        // wildcards says.
+        assert_eq!(like_pattern(""), "%%");
+    }
     use super::*;
     use std::env;
 

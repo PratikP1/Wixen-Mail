@@ -105,14 +105,14 @@ impl MessageCache {
 
     /// Search reminders by title.
     pub fn search_reminders(&self, account_id: &str, query: &str) -> Result<Vec<ReminderEntry>> {
-        let pattern = format!("%{}%", query);
+        let pattern = super::like_pattern(query);
         let mut stmt = self
             .conn
             .prepare(
                 "SELECT id, account_id, title, description, due_datetime,
                         is_completed, priority, repeat_rule, related_event_id,
                         created_at, updated_at
-                 FROM reminders WHERE account_id = ?1 AND title LIKE ?2
+                 FROM reminders WHERE account_id = ?1 AND title LIKE ?2 ESCAPE '!'
                  ORDER BY due_datetime",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare reminder search: {}", e)))?;

@@ -223,14 +223,14 @@ impl MessageCache {
 
     /// Search tasks by title.
     pub fn search_tasks(&self, account_id: &str, query: &str) -> Result<Vec<TaskEntry>> {
-        let pattern = format!("%{}%", query);
+        let pattern = super::like_pattern(query);
         let mut stmt = self
             .conn
             .prepare(
                 "SELECT id, account_id, task_list_id, title, description, due_date,
                         is_completed, completed_at, priority, display_order,
                         parent_task_id, created_at, updated_at
-                 FROM tasks WHERE account_id = ?1 AND title LIKE ?2
+                 FROM tasks WHERE account_id = ?1 AND title LIKE ?2 ESCAPE '!'
                  ORDER BY is_completed, due_date",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare task search: {}", e)))?;
