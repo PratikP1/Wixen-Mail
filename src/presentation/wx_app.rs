@@ -522,7 +522,14 @@ impl WxMailApp {
                 // Block all navigation — open links in default browser instead
                 preview.on_navigating(|event: WebViewEventData| {
                     if let Some(url) = event.get_string() {
-                        if url != "about:blank" && !url.starts_with("about:") {
+                        // An empty URL is the control loading its own document,
+                        // not a link the user followed. Vetoing it blocked the
+                        // message preview from rendering at all.
+                        if !url.is_empty()
+                            && url != "about:blank"
+                            && !url.starts_with("about:")
+                            && !url.starts_with("data:")
+                        {
                             event.event.event.veto();
                             // The sender of a message does not get to choose
                             // what this machine opens.
@@ -539,6 +546,9 @@ impl WxMailApp {
                 preview.on_new_window(|event: WebViewEventData| {
                     if let Some(url) = event.get_string() {
                         event.event.event.veto();
+                        if url.is_empty() {
+                            return;
+                        }
                         if let Some(safe) = HtmlRenderer::safe_external_url(&url) {
                             let _ = open::that(&safe);
                         } else {

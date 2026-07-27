@@ -110,14 +110,10 @@ mod native {
     /// separate is needed for braille.
     pub fn raise_notification(text: &str, processing: Processing, activity: &str) -> bool {
         unsafe {
-            // Each step logs why it gave up. This path cannot be unit tested and
-            // it failed silently once already, so when nothing is spoken the log
-            // has to say which link broke rather than leaving it to guesswork.
-            if UiaClientsAreListening() == 0 {
-                tracing::debug!("No UI Automation client is listening; nothing to announce to");
-                return false;
-            }
-
+            // Deliberately not gated on UiaClientsAreListening. It reports
+            // false in cases where a screen reader is plainly running, and
+            // gating on it turned every announcement into a silent no-op.
+            // Raising the event when nobody is listening costs almost nothing.
             let hwnd = GetForegroundWindow();
             if hwnd == 0 {
                 tracing::warn!("No foreground window, so the announcement had nowhere to go");
@@ -152,7 +148,7 @@ mod native {
             if result != 0 {
                 tracing::warn!("UiaRaiseNotificationEvent failed with 0x{:08x}", result);
             } else {
-                tracing::trace!("Announced: {}", text);
+                tracing::debug!("Announced: {}", text);
             }
             result == 0
         }
@@ -170,6 +166,14 @@ mod native {
                 NotifyWinEvent(EVENT_OBJECT_NAMECHANGE, hwnd, OBJID_CLIENT, CHILDID_SELF);
             }
         }
+    }
+
+    /// Whether any UI Automation client is listening, for the startup log only.
+    ///
+    /// Not used to decide whether to announce: it reports false in cases where
+    /// a screen reader is running, so acting on it silences everything.
+    pub fn clients_are_listening() -> bool {
+        unsafe { UiaClientsAreListening() != 0 }
     }
 
     /// Convert to a null-terminated wide string.
@@ -202,6 +206,14 @@ pub struct ScreenReaderBridge {
 impl ScreenReaderBridge {
     /// Create a new screen reader bridge
     pub fn new() -> Result<Self> {
+        // Logged once at startup so a report of "nothing was spoken" can be
+        // read against whether a screen reader was even running.
+        #[cfg(target_os = "windows")]
+        tracing::info!(
+            "Screen reader bridge ready; UI Automation clients listening: {}",
+            native::clients_are_listening()
+        );
+
         Ok(Self {
             last_announcement: Mutex::new(None),
             event_log: Mutex::new(Vec::new()),

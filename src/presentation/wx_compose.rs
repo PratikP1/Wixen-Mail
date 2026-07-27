@@ -583,7 +583,11 @@ fn show_send_preview(
     // Block navigation in preview — open links in default browser
     body_preview.on_navigating(|event: WebViewEventData| {
         if let Some(url) = event.get_string() {
-            if url != "about:blank" && !url.starts_with("about:") {
+            if !url.is_empty()
+                && url != "about:blank"
+                && !url.starts_with("about:")
+                && !url.starts_with("data:")
+            {
                 event.event.event.veto();
                 if let Some(safe) = crate::presentation::HtmlRenderer::safe_external_url(&url) {
                     let _ = open::that(&safe);
