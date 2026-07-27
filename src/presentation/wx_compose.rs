@@ -6,8 +6,8 @@
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::ui_types::CompositionData;
-use wxdragon::event::webview_events::WebViewEventData;
 use wxdragon::event::WebViewEvents;
+use wxdragon::event::webview_events::WebViewEventData;
 use wxdragon::prelude::*;
 use wxdragon::widgets::{WebView, WebViewBackend};
 
@@ -411,11 +411,12 @@ pub fn show_compose_dialog_with_options(
     // Ctrl+Enter → Send from body editor
     body_editor.on_key_down({
         move |event| {
-            if let WindowEventData::Keyboard(ref kb) = event {
-                if kb.event.control_down() && kb.event.get_key_code() == Some(13) {
-                    dialog.end_modal(ID_SEND);
-                    return;
-                }
+            if let WindowEventData::Keyboard(ref kb) = event
+                && kb.event.control_down()
+                && kb.event.get_key_code() == Some(13)
+            {
+                dialog.end_modal(ID_SEND);
+                return;
             }
             event.skip(true);
         }
@@ -424,11 +425,12 @@ pub fn show_compose_dialog_with_options(
     // Ctrl+Enter → Send from any other focused control (dialog-level fallback)
     dialog.on_key_down({
         move |event| {
-            if let WindowEventData::Keyboard(ref kb) = event {
-                if kb.event.control_down() && kb.event.get_key_code() == Some(13) {
-                    dialog.end_modal(ID_SEND);
-                    return;
-                }
+            if let WindowEventData::Keyboard(ref kb) = event
+                && kb.event.control_down()
+                && kb.event.get_key_code() == Some(13)
+            {
+                dialog.end_modal(ID_SEND);
+                return;
             }
             event.skip(true);
         }
@@ -582,18 +584,17 @@ fn show_send_preview(
 
     // Block navigation in preview — open links in default browser
     body_preview.on_navigating(|event: WebViewEventData| {
-        if let Some(url) = event.get_string() {
-            if !url.is_empty()
-                && url != "about:blank"
-                && !url.starts_with("about:")
-                && !url.starts_with("data:")
-            {
-                event.event.event.veto();
-                if let Some(safe) = crate::presentation::HtmlRenderer::safe_external_url(&url) {
-                    let _ = open::that(&safe);
-                } else {
-                    tracing::warn!("Refused to open unsafe URL from message: {}", url);
-                }
+        if let Some(url) = event.get_string()
+            && !url.is_empty()
+            && url != "about:blank"
+            && !url.starts_with("about:")
+            && !url.starts_with("data:")
+        {
+            event.event.event.veto();
+            if let Some(safe) = crate::presentation::HtmlRenderer::safe_external_url(&url) {
+                let _ = open::that(&safe);
+            } else {
+                tracing::warn!("Refused to open unsafe URL from message: {}", url);
             }
         }
     });

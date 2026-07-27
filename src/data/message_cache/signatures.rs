@@ -2,7 +2,7 @@
 
 use super::{MessageCache, Signature};
 use crate::common::{Error, Result};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{OptionalExtension, params};
 
 impl MessageCache {
     /// Create a new signature

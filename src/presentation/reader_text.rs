@@ -390,9 +390,10 @@ mod tests {
     #[test]
     fn test_a_message_leads_with_its_subject_and_sender() {
         let doc = single_message(&message(), "The numbers are attached.");
-        assert!(doc
-            .text
-            .starts_with("Subject: Quarterly report\nFrom: Ada Lovelace"));
+        assert!(
+            doc.text
+                .starts_with("Subject: Quarterly report\nFrom: Ada Lovelace")
+        );
         assert_eq!(doc.title, "Quarterly report");
     }
 

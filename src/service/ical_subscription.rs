@@ -5,7 +5,7 @@
 //! They refresh by re-fetching the full .ics feed on sync.
 
 use crate::common::{Error, Result};
-use crate::service::caldav::{parse_ical_vevent, CalDavEvent};
+use crate::service::caldav::{CalDavEvent, parse_ical_vevent};
 
 /// ICS feed subscription client.
 pub struct ICalSubscriptionClient {

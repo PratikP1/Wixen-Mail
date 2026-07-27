@@ -6,7 +6,7 @@
 use crate::application::calendar::CalendarSyncResult;
 use crate::common::Result;
 use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache};
-use crate::service::caldav::{build_ical_vevent, CalDavClient, CalDavEvent};
+use crate::service::caldav::{CalDavClient, CalDavEvent, build_ical_vevent};
 use crate::service::ical_subscription::ICalSubscriptionClient;
 
 /// Sync a CalDAV calendar with the local cache.
@@ -77,11 +77,11 @@ pub async fn sync_caldav_calendar(
 
     // Delete local events not seen in remote
     for local in &local_events {
-        if let Some(uid) = local.provider_event_id.as_deref() {
-            if !seen_uids.contains(uid) {
-                cache.delete_calendar_event(&local.id)?;
-                result.deleted += 1;
-            }
+        if let Some(uid) = local.provider_event_id.as_deref()
+            && !seen_uids.contains(uid)
+        {
+            cache.delete_calendar_event(&local.id)?;
+            result.deleted += 1;
         }
     }
 

@@ -2,7 +2,7 @@
 //!
 //! Handles creation and editing of email messages.
 
-use crate::common::{types::EmailAddress, Result};
+use crate::common::{Result, types::EmailAddress};
 
 /// Draft message
 #[derive(Debug, Clone)]

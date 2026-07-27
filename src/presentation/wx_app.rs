@@ -7,8 +7,8 @@ use crate::application::mail_controller::{MailController, SendEmailRequest};
 use crate::common::Result;
 use crate::data::account::Account;
 use crate::data::message_cache::MessageCache;
-use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::accessibility::Accessibility;
+use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::ui_types::*;
 use crate::presentation::wx_account_manager::{self, AccountManagerAction};
@@ -35,9 +35,9 @@ use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex as TokioMutex;
+use wxdragon::event::WebViewEvents;
 use wxdragon::event::webview_events::WebViewEventData;
 use wxdragon::event::window_events::WindowEvents;
-use wxdragon::event::WebViewEvents;
 use wxdragon::prelude::*;
 use wxdragon::widgets::{WebView, WebViewBackend, WebViewUserScriptInjectionTime};
 
@@ -245,11 +245,12 @@ impl WxMailApp {
         let message_cache = MessageCache::new(cache_dir, security).ok();
 
         let mut state = WxUIState::default();
-        if let Some(ref cache) = message_cache {
-            if let Ok(accounts) = cache.load_accounts() {
-                state.active_account_id = accounts.first().map(|a| a.id.clone());
-                state.accounts = accounts;
-            }
+        // Borrowed rather than moved: the cache is handed to the window below.
+        if let Some(cache) = &message_cache
+            && let Ok(accounts) = cache.load_accounts()
+        {
+            state.active_account_id = accounts.first().map(|a| a.id.clone());
+            state.accounts = accounts;
         }
 
         let accessibility = Accessibility::new()?;
@@ -1173,34 +1174,46 @@ document.addEventListener('keydown', function(e) {
                 let runtime = runtime.clone();
                 let a11y = a11y.clone();
                 move |_| {
-                    let dlg = DirDialog::builder(&frame, "Select folder with .vcf files", "").build();
-                    if dlg.show_modal() == ID_OK {
-                        if let Some(path) = dlg.get_path() {
-                            if let Some(ref cache) = message_cache {
-                                // Try to read .vcf file from the selected path
-                                let vcf_path = std::path::Path::new(&path);
-                                let mut imported = 0usize;
-                                if vcf_path.is_file() {
-                                    if let Ok(data) = std::fs::read_to_string(vcf_path) {
-                                        imported = cache.import_contacts_from_vcard("default", &data).unwrap_or(0);
-                                    }
-                                } else if vcf_path.is_dir() {
-                                    if let Ok(entries) = std::fs::read_dir(vcf_path) {
-                                        for entry in entries.flatten() {
-                                            if entry.path().extension().map(|e| e == "vcf").unwrap_or(false) {
-                                                if let Ok(data) = std::fs::read_to_string(entry.path()) {
-                                                    imported += cache.import_contacts_from_vcard("default", &data).unwrap_or(0);
-                                                }
-                                            }
-                                        }
+                    let dlg =
+                        DirDialog::builder(&frame, "Select folder with .vcf files", "").build();
+                    if dlg.show_modal() == ID_OK
+                        && let Some(path) = dlg.get_path()
+                    {
+                        if let Some(cache) = &message_cache {
+                            // Try to read .vcf file from the selected path
+                            let vcf_path = std::path::Path::new(&path);
+                            let mut imported = 0usize;
+                            if vcf_path.is_file() {
+                                if let Ok(data) = std::fs::read_to_string(vcf_path) {
+                                    imported = cache
+                                        .import_contacts_from_vcard("default", &data)
+                                        .unwrap_or(0);
+                                }
+                            } else if vcf_path.is_dir()
+                                && let Ok(entries) = std::fs::read_dir(vcf_path)
+                            {
+                                for entry in entries.flatten() {
+                                    if entry
+                                        .path()
+                                        .extension()
+                                        .map(|e| e == "vcf")
+                                        .unwrap_or(false)
+                                        && let Ok(data) = std::fs::read_to_string(entry.path())
+                                    {
+                                        imported += cache
+                                            .import_contacts_from_vcard("default", &data)
+                                            .unwrap_or(0);
                                     }
                                 }
-                                let msg = format!("Imported {} contacts", imported);
-                                send_status(&ui_tx, &runtime, &msg);
-                                let _ = a11y.announce(&msg, crate::presentation::accessibility::announcements::Priority::Normal);
-                            } else {
-                                send_status(&ui_tx, &runtime, "No cache available for import");
                             }
+                            let msg = format!("Imported {} contacts", imported);
+                            send_status(&ui_tx, &runtime, &msg);
+                            let _ = a11y.announce(
+                                &msg,
+                                crate::presentation::accessibility::announcements::Priority::Normal,
+                            );
+                        } else {
+                            send_status(&ui_tx, &runtime, "No cache available for import");
                         }
                     }
                 }
@@ -1211,12 +1224,12 @@ document.addEventListener('keydown', function(e) {
                 let runtime = runtime.clone();
                 let a11y = a11y.clone();
                 move |_| {
-                    if let Some(ref cache) = message_cache {
+                    if let Some(cache) = &message_cache {
                         match cache.export_contacts_to_vcard("default") {
                             Ok(vcard_data) => {
                                 let dlg = DirDialog::builder(&frame, "Select export folder", "").build();
-                                if dlg.show_modal() == ID_OK {
-                                    if let Some(path) = dlg.get_path() {
+                                if dlg.show_modal() == ID_OK
+                                    && let Some(path) = dlg.get_path() {
                                         let file_path = std::path::Path::new(&path).join("contacts.vcf");
                                         match std::fs::write(&file_path, &vcard_data) {
                                             Ok(_) => {
@@ -1229,7 +1242,6 @@ document.addEventListener('keydown', function(e) {
                                             }
                                         }
                                     }
-                                }
                             }
                             Err(e) => {
                                 send_status(&ui_tx, &runtime, &format!("Export failed: {}", e));
@@ -1461,32 +1473,32 @@ document.addEventListener('keydown', function(e) {
                 let runtime = runtime.clone();
                 let folder_cache = message_cache.clone();
                 move |event| {
-                    if let Some(item) = event.get_item() {
-                        if let Some(name) = folder_tree.get_item_text(&item) {
-                            if name == "Mail Folders" {
-                                return;
-                            }
-                            let (folder_id, account_id) = {
-                                let mut s = lock_state(&state);
-                                s.selected_folder = Some(name.clone());
-                                (
-                                    s.folder_ids.get(&name).copied(),
-                                    s.active_account_id.clone(),
-                                )
-                            };
-                            // Update title bar with folder context
-                            frame.set_title(&format!("{} - Mail - Wixen Mail", name));
-                            let tx = ui_tx.clone();
-                            runtime.spawn(async move {
-                                let _ = tx
-                                    .send(UIUpdate::StatusUpdated(format!("Loading {}...", name)))
-                                    .await;
-                            });
-                            // Selecting a folder used to announce "Loading
-                            // INBOX..." and then load nothing at all. This is
-                            // the read that makes the status true.
-                            load_folder_messages(&folder_cache, folder_id, account_id, &ui_tx);
+                    if let Some(item) = event.get_item()
+                        && let Some(name) = folder_tree.get_item_text(&item)
+                    {
+                        if name == "Mail Folders" {
+                            return;
                         }
+                        let (folder_id, account_id) = {
+                            let mut s = lock_state(&state);
+                            s.selected_folder = Some(name.clone());
+                            (
+                                s.folder_ids.get(&name).copied(),
+                                s.active_account_id.clone(),
+                            )
+                        };
+                        // Update title bar with folder context
+                        frame.set_title(&format!("{} - Mail - Wixen Mail", name));
+                        let tx = ui_tx.clone();
+                        runtime.spawn(async move {
+                            let _ = tx
+                                .send(UIUpdate::StatusUpdated(format!("Loading {}...", name)))
+                                .await;
+                        });
+                        // Selecting a folder used to announce "Loading
+                        // INBOX..." and then load nothing at all. This is
+                        // the read that makes the status true.
+                        load_folder_messages(&folder_cache, folder_id, account_id, &ui_tx);
                     }
                 }
             });
@@ -1757,13 +1769,12 @@ document.addEventListener('keydown', function(e) {
                             };
                             match toggled {
                                 Some((cache_id, read, starred, subject)) => {
-                                    if let Some(cache) = message_cache.as_ref() {
-                                        if let Err(e) =
+                                    if let Some(cache) = message_cache.as_ref()
+                                        && let Err(e) =
                                             cache.update_message_flags(cache_id, read, starred)
                                         {
                                             tracing::error!("Flag not saved: {}", e);
                                         }
-                                    }
                                     let _ = a11y.announce(
                                         &format!(
                                             "{}: {}",
@@ -2863,7 +2874,7 @@ fn conversation_nodes(
 /// and an earcon on every ordinary message, which is the fastest way to make
 /// someone switch the indicator off.
 fn apply_threading(rows: &[crate::data::message_cache::MessageListRow], items: &mut [MessageItem]) {
-    use crate::application::threading::{thread_messages, ThreadInput};
+    use crate::application::threading::{ThreadInput, thread_messages};
 
     let inputs: Vec<ThreadInput> = rows
         .iter()
@@ -3508,14 +3519,14 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
         }
         UIUpdate::MessageDeletedFromCache(cache_id) => {
-            if let Some(ref cache) = message_cache {
-                if let Err(e) = cache.delete_message(*cache_id) {
-                    tracing::error!("Failed to delete message {} from cache: {}", cache_id, e);
-                }
+            if let Some(cache) = &message_cache
+                && let Err(e) = cache.delete_message(*cache_id)
+            {
+                tracing::error!("Failed to delete message {} from cache: {}", cache_id, e);
             }
         }
         UIUpdate::MessageReadToggled(cache_id, new_read) => {
-            if let Some(ref cache) = message_cache {
+            if let Some(cache) = &message_cache {
                 // Preserve starred state — read the current value first
                 let starred = cache
                     .get_message(*cache_id)
@@ -4122,11 +4133,7 @@ fn show_search_dialog(parent: &Frame) -> Option<String> {
 
     if dlg.show_modal() == ID_OK {
         let q = q_field.get_value();
-        if !q.trim().is_empty() {
-            Some(q)
-        } else {
-            None
-        }
+        if !q.trim().is_empty() { Some(q) } else { None }
     } else {
         None
     }
@@ -4647,12 +4654,16 @@ mod tests {
         load_module_data(PimModule::Tasks, &cache, Some(account.to_string()), &tx);
 
         let updates = drain(&rx);
-        assert!(updates
-            .iter()
-            .any(|u| matches!(u, UIUpdate::TasksLoaded(items) if items.len() == 1)));
-        assert!(updates
-            .iter()
-            .any(|u| matches!(u, UIUpdate::TaskListsLoaded(items) if items[0].task_count == 1)));
+        assert!(
+            updates
+                .iter()
+                .any(|u| matches!(u, UIUpdate::TasksLoaded(items) if items.len() == 1))
+        );
+        assert!(
+            updates
+                .iter()
+                .any(|u| matches!(u, UIUpdate::TaskListsLoaded(items) if items[0].task_count == 1))
+        );
     }
 
     #[test]
@@ -4680,9 +4691,11 @@ mod tests {
 
         load_module_data(PimModule::Reminders, &cache, Some(account.to_string()), &tx);
 
-        assert!(drain(&rx)
-            .iter()
-            .any(|u| matches!(u, UIUpdate::RemindersLoaded(items) if items.len() == 1)));
+        assert!(
+            drain(&rx)
+                .iter()
+                .any(|u| matches!(u, UIUpdate::RemindersLoaded(items) if items.len() == 1))
+        );
     }
 
     #[test]
@@ -4694,9 +4707,11 @@ mod tests {
 
         load_module_data(PimModule::Calendar, &cache, Some("fresh".to_string()), &tx);
 
-        assert!(drain(&rx)
-            .iter()
-            .any(|u| matches!(u, UIUpdate::CalendarContainersLoaded(items) if !items.is_empty())));
+        assert!(
+            drain(&rx).iter().any(
+                |u| matches!(u, UIUpdate::CalendarContainersLoaded(items) if !items.is_empty())
+            )
+        );
     }
 
     #[test]
@@ -4731,9 +4746,11 @@ mod tests {
         // And the ids come with them, because reading a folder needs the id
         // and looking one up by name breaks the moment two accounts both have
         // an INBOX.
-        assert!(updates
-            .iter()
-            .any(|u| matches!(u, UIUpdate::FolderIdsLoaded(pairs) if pairs.len() == 1)));
+        assert!(
+            updates
+                .iter()
+                .any(|u| matches!(u, UIUpdate::FolderIdsLoaded(pairs) if pairs.len() == 1))
+        );
     }
 
     #[test]
@@ -4815,5 +4832,132 @@ mod tests {
         let state = Arc::new(StdMutex::new(WxUIState::default()));
         lock_state(&state).outbox_count = 7;
         assert_eq!(lock_state(&state).outbox_count, 7);
+    }
+}
+
+#[cfg(test)]
+// The one place in this crate where holding a guard across a scrutinee is the
+// point rather than the bug. These tests exist to demonstrate the rule the lint
+// enforces, so the lint firing on them is correct and switching it off here is
+// what lets it stay switched on everywhere it matters. `try_lock` throughout,
+// so nothing here can hang.
+#[allow(clippy::significant_drop_in_scrutinee)]
+mod edition_2024_semantics {
+    use std::sync::Mutex;
+
+    /// What edition 2024 changed about lock guards in an `if let`, and what it
+    /// did not.
+    ///
+    /// It rescopes the temporary so it is dropped before the `else` arm. It
+    /// does **not** drop it before the body: the body may bind from it, so the
+    /// guard lives to the end of the block exactly as it did before.
+    ///
+    /// This is worth a test rather than a comment because the belief that the
+    /// edition fixed it was wrong, and acting on that belief would have
+    /// retired the lint that is the actual protection. Getting this wrong once
+    /// already deadlocked the UI thread and froze NVDA with it. `try_lock`
+    /// rather than `lock`, so a wrong answer fails the test instead of hanging
+    /// it.
+    #[test]
+    fn test_a_guard_in_an_if_let_condition_still_lives_through_the_body() {
+        let numbers = Mutex::new(vec![1usize, 2, 3]);
+
+        if let Some(position) = numbers
+            .lock()
+            .expect("not poisoned")
+            .iter()
+            .position(|n| *n == 2)
+        {
+            assert_eq!(position, 1);
+            // Still held. Every widget call in this file that could raise an
+            // event taking the same lock must therefore stay outside a block
+            // like this one, and `significant_drop_in_scrutinee` is what
+            // enforces that rather than the edition.
+            assert!(
+                numbers.try_lock().is_err(),
+                "the guard now drops before the body; the lint guarding this                  pattern can be reconsidered and this comment is stale"
+            );
+        } else {
+            panic!("2 should have been found");
+        }
+    }
+
+    /// The part the edition did change: the `else` arm.
+    #[test]
+    fn test_a_guard_in_an_if_let_condition_is_released_before_the_else() {
+        let numbers = Mutex::new(vec![1usize, 2, 3]);
+
+        if let Some(_position) = numbers
+            .lock()
+            .expect("not poisoned")
+            .iter()
+            .position(|n| *n == 99)
+        {
+            panic!("99 is not in the list");
+        } else {
+            // On edition 2021 this was held and this line would deadlock.
+            assert!(
+                numbers.try_lock().is_ok(),
+                "the guard outlived the condition into the else arm"
+            );
+        }
+    }
+
+    /// `match` was left alone by the edition too, which is the other half of
+    /// why the `significant_drop_in_scrutinee` lint stays switched on in
+    /// Cargo.toml rather than being retired with the migration.
+    #[test]
+    fn test_a_guard_in_a_match_scrutinee_still_lives_to_the_end_of_the_match() {
+        let numbers = Mutex::new(vec![1usize, 2, 3]);
+
+        match numbers.lock().expect("not poisoned").first().copied() {
+            Some(first) => {
+                assert_eq!(first, 1);
+                assert!(
+                    numbers.try_lock().is_err(),
+                    "match scrutinee temporaries now drop early; the lint \
+                     guarding this pattern can be reconsidered"
+                );
+            }
+            None => panic!("the list is not empty"),
+        }
+    }
+
+    /// The other rescoping edition 2024 performs: a temporary in a block's tail
+    /// expression is dropped before the block's own locals, rather than after.
+    ///
+    /// This one does apply to us. `lock_state(&state)` in tail position is a
+    /// common shape in this file, and under 2021 the guard outlived everything
+    /// declared in the block.
+    #[test]
+    fn test_a_guard_in_a_tail_expression_drops_before_the_blocks_locals() {
+        let numbers = Mutex::new(vec![1usize, 2, 3]);
+
+        let first = {
+            let _local = String::from("declared before the tail expression");
+            numbers.lock().expect("not poisoned").first().copied()
+        };
+
+        assert_eq!(first, Some(1));
+        assert!(
+            numbers.try_lock().is_ok(),
+            "the tail expression guard escaped its block"
+        );
+    }
+
+    /// Reading a value out through a scoped block, which is the shape this file
+    /// uses everywhere a widget is touched afterwards. It has always been safe;
+    /// this records that the migration did not change it.
+    #[test]
+    fn test_a_scoped_read_still_releases_before_the_next_statement() {
+        let numbers = Mutex::new(vec![1usize, 2, 3]);
+
+        let count = {
+            let guard = numbers.lock().expect("not poisoned");
+            guard.len()
+        };
+
+        assert_eq!(count, 3);
+        assert!(numbers.try_lock().is_ok());
     }
 }

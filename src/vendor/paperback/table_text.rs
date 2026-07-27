@@ -23,8 +23,10 @@
 // SOFTWARE.
 //
 // Local changes: import paths point at this module rather than paperback-core;
-// the `t!` translation macro routes through Wixen Mail's own i18n registry;
-// parsers and types this application does not use have been left behind.
+// the translated strings route through Wixen Mail's own i18n registry; the
+// markdown and roman-numeral helpers were dropped or replaced; and parsers and
+// types this application does not use were left behind. The code itself is
+// otherwise upstream's, so a future re-sync is a diff rather than a rewrite.
 
 use super::text::{collapse_whitespace, display_len, trim_string};
 
@@ -110,13 +112,12 @@ pub fn table_caption_from_html(html: &str) -> Option<String> {
 /// Text of the table's explicit `<caption>` element, if present and non-empty.
 fn caption_element_text(table: ego_tree::NodeRef<'_, Node>) -> Option<String> {
     for child in table.children() {
-        // Local change: rewritten from a let chain, which needs edition 2024.
-        if let Node::Element(element) = child.value() {
-            if element.name() == "caption" {
-                let caption = cell_text(child);
-                if !caption.is_empty() {
-                    return Some(caption);
-                }
+        if let Node::Element(element) = child.value()
+            && element.name() == "caption"
+        {
+            let caption = cell_text(child);
+            if !caption.is_empty() {
+                return Some(caption);
             }
         }
     }

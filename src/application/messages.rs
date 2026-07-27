@@ -3,8 +3,8 @@
 //! Manages email messages, threads, and message operations.
 
 use crate::common::{
-    types::{Attachment, EmailAddress, Id, MessageBody},
     Result,
+    types::{Attachment, EmailAddress, Id, MessageBody},
 };
 use crate::data::message_cache::CachedMessage;
 use chrono::{DateTime, Utc};

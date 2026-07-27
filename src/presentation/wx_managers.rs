@@ -19,11 +19,7 @@ const ID_MGR_SYNC: Id = ID_HIGHEST + 303;
 /// Get selected item index from a ListCtrl (-1 means none).
 pub(crate) fn get_selected(list: &ListCtrl) -> Option<usize> {
     let sel = list.get_first_selected_item();
-    if sel >= 0 {
-        Some(sel as usize)
-    } else {
-        None
-    }
+    if sel >= 0 { Some(sel as usize) } else { None }
 }
 
 /// Add a label + TextCtrl row to a FlexGridSizer. Returns the TextCtrl.

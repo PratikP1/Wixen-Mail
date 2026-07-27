@@ -66,7 +66,7 @@ mod native {
     }
 
     #[link(name = "uiautomationcore")]
-    extern "system" {
+    unsafe extern "system" {
         fn UiaClientsAreListening() -> i32;
         fn UiaHostProviderFromHwnd(hwnd: isize, provider: *mut *mut c_void) -> i32;
         fn UiaRaiseNotificationEvent(
@@ -79,13 +79,13 @@ mod native {
     }
 
     #[link(name = "oleaut32")]
-    extern "system" {
+    unsafe extern "system" {
         fn SysAllocString(s: *const u16) -> *mut u16;
         fn SysFreeString(s: *mut u16);
     }
 
     #[link(name = "user32")]
-    extern "system" {
+    unsafe extern "system" {
         fn NotifyWinEvent(event: u32, hwnd: isize, id_object: i32, id_child: u32);
         fn GetForegroundWindow() -> isize;
         fn SetWindowTextW(hwnd: isize, text: *const u16) -> i32;
@@ -117,14 +117,26 @@ mod native {
     /// Release a COM interface pointer through its vtable.
     ///
     /// `IUnknown::Release` is the third entry, after QueryInterface and AddRef.
+    ///
+    /// # Safety
+    ///
+    /// `provider` must be null or a live COM interface pointer that this code
+    /// owns a reference to. Passing anything else, or passing the same pointer
+    /// twice, releases memory the caller no longer owns.
     unsafe fn release(provider: *mut c_void) {
         if provider.is_null() {
             return;
         }
-        let vtable = *(provider as *mut *mut usize);
-        let release_fn: extern "system" fn(*mut c_void) -> u32 =
-            std::mem::transmute(*vtable.add(2));
-        release_fn(provider);
+        // The unsafe block is explicit rather than inherited from the
+        // signature, which edition 2024 requires and which is the point: the
+        // null check above is ordinary code, and only these three lines are
+        // trusting the layout of someone else's object.
+        unsafe {
+            let vtable = *(provider as *mut *mut usize);
+            let release_fn: extern "system" fn(*mut c_void) -> u32 =
+                std::mem::transmute(*vtable.add(2));
+            release_fn(provider);
+        }
     }
 
     /// Speak and braille `text` through the screen reader.

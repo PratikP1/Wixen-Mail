@@ -391,11 +391,7 @@ fn extract_xml_value(xml: &str, tag: &str) -> Option<String> {
     let content = &after_open[content_start..];
     let end = content.find(&close)?;
     let value = content[..end].trim().to_string();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
+    if value.is_empty() { None } else { Some(value) }
 }
 
 /// Extract an iCalendar property value from VEVENT data.

@@ -2,7 +2,7 @@
 
 use super::{CachedAttachment, CachedMessage, MessageCache};
 use crate::common::{Error, Result};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{OptionalExtension, params};
 
 /// One row of a folder listing.
 ///
@@ -452,10 +452,12 @@ mod tests {
             .save_message(&listing_message(folder_id, 3, "Gone", "2026-07-24"))
             .unwrap();
         cache.delete_message(id).unwrap();
-        assert!(cache
-            .get_message_list(folder_id, "acc-1")
-            .unwrap()
-            .is_empty());
+        assert!(
+            cache
+                .get_message_list(folder_id, "acc-1")
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -465,10 +467,12 @@ mod tests {
         cache
             .save_message(&listing_message(folder_id, 4, "Private", "2026-07-23"))
             .unwrap();
-        assert!(cache
-            .get_message_list(folder_id, "someone-else")
-            .unwrap()
-            .is_empty());
+        assert!(
+            cache
+                .get_message_list(folder_id, "someone-else")
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

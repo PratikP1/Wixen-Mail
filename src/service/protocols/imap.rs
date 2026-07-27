@@ -3,8 +3,8 @@
 //! Handles IMAP4rev1 protocol for receiving email.
 
 use crate::common::Result;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -197,7 +197,10 @@ impl ImapSession {
     pub async fn fetch_message_body(&mut self, _folder: &str, uid: u32) -> Result<String> {
         tracing::debug!("Fetching IMAP message body for UID: {} (placeholder)", uid);
 
-        Ok(format!("From: test@example.com\r\nTo: recipient@example.com\r\nSubject: Test Message {}\r\n\r\nThis is a test message body.", uid))
+        Ok(format!(
+            "From: test@example.com\r\nTo: recipient@example.com\r\nSubject: Test Message {}\r\n\r\nThis is a test message body.",
+            uid
+        ))
     }
 
     /// Fetch messages from a folder (placeholder)

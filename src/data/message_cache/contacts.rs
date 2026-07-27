@@ -411,17 +411,17 @@ impl MessageCache {
                 )));
             }
             // Custom fields as X-CUSTOM properties
-            if let Some(ref json) = c.custom_fields_json {
-                if let Ok(fields) = serde_json::from_str::<Vec<super::CustomFieldEntry>>(json) {
-                    for f in &fields {
-                        output.push_str(&Self::fold_vcard_line(&format!(
-                            "X-CUSTOM-{}:{}",
-                            Self::escape_vcard_text(&f.label)
-                                .to_uppercase()
-                                .replace(' ', "-"),
-                            Self::escape_vcard_text(&f.value)
-                        )));
-                    }
+            if let Some(ref json) = c.custom_fields_json
+                && let Ok(fields) = serde_json::from_str::<Vec<super::CustomFieldEntry>>(json)
+            {
+                for f in &fields {
+                    output.push_str(&Self::fold_vcard_line(&format!(
+                        "X-CUSTOM-{}:{}",
+                        Self::escape_vcard_text(&f.label)
+                            .to_uppercase()
+                            .replace(' ', "-"),
+                        Self::escape_vcard_text(&f.value)
+                    )));
                 }
             }
             output.push_str("END:VCARD\r\n");
@@ -575,13 +575,13 @@ impl MessageCache {
         if trimmed.is_empty() {
             return None;
         }
-        if let (Some(start), Some(end)) = (trimmed.find('<'), trimmed.rfind('>')) {
-            if end > start {
-                let name = trimmed[..start].trim().trim_matches('"').to_string();
-                let email = trimmed[start + 1..end].trim().to_string();
-                if email.contains('@') {
-                    return Some((name, email));
-                }
+        if let (Some(start), Some(end)) = (trimmed.find('<'), trimmed.rfind('>'))
+            && end > start
+        {
+            let name = trimmed[..start].trim().trim_matches('"').to_string();
+            let email = trimmed[start + 1..end].trim().to_string();
+            if email.contains('@') {
+                return Some((name, email));
             }
         }
         if trimmed.contains('@') {

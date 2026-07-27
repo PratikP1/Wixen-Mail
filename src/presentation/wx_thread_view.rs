@@ -10,8 +10,8 @@
 //! reader says "level 3" without us describing it, and it says it the way that
 //! user has configured their screen reader to say it.
 
-use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::accessibility::Accessibility;
+use crate::presentation::accessibility::names::set_accessible_name;
 use std::sync::Arc;
 use wxdragon::prelude::*;
 

@@ -7,7 +7,7 @@
 //! user adds such an account (press OK), the browser opens immediately
 //! for authorization with no extra steps or checkboxes.
 
-use crate::data::account::{requires_oauth, Account};
+use crate::data::account::{Account, requires_oauth};
 use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
 use crate::presentation::wx_managers::get_selected;
 use crate::service::oauth::{AuthManager, OAuthService};
@@ -217,18 +217,17 @@ pub fn show_account_manager_dialog(
                     let rid = working[idx].id.clone();
                     let name = working[idx].name.clone();
                     // Revoke keychain tokens
-                    if working[idx].use_oauth {
-                        if let Some(prov) = OAuthService::detect_provider(&working[idx].email) {
-                            if let Some(creds) = oauth_credentials::credentials_for(&prov) {
-                                let mgr = AuthManager::new(
-                                    &rid,
-                                    &prov,
-                                    &creds.client_id,
-                                    creds.client_secret.as_deref(),
-                                );
-                                mgr.revoke_stored_tokens();
-                            }
-                        }
+                    if working[idx].use_oauth
+                        && let Some(prov) = OAuthService::detect_provider(&working[idx].email)
+                        && let Some(creds) = oauth_credentials::credentials_for(&prov)
+                    {
+                        let mgr = AuthManager::new(
+                            &rid,
+                            &prov,
+                            &creds.client_id,
+                            creds.client_secret.as_deref(),
+                        );
+                        mgr.revoke_stored_tokens();
                     }
                     working.remove(idx);
                     changed = true;

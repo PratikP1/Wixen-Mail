@@ -2,7 +2,7 @@
 
 use super::{CachedDraft, MessageCache};
 use crate::common::{Error, Result};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{OptionalExtension, params};
 
 impl MessageCache {
     /// Save a draft to cache

@@ -54,10 +54,10 @@ impl SearchEngine {
         let results = items
             .iter()
             .filter(|item| {
-                if let Some(filter_folder) = &query.folder {
-                    if item.folder.as_ref() != Some(filter_folder) {
-                        return false;
-                    }
+                if let Some(filter_folder) = &query.folder
+                    && item.folder.as_ref() != Some(filter_folder)
+                {
+                    return false;
                 }
                 item.text.to_lowercase().contains(&needle)
             })

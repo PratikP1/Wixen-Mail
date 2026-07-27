@@ -2,7 +2,7 @@
 //!
 //! Manages contacts, address book, and contact groups (distribution lists).
 
-use crate::common::{types::EmailAddress, Result};
+use crate::common::{Result, types::EmailAddress};
 use crate::data::message_cache::ContactEntry;
 
 /// Contact information
@@ -112,10 +112,10 @@ impl ContactManager {
 
     /// Add a contact to a group
     pub fn add_to_group(&mut self, contact_id: &str, group_id: &str) -> Result<()> {
-        if let Some(contact) = self.contacts.iter_mut().find(|c| c.id == contact_id) {
-            if !contact.group_ids.contains(&group_id.to_string()) {
-                contact.group_ids.push(group_id.to_string());
-            }
+        if let Some(contact) = self.contacts.iter_mut().find(|c| c.id == contact_id)
+            && !contact.group_ids.contains(&group_id.to_string())
+        {
+            contact.group_ids.push(group_id.to_string());
         }
         if let Some(group) = self.groups.iter_mut().find(|g| g.id == group_id) {
             group.member_count = self

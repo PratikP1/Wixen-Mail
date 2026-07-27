@@ -337,10 +337,10 @@ fn default_dict_search_paths() -> Vec<PathBuf> {
         if let Some(home) = dirs::home_dir() {
             paths.push(home.join("Library/Spelling"));
         }
-    } else if cfg!(target_os = "windows") {
-        if let Some(program_data) = std::env::var_os("ProgramData") {
-            paths.push(PathBuf::from(program_data).join("hunspell"));
-        }
+    } else if cfg!(target_os = "windows")
+        && let Some(program_data) = std::env::var_os("ProgramData")
+    {
+        paths.push(PathBuf::from(program_data).join("hunspell"));
     }
 
     paths
@@ -352,20 +352,20 @@ fn try_load_spellbook(hunspell_name: &str, search_paths: &[PathBuf]) -> Option<B
         let aff_path = dir.join(format!("{}.aff", hunspell_name));
         let dic_path = dir.join(format!("{}.dic", hunspell_name));
 
-        if aff_path.exists() && dic_path.exists() {
-            if let Ok(aff) = std::fs::read_to_string(&aff_path) {
-                if let Ok(dic) = std::fs::read_to_string(&dic_path) {
-                    let aff_static: &'static str = Box::leak(aff.into_boxed_str());
-                    let dic_static: &'static str = Box::leak(dic.into_boxed_str());
-                    if let Ok(dict) = spellbook::Dictionary::new(aff_static, dic_static) {
-                        tracing::info!(
-                            "Loaded Hunspell dictionary '{}' from {}",
-                            hunspell_name,
-                            dir.display()
-                        );
-                        return Some(Backend::Spellbook(Box::new(dict)));
-                    }
-                }
+        if aff_path.exists()
+            && dic_path.exists()
+            && let Ok(aff) = std::fs::read_to_string(&aff_path)
+            && let Ok(dic) = std::fs::read_to_string(&dic_path)
+        {
+            let aff_static: &'static str = Box::leak(aff.into_boxed_str());
+            let dic_static: &'static str = Box::leak(dic.into_boxed_str());
+            if let Ok(dict) = spellbook::Dictionary::new(aff_static, dic_static) {
+                tracing::info!(
+                    "Loaded Hunspell dictionary '{}' from {}",
+                    hunspell_name,
+                    dir.display()
+                );
+                return Some(Backend::Spellbook(Box::new(dict)));
             }
         }
     }
@@ -626,15 +626,15 @@ impl I18n {
     }
 
     pub fn t(&self, string_id: &str) -> String {
-        if let Some(table) = self.translations.get(&self.active_locale.language_code) {
-            if let Some(s) = table.get(string_id) {
-                return s.clone();
-            }
+        if let Some(table) = self.translations.get(&self.active_locale.language_code)
+            && let Some(s) = table.get(string_id)
+        {
+            return s.clone();
         }
-        if let Some(en) = self.translations.get("en") {
-            if let Some(s) = en.get(string_id) {
-                return s.clone();
-            }
+        if let Some(en) = self.translations.get("en")
+            && let Some(s) = en.get(string_id)
+        {
+            return s.clone();
         }
         string_id.to_string()
     }

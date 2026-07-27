@@ -265,13 +265,12 @@ impl FeedbackSettings {
         // available at all, add the quietest one rather than let the event go
         // out as a noise with no meaning.
         let sound_only = !active.is_empty() && !active.iter().any(Channel::carries_text);
-        if sound_only {
-            if let Some(fallback) = [Channel::Braille, Channel::Visual, Channel::Speech]
+        if sound_only
+            && let Some(fallback) = [Channel::Braille, Channel::Visual, Channel::Speech]
                 .into_iter()
                 .find(|c| self.is_channel_enabled(*c))
-            {
-                active.insert(fallback);
-            }
+        {
+            active.insert(fallback);
         }
         active
     }
@@ -368,10 +367,10 @@ impl EarconPlayer {
             // silent is the safe answer; a stuck tone is worse than none.
             return false;
         };
-        if let Some(previous) = *last {
-            if now.duration_since(previous) < EARCON_GAP {
-                return false;
-            }
+        if let Some(previous) = *last
+            && now.duration_since(previous) < EARCON_GAP
+        {
+            return false;
         }
         *last = Some(now);
         emit(tone);
@@ -388,7 +387,7 @@ impl EarconPlayer {
 #[cfg(target_os = "windows")]
 fn emit(tone: Tone) {
     #[link(name = "kernel32")]
-    extern "system" {
+    unsafe extern "system" {
         fn Beep(frequency: u32, duration: u32) -> i32;
     }
     // Safety: Beep takes two integers and touches nothing we own.
@@ -482,9 +481,11 @@ mod tests {
         // people mute permanently before learning what the sounds mean.
         let settings = FeedbackSettings::default();
         assert!(!settings.is_channel_enabled(Channel::Earcon));
-        assert!(!settings
-            .channels_for(Event::NewMail)
-            .contains(&Channel::Earcon));
+        assert!(
+            !settings
+                .channels_for(Event::NewMail)
+                .contains(&Channel::Earcon)
+        );
     }
 
     #[test]

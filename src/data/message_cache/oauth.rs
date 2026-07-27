@@ -2,7 +2,7 @@
 
 use super::{MessageCache, OAuthTokenEntry};
 use crate::common::{Error, Result};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{OptionalExtension, params};
 
 impl MessageCache {
     /// Save or update OAuth token set for an account/provider

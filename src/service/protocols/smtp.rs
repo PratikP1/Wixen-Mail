@@ -4,9 +4,9 @@
 
 use crate::common::{Error, Result};
 use lettre::{
-    message::{header::ContentType, Mailbox, Message, MultiPart, SinglePart},
-    transport::smtp::authentication::Credentials,
     AsyncSmtpTransport, AsyncTransport, Tokio1Executor,
+    message::{Mailbox, Message, MultiPart, SinglePart, header::ContentType},
+    transport::smtp::authentication::Credentials,
 };
 
 /// SMTP client configuration

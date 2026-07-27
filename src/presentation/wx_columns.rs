@@ -8,9 +8,9 @@
 //! Every change announces what happened. Moving something in a list you cannot
 //! see is otherwise a silent action with an invisible result.
 
+use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::set_accessible_name;
-use crate::presentation::accessibility::Accessibility;
 use crate::presentation::message_columns::{ColumnLayout, FolderKind, MessageColumn};
 use std::sync::Arc;
 use wxdragon::prelude::*;
@@ -193,13 +193,13 @@ pub fn show_column_dialog(
     list.on_key_down({
         let move_by = move_by.clone();
         move |event| {
-            if let WindowEventData::Keyboard(ref key) = event {
-                if key.alt_down() {
-                    match key.get_key_code() {
-                        Some(315) => move_by(-1),
-                        Some(317) => move_by(1),
-                        _ => {}
-                    }
+            if let WindowEventData::Keyboard(ref key) = event
+                && key.alt_down()
+            {
+                match key.get_key_code() {
+                    Some(315) => move_by(-1),
+                    Some(317) => move_by(1),
+                    _ => {}
                 }
             }
         }

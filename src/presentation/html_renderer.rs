@@ -248,13 +248,13 @@ impl HtmlRenderer {
         let mut links = Vec::new();
 
         for cap in link_re().captures_iter(html) {
-            if let (Some(href), Some(text)) = (cap.get(1).or_else(|| cap.get(2)), cap.get(3)) {
-                if let Some(safe_url) = Self::safe_external_url(href.as_str()) {
-                    links.push(LinkInfo {
-                        url: safe_url,
-                        text: self.html_to_plain_text(text.as_str()),
-                    });
-                }
+            if let (Some(href), Some(text)) = (cap.get(1).or_else(|| cap.get(2)), cap.get(3))
+                && let Some(safe_url) = Self::safe_external_url(href.as_str())
+            {
+                links.push(LinkInfo {
+                    url: safe_url,
+                    text: self.html_to_plain_text(text.as_str()),
+                });
             }
         }
 

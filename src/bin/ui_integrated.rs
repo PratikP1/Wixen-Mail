@@ -6,7 +6,7 @@
 //! with real IMAP/SMTP connectivity.
 
 use wixen_mail::{
-    common::logging::{init_logging, LoggerConfig},
+    common::logging::{LoggerConfig, init_logging},
     presentation::WxMailApp,
 };
 
@@ -96,9 +96,9 @@ fn show_error_dialog(message: &str) {
         use std::ptr;
 
         #[link(name = "user32")]
-        extern "system" {
+        unsafe extern "system" {
             fn MessageBoxW(hwnd: *mut (), text: *const u16, caption: *const u16, flags: u32)
-                -> i32;
+            -> i32;
         }
 
         fn to_wide(s: &str) -> Vec<u16> {

@@ -74,11 +74,7 @@ impl FilterEngine {
 
     fn matches(rule: &FilterRule, message: &CachedMessage) -> bool {
         fn bool_to_str(value: bool) -> &'static str {
-            if value {
-                "true"
-            } else {
-                "false"
-            }
+            if value { "true" } else { "false" }
         }
 
         let target_text = match rule.field.as_str() {

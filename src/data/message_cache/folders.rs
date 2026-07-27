@@ -2,7 +2,7 @@
 
 use super::{CachedFolder, MessageCache};
 use crate::common::{Error, Result};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{OptionalExtension, params};
 
 impl MessageCache {
     /// Save a folder to cache

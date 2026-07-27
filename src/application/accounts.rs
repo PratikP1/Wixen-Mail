@@ -3,8 +3,8 @@
 //! Manages email accounts, credentials, and authentication.
 
 use crate::common::{
-    types::{AccountSettings, Credentials, Id, Protocol, ServerConfig},
     Result,
+    types::{AccountSettings, Credentials, Id, Protocol, ServerConfig},
 };
 
 /// Account information with full server configuration

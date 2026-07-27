@@ -1,6 +1,6 @@
 #![windows_subsystem = "windows"]
 
-use wixen_mail::common::logging::{init_logging, LoggerConfig};
+use wixen_mail::common::logging::{LoggerConfig, init_logging};
 use wixen_mail::presentation::WxMailApp;
 
 fn main() {
@@ -93,9 +93,9 @@ fn show_error_dialog(message: &str) {
         use std::ptr;
 
         #[link(name = "user32")]
-        extern "system" {
+        unsafe extern "system" {
             fn MessageBoxW(hwnd: *mut (), text: *const u16, caption: *const u16, flags: u32)
-                -> i32;
+            -> i32;
         }
 
         fn to_wide(s: &str) -> Vec<u16> {

@@ -2,7 +2,7 @@
 //!
 //! Handles application settings, account configurations, and persistence.
 
-use crate::common::{types::Id, Error, Result};
+use crate::common::{Error, Result, types::Id};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -427,10 +427,10 @@ mod tests {
         let config_dir = ConfigManager::get_config_dir().unwrap();
         assert!(config_dir.ends_with("wixen-mail"));
 
-        if cfg!(windows) {
-            if let Some(base) = dirs::data_local_dir().or_else(dirs::config_dir) {
-                assert!(config_dir.starts_with(base));
-            }
+        if cfg!(windows)
+            && let Some(base) = dirs::data_local_dir().or_else(dirs::config_dir)
+        {
+            assert!(config_dir.starts_with(base));
         }
     }
 

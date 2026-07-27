@@ -207,10 +207,10 @@ impl Accessibility {
         {
             self.announce_topic(&text, event.priority(), event.key())?;
         }
-        if channels.contains(&feedback::Channel::Visual) {
-            if let Ok(mut visual) = self.visual.lock() {
-                *visual = Some(text);
-            }
+        if channels.contains(&feedback::Channel::Visual)
+            && let Ok(mut visual) = self.visual.lock()
+        {
+            *visual = Some(text);
         }
         Ok(())
     }

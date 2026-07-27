@@ -11,8 +11,8 @@
 //! lie about what happened.
 
 use crate::common::{Error, Result};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// Most announcements that may be waiting at once. Beyond this the queue is
@@ -144,15 +144,14 @@ impl AnnouncementQueue {
 
         // Superseding: a newer entry on the same topic replaces the older one
         // in place, keeping its queue position so nothing starves.
-        if let Some(topic) = announcement.topic.as_deref() {
-            if let Some(existing) = state
+        if let Some(topic) = announcement.topic.as_deref()
+            && let Some(existing) = state
                 .pending
                 .iter_mut()
                 .find(|p| p.announcement.topic.as_deref() == Some(topic))
-            {
-                existing.announcement = announcement;
-                return Ok(());
-            }
+        {
+            existing.announcement = announcement;
+            return Ok(());
         }
 
         // A repeat says nothing new.

@@ -434,7 +434,7 @@ impl MessageCache {
             Ok(String::from_utf8(encrypted)
                 .map_err(|e| Error::Security(format!("Encrypted output not UTF-8: {}", e)))?)
         } else {
-            use base64::{engine::general_purpose, Engine as _};
+            use base64::{Engine as _, engine::general_purpose};
             Ok(general_purpose::STANDARD.encode(value))
         }
     }
@@ -442,16 +442,15 @@ impl MessageCache {
     /// Decrypt a stored value. Tries AES decryption first, falls back to base64 for migration.
     fn decrypt_value(&self, stored: &str) -> Result<String> {
         // Try AES decryption first (encrypted values have WXM2: prefix)
-        if let Some(ref sec) = self.security {
-            if stored.starts_with("WXM2:") {
-                let decrypted = sec.decrypt(stored.as_bytes())?;
-                return String::from_utf8(decrypted).map_err(|e| {
-                    Error::Security(format!("Decrypted value not valid UTF-8: {}", e))
-                });
-            }
+        if let Some(ref sec) = self.security
+            && stored.starts_with("WXM2:")
+        {
+            let decrypted = sec.decrypt(stored.as_bytes())?;
+            return String::from_utf8(decrypted)
+                .map_err(|e| Error::Security(format!("Decrypted value not valid UTF-8: {}", e)));
         }
         // Fall back to base64 decode (legacy data or no SecurityService)
-        use base64::{engine::general_purpose, Engine as _};
+        use base64::{Engine as _, engine::general_purpose};
         general_purpose::STANDARD
             .decode(stored)
             .ok()

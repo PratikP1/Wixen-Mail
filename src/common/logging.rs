@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use tracing::Level;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Layer, Registry};
+use tracing_subscriber::{EnvFilter, Layer, Registry, fmt, layer::SubscriberExt};
 
 /// Privacy-aware string wrapper that masks sensitive data in logs
 #[derive(Debug)]

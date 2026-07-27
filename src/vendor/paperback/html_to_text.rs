@@ -23,14 +23,16 @@
 // SOFTWARE.
 //
 // Local changes: import paths point at this module rather than paperback-core;
-// the `t!` translation macro routes through Wixen Mail's own i18n registry;
-// parsers and types this application does not use have been left behind.
+// the translated strings route through Wixen Mail's own i18n registry; the
+// markdown and roman-numeral helpers were dropped or replaced; and parsers and
+// types this application does not use were left behind. The code itself is
+// otherwise upstream's, so a future re-sync is a diff rather than a rewrite.
 
 use std::{collections::HashMap, fmt::Write, mem};
 
 use bitflags::bitflags;
 use ego_tree::NodeRef;
-use scraper::{node, ElementRef, Html, Node};
+use scraper::{ElementRef, Html, Node, node};
 
 use super::table_text::{push_finalized_line, table_render_bundle};
 use super::text::{
@@ -282,11 +284,11 @@ impl HtmlToText {
             Node::Element(element) => {
                 let tag_name = element.name();
                 if tag_name == "table" {
-                    if self.flags.contains(ProcessingFlags::IN_BODY) {
-                        if let Some(id) = element.attr("id").or_else(|| element.attr("name")) {
-                            self.id_positions
-                                .insert(id.to_string(), self.get_current_text_position());
-                        }
+                    if self.flags.contains(ProcessingFlags::IN_BODY)
+                        && let Some(id) = element.attr("id").or_else(|| element.attr("name"))
+                    {
+                        self.id_positions
+                            .insert(id.to_string(), self.get_current_text_position());
                     }
                     self.handle_table(node, document);
                     return;
@@ -362,11 +364,11 @@ impl HtmlToText {
 
                     if description.is_empty() && tag_name == "figure" {
                         for child in node.children() {
-                            if let Node::Element(child_elem) = child.value() {
-                                if child_elem.name() == "figcaption" {
-                                    description = collapse_whitespace(&Self::collect_text(child));
-                                    break;
-                                }
+                            if let Node::Element(child_elem) = child.value()
+                                && child_elem.name() == "figcaption"
+                            {
+                                description = collapse_whitespace(&Self::collect_text(child));
+                                break;
                             }
                         }
                     }
@@ -472,10 +474,10 @@ impl HtmlToText {
             if tag_name == "ol" {
                 style.ordered = true;
                 if let Some(element) = ElementRef::wrap(node) {
-                    if let Some(start_val) = element.attr("start") {
-                        if let Ok(start_num) = start_val.parse::<i32>() {
-                            style.item_number = start_num;
-                        }
+                    if let Some(start_val) = element.attr("start")
+                        && let Ok(start_num) = start_val.parse::<i32>()
+                    {
+                        style.item_number = start_num;
                     }
                     if let Some(type_val) = element.attr("type") {
                         style.list_type = type_val.to_lowercase();
@@ -485,10 +487,10 @@ impl HtmlToText {
             self.list_style_stack.push(style);
             let mut item_count = 0;
             for child in node.children() {
-                if let Node::Element(child_elem) = child.value() {
-                    if child_elem.name() == "li" {
-                        item_count += 1;
-                    }
+                if let Node::Element(child_elem) = child.value()
+                    && child_elem.name() == "li"
+                {
+                    item_count += 1;
                 }
             }
             if item_count > 0 {
@@ -506,18 +508,14 @@ impl HtmlToText {
     }
 
     fn handle_heading(&mut self, tag_name: &str, node: NodeRef<'_, Node>, document: &Html) {
-        // Local change: rewritten from a let chain, which needs edition 2024.
-        // The chain tested the second character for a digit and then parsed it
-        // again; this asks once.
-        let level = if self.flags.contains(ProcessingFlags::IN_BODY)
+        if self.flags.contains(ProcessingFlags::IN_BODY)
             && tag_name.len() == 2
             && tag_name.starts_with('h')
+            && tag_name.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
+            && let Some(level_char) = tag_name.chars().nth(1)
+            && let Some(level) = level_char.to_digit(10)
+            && (1..=6).contains(&level)
         {
-            tag_name.chars().nth(1).and_then(|c| c.to_digit(10))
-        } else {
-            None
-        };
-        if let Some(level) = level.filter(|level| (1..=6).contains(level)) {
             self.finalize_current_line();
             let heading_offset = self.get_current_text_position();
             let heading_text = Self::get_element_text(node, document);
@@ -613,13 +611,13 @@ impl HtmlToText {
                     length: self.get_current_text_position().saturating_sub(start),
                 });
             }
-        } else if tag_name == "u" {
-            if let Some(start) = self.open_underlines.pop() {
-                self.underlines.push(FormatInfo {
-                    offset: start,
-                    length: self.get_current_text_position().saturating_sub(start),
-                });
-            }
+        } else if tag_name == "u"
+            && let Some(start) = self.open_underlines.pop()
+        {
+            self.underlines.push(FormatInfo {
+                offset: start,
+                length: self.get_current_text_position().saturating_sub(start),
+            });
         }
     }
 

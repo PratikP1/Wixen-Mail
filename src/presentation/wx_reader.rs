@@ -17,9 +17,9 @@
 //! that shape for the same reasons, and there was no sense in learning them
 //! twice.
 
+use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::set_accessible_name;
-use crate::presentation::accessibility::Accessibility;
 use crate::presentation::reader_text::ReaderDocument;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -109,10 +109,10 @@ impl ReaderWindow {
         notebook.on_page_changed({
             let current = current.clone();
             move |event| {
-                if let Some(page) = event.get_selection() {
-                    if page >= 0 {
-                        current.set(page as usize);
-                    }
+                if let Some(page) = event.get_selection()
+                    && page >= 0
+                {
+                    current.set(page as usize);
                 }
             }
         });

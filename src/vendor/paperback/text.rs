@@ -23,8 +23,10 @@
 // SOFTWARE.
 //
 // Local changes: import paths point at this module rather than paperback-core;
-// the `t!` translation macro routes through Wixen Mail's own i18n registry;
-// parsers and types this application does not use have been left behind.
+// the translated strings route through Wixen Mail's own i18n registry; the
+// markdown and roman-numeral helpers were dropped or replaced; and parsers and
+// types this application does not use were left behind. The code itself is
+// otherwise upstream's, so a future re-sync is a diff rather than a rewrite.
 
 // Local change: roman numeral list markers are spelled out here rather than
 // pulling in a crate for five lines, so an ordered list using type="i" still

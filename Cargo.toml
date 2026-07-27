@@ -1,7 +1,11 @@
 [package]
 name = "wixen-mail"
 version = "0.1.0-alpha.12"
-edition = "2021"
+edition = "2024"
+# Stated rather than left implicit. Edition 2024 needs 1.85, and without this a
+# older toolchain fails with a parse error somewhere in the middle of the build
+# rather than saying which version it wants.
+rust-version = "1.85"
 authors = ["Pratik Patel"]
 description = "A fully accessible, light-weight mail client built with Rust and WXDragon"
 license = "MIT"
@@ -78,13 +82,17 @@ tokio-test = "0.4"
 tempfile = "3.14"
 
 # A held lock guard is how this application deadlocked its own UI thread and
-# froze NVDA with it: the guard in an `if let` scrutinee lives for the whole
-# block on edition 2021, so a widget call inside that block ran while the state
-# mutex was held, and the event it raised tried to take the same mutex again.
+# froze NVDA with it: the guard in an `if let` condition lives for the whole
+# block, so a widget call inside that block ran while the state mutex was held,
+# and the event it raised tried to take the same mutex again.
 #
-# These two lints name that shape. They are nursery lints, so they have to be
-# asked for; the cost of a false positive here is a `let` binding, and the cost
-# of a miss is a screen reader hanging on a user.
+# Edition 2024 does not fix this. It rescopes the guard so it drops before the
+# `else` arm, and leaves the body exactly as it was, because the body may bind
+# from the scrutinee. `match` is unchanged as well. So these lints remain the
+# only thing standing between us and that deadlock, and there are tests in
+# wx_app.rs pinning down both halves of that rule rather than trusting a
+# comment. The cost of a false positive is a `let` binding; the cost of a miss
+# is a screen reader hanging on a user.
 [lints.clippy]
 significant_drop_in_scrutinee = "deny"
 await_holding_lock = "deny"

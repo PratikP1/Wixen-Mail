@@ -64,14 +64,14 @@ fn resolve_gmail() -> Option<ClientCredentials> {
     if let (Ok(id), Ok(secret)) = (
         std::env::var("WIXEN_GMAIL_CLIENT_ID"),
         std::env::var("WIXEN_GMAIL_CLIENT_SECRET"),
-    ) {
-        if !id.is_empty() && !secret.is_empty() {
-            return Some(ClientCredentials {
-                client_id: id,
-                client_secret: Some(secret),
-                tenant_id: None,
-            });
-        }
+    ) && !id.is_empty()
+        && !secret.is_empty()
+    {
+        return Some(ClientCredentials {
+            client_id: id,
+            client_secret: Some(secret),
+            tenant_id: None,
+        });
     }
 
     // 2. TOML config file
@@ -95,20 +95,20 @@ fn resolve_gmail() -> Option<ClientCredentials> {
 
 fn resolve_outlook() -> Option<ClientCredentials> {
     // 1. Environment variables — client_secret optional for public clients
-    if let Ok(id) = std::env::var("WIXEN_OUTLOOK_CLIENT_ID") {
-        if !id.is_empty() {
-            let secret = std::env::var("WIXEN_OUTLOOK_CLIENT_SECRET")
-                .ok()
-                .filter(|s| !s.is_empty());
-            let tenant = std::env::var("WIXEN_OUTLOOK_TENANT_ID")
-                .ok()
-                .filter(|s| !s.is_empty());
-            return Some(ClientCredentials {
-                client_id: id,
-                client_secret: secret,
-                tenant_id: tenant,
-            });
-        }
+    if let Ok(id) = std::env::var("WIXEN_OUTLOOK_CLIENT_ID")
+        && !id.is_empty()
+    {
+        let secret = std::env::var("WIXEN_OUTLOOK_CLIENT_SECRET")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let tenant = std::env::var("WIXEN_OUTLOOK_TENANT_ID")
+            .ok()
+            .filter(|s| !s.is_empty());
+        return Some(ClientCredentials {
+            client_id: id,
+            client_secret: secret,
+            tenant_id: tenant,
+        });
     }
 
     // 2. TOML config file

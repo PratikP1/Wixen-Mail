@@ -6,7 +6,7 @@
 use crate::common::{Error, Result};
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use rand::Rng;
 use regex::Regex;
 use std::fs;
@@ -368,11 +368,11 @@ impl SecurityService {
             indicators.push("Contains punycode-like domain (possible homograph)".to_string());
         }
 
-        if let Some(html) = body_html {
-            if self.has_deceptive_links(html) {
-                phishing_score = phishing_score.saturating_add(SCORE_DECEPTIVE_LINK);
-                indicators.push("Detected deceptive link text/href mismatch".to_string());
-            }
+        if let Some(html) = body_html
+            && self.has_deceptive_links(html)
+        {
+            phishing_score = phishing_score.saturating_add(SCORE_DECEPTIVE_LINK);
+            indicators.push("Detected deceptive link text/href mismatch".to_string());
         }
 
         // Normalize score to a stable 0-100 policy scale (not overflow handling).

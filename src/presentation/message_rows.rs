@@ -9,7 +9,7 @@
 //! to be heard rather than seen. "Unread" beats a bullet, and a date reads as a
 //! date rather than a timestamp.
 
-use super::date_display::{format_for_list, DateOrder, DateStyle};
+use super::date_display::{DateOrder, DateStyle, format_for_list};
 use super::message_columns::MessageColumn;
 use super::ui_types::MessageItem;
 

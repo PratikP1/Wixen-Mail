@@ -619,10 +619,10 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl) {
         let panel_ref = *panel;
         move |_ev| {
             let dir_dlg = DirDialog::builder(&panel_ref, "Select download folder", "").build();
-            if dir_dlg.show_modal() == ID_OK {
-                if let Some(path) = dir_dlg.get_path() {
-                    dl_field_clone.set_value(&path);
-                }
+            if dir_dlg.show_modal() == ID_OK
+                && let Some(path) = dir_dlg.get_path()
+            {
+                dl_field_clone.set_value(&path);
             }
         }
     });

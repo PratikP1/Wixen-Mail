@@ -88,7 +88,7 @@ pub fn name_from_label(label: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{name_from_label, AccessibleImpl, FixedName};
+    use super::{AccessibleImpl, FixedName, name_from_label};
     use wxdragon::ffi;
 
     #[test]

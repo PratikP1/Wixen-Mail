@@ -75,7 +75,7 @@ impl DateOrder {
         const LOCALE_IDATE: u32 = 0x00000021;
 
         #[link(name = "kernel32")]
-        extern "system" {
+        unsafe extern "system" {
             fn GetLocaleInfoW(locale: u32, lctype: u32, data: *mut u16, size: i32) -> i32;
         }
 
@@ -118,10 +118,10 @@ pub fn format_for_list(
         return stored.to_string();
     };
 
-    if style == DateStyle::RelativeWithinWeek {
-        if let Some(relative) = relative_to(when, now) {
-            return relative;
-        }
+    if style == DateStyle::RelativeWithinWeek
+        && let Some(relative) = relative_to(when, now)
+    {
+        return relative;
     }
     absolute(when, order)
 }

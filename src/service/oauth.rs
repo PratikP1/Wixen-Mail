@@ -13,8 +13,8 @@
 
 use crate::common::{Error, Result};
 use oauth2::{
-    basic::BasicClient, AuthUrl, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl,
-    Scope, TokenUrl,
+    AuthUrl, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, Scope, TokenUrl,
+    basic::BasicClient,
 };
 use serde::{Deserialize, Serialize};
 
@@ -408,21 +408,20 @@ pub fn wait_for_redirect_code(expected_state: Option<&str>, timeout_secs: u64) -
         };
 
         // Validate CSRF state if provided
-        if let Some(expected) = expected_state {
-            if let Some(state) = params.get("state") {
-                if state.as_ref() != expected {
-                    let html = "<html><body><h2>State Mismatch</h2><p>CSRF state does not match. Authorization aborted.</p></body></html>";
-                    let response = tiny_http::Response::from_string(html).with_header(
-                        "Content-Type: text/html"
-                            .parse::<tiny_http::Header>()
-                            .unwrap(),
-                    );
-                    let _ = request.respond(response);
-                    return Err(Error::Authentication(
-                        "CSRF state mismatch, the response may have been intercepted".to_string(),
-                    ));
-                }
-            }
+        if let Some(expected) = expected_state
+            && let Some(state) = params.get("state")
+            && state.as_ref() != expected
+        {
+            let html = "<html><body><h2>State Mismatch</h2><p>CSRF state does not match. Authorization aborted.</p></body></html>";
+            let response = tiny_http::Response::from_string(html).with_header(
+                "Content-Type: text/html"
+                    .parse::<tiny_http::Header>()
+                    .unwrap(),
+            );
+            let _ = request.respond(response);
+            return Err(Error::Authentication(
+                "CSRF state mismatch, the response may have been intercepted".to_string(),
+            ));
         }
 
         // Success — respond with a friendly page and return the code
@@ -615,10 +614,10 @@ impl AuthManager {
         let service = format!("wixen-mail-{}", self.provider);
         match keyring::Entry::new(&service, &self.account_id) {
             Ok(entry) => {
-                if let Ok(json) = serde_json::to_string(tokens) {
-                    if let Err(e) = entry.set_password(&json) {
-                        tracing::warn!("Failed to store token in keyring: {}", e);
-                    }
+                if let Ok(json) = serde_json::to_string(tokens)
+                    && let Err(e) = entry.set_password(&json)
+                {
+                    tracing::warn!("Failed to store token in keyring: {}", e);
                 }
             }
             Err(e) => {
