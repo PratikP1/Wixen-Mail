@@ -15,6 +15,7 @@ pub mod notes;
 pub mod reminders;
 pub mod search;
 pub mod tasks;
+pub mod threading;
 
 pub use accounts::AccountManager;
 pub use caldav_sync::{refresh_subscription, sync_caldav_calendar};

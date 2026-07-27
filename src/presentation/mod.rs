@@ -22,6 +22,7 @@ pub mod wx_oauth;
 pub mod wx_reminders_module;
 pub mod wx_settings;
 pub mod wx_tasks_module;
+pub mod wx_thread_view;
 
 pub use accessibility::Accessibility;
 pub use html_renderer::HtmlRenderer;

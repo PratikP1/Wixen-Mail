@@ -58,6 +58,18 @@ pub struct HtmlRenderer {
     plain_text_only: bool,
 }
 
+/// One message in a combined conversation document.
+///
+/// The body is untrusted and is sanitized on the way in, like every other
+/// body. Being part of a thread does not make a stranger's HTML safer.
+pub struct ThreadPart {
+    pub sender: String,
+    pub date: String,
+    pub subject: String,
+    pub body: String,
+    pub depth: usize,
+}
+
 impl HtmlRenderer {
     /// Create a new HTML renderer
     pub fn new() -> Self {
@@ -288,6 +300,68 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
         )
     }
 
+    /// Render a whole conversation as one document.
+    ///
+    /// Every message is introduced by a heading, so `H` in a screen reader
+    /// moves between them and the whole thread is navigable without tabbing
+    /// through it. The heading carries the sender and, past level six, the
+    /// real depth, because those are what someone navigates by; the subject is
+    /// on the document rather than repeated on every reply.
+    ///
+    /// Levels cap at six and never skip. Skipping a heading level is a
+    /// structure violation in its own right, and conversations go deeper than
+    /// six, so the depth moves into the text rather than the markup.
+    pub fn render_thread(&self, subject: &str, parts: &[ThreadPart]) -> String {
+        let mut body = String::new();
+        body.push_str(&format!(
+            "<h1>{}</h1>
+<p>{} messages in this conversation.</p>
+",
+            html_escape::encode_text(if subject.trim().is_empty() {
+                "No subject"
+            } else {
+                subject.trim()
+            }),
+            parts.len()
+        ));
+
+        for (position, part) in parts.iter().enumerate() {
+            // Heading levels start at 2: the subject is the document's h1, and
+            // a second h1 would give the page two titles.
+            let level = (crate::application::threading::heading_level(part.depth) + 1).min(6);
+            let role = if part.depth == 0 {
+                "Message".to_string()
+            } else if level < 6 {
+                "Reply".to_string()
+            } else {
+                // The markup has run out of levels, so the depth is spoken.
+                format!("Reply, level {}", part.depth + 1)
+            };
+            body.push_str(&format!(
+                "<h{level}>{position}. {role} from {sender}</h{level}>
+<p>{date}</p>
+",
+                level = level,
+                position = position + 1,
+                role = html_escape::encode_text(&role),
+                sender = html_escape::encode_text(&part.sender),
+                date = html_escape::encode_text(&part.date),
+            ));
+            let content = if part.body.contains('<') && part.body.contains('>') {
+                self.sanitize_html(&part.body)
+            } else {
+                format!(
+                    "<pre style=\"white-space:pre-wrap;font-family:inherit\">{}</pre>",
+                    html_escape::encode_text(&part.body)
+                )
+            };
+            body.push_str(&content);
+            body.push('\n');
+        }
+
+        self.wrap_for_webview(&body)
+    }
+
     /// The only URLs this application will hand to the operating system.
     ///
     /// Returns the URL when it is safe to open externally, `None` otherwise.
@@ -400,6 +474,91 @@ pub struct LinkInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn part(sender: &str, depth: usize, body: &str) -> ThreadPart {
+        ThreadPart {
+            sender: sender.to_string(),
+            date: "2026-07-26".to_string(),
+            subject: "Quarterly report".to_string(),
+            body: body.to_string(),
+            depth,
+        }
+    }
+
+    #[test]
+    fn test_a_thread_document_has_one_heading_per_message() {
+        // H moves between messages in a screen reader, which is the whole
+        // point of rendering a conversation as one document.
+        let renderer = HtmlRenderer::new();
+        let html = renderer.render_thread(
+            "Quarterly report",
+            &[
+                part("Ada", 0, "The numbers are attached."),
+                part("Grace", 1, "Thanks."),
+                part("Alan", 2, "Agreed."),
+            ],
+        );
+        assert_eq!(html.matches("<h2").count(), 1);
+        assert_eq!(html.matches("<h3").count(), 1);
+        assert_eq!(html.matches("<h4").count(), 1);
+        assert!(html.contains("from Ada"));
+        assert!(html.contains("3 messages in this conversation"));
+    }
+
+    #[test]
+    fn test_the_subject_is_the_only_h1() {
+        // Two h1 elements give a document two titles, and a screen reader user
+        // navigating by heading has no way to tell which is the real one.
+        let renderer = HtmlRenderer::new();
+        let html = renderer.render_thread("Quarterly report", &[part("Ada", 0, "Body")]);
+        assert_eq!(html.matches("<h1").count(), 1);
+    }
+
+    #[test]
+    fn test_deep_replies_stop_at_h6_and_say_their_real_depth() {
+        // Levels cap rather than skip, and the depth moves into the text so
+        // nothing is lost.
+        let renderer = HtmlRenderer::new();
+        let deep: Vec<ThreadPart> = (0..10).map(|d| part("Ada", d, "Body")).collect();
+        let html = renderer.render_thread("Long thread", &deep);
+        assert!(!html.contains("<h7"));
+        assert!(html.contains("Reply, level 10"));
+    }
+
+    #[test]
+    fn test_a_thread_body_is_still_sanitized() {
+        // Being part of a conversation does not make a stranger's HTML safer.
+        let renderer = HtmlRenderer::new();
+        let html = renderer.render_thread(
+            "Quarterly report",
+            &[part("Ada", 0, "<script>alert(1)</script><p>Hello</p>")],
+        );
+        assert!(!html.contains("<script"));
+        assert!(html.contains("Hello"));
+    }
+
+    #[test]
+    fn test_a_plain_text_body_in_a_thread_is_escaped_not_rendered() {
+        let renderer = HtmlRenderer::new();
+        let html = renderer.render_thread("Subject", &[part("Ada", 0, "5 < 6 & 7 > 6")]);
+        assert!(html.contains("5 &lt; 6 &amp; 7 &gt; 6"));
+    }
+
+    #[test]
+    fn test_a_thread_with_no_subject_says_so() {
+        let renderer = HtmlRenderer::new();
+        let html = renderer.render_thread("   ", &[part("Ada", 0, "Body")]);
+        assert!(html.contains("No subject"));
+    }
+
+    #[test]
+    fn test_a_sender_name_cannot_inject_markup_through_the_heading() {
+        // The sender field is attacker controlled on every message.
+        let renderer = HtmlRenderer::new();
+        let html =
+            renderer.render_thread("Subject", &[part("<script>alert(1)</script>", 0, "Body")]);
+        assert!(!html.contains("<script"));
+    }
 
     #[test]
     fn test_html_renderer_creation() {

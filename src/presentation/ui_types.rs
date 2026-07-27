@@ -183,6 +183,8 @@ pub struct CompositionData {
 pub enum UIUpdate {
     FoldersLoaded(Vec<String>),
     MessagesLoaded(Vec<MessageItem>),
+    /// A whole conversation rendered as one document, ready for the preview.
+    ThreadRendered(String),
     /// Folder names paired with their database ids.
     ///
     /// The tree shows names, but reading a folder needs its id, and looking

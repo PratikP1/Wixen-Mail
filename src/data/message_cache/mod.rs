@@ -911,6 +911,14 @@ impl MessageCache {
         // reading on every row after that happens.
         self.ensure_column_exists("messages", "snippet", "TEXT")?;
         self.ensure_column_exists("messages", "size_bytes", "INTEGER")?;
+        // The References and In-Reply-To headers, space separated. Threading
+        // reads them and nothing else; storing them is what makes conversations
+        // cost no extra fetch.
+        self.ensure_column_exists("messages", "refs_header", "TEXT")?;
+        // The conversation this message was placed in, so the list does not
+        // rethread the whole folder on every open.
+        self.ensure_column_exists("messages", "thread_id", "TEXT")?;
+        self.ensure_column_exists("messages", "thread_depth", "INTEGER")?;
         self.ensure_column_exists("calendar_events", "calendar_id", "TEXT")?;
         self.ensure_column_exists(
             "message_filter_rules",

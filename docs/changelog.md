@@ -14,6 +14,10 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 - **A snippet column that has something to read.** The first line of the body is stored beside the message when the body is fetched, so the column keeps working after the body cache evicts. Messages with no plain text part fall back to their HTML.
 - **A size column**, spoken in units: "2 KB" rather than "2048". A size we do not know yet reads as blank rather than as "0 bytes", which would be a claim we cannot make.
 - **To and Cc columns**, which prefer a display name over a raw address the same way the correspondent column does.
+- **Conversations.** Messages are grouped from the `References` and `In-Reply-To` headers, so threading costs no extra fetch. Subject matching is deliberately not used: "Re: lunch" collides across years and strangers, and a thread that quietly merges two conversations is worse than two threads. A late message that references two separate trees merges them, which is the case the tests are built around.
+- **`Enter` on a message in a conversation opens a tree**, on a native tree control so the screen reader announces the level itself. `Enter` on the first row opens the whole conversation as one document; `Enter` on a message opens that message. The first row is labelled "Whole conversation, 5 messages" rather than repeating the subject, because `Enter` does two things there and the row has to say which. `Escape` goes back to the list with focus on the row it came from. A message with no conversation opens straight into the preview, with no tree in the way.
+- **A whole conversation renders as one document**, each message introduced by a heading so `H` moves between them. Levels cap at `h6` and never skip: skipping a heading level is a structure violation in its own right, and conversations go deeper than six, so the real depth moves into the heading text as "Reply, level 8". Bodies are sanitized exactly as they are anywhere else; being part of a thread does not make a stranger's HTML safer.
+- **A conversation of one is not reported as a conversation**, so an ordinary message carries no thread indicator and raises no earcon.
 - **Next and previous unread** on `Ctrl+Shift+N` and `Ctrl+Shift+P`. They wrap at the ends, and say "no unread messages" rather than doing nothing, because a key that silently does nothing is indistinguishable from a key that is broken.
 - **Flag a message** with `Ctrl+Shift+S`, which writes through to the cache.
 - **`F5` reads the current folder again** and `F6` moves between the folder, message, and preview panes, skipping the preview when it is hidden rather than focusing something invisible.
@@ -37,7 +41,7 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 - Sorting still happens in memory over the loaded folder rather than in SQL. That is fine for the folder sizes the application can currently reach, and it is the wrong shape for the hundreds of thousands of messages the storage design targets. The SQL ordering is written and tested; the listing query does not use it yet.
 - Earcons are Windows-only for now. On macOS and Linux the sound channel is silent and the text channels carry the event on their own; a port needs its own audio path.
 - Feedback preferences are per channel, not per event. The per-event overrides exist in the model and have no interface yet, because a grid of nine events by four channels is not the choice most people are making.
-- The Thread column reads blank because threading is not computed. It is not hidden, because a column offered and empty at least says the feature exists; a column silently absent says nothing.
+- Threading runs over the loaded folder rather than incrementally as mail arrives, because no IMAP sync feeds it yet. The `References` headers have nowhere to come from until that lands, so in practice every message currently threads alone.
 
 ### Added, earlier in this cycle
 

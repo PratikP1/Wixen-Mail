@@ -17,6 +17,7 @@ use crate::presentation::wx_columns;
 use crate::presentation::wx_compose::{self, ComposeMode, ComposeResult};
 use crate::presentation::wx_managers;
 use crate::presentation::wx_settings;
+use crate::presentation::wx_thread_view;
 
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::date_display;
@@ -1425,6 +1426,69 @@ impl WxMailApp {
             });
 
             // ── Spacebar read-aloud ─────────────────────────────────────
+
+            // ── Enter opens a message, or a conversation ─────────────────
+            //
+            // A message on its own opens straight into the preview, with no
+            // tree in the way. A message that belongs to a conversation opens
+            // the tree first, because that is the only place the structure
+            // exists: the list stays one row per message so arrowing never
+            // walks branches nobody asked for.
+            msg_list.on_item_activated({
+                let state = state.clone();
+                let a11y = a11y.clone();
+                let ui_tx = ui_tx.clone();
+                let thread_cache = message_cache.clone();
+                move |event| {
+                    let index = event.get_item_index();
+                    if index < 0 {
+                        return;
+                    }
+                    let (thread_id, subject) = {
+                        let s = lock_state(&state);
+                        match s.messages.get(index as usize) {
+                            Some(m) => (m.thread_id.clone(), m.subject.clone()),
+                            None => return,
+                        }
+                    };
+                    let Some(thread_id) = thread_id else {
+                        // Not in a conversation: the preview already follows
+                        // selection, so there is nothing else to do.
+                        return;
+                    };
+                    let nodes = conversation_nodes(&state, &thread_id);
+                    if nodes.len() < 2 {
+                        return;
+                    }
+                    match wx_thread_view::show_thread_dialog(&frame, &subject, &nodes, &a11y) {
+                        wx_thread_view::ThreadChoice::WholeConversation => {
+                            let html = render_conversation(&thread_cache, &subject, &nodes);
+                            let _ = ui_tx.try_send(UIUpdate::ThreadRendered(html));
+                        }
+                        wx_thread_view::ThreadChoice::Message(id) => {
+                            if let Some(row) = lock_state(&state)
+                                .messages
+                                .iter()
+                                .position(|m| m.message_id == id)
+                            {
+                                msg_list.set_item_state(
+                                    row as i64,
+                                    ListItemState::Selected | ListItemState::Focused,
+                                    ListItemState::Selected | ListItemState::Focused,
+                                );
+                                msg_list.ensure_visible(row as i64);
+                            }
+                            msg_list.set_focus();
+                        }
+                        wx_thread_view::ThreadChoice::Cancelled => {
+                            // Focus back where it came from. Without this a
+                            // dismissed dialog leaves a keyboard user nowhere.
+                            msg_list.set_focus();
+                        }
+                    }
+                }
+            });
+
             // ── Space and Shift+Space read the item under the cursor ────
             //
             // A list row is read as its visible columns and nothing else, so
@@ -2530,6 +2594,136 @@ fn persist_mute_preference(muted: bool) {
     }
 }
 
+/// The messages of one conversation, parents before their children.
+///
+/// Built from what the list already holds rather than from a fresh query: the
+/// tree opens on a keystroke and must not wait on the database, and everything
+/// it needs is already in memory.
+fn conversation_nodes(
+    state: &Arc<StdMutex<WxUIState>>,
+    thread_id: &str,
+) -> Vec<wx_thread_view::ThreadNode> {
+    let s = lock_state(state);
+    let members: Vec<&MessageItem> = s
+        .messages
+        .iter()
+        .filter(|m| m.thread_id.as_deref() == Some(thread_id))
+        .collect();
+
+    // Oldest first, which is reading order for a conversation, and it also
+    // guarantees a parent is placed before its children.
+    let mut ordered: Vec<&MessageItem> = members;
+    ordered.sort_by(|a, b| a.date.cmp(&b.date).then(a.uid.cmp(&b.uid)));
+
+    let mut nodes: Vec<wx_thread_view::ThreadNode> = Vec::with_capacity(ordered.len());
+    for message in &ordered {
+        // The nearest earlier message one level up is the parent. Placement
+        // proper is computed by the threading pass; this reconstructs the
+        // shape from the depth the list already carries.
+        let parent = nodes
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, node)| node.depth + 1 == message.thread_depth)
+            .map(|(index, _)| index);
+        nodes.push(wx_thread_view::ThreadNode {
+            message_id: message.message_id,
+            sender: message.from.clone(),
+            subject: message.subject.clone(),
+            date: message.date.clone(),
+            read: message.read,
+            depth: message.thread_depth,
+            parent,
+        });
+    }
+    nodes
+}
+
+/// Render a whole conversation into one document.
+///
+/// A message with no cached body renders with a line saying so rather than an
+/// empty section. An empty section under a heading reads as a message with no
+/// content, which is a different fact from a message not fetched yet.
+fn render_conversation(
+    cache: &Option<Arc<MessageCache>>,
+    subject: &str,
+    nodes: &[wx_thread_view::ThreadNode],
+) -> String {
+    let renderer = HtmlRenderer::new();
+    let parts: Vec<crate::presentation::html_renderer::ThreadPart> = nodes
+        .iter()
+        .map(|node| {
+            let body = cache
+                .as_ref()
+                .and_then(|c| c.get_message_body(node.message_id).ok().flatten())
+                .and_then(|b| b.body_html.or(b.body_plain))
+                .unwrap_or_else(|| "This message has not been downloaded yet.".to_string());
+            crate::presentation::html_renderer::ThreadPart {
+                sender: node.sender.clone(),
+                date: node.date.clone(),
+                subject: node.subject.clone(),
+                body,
+                depth: node.depth,
+            }
+        })
+        .collect();
+    renderer.render_thread(subject, &parts)
+}
+
+/// Group a folder's messages into conversations and mark the list rows.
+///
+/// A conversation of one is not a conversation, so a message with no relatives
+/// is left with no thread at all. Reporting one would put a thread indicator
+/// and an earcon on every ordinary message, which is the fastest way to make
+/// someone switch the indicator off.
+fn apply_threading(rows: &[crate::data::message_cache::MessageListRow], items: &mut [MessageItem]) {
+    use crate::application::threading::{thread_messages, ThreadInput};
+
+    let inputs: Vec<ThreadInput> = rows
+        .iter()
+        .map(|row| ThreadInput {
+            id: row.id,
+            message_id: row.message_id.clone(),
+            references: row
+                .refs_header
+                .as_deref()
+                .unwrap_or("")
+                .split_whitespace()
+                .map(|r| r.to_string())
+                .collect(),
+            server_thread_id: None,
+        })
+        .collect();
+
+    let placements = thread_messages(&inputs);
+    let mut sizes: HashMap<&str, usize> = HashMap::new();
+    for placement in &placements {
+        *sizes.entry(placement.thread_id.as_str()).or_insert(0) += 1;
+    }
+
+    let by_id: HashMap<i64, &crate::application::threading::ThreadPlacement> =
+        placements.iter().map(|p| (p.id, p)).collect();
+    for item in items.iter_mut() {
+        let Some(placement) = by_id.get(&item.message_id) else {
+            continue;
+        };
+        if sizes
+            .get(placement.thread_id.as_str())
+            .copied()
+            .unwrap_or(0)
+            < 2
+        {
+            item.thread_id = None;
+            item.thread_depth = 0;
+            item.is_thread_parent = false;
+            continue;
+        }
+        item.thread_id = Some(placement.thread_id.clone());
+        item.thread_depth = placement.depth;
+        item.is_thread_parent = placement.depth == 0;
+    }
+}
+
 /// Read a folder's messages out of the cache and send them to the list.
 ///
 /// Runs on the UI thread for the same reason `load_module_data` does:
@@ -2551,7 +2745,8 @@ fn load_folder_messages(
     };
     match cache.get_message_list(folder_id, &account_id) {
         Ok(rows) => {
-            let items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
+            let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
+            apply_threading(&rows, &mut items);
             let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
         }
         Err(e) => {
@@ -2850,6 +3045,15 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let msg = format!("{} messages, {} unread", messages.len(), unread);
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Normal, "messages");
+        }
+        UIUpdate::ThreadRendered(html) => {
+            // Shown in the preview, and the preview is forced open: rendering
+            // a conversation into a pane the user has hidden would look like
+            // the key did nothing.
+            preview.set_page(html, "about:blank");
+            preview.show(true);
+            preview.set_focus();
+            let _ = a11y.announce("Conversation opened", Priority::Normal);
         }
         UIUpdate::MessageBodyLoaded(body) => {
             {
@@ -3867,6 +4071,200 @@ fn show_new_item_dialog(frame: &Frame, item_type: &str, a11y: &Arc<Accessibility
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_loading_a_folder_threads_the_messages_it_read() {
+        // Threading that is computed and never applied is threading that does
+        // not exist: the Thread column stays blank and Enter never opens a
+        // conversation.
+        let (_dir, cache) = test_cache();
+        let (tx, rx) = async_channel::unbounded();
+        let folder_id = cache
+            .as_ref()
+            .map(|c| {
+                let id = c
+                    .save_folder(&crate::data::message_cache::CachedFolder {
+                        id: 0,
+                        account_id: "acct-1".to_string(),
+                        name: "INBOX".to_string(),
+                        path: "INBOX".to_string(),
+                        folder_type: "Inbox".to_string(),
+                        unread_count: 0,
+                        total_count: 0,
+                    })
+                    .expect("seed folder");
+                for (uid, header, refs) in
+                    [(1u32, "<a@x>", ""), (2, "<b@x>", "<a@x>"), (3, "<c@x>", "")]
+                {
+                    let row = c
+                        .save_message(&crate::data::message_cache::CachedMessage {
+                            id: 0,
+                            uid,
+                            folder_id: id,
+                            message_id: header.to_string(),
+                            subject: "Quarterly report".to_string(),
+                            from_addr: "ada@example.com".to_string(),
+                            to_addr: "me@example.com".to_string(),
+                            cc: None,
+                            date: format!("2026-07-2{}", uid),
+                            body_plain: None,
+                            body_html: None,
+                            read: false,
+                            starred: false,
+                            deleted: false,
+                        })
+                        .expect("seed message");
+                    let references: Vec<String> =
+                        refs.split_whitespace().map(|r| r.to_string()).collect();
+                    c.set_message_references(row, &references)
+                        .expect("seed references");
+                }
+                id
+            })
+            .expect("cache");
+
+        load_folder_messages(&cache, Some(folder_id), Some("acct-1".to_string()), &tx);
+
+        let messages = drain(&rx)
+            .into_iter()
+            .find_map(|u| match u {
+                UIUpdate::MessagesLoaded(items) => Some(items),
+                _ => None,
+            })
+            .expect("messages loaded");
+
+        let a = messages.iter().find(|m| m.uid == 1).expect("a");
+        let b = messages.iter().find(|m| m.uid == 2).expect("b");
+        let c = messages.iter().find(|m| m.uid == 3).expect("c");
+        assert_eq!(a.thread_id, b.thread_id, "a reply did not join its parent");
+        assert_ne!(a.thread_id, c.thread_id, "unrelated messages were merged");
+        assert_eq!(a.thread_depth, 0);
+        assert_eq!(b.thread_depth, 1);
+        assert!(a.is_thread_parent);
+        assert!(!b.is_thread_parent);
+    }
+
+    #[test]
+    fn test_a_message_alone_reports_no_thread_at_all() {
+        // A conversation of one is not a conversation. Reporting one would put
+        // a thread indicator and an earcon on every ordinary message.
+        let (_dir, cache) = test_cache();
+        let (tx, rx) = async_channel::unbounded();
+        let folder_id = cache
+            .as_ref()
+            .map(|c| {
+                let id = c
+                    .save_folder(&crate::data::message_cache::CachedFolder {
+                        id: 0,
+                        account_id: "acct-1".to_string(),
+                        name: "INBOX".to_string(),
+                        path: "INBOX".to_string(),
+                        folder_type: "Inbox".to_string(),
+                        unread_count: 0,
+                        total_count: 0,
+                    })
+                    .expect("seed folder");
+                c.save_message(&crate::data::message_cache::CachedMessage {
+                    id: 0,
+                    uid: 1,
+                    folder_id: id,
+                    message_id: "<solo@x>".to_string(),
+                    subject: "Alone".to_string(),
+                    from_addr: "ada@example.com".to_string(),
+                    to_addr: "me@example.com".to_string(),
+                    cc: None,
+                    date: "2026-07-26".to_string(),
+                    body_plain: None,
+                    body_html: None,
+                    read: false,
+                    starred: false,
+                    deleted: false,
+                })
+                .expect("seed message");
+                id
+            })
+            .expect("cache");
+
+        load_folder_messages(&cache, Some(folder_id), Some("acct-1".to_string()), &tx);
+
+        let messages = drain(&rx)
+            .into_iter()
+            .find_map(|u| match u {
+                UIUpdate::MessagesLoaded(items) => Some(items),
+                _ => None,
+            })
+            .expect("messages loaded");
+        assert_eq!(messages[0].thread_id, None);
+    }
+
+    fn threaded(id: i64, uid: u32, date: &str, depth: usize, thread: &str) -> MessageItem {
+        MessageItem {
+            uid,
+            message_id: id,
+            subject: "Quarterly report".to_string(),
+            from: "Ada Lovelace".to_string(),
+            date: date.to_string(),
+            read: true,
+            starred: false,
+            has_attachments: false,
+            attachments: Vec::new(),
+            thread_depth: depth,
+            is_thread_parent: depth == 0,
+            thread_id: Some(thread.to_string()),
+            snippet: String::new(),
+            size_bytes: None,
+            to: String::new(),
+            cc: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_a_conversation_lists_oldest_first_with_parents_before_children() {
+        // Reading order for a conversation, and it is also what guarantees a
+        // parent exists in the tree before its replies are hung off it.
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        lock_state(&state).messages = vec![
+            threaded(3, 3, "2026-07-26 12:00", 2, "t1"),
+            threaded(1, 1, "2026-07-26 10:00", 0, "t1"),
+            threaded(2, 2, "2026-07-26 11:00", 1, "t1"),
+        ];
+
+        let nodes = conversation_nodes(&state, "t1");
+        assert_eq!(
+            nodes.iter().map(|n| n.message_id).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        assert_eq!(nodes[0].parent, None);
+        assert_eq!(nodes[1].parent, Some(0));
+        assert_eq!(nodes[2].parent, Some(1));
+    }
+
+    #[test]
+    fn test_a_conversation_ignores_messages_from_other_threads() {
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        lock_state(&state).messages = vec![
+            threaded(1, 1, "2026-07-26 10:00", 0, "t1"),
+            threaded(2, 2, "2026-07-26 11:00", 0, "t2"),
+        ];
+        let nodes = conversation_nodes(&state, "t1");
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].message_id, 1);
+    }
+
+    #[test]
+    fn test_a_reply_whose_parent_is_missing_hangs_off_the_root() {
+        // Someone was added to the conversation halfway through, so the
+        // message above them is not in this mailbox at all. It still has to
+        // appear rather than vanishing from the tree.
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        lock_state(&state).messages = vec![
+            threaded(1, 1, "2026-07-26 10:00", 0, "t1"),
+            threaded(2, 2, "2026-07-26 11:00", 4, "t1"),
+        ];
+        let nodes = conversation_nodes(&state, "t1");
+        assert_eq!(nodes.len(), 2);
+        assert_eq!(nodes[1].parent, None);
+    }
 
     #[test]
     fn test_next_unread_wraps_and_reports_when_there_is_none() {

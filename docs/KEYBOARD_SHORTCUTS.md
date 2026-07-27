@@ -56,6 +56,28 @@ and locks out anyone who types slowly.
 `Ctrl+Shift+M` mutes this reading without silencing status and error
 announcements.
 
+### Conversations
+
+| Where | Key | Result |
+|-------|-----|--------|
+| A message with no conversation | `Enter` | Opens that message in the preview. No tree in the way. |
+| A message in a conversation | `Enter` | Opens the conversation tree |
+| Conversation tree, first row | `Enter` | The whole conversation in one document, every message in order |
+| Conversation tree, any message | `Enter` | That message alone |
+| Conversation tree | `Esc` | Back to the list, focus on the row it came from |
+
+The message list stays one row per message. The conversation structure is
+behind `Enter` rather than in the list itself, so arrowing never walks branches
+you did not ask for.
+
+The first row of the tree is labelled "Whole conversation, 5 messages" rather
+than the subject, because `Enter` does two different things in that tree and
+the row has to say which one it will do.
+
+In the combined document every message has a heading, so `H` moves between
+them. Levels stop at level 6 and never skip; past that the real depth is spoken
+in the heading, as in "Reply, level 8, from Ada Lovelace".
+
 ### Speech Control
 
 | Action | Shortcut | Description |

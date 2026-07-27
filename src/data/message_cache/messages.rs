@@ -15,6 +15,10 @@ use rusqlite::{params, OptionalExtension};
 pub struct MessageListRow {
     pub id: i64,
     pub uid: u32,
+    /// The `Message-ID` header, which threading matches references against.
+    pub message_id: String,
+    /// `References` and `In-Reply-To`, space separated.
+    pub refs_header: Option<String>,
     pub subject: String,
     pub from_addr: String,
     pub to_addr: String,
@@ -112,8 +116,8 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT m.id, m.uid, m.subject, m.from_addr, m.to_addr, m.cc, m.date,
-                        m.snippet, m.size_bytes, m.read, m.starred,
+                "SELECT m.id, m.uid, m.message_id, m.refs_header, m.subject, m.from_addr,
+                        m.to_addr, m.cc, m.date, m.snippet, m.size_bytes, m.read, m.starred,
                         EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)
                  FROM messages m
                  INNER JOIN folders f ON m.folder_id = f.id
@@ -127,16 +131,18 @@ impl MessageCache {
                 Ok(MessageListRow {
                     id: row.get(0)?,
                     uid: row.get(1)?,
-                    subject: row.get(2)?,
-                    from_addr: row.get(3)?,
-                    to_addr: row.get(4)?,
-                    cc: row.get(5)?,
-                    date: row.get(6)?,
-                    snippet: row.get(7)?,
-                    size_bytes: row.get(8)?,
-                    read: row.get(9)?,
-                    starred: row.get(10)?,
-                    has_attachments: row.get(11)?,
+                    message_id: row.get(2)?,
+                    refs_header: row.get(3)?,
+                    subject: row.get(4)?,
+                    from_addr: row.get(5)?,
+                    to_addr: row.get(6)?,
+                    cc: row.get(7)?,
+                    date: row.get(8)?,
+                    snippet: row.get(9)?,
+                    size_bytes: row.get(10)?,
+                    read: row.get(11)?,
+                    starred: row.get(12)?,
+                    has_attachments: row.get(13)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to list messages: {}", e)))?
@@ -144,6 +150,35 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to collect listing: {}", e)))?;
 
         Ok(rows)
+    }
+
+    /// Record a message's `References` and `In-Reply-To` headers.
+    ///
+    /// Separate from `save_message` because these arrive with the envelope
+    /// rather than with the row: the fetch that lists a folder and the fetch
+    /// that reads headers are different requests, and threading must not force
+    /// them to be one.
+    pub fn set_message_references(&self, message_id: i64, references: &[String]) -> Result<()> {
+        let joined = references
+            .iter()
+            .map(|r| r.trim())
+            .filter(|r| !r.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        self.conn
+            .execute(
+                "UPDATE messages SET refs_header = ?1 WHERE id = ?2",
+                params![
+                    if joined.is_empty() {
+                        None
+                    } else {
+                        Some(joined)
+                    },
+                    message_id
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to save references: {}", e)))?;
+        Ok(())
     }
 
     /// Store an attachment record.
@@ -286,6 +321,37 @@ impl MessageCache {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_references_round_trip_through_the_listing() {
+        let (cache, folder_id) = listing_cache();
+        let id = cache
+            .save_message(&listing_message(folder_id, 9, "Re: report", "2026-07-26"))
+            .unwrap();
+        cache
+            .set_message_references(
+                id,
+                &["  <a@x> ".to_string(), String::new(), "<b@x>".to_string()],
+            )
+            .unwrap();
+
+        let rows = cache.get_message_list(folder_id, "acc-1").unwrap();
+        assert_eq!(rows[0].refs_header.as_deref(), Some("<a@x> <b@x>"));
+        assert_eq!(rows[0].message_id, "9@example.com");
+    }
+
+    #[test]
+    fn test_no_references_stores_nothing_rather_than_an_empty_string() {
+        // An empty string and "no references" are different facts, and only
+        // one of them should survive a round trip.
+        let (cache, folder_id) = listing_cache();
+        let id = cache
+            .save_message(&listing_message(folder_id, 10, "New thread", "2026-07-26"))
+            .unwrap();
+        cache.set_message_references(id, &[]).unwrap();
+        let rows = cache.get_message_list(folder_id, "acc-1").unwrap();
+        assert_eq!(rows[0].refs_header, None);
+    }
 
     // ── The listing row ─────────────────────────────────────────────────
     //
