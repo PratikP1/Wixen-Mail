@@ -34,6 +34,16 @@ pub struct AppConfig {
     /// Default sort order for message list
     #[serde(default = "default_sort_order")]
     pub default_sort_order: String,
+    /// How dates are shown in lists: "absolute" or "relative".
+    ///
+    /// Relative says "2 days ago" within the last week, which is three
+    /// syllables where a full date is a dozen, and answers the question most
+    /// people are actually asking of a date in a mail list.
+    #[serde(default = "default_date_style")]
+    pub date_style: String,
+    /// Day and month order: "auto", "month_first", or "day_first".
+    #[serde(default = "default_date_order")]
+    pub date_order: String,
     /// Whether message text is read aloud.
     ///
     /// Kept across restarts because someone who works in a shared room needs
@@ -63,6 +73,14 @@ fn default_language() -> String {
 fn default_sort_order() -> String {
     "date_newest".to_string()
 }
+fn default_date_style() -> String {
+    "relative".to_string()
+}
+
+fn default_date_order() -> String {
+    "auto".to_string()
+}
+
 fn default_calendar_view() -> String {
     "agenda".to_string()
 }
@@ -78,6 +96,8 @@ impl Default for AppConfig {
             check_updates: true,
             theme: "default".to_string(),
             font_size: 12,
+            date_style: default_date_style(),
+            date_order: default_date_order(),
             mute_message_reading: false,
             enable_notifications: true,
             log_level: "info".to_string(),

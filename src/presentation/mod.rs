@@ -3,6 +3,7 @@
 //! Native wxdragon (wxWidgets) UI with built-in accessibility support.
 
 pub mod accessibility;
+pub mod date_display;
 pub mod html_renderer;
 pub mod message_columns;
 pub mod message_rows;

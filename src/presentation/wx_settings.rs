@@ -13,8 +13,11 @@ use wxdragon::prelude::*;
 
 /// The outcome of the settings dialog.
 pub enum SettingsResult {
-    /// User pressed OK — contains the (possibly modified) AppConfig.
-    Updated(AppConfig),
+    /// User pressed OK, carrying the possibly modified configuration.
+    ///
+    /// Boxed because the configuration dwarfs the other variant, and this
+    /// grew past the point where every Cancelled paid for it.
+    Updated(Box<AppConfig>),
     /// User cancelled — no changes.
     Cancelled,
 }
@@ -69,7 +72,6 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 
     // Notebook (tabbed pane)
     let notebook = Notebook::builder(&dlg).build();
-    set_accessible_name(&notebook, "Settings categories");
 
     // ── Tab 1: General
     let general_panel = Panel::builder(&notebook).build();
@@ -152,7 +154,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
     };
 
     if dlg.show_modal() == ID_OK {
-        SettingsResult::Updated(read_settings(&widgets, config))
+        SettingsResult::Updated(Box::new(read_settings(&widgets, config)))
     } else {
         SettingsResult::Cancelled
     }

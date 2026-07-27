@@ -800,7 +800,6 @@ fn show_contact_edit(
     let root = BoxSizer::builder(Orientation::Vertical).build();
 
     let notebook = Notebook::builder(&dlg).build();
-    set_accessible_name(&notebook, "Contact details");
 
     // ── Tab 1: Basic Info ────────────────────────────────────────────────
     // Accelerators: N(Name), K(Nickname), C(Company), D(Department),

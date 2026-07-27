@@ -17,6 +17,7 @@ use crate::presentation::wx_managers;
 use crate::presentation::wx_settings;
 
 use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::date_display;
 use crate::presentation::message_columns::{self, ColumnLayout, MessageColumn};
 use crate::presentation::message_rows;
 use async_channel::{Receiver, Sender};
@@ -494,6 +495,20 @@ impl WxMailApp {
             let column_layout = Rc::new(RefCell::new(ColumnLayout::defaults_for(
                 message_columns::FolderKind::Inbox,
             )));
+
+            // Read once rather than per row: the paint callback runs for every
+            // visible cell and must not touch configuration.
+            let date_settings = {
+                let mut mgr = crate::data::config::ConfigManager::default();
+                let cfg = mgr.load().map(|()| mgr.app_config().clone()).ok();
+                match cfg {
+                    Some(cfg) => message_rows::DateSettings {
+                        style: date_display::DateStyle::from_setting(&cfg.date_style),
+                        order: date_display::DateOrder::from_setting(&cfg.date_order),
+                    },
+                    None => message_rows::DateSettings::default(),
+                }
+            };
             apply_columns(&msg_list, &column_layout.borrow());
 
             // The callback runs while wxWidgets paints, so it reads what is
@@ -510,7 +525,12 @@ impl WxMailApp {
                     };
                     let columns = column_layout.borrow().visible();
                     match columns.get(column as usize) {
-                        Some(c) => message_rows::cell_text(message, *c),
+                        Some(c) => message_rows::cell_text(
+                            message,
+                            *c,
+                            date_settings,
+                            chrono::Local::now(),
+                        ),
                         None => String::new(),
                     }
                 }
@@ -650,7 +670,11 @@ impl WxMailApp {
                 preview.set_page(&blank, "about:blank");
             }
 
-            // Start with preview hidden (user can toggle via View > Preview Pane)
+            // Start with the preview hidden, matching the unchecked View menu
+            // item. initialize() only decides what the splitter manages: the
+            // WebView is still a child window and shows itself unless told not
+            // to, which is why the pane appeared whatever the menu said.
+            preview.show(false);
             inner.initialize(&msg_list);
             mail_content_sizer.add(&inner, 1, SizerFlag::Expand | SizerFlag::All, 0);
             mail_content.set_sizer(mail_content_sizer, true);
@@ -1245,8 +1269,10 @@ impl WxMailApp {
                         _ if id == ID_VIEW_PREVIEW_PANE => {
                             if preview_visible.get() {
                                 inner.unsplit(Some(&preview));
+                                preview.show(false);
                                 preview_visible.set(false);
                             } else {
+                                preview.show(true);
                                 inner.split_horizontally(&msg_list, &preview, 300);
                                 preview_visible.set(true);
                             }
@@ -2014,8 +2040,16 @@ fn load_module_data(
         }
     }
 
+    tracing::info!(
+        "{} loaded {} update(s) for account {}",
+        module.label().replace('&', ""),
+        updates.len(),
+        account_id
+    );
     for update in updates {
-        let _ = tx.try_send(update);
+        if let Err(e) = tx.try_send(update) {
+            tracing::error!("Module data never reached the window: {}", e);
+        }
     }
 
     for failure in &failures {
@@ -2199,7 +2233,7 @@ fn handle_settings(frame: &Frame, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
     let config = mgr.app_config().clone();
     match wx_settings::show_settings_dialog(frame, &config) {
         wx_settings::SettingsResult::Updated(new_config) => {
-            *mgr.app_config_mut() = new_config;
+            *mgr.app_config_mut() = *new_config;
             if let Err(e) = mgr.save() {
                 tracing::error!("Failed to save settings: {}", e);
                 send_status(tx, rt, &format!("Settings save error: {}", e));

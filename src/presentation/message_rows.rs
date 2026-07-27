@@ -9,8 +9,26 @@
 //! to be heard rather than seen. "Unread" beats a bullet, and a date reads as a
 //! date rather than a timestamp.
 
+use super::date_display::{format_for_list, DateOrder, DateStyle};
 use super::message_columns::MessageColumn;
 use super::ui_types::MessageItem;
+
+/// How dates are being shown, passed in so the cell function stays pure and
+/// the preference is read once rather than per row.
+#[derive(Debug, Clone, Copy)]
+pub struct DateSettings {
+    pub style: DateStyle,
+    pub order: DateOrder,
+}
+
+impl Default for DateSettings {
+    fn default() -> Self {
+        Self {
+            style: DateStyle::RelativeWithinWeek,
+            order: DateOrder::from_system(),
+        }
+    }
+}
 
 /// Shown in a cell whose page has not been loaded yet.
 ///
@@ -20,17 +38,19 @@ use super::ui_types::MessageItem;
 pub const PLACEHOLDER: &str = "Loading";
 
 /// The text for one cell.
-pub fn cell_text(message: &MessageItem, column: MessageColumn) -> String {
+pub fn cell_text(
+    message: &MessageItem,
+    column: MessageColumn,
+    dates: DateSettings,
+    now: chrono::DateTime<chrono::Local>,
+) -> String {
     match column {
-        // Spoken words rather than symbols. A screen reader announces "unread"
-        // usefully and a bullet character either not at all or as "bullet".
-        MessageColumn::Unread => if message.read { "" } else { "Unread" }.to_string(),
-        MessageColumn::Attachment => if message.has_attachments {
-            "Attachment"
-        } else {
-            ""
-        }
-        .to_string(),
+        // "Yes" rather than the column's own word. A screen reader reads a
+        // report row as "heading, value", so a cell repeating its heading came
+        // out as "Attachment attachment" on every row that had one. Empty for
+        // the negative case, which costs no listening time at all.
+        MessageColumn::Unread => if message.read { "" } else { "Yes" }.to_string(),
+        MessageColumn::Attachment => if message.has_attachments { "Yes" } else { "" }.to_string(),
         MessageColumn::Subject => {
             if message.subject.trim().is_empty() {
                 "No subject".to_string()
@@ -39,11 +59,13 @@ pub fn cell_text(message: &MessageItem, column: MessageColumn) -> String {
             }
         }
         MessageColumn::Correspondent => display_address(&message.from),
-        MessageColumn::Received | MessageColumn::Sent => message.date.clone(),
+        MessageColumn::Received | MessageColumn::Sent => {
+            format_for_list(&message.date, now, dates.style, dates.order)
+        }
         MessageColumn::Snippet => String::new(),
         MessageColumn::Thread => thread_cell(message),
         MessageColumn::Size => String::new(),
-        MessageColumn::Flagged => if message.starred { "Flagged" } else { "" }.to_string(),
+        MessageColumn::Flagged => if message.starred { "Yes" } else { "" }.to_string(),
         MessageColumn::Answered | MessageColumn::Draft => String::new(),
         MessageColumn::To | MessageColumn::Cc | MessageColumn::Tags => String::new(),
     }
@@ -100,10 +122,40 @@ mod tests {
     }
 
     #[test]
-    fn test_unread_reads_as_a_word() {
-        // A bullet or an asterisk is either skipped by a screen reader or read
-        // as "bullet", neither of which tells anyone the message is unread.
-        assert_eq!(cell_text(&message(), MessageColumn::Unread), "Unread");
+    fn test_a_flag_cell_does_not_repeat_its_own_heading() {
+        // A report row is read as "heading, value", so a cell holding the word
+        // "Attachment" under a heading of "Attachment" was announced twice on
+        // every row that had one.
+        let mut m = message();
+        m.has_attachments = true;
+        m.starred = true;
+        assert_eq!(
+            cell_text(
+                &m,
+                MessageColumn::Unread,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            "Yes"
+        );
+        assert_eq!(
+            cell_text(
+                &m,
+                MessageColumn::Attachment,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            "Yes"
+        );
+        assert_eq!(
+            cell_text(
+                &m,
+                MessageColumn::Flagged,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            "Yes"
+        );
     }
 
     #[test]
@@ -112,16 +164,15 @@ mod tests {
         // has something to say.
         let mut m = message();
         m.read = true;
-        assert_eq!(cell_text(&m, MessageColumn::Unread), "");
-    }
-
-    #[test]
-    fn test_attachment_and_flag_columns_are_words_too() {
-        let mut m = message();
-        m.has_attachments = true;
-        m.starred = true;
-        assert_eq!(cell_text(&m, MessageColumn::Attachment), "Attachment");
-        assert_eq!(cell_text(&m, MessageColumn::Flagged), "Flagged");
+        assert_eq!(
+            cell_text(
+                &m,
+                MessageColumn::Unread,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            ""
+        );
     }
 
     #[test]
@@ -130,13 +181,26 @@ mod tests {
         // indistinguishable from a row that failed to load.
         let mut m = message();
         m.subject = "   ".to_string();
-        assert_eq!(cell_text(&m, MessageColumn::Subject), "No subject");
+        assert_eq!(
+            cell_text(
+                &m,
+                MessageColumn::Subject,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            "No subject"
+        );
     }
 
     #[test]
     fn test_correspondent_prefers_the_display_name() {
         assert_eq!(
-            cell_text(&message(), MessageColumn::Correspondent),
+            cell_text(
+                &message(),
+                MessageColumn::Correspondent,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
             "Ada Lovelace"
         );
     }
@@ -146,7 +210,12 @@ mod tests {
         let mut m = message();
         m.from = "ada@example.com".to_string();
         assert_eq!(
-            cell_text(&m, MessageColumn::Correspondent),
+            cell_text(
+                &m,
+                MessageColumn::Correspondent,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
             "ada@example.com"
         );
     }
@@ -155,7 +224,15 @@ mod tests {
     fn test_correspondent_strips_quotes_around_a_name() {
         let mut m = message();
         m.from = "\"Lovelace, Ada\" <ada@example.com>".to_string();
-        assert_eq!(cell_text(&m, MessageColumn::Correspondent), "Lovelace, Ada");
+        assert_eq!(
+            cell_text(
+                &m,
+                MessageColumn::Correspondent,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            "Lovelace, Ada"
+        );
     }
 
     #[test]
@@ -163,7 +240,12 @@ mod tests {
         let mut m = message();
         m.from = "\"\" <ada@example.com>".to_string();
         assert_eq!(
-            cell_text(&m, MessageColumn::Correspondent),
+            cell_text(
+                &m,
+                MessageColumn::Correspondent,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
             "\"\" <ada@example.com>"
         );
     }
@@ -172,14 +254,38 @@ mod tests {
     fn test_thread_column_describes_position_not_size() {
         let mut m = message();
         m.thread_id = Some("t1".to_string());
-        assert_eq!(cell_text(&m, MessageColumn::Thread), "Thread start");
+        assert_eq!(
+            cell_text(
+                &m,
+                MessageColumn::Thread,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            "Thread start"
+        );
         m.thread_depth = 3;
-        assert_eq!(cell_text(&m, MessageColumn::Thread), "Reply 3");
+        assert_eq!(
+            cell_text(
+                &m,
+                MessageColumn::Thread,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            "Reply 3"
+        );
     }
 
     #[test]
     fn test_a_message_in_no_thread_says_nothing() {
-        assert_eq!(cell_text(&message(), MessageColumn::Thread), "");
+        assert_eq!(
+            cell_text(
+                &message(),
+                MessageColumn::Thread,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            ""
+        );
     }
 
     #[test]
@@ -187,7 +293,12 @@ mod tests {
         // The paint callback has nowhere to report a failure, so no column may
         // panic and none may return a control character.
         for column in MessageColumn::ALL {
-            let text = cell_text(&message(), column);
+            let text = cell_text(
+                &message(),
+                column,
+                DateSettings::default(),
+                chrono::Local::now(),
+            );
             assert!(
                 !text.chars().any(|c| c.is_control()),
                 "{:?} produced a control character",
