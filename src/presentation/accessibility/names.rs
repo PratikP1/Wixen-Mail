@@ -30,6 +30,22 @@ impl AccessibleImpl for FixedName {
     fn get_name(&self, _child_id: i32) -> (AccStatus, Option<String>) {
         (ffi::wxd_AccStatus_WXD_ACC_OK, Some(self.name.clone()))
     }
+
+    /// Defer to the control's own child enumeration.
+    ///
+    /// This override is not optional. The trait's default answers `OK` with a
+    /// count of zero, which is a positive claim that the control has no
+    /// children rather than a request to fall back. Attaching one of these to a
+    /// notebook silenced its tabs, and to a list or tree it would have hidden
+    /// every item, because the accessible object was answering "nothing in
+    /// here" on the control's behalf.
+    ///
+    /// Every other method left at its default returns `NOT_IMPLEMENTED`, which
+    /// is what makes wxWidgets use its own implementation. Only the name is
+    /// meant to be replaced here.
+    fn get_child_count(&self) -> (AccStatus, i32) {
+        (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, 0)
+    }
 }
 
 /// Give `window` an accessible name that screen readers will announce.
@@ -61,7 +77,36 @@ pub fn name_from_label(label: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::name_from_label;
+    use super::{name_from_label, AccessibleImpl, FixedName};
+    use wxdragon::ffi;
+
+    #[test]
+    fn test_the_name_is_the_only_thing_replaced() {
+        let named = FixedName {
+            name: "Messages".to_string(),
+        };
+        let (status, name) = named.get_name(0);
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_OK);
+        assert_eq!(name.as_deref(), Some("Messages"));
+    }
+
+    #[test]
+    fn test_child_enumeration_is_left_to_the_control() {
+        // The trait default answers OK with zero children, which is a claim
+        // that the control is empty rather than a request to fall back. With
+        // that default in place a named notebook lost its tabs and a named
+        // list would have lost every row.
+        let named = FixedName {
+            name: "Messages".to_string(),
+        };
+        let (status, count) = named.get_child_count();
+        assert_eq!(
+            status,
+            ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED,
+            "naming a control must not claim it has no children"
+        );
+        assert_eq!(count, 0);
+    }
 
     #[test]
     fn test_strips_the_mnemonic_and_colon() {

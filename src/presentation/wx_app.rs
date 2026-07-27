@@ -776,7 +776,7 @@ impl WxMailApp {
                     frame.set_status_text(&label, 2);
                     // Announce to screen reader
                     let _ = a11y.announce(
-                        &format!("Switched to {}", label),
+                        &format!("Switching to {}", label),
                         crate::presentation::accessibility::announcements::Priority::Normal,
                     );
 
