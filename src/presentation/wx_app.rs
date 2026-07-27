@@ -47,69 +47,91 @@ const WIN_H: i32 = 800;
 const FOLDER_W: i32 = 220;
 
 // Menu IDs
-const ID_MUTE_CONTENT: Id = ID_HIGHEST + 78;
-const ID_LOAD_SCALE_SAMPLE: Id = ID_HIGHEST + 79;
-const ID_CHECK_MAIL: Id = ID_HIGHEST + 1;
-const ID_NEW_MESSAGE: Id = ID_HIGHEST + 2;
-const ID_QUIT: Id = ID_HIGHEST + 3;
-const ID_SEARCH: Id = ID_HIGHEST + 4;
-const ID_REPLY: Id = ID_HIGHEST + 5;
-const ID_REPLY_ALL: Id = ID_HIGHEST + 6;
-const ID_FORWARD: Id = ID_HIGHEST + 7;
-const ID_DELETE: Id = ID_HIGHEST + 8;
-const ID_MARK_READ: Id = ID_HIGHEST + 9;
-const ID_ACCOUNT_MGR: Id = ID_HIGHEST + 10;
-const ID_CONTACT_MGR: Id = ID_HIGHEST + 11;
-const ID_FILTER_MGR: Id = ID_HIGHEST + 12;
-const ID_TAG_MGR: Id = ID_HIGHEST + 13;
-const ID_SIG_MGR: Id = ID_HIGHEST + 14;
-const ID_ABOUT: Id = ID_HIGHEST + 15;
-const ID_THREAD_VIEW: Id = ID_HIGHEST + 16;
-const ID_OFFLINE_MODE: Id = ID_HIGHEST + 17;
-const ID_FLUSH_OUTBOX: Id = ID_HIGHEST + 18;
+/// Menu and control identifiers.
+///
+/// Numbered by the macro rather than by hand. Two of these were written with
+/// the same offset once, and wxWidgets resolves a duplicate id by taking the
+/// first item that carries it: the mute toggle checked the Columns item
+/// instead, which is not checkable, and the application asserted on startup.
+/// Nothing here depends on a particular value, only on them being distinct,
+/// so the numbering is not a thing a person should be doing.
+macro_rules! menu_ids {
+    ($($name:ident),* $(,)?) => {
+        menu_ids!(@assign 0; $($name,)*);
+    };
+    (@assign $offset:expr; $head:ident, $($tail:ident,)*) => {
+        const $head: Id = ID_HIGHEST + $offset;
+        menu_ids!(@assign $offset + 1; $($tail,)*);
+    };
+    (@assign $offset:expr;) => {};
+}
+
+menu_ids!(
+    ID_MUTE_CONTENT,
+    ID_LOAD_SCALE_SAMPLE,
+    ID_CHECK_MAIL,
+    ID_NEW_MESSAGE,
+    ID_QUIT,
+    ID_SEARCH,
+    ID_REPLY,
+    ID_REPLY_ALL,
+    ID_FORWARD,
+    ID_DELETE,
+    ID_MARK_READ,
+    ID_ACCOUNT_MGR,
+    ID_CONTACT_MGR,
+    ID_FILTER_MGR,
+    ID_TAG_MGR,
+    ID_SIG_MGR,
+    ID_ABOUT,
+    ID_THREAD_VIEW,
+    ID_OFFLINE_MODE,
+    ID_FLUSH_OUTBOX,
+    ID_SORT_DATE_NEWEST,
+    ID_SORT_DATE_OLDEST,
+    ID_SORT_SENDER_AZ,
+    ID_SORT_SENDER_ZA,
+    ID_SORT_SUBJECT_AZ,
+    ID_SORT_SUBJECT_ZA,
+    ID_SORT_UNREAD_FIRST,
+    ID_SAVE,
+    ID_SAVE_AS,
+    ID_NEW_CONTACT,
+    ID_NEW_ACCOUNT,
+    ID_SETTINGS,
+    ID_CALENDAR,
+    ID_SYNC_CONTACTS,
+    ID_SYNC_CALENDAR,
+    ID_CTX_SELECT_ALL,
+    ID_CTX_COPY_LINK,
+    ID_CTX_SAVE_LINK,
+    ID_MODULE_MAIL,
+    ID_MODULE_CONTACTS,
+    ID_MODULE_CALENDAR,
+    ID_MODULE_REMINDERS,
+    ID_MODULE_TASKS,
+    ID_MODULE_NOTES,
+    ID_VIEW_FOLDER_PANE,
+    ID_VIEW_PREVIEW_PANE,
+    ID_VIEW_MODULE_BUTTONS,
+    ID_VIEW_COLUMNS,
+    ID_NEXT_UNREAD,
+    ID_PREV_UNREAD,
+    ID_TOGGLE_STAR,
+    ID_REFRESH_FOLDER,
+    ID_CYCLE_PANES,
+    ID_NEW_CALENDAR,
+    ID_NEW_EVENT,
+    ID_NEW_REMINDER,
+    ID_NEW_TASK,
+    ID_NEW_NOTE,
+);
+
 // Sort menu IDs
-const ID_SORT_DATE_NEWEST: Id = ID_HIGHEST + 30;
-const ID_SORT_DATE_OLDEST: Id = ID_HIGHEST + 31;
-const ID_SORT_SENDER_AZ: Id = ID_HIGHEST + 32;
-const ID_SORT_SENDER_ZA: Id = ID_HIGHEST + 33;
-const ID_SORT_SUBJECT_AZ: Id = ID_HIGHEST + 34;
-const ID_SORT_SUBJECT_ZA: Id = ID_HIGHEST + 35;
-const ID_SORT_UNREAD_FIRST: Id = ID_HIGHEST + 36;
-const ID_SAVE: Id = ID_HIGHEST + 20;
-const ID_SAVE_AS: Id = ID_HIGHEST + 21;
-const ID_NEW_CONTACT: Id = ID_HIGHEST + 22;
-const ID_NEW_ACCOUNT: Id = ID_HIGHEST + 23;
-const ID_SETTINGS: Id = ID_HIGHEST + 40;
-const ID_CALENDAR: Id = ID_HIGHEST + 41;
-const ID_SYNC_CONTACTS: Id = ID_HIGHEST + 42;
-const ID_SYNC_CALENDAR: Id = ID_HIGHEST + 43;
 // Context menu IDs for WebView
-const ID_CTX_SELECT_ALL: Id = ID_HIGHEST + 50;
-const ID_CTX_COPY_LINK: Id = ID_HIGHEST + 51;
-const ID_CTX_SAVE_LINK: Id = ID_HIGHEST + 52;
 // Module navigation IDs
-const ID_MODULE_MAIL: Id = ID_HIGHEST + 60;
-const ID_MODULE_CONTACTS: Id = ID_HIGHEST + 61;
-const ID_MODULE_CALENDAR: Id = ID_HIGHEST + 62;
-const ID_MODULE_REMINDERS: Id = ID_HIGHEST + 63;
-const ID_MODULE_TASKS: Id = ID_HIGHEST + 64;
-const ID_MODULE_NOTES: Id = ID_HIGHEST + 65;
 // View toggle IDs
-const ID_VIEW_FOLDER_PANE: Id = ID_HIGHEST + 75;
-const ID_VIEW_PREVIEW_PANE: Id = ID_HIGHEST + 76;
-const ID_VIEW_MODULE_BUTTONS: Id = ID_HIGHEST + 77;
-const ID_VIEW_COLUMNS: Id = ID_HIGHEST + 78;
-const ID_NEXT_UNREAD: Id = ID_HIGHEST + 79;
-const ID_PREV_UNREAD: Id = ID_HIGHEST + 80;
-const ID_TOGGLE_STAR: Id = ID_HIGHEST + 81;
-const ID_REFRESH_FOLDER: Id = ID_HIGHEST + 82;
-const ID_CYCLE_PANES: Id = ID_HIGHEST + 83;
 // New item creation IDs
-const ID_NEW_CALENDAR: Id = ID_HIGHEST + 70;
-const ID_NEW_EVENT: Id = ID_HIGHEST + 71;
-const ID_NEW_REMINDER: Id = ID_HIGHEST + 72;
-const ID_NEW_TASK: Id = ID_HIGHEST + 73;
-const ID_NEW_NOTE: Id = ID_HIGHEST + 74;
 
 // ── UI State ─────────────────────────────────────────────────────────────────
 
@@ -4072,6 +4094,56 @@ fn show_new_item_dialog(frame: &Frame, item_type: &str, a11y: &Arc<Accessibility
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_no_two_menu_ids_are_the_same() {
+        // wxWidgets resolves a duplicate id by acting on the first item that
+        // carries it. Two of these once shared an offset, so the mute toggle
+        // checked the Columns item, which is not checkable, and the
+        // application asserted on startup. The macro numbers them now; this
+        // catches anyone who adds one by hand beside it.
+        let source = include_str!("wx_app.rs");
+        let mut hand_numbered: Vec<&str> = Vec::new();
+        for line in source.lines() {
+            let line = line.trim();
+            if line.starts_with("const ID_") && line.contains("ID_HIGHEST") {
+                hand_numbered.push(line);
+            }
+        }
+        assert!(
+            hand_numbered.is_empty(),
+            "menu ids must come from menu_ids!, not from a hand written offset: {:?}",
+            hand_numbered
+        );
+    }
+
+    #[test]
+    fn test_the_id_macro_numbers_sequentially_from_zero() {
+        // Guards the macro itself: an @assign arm that stopped incrementing
+        // would give every id the same value and every menu item would fire
+        // the first handler.
+        assert_ne!(ID_MUTE_CONTENT, ID_VIEW_COLUMNS);
+        assert_ne!(ID_NEXT_UNREAD, ID_LOAD_SCALE_SAMPLE);
+        let mut all = vec![
+            ID_MUTE_CONTENT,
+            ID_LOAD_SCALE_SAMPLE,
+            ID_VIEW_COLUMNS,
+            ID_NEXT_UNREAD,
+            ID_PREV_UNREAD,
+            ID_TOGGLE_STAR,
+            ID_REFRESH_FOLDER,
+            ID_CYCLE_PANES,
+            ID_SORT_DATE_NEWEST,
+            ID_SORT_UNREAD_FIRST,
+            ID_VIEW_FOLDER_PANE,
+            ID_VIEW_PREVIEW_PANE,
+            ID_VIEW_MODULE_BUTTONS,
+        ];
+        let count = all.len();
+        all.sort_unstable();
+        all.dedup();
+        assert_eq!(all.len(), count, "two menu ids collided");
+    }
 
     #[test]
     fn test_loading_a_folder_threads_the_messages_it_read() {

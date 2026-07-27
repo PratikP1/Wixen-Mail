@@ -31,6 +31,7 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Fixed
 
+- **Two menu items shared an identifier, and the application asserted on startup.** `Ctrl+Shift+M` (mute) and `F8` (columns) were written with the same offset, as were next-unread and the Help menu's sample mailbox. wxWidgets resolves a duplicate id by acting on the first item that carries it, so the startup mute sync tried to tick the Columns item, which is not a checkable item. Beyond the assert, `Ctrl+Shift+M` would have opened the Columns dialog. Identifiers are now numbered by a macro rather than by hand, so a collision cannot be written, and a test refuses any that are added by hand beside it.
 - **The keyboard shortcut reference documented eight shortcuts that did not exist**: `F5`, `F6`, `F3`, `N`, `P`, `S`, `Ctrl+1`, and `Ctrl+2`. The useful ones are now implemented, and the rest are gone from the document. A reference that lists keys which do nothing is worse than one that lists fewer keys.
 
 ### Removed
