@@ -7,7 +7,7 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Changed
 
-- **The crate moved to Rust edition 2024.** Foreign function declarations are now marked `unsafe extern`, an `unsafe fn` no longer makes its whole body an implicit unsafe block, and `if let` releases a temporary before its `else` arm. The minimum Rust version is now stated in `Cargo.toml` as 1.85, so an older toolchain says which version it wants instead of failing partway through with a parse error.
+- **The crate moved to Rust edition 2024.** Foreign function declarations are now marked `unsafe extern`, an `unsafe fn` no longer makes its whole body an implicit unsafe block, and `if let` releases a temporary before its `else` arm. The minimum Rust version is now stated in `Cargo.toml` as 1.87, so an older toolchain says which version it wants instead of failing partway through with a parse error.
 - **Edition 2024 does not fix the lock-guard deadlock**, which is worth recording because it was assumed to. The rescoping applies to the `else` arm, not the body, and `match` is unchanged. The two clippy lints remain the only protection, and there are now tests in `wx_app.rs` that pin down each half of the rule rather than trusting a comment about it.
 
 ### Added

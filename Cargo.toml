@@ -2,10 +2,13 @@
 name = "wixen-mail"
 version = "0.1.0-alpha.12"
 edition = "2024"
-# Stated rather than left implicit. Edition 2024 needs 1.85, and without this a
-# older toolchain fails with a parse error somewhere in the middle of the build
-# rather than saying which version it wants.
-rust-version = "1.85"
+# Stated rather than left implicit, so an older toolchain says which version it
+# wants instead of failing partway through with a parse error. The edition needs
+# 1.85; the real floor is 1.87, because the vendored converter uses
+# `char::is_whitespace` in a `const fn` and that only became const-stable then.
+# Clippy's incompatible_msrv check is what found that, after 1.85 was claimed
+# here on the strength of the edition alone.
+rust-version = "1.87"
 authors = ["Pratik Patel"]
 description = "A fully accessible, light-weight mail client built with Rust and WXDragon"
 license = "MIT"
