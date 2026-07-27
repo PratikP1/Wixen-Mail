@@ -219,6 +219,18 @@ impl Accessibility {
     /// back by the rate limit are picked up rather than stranded.
     pub fn flush_announcements(&self) -> Result<()> {
         for spoken in self.announcements.drain(std::time::Instant::now())? {
+            // Logged so a report of silence can be checked against whether
+            // anything was ever released to be spoken. Message content is
+            // logged by length only: a body read aloud must not be written to
+            // a file on disk.
+            match spoken.kind {
+                announcements::Kind::Interface => {
+                    tracing::info!(topic = ?spoken.topic, "Speaking: {}", spoken.text)
+                }
+                announcements::Kind::Content => {
+                    tracing::info!("Speaking message content, {} characters", spoken.text.len())
+                }
+            }
             self.screen_reader.announce_with(
                 &spoken.text,
                 match spoken.priority {

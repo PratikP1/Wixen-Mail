@@ -106,6 +106,7 @@ struct QueueState {
 pub struct Spoken {
     pub text: String,
     pub priority: Priority,
+    pub kind: Kind,
     pub topic: Option<String>,
 }
 
@@ -233,6 +234,7 @@ impl AnnouncementQueue {
                 spoken.push(Spoken {
                     text: entry.announcement.text,
                     priority: entry.announcement.priority,
+                    kind: entry.announcement.kind,
                     topic: entry.announcement.topic,
                 });
             } else {
@@ -246,6 +248,7 @@ impl AnnouncementQueue {
             spoken.push(Spoken {
                 text: format!("{} announcements skipped", skipped),
                 priority: Priority::Normal,
+                kind: Kind::Interface,
                 topic: None,
             });
         }

@@ -126,6 +126,7 @@ mod native {
                 tracing::warn!("UiaHostProviderFromHwnd failed with 0x{:08x}", host);
                 return false;
             }
+            tracing::debug!("Raising notification on window 0x{:x}", hwnd);
 
             let display = SysAllocString(wide(text).as_ptr());
             // The activity identifier lets the screen reader coalesce related
@@ -148,7 +149,7 @@ mod native {
             if result != 0 {
                 tracing::warn!("UiaRaiseNotificationEvent failed with 0x{:08x}", result);
             } else {
-                tracing::debug!("Announced: {}", text);
+                tracing::debug!("Notification raised for {} characters", text.len());
             }
             result == 0
         }
