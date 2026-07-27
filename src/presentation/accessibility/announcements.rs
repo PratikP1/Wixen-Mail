@@ -100,6 +100,15 @@ struct QueueState {
     spoken_at: Vec<Instant>,
 }
 
+/// An announcement released for speaking, with what the screen reader needs to
+/// decide how hard to hold on to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Spoken {
+    pub text: String,
+    pub priority: Priority,
+    pub topic: Option<String>,
+}
+
 /// Queues and paces screen reader announcements.
 pub struct AnnouncementQueue {
     state: Mutex<QueueState>,
@@ -196,7 +205,7 @@ impl AnnouncementQueue {
     /// Returns at most `MAX_PER_WINDOW` per `WINDOW`, except for `Urgent`,
     /// which is never held back. Anything dropped for capacity is reported as
     /// a final line rather than vanishing.
-    pub fn drain(&self, now: Instant) -> Result<Vec<String>> {
+    pub fn drain(&self, now: Instant) -> Result<Vec<Spoken>> {
         let mut state = self.lock()?;
 
         state
@@ -221,7 +230,11 @@ impl AnnouncementQueue {
                     budget -= 1;
                 }
                 state.spoken_at.push(now);
-                spoken.push(entry.announcement.text);
+                spoken.push(Spoken {
+                    text: entry.announcement.text,
+                    priority: entry.announcement.priority,
+                    topic: entry.announcement.topic,
+                });
             } else {
                 held.push(entry);
             }
@@ -230,7 +243,11 @@ impl AnnouncementQueue {
 
         if state.skipped > 0 && !spoken.is_empty() {
             let skipped = std::mem::take(&mut state.skipped);
-            spoken.push(format!("{} announcements skipped", skipped));
+            spoken.push(Spoken {
+                text: format!("{} announcements skipped", skipped),
+                priority: Priority::Normal,
+                topic: None,
+            });
         }
 
         Ok(spoken)
@@ -266,6 +283,16 @@ mod tests {
         Instant::now()
     }
 
+    /// Just the text, for the tests that only care what was said.
+    fn drained(queue: &AnnouncementQueue, now: Instant) -> Vec<String> {
+        queue
+            .drain(now)
+            .unwrap()
+            .into_iter()
+            .map(|spoken| spoken.text)
+            .collect()
+    }
+
     #[test]
     fn test_priority_order() {
         let q = AnnouncementQueue::new().unwrap();
@@ -273,7 +300,7 @@ mod tests {
             .unwrap();
         q.push(Announcement::interface("urgent", Priority::Urgent))
             .unwrap();
-        assert_eq!(q.drain(t0()).unwrap(), vec!["urgent", "normal"]);
+        assert_eq!(drained(&q, t0()), vec!["urgent", "normal"]);
     }
 
     #[test]
@@ -283,7 +310,7 @@ mod tests {
             .unwrap();
         q.push(Announcement::interface("second", Priority::Normal))
             .unwrap();
-        assert_eq!(q.drain(t0()).unwrap(), vec!["first", "second"]);
+        assert_eq!(drained(&q, t0()), vec!["first", "second"]);
     }
 
     #[test]
@@ -293,7 +320,7 @@ mod tests {
             .unwrap();
         q.push(Announcement::interface("Connected", Priority::Normal))
             .unwrap();
-        assert_eq!(q.drain(t0()).unwrap(), vec!["Connected"]);
+        assert_eq!(drained(&q, t0()), vec!["Connected"]);
     }
 
     #[test]
@@ -307,7 +334,7 @@ mod tests {
             .unwrap();
         }
         // The user wants the final count, not all five steps.
-        assert_eq!(q.drain(t0()).unwrap(), vec!["5 messages loaded"]);
+        assert_eq!(drained(&q, t0()), vec!["5 messages loaded"]);
     }
 
     #[test]
@@ -347,7 +374,7 @@ mod tests {
             ))
             .unwrap();
         }
-        let spoken = q.drain(t0()).unwrap();
+        let spoken = drained(&q, t0());
         assert_eq!(spoken.first().map(String::as_str), Some("critical"));
     }
 
@@ -361,7 +388,7 @@ mod tests {
             ))
             .unwrap();
         }
-        let spoken = q.drain(t0()).unwrap();
+        let spoken = drained(&q, t0());
         assert!(
             spoken.iter().any(|s| s.contains("skipped")),
             "a silent drop is a lie about what happened: {:?}",
@@ -377,7 +404,7 @@ mod tests {
             .unwrap();
         q.push(Announcement::interface("Connected", Priority::Normal))
             .unwrap();
-        assert_eq!(q.drain(t0()).unwrap(), vec!["Connected"]);
+        assert_eq!(drained(&q, t0()), vec!["Connected"]);
     }
 
     #[test]
@@ -387,7 +414,7 @@ mod tests {
         q.push(Announcement::content("first body")).unwrap();
         q.set_muted(false);
         q.push(Announcement::content("second body")).unwrap();
-        assert_eq!(q.drain(t0()).unwrap(), vec!["second body"]);
+        assert_eq!(drained(&q, t0()), vec!["second body"]);
     }
 
     #[test]
@@ -400,7 +427,7 @@ mod tests {
             ))
             .unwrap();
         }
-        assert_eq!(q.drain(t0()).unwrap().len(), MAX_PER_WINDOW);
+        assert_eq!(drained(&q, t0()).len(), MAX_PER_WINDOW);
     }
 
     #[test]
@@ -414,9 +441,9 @@ mod tests {
             ))
             .unwrap();
         }
-        let first = q.drain(now).unwrap();
+        let first = drained(&q, now);
         assert_eq!(first.len(), MAX_PER_WINDOW);
-        let later = q.drain(now + WINDOW + Duration::from_millis(1)).unwrap();
+        let later = drained(&q, now + WINDOW + Duration::from_millis(1));
         assert_eq!(later.len(), 2, "held announcements must not be lost");
     }
 
@@ -431,15 +458,15 @@ mod tests {
             ))
             .unwrap();
         }
-        q.drain(now).unwrap();
+        drained(&q, now);
         q.push(Announcement::interface("connection lost", Priority::Urgent))
             .unwrap();
-        assert_eq!(q.drain(now).unwrap(), vec!["connection lost"]);
+        assert_eq!(drained(&q, now), vec!["connection lost"]);
     }
 
     #[test]
     fn test_draining_an_empty_queue_says_nothing() {
         let q = AnnouncementQueue::new().unwrap();
-        assert!(q.drain(t0()).unwrap().is_empty());
+        assert!(drained(&q, t0()).is_empty());
     }
 }

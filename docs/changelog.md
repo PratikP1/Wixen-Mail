@@ -25,6 +25,8 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 - **Message bodies moved out of the messages table.** They used to sit inline, so every folder listing dragged body text through SQLite to render a subject line, and a mailbox of a few hundred thousand messages would have been tens of gigabytes in one file. Bodies now live in their own table, are read only when a message is opened, and can be evicted least-recently-read against a size budget. Databases written by earlier versions have their inline bodies moved across on first open, and the space is reclaimed.
 
+- **Announcements now actually reach the screen reader.** `announce` stored the text, then fired a name-change event telling the screen reader to re-read the title bar. The text was never handed to any accessibility API, so nothing the application announced was ever spoken. It now uses `UiaRaiseNotificationEvent`, the call meant for saying something not tied to a focus change, which NVDA routes to speech and to a connected braille display. The queue's priority and topic are passed through, so its coalescing and the screen reader's agree instead of fighting.
+
 ### Security
 
 - **Dependency advisories are now checked in CI.** `cargo audit` runs on every push and pull request. Advisories reach this project through transitive dependencies, where a green build says nothing about them, and the first run found five.

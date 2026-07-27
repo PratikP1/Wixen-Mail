@@ -218,8 +218,18 @@ impl Accessibility {
     /// Called both after queueing and from the UI timer, so announcements held
     /// back by the rate limit are picked up rather than stranded.
     pub fn flush_announcements(&self) -> Result<()> {
-        for message in self.announcements.drain(std::time::Instant::now())? {
-            self.screen_reader.announce(&message)?;
+        for spoken in self.announcements.drain(std::time::Instant::now())? {
+            self.screen_reader.announce_with(
+                &spoken.text,
+                match spoken.priority {
+                    announcements::Priority::Urgent => screen_reader::Urgency::Urgent,
+                    announcements::Priority::High => screen_reader::Urgency::Important,
+                    announcements::Priority::Normal | announcements::Priority::Low => {
+                        screen_reader::Urgency::Routine
+                    }
+                },
+                spoken.topic.as_deref().unwrap_or(""),
+            )?;
         }
         Ok(())
     }

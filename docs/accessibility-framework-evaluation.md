@@ -1,3 +1,16 @@
+> **Superseded, 2026-07-26.** This document evaluated accessibility frameworks
+> for an egui user interface and recommended egui plus AccessKit. The project
+> does not use egui. It uses wxWidgets through wxdragon, where the controls are
+> native Win32 and already expose a UI Automation tree.
+>
+> AccessKit is for applications that draw their own widgets and therefore have no
+> accessibility tree at all. Adding it here would put a second UI Automation
+> provider on windows that already have one. Announcements go through
+> `UiaRaiseNotificationEvent` instead, which NVDA routes to both speech and
+> braille.
+>
+> Kept for the record of how the decision was reached, not as guidance.
+
 # Accessibility Framework Evaluation for Wixen Mail
 
 ## Executive Summary
