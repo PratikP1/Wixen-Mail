@@ -75,7 +75,7 @@ announcements.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Cycle Panes | `F6` | Move focus between folders, messages, and preview panes |
+| Next Pane | `F6` | Move focus between folders, messages, and preview. A hidden preview is skipped rather than focused. |
 | Navigate Forward | `Tab` | Move to next element in current pane |
 | Navigate Backward | `Shift+Tab` | Move to previous element in current pane |
 | Navigate List | `↑` `↓` | Move up/down in lists |
@@ -100,14 +100,6 @@ announcements.
 | Action | Shortcut | Description |
 |--------|----------|-------------|
 | Search | `Ctrl+F` | Open search dialog |
-| Find Next | `F3` | Find next search result (when search is active) |
-
-### Focus Navigation
-
-| Action | Shortcut | Description |
-|--------|----------|-------------|
-| Focus Inbox | `Ctrl+1` | Move focus to the message list / inbox |
-| Focus Toolbar | `Ctrl+\` | Move focus to the main toolbar |
 
 ### Account Management
 
@@ -119,7 +111,7 @@ announcements.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Open Contact Manager | `Ctrl+2` | Open contact / address book manager |
+| Open Contact Manager | (Tools menu) | Open contact / address book manager |
 
 ### Rules Management
 
@@ -135,8 +127,9 @@ announcements.
 | Preview Pane | `Alt+2` | Show or hide the message preview |
 | Module Buttons | `Alt+3` | Show or hide the module navigation buttons |
 | Columns | `F8` | Choose which message list columns are shown and in what order |
-| Thread View Toggle | (checkbox) | Toggle conversation threading on/off |
-| Refresh Folder | `F5` | Reload messages in current folder |
+| Refresh Folder | `F5` | Read the current folder again from the local store |
+| Next Pane | `F6` | Move focus between folders, messages, and preview |
+| Thread View Toggle | `Ctrl+T` | Toggle conversation threading on and off |
 | Check Mail | `F9` | Check for new messages |
 
 #### Inside the Columns dialog
@@ -172,15 +165,15 @@ moves the menu, and sorting from the menu moves the headers.
 | Reply All | `Ctrl+Shift+R` | Reply to all recipients |
 | Forward | `Ctrl+L` | Forward selected message |
 | Delete | `Delete` | Move selected message to trash |
-| Star Message | `S` | Toggle star/flag on message |
-| Mark Read/Unread | `Space` | Toggle read/unread status |
+| Flag Message | `Ctrl+Shift+S` | Flag or unflag the selected message |
+| Mark as Read | (Message menu) | Mark the selected message as read. This is not on `Space`: `Space` reads the item aloud, in every module. |
 
 ### Message Navigation
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Next Unread | `N` | Jump to next unread message |
-| Previous Unread | `P` | Jump to previous unread message |
+| Next Unread | `Ctrl+Shift+N` | Next unread message, wrapping at the end. Says so when there is none, rather than doing nothing. |
+| Previous Unread | `Ctrl+Shift+P` | Previous unread message, wrapping at the start |
 | Next Message | `↓` | Move to next message in list |
 | Previous Message | `↑` | Move to previous message in list |
 | First Message | `Home` | Jump to first message |
@@ -366,15 +359,16 @@ the field accelerators for letters without making anything more reachable.
 
 1. **Use `F6` to move between panes** - Much faster than using the mouse
 2. **Learn the message action shortcuts** - `Ctrl+R`, `Ctrl+L`, `Delete` are the most common
-3. **Use `N` to jump to unread messages** - Quickly find messages that need attention
-4. **Master the composition shortcuts** - `Ctrl+Enter` to send, `Esc` to cancel
-5. **Context menus are your friend** - `Shift+F10` opens context menu for selected item
+3. **Press `Space` on any row** to hear the item, and again to hear all of it. It works the same in every module.
+4. **Use `Ctrl+Shift+N` to jump to unread messages** - Quickly find messages that need attention. It wraps at the end and tells you when there are none left.
+5. **Master the composition shortcuts** - `Ctrl+Enter` to send, `Esc` to cancel
+6. **Context menus are your friend** - `Shift+F10` opens context menu for selected item
 
 ### Power User Tips
 
 - **Combine shortcuts** - Use `↓` to select a message, then `Ctrl+R` to reply
 - **Use search frequently** - `Ctrl+F` is faster than scrolling through long message lists
-- **Star important messages with `S`** - Makes them easier to find later
+- **Flag important messages with `Ctrl+Shift+S`** - Makes them easier to find later
 - **`F5` refreshes the current view** - Use when waiting for new mail
 - **`Esc` backs out of anything** - Universal cancel/close shortcut
 

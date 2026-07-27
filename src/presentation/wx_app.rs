@@ -97,6 +97,11 @@ const ID_VIEW_FOLDER_PANE: Id = ID_HIGHEST + 75;
 const ID_VIEW_PREVIEW_PANE: Id = ID_HIGHEST + 76;
 const ID_VIEW_MODULE_BUTTONS: Id = ID_HIGHEST + 77;
 const ID_VIEW_COLUMNS: Id = ID_HIGHEST + 78;
+const ID_NEXT_UNREAD: Id = ID_HIGHEST + 79;
+const ID_PREV_UNREAD: Id = ID_HIGHEST + 80;
+const ID_TOGGLE_STAR: Id = ID_HIGHEST + 81;
+const ID_REFRESH_FOLDER: Id = ID_HIGHEST + 82;
+const ID_CYCLE_PANES: Id = ID_HIGHEST + 83;
 // New item creation IDs
 const ID_NEW_CALENDAR: Id = ID_HIGHEST + 70;
 const ID_NEW_EVENT: Id = ID_HIGHEST + 71;
@@ -1484,6 +1489,124 @@ impl WxMailApp {
                                 },
                                 crate::presentation::accessibility::announcements::Priority::High,
                             );
+                        }
+                        _ if id == ID_NEXT_UNREAD || id == ID_PREV_UNREAD => {
+                            let direction = if id == ID_NEXT_UNREAD { 1 } else { -1 };
+                            let found = {
+                                let s = lock_state(&state);
+                                next_unread(&s.messages, s.selected_message_index, direction)
+                            };
+                            match found {
+                                Some(index) => {
+                                    lock_state(&state).selected_message_index = Some(index);
+                                    // Focus and selection together: selecting
+                                    // without focusing leaves the screen
+                                    // reader's cursor where it was, and the
+                                    // user hears nothing move.
+                                    msg_list.set_item_state(
+                                        index as i64,
+                                        ListItemState::Selected | ListItemState::Focused,
+                                        ListItemState::Selected | ListItemState::Focused,
+                                    );
+                                    msg_list.ensure_visible(index as i64);
+                                    msg_list.set_focus();
+                                }
+                                None => {
+                                    // Said rather than done silently: nothing
+                                    // happening is indistinguishable from a
+                                    // key that does not work.
+                                    let _ = a11y.signal(FeedbackEvent::EdgeOfList, "no unread messages");
+                                }
+                            }
+                        }
+                        _ if id == ID_TOGGLE_STAR => {
+                            let toggled = {
+                                let mut s = lock_state(&state);
+                                match s.selected_message_index {
+                                    Some(idx) if idx < s.messages.len() => {
+                                        s.messages[idx].starred = !s.messages[idx].starred;
+                                        let m = &s.messages[idx];
+                                        Some((m.message_id, m.read, m.starred, m.subject.clone()))
+                                    }
+                                    _ => None,
+                                }
+                            };
+                            match toggled {
+                                Some((cache_id, read, starred, subject)) => {
+                                    if let Some(cache) = message_cache.as_ref() {
+                                        if let Err(e) =
+                                            cache.update_message_flags(cache_id, read, starred)
+                                        {
+                                            tracing::error!("Flag not saved: {}", e);
+                                        }
+                                    }
+                                    let _ = a11y.announce(
+                                        &format!(
+                                            "{}: {}",
+                                            if starred { "Flagged" } else { "Unflagged" },
+                                            subject
+                                        ),
+                                        crate::presentation::accessibility::announcements::Priority::Normal,
+                                    );
+                                }
+                                None => {
+                                    let _ = a11y.signal(FeedbackEvent::ActionRefused, "no message selected");
+                                }
+                            }
+                        }
+                        _ if id == ID_REFRESH_FOLDER => {
+                            let (folder_id, account_id, name) = {
+                                let s = lock_state(&state);
+                                let name = s.selected_folder.clone();
+                                (
+                                    name.as_ref().and_then(|n| s.folder_ids.get(n).copied()),
+                                    s.active_account_id.clone(),
+                                    name,
+                                )
+                            };
+                            if folder_id.is_some() {
+                                load_folder_messages(
+                                    &message_cache,
+                                    folder_id,
+                                    account_id,
+                                    &ui_tx,
+                                );
+                                let _ = a11y.announce_topic(
+                                    &format!("Refreshed {}", name.unwrap_or_default()),
+                                    crate::presentation::accessibility::announcements::Priority::Normal,
+                                    "refresh",
+                                );
+                            } else {
+                                let _ = a11y.signal(FeedbackEvent::ActionRefused, "no folder selected");
+                            }
+                        }
+                        _ if id == ID_CYCLE_PANES => {
+                            // Folders, then messages, then the preview if it
+                            // is showing. Skipping a hidden pane rather than
+                            // focusing something invisible, which is where a
+                            // keyboard user gets stranded.
+                            if folder_tree.has_focus() {
+                                msg_list.set_focus();
+                                let _ = a11y.announce_topic(
+                                    "Messages",
+                                    crate::presentation::accessibility::announcements::Priority::Low,
+                                    "pane",
+                                );
+                            } else if msg_list.has_focus() && preview_visible.get() {
+                                preview.set_focus();
+                                let _ = a11y.announce_topic(
+                                    "Message preview",
+                                    crate::presentation::accessibility::announcements::Priority::Low,
+                                    "pane",
+                                );
+                            } else {
+                                folder_tree.set_focus();
+                                let _ = a11y.announce_topic(
+                                    "Folders",
+                                    crate::presentation::accessibility::announcements::Priority::Low,
+                                    "pane",
+                                );
+                            }
                         }
                         _ if id == ID_VIEW_COLUMNS => {
                             let current = column_layout.borrow().clone();
@@ -3499,6 +3622,28 @@ fn apply_sort(
     send_status(&tx3, rt, label);
 }
 
+/// The next unread message in a direction, wrapping around the end.
+///
+/// Wrapping rather than stopping, because someone working through an inbox by
+/// unread does not want to arrow back to the top by hand, and there is no
+/// visible scrollbar telling them they reached the bottom. `None` means there
+/// is no unread message at all, which the caller says out loud: silence would
+/// be indistinguishable from a key that does not work.
+fn next_unread(messages: &[MessageItem], from: Option<usize>, direction: isize) -> Option<usize> {
+    if messages.is_empty() {
+        return None;
+    }
+    let count = messages.len();
+    let start = from.unwrap_or(0) as isize;
+    for step in 1..=count as isize {
+        let index = (start + direction * step).rem_euclid(count as isize) as usize;
+        if !messages[index].read {
+            return Some(index);
+        }
+    }
+    None
+}
+
 /// Sort messages in-place according to the given sort option.
 fn sort_messages(messages: &mut [MessageItem], order: MailSortOption) {
     match order {
@@ -3722,6 +3867,73 @@ fn show_new_item_dialog(frame: &Frame, item_type: &str, a11y: &Arc<Accessibility
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_next_unread_wraps_and_reports_when_there_is_none() {
+        // Silence would be indistinguishable from a key that does not work.
+        let read = |r: bool| MessageItem {
+            uid: 1,
+            message_id: 1,
+            subject: "s".to_string(),
+            from: "f".to_string(),
+            date: "2026-07-26".to_string(),
+            read: r,
+            starred: false,
+            has_attachments: false,
+            attachments: Vec::new(),
+            thread_depth: 0,
+            is_thread_parent: false,
+            thread_id: None,
+            snippet: String::new(),
+            size_bytes: None,
+            to: String::new(),
+            cc: String::new(),
+        };
+        let messages = vec![read(true), read(false), read(true), read(false)];
+
+        assert_eq!(next_unread(&messages, Some(0), 1), Some(1));
+        assert_eq!(next_unread(&messages, Some(1), 1), Some(3));
+        // Wraps rather than stopping dead at the end.
+        assert_eq!(next_unread(&messages, Some(3), 1), Some(1));
+        // Backwards too.
+        assert_eq!(next_unread(&messages, Some(3), -1), Some(1));
+        assert_eq!(next_unread(&messages, Some(1), -1), Some(3));
+        // Nothing selected yet starts from the top.
+        assert_eq!(next_unread(&messages, None, 1), Some(1));
+    }
+
+    #[test]
+    fn test_next_unread_says_no_when_everything_is_read() {
+        let all_read: Vec<MessageItem> = Vec::new();
+        assert_eq!(next_unread(&all_read, None, 1), None);
+    }
+
+    #[test]
+    fn test_next_unread_on_the_only_unread_message_stays_put() {
+        // Landing back on the message you are standing on is the honest
+        // answer: it is the only unread one.
+        let mut m = MessageItem {
+            uid: 1,
+            message_id: 1,
+            subject: "s".to_string(),
+            from: "f".to_string(),
+            date: "2026-07-26".to_string(),
+            read: true,
+            starred: false,
+            has_attachments: false,
+            attachments: Vec::new(),
+            thread_depth: 0,
+            is_thread_parent: false,
+            thread_id: None,
+            snippet: String::new(),
+            size_bytes: None,
+            to: String::new(),
+            cc: String::new(),
+        };
+        m.read = false;
+        let messages = vec![m];
+        assert_eq!(next_unread(&messages, Some(0), 1), Some(0));
+    }
     use super::*;
 
     #[test]

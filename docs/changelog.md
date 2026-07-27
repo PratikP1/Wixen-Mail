@@ -14,12 +14,19 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 - **A snippet column that has something to read.** The first line of the body is stored beside the message when the body is fetched, so the column keeps working after the body cache evicts. Messages with no plain text part fall back to their HTML.
 - **A size column**, spoken in units: "2 KB" rather than "2048". A size we do not know yet reads as blank rather than as "0 bytes", which would be a claim we cannot make.
 - **To and Cc columns**, which prefer a display name over a raw address the same way the correspondent column does.
+- **Next and previous unread** on `Ctrl+Shift+N` and `Ctrl+Shift+P`. They wrap at the ends, and say "no unread messages" rather than doing nothing, because a key that silently does nothing is indistinguishable from a key that is broken.
+- **Flag a message** with `Ctrl+Shift+S`, which writes through to the cache.
+- **`F5` reads the current folder again** and `F6` moves between the folder, message, and preview panes, skipping the preview when it is hidden rather than focusing something invisible.
 - **Space reads the item under the cursor, in all six modules.** A list row is read as its visible columns and nothing else, so a task's description, a contact's phone number, or a message's recipients were invisible until you opened the item. `Space` reads the short form, pressing it again reads everything the record holds, and a third press goes back. `Shift+Space` reads everything outright. Moving to another row starts again at the short form. There is no double-press timing window: the second press does the second thing however long you took, because a timing window locks out anyone who types slowly.
 - **Landing on a conversation is signalled**, so it can be a short tone rather than another sentence on every row. Which channel it uses is a setting, not a decision made in the code.
 - **Feedback on four channels: speech, braille, sound, and the status bar.** Events such as new mail, a sent message, a lost connection, or a failed send are now facts the application signals rather than sentences it speaks. A new Feedback tab in Settings decides which channels each one reaches. This matters most to two groups pulling in opposite directions: a deaf-blind user can switch speech off and keep braille, and someone working in an open office can swap a spoken sentence for a short tone.
 - **Nothing is ever signalled by sound alone.** If sounds are the only channel left on, a written equivalent is added automatically, unless you switched every text channel off yourself. The rule lives in the routing rather than at each call site, so no future event can bypass it by forgetting.
 - **Each event has its own tone**, and tones are spaced out so a syncing mailbox does not run them together. An earcon that cannot be told apart from its sibling carries no information.
 - **Attachment records are stored and read back.** The attachments table existed and nothing ever wrote to it, so the attachment column could never have been true. Listing a folder now reports attachment presence without loading the attachments.
+
+### Fixed
+
+- **The keyboard shortcut reference documented eight shortcuts that did not exist**: `F5`, `F6`, `F3`, `N`, `P`, `S`, `Ctrl+1`, and `Ctrl+2`. The useful ones are now implemented, and the rest are gone from the document. A reference that lists keys which do nothing is worse than one that lists fewer keys.
 
 ### Removed
 
