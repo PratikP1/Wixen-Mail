@@ -4,6 +4,7 @@
 //! Native Windows UI with first-class accessibility support.
 
 use crate::application::mail_controller::{MailController, SendEmailRequest};
+use crate::application::reply::ReplyMode;
 use crate::common::Result;
 use crate::data::account::Account;
 use crate::data::message_cache::MessageCache;
@@ -76,6 +77,7 @@ menu_ids!(
     ID_SEARCH,
     ID_REPLY,
     ID_REPLY_ALL,
+    ID_REPLY_SENDER,
     ID_FORWARD,
     ID_DELETE,
     ID_MARK_READ,
@@ -356,13 +358,19 @@ impl WxMailApp {
                     ID_REPLY,
                     "Reply",
                     &bmp(ArtId::GoBack),
-                    "Reply to sender (Ctrl+R)",
+                    "Reply where the sender asked (Ctrl+R)",
                 );
                 toolbar.add_tool(
                     ID_REPLY_ALL,
                     "Reply All",
                     &bmp(ArtId::GoBack),
-                    "Reply to all (Ctrl+Shift+R)",
+                    "Reply to everyone the message reached (Ctrl+Shift+R)",
+                );
+                toolbar.add_tool(
+                    ID_REPLY_SENDER,
+                    "Reply to Sender",
+                    &bmp(ArtId::GoBack),
+                    "Reply only to the person who wrote it (Alt+Shift+R)",
                 );
                 toolbar.add_tool(
                     ID_FORWARD,
@@ -1985,12 +1993,13 @@ document.addEventListener('keydown', function(e) {
                         }
                         _ if id == ID_NEW_MESSAGE => open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, ComposeMode::New),
                         _ if id == ID_REPLY => {
-                            let (to, subj, body) = msg_info(&state);
-                            open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, ComposeMode::Reply { to, subject: subj, quoted_body: body });
+                            start_reply(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ReplyMode::Default);
                         }
                         _ if id == ID_REPLY_ALL => {
-                            let (to, subj, body) = msg_info(&state);
-                            open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, ComposeMode::ReplyAll { to, cc: String::new(), subject: subj, quoted_body: body });
+                            start_reply(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ReplyMode::All);
+                        }
+                        _ if id == ID_REPLY_SENDER => {
+                            start_reply(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ReplyMode::Sender);
                         }
                         _ if id == ID_FORWARD => {
                             let (_to, subj, body) = msg_info(&state);
@@ -3147,6 +3156,92 @@ pub(crate) fn send_status(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, msg: &str) {
     });
 }
 
+/// Open a reply to the selected message.
+///
+/// The three reply keys differ by a modifier, and the cost of the wrong one is
+/// a private answer arriving in front of a mailing list. So the mode and the
+/// number of people it reaches are announced before the window takes focus,
+/// rather than left to be discovered from the To field.
+#[allow(clippy::too_many_arguments)]
+fn start_reply(
+    frame: &Frame,
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Accessibility,
+    mode: ReplyMode,
+) {
+    let (selected, own_addresses, preview) = {
+        let s = lock_state(state);
+        (
+            s.selected_message_index
+                .and_then(|i| s.messages.get(i))
+                .cloned(),
+            s.accounts
+                .iter()
+                .map(|a| a.email.clone())
+                .collect::<Vec<_>>(),
+            s.message_preview.clone(),
+        )
+    };
+    let Some(message) = selected else {
+        let _ = a11y.signal(FeedbackEvent::ActionRefused, "no message selected");
+        return;
+    };
+
+    let recipients = crate::application::reply::reply_recipients(
+        &crate::application::reply::RepliedTo {
+            from: &message.from,
+            reply_to: &message.reply_to,
+            to: &message.to,
+            cc: &message.cc,
+        },
+        &own_addresses,
+        mode,
+    );
+
+    if recipients.to.trim().is_empty() {
+        // Better than a compose window addressed to nothing, which fails at the
+        // server with an error nobody can act on.
+        let _ = a11y.signal(
+            FeedbackEvent::ActionRefused,
+            "this message has no address to reply to",
+        );
+        return;
+    }
+
+    let reach = recipients.count();
+    let _ = a11y.announce(
+        &format!(
+            "{}, {} {}",
+            mode.description(),
+            reach,
+            if reach == 1 {
+                "recipient"
+            } else {
+                "recipients"
+            }
+        ),
+        crate::presentation::accessibility::announcements::Priority::Normal,
+    );
+
+    let compose = match mode {
+        ReplyMode::All => ComposeMode::ReplyAll {
+            to: recipients.to,
+            cc: recipients.cc,
+            subject: message.subject.clone(),
+            quoted_body: preview,
+        },
+        _ => ComposeMode::Reply {
+            to: recipients.to,
+            subject: message.subject.clone(),
+            quoted_body: preview,
+        },
+    };
+    open_compose(frame, state, tx, rt, cache, compose);
+}
+
 /// Extract selected message info for reply/forward.
 fn msg_info(state: &Arc<StdMutex<WxUIState>>) -> (String, String, String) {
     state
@@ -3844,18 +3939,22 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
             // A message the account cannot send is a configuration problem, not
             // a transport failure, and saying which is the difference between a
             // fixable error and a mystery.
-            let outcome = match SendEmailRequest::from_queued(msg, &account) {
-                Some(request) => controller
-                    .send_email(&request)
-                    .await
-                    .map_err(|e| e.to_string()),
-                None if account.use_oauth => Err(
-                    "This account signs in with OAuth, which sending does not support yet"
-                        .to_string(),
-                ),
-                None => {
-                    Err("Check the account's SMTP server, port, and recipient address".to_string())
-                }
+            //
+            // The credential is fetched per message rather than once, because a
+            // long queue can outlive an access token, and a token that expired
+            // halfway through would fail every message after it for a reason
+            // that reads like a wrong password.
+            let outcome = match crate::application::mail_auth::for_account(&account).await {
+                Ok(auth) => match SendEmailRequest::from_queued(msg, &account, auth) {
+                    Some(request) => controller
+                        .send_email(&request)
+                        .await
+                        .map_err(|e| e.to_string()),
+                    None => Err(
+                        "Check the account's SMTP server, port, and recipient address".to_string(),
+                    ),
+                },
+                Err(e) => Err(e.to_string()),
             };
 
             match &outcome {
@@ -3942,7 +4041,7 @@ fn spawn_mail_watch(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt:
         // silently until the next check, which is where the client was before
         // watching existed, and is not worth interrupting somebody to say.
         let Some(account) = account else { return };
-        if account.use_oauth || account.imap_server.trim().is_empty() {
+        if account.imap_server.trim().is_empty() {
             return;
         }
         let Ok(port) = account.imap_port.trim().parse::<u16>() else {
@@ -3952,6 +4051,9 @@ fn spawn_mail_watch(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt:
             return;
         };
         let Ok(cache) = crate::data::message_cache::MessageCache::new(dir, None) else {
+            return;
+        };
+        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
             return;
         };
         // Whichever folder the server calls the inbox, which is not always
@@ -3974,7 +4076,7 @@ fn spawn_mail_watch(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt:
             &account.imap_server,
             port,
             &account.username,
-            &account.password,
+            &auth,
             account.imap_use_tls,
             &inbox.path,
         ));
@@ -4094,13 +4196,6 @@ fn spawn_server_change(
             refuse("no account is set up".to_string());
             return;
         };
-        if account.use_oauth {
-            refuse(
-                "this account signs in with OAuth, which mail access does not support yet"
-                    .to_string(),
-            );
-            return;
-        }
         let Ok(port) = account.imap_port.trim().parse::<u16>() else {
             refuse(format!("{} has no usable IMAP port", account.name));
             return;
@@ -4124,12 +4219,20 @@ fn spawn_server_change(
             }
         };
 
+        let auth = match handle.block_on(crate::application::mail_auth::for_account(&account)) {
+            Ok(auth) => auth,
+            Err(e) => {
+                refuse(e.to_string());
+                return;
+            }
+        };
+
         let controller = MailController::new();
         if let Err(e) = handle.block_on(controller.connect_imap(
             account.imap_server.clone(),
             port,
             account.username.clone(),
-            account.password.clone(),
+            auth,
             account.imap_use_tls,
         )) {
             refuse(e.to_string());
@@ -4214,7 +4317,7 @@ fn spawn_body_fetch(
         // reported when somebody asks for it by opening it, not as a sentence
         // spoken over every row they pass.
         let Some(account) = account else { return };
-        if account.use_oauth || account.imap_server.trim().is_empty() {
+        if account.imap_server.trim().is_empty() {
             return;
         }
         let Ok(port) = account.imap_port.trim().parse::<u16>() else {
@@ -4229,13 +4332,16 @@ fn spawn_body_fetch(
         let Ok(Some(folder_path)) = cache.folder_path_for_message(message_row_id) else {
             return;
         };
+        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
+            return;
+        };
 
         let controller = MailController::new();
         if let Err(e) = handle.block_on(controller.connect_imap(
             account.imap_server.clone(),
             port,
             account.username.clone(),
-            account.password.clone(),
+            auth,
             account.imap_use_tls,
         )) {
             tracing::warn!("Could not connect to fetch a message body: {}", e);
@@ -4347,15 +4453,6 @@ fn spawn_mail_sync(
             fail("Add an account before checking for mail".to_string());
             return;
         };
-        // Refused here rather than at the server, where the failure would be an
-        // authentication error the user cannot act on.
-        if account.use_oauth {
-            fail(
-                "This account signs in with OAuth, which fetching mail does not support yet"
-                    .to_string(),
-            );
-            return;
-        }
         if account.imap_server.trim().is_empty() {
             fail(format!("{} has no IMAP server set", account.name));
             return;
@@ -4388,12 +4485,23 @@ fn spawn_mail_sync(
             account.imap_server
         )));
 
+        // Fetched before connecting, because an expired token is refreshed here
+        // and a missing one is a configuration problem worth naming rather than
+        // a sign-in the server refuses for reasons nobody can act on.
+        let auth = match handle.block_on(crate::application::mail_auth::for_account(&account)) {
+            Ok(auth) => auth,
+            Err(e) => {
+                fail(e.to_string());
+                return;
+            }
+        };
+
         let controller = MailController::new();
         if let Err(e) = handle.block_on(controller.connect_imap(
             account.imap_server.clone(),
             port,
             account.username.clone(),
-            account.password.clone(),
+            auth,
             account.imap_use_tls,
         )) {
             fail(e.to_string());

@@ -3,11 +3,40 @@
 //! Handles SMTP protocol for sending email.
 
 use crate::common::{Error, Result};
+use crate::service::protocols::MailAuth;
 use lettre::{
     AsyncSmtpTransport, AsyncTransport, Tokio1Executor,
     message::{Mailbox, Message, MultiPart, SinglePart, header::ContentType},
-    transport::smtp::authentication::Credentials,
+    transport::smtp::authentication::{Credentials, Mechanism},
 };
+
+/// How an SMTP connection is protected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SmtpSecurity {
+    /// TLS from the first byte, which is port 465.
+    Tls,
+    /// Plain to start with, upgraded by STARTTLS, which is port 587.
+    StartTls,
+    /// No encryption at all.
+    Plaintext,
+}
+
+impl SmtpSecurity {
+    /// Work out how to protect a connection from what the account says.
+    ///
+    /// The submission port, 587, is a plaintext port that upgrades. Treating it
+    /// as implicit TLS makes the handshake fail against every mail provider
+    /// worth naming: Gmail, Outlook and Fastmail all use 587. The failure looks
+    /// like the server being unreachable, which sends somebody to check their
+    /// network rather than their port.
+    pub fn choose(port: u16, use_tls: bool) -> Self {
+        match (use_tls, port) {
+            (false, _) => SmtpSecurity::Plaintext,
+            (true, 465) => SmtpSecurity::Tls,
+            (true, _) => SmtpSecurity::StartTls,
+        }
+    }
+}
 
 /// SMTP client configuration
 #[derive(Debug, Clone)]
@@ -58,8 +87,8 @@ impl SmtpClient {
         Ok(Self { config })
     }
 
-    /// Send an email
-    pub async fn send_email(&self, email: Email, password: &str) -> Result<()> {
+    /// Send an email.
+    pub async fn send_email(&self, email: Email, auth: &MailAuth) -> Result<()> {
         tracing::info!(
             "Sending email from {} to {:?}",
             crate::common::logging::mask_email(&email.from),
@@ -109,20 +138,47 @@ impl SmtpClient {
                 .map_err(|e| Error::Protocol(format!("Failed to build message: {}", e)))?
         };
 
-        // Create transport
-        let creds = Credentials::new(self.config.username.clone(), password.to_string());
+        // Create transport.
+        //
+        // A token is not a password: sent as PLAIN it is rejected, and the
+        // failure reads as a wrong password, which sends somebody off to reset
+        // one that no longer exists. So the mechanism is pinned to match the
+        // credential rather than left to negotiation.
+        let (creds, mechanisms) = match auth {
+            MailAuth::Password(password) => (
+                Credentials::new(self.config.username.clone(), password.clone()),
+                vec![Mechanism::Plain, Mechanism::Login],
+            ),
+            MailAuth::OAuth2(token) => (
+                Credentials::new(self.config.username.clone(), token.clone()),
+                vec![Mechanism::Xoauth2],
+            ),
+        };
 
-        let transport = if self.config.use_tls {
-            AsyncSmtpTransport::<Tokio1Executor>::relay(&self.config.server)
+        let transport = match SmtpSecurity::choose(self.config.port, self.config.use_tls) {
+            SmtpSecurity::Tls => AsyncSmtpTransport::<Tokio1Executor>::relay(&self.config.server)
                 .map_err(|e| Error::Protocol(format!("Failed to create SMTP transport: {}", e)))?
                 .port(self.config.port)
                 .credentials(creds)
-                .build()
-        } else {
-            AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&self.config.server)
-                .port(self.config.port)
-                .credentials(creds)
-                .build()
+                .authentication(mechanisms)
+                .build(),
+            SmtpSecurity::StartTls => {
+                AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&self.config.server)
+                    .map_err(|e| {
+                        Error::Protocol(format!("Failed to create SMTP transport: {}", e))
+                    })?
+                    .port(self.config.port)
+                    .credentials(creds)
+                    .authentication(mechanisms)
+                    .build()
+            }
+            SmtpSecurity::Plaintext => {
+                AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&self.config.server)
+                    .port(self.config.port)
+                    .credentials(creds)
+                    .authentication(mechanisms)
+                    .build()
+            }
         };
 
         // Send the email
@@ -152,6 +208,36 @@ impl SmtpClient {
 
 #[cfg(test)]
 mod tests {
+    use super::SmtpSecurity;
+
+    #[test]
+    fn test_the_submission_port_upgrades_rather_than_starting_encrypted() {
+        // 587 is the port Gmail, Outlook and Fastmail all use, and it is a
+        // plaintext port that upgrades. Treating it as implicit TLS makes the
+        // handshake fail in a way that reads like the server being
+        // unreachable, which sends somebody to check their network.
+        assert_eq!(SmtpSecurity::choose(587, true), SmtpSecurity::StartTls);
+    }
+
+    #[test]
+    fn test_the_older_port_starts_encrypted() {
+        assert_eq!(SmtpSecurity::choose(465, true), SmtpSecurity::Tls);
+    }
+
+    #[test]
+    fn test_an_unusual_port_upgrades_rather_than_assuming() {
+        // STARTTLS on a port that wants implicit TLS fails with a clear
+        // protocol error. Implicit TLS on a port that wants STARTTLS hangs the
+        // handshake, which is worse to diagnose.
+        assert_eq!(SmtpSecurity::choose(2525, true), SmtpSecurity::StartTls);
+    }
+
+    #[test]
+    fn test_encryption_turned_off_means_off() {
+        assert_eq!(SmtpSecurity::choose(465, false), SmtpSecurity::Plaintext);
+        assert_eq!(SmtpSecurity::choose(587, false), SmtpSecurity::Plaintext);
+    }
+
     use super::*;
 
     #[test]

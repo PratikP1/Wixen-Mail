@@ -244,7 +244,7 @@ pub async fn watch_folder(
     server: &str,
     port: u16,
     username: &str,
-    password: &str,
+    auth: &crate::service::protocols::MailAuth,
     use_tls: bool,
     folder: &str,
 ) -> Result<(
@@ -257,7 +257,7 @@ pub async fn watch_folder(
         use_tls,
         username: username.to_string(),
     })?;
-    let mut session = client.connect(password).await?;
+    let mut session = client.connect(auth).await?;
     session.select_folder(folder).await?;
     Ok(session.watch(folder.to_string()))
 }

@@ -18,6 +18,7 @@ pub mod structure;
 use crate::common::types::{EmailAddress, FolderType};
 use crate::common::{Error, Result, error::redact_provider_message};
 use crate::service::mime;
+use crate::service::protocols::MailAuth;
 use async_imap::imap_proto::NameAttribute;
 use async_imap::types::{Fetch, Flag};
 use futures::TryStreamExt;
@@ -52,6 +53,30 @@ pub struct ImapConfig {
     pub port: u16,
     pub use_tls: bool,
     pub username: String,
+}
+
+/// Answers the server's XOAUTH2 challenge.
+///
+/// The exchange is one round: the server offers an empty challenge and the
+/// client sends the credential. When the credential is refused the server sends
+/// a second challenge carrying a JSON error, and the client has to answer with
+/// an empty line before the failure is reported, so anything after the first
+/// call answers empty rather than sending the token again.
+struct XOAuth2 {
+    credential: String,
+    sent: bool,
+}
+
+impl async_imap::Authenticator for XOAuth2 {
+    type Response = String;
+
+    fn process(&mut self, _challenge: &[u8]) -> Self::Response {
+        if self.sent {
+            return String::new();
+        }
+        self.sent = true;
+        std::mem::take(&mut self.credential)
+    }
 }
 
 /// How the connection is protected.
@@ -246,8 +271,8 @@ impl ImapClient {
         Ok(Self { config })
     }
 
-    /// Connect, protect the connection, and log in.
-    pub async fn connect(&self, password: &str) -> Result<ImapSession> {
+    /// Connect, protect the connection, and sign in.
+    pub async fn connect(&self, auth: &MailAuth) -> Result<ImapSession> {
         let security = ImapSecurity::choose(self.config.port, self.config.use_tls);
         tracing::info!(
             "Connecting to {}:{} ({:?})",
@@ -281,20 +306,40 @@ impl ImapClient {
             client = self.upgrade(client).await?;
         }
 
-        let session = with_timeout(
-            COMMAND_TIMEOUT,
-            client.login(&self.config.username, password),
-            "signing in",
-        )
-        .await?
-        .map_err(|(error, _client)| {
-            // The server's own words, bounded and stripped of anything that
-            // looks like a credential before it reaches the log.
+        // The server's own words for a refusal, bounded and stripped of
+        // anything that looks like a credential before it reaches the log.
+        let refused = |error: async_imap::error::Error| {
             Error::Authentication(format!(
                 "The mail server rejected the sign-in: {}",
                 redact_provider_message(&error.to_string())
             ))
-        })?;
+        };
+        let session = match auth {
+            MailAuth::Password(password) => with_timeout(
+                COMMAND_TIMEOUT,
+                client.login(&self.config.username, password),
+                "signing in",
+            )
+            .await?
+            .map_err(|(error, _client)| refused(error))?,
+            MailAuth::OAuth2(token) => {
+                let credential =
+                    crate::service::protocols::xoauth2::credential(&self.config.username, token)?;
+                with_timeout(
+                    COMMAND_TIMEOUT,
+                    client.authenticate(
+                        "XOAUTH2",
+                        XOAuth2 {
+                            credential,
+                            sent: false,
+                        },
+                    ),
+                    "signing in",
+                )
+                .await?
+                .map_err(|(error, _client)| refused(error))?
+            }
+        };
 
         tracing::info!("Signed in to {}", self.config.server);
         Ok(ImapSession {

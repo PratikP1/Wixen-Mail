@@ -175,9 +175,11 @@ Comprehensive solutions for common issues with Wixen Mail.
 **Common Problems:**
 
 1. **Modern authentication required**
-   - Basic auth being phased out
-   - Most accounts should work with username/password
-   - OAuth support coming in future update
+   - Microsoft has ended password sign-in for mail on most accounts
+   - Add the account with the Outlook button so it signs in with OAuth
+   - If sign-in fails, the message says which part is missing: no provider
+     recorded, no client credentials configured, or authorisation that has been
+     revoked and needs doing again
 
 2. **Wrong server for Exchange**
    - Use outlook.office365.com, not your company's server

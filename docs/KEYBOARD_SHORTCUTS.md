@@ -9,6 +9,8 @@ Complete reference of all keyboard shortcuts in Wixen Mail for efficient, access
 |--------|----------|
 | New Message | `Ctrl+N` |
 | Reply | `Ctrl+R` |
+| Reply All | `Ctrl+Shift+R` |
+| Reply to Sender Only | `Alt+Shift+R` |
 | Forward | `Ctrl+L` |
 | Search | `Ctrl+F` |
 | Delete Message | `Delete` |
@@ -222,8 +224,9 @@ moves the menu, and sorting from the menu moves the headers.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Reply | `Ctrl+R` | Reply to selected message |
-| Reply All | `Ctrl+Shift+R` | Reply to all recipients |
+| Reply | `Ctrl+R` | Reply where the sender asked. On a mailing list this is the list. |
+| Reply All | `Ctrl+Shift+R` | Reply to everyone the message reached, leaving out your own address |
+| Reply to Sender Only | `Alt+Shift+R` | Reply only to the person who wrote it, never to the list |
 | Forward | `Ctrl+L` | Forward selected message |
 | Delete | `Delete` | Move selected message to trash |
 | Flag Message | `Ctrl+Shift+S` | Flag or unflag the selected message |
@@ -494,6 +497,8 @@ ESSENTIAL SHORTCUTS
 ─────────────────────────────────────
 Ctrl+N          New Message
 Ctrl+R          Reply
+Ctrl+Shift+R    Reply All
+Alt+Shift+R     Reply to Sender Only
 Ctrl+L          Forward  
 Ctrl+F          Search
 Delete          Delete Message
