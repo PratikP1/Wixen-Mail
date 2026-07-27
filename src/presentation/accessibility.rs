@@ -190,6 +190,14 @@ impl Accessibility {
         self.flush_announcements()
     }
 
+    /// Register the control that announcements are carried on.
+    ///
+    /// Called once the main window exists, because the handle does not exist
+    /// before that.
+    pub fn register_live_region(&self, handle: isize) {
+        self.screen_reader.set_live_region(handle);
+    }
+
     /// Stop or resume reading message content aloud.
     ///
     /// Interface announcements keep working, so muting before a screen share

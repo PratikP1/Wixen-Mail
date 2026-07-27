@@ -38,8 +38,12 @@ mod native {
     use std::os::raw::c_void;
     use std::os::windows::ffi::OsStrExt;
 
-    // Win32 constants for the legacy fallback path.
+    // Win32 constants.
     const EVENT_OBJECT_NAMECHANGE: u32 = 0x800C;
+    /// Windows 8 and later. Screen readers announce the new name of a control
+    /// that raises this, which is how a plain Win32 application says something
+    /// without moving focus.
+    const EVENT_OBJECT_LIVEREGIONCHANGED: u32 = 0x8019;
     const OBJID_CLIENT: i32 = -4;
     const CHILDID_SELF: u32 = 0;
 
@@ -84,6 +88,30 @@ mod native {
     extern "system" {
         fn NotifyWinEvent(event: u32, hwnd: isize, id_object: i32, id_child: u32);
         fn GetForegroundWindow() -> isize;
+        fn SetWindowTextW(hwnd: isize, text: *const u16) -> i32;
+    }
+
+    /// Announce through a live region control.
+    ///
+    /// A Win32 static control reports its window text as its accessible name,
+    /// so setting the text and then raising a live region change is a complete
+    /// announcement. This works through MSAA, which is what wxWidgets actually
+    /// implements, rather than requiring the application to be a native UI
+    /// Automation provider.
+    pub fn announce_via_live_region(hwnd: isize, text: &str) -> bool {
+        if hwnd == 0 {
+            return false;
+        }
+        unsafe {
+            SetWindowTextW(hwnd, wide(text).as_ptr());
+            NotifyWinEvent(
+                EVENT_OBJECT_LIVEREGIONCHANGED,
+                hwnd,
+                OBJID_CLIENT,
+                CHILDID_SELF,
+            );
+        }
+        true
     }
 
     /// Release a COM interface pointer through its vtable.
@@ -202,6 +230,8 @@ pub struct ScreenReaderBridge {
     last_announcement: Mutex<Option<String>>,
     event_log: Mutex<Vec<AutomationEvent>>,
     status: NativeBridgeStatus,
+    /// Native handle of the control used to carry announcements, or zero.
+    live_region: std::sync::atomic::AtomicIsize,
 }
 
 impl ScreenReaderBridge {
@@ -223,7 +253,20 @@ impl ScreenReaderBridge {
             } else {
                 NativeBridgeStatus::Fallback
             },
+            live_region: std::sync::atomic::AtomicIsize::new(0),
         })
+    }
+
+    /// Register the control announcements are carried on.
+    ///
+    /// Must be called once the main window exists. Without it announcements
+    /// fall back to the UI Automation notification, which returns success on
+    /// this application and is not delivered, because wxWidgets implements
+    /// MSAA rather than being a native UI Automation provider.
+    pub fn set_live_region(&self, handle: isize) {
+        self.live_region
+            .store(handle, std::sync::atomic::Ordering::Relaxed);
+        tracing::info!("Announcements will be carried on window 0x{:x}", handle);
     }
 
     /// Announce text to the screen reader.
@@ -255,6 +298,18 @@ impl ScreenReaderBridge {
 
         #[cfg(target_os = "windows")]
         {
+            // The live region is the path that works here. The notification
+            // call reports success and is never delivered, so it is only tried
+            // when there is no live region to use.
+            let live_region = self.live_region.load(std::sync::atomic::Ordering::Relaxed);
+            if live_region != 0 && native::announce_via_live_region(live_region, text) {
+                tracing::debug!(
+                    "Announced through the live region: {} characters",
+                    text.len()
+                );
+                return Ok(());
+            }
+
             let processing = match (urgency, topic.is_empty()) {
                 (Urgency::Urgent, _) => native::Processing::ImportantAll,
                 (Urgency::Important, _) => native::Processing::ImportantMostRecent,
@@ -323,6 +378,7 @@ impl Default for ScreenReaderBridge {
             } else {
                 NativeBridgeStatus::Fallback
             },
+            live_region: std::sync::atomic::AtomicIsize::new(0),
         }
     }
 }

@@ -246,6 +246,19 @@ impl WxMailApp {
 
             frame.set_menu_bar(Self::build_menu_bar());
 
+            // A one pixel static control that carries announcements. A Win32
+            // static reports its window text as its accessible name, so setting
+            // the text and raising a live region change is a complete
+            // announcement without moving focus. It has to be a real, shown
+            // window: a hidden or zero sized one is not exposed to MSAA at all,
+            // which is why it is sized rather than hidden.
+            let live_region = StaticText::builder(&frame)
+                .with_label("")
+                .with_pos(Point::new(0, 0))
+                .with_size(Size::new(1, 1))
+                .build();
+            a11y.register_live_region(live_region.get_handle() as isize);
+
             // Restore the stored mute preference before anything can speak.
             {
                 let mut mgr = crate::data::config::ConfigManager::default();
