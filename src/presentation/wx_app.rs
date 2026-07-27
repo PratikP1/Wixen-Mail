@@ -17,8 +17,12 @@ use crate::presentation::wx_managers;
 use crate::presentation::wx_settings;
 
 use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::message_columns::{self, ColumnLayout, MessageColumn};
+use crate::presentation::message_rows;
 use async_channel::{Receiver, Sender};
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use tokio::runtime::Runtime;
@@ -39,6 +43,7 @@ const FOLDER_W: i32 = 220;
 
 // Menu IDs
 const ID_MUTE_CONTENT: Id = ID_HIGHEST + 78;
+const ID_LOAD_SCALE_SAMPLE: Id = ID_HIGHEST + 79;
 const ID_CHECK_MAIL: Id = ID_HIGHEST + 1;
 const ID_NEW_MESSAGE: Id = ID_HIGHEST + 2;
 const ID_QUIT: Id = ID_HIGHEST + 3;
@@ -446,9 +451,17 @@ impl WxMailApp {
             let inner = SplitterWindow::builder(&mail_content).build();
             inner.set_minimum_pane_size(100);
 
+            // Virtual mode: the control asks for the text of visible rows and
+            // never holds the rest. Memory is proportional to what is on screen
+            // rather than to what exists, and because it stays the native list,
+            // UI Automation reports the true count, so a screen reader says
+            // "row 12 of 207,431" and means it.
             let msg_list = ListCtrl::builder(&inner)
                 .with_style(
-                    ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules,
+                    ListCtrlStyle::Report
+                        | ListCtrlStyle::SingleSel
+                        | ListCtrlStyle::HRules
+                        | ListCtrlStyle::Virtual,
                 )
                 .build();
             set_accessible_name(&msg_list, "Messages");
@@ -462,10 +475,33 @@ impl WxMailApp {
             ) {
                 msg_list.set_font(&list_font);
             }
-            msg_list.insert_column(0, "Subject", ListColumnFormat::Left, 300);
-            msg_list.insert_column(1, "From", ListColumnFormat::Left, 200);
-            msg_list.insert_column(2, "Date", ListColumnFormat::Left, 150);
-            msg_list.insert_column(3, "Status", ListColumnFormat::Centre, 60);
+            // Columns come from the layout, so hiding and reordering has one
+            // source of truth rather than a hard coded list here and a model
+            // somewhere else.
+            let column_layout = Rc::new(RefCell::new(ColumnLayout::defaults_for(
+                message_columns::FolderKind::Inbox,
+            )));
+            apply_columns(&msg_list, &column_layout.borrow());
+
+            // The callback runs while wxWidgets paints, so it reads what is
+            // already in memory and never touches the database.
+            msg_list.set_virtual_text_callback({
+                let state = state.clone();
+                let column_layout = column_layout.clone();
+                move |row, column| {
+                    let Ok(state) = state.lock() else {
+                        return message_rows::PLACEHOLDER.to_string();
+                    };
+                    let Some(message) = state.messages.get(row as usize) else {
+                        return message_rows::PLACEHOLDER.to_string();
+                    };
+                    let columns = column_layout.borrow().visible();
+                    match columns.get(column as usize) {
+                        Some(c) => message_rows::cell_text(message, *c),
+                        None => String::new(),
+                    }
+                }
+            });
 
             tracing::info!("Message list created, setting up WebView");
 
@@ -1399,6 +1435,11 @@ impl WxMailApp {
                         _ if id == ID_SORT_SUBJECT_AZ => apply_sort(&state, &ui_tx, &runtime, MailSortOption::SubjectAZ),
                         _ if id == ID_SORT_SUBJECT_ZA => apply_sort(&state, &ui_tx, &runtime, MailSortOption::SubjectZA),
                         _ if id == ID_SORT_UNREAD_FIRST => apply_sort(&state, &ui_tx, &runtime, MailSortOption::UnreadFirst),
+                        _ if id == ID_LOAD_SCALE_SAMPLE => {
+                            let generated = sample_mailbox(SAMPLE_MAILBOX_SIZE);
+                            let tx = ui_tx.clone();
+                            let _ = tx.try_send(UIUpdate::MessagesLoaded(generated));
+                        }
                         _ if id == ID_ABOUT => show_about_dialog(&frame),
                         _ => tracing::debug!("Unhandled menu ID: {:?}", id),
                     }
@@ -1700,6 +1741,79 @@ fn lock_state(state: &Arc<StdMutex<WxUIState>>) -> std::sync::MutexGuard<'_, WxU
     state
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// How many messages the sample mailbox generates.
+const SAMPLE_MAILBOX_SIZE: usize = 200_000;
+
+/// Build a mailbox large enough to tell whether the list actually scales.
+///
+/// This exists to be tested with a screen reader. Claims about a list holding
+/// two hundred thousand rows are worth nothing until someone arrows through one,
+/// and waiting for a real mailbox that size to sync is not a reasonable way to
+/// find out that it does not work.
+///
+/// Deliberately reachable from the Help menu rather than hidden behind a build
+/// flag, because the people who most need to test it are not the people
+/// compiling it.
+fn sample_mailbox(count: usize) -> Vec<MessageItem> {
+    let senders = [
+        "Ada Lovelace <ada@example.com>",
+        "Grace Hopper <grace@example.com>",
+        "Alan Turing <alan@example.com>",
+        "no-reply@example.com",
+    ];
+    let subjects = [
+        "Quarterly report",
+        "Re: schedule for next week",
+        "Invoice 4021",
+        "Notes from the accessibility review",
+        "",
+    ];
+
+    (0..count)
+        .map(|i| MessageItem {
+            uid: i as u32 + 1,
+            message_id: i as i64 + 1,
+            subject: subjects[i % subjects.len()].to_string(),
+            from: senders[i % senders.len()].to_string(),
+            // Descending so the newest is first, matching the default sort.
+            date: format!("2026-07-26 {:02}:{:02}", (i / 60) % 24, i % 60),
+            read: i % 3 != 0,
+            starred: i % 17 == 0,
+            has_attachments: i % 7 == 0,
+            attachments: Vec::new(),
+            thread_depth: i % 5,
+            is_thread_parent: i % 5 == 0,
+            thread_id: (i % 5 != 0).then(|| format!("thread-{}", i / 5)),
+        })
+        .collect()
+}
+
+/// Rebuild the list's columns from a layout.
+///
+/// Hiding rebuilds rather than setting a width of zero. A zero width column
+/// still exists in the UI Automation tree and a screen reader may still read
+/// it, which is the kind of defect that is invisible to sighted users and
+/// audible to everyone else. Rebuilding is cheap in virtual mode because there
+/// are no rows to restore, only a count to set again.
+fn apply_columns(list: &ListCtrl, layout: &ColumnLayout) {
+    list.clear_all();
+    for (position, column) in layout.visible().iter().enumerate() {
+        let width = match column {
+            MessageColumn::Unread | MessageColumn::Attachment | MessageColumn::Flagged => 90,
+            MessageColumn::Subject => 320,
+            MessageColumn::Snippet => 360,
+            MessageColumn::Correspondent | MessageColumn::To | MessageColumn::Cc => 200,
+            _ => 140,
+        };
+        list.insert_column(
+            position as i64,
+            column.heading(),
+            ListColumnFormat::Left,
+            width,
+        );
+    }
 }
 
 /// Read a module's records out of the cache and send them to the UI.
@@ -2093,14 +2207,11 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 let mut s = lock_state(state);
                 s.messages = messages.clone();
             }
-            msg_list.delete_all_items();
-            for (i, m) in messages.iter().enumerate() {
-                let idx = i as i64;
-                msg_list.insert_item(idx, &m.subject, None);
-                msg_list.set_item_text_by_column(idx, 1, &m.from);
-                msg_list.set_item_text_by_column(idx, 2, &m.date);
-                msg_list.set_item_text_by_column(idx, 3, if m.read { "" } else { "NEW" });
-            }
+            // Virtual mode: tell the control how many rows exist and let it
+            // ask for the ones it paints. Inserting them would be a quarter of
+            // a million native calls to render thirty visible lines.
+            msg_list.set_item_count(messages.len() as i64);
+            msg_list.refresh_items(0, messages.len().saturating_sub(1) as i64);
             let unread = messages.iter().filter(|m| !m.read).count();
             let msg = format!("{} messages, {} unread", messages.len(), unread);
             frame.set_status_text(&msg, 0);

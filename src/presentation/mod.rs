@@ -5,6 +5,7 @@
 pub mod accessibility;
 pub mod html_renderer;
 pub mod message_columns;
+pub mod message_rows;
 pub mod ui_types;
 pub mod wx_account_manager;
 pub mod wx_app;
