@@ -5,6 +5,7 @@
 pub mod accounts;
 pub mod caldav_sync;
 pub mod calendar;
+pub mod collection_sync;
 pub mod composition;
 pub mod contacts;
 pub mod contacts_sync;

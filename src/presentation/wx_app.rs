@@ -12,7 +12,6 @@ use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::ui_types::*;
 use crate::presentation::wx_account_manager::{self, AccountManagerAction};
-use crate::presentation::wx_calendar;
 use crate::presentation::wx_columns;
 use crate::presentation::wx_compose::{self, ComposeMode, ComposeResult};
 use crate::presentation::wx_managers;
@@ -21,6 +20,7 @@ use crate::presentation::wx_thread_view;
 
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::date_display;
+use crate::presentation::managers;
 use crate::presentation::message_columns::{self, ColumnLayout, MessageColumn};
 use crate::presentation::message_rows;
 use crate::presentation::pim_rows;
@@ -1077,7 +1077,10 @@ document.addEventListener('keydown', function(e) {
                         }
                     };
                     frame.set_title(&title);
-                    frame.set_status_text(&label, 2);
+                    // Through the update rather than written here, so the
+                    // handler that owns this status field stays its only
+                    // writer. It had no producer at all before.
+                    let _ = switch_tx.try_send(UIUpdate::ModuleChanged(module));
                     // Announce to screen reader
                     let _ = a11y.announce(
                         &format!("Switching to {}", label),
@@ -1139,9 +1142,11 @@ document.addEventListener('keydown', function(e) {
                 }
             });
             cal_sb.btn_manage.on_click({
-                move |_| {
-                    wx_calendar::show_calendar_dialog(&frame, &[]);
-                }
+                let state = state.clone();
+                let cache = message_cache.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                move |_| managers::manage_calendar(&state, &cache, &frame, &ui_tx, &runtime)
             });
 
             // ── Contacts panel button handlers ──────────────────────────
@@ -1507,8 +1512,8 @@ document.addEventListener('keydown', function(e) {
             msg_list.on_item_selected({
                 let state = state.clone();
                 let ui_tx = ui_tx.clone();
-                let runtime = runtime.clone();
                 let a11y = a11y.clone();
+                let body_cache = message_cache.clone();
                 move |event| {
                     let idx = event.get_item_index() as usize;
                     let in_thread = {
@@ -1523,15 +1528,37 @@ document.addEventListener('keydown', function(e) {
                     if in_thread {
                         let _ = a11y.signal(FeedbackEvent::ThreadLanded, "");
                     }
-                    let tx = ui_tx.clone();
-                    runtime.spawn(async move {
-                        let _ = tx
-                            .send(UIUpdate::StatusUpdated(format!(
-                                "Loading message {}...",
-                                idx
-                            )))
-                            .await;
+                    // Load the body. Selecting a message announced "Loading
+                    // message 3..." and then loaded nothing: the handler for a
+                    // loaded body existed and no code ever sent one, so the
+                    // preview was empty for every message ever selected.
+                    let body = {
+                        let s = lock_state(&state);
+                        s.messages.get(idx).map(|m| m.message_id)
+                    }
+                    .and_then(|id| {
+                        body_cache
+                            .as_ref()
+                            .and_then(|c| c.get_message_body(id).ok().flatten())
+                            .and_then(|b| b.body_html.or(b.body_plain))
+                            .map(|body| (id, body))
                     });
+                    match body {
+                        Some((id, body)) => {
+                            // Read counts as read: the eviction budget keeps
+                            // what is being looked at rather than what happens
+                            // to be newest.
+                            if let Some(cache) = &body_cache {
+                                let _ = cache.touch_message_body(id);
+                            }
+                            let _ = ui_tx.try_send(UIUpdate::MessageBodyLoaded(body));
+                        }
+                        None => {
+                            let _ = ui_tx.try_send(UIUpdate::MessageBodyLoaded(
+                                "This message has not been downloaded yet.".to_string(),
+                            ));
+                        }
+                    }
                 }
             });
 
@@ -2029,11 +2056,21 @@ document.addEventListener('keydown', function(e) {
                                 spawn_contacts_sync(&state, &ui_tx, &runtime);
                             }
                         }
-                        _ if id == ID_FILTER_MGR => { wx_managers::show_filter_manager_dialog(&frame, &[]); }
-                        _ if id == ID_TAG_MGR => { wx_managers::show_tag_manager_dialog(&frame, &[]); }
-                        _ if id == ID_SIG_MGR => { wx_managers::show_signature_manager_dialog(&frame, &[]); }
+                        // Each of these used to be handed an empty list and
+                        // have its result dropped on the floor, so the dialog
+                        // opened blank however much was stored and anything the
+                        // user added, edited or deleted was lost on OK.
+                        _ if id == ID_FILTER_MGR => {
+                            managers::manage_filters(&state, &message_cache, &frame, &ui_tx, &runtime)
+                        }
+                        _ if id == ID_TAG_MGR => {
+                            managers::manage_tags(&state, &message_cache, &frame, &ui_tx, &runtime)
+                        }
+                        _ if id == ID_SIG_MGR => {
+                            managers::manage_signatures(&state, &message_cache, &frame, &ui_tx, &runtime)
+                        }
                         _ if id == ID_CALENDAR => {
-                            wx_calendar::show_calendar_dialog(&frame, &[]);
+                            managers::manage_calendar(&state, &message_cache, &frame, &ui_tx, &runtime)
                         }
                         _ if id == ID_SYNC_CONTACTS => {
                             send_status(&ui_tx, &runtime, "Contacts sync requested...");
@@ -2053,6 +2090,10 @@ document.addEventListener('keydown', function(e) {
                             sync_menu_check(&frame, ID_OFFLINE_MODE, new_mode);
                             let label = if new_mode { "Offline mode enabled - outgoing mail will be queued" } else { "Online mode - outgoing mail will be sent immediately" };
                             send_status(&ui_tx, &runtime, label);
+                            // The second status field only changes through
+                            // this update, so without it the window kept
+                            // saying whatever it said before.
+                            let _ = ui_tx.try_send(UIUpdate::OfflineModeChanged(new_mode));
                         }
                         _ if id == ID_FLUSH_OUTBOX => {
                             send_status(&ui_tx, &runtime, "Flushing outbox queue...");
@@ -2410,7 +2451,7 @@ document.addEventListener('keydown', function(e) {
 /// application rather than one action. `WxUIState` is plain data with no
 /// invariant spanning fields, so the worst a recovered lock carries forward is
 /// a half-applied update, which is a better outcome than losing the session.
-fn lock_state(state: &Arc<StdMutex<WxUIState>>) -> std::sync::MutexGuard<'_, WxUIState> {
+pub(crate) fn lock_state(state: &Arc<StdMutex<WxUIState>>) -> std::sync::MutexGuard<'_, WxUIState> {
     state
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -3017,7 +3058,7 @@ fn persist_column_layout(layout: &ColumnLayout) {
 }
 
 /// Send a simple status update through the async channel.
-fn send_status(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, msg: &str) {
+pub(crate) fn send_status(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, msg: &str) {
     let tx = tx.clone();
     let msg = msg.to_string();
     rt.spawn(async move {
@@ -3288,10 +3329,6 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 s.status_message = status.clone();
             }
             frame.set_status_text(status, 0);
-        }
-        UIUpdate::EmailSent => {
-            frame.set_status_text("Email sent successfully", 0);
-            let _ = a11y.signal(FeedbackEvent::MessageSent, "");
         }
         UIUpdate::OutboxSendResult {
             queue_id,
@@ -3617,6 +3654,16 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
         let mut sent = 0usize;
         let mut failed = 0usize;
 
+        // The one place this application really does talk to a server, so it
+        // is the one place that can honestly report a connection. The status
+        // field said "Disconnected" for the whole life of the process before
+        // this, because nothing ever sent the update that changes it.
+        let _ = tx
+            .send(UIUpdate::ConnectionStatusChanged(
+                ConnectionStatus::Connecting,
+            ))
+            .await;
+
         let controller = MailController::new();
 
         for msg in &queued {
@@ -3654,6 +3701,23 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
                     success: outcome.is_ok(),
                     error: outcome.err(),
                 })
+                .await;
+        }
+
+        // What actually happened, rather than an optimistic "Connected". One
+        // message through is proof the server answered; nothing through is
+        // not proof it did not, so an empty queue leaves the status alone.
+        if sent > 0 {
+            let _ = tx
+                .send(UIUpdate::ConnectionStatusChanged(
+                    ConnectionStatus::Connected,
+                ))
+                .await;
+        } else if failed > 0 {
+            let _ = tx
+                .send(UIUpdate::ConnectionStatusChanged(ConnectionStatus::Error(
+                    "Sending failed".to_string(),
+                )))
                 .await;
         }
 

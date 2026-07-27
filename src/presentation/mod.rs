@@ -5,6 +5,7 @@
 pub mod accessibility;
 pub mod date_display;
 pub mod html_renderer;
+pub mod managers;
 pub mod message_columns;
 pub mod message_rows;
 pub mod pim_rows;

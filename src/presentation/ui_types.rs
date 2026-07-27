@@ -192,7 +192,6 @@ pub enum UIUpdate {
     ConnectionStatusChanged(ConnectionStatus),
     ErrorOccurred(String),
     StatusUpdated(String),
-    EmailSent,
     OutboxSendResult {
         queue_id: String,
         success: bool,
