@@ -2,6 +2,7 @@
 //!
 //! Contact, Filter, Tag, and Signature managers sharing a generic modal loop.
 
+use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
 use std::cell::RefCell;
 use std::rc::Rc;
 use wxdragon::prelude::*;
@@ -29,6 +30,9 @@ pub(crate) fn get_selected(list: &ListCtrl) -> Option<usize> {
 fn add_field(parent: &Dialog, sizer: &FlexGridSizer, label: &str) -> TextCtrl {
     let lbl = StaticText::builder(parent).with_label(label).build();
     let field = TextCtrl::builder(parent).build();
+    // The visible label is a separate control, which wxWidgets never associates
+    // with the field, so without this the field announces as just "edit".
+    set_accessible_name(&field, &name_from_label(label));
     sizer.add(&lbl, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
     sizer.add(&field, 1, SizerFlag::Expand | SizerFlag::All, 4);
     field
@@ -190,6 +194,7 @@ fn make_shell(
     let list = ListCtrl::builder(&dialog)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
+    set_accessible_name(&list, "Items");
     let status = StaticText::builder(&dialog).with_label(" ").build();
     (dialog, sizer, list, status)
 }
@@ -528,6 +533,7 @@ pub fn show_contact_manager_dialog(
     let search_row = BoxSizer::builder(Orientation::Horizontal).build();
     let search_lbl = StaticText::builder(&dialog).with_label("&Search:").build();
     let search_f = TextCtrl::builder(&dialog).build();
+    set_accessible_name(&search_f, "Search");
     search_row.add(
         &search_lbl,
         0,
@@ -546,6 +552,7 @@ pub fn show_contact_manager_dialog(
     let list = ListCtrl::builder(&dialog)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
+    set_accessible_name(&list, "Contacts");
     list.insert_column(0, "Name", ListColumnFormat::Left, 160);
     list.insert_column(1, "Email", ListColumnFormat::Left, 200);
     list.insert_column(2, "Phone", ListColumnFormat::Left, 130);
@@ -766,6 +773,7 @@ const ID_DEL_CUSTOM: Id = ID_HIGHEST + 407;
 fn add_panel_field(parent: &Panel, sizer: &FlexGridSizer, label: &str) -> TextCtrl {
     let lbl = StaticText::builder(parent).with_label(label).build();
     let field = TextCtrl::builder(parent).build();
+    set_accessible_name(&field, &name_from_label(label));
     sizer.add(&lbl, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
     sizer.add(&field, 1, SizerFlag::Expand | SizerFlag::All, 4);
     field
@@ -792,6 +800,7 @@ fn show_contact_edit(
     let root = BoxSizer::builder(Orientation::Vertical).build();
 
     let notebook = Notebook::builder(&dlg).build();
+    set_accessible_name(&notebook, "Contact details");
 
     // ── Tab 1: Basic Info ────────────────────────────────────────────────
     // Accelerators: N(Name), K(Nickname), C(Company), D(Department),
@@ -843,6 +852,7 @@ fn show_contact_edit(
     let email_list = ListCtrl::builder(&contact_panel)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
+    set_accessible_name(&email_list, "Email addresses");
     email_list.insert_column(0, "Type", ListColumnFormat::Left, 100);
     email_list.insert_column(1, "Address", ListColumnFormat::Left, 300);
     contact_sizer.add(&email_list, 1, SizerFlag::Expand | SizerFlag::All, 4);
@@ -872,6 +882,7 @@ fn show_contact_edit(
     let phone_list = ListCtrl::builder(&contact_panel)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
+    set_accessible_name(&phone_list, "Phone numbers");
     phone_list.insert_column(0, "Type", ListColumnFormat::Left, 100);
     phone_list.insert_column(1, "Number", ListColumnFormat::Left, 300);
     contact_sizer.add(&phone_list, 1, SizerFlag::Expand | SizerFlag::All, 4);
@@ -907,6 +918,7 @@ fn show_contact_edit(
     let addr_list = ListCtrl::builder(&addr_panel)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
+    set_accessible_name(&addr_list, "Addresses");
     addr_list.insert_column(0, "Type", ListColumnFormat::Left, 80);
     addr_list.insert_column(1, "Street", ListColumnFormat::Left, 150);
     addr_list.insert_column(2, "City", ListColumnFormat::Left, 100);
@@ -939,6 +951,7 @@ fn show_contact_edit(
     let notes_f = TextCtrl::builder(&notes_panel)
         .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
         .build();
+    set_accessible_name(&notes_f, "Notes");
     notes_sizer.add(&notes_f, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     let custom_label = StaticText::builder(&notes_panel)
@@ -948,6 +961,7 @@ fn show_contact_edit(
     let custom_list = ListCtrl::builder(&notes_panel)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
+    set_accessible_name(&custom_list, "Custom fields");
     custom_list.insert_column(0, "Label", ListColumnFormat::Left, 150);
     custom_list.insert_column(1, "Value", ListColumnFormat::Left, 300);
     notes_sizer.add(&custom_list, 1, SizerFlag::Expand | SizerFlag::All, 4);
@@ -1215,6 +1229,7 @@ fn show_email_sub_dialog(parent: &Dialog, _existing: Option<&EmailItem>) -> Opti
     let type_lbl = StaticText::builder(&dlg).with_label("&Type:").build();
     let type_choices: Vec<String> = EMAIL_LABELS.iter().map(|s| s.to_string()).collect();
     let type_choice = Choice::builder(&dlg).with_choices(type_choices).build();
+    set_accessible_name(&type_choice, "Email type");
     type_choice.set_selection(0);
     fields.add(
         &type_lbl,
@@ -1284,6 +1299,7 @@ fn show_phone_sub_dialog(parent: &Dialog, _existing: Option<&PhoneItem>) -> Opti
     let type_lbl = StaticText::builder(&dlg).with_label("&Type:").build();
     let type_choices: Vec<String> = PHONE_LABELS.iter().map(|s| s.to_string()).collect();
     let type_choice = Choice::builder(&dlg).with_choices(type_choices).build();
+    set_accessible_name(&type_choice, "Phone type");
     type_choice.set_selection(0);
     fields.add(
         &type_lbl,
@@ -1358,6 +1374,7 @@ fn show_address_sub_dialog(
     let country_lbl = StaticText::builder(&dlg).with_label("&Country:").build();
     let country_choices: Vec<String> = COUNTRIES.iter().map(|s| s.to_string()).collect();
     let country_choice = Choice::builder(&dlg).with_choices(country_choices).build();
+    set_accessible_name(&country_choice, "Country");
     // Default to system locale country
     let default_country = get_default_country();
     select_choice_by_string(&country_choice, default_country);
@@ -1373,6 +1390,7 @@ fn show_address_sub_dialog(
     let type_lbl = StaticText::builder(&dlg).with_label("&Type:").build();
     let type_choices: Vec<String> = ADDRESS_LABELS.iter().map(|s| s.to_string()).collect();
     let type_choice = Choice::builder(&dlg).with_choices(type_choices).build();
+    set_accessible_name(&type_choice, "Address type");
     type_choice.set_selection(0);
     fields.add(
         &type_lbl,
@@ -1393,6 +1411,7 @@ fn show_address_sub_dialog(
         .with_label(initial_region_label)
         .build();
     let region_f = TextCtrl::builder(&dlg).build();
+    set_accessible_name(&region_f, "State or region");
     fields.add(
         &region_lbl,
         0,
@@ -1405,6 +1424,7 @@ fn show_address_sub_dialog(
         .with_label(initial_code_label)
         .build();
     let code_f = TextCtrl::builder(&dlg).build();
+    set_accessible_name(&code_f, "Postal code");
     fields.add(
         &code_lbl,
         0,
@@ -1636,6 +1656,7 @@ fn show_filter_edit(parent: &Dialog, existing: Option<&FilterRule>) -> Option<Fi
         .map(|s| s.to_string())
         .collect();
     let field_choice = Choice::builder(&dlg).with_choices(field_choices).build();
+    set_accessible_name(&field_choice, "Match field");
     fields.add(
         &field_label,
         0,
@@ -1657,6 +1678,7 @@ fn show_filter_edit(parent: &Dialog, existing: Option<&FilterRule>) -> Option<Fi
     .map(|s| s.to_string())
     .collect();
     let match_choice = Choice::builder(&dlg).with_choices(match_choices).build();
+    set_accessible_name(&match_choice, "Match type");
     fields.add(
         &match_label,
         0,
@@ -1687,6 +1709,7 @@ fn show_filter_edit(parent: &Dialog, existing: Option<&FilterRule>) -> Option<Fi
     .map(|s| s.to_string())
     .collect();
     let action_choice = Choice::builder(&dlg).with_choices(action_choices).build();
+    set_accessible_name(&action_choice, "Action");
     fields.add(
         &action_label,
         0,
@@ -1857,6 +1880,7 @@ fn show_tag_edit(parent: &Dialog, existing: Option<&TagEntry>) -> Option<TagEntr
         .map(|(name, _)| name.to_string())
         .collect();
     let color_choice = Choice::builder(&dlg).with_choices(color_choices).build();
+    set_accessible_name(&color_choice, "Colour");
     color_choice.set_selection(0);
     fields.add(
         &color_label,
@@ -2032,6 +2056,7 @@ fn show_sig_edit(parent: &Dialog, existing: Option<&SignatureEntry>) -> Option<S
     let content_f = TextCtrl::builder(&dlg)
         .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
         .build();
+    set_accessible_name(&content_f, "Signature, plain text");
     sizer.add(&content_f, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
     let html_label = StaticText::builder(&dlg)
@@ -2041,6 +2066,7 @@ fn show_sig_edit(parent: &Dialog, existing: Option<&SignatureEntry>) -> Option<S
     let html_f = TextCtrl::builder(&dlg)
         .with_style(TextCtrlStyle::MultiLine)
         .build();
+    set_accessible_name(&html_f, "Signature, HTML version");
     sizer.add(&html_f, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
     let btn_row = BoxSizer::builder(Orientation::Horizontal).build();

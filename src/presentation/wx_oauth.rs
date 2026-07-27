@@ -3,6 +3,7 @@
 //! Provides a dialog for configuring OAuth2 authentication flow for email accounts.
 //! Supports generating authorization URLs, exchanging codes, refreshing and revoking tokens.
 
+use crate::presentation::accessibility::names::set_accessible_name;
 use crate::service::oauth::OAuthService;
 use wxdragon::prelude::*;
 
@@ -60,6 +61,7 @@ pub fn show_oauth_dialog(
     let acct_choice = Choice::builder(&dialog)
         .with_choices(account_names.iter().map(|s| s.to_string()).collect())
         .build();
+    set_accessible_name(&acct_choice, "Account");
     if !account_names.is_empty() {
         acct_choice.set_selection(0);
     }
@@ -76,6 +78,7 @@ pub fn show_oauth_dialog(
     let prov_choice = Choice::builder(&dialog)
         .with_choices(providers.iter().map(|s| s.to_string()).collect())
         .build();
+    set_accessible_name(&prov_choice, "Provider");
     if !providers.is_empty() {
         prov_choice.set_selection(0);
     }
@@ -92,6 +95,7 @@ pub fn show_oauth_dialog(
         .with_label("Client ID:")
         .build();
     let client_field = TextCtrl::builder(&dialog).build();
+    set_accessible_name(&client_field, "Client ID");
     fields.add(
         &client_label,
         0,
@@ -107,6 +111,7 @@ pub fn show_oauth_dialog(
     let secret_field = TextCtrl::builder(&dialog)
         .with_style(TextCtrlStyle::Password)
         .build();
+    set_accessible_name(&secret_field, "Client secret");
     fields.add(
         &secret_label,
         0,
@@ -122,6 +127,7 @@ pub fn show_oauth_dialog(
     let redirect_field = TextCtrl::builder(&dialog)
         .with_value("http://localhost/oauth/callback")
         .build();
+    set_accessible_name(&redirect_field, "Redirect URI");
     fields.add(
         &redirect_label,
         0,
@@ -147,6 +153,7 @@ pub fn show_oauth_dialog(
     let url_field = TextCtrl::builder(&dialog)
         .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::ReadOnly)
         .build();
+    set_accessible_name(&url_field, "Authorization URL");
     main_sizer.add(
         &url_field,
         0,
@@ -161,6 +168,7 @@ pub fn show_oauth_dialog(
     main_sizer.add(&step2_label, 0, SizerFlag::Left | SizerFlag::All, 8);
 
     let code_field = TextCtrl::builder(&dialog).build();
+    set_accessible_name(&code_field, "Authorization code");
     main_sizer.add(
         &code_field,
         0,

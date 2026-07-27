@@ -8,6 +8,7 @@
 //! for authorization with no extra steps or checkboxes.
 
 use crate::data::account::{requires_oauth, Account};
+use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
 use crate::presentation::wx_managers::get_selected;
 use crate::service::oauth::{AuthManager, OAuthService};
 use crate::service::oauth_credentials;
@@ -50,6 +51,7 @@ pub fn show_account_manager_dialog(
     let list = ListCtrl::builder(&dlg)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
+    set_accessible_name(&list, "Accounts");
     list.insert_column(0, "Name", ListColumnFormat::Left, 140);
     list.insert_column(1, "Email", ListColumnFormat::Left, 200);
     list.insert_column(2, "IMAP Server", ListColumnFormat::Left, 150);
@@ -293,6 +295,7 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
     let tf = |label: &str, default: &str| -> TextCtrl {
         let l = StaticText::builder(&dlg).with_label(label).build();
         let f = TextCtrl::builder(&dlg).with_value(default).build();
+        set_accessible_name(&f, &name_from_label(label));
         fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
         fields.add(&f, 1, SizerFlag::Expand | SizerFlag::All, 4);
         f

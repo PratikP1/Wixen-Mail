@@ -5,6 +5,7 @@
 
 use wxdragon::prelude::*;
 
+use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::ui_types::CalendarEventItem;
 
 // ── Button IDs ──────────────────────────────────────────────────────────────
@@ -109,6 +110,7 @@ pub fn show_calendar_dialog(parent: &Frame, events: &[CalendarEventItem]) -> Vec
     let list = ListCtrl::builder(&dialog)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
+    set_accessible_name(&list, "Calendar events");
     list.insert_column(0, "Date/Time", ListColumnFormat::Left, 180);
     list.insert_column(1, "Summary", ListColumnFormat::Left, 280);
     list.insert_column(2, "Location", ListColumnFormat::Left, 160);
@@ -335,6 +337,7 @@ fn show_event_editor(
     // Summary
     let lbl_summary = StaticText::builder(&editor).with_label("&Summary:").build();
     let txt_summary = TextCtrl::builder(&editor).build();
+    set_accessible_name(&txt_summary, "Summary");
     sizer.add(
         &lbl_summary,
         0,
@@ -348,6 +351,7 @@ fn show_event_editor(
         .with_label("Start &Date (YYYY-MM-DD):")
         .build();
     let txt_start_date = TextCtrl::builder(&editor).build();
+    set_accessible_name(&txt_start_date, "Start date");
     sizer.add(
         &lbl_start_date,
         0,
@@ -361,6 +365,7 @@ fn show_event_editor(
         .with_label("Start &Time (HH:MM):")
         .build();
     let txt_start_time = TextCtrl::builder(&editor).build();
+    set_accessible_name(&txt_start_time, "Start time");
     sizer.add(
         &lbl_start_time,
         0,
@@ -374,6 +379,7 @@ fn show_event_editor(
         .with_label("&End Date (YYYY-MM-DD):")
         .build();
     let txt_end_date = TextCtrl::builder(&editor).build();
+    set_accessible_name(&txt_end_date, "End date");
     sizer.add(
         &lbl_end_date,
         0,
@@ -387,6 +393,7 @@ fn show_event_editor(
         .with_label("End Ti&me (HH:MM):")
         .build();
     let txt_end_time = TextCtrl::builder(&editor).build();
+    set_accessible_name(&txt_end_time, "End time");
     sizer.add(
         &lbl_end_time,
         0,
@@ -408,6 +415,7 @@ fn show_event_editor(
         .with_label("&Location:")
         .build();
     let txt_location = TextCtrl::builder(&editor).build();
+    set_accessible_name(&txt_location, "Location");
     sizer.add(
         &lbl_location,
         0,
@@ -423,6 +431,7 @@ fn show_event_editor(
     let txt_desc = TextCtrl::builder(&editor)
         .with_style(TextCtrlStyle::MultiLine)
         .build();
+    set_accessible_name(&txt_desc, "Description");
     sizer.add(
         &lbl_desc,
         0,
@@ -436,6 +445,7 @@ fn show_event_editor(
         .with_label("&Reminder (minutes):")
         .build();
     let txt_reminder = TextCtrl::builder(&editor).build();
+    set_accessible_name(&txt_reminder, "Reminder in minutes");
     sizer.add(
         &lbl_reminder,
         0,

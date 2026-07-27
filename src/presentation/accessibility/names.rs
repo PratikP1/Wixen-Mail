@@ -44,3 +44,42 @@ pub fn set_accessible_name(window: &dyn WxWidget, name: &str) {
         },
     ));
 }
+
+/// Turn a visible label into the name a screen reader should announce.
+///
+/// Drops the mnemonic ampersand and any trailing colon. Both are visual
+/// conventions: spoken, "and Subject colon" is worse than "Subject", and some
+/// screen readers read the ampersand aloud.
+pub fn name_from_label(label: &str) -> String {
+    label
+        .replace('&', "")
+        .trim()
+        .trim_end_matches(':')
+        .trim()
+        .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::name_from_label;
+
+    #[test]
+    fn test_strips_the_mnemonic_and_colon() {
+        assert_eq!(name_from_label("&Subject:"), "Subject");
+        assert_eq!(
+            name_from_label("Start &Date (YYYY-MM-DD):"),
+            "Start Date (YYYY-MM-DD)"
+        );
+    }
+
+    #[test]
+    fn test_leaves_a_plain_label_alone() {
+        assert_eq!(name_from_label("Accounts"), "Accounts");
+    }
+
+    #[test]
+    fn test_handles_a_label_that_is_only_decoration() {
+        assert_eq!(name_from_label(":"), "");
+        assert_eq!(name_from_label("   "), "");
+    }
+}

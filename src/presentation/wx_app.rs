@@ -3057,6 +3057,7 @@ fn show_search_dialog(parent: &Frame) -> Option<String> {
     let q_field = TextCtrl::builder(&dlg)
         .with_style(TextCtrlStyle::ProcessEnter)
         .build();
+    set_accessible_name(&q_field, "Search");
     fields.add(
         &q_label,
         0,
@@ -3075,6 +3076,7 @@ fn show_search_dialog(parent: &Frame) -> Option<String> {
         )
         .with_selection(Some(0))
         .build();
+    set_accessible_name(&scope, "Search in");
     fields.add(
         &s_label,
         0,
@@ -3144,6 +3146,7 @@ fn show_new_item_dialog(frame: &Frame, item_type: &str, a11y: &Arc<Accessibility
         .with_label(&format!("{} &title:", item_type))
         .build();
     let title_field = TextCtrl::builder(&dlg).build();
+    set_accessible_name(&title_field, "Title");
     fields.add(
         &title_label,
         0,

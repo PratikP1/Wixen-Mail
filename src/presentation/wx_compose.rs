@@ -3,6 +3,7 @@
 //! Provides a modal dialog for composing, replying to, and forwarding emails.
 //! Uses RichTextCtrl for the message body with formatting toolbar support.
 
+use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::ui_types::CompositionData;
 use wxdragon::event::webview_events::WebViewEventData;
@@ -159,6 +160,7 @@ pub fn show_compose_dialog_with_options(
         .with_choices(account_names.iter().map(|s| s.to_string()).collect())
         .with_selection(Some(active_account_index))
         .build();
+    set_accessible_name(&account_choice, "From account");
     fields_sizer.add(
         &account_label,
         0,
@@ -170,6 +172,7 @@ pub fn show_compose_dialog_with_options(
     // To field
     let to_label = StaticText::builder(&dialog).with_label("&To:").build();
     let to_field = TextCtrl::builder(&dialog).build();
+    set_accessible_name(&to_field, "To");
     fields_sizer.add(
         &to_label,
         0,
@@ -181,6 +184,7 @@ pub fn show_compose_dialog_with_options(
     // CC field
     let cc_label = StaticText::builder(&dialog).with_label("&CC:").build();
     let cc_field = TextCtrl::builder(&dialog).build();
+    set_accessible_name(&cc_field, "Cc");
     fields_sizer.add(
         &cc_label,
         0,
@@ -192,6 +196,7 @@ pub fn show_compose_dialog_with_options(
     // BCC field
     let bcc_label = StaticText::builder(&dialog).with_label("&BCC:").build();
     let bcc_field = TextCtrl::builder(&dialog).build();
+    set_accessible_name(&bcc_field, "Bcc");
     fields_sizer.add(
         &bcc_label,
         0,
@@ -203,6 +208,7 @@ pub fn show_compose_dialog_with_options(
     // Subject field
     let subject_label = StaticText::builder(&dialog).with_label("&Subject:").build();
     let subject_field = TextCtrl::builder(&dialog).build();
+    set_accessible_name(&subject_field, "Subject");
     fields_sizer.add(
         &subject_label,
         0,
@@ -295,6 +301,7 @@ pub fn show_compose_dialog_with_options(
     let body_editor = RichTextCtrl::builder(&dialog)
         .with_style(RichTextCtrlStyle::MultiLine | RichTextCtrlStyle::WordWrap)
         .build();
+    set_accessible_name(&body_editor, "Message body");
     body_editor.set_name("Message body");
 
     main_sizer.add(&body_editor, 1, SizerFlag::Expand | SizerFlag::All, 8);
@@ -565,6 +572,7 @@ fn show_send_preview(
     let body_preview = WebView::builder(&dlg)
         .with_backend(WebViewBackend::Edge)
         .build();
+    set_accessible_name(&body_preview, "Message preview");
     body_preview.set_name("Message preview");
     body_preview.enable_context_menu(false);
     body_preview.enable_access_to_dev_tools(false);

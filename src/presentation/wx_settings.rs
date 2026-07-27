@@ -69,6 +69,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 
     // Notebook (tabbed pane)
     let notebook = Notebook::builder(&dlg).build();
+    set_accessible_name(&notebook, "Settings categories");
 
     // ── Tab 1: General
     let general_panel = Panel::builder(&notebook).build();
