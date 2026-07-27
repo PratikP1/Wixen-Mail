@@ -7,6 +7,7 @@ use crate::application::mail_controller::{MailController, SendEmailRequest};
 use crate::common::Result;
 use crate::data::account::Account;
 use crate::data::message_cache::MessageCache;
+use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::ui_types::*;
@@ -520,6 +521,21 @@ impl WxMailApp {
                 },
             ));
             apply_columns(&msg_list, &column_layout.borrow());
+
+            // Feedback channels are a per-person setting more than a
+            // preference: someone reading braille with speech off has
+            // configured how the application reaches them at all.
+            if let Some(stored) = stored_config
+                .as_ref()
+                .map(|c| c.feedback_channels.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                a11y.set_feedback_settings(
+                    crate::presentation::accessibility::feedback::FeedbackSettings::from_stored(
+                        stored,
+                    ),
+                );
+            }
 
             // A restored layout carries a restored sort. Without this the menu
             // came up ticking Date (Newest First) whatever the list was
@@ -1614,7 +1630,7 @@ impl WxMailApp {
                             send_status(&ui_tx, &runtime, "Calendar sync requested...");
                             spawn_calendar_sync(&state, &ui_tx, &runtime);
                         }
-                        _ if id == ID_SETTINGS => handle_settings(&frame, &ui_tx, &runtime),
+                        _ if id == ID_SETTINGS => handle_settings(&frame, &ui_tx, &runtime, &a11y),
                         _ if id == ID_OFFLINE_MODE => {
                             let new_mode = {
                                 let mut s = lock_state(&state);
@@ -1697,6 +1713,13 @@ impl WxMailApp {
                     // behind. Without this tick nothing would collect it and
                     // those announcements would never be spoken.
                     let _ = a11y.flush_announcements();
+
+                    // The visual channel. This is what a deaf-blind user's
+                    // braille display reads off the status bar, and what
+                    // anyone with speech switched off sees instead of hearing.
+                    if let Some(text) = a11y.take_visual_feedback() {
+                        frame.set_status_text(&text, 0);
+                    }
                 }
             });
             if !timer.start(POLL_MS, false) {
@@ -2496,13 +2519,26 @@ fn handle_account_mgr(frame: &Frame, state: &Arc<StdMutex<WxUIState>>) {
 }
 
 /// Open the Settings dialog and persist changes.
-fn handle_settings(frame: &Frame, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
+fn handle_settings(
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) {
     use crate::data::config::ConfigManager;
     let mut mgr = ConfigManager::default();
     let _ = mgr.load();
     let config = mgr.app_config().clone();
     match wx_settings::show_settings_dialog(frame, &config) {
         wx_settings::SettingsResult::Updated(new_config) => {
+            // Applied to the running application, not only written to disk.
+            // Saving a preference that needs a restart to take effect is a
+            // setting that appears not to work.
+            a11y.set_feedback_settings(
+                crate::presentation::accessibility::feedback::FeedbackSettings::from_stored(
+                    &new_config.feedback_channels,
+                ),
+            );
             *mgr.app_config_mut() = *new_config;
             if let Err(e) = mgr.save() {
                 tracing::error!("Failed to save settings: {}", e);
@@ -2587,11 +2623,25 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             preview.set_page(&html, "about:blank");
         }
         UIUpdate::ConnectionStatusChanged(status) => {
-            {
+            let previous = {
                 let mut s = lock_state(state);
-                s.connection_status = status.clone();
-            }
+                std::mem::replace(&mut s.connection_status, status.clone())
+            };
             frame.set_status_text(&status.to_string(), 1);
+            // Losing the connection is signalled rather than announced, so
+            // someone running on earcons alone still learns about it and
+            // someone reading braille still gets the words.
+            if previous != *status {
+                match status {
+                    ConnectionStatus::Connected => {
+                        let _ = a11y.signal(FeedbackEvent::ConnectionRestored, "");
+                    }
+                    ConnectionStatus::Disconnected | ConnectionStatus::Error(_) => {
+                        let _ = a11y.signal(FeedbackEvent::ConnectionLost, "");
+                    }
+                    ConnectionStatus::Connecting => {}
+                }
+            }
         }
         UIUpdate::ErrorOccurred(error) => {
             {
@@ -2611,7 +2661,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         }
         UIUpdate::EmailSent => {
             frame.set_status_text("Email sent successfully", 0);
-            let _ = a11y.announce("Email sent successfully", Priority::Normal);
+            let _ = a11y.signal(FeedbackEvent::MessageSent, "");
         }
         UIUpdate::OutboxSendResult {
             queue_id,
@@ -2620,10 +2670,12 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         } => {
             if *success {
                 frame.set_status_text("Queued message sent", 0);
+                let _ = a11y.signal(FeedbackEvent::MessageSent, "from the outbox");
             } else {
                 let err = error.as_deref().unwrap_or("Unknown error");
                 tracing::error!("Outbox {} failed: {}", queue_id, err);
                 frame.set_status_text(&format!("Send failed: {}", err), 0);
+                let _ = a11y.signal(FeedbackEvent::SendFailed, err);
             }
         }
         UIUpdate::OfflineModeChanged(enabled) => {

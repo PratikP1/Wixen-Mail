@@ -5,6 +5,7 @@
 
 pub mod announcements;
 pub mod automation;
+pub mod feedback;
 pub mod focus;
 pub mod keyboard;
 pub mod names;
@@ -22,6 +23,15 @@ pub struct Accessibility {
     announcements: announcements::AnnouncementQueue,
     automation: automation::AutomationStore,
     shortcuts: shortcuts::ShortcutManager,
+    /// Which channels each event reaches, and the thing that plays the tones.
+    feedback: std::sync::Mutex<feedback::FeedbackSettings>,
+    earcons: feedback::EarconPlayer,
+    /// The most recent event's written form, for the status line to pick up.
+    ///
+    /// The visual channel has no API of its own here: the window owns the
+    /// status bar. Leaving the text where the caller can read it keeps this
+    /// layer free of widget handles.
+    visual: std::sync::Mutex<Option<String>>,
 }
 
 impl Accessibility {
@@ -34,6 +44,9 @@ impl Accessibility {
             announcements: announcements::AnnouncementQueue::new()?,
             automation: automation::AutomationStore::new()?,
             shortcuts: shortcuts::ShortcutManager::new(),
+            feedback: std::sync::Mutex::new(feedback::FeedbackSettings::default()),
+            earcons: feedback::EarconPlayer::new(),
+            visual: std::sync::Mutex::new(None),
         })
     }
 
@@ -158,6 +171,70 @@ impl Accessibility {
         Ok(())
     }
 
+    /// Signal an event on whichever channels the user has chosen.
+    ///
+    /// Callers name the fact, not the medium. That is what keeps the
+    /// never-sound-alone rule in one place instead of depending on every call
+    /// site remembering it, and what lets someone switch the whole application
+    /// from speech to earcons without touching any of this code.
+    ///
+    /// `detail` is appended to the event's own wording when there is something
+    /// specific worth saying, such as which message or how many. Pass an empty
+    /// string when the event says it all.
+    pub fn signal(&self, event: feedback::Event, detail: &str) -> Result<()> {
+        let channels = match self.feedback.lock() {
+            Ok(settings) => settings.channels_for(event),
+            Err(_) => return Ok(()),
+        };
+        if channels.is_empty() {
+            return Ok(());
+        }
+
+        let text = if detail.trim().is_empty() {
+            event.text().to_string()
+        } else {
+            format!("{}, {}", event.text(), detail.trim())
+        };
+
+        if channels.contains(&feedback::Channel::Earcon) {
+            self.earcons.play(event.tone());
+        }
+        // Speech and braille both ride the one screen reader notification, so
+        // announcing once serves either. Announcing twice would double the
+        // speech for anyone who has both.
+        if channels.contains(&feedback::Channel::Speech)
+            || channels.contains(&feedback::Channel::Braille)
+        {
+            self.announce_topic(&text, event.priority(), event.key())?;
+        }
+        if channels.contains(&feedback::Channel::Visual) {
+            if let Ok(mut visual) = self.visual.lock() {
+                *visual = Some(text);
+            }
+        }
+        Ok(())
+    }
+
+    /// Take the last event's text for the status line, if there is one.
+    ///
+    /// Taking rather than reading, so the status line shows each event once
+    /// and does not redisplay an old one on the next timer tick.
+    pub fn take_visual_feedback(&self) -> Option<String> {
+        self.visual.lock().ok().and_then(|mut v| v.take())
+    }
+
+    /// Read the current feedback preferences.
+    pub fn feedback_settings(&self) -> feedback::FeedbackSettings {
+        self.feedback.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    /// Replace the feedback preferences.
+    pub fn set_feedback_settings(&self, settings: feedback::FeedbackSettings) {
+        if let Ok(mut current) = self.feedback.lock() {
+            *current = settings;
+        }
+    }
+
     /// Queue an announcement about the application and speak what is due now.
     ///
     /// The queue paces itself, so a burst leaves a remainder behind. The UI
@@ -279,6 +356,9 @@ impl Default for Accessibility {
             announcements: announcements::AnnouncementQueue::default(),
             automation: automation::AutomationStore::default(),
             shortcuts: shortcuts::ShortcutManager::new(),
+            feedback: std::sync::Mutex::new(feedback::FeedbackSettings::default()),
+            earcons: feedback::EarconPlayer::new(),
+            visual: std::sync::Mutex::new(None),
         })
     }
 }
@@ -286,6 +366,50 @@ impl Default for Accessibility {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_signalling_an_event_reaches_the_visual_channel() {
+        // The status line is what someone sees when speech is off, and it is
+        // the only channel that survives both mute and a missing screen
+        // reader.
+        let a11y = Accessibility::new().expect("accessibility");
+        a11y.signal(feedback::Event::NewMail, "3 messages")
+            .expect("signal");
+        assert_eq!(
+            a11y.take_visual_feedback().as_deref(),
+            Some("New mail, 3 messages")
+        );
+    }
+
+    #[test]
+    fn test_visual_feedback_is_taken_once_and_not_repeated() {
+        // A status line that redisplays an old event on every timer tick is
+        // saying something happened when nothing did.
+        let a11y = Accessibility::new().expect("accessibility");
+        a11y.signal(feedback::Event::SyncComplete, "")
+            .expect("signal");
+        assert!(a11y.take_visual_feedback().is_some());
+        assert!(a11y.take_visual_feedback().is_none());
+    }
+
+    #[test]
+    fn test_an_event_with_no_detail_says_only_its_own_words() {
+        let a11y = Accessibility::new().expect("accessibility");
+        a11y.signal(feedback::Event::ConnectionLost, "   ")
+            .expect("signal");
+        assert_eq!(a11y.take_visual_feedback().as_deref(), Some("Disconnected"));
+    }
+
+    #[test]
+    fn test_switching_the_visual_channel_off_leaves_nothing_to_display() {
+        let a11y = Accessibility::new().expect("accessibility");
+        let mut settings = a11y.feedback_settings();
+        settings.set_channel_enabled(feedback::Channel::Visual, false);
+        a11y.set_feedback_settings(settings);
+
+        a11y.signal(feedback::Event::NewMail, "").expect("signal");
+        assert!(a11y.take_visual_feedback().is_none());
+    }
 
     #[test]
     fn test_accessibility_creation() {

@@ -14,6 +14,9 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 - **A snippet column that has something to read.** The first line of the body is stored beside the message when the body is fetched, so the column keeps working after the body cache evicts. Messages with no plain text part fall back to their HTML.
 - **A size column**, spoken in units: "2 KB" rather than "2048". A size we do not know yet reads as blank rather than as "0 bytes", which would be a claim we cannot make.
 - **To and Cc columns**, which prefer a display name over a raw address the same way the correspondent column does.
+- **Feedback on four channels: speech, braille, sound, and the status bar.** Events such as new mail, a sent message, a lost connection, or a failed send are now facts the application signals rather than sentences it speaks. A new Feedback tab in Settings decides which channels each one reaches. This matters most to two groups pulling in opposite directions: a deaf-blind user can switch speech off and keep braille, and someone working in an open office can swap a spoken sentence for a short tone.
+- **Nothing is ever signalled by sound alone.** If sounds are the only channel left on, a written equivalent is added automatically, unless you switched every text channel off yourself. The rule lives in the routing rather than at each call site, so no future event can bypass it by forgetting.
+- **Each event has its own tone**, and tones are spaced out so a syncing mailbox does not run them together. An earcon that cannot be told apart from its sibling carries no information.
 - **Attachment records are stored and read back.** The attachments table existed and nothing ever wrote to it, so the attachment column could never have been true. Listing a folder now reports attachment presence without loading the attachments.
 
 ### Removed
@@ -23,6 +26,8 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 ### Known limitations
 
 - Sorting still happens in memory over the loaded folder rather than in SQL. That is fine for the folder sizes the application can currently reach, and it is the wrong shape for the hundreds of thousands of messages the storage design targets. The SQL ordering is written and tested; the listing query does not use it yet.
+- Earcons are Windows-only for now. On macOS and Linux the sound channel is silent and the text channels carry the event on their own; a port needs its own audio path.
+- Feedback preferences are per channel, not per event. The per-event overrides exist in the model and have no interface yet, because a grid of nine events by four channels is not the choice most people are making.
 - The Thread column reads blank because threading is not computed. It is not hidden, because a column offered and empty at least says the feature exists; a column silently absent says nothing.
 
 ### Added, earlier in this cycle

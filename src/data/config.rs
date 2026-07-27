@@ -58,6 +58,14 @@ pub struct AppConfig {
     /// and losing that on restart is not a small annoyance.
     #[serde(default)]
     pub message_columns: String,
+    /// Which channels each event reaches: speech, braille, earcon, visual.
+    ///
+    /// Stored as the compact form `FeedbackSettings::to_stored` writes. Empty
+    /// means the defaults: words on, sounds off. This is the setting that lets
+    /// a deaf-blind user drop speech and keep braille, or someone in an open
+    /// office swap a sentence of speech for a short tone.
+    #[serde(default)]
+    pub feedback_channels: String,
     /// Calendar default view: "agenda", "day", "week", "month"
     #[serde(default = "default_calendar_view")]
     pub calendar_default_view: String,
@@ -108,6 +116,7 @@ impl Default for AppConfig {
             date_order: default_date_order(),
             mute_message_reading: false,
             message_columns: String::new(),
+            feedback_channels: String::new(),
             enable_notifications: true,
             log_level: "info".to_string(),
             preview_before_send: true,

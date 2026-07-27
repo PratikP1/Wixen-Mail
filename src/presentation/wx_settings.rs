@@ -5,6 +5,7 @@
 //! and persisted through `AppConfig` / `ConfigManager`.
 
 use crate::data::config::AppConfig;
+use crate::presentation::accessibility::feedback::{Channel, FeedbackSettings};
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::service::spellcheck::supported_languages;
 use wxdragon::prelude::*;
@@ -46,6 +47,8 @@ struct SettingsWidgets {
     // Advanced
     log_level: Choice,
     download_folder: TextCtrl,
+    // Feedback channels, one checkbox per channel in Channel::ALL order.
+    feedback: Vec<CheckBox>,
 }
 
 /// Helper: unwrap get_selection() returning 0 if None.
@@ -100,7 +103,12 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         build_calendar_pim_tab(&pim_panel, config);
     notebook.add_page(&pim_panel, "Calendar && PIM", false, None);
 
-    // ── Tab 6: Advanced
+    // ── Tab 6: Feedback
+    let feedback_panel = Panel::builder(&notebook).build();
+    let feedback = build_feedback_tab(&feedback_panel, config);
+    notebook.add_page(&feedback_panel, "Feedback", false, None);
+
+    // ── Tab 7: Advanced
     let advanced_panel = Panel::builder(&notebook).build();
     let (log_level, download_folder) = build_advanced_tab(&advanced_panel, config);
     notebook.add_page(&advanced_panel, "Advanced", false, None);
@@ -151,6 +159,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         default_reminder,
         log_level,
         download_folder,
+        feedback,
     };
 
     if dlg.show_modal() == ID_OK {
@@ -639,11 +648,88 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl) {
     (log_choice, dl_field)
 }
 
+/// Feedback channels: how the application tells you something happened.
+///
+/// One checkbox per channel rather than a grid of events, because the choice
+/// people actually make is "words, not sounds" or "sounds, not words". The
+/// per-event overrides exist in the model for anyone who wants them and are
+/// not worth forty checkboxes here.
+///
+/// Nothing here can produce a sound-only application by accident: the routing
+/// adds a written equivalent unless every text channel is off, and the wording
+/// says so rather than leaving it to be discovered.
+fn build_feedback_tab(panel: &Panel, config: &AppConfig) -> Vec<CheckBox> {
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+    let settings = FeedbackSettings::from_stored(&config.feedback_channels);
+
+    let intro = StaticText::builder(panel)
+        .with_label(
+            "Choose how Wixen Mail tells you about new mail, sent messages, connection \
+             changes, and errors. Sounds never replace words unless you switch every \
+             other channel off yourself.",
+        )
+        .build();
+    sizer.add(&intro, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    let sec = section(panel, "Channels");
+    let descriptions = [
+        (
+            Channel::Speech,
+            "&Speak events through the screen reader",
+            "Speak events through the screen reader",
+        ),
+        (
+            Channel::Braille,
+            "Send events to a &braille display",
+            "Send events to a braille display",
+        ),
+        (
+            Channel::Earcon,
+            "Play a short &sound for each event",
+            "Play a short sound for each event",
+        ),
+        (
+            Channel::Visual,
+            "Show events in the s&tatus bar",
+            "Show events in the status bar",
+        ),
+    ];
+
+    let mut boxes = Vec::new();
+    for (channel, label, name) in descriptions {
+        let cb = CheckBox::builder(panel).with_label(label).build();
+        set_accessible_name(&cb, name);
+        cb.set_value(settings.is_channel_enabled(channel));
+        sec.add(&cb, 0, SizerFlag::All, 4);
+        boxes.push(cb);
+    }
+    sizer.add_sizer(&sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    let note = StaticText::builder(panel)
+        .with_label(
+            "Each event has its own tone, so they can be told apart. Sounds are spaced \
+             out so a busy mailbox does not run them together.",
+        )
+        .build();
+    sizer.add(&note, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    panel.set_sizer(sizer, true);
+    boxes
+}
+
 // ── Read settings back from widget references ────────────────────────────────
 
 /// Collect current widget values and produce an updated `AppConfig`.
 fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     let mut cfg = base.clone();
+
+    // Feedback channels. The per-event overrides in the stored value are
+    // preserved: this tab only decides which channels are on at all.
+    let mut feedback = FeedbackSettings::from_stored(&base.feedback_channels);
+    for (channel, cb) in Channel::ALL.into_iter().zip(w.feedback.iter()) {
+        feedback.set_channel_enabled(channel, cb.get_value());
+    }
+    cfg.feedback_channels = feedback.to_stored();
 
     // General
     cfg.theme = match sel(&w.theme) {
