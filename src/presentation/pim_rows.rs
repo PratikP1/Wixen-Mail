@@ -12,10 +12,9 @@
 //! The paint callback cannot query the database, cannot block, and has nowhere
 //! to report an error to.
 //!
-//! Cells are also what a screen reader reads for a row, so a flag column says
-//! "Yes" rather than repeating its own heading: a report row is announced as
-//! "heading, value", and a cell holding the word "Done" under a heading of
-//! "Done" comes out twice on every completed row.
+//! Cells are also what a screen reader reads for a row, and a cell has to stand
+//! on its own. The headings are not reliably announced, so a cell saying "Yes"
+//! is a word with nothing attached to it: it has to say "Done".
 
 use super::ui_types::{CalendarEventItem, ContactItem, NoteItem, ReminderItem, TaskItem};
 
@@ -54,7 +53,7 @@ pub fn event_cell(event: &CalendarEventItem, column: i32) -> String {
 /// Reminders: done, title, due, priority.
 pub fn reminder_cell(reminder: &ReminderItem, column: i32) -> String {
     match column {
-        0 => flag(reminder.is_completed),
+        0 => flag(reminder.is_completed, "Done"),
         1 => non_empty(&reminder.title, "No title"),
         2 => reminder.due_datetime.clone().unwrap_or_default(),
         3 => reminder.priority.clone(),
@@ -65,7 +64,7 @@ pub fn reminder_cell(reminder: &ReminderItem, column: i32) -> String {
 /// Tasks: done, title, due, priority.
 pub fn task_cell(task: &TaskItem, column: i32) -> String {
     match column {
-        0 => flag(task.is_completed),
+        0 => flag(task.is_completed, "Done"),
         1 => non_empty(&task.title, "No title"),
         2 => task.due_date.clone().unwrap_or_default(),
         3 => task.priority.clone(),
@@ -92,9 +91,13 @@ pub fn note_cell(note: &NoteItem, column: i32) -> String {
     }
 }
 
-/// "Yes" or nothing, never the column's own word.
-fn flag(value: bool) -> String {
-    if value { "Yes" } else { "" }.to_string()
+/// What the flag means, or nothing.
+///
+/// The word itself rather than "Yes", because the column heading is not
+/// reliably read and "Yes" on its own carries nothing. Silence for the
+/// negative case, which costs no listening time.
+fn flag(value: bool, meaning: &str) -> String {
+    if value { meaning } else { "" }.to_string()
 }
 
 /// Fall back to a stated absence rather than an empty cell.
@@ -176,10 +179,10 @@ mod tests {
     }
 
     #[test]
-    fn test_a_done_cell_does_not_repeat_its_own_heading() {
-        // A report row is read as "heading, value", so a cell holding "Done"
-        // under a heading of "Done" is announced twice on every finished row.
-        assert_eq!(reminder_cell(&reminder(), 0), "Yes");
+    fn test_a_done_cell_says_done_rather_than_yes() {
+        // The heading is not reliably announced, so "Yes" is a word with
+        // nothing attached to it.
+        assert_eq!(reminder_cell(&reminder(), 0), "Done");
         assert_eq!(task_cell(&task(), 0), "");
     }
 

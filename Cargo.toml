@@ -73,3 +73,15 @@ winresource = "0.1"
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.14"
+
+# A held lock guard is how this application deadlocked its own UI thread and
+# froze NVDA with it: the guard in an `if let` scrutinee lives for the whole
+# block on edition 2021, so a widget call inside that block ran while the state
+# mutex was held, and the event it raised tried to take the same mutex again.
+#
+# These two lints name that shape. They are nursery lints, so they have to be
+# asked for; the cost of a false positive here is a `let` binding, and the cost
+# of a miss is a screen reader hanging on a user.
+[lints.clippy]
+significant_drop_in_scrutinee = "deny"
+await_holding_lock = "deny"

@@ -1598,11 +1598,18 @@ document.addEventListener('keydown', function(e) {
                             let _ = ui_tx.try_send(UIUpdate::ThreadRendered(html));
                         }
                         wx_thread_view::ThreadChoice::Message(id) => {
-                            if let Some(row) = lock_state(&state)
-                                .messages
-                                .iter()
-                                .position(|m| m.message_id == id)
-                            {
+                            // The lock is taken and released before any widget
+                            // is touched. Selecting a row raises a selection
+                            // event on this same thread, and that handler takes
+                            // the state mutex too: holding it across the call
+                            // deadlocked the UI thread, which in turn hung
+                            // NVDA, because a screen reader's accName call into
+                            // a frozen thread never returns.
+                            let row = {
+                                let s = lock_state(&state);
+                                s.messages.iter().position(|m| m.message_id == id)
+                            };
+                            if let Some(row) = row {
                                 msg_list.set_item_state(
                                     row as i64,
                                     ListItemState::Selected | ListItemState::Focused,

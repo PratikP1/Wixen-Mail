@@ -45,12 +45,23 @@ pub fn cell_text(
     now: chrono::DateTime<chrono::Local>,
 ) -> String {
     match column {
-        // "Yes" rather than the column's own word. A screen reader reads a
-        // report row as "heading, value", so a cell repeating its heading came
-        // out as "Attachment attachment" on every row that had one. Empty for
-        // the negative case, which costs no listening time at all.
-        MessageColumn::Unread => if message.read { "" } else { "Yes" }.to_string(),
-        MessageColumn::Attachment => if message.has_attachments { "Yes" } else { "" }.to_string(),
+        // The cell says what it means rather than "Yes".
+        //
+        // This was "Yes" for a while, on the reasoning that a screen reader
+        // reads a report row as "heading, value" and a cell repeating its
+        // heading would be said twice. In practice the headings are not being
+        // read here, so "Yes" was a word with nothing attached to it and the
+        // unread state was never spoken at all. A cell that stands on its own
+        // is worth more than one that depends on a heading being announced.
+        //
+        // Still empty for the negative case, which costs no listening time.
+        MessageColumn::Unread => if message.read { "" } else { "Unread" }.to_string(),
+        MessageColumn::Attachment => if message.has_attachments {
+            "Has attachment"
+        } else {
+            ""
+        }
+        .to_string(),
         MessageColumn::Subject => {
             if message.subject.trim().is_empty() {
                 "No subject".to_string()
@@ -65,7 +76,7 @@ pub fn cell_text(
         MessageColumn::Snippet => message.snippet.clone(),
         MessageColumn::Thread => thread_cell(message),
         MessageColumn::Size => message.size_bytes.map(size_cell).unwrap_or_default(),
-        MessageColumn::Flagged => if message.starred { "Yes" } else { "" }.to_string(),
+        MessageColumn::Flagged => if message.starred { "Flagged" } else { "" }.to_string(),
         MessageColumn::To => display_address(&message.to),
         MessageColumn::Cc => display_address(&message.cc),
     }
@@ -232,10 +243,9 @@ mod tests {
     }
 
     #[test]
-    fn test_a_flag_cell_does_not_repeat_its_own_heading() {
-        // A report row is read as "heading, value", so a cell holding the word
-        // "Attachment" under a heading of "Attachment" was announced twice on
-        // every row that had one.
+    fn test_a_flag_cell_stands_on_its_own_without_its_heading() {
+        // "Yes" is a word with nothing attached to it when the heading is not
+        // being read, and the unread state was never spoken at all.
         let mut m = message();
         m.has_attachments = true;
         m.starred = true;
@@ -246,7 +256,7 @@ mod tests {
                 DateSettings::default(),
                 chrono::Local::now()
             ),
-            "Yes"
+            "Unread"
         );
         assert_eq!(
             cell_text(
@@ -255,7 +265,7 @@ mod tests {
                 DateSettings::default(),
                 chrono::Local::now()
             ),
-            "Yes"
+            "Has attachment"
         );
         assert_eq!(
             cell_text(
@@ -264,7 +274,7 @@ mod tests {
                 DateSettings::default(),
                 chrono::Local::now()
             ),
-            "Yes"
+            "Flagged"
         );
     }
 
