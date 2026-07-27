@@ -25,6 +25,8 @@ use crate::presentation::message_columns::{self, ColumnLayout, MessageColumn};
 use crate::presentation::message_rows;
 use crate::presentation::pim_rows;
 use crate::presentation::read_aloud::{self, ReadAloud};
+use crate::presentation::reader_text;
+use crate::presentation::wx_reader;
 use async_channel::{Receiver, Sender};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -899,6 +901,12 @@ document.addEventListener('keydown', function(e) {
                 }
             }
 
+            // One reader window, reused. Tabs inside it rather than a window
+            // per message: a dozen top level windows is a dozen things to find
+            // your way back out of, and Ctrl+Tab through tabs is one gesture.
+            let reader = Rc::new(wx_reader::ReaderWindow::new(&frame, &a11y));
+            reader.wire_menu();
+
             // Space cycles short then full on the item under the cursor;
             // Shift+Space goes straight to full. One cycle shared across the
             // modules, keyed by module and item id, so moving anywhere starts
@@ -1569,55 +1577,51 @@ document.addEventListener('keydown', function(e) {
             msg_list.on_item_activated({
                 let state = state.clone();
                 let a11y = a11y.clone();
-                let ui_tx = ui_tx.clone();
                 let thread_cache = message_cache.clone();
+                let reader = reader.clone();
                 move |event| {
                     let index = event.get_item_index();
                     if index < 0 {
                         return;
                     }
-                    let (thread_id, subject) = {
+                    let (thread_id, subject, message) = {
                         let s = lock_state(&state);
                         match s.messages.get(index as usize) {
-                            Some(m) => (m.thread_id.clone(), m.subject.clone()),
+                            Some(m) => (m.thread_id.clone(), m.subject.clone(), m.clone()),
                             None => return,
                         }
                     };
                     let Some(thread_id) = thread_id else {
-                        // Not in a conversation: the preview already follows
-                        // selection, so there is nothing else to do.
+                        // Not in a conversation, so there is nothing to choose
+                        // between: it opens straight into the reader.
+                        open_single_message(&reader, &thread_cache, &message);
                         return;
                     };
                     let nodes = conversation_nodes(&state, &thread_id);
                     if nodes.len() < 2 {
+                        open_single_message(&reader, &thread_cache, &message);
                         return;
                     }
                     match wx_thread_view::show_thread_dialog(&frame, &subject, &nodes, &a11y) {
                         wx_thread_view::ThreadChoice::WholeConversation => {
-                            let html = render_conversation(&thread_cache, &subject, &nodes);
-                            let _ = ui_tx.try_send(UIUpdate::ThreadRendered(html));
+                            open_conversation(&reader, &thread_cache, &subject, &nodes);
                         }
                         wx_thread_view::ThreadChoice::Message(id) => {
-                            // The lock is taken and released before any widget
-                            // is touched. Selecting a row raises a selection
-                            // event on this same thread, and that handler takes
-                            // the state mutex too: holding it across the call
-                            // deadlocked the UI thread, which in turn hung
-                            // NVDA, because a screen reader's accName call into
-                            // a frozen thread never returns.
-                            let row = {
+                            // The lock is taken and released before anything
+                            // else runs. Holding it across a widget call
+                            // deadlocked the UI thread once, and a screen
+                            // reader asking a frozen thread for a name never
+                            // gets an answer.
+                            let chosen = {
                                 let s = lock_state(&state);
-                                s.messages.iter().position(|m| m.message_id == id)
+                                s.messages.iter().find(|m| m.message_id == id).cloned()
                             };
-                            if let Some(row) = row {
-                                msg_list.set_item_state(
-                                    row as i64,
-                                    ListItemState::Selected | ListItemState::Focused,
-                                    ListItemState::Selected | ListItemState::Focused,
-                                );
-                                msg_list.ensure_visible(row as i64);
+                            match chosen {
+                                Some(message) => {
+                                    open_single_message(&reader, &thread_cache, &message)
+                                }
+                                None => msg_list.set_focus(),
                             }
-                            msg_list.set_focus();
                         }
                         wx_thread_view::ThreadChoice::Cancelled => {
                             // Focus back where it came from. Without this a
@@ -2747,6 +2751,66 @@ fn persist_mute_preference(muted: bool) {
     }
 }
 
+/// Open one message in the reader window.
+///
+/// The body comes from the cache. A message with no cached body still opens:
+/// the document says the body has not been downloaded, which is a different
+/// fact from an empty message and a much more useful one than a blank window.
+fn open_single_message(
+    reader: &Rc<wx_reader::ReaderWindow>,
+    cache: &Option<Arc<MessageCache>>,
+    message: &MessageItem,
+) {
+    let body = cache
+        .as_ref()
+        .and_then(|c| c.get_message_body(message.message_id).ok().flatten())
+        .and_then(|b| b.body_html.or(b.body_plain))
+        .unwrap_or_default();
+    reader.open(reader_text::single_message(message, &body));
+}
+
+/// Open a whole conversation in the reader window as one document.
+fn open_conversation(
+    reader: &Rc<wx_reader::ReaderWindow>,
+    cache: &Option<Arc<MessageCache>>,
+    subject: &str,
+    nodes: &[wx_thread_view::ThreadNode],
+) {
+    let parts: Vec<reader_text::ConversationPart> = nodes
+        .iter()
+        .map(|node| {
+            let body = cache
+                .as_ref()
+                .and_then(|c| c.get_message_body(node.message_id).ok().flatten())
+                .and_then(|b| b.body_html.or(b.body_plain))
+                .unwrap_or_default();
+            reader_text::ConversationPart {
+                message: MessageItem {
+                    uid: 0,
+                    message_id: node.message_id,
+                    subject: node.subject.clone(),
+                    from: node.sender.clone(),
+                    date: node.date.clone(),
+                    read: node.read,
+                    starred: false,
+                    has_attachments: false,
+                    attachments: Vec::new(),
+                    thread_depth: node.depth,
+                    is_thread_parent: node.depth == 0,
+                    thread_id: None,
+                    snippet: String::new(),
+                    size_bytes: None,
+                    to: String::new(),
+                    cc: String::new(),
+                },
+                body,
+                depth: node.depth,
+            }
+        })
+        .collect();
+    reader.open(reader_text::conversation(subject, &parts));
+}
+
 /// The messages of one conversation, parents before their children.
 ///
 /// Built from what the list already holds rather than from a fresh query: the
@@ -2790,37 +2854,6 @@ fn conversation_nodes(
         });
     }
     nodes
-}
-
-/// Render a whole conversation into one document.
-///
-/// A message with no cached body renders with a line saying so rather than an
-/// empty section. An empty section under a heading reads as a message with no
-/// content, which is a different fact from a message not fetched yet.
-fn render_conversation(
-    cache: &Option<Arc<MessageCache>>,
-    subject: &str,
-    nodes: &[wx_thread_view::ThreadNode],
-) -> String {
-    let renderer = HtmlRenderer::new();
-    let parts: Vec<crate::presentation::html_renderer::ThreadPart> = nodes
-        .iter()
-        .map(|node| {
-            let body = cache
-                .as_ref()
-                .and_then(|c| c.get_message_body(node.message_id).ok().flatten())
-                .and_then(|b| b.body_html.or(b.body_plain))
-                .unwrap_or_else(|| "This message has not been downloaded yet.".to_string());
-            crate::presentation::html_renderer::ThreadPart {
-                sender: node.sender.clone(),
-                date: node.date.clone(),
-                subject: node.subject.clone(),
-                body,
-                depth: node.depth,
-            }
-        })
-        .collect();
-    renderer.render_thread(subject, &parts)
 }
 
 /// Group a folder's messages into conversations and mark the list rows.
@@ -3198,20 +3231,6 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let msg = format!("{} messages, {} unread", messages.len(), unread);
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Normal, "messages");
-        }
-        UIUpdate::ThreadRendered(html) => {
-            // Shown in the preview, and the preview is forced open: rendering
-            // a conversation into a pane the user has hidden would look like
-            // the key did nothing.
-            preview.set_page(html, "about:blank");
-            preview.show(true);
-            // Rendered for anyone looking at it, and read aloud for anyone not.
-            // Focus stays on the list: moving it into the browser is what
-            // stranded people there, and the reading channel does not need
-            // focus to work.
-            let renderer = HtmlRenderer::new();
-            let _ = a11y.announce("Conversation opened", Priority::Normal);
-            let _ = a11y.announce_content(&renderer.html_to_plain_text(html));
         }
         UIUpdate::MessageBodyLoaded(body) => {
             {

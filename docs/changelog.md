@@ -7,6 +7,10 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Added
 
+- **Messages open in a reader window with tabs.** `Enter` on a message opens it; `Enter` on a message in a conversation opens the conversation tree first, and either choice from there opens into the same window. One window with tabs rather than a window per message: a dozen top-level windows is a dozen things to find your way out of, and `Ctrl+Tab` between tabs is one gesture.
+- **The reader is a read-only rich text control, not a WebView.** That is the whole point of it. A native text control is focusable, moves by character, word, line and paragraph with the arrow keys, supports selection and copy, is searchable, reports its caret position to a screen reader, and gives focus back when you press `Escape`. A WebView does none of that reliably once it has focus, which is how the preview pane came to trap people.
+- **`Ctrl+Down` and `Ctrl+Up` move between the messages of a conversation** in the reader, announcing each one, so you can reach the fifth reply without reading through the first four. They say "Last message" rather than doing nothing at the end.
+- **The reader has a menu bar**, so what the window can do is discoverable by walking it rather than something you have to be told.
 - **The mail folder tree now fills from the cache.** Opening mail read nothing at all: the handler for a loaded folder list existed and no code ever sent one, so the tree was empty in every build no matter what had been synced.
 - **Selecting a folder loads its messages.** The status line said "Loading INBOX..." and then nothing happened. The list only ever filled from the sample mailbox on the Help menu.
 - **A Columns dialog** on `F8`, also at View, Columns. Choose which columns the message list shows and in what order. Space shows or hides a column, `Alt+Up` and `Alt+Down` move one, and every change is announced. The last remaining column cannot be hidden. Your choice is remembered across restarts.

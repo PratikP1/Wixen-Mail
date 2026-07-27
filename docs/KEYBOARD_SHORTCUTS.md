@@ -56,6 +56,26 @@ and locks out anyone who types slowly.
 `Ctrl+Shift+M` mutes this reading without silencing status and error
 announcements.
 
+### The Reader Window
+
+`Enter` on a message opens it in the reader. `Enter` on a message that belongs
+to a conversation opens the conversation tree first; both choices from there
+open into the same reader window.
+
+The reader is a read-only text control, not a browser, so everything you expect
+from a text control works: arrow keys move by character, word and line, `Home`
+and `End` work, text can be selected and copied, and your screen reader reports
+where the caret is.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Close the window | `Esc` | Back to the message list |
+| Close this tab | `Ctrl+W` | Closes the window when the last tab goes |
+| Next tab | `Ctrl+Tab` | Standard notebook navigation |
+| Previous tab | `Ctrl+Shift+Tab` | |
+| Next message in the conversation | `Ctrl+Down` | Announces the message it lands on, and says "Last message" at the end |
+| Previous message in the conversation | `Ctrl+Up` | |
+
 ### The Preview Pane
 
 The preview is a visual pane. It never takes focus, and `F6` does not stop
