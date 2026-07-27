@@ -18,16 +18,26 @@ use crate::service::protocols::MailAuth;
 
 /// Work out which OAuth provider an account belongs to.
 ///
-/// The account's own setting first, then the address, because an account added
-/// before providers were recorded still has an address that says which it is.
+/// The address first, because that is what the sign-in flow used when it put
+/// the tokens in the keychain, and the keychain entry is named after it. The
+/// account's own `provider` field holds a display name chosen for the settings
+/// window, so it is spelled "Gmail" where the keychain says "gmail", and it
+/// also holds names such as "Yahoo" that are not OAuth providers at all.
+/// Trusting it first looked up an entry that does not exist and reported every
+/// account as needing to be authorised again.
+///
+/// It is still the fallback, lowercased and checked against the providers we
+/// know, because a Google Workspace account is on its own domain and its
+/// address says nothing about who runs the mailbox.
 pub fn provider_of(account: &Account) -> Option<String> {
-    account
-        .provider
-        .as_deref()
-        .map(str::trim)
-        .filter(|provider| !provider.is_empty())
-        .map(str::to_string)
-        .or_else(|| OAuthService::detect_provider(&account.email))
+    OAuthService::detect_provider(&account.email).or_else(|| {
+        account
+            .provider
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_lowercase)
+            .filter(|provider| OAuthService::provider_by_name(provider).is_some())
+    })
 }
 
 /// The credential this account signs in with, fetching a token if it needs one.
@@ -114,26 +124,39 @@ mod tests {
     }
 
     #[test]
-    fn test_the_provider_comes_from_the_account_when_it_is_recorded() {
+    fn test_the_provider_is_spelled_the_way_the_keychain_spells_it() {
+        // The settings window records a display name, "Gmail". The keychain
+        // entry is named "gmail". Returning the display name looked up an
+        // entry that does not exist and reported the account as needing to be
+        // authorised again, every time.
         let mut recorded = account();
-        recorded.provider = Some("outlook".into());
-        assert_eq!(provider_of(&recorded).as_deref(), Some("outlook"));
+        recorded.provider = Some("Gmail".into());
+        assert_eq!(provider_of(&recorded).as_deref(), Some("gmail"));
+    }
+
+    #[test]
+    fn test_a_workspace_account_on_its_own_domain_is_found_by_its_provider() {
+        // The address says nothing, so the recorded provider is the only
+        // signal there is.
+        let mut workspace = account();
+        workspace.email = "me@mycompany.com".into();
+        workspace.provider = Some("Gmail".into());
+        assert_eq!(provider_of(&workspace).as_deref(), Some("gmail"));
+    }
+
+    #[test]
+    fn test_a_provider_that_does_not_do_oauth_is_not_returned() {
+        // "Yahoo" is a display name in the same field, and looking up
+        // credentials for it would report the wrong problem.
+        let mut yahoo = account();
+        yahoo.email = "me@yahoo.com".into();
+        yahoo.provider = Some("Yahoo".into());
+        assert_eq!(provider_of(&yahoo), None);
     }
 
     #[test]
     fn test_the_provider_falls_back_to_the_address() {
-        // An account added before providers were recorded still has an address
-        // that says which one it is.
         assert_eq!(provider_of(&account()).as_deref(), Some("gmail"));
-    }
-
-    #[test]
-    fn test_a_blank_recorded_provider_is_not_treated_as_one() {
-        let mut blank = account();
-        blank.provider = Some("   ".into());
-        // Falls through to the address rather than looking up a provider whose
-        // name is nothing.
-        assert_eq!(provider_of(&blank).as_deref(), Some("gmail"));
     }
 
     #[test]

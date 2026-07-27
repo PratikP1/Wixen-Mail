@@ -67,8 +67,37 @@ fn default_account_color() -> String {
     "#4A90E2".to_string() // Default blue
 }
 
-/// Helper: returns true if the email domain requires OAuth.
-pub fn requires_oauth(email: &str) -> bool {
+/// Whether browser sign-in is the better default for this address.
+///
+/// A default, not a rule. Both providers also accept an app password, which is
+/// a password generated for one application and revocable on its own, and for
+/// Google that is the path that works without the application being through
+/// Google verification. Forcing OAuth on a Gmail address left anybody without
+/// access to a verified client unable to add their own mail at all.
+///
+/// Microsoft defaults to OAuth because it has withdrawn password sign-in more
+/// widely than Google has, so an app password there fails more often than not.
+pub fn oauth_is_default(email: &str) -> bool {
+    email
+        .split('@')
+        .nth(1)
+        .map(|d| {
+            let d = d.to_lowercase();
+            matches!(
+                d.as_str(),
+                "outlook.com" | "hotmail.com" | "live.com" | "msn.com"
+            )
+        })
+        .unwrap_or(false)
+}
+
+/// Whether this address belongs to a provider that offers app passwords.
+///
+/// Decides whether to tell somebody how to get one. Both providers require
+/// two-step verification on the account first, and an organisation
+/// administrator can switch app passwords off, so the guidance says where to
+/// look rather than promising what will be there.
+pub fn offers_app_passwords(email: &str) -> bool {
     email
         .split('@')
         .nth(1)
@@ -90,7 +119,7 @@ pub fn requires_oauth(email: &str) -> bool {
 impl Account {
     /// Create a new account with default settings
     pub fn new(name: String, email: String) -> Self {
-        let oauth = requires_oauth(&email);
+        let oauth = oauth_is_default(&email);
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name,
@@ -207,7 +236,7 @@ impl Account {
             smtp_use_tls: config.smtp_use_tls,
             username: config.username.clone(),
             password: config.password.clone(),
-            use_oauth: requires_oauth(&email),
+            use_oauth: oauth_is_default(&email),
             oauth_access_token: String::new(),
             oauth_refresh_token: String::new(),
             oauth_token_expires_at: None,
@@ -369,8 +398,12 @@ mod tests {
 
     #[test]
     fn test_oauth_auto_detection() {
+        // Google is the exception: it can sign in either way, and an app
+        // password is the one that works without the application being through
+        // Google verification. The setting is a starting point the account
+        // dialog can change.
         let gmail = Account::new("Gmail".to_string(), "user@gmail.com".to_string());
-        assert!(gmail.use_oauth);
+        assert!(!gmail.use_oauth);
 
         let outlook = Account::new("Outlook".to_string(), "user@outlook.com".to_string());
         assert!(outlook.use_oauth);
@@ -383,15 +416,37 @@ mod tests {
     }
 
     #[test]
-    fn test_requires_oauth() {
-        assert!(requires_oauth("user@gmail.com"));
-        assert!(requires_oauth("user@googlemail.com"));
-        assert!(requires_oauth("user@outlook.com"));
-        assert!(requires_oauth("user@hotmail.com"));
-        assert!(requires_oauth("user@live.com"));
-        assert!(requires_oauth("user@msn.com"));
-        assert!(!requires_oauth("user@yahoo.com"));
-        assert!(!requires_oauth("user@custom.com"));
+    fn test_microsoft_addresses_default_to_browser_sign_in() {
+        // Microsoft has withdrawn password sign-in more widely than Google has,
+        // so an app password there fails more often than not.
+        assert!(oauth_is_default("user@outlook.com"));
+        assert!(oauth_is_default("user@hotmail.com"));
+        assert!(oauth_is_default("user@live.com"));
+        assert!(oauth_is_default("user@msn.com"));
+    }
+
+    #[test]
+    fn test_google_addresses_default_to_an_app_password() {
+        // Browser sign-in needs the application to be through Google
+        // verification. Defaulting to it left anybody using a client that is
+        // not verified unable to add their own mail, and an app password works
+        // today.
+        assert!(!oauth_is_default("user@gmail.com"));
+        assert!(!oauth_is_default("user@googlemail.com"));
+    }
+
+    #[test]
+    fn test_an_ordinary_address_defaults_to_a_password() {
+        assert!(!oauth_is_default("user@yahoo.com"));
+        assert!(!oauth_is_default("user@custom.com"));
+        assert!(!oauth_is_default("not-an-address"));
+    }
+
+    #[test]
+    fn test_both_big_providers_are_known_to_offer_app_passwords() {
+        assert!(offers_app_passwords("user@gmail.com"));
+        assert!(offers_app_passwords("user@outlook.com"));
+        assert!(!offers_app_passwords("user@custom.com"));
     }
 
     #[test]
@@ -487,7 +542,10 @@ mod tests {
 
         let account = Account::from_account_config(&config);
         assert_eq!(account.email, "user@gmail.com");
-        assert!(account.use_oauth);
+        // A migrated account keeps its password and signs in with it. Turning
+        // OAuth on here would have made an account that already worked stop
+        // working until somebody went and authorised it.
+        assert!(!account.use_oauth);
         assert_eq!(account.provider, Some("Gmail".to_string()));
     }
 

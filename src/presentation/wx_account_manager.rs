@@ -7,8 +7,18 @@
 //! user adds such an account (press OK), the browser opens immediately
 //! for authorization with no extra steps or checkboxes.
 
-use crate::data::account::{Account, requires_oauth};
+use crate::data::account::{Account, oauth_is_default, offers_app_passwords};
 use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
+
+/// What to put in the password box when the provider wants an app password.
+///
+/// Said in the dialog rather than only in the documentation, because somebody
+/// adding an account is in the dialog and pasting their ordinary password is
+/// the thing they are about to do. It fails with "authentication failed",
+/// which reads as a typo and sends them round again.
+const APP_PASSWORD_HINT: &str = "Password: use an app password, not your ordinary one. \
+Turn on two-step verification with your provider first, then generate one for mail. \
+See docs/PROVIDER_SETUP.md.";
 use crate::presentation::wx_managers::get_selected;
 use crate::service::oauth::{AuthManager, OAuthService};
 use crate::service::oauth_credentials;
@@ -337,6 +347,12 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
     let smtp_tls = cb("Use TL&S", true);
 
     section("── Authentication ──");
+    // A choice rather than something worked out from the address. Google
+    // accounts can sign in either way, and browser sign-in needs this
+    // application to be through Google verification, so an address is not
+    // enough to decide. Deciding it silently left people unable to add their
+    // own mail with no control to change it and nothing saying why.
+    let use_oauth_cb = cb("Sign in with the provider in a &browser (OAuth)", false);
     let user_f = tf("&Username:", "");
     let pass_f = {
         let l = StaticText::builder(&dlg).with_label("Pass&word:").build();
@@ -382,9 +398,11 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
         pass_f.set_value(&a.password);
         interval_f.set_value(&a.check_interval_minutes.to_string());
         enabled.set_value(a.enabled);
-        // Show hint for existing accounts
+        use_oauth_cb.set_value(a.use_oauth);
         if a.use_oauth {
-            auth_hint.set_label("(Gmail and Microsoft authorize in the browser on save)");
+            auth_hint.set_label("Signs in through the browser when you save.");
+        } else if offers_app_passwords(&a.email) {
+            auth_hint.set_label(APP_PASSWORD_HINT);
         }
     }
 
@@ -401,17 +419,15 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
                     smtp_port_f.set_value(sp);
                     user_f.set_value(&email);
                 }
-                // Update the auth hint
-                let d = domain.to_lowercase();
-                if d == "gmail.com" || d == "googlemail.com" {
-                    auth_hint.set_label("Google account. Browser sign-in will open automatically");
-                } else if d == "outlook.com"
-                    || d == "hotmail.com"
-                    || d == "live.com"
-                    || d == "msn.com"
-                {
-                    auth_hint
-                        .set_label("Microsoft account. Browser sign-in will open automatically");
+                // Set the sign-in method to whatever usually works for this
+                // provider, and say what to do about it either way. Somebody
+                // who wants the other one can still change it: this moves the
+                // checkbox, it does not lock it.
+                use_oauth_cb.set_value(oauth_is_default(&email));
+                if use_oauth_cb.get_value() {
+                    auth_hint.set_label("Signs in through the browser when you save.");
+                } else if offers_app_passwords(&email) {
+                    auth_hint.set_label(APP_PASSWORD_HINT);
                 } else {
                     auth_hint.set_label("");
                 }
@@ -435,7 +451,7 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
     if dlg.show_modal() == ID_OK {
         let interval: u32 = interval_f.get_value().parse().unwrap_or(5).clamp(1, 60);
         let email_val = email_f.get_value();
-        let is_oauth = requires_oauth(&email_val);
+        let is_oauth = use_oauth_cb.get_value();
 
         let provider =
             email_val

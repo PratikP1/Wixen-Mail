@@ -13,6 +13,53 @@ Quick setup instructions for popular email providers with Wixen Mail.
 
 ---
 
+## Choosing a sign-in method
+
+Wixen Mail signs in to a mailbox one of two ways. The account dialog has a
+checkbox, "Sign in with the provider in a browser (OAuth)", and it is set to
+whichever usually works for the address you typed. You can change it.
+
+### App password
+
+A password your provider generates for one application, which you can revoke on
+its own without changing the password you sign in with everywhere else. This is
+the default for Gmail and for any provider we do not recognise.
+
+It works today, it does not expire, and it does not depend on Wixen Mail being
+registered with anybody. You need two-step verification turned on with your
+provider before they will give you one.
+
+Your ordinary password will not work. Google stopped accepting it for mail
+applications, and Microsoft has stopped for most accounts. Typing it produces
+"authentication failed", which reads like a typo and sends people round the loop
+again, so the account dialog says this next to the password box.
+
+### Browser sign-in (OAuth)
+
+You are sent to the provider's own page, you sign in there, and Wixen Mail never
+sees your password. This is the default for Outlook.com addresses, because
+Microsoft has withdrawn password sign-in more widely than Google has.
+
+**What this costs, honestly.** Reading mail is what Google calls a restricted
+scope, and an application asking for it has to pass a security assessment before
+Google will let the general public use it. Until that assessment is done:
+
+- Only people added by hand to the project's list can sign in, and that list is
+  capped at 100.
+- Google expires their sign-in after seven days, so each of them has to go
+  through the browser again roughly once a week.
+
+That second point is the one that matters in daily use, and it is a Google
+policy rather than something Wixen Mail can work around. Until the assessment is
+done, an app password is the arrangement that stays working. If you are choosing
+for someone who will not enjoy re-authorising every week, choose the app
+password.
+
+Microsoft does not apply the same seven-day rule, so an Outlook browser sign-in
+keeps working until it is revoked.
+
+---
+
 ## Gmail
 
 ### Requirements
@@ -30,7 +77,10 @@ Quick setup instructions for popular email providers with Wixen Mail.
 4. Under IMAP Access, select **Enable IMAP**
 5. Click **Save Changes**
 
-#### 2. Generate App Password (If Using 2FA)
+#### 2. Generate an app password
+
+You need two-step verification turned on first. Google does not offer app
+passwords without it, and it does not accept your ordinary password for mail.
 
 1. Go to your Google Account (https://myaccount.google.com)
 2. Navigate to **Security**
@@ -59,13 +109,21 @@ Quick setup instructions for popular email providers with Wixen Mail.
    - **SMTP Port:** 587
    - **Use TLS/SSL:** ✓ Checked
 5. Enter **Username:** Your full Gmail address
-6. Enter **Password:** Your 16-character app password (or regular password if no 2FA)
+6. Enter **Password:** the 16-character app password. Your ordinary Google
+   password will not work here.
 7. Click **Connect**
 
 ### Troubleshooting Gmail
 
 **"Authentication failed" error:**
-- Make sure you're using app password, not regular password (if 2FA enabled)
+- Use the app password, not your ordinary Google password. Google does not
+  accept the ordinary one for mail applications at all.
+- If the account is set to browser sign-in and it has been more than a week,
+  Google has expired the sign-in. Open the account and sign in again, or switch
+  it to an app password.
+- If your account is on Google Advanced Protection, or an administrator has
+  turned app passwords off for your organisation, browser sign-in is the only
+  route open to you.
 - Check that IMAP is enabled in Gmail settings
 - Wait a few minutes after generating app password
 
