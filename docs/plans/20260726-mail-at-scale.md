@@ -325,11 +325,94 @@ suppressing a screen reader handler silently killed the braille output riding on
 the same channel. Anything that intercepts or replaces speech has to be checked
 against braille, not assumed.
 
-## What this plan does not solve
+## Threads
 
-Threading. The data model carries thread identifiers and nothing groups by them.
-It is deliberately out of scope here so that the list work does not grow a second
-hard problem.
+### Computing them
+
+JWZ, from the `References` and `In-Reply-To` headers the envelope already
+carries, so threading costs no extra fetch. Where a server offers `X-GM-THRID` we
+take it instead, because it matches what that provider shows the user elsewhere.
+Subject matching is not used: "Re: lunch" collides across years and strangers.
+
+Assignment is incremental. Each arriving message looks up its references against
+an index on `message_id` and joins an existing thread or starts one. A late
+message can join two existing trees, and that merge is the case worth testing.
+
+### Landing on a thread
+
+The message list stays one row per message. Landing on a row that belongs to a
+thread is signalled by an **earcon or a spoken announcement, whichever the user
+has chosen**. Until earcons exist, the announcement is the only option, and the
+setting says so rather than offering a choice that does nothing.
+
+### Opening one
+
+| Where | Key | Result |
+|-------|-----|--------|
+| Message list, message with no thread | `Enter` | Opens that message in the WebView. No tree in the way |
+| Message list, message in a thread | `Enter` | Opens a conversation tree |
+| Conversation tree, root node | `Enter` | The whole thread in the WebView, every message in order |
+| Conversation tree, any other node | `Enter` | That message alone |
+| WebView | `Esc` | Back to the list, focus on the row it came from |
+
+The tree is a native `TreeCtrl`. Level announcement then comes from the control
+itself, so a screen reader says "level 3" without us describing it.
+
+`Enter` doing two things depending on the node is only acceptable because the
+root node says which: it is labelled **"Whole conversation, 5 messages"** rather
+than repeating the subject. The key does what the row says it does.
+
+That last point is why `Esc` is in the table. Without it a thread view is
+somewhere you tab your way out of.
+
+### The combined thread document
+
+Opening a whole thread renders every message into one document, each introduced
+by a heading so `H` moves between them.
+
+Headings cap at `h6` and never skip a level, because skipping is a structure
+violation in its own right and threads go deeper than six. Depth beyond six
+renders at `h6` with the real depth in the text, for example "Reply, level 8,
+from Ada Lovelace". The heading carries sender and depth because those are what
+you navigate by.
+
+## Reading with the space bar
+
+`Space` is the read key across every module, and it cycles while focus stays on
+one row:
+
+| Press | Reads |
+|-------|-------|
+| First | The short form: snippet, note title, task title, event summary |
+| Again | The full content: body, note text, description |
+| Again | Back to the short form |
+
+Moving to another row resets to the short form. **The cycle deliberately has no
+timer.** A double press inside a timeout is a timing dependency: a tremor or slow
+keystrokes turn "read the whole message" into "snippet, snippet", and guardrail 5
+rules that out. Cycling gives the same two-presses-reads-everything behaviour at
+any speed.
+
+`Shift+Space` reads the details instead of the content, meaning the fields
+otherwise reached by tabbing:
+
+| Module | `Space` | `Space` again | `Shift+Space` |
+|--------|---------|---------------|---------------|
+| Mail | Snippet | Body | From, to, cc, date, attachments |
+| Notes | Title | Body | Folder, modified, pinned |
+| Tasks | Title | Description | List, due, priority, completion |
+| Calendar | Summary | Description | Start, end, location, attendees |
+| Contacts | Name | Notes | Email, phone, company, groups |
+| Reminders | Title | Description | Due, priority, repeat |
+
+One key, one meaning, in every module: `Space` is the content and `Shift+Space`
+is the metadata about it.
+
+Whether a full read includes quoted history is a setting rather than a third key.
+Most reads do not want it, and a key that means "the same but longer" is not worth
+a global binding.
+
+## What this plan does not solve
 
 Screen reader verification. Every claim above about what a screen reader will
 announce is a design intention. None of it is true until an NVDA run says so, and
