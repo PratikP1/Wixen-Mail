@@ -16,6 +16,7 @@
 
 use super::html_renderer::HtmlRenderer;
 use super::ui_types::MessageItem;
+use crate::vendor::paperback::html_to_text::{HtmlSourceMode, HtmlToText};
 
 /// A heading inside the composed text, for jump-to-next-heading.
 ///
@@ -78,25 +79,86 @@ fn headers(message: &MessageItem) -> String {
     lines.join("\n")
 }
 
-/// Turn a body into readable text.
+/// Turn a body into readable text, and say what structure it had.
 ///
-/// HTML goes through the accessible renderer, which keeps link text with its
-/// target and turns images into their alt text. A body that is already plain
-/// text is left alone.
-fn body_text(body: &str) -> String {
+/// HTML goes through the converter vendored from Paperback, which returns the
+/// text along with the offset of every heading, link and list. Those offsets
+/// are what let someone jump through a long message instead of reading it from
+/// the top.
+///
+/// Tables are rendered inline. The converter's default is to summarise a table
+/// and keep its grid aside, which is right for a document and wrong for mail:
+/// messages are routinely wrapped in a layout table, and summarising would
+/// reduce a whole message to the word "Table".
+fn body_text(body: &str) -> (String, Vec<Landmark>) {
     let trimmed = body.trim();
     if trimmed.is_empty() {
         // Said rather than shown as an empty pane. A message that has not been
         // fetched and a message with nothing in it are different facts.
-        return "This message has no text, or it has not been downloaded yet.".to_string();
+        return (
+            "This message has no text, or it has not been downloaded yet.".to_string(),
+            Vec::new(),
+        );
     }
-    if trimmed.contains('<') && trimmed.contains('>') {
-        HtmlRenderer::new()
-            .render_for_accessibility(trimmed)
-            .accessible_text
-    } else {
-        trimmed.to_string()
+    if !(trimmed.contains('<') && trimmed.contains('>')) {
+        return (trimmed.to_string(), Vec::new());
     }
+
+    let mut converter = HtmlToText::with_render_tables_inline(true);
+    if !converter.convert(trimmed, HtmlSourceMode::NativeHtml) {
+        // Not swallowed: a body we could not parse is still shown, because the
+        // raw text of a broken message is worth more than nothing at all.
+        tracing::warn!("Message body could not be parsed as HTML; showing it as text");
+        return (trimmed.to_string(), Vec::new());
+    }
+
+    let mut landmarks: Vec<Landmark> = converter
+        .get_headings()
+        .iter()
+        .map(|heading| Landmark {
+            offset: heading.offset,
+            level: (heading.level.max(1) as usize).min(6),
+            label: heading.text.clone(),
+        })
+        .collect();
+
+    let mut text = converter.get_text();
+
+    // Link targets are gathered at the end rather than left inline. A URL read
+    // out mid-sentence is a wall of syllables in the middle of a thought, and
+    // the converter already keeps the link's own words where they belong. This
+    // is also the only place the target can be checked before anyone acts on
+    // it: a message body is written by a stranger.
+    let links: Vec<(String, String)> = converter
+        .get_links()
+        .iter()
+        .filter_map(|link| {
+            HtmlRenderer::safe_external_url(&link.reference).map(|safe| {
+                let label = if link.text.trim().is_empty() {
+                    safe.clone()
+                } else {
+                    link.text.trim().to_string()
+                };
+                (label, safe)
+            })
+        })
+        .collect();
+    if !links.is_empty() {
+        let heading = format!("Links ({})", links.len());
+        text.push_str("\n\n");
+        landmarks.push(Landmark {
+            offset: text.chars().count(),
+            level: 2,
+            label: heading.clone(),
+        });
+        text.push_str(&heading);
+        text.push('\n');
+        for (position, (label, url)) in links.iter().enumerate() {
+            text.push_str(&format!("{}. {}: {}\n", position + 1, label, url));
+        }
+    }
+
+    (text, landmarks)
 }
 
 /// Compose one message for the reader.
@@ -106,15 +168,27 @@ pub fn single_message(message: &MessageItem, body: &str) -> ReaderDocument {
     } else {
         message.subject.trim().to_string()
     };
-    let text = format!("{}\n\n{}\n", headers(message), body_text(body));
+    let header_block = headers(message);
+    let (body, body_landmarks) = body_text(body);
+    // Where the body starts, so the headings inside it land in the right place
+    // now that the header block sits above them.
+    let shift = header_block.chars().count() + 2;
+    let mut landmarks = vec![Landmark {
+        offset: 0,
+        level: 1,
+        label: title.clone(),
+    }];
+    landmarks.extend(body_landmarks.into_iter().map(|mut landmark| {
+        landmark.offset += shift;
+        // The subject is the document's own level 1, so a heading from the
+        // body starts at 2 and never competes with it.
+        landmark.level = (landmark.level + 1).min(6);
+        landmark
+    }));
     ReaderDocument {
-        landmarks: vec![Landmark {
-            offset: 0,
-            level: 1,
-            label: title.clone(),
-        }],
         title,
-        text,
+        text: format!("{}\n\n{}\n", header_block, body),
+        landmarks,
     }
 }
 
@@ -178,7 +252,7 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
         });
         text.push_str(&heading);
         text.push('\n');
-        text.push_str(&body_text(&part.body));
+        text.push_str(&body_text(&part.body).0);
         text.push('\n');
     }
 
@@ -205,6 +279,92 @@ impl ReaderDocument {
 mod tests {
     use super::*;
     use crate::presentation::ui_types::AttachmentItem;
+
+    #[test]
+    fn test_headings_in_a_message_body_become_landmarks_the_reader_can_jump_to() {
+        // The reason the converter was vendored. Our own stripped tags and
+        // produced a wall of text: readable from the top and nothing else.
+        let doc = single_message(
+            &message(),
+            "<html><body><h1>Revenue</h1><p>Up.</p><h2>Costs</h2><p>Down.</p></body></html>",
+        );
+        let labels: Vec<&str> = doc.landmarks.iter().map(|l| l.label.as_str()).collect();
+        assert!(labels.contains(&"Revenue"), "headings lost: {:?}", labels);
+        assert!(labels.contains(&"Costs"), "headings lost: {:?}", labels);
+    }
+
+    #[test]
+    fn test_a_body_landmark_points_at_its_heading_in_the_finished_document() {
+        // The header block sits above the body, so every offset the converter
+        // gave has to move by exactly that much. Off by one puts the caret in
+        // the wrong place and someone listening cannot tell.
+        let doc = single_message(
+            &message(),
+            "<html><body><h1>Revenue</h1><p>Up.</p></body></html>",
+        );
+        let text: Vec<char> = doc.text.chars().collect();
+        let landmark = doc
+            .landmarks
+            .iter()
+            .find(|l| l.label == "Revenue")
+            .expect("the heading");
+        let at: String = text[landmark.offset..]
+            .iter()
+            .take("Revenue".chars().count())
+            .collect();
+        assert_eq!(at, "Revenue", "landmark points at the wrong place");
+    }
+
+    #[test]
+    fn test_the_subject_stays_the_only_level_one() {
+        // Two level ones give a document two titles, and someone navigating by
+        // heading has no way to tell which is the real one.
+        let doc = single_message(
+            &message(),
+            "<html><body><h1>Revenue</h1><h1>Costs</h1></body></html>",
+        );
+        let level_ones = doc.landmarks.iter().filter(|l| l.level == 1).count();
+        assert_eq!(level_ones, 1);
+    }
+
+    #[test]
+    fn test_a_link_to_something_unsafe_is_not_listed() {
+        // A message body is written by a stranger, and this is the only place
+        // the target is looked at before anyone is offered it.
+        let doc = single_message(
+            &message(),
+            "<html><body><p><a href=\"javascript:alert(1)\">click</a></p></body></html>",
+        );
+        assert!(
+            !doc.text.contains("javascript:"),
+            "unsafe link listed: {}",
+            doc.text
+        );
+        assert!(!doc.text.contains("Links ("));
+    }
+
+    #[test]
+    fn test_a_layout_table_does_not_swallow_the_message() {
+        // Mail is routinely wrapped in a layout table. The converter's default
+        // would reduce the whole body to the word "Table".
+        let doc = single_message(
+            &message(),
+            "<html><body><table><tr><td><p>Dear Ada, the report is ready.</p></td></tr></table></body></html>",
+        );
+        assert!(
+            doc.text.contains("Dear Ada"),
+            "message body lost: {}",
+            doc.text
+        );
+    }
+
+    #[test]
+    fn test_a_body_that_is_not_html_is_left_exactly_as_it_is() {
+        // Plain text mail must not be put through an HTML parser, which would
+        // eat anything that looked like a tag.
+        let doc = single_message(&message(), "5 < 6 and 7 > 6, so all is well.");
+        assert!(doc.text.contains("5 < 6 and 7 > 6, so all is well."));
+    }
 
     fn message() -> MessageItem {
         MessageItem {
@@ -281,9 +441,15 @@ mod tests {
             &message(),
             "<p>See <a href=\"https://example.com/report\">the report</a>.</p>",
         );
+        // The link's own words stay in the prose where they belong.
         assert!(doc.text.contains("the report"));
         assert!(!doc.text.contains("<p>"));
+        // The target is gathered at the end rather than read out mid-sentence,
+        // and it is still there: dropping it would leave a link nobody can
+        // follow or check.
+        assert!(doc.text.contains("Links (1)"));
         assert!(doc.text.contains("https://example.com/report"));
+        assert!(doc.landmarks.iter().any(|l| l.label == "Links (1)"));
     }
 
     #[test]

@@ -495,6 +495,34 @@ impl Locale {
     }
 }
 
+/// The active registry, for code that has no `I18n` to hand.
+///
+/// The document converter runs deep inside a rendering pass and threading a
+/// registry down to it would mean a parameter on every function between here
+/// and there for three strings. It reads the locale that was last set and
+/// falls back to English, which is what the registry does anyway.
+static DOCUMENT_LOCALE: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// Set the locale used for text inside rendered documents.
+pub fn set_document_locale(code: &str) {
+    if let Ok(mut locale) = DOCUMENT_LOCALE.write() {
+        *locale = Some(code.to_string());
+    }
+}
+
+/// Translate one of the terms the document converter puts into its output.
+///
+/// Falls back to the key's English default rather than to the key itself, so a
+/// missing translation reads as "Image" and never as "document.image".
+pub fn translate_document_term(key: &str) -> String {
+    let code = DOCUMENT_LOCALE
+        .read()
+        .ok()
+        .and_then(|locale| locale.clone())
+        .unwrap_or_else(|| "en".to_string());
+    I18n::with_locale(&code).t(key)
+}
+
 /// Internationalization (i18n) registry for UI string translations.
 pub struct I18n {
     active_locale: Locale,
@@ -523,6 +551,12 @@ impl I18n {
     fn register_english_defaults(&mut self) {
         let mut en = HashMap::new();
         for (k, v) in [
+            // Read aloud inside a rendered message body. Keyed rather than
+            // written as literals so a screen reader user working in another
+            // language does not hear these three words in English.
+            ("document.image", "Image"),
+            ("document.figure", "Figure"),
+            ("document.table_marker", "Table marker"),
             ("menu.file", "File"),
             ("menu.edit", "Edit"),
             ("menu.view", "View"),

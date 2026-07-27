@@ -11,6 +11,7 @@ pub mod application;
 
 // Service Layer
 pub mod service;
+pub mod vendor;
 
 // Data Layer
 pub mod data;
