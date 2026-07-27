@@ -498,7 +498,7 @@ impl WxMailApp {
 
             // The callback runs while wxWidgets paints, so it reads what is
             // already in memory and never touches the database.
-            msg_list.set_virtual_text_callback({
+            let callback_registered = msg_list.set_virtual_text_callback({
                 let state = state.clone();
                 let column_layout = column_layout.clone();
                 move |row, column| {
@@ -515,6 +515,11 @@ impl WxMailApp {
                     }
                 }
             });
+            if !callback_registered {
+                tracing::error!(
+                    "Virtual text callback was refused; the message list will render empty"
+                );
+            }
 
             tracing::info!("Message list created, setting up WebView");
 
@@ -1459,9 +1464,15 @@ impl WxMailApp {
                         _ if id == ID_SORT_SUBJECT_ZA => apply_sort(&state, &ui_tx, &runtime, MailSortOption::SubjectZA),
                         _ if id == ID_SORT_UNREAD_FIRST => apply_sort(&state, &ui_tx, &runtime, MailSortOption::UnreadFirst),
                         _ if id == ID_LOAD_SCALE_SAMPLE => {
+                            tracing::info!(
+                                "Generating a sample mailbox of {} messages",
+                                SAMPLE_MAILBOX_SIZE
+                            );
                             let generated = sample_mailbox(SAMPLE_MAILBOX_SIZE);
-                            let tx = ui_tx.clone();
-                            let _ = tx.try_send(UIUpdate::MessagesLoaded(generated));
+                            tracing::info!("Generated {} messages, sending to the list", generated.len());
+                            if let Err(e) = ui_tx.try_send(UIUpdate::MessagesLoaded(generated)) {
+                                tracing::error!("Sample mailbox never reached the list: {}", e);
+                            }
                         }
                         _ if id == ID_ABOUT => show_about_dialog(&frame),
                         _ => tracing::debug!("Unhandled menu ID: {:?}", id),
@@ -2239,8 +2250,8 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // Virtual mode: tell the control how many rows exist and let it
             // ask for the ones it paints. Inserting them would be a quarter of
             // a million native calls to render thirty visible lines.
+            tracing::info!("Message list now holds {} rows", messages.len());
             msg_list.set_item_count(messages.len() as i64);
-            msg_list.refresh_items(0, messages.len().saturating_sub(1) as i64);
             let unread = messages.iter().filter(|m| !m.read).count();
             let msg = format!("{} messages, {} unread", messages.len(), unread);
             frame.set_status_text(&msg, 0);
