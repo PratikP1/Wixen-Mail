@@ -299,6 +299,32 @@ overrides deferred until someone asks.
 Steps 1 and 2 need no credentials and no protocol work, which is why they come
 first.
 
+## Open: feedback channels
+
+Requested during this design: sounds for events rather than spoken announcements,
+configurable, so that speech is not the only way the application tells you
+something.
+
+Worth separating two audiences that get merged easily. An earcon serves a blind
+user well and is faster than a sentence. It does **nothing** for a deaf-blind
+user, who reads braille. Speech does nothing for them either. So the requirement
+is not "sounds instead of announcements", it is one event model feeding four
+independently configurable channels:
+
+| Channel | Serves | Status today |
+|---------|--------|--------------|
+| Speech | Blind users | Built, paced and bounded |
+| Earcon | Blind users who want brevity | Not started |
+| Braille | Deaf-blind users, and blind users who prefer it | **Nothing exists** |
+| Visual | Deaf and sighted users | Status bar only |
+
+Braille is the gap that matters most, because it is the only channel a deaf-blind
+user has and the codebase has no handling for it at all. On Windows it rides on
+the screen reader, which is also a warning: a related project found that
+suppressing a screen reader handler silently killed the braille output riding on
+the same channel. Anything that intercepts or replaces speech has to be checked
+against braille, not assumed.
+
 ## What this plan does not solve
 
 Threading. The data model carries thread identifiers and nothing groups by them.
