@@ -27,7 +27,18 @@ struct FixedName {
 }
 
 impl AccessibleImpl for FixedName {
-    fn get_name(&self, _child_id: i32) -> (AccStatus, Option<String>) {
+    /// Name the control itself, and nothing inside it.
+    ///
+    /// Child zero is the control. Anything else is a row, a tree node, or a
+    /// notebook tab asking for its own name, and answering those with the
+    /// control's name gave every one of them the same label. That is why the
+    /// settings tabs stayed silent even after child enumeration was restored:
+    /// enumeration worked, and then every tab reported itself as "Settings
+    /// categories".
+    fn get_name(&self, child_id: i32) -> (AccStatus, Option<String>) {
+        if child_id != 0 {
+            return (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, None);
+        }
         (ffi::wxd_AccStatus_WXD_ACC_OK, Some(self.name.clone()))
     }
 
@@ -88,6 +99,19 @@ mod tests {
         let (status, name) = named.get_name(0);
         assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_OK);
         assert_eq!(name.as_deref(), Some("Messages"));
+    }
+
+    #[test]
+    fn test_children_name_themselves() {
+        // A list row, a tree node and a notebook tab each ask for their own
+        // name through the parent. Answering with the control's name labels
+        // every one of them identically.
+        let named = FixedName {
+            name: "Settings categories".to_string(),
+        };
+        let (status, name) = named.get_name(1);
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED);
+        assert!(name.is_none());
     }
 
     #[test]

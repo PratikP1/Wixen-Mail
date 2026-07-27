@@ -739,22 +739,33 @@ impl WxMailApp {
 
             // ── Module switching helper ──────────────────────────────────
             // Collect sidebar and content panel references for switching
-            let sidebar_panels: Vec<Panel> = vec![
-                mail_sidebar,
-                cal_sidebar,
-                contacts_sidebar,
-                reminders_sidebar,
-                tasks_sidebar,
-                notes_sidebar,
+            // Each panel is tagged with the module it belongs to and then sorted
+            // into PimModule::index() order. These lists used to be written by
+            // hand in construction order, which put calendar at index 1 and
+            // contacts at index 2 while the enum says the opposite, so choosing
+            // contacts opened the calendar and choosing calendar opened
+            // contacts. Carrying the tag makes that impossible to get wrong.
+            let mut sidebars = vec![
+                (PimModule::Mail, mail_sidebar),
+                (PimModule::Calendar, cal_sidebar),
+                (PimModule::Contacts, contacts_sidebar),
+                (PimModule::Reminders, reminders_sidebar),
+                (PimModule::Tasks, tasks_sidebar),
+                (PimModule::Notes, notes_sidebar),
             ];
-            let content_panels: Vec<Panel> = vec![
-                mail_content,
-                cal_content,
-                contacts_content,
-                reminders_content,
-                tasks_content,
-                notes_content,
+            sidebars.sort_by_key(|(module, _)| module.index());
+            let sidebar_panels: Vec<Panel> = sidebars.into_iter().map(|(_, panel)| panel).collect();
+
+            let mut contents = vec![
+                (PimModule::Mail, mail_content),
+                (PimModule::Calendar, cal_content),
+                (PimModule::Contacts, contacts_content),
+                (PimModule::Reminders, reminders_content),
+                (PimModule::Tasks, tasks_content),
+                (PimModule::Notes, notes_content),
             ];
+            contents.sort_by_key(|(module, _)| module.index());
+            let content_panels: Vec<Panel> = contents.into_iter().map(|(_, panel)| panel).collect();
 
             // Module switch function — updates panels, title bar, status, screen reader
             let do_switch_module = {
@@ -765,6 +776,18 @@ impl WxMailApp {
                 let switch_cache = message_cache.clone();
                 let switch_tx = ui_tx.clone();
                 move |module: PimModule| {
+                    // Pressing the shortcut for the module you are already in
+                    // is a question, not a request. Saying where you are
+                    // answers it; silently redoing the switch does not, and
+                    // rebuilding the panels would move focus for no reason.
+                    if lock_state(&state).active_module == module {
+                        let _ = a11y.announce(
+                            &format!("Already on {}", module.label().replace('&', "")),
+                            crate::presentation::accessibility::announcements::Priority::Normal,
+                        );
+                        return;
+                    }
+
                     let idx = module.index();
                     // Hide all, show target
                     for (i, sp) in sidebar_panels.iter().enumerate() {
