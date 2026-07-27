@@ -618,12 +618,29 @@ impl WxMailApp {
                 .with_backend(WebViewBackend::Edge)
                 .build();
             set_accessible_name(&preview, "Email preview");
+            // The preview never takes focus.
+            //
+            // A WebView hosts an out of process browser. Once focus is inside
+            // it, Escape, F6 and every menu accelerator are consumed there and
+            // never reach this application, and if the browser has the host
+            // window rather than the document, the keys reach nothing at all:
+            // no screen reader output, no keyboard route back, and the system
+            // menu the only way out. Keeping focus off it is the only fix that
+            // does not depend on the browser cooperating.
+            //
+            // Nothing is lost by this. The preview is a visual surface; the
+            // way this application reads a message aloud is Space and
+            // Shift+Space on the list, which is where focus stays.
+            preview.set_can_focus(false);
             tracing::info!("WebView widget created");
 
             // Only configure advanced WebView2 features when the backend is available
             if webview_available {
                 preview.enable_context_menu(false);
                 preview.enable_access_to_dev_tools(false);
+                // Stops the browser claiming F5, F6, Ctrl+F and the rest,
+                // which are this application's keys, not its content's.
+                preview.enable_browser_accelerator_keys(false);
 
                 // Block all navigation — open links in default browser instead
                 preview.on_navigating(|event: WebViewEventData| {
@@ -676,8 +693,12 @@ impl WxMailApp {
                 // The page listens for Escape and F6 and posts back to the
                 // host, which moves focus to the message list. It is the same
                 // channel the context menu already uses.
-                preview.add_script_message_handler("contextMenu");
-                preview.add_user_script(
+                if !preview.add_script_message_handler("contextMenu") {
+                    tracing::error!(
+                        "Preview script channel refused; the in-page way out will not work"
+                    );
+                }
+                let script_added = preview.add_user_script(
                     r#"document.addEventListener('contextmenu', function(e) {
     e.preventDefault();
     var link = e.target.closest('a');
@@ -693,6 +714,11 @@ document.addEventListener('keydown', function(e) {
 }, true);"#,
                     WebViewUserScriptInjectionTime::AtDocumentStart,
                 );
+                if !script_added {
+                    tracing::error!(
+                        "Preview user script refused; Escape will not leave the preview"
+                    );
+                }
 
                 // Handle context menu messages from JS — store link href in state,
                 // show popup menu, let events bubble to frame.on_menu handler.
@@ -1654,7 +1680,7 @@ document.addEventListener('keydown', function(e) {
                             // there, and F6 now reaches somewhere new.
                             let _ = a11y.announce(
                                 if preview_visible.get() {
-                                    "Preview pane shown. F6 moves to it, Escape comes back."
+                                    "Preview pane shown. Space reads the message."
                                 } else {
                                     "Preview pane hidden"
                                 },
@@ -1772,17 +1798,14 @@ document.addEventListener('keydown', function(e) {
                             // is showing. Skipping a hidden pane rather than
                             // focusing something invisible, which is where a
                             // keyboard user gets stranded.
+                            // Folders and messages only. The preview is not a
+                            // focus stop: it is a browser that swallows every
+                            // key once it has focus, so cycling into it is
+                            // cycling into a dead end.
                             if folder_tree.has_focus() {
                                 msg_list.set_focus();
                                 let _ = a11y.announce_topic(
                                     "Messages",
-                                    crate::presentation::accessibility::announcements::Priority::Low,
-                                    "pane",
-                                );
-                            } else if msg_list.has_focus() && preview_visible.get() {
-                                preview.set_focus();
-                                let _ = a11y.announce_topic(
-                                    "Message preview",
                                     crate::presentation::accessibility::announcements::Priority::Low,
                                     "pane",
                                 );
@@ -3175,14 +3198,13 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // the key did nothing.
             preview.set_page(html, "about:blank");
             preview.show(true);
-            // Focus moves here deliberately: opening a conversation is a
-            // request to read it. The way back is said in the same breath,
-            // because a WebView eats the keys that would normally reveal it.
-            preview.set_focus();
-            let _ = a11y.announce(
-                "Conversation opened. Escape goes back to the message list.",
-                Priority::Normal,
-            );
+            // Rendered for anyone looking at it, and read aloud for anyone not.
+            // Focus stays on the list: moving it into the browser is what
+            // stranded people there, and the reading channel does not need
+            // focus to work.
+            let renderer = HtmlRenderer::new();
+            let _ = a11y.announce("Conversation opened", Priority::Normal);
+            let _ = a11y.announce_content(&renderer.html_to_plain_text(html));
         }
         UIUpdate::MessageBodyLoaded(body) => {
             {

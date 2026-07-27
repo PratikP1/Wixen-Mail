@@ -58,20 +58,22 @@ announcements.
 
 ### The Preview Pane
 
-The preview is a WebView, which hosts a browser and swallows the keys that
-normally move focus back to the application. Two things follow from that, and
-both are deliberate.
+The preview is a visual pane. It never takes focus, and `F6` does not stop
+there.
 
-Showing the pane with `Alt+2` leaves focus on the message list. You go to the
-preview when you mean to, with `F6`.
+That is deliberate. The preview is a WebView, which hosts a browser: once focus
+is inside it, the browser consumes `Esc`, `F6` and every menu accelerator, and
+when it holds its host window rather than the page, those keys reach nothing at
+all. There is no way for this application to intercept them first, so the only
+reliable answer is to keep focus out.
 
-Every preview page carries two ways back, because inside a WebView one is not
-enough:
+To read a message, use `Space` on the message list: once for the summary, again
+for the whole message, or `Shift+Space` for the whole message outright. That
+path works with the screen reader you already have configured, and you never
+leave the list.
 
-| Action | Shortcut | Description |
-|--------|----------|-------------|
-| Back to the message list | `Esc` | Handled inside the page |
-| Back to the message list | `Tab` then `Enter` | The first focusable thing on every preview page is a "Back to message list" button |
+A readable, focusable text view of the message body is the proper long-term
+answer and is not built yet.
 
 ### Conversations
 
@@ -114,7 +116,7 @@ in the heading, as in "Reply, level 8, from Ada Lovelace".
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Next Pane | `F6` | Move focus between folders, messages, and preview. A hidden preview is skipped rather than focused. |
+| Next Pane | `F6` | Move focus between the folder tree and the message list |
 | Navigate Forward | `Tab` | Move to next element in current pane |
 | Navigate Backward | `Shift+Tab` | Move to previous element in current pane |
 | Navigate List | `↑` `↓` | Move up/down in lists |
@@ -167,7 +169,7 @@ in the heading, as in "Reply, level 8, from Ada Lovelace".
 | Module Buttons | `Alt+3` | Show or hide the module navigation buttons |
 | Columns | `F8` | Choose which message list columns are shown and in what order |
 | Refresh Folder | `F5` | Read the current folder again from the local store |
-| Next Pane | `F6` | Move focus between folders, messages, and preview |
+| Next Pane | `F6` | Move focus between the folder tree and the message list |
 | Thread View Toggle | `Ctrl+T` | Toggle conversation threading on and off |
 | Check Mail | `F9` | Check for new messages |
 
@@ -396,7 +398,7 @@ the field accelerators for letters without making anything more reachable.
 
 ### Efficient Workflow
 
-1. **Use `F6` to move between panes** - Much faster than using the mouse
+1. **Use `F6` to move between the folder tree and the message list** - Much faster than using the mouse
 2. **Learn the message action shortcuts** - `Ctrl+R`, `Ctrl+L`, `Delete` are the most common
 3. **Press `Space` on any row** to hear the item, and again to hear all of it. It works the same in every module.
 4. **Use `Ctrl+Shift+N` to jump to unread messages** - Quickly find messages that need attention. It wraps at the end and tells you when there are none left.
