@@ -22,6 +22,7 @@ use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::date_display;
 use crate::presentation::message_columns::{self, ColumnLayout, MessageColumn};
 use crate::presentation::message_rows;
+use crate::presentation::read_aloud::{self, ReadAloud};
 use async_channel::{Receiver, Sender};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -34,7 +35,6 @@ use wxdragon::event::webview_events::WebViewEventData;
 use wxdragon::event::window_events::WindowEvents;
 use wxdragon::event::WebViewEvents;
 use wxdragon::prelude::*;
-use wxdragon::widgets::list_ctrl::ListCtrlEventData;
 use wxdragon::widgets::{WebView, WebViewBackend, WebViewUserScriptInjectionTime};
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -130,6 +130,8 @@ pub struct WxUIState {
     pub contacts: Vec<ContactItem>,
     pub notes: Vec<NoteItem>,
     pub reminders: Vec<ReminderItem>,
+    pub tasks: Vec<TaskItem>,
+    pub events: Vec<CalendarEventItem>,
     /// Which note the editor is currently showing, so a save knows what it is
     /// writing back to.
     pub selected_note_id: Option<String>,
@@ -157,6 +159,8 @@ impl Default for WxUIState {
             contacts: Vec::new(),
             notes: Vec::new(),
             reminders: Vec::new(),
+            tasks: Vec::new(),
+            events: Vec::new(),
             selected_note_id: None,
         }
     }
@@ -757,6 +761,55 @@ impl WxMailApp {
                 notes_tree: notes_sb.tree,
             };
 
+            // Space cycles short then full on the item under the cursor;
+            // Shift+Space goes straight to full. One cycle shared across the
+            // modules, keyed by module and item id, so moving anywhere starts
+            // again at the short form.
+            let space_cycle = Rc::new(RefCell::new(read_aloud::SpaceCycle::new()));
+
+            // The same two keys in every module. One key learned once, not six
+            // that each behave a little differently.
+            wire_read_aloud(&pim_refs.contact_list, &a11y, &space_cycle, "contacts", {
+                let state = state.clone();
+                move |index| {
+                    let s = lock_state(&state);
+                    let item = s.contacts.get(index)?;
+                    Some((item.read_id(), item.read_short(), item.read_full()))
+                }
+            });
+            wire_read_aloud(&pim_refs.cal_event_list, &a11y, &space_cycle, "calendar", {
+                let state = state.clone();
+                move |index| {
+                    let s = lock_state(&state);
+                    let item = s.events.get(index)?;
+                    Some((item.read_id(), item.read_short(), item.read_full()))
+                }
+            });
+            wire_read_aloud(&pim_refs.reminder_list, &a11y, &space_cycle, "reminders", {
+                let state = state.clone();
+                move |index| {
+                    let s = lock_state(&state);
+                    let item = s.reminders.get(index)?;
+                    Some((item.read_id(), item.read_short(), item.read_full()))
+                }
+            });
+            wire_read_aloud(&pim_refs.task_list, &a11y, &space_cycle, "tasks", {
+                let state = state.clone();
+                move |index| {
+                    let s = lock_state(&state);
+                    let item = s.tasks.get(index)?;
+                    Some((item.read_id(), item.read_short(), item.read_full()))
+                }
+            });
+            wire_read_aloud(&pim_refs.note_list, &a11y, &space_cycle, "notes", {
+                let state = state.clone();
+                move |index| {
+                    let s = lock_state(&state);
+                    let item = s.notes.get(index)?;
+                    Some((item.read_id(), item.read_short(), item.read_full()))
+                }
+            });
+
             // Add all content panels to right sizer (only mail visible)
             right_sizer.add(&mail_content, 1, SizerFlag::Expand | SizerFlag::All, 0);
             right_sizer.add(&cal_content, 1, SizerFlag::Expand | SizerFlag::All, 0);
@@ -1297,11 +1350,20 @@ impl WxMailApp {
                 let state = state.clone();
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
+                let a11y = a11y.clone();
                 move |event| {
                     let idx = event.get_item_index() as usize;
-                    {
+                    let in_thread = {
                         let mut s = lock_state(&state);
                         s.selected_message_index = Some(idx);
+                        s.messages.get(idx).is_some_and(|m| m.thread_id.is_some())
+                    };
+                    // Landing on a conversation is signalled rather than
+                    // spoken, so it can be a short tone for anyone who does
+                    // not want another sentence on every row, and words for
+                    // anyone who does. The choice is in Settings, not here.
+                    if in_thread {
+                        let _ = a11y.signal(FeedbackEvent::ThreadLanded, "");
                     }
                     let tx = ui_tx.clone();
                     runtime.spawn(async move {
@@ -1358,23 +1420,19 @@ impl WxMailApp {
             });
 
             // ── Spacebar read-aloud ─────────────────────────────────────
-            msg_list.on_key_down({
+            // ── Space and Shift+Space read the item under the cursor ────
+            //
+            // A list row is read as its visible columns and nothing else, so
+            // everything the record holds beyond them is invisible until the
+            // item is opened. The same two keys answer that in all six
+            // modules: Space cycles short then full, Shift+Space goes
+            // straight to full.
+            wire_read_aloud(&msg_list, &a11y, &space_cycle, "mail", {
                 let state = state.clone();
-                let a11y = a11y.clone();
-                move |event: ListCtrlEventData| {
-                    // Spacebar (key code 32) — read current message aloud via screen reader
-                    if event.get_key_code() == Some(32) {
-                        {
-                            let s = lock_state(&state);
-                            if !s.message_preview.is_empty() {
-                                let renderer = HtmlRenderer::new();
-                                let plain = renderer.html_to_plain_text(&s.message_preview);
-                                // Message text, not interface chatter: this is
-                                // what mute has to be able to stop.
-                                let _ = a11y.announce_content(&plain);
-                            }
-                        }
-                    }
+                move |index| {
+                    let s = lock_state(&state);
+                    let message = s.messages.get(index)?;
+                    Some((message.read_id(), message.read_short(), message.read_full()))
                 }
             });
 
@@ -2080,6 +2138,63 @@ fn apply_columns(list: &ListCtrl, layout: &ColumnLayout) {
     }
 }
 
+/// Give a list Space and Shift+Space read-aloud, the same way in every module.
+///
+/// One helper rather than six copies, because the point of the key is that it
+/// behaves identically wherever you are (WCAG 3.2.3, 3.2.4). Six hand-written
+/// handlers is six chances for one module to drift.
+///
+/// `lookup` turns the selected row into the item's identity and its two
+/// readings. Returning `None` means there is nothing selected, and the key does
+/// nothing rather than reading the wrong row.
+///
+/// Bound through the generic keyboard event rather than the list control's own,
+/// because the list event carries a key code and no modifier state, and telling
+/// Space from Shift+Space is the whole point.
+fn wire_read_aloud<F>(
+    list: &ListCtrl,
+    a11y: &Arc<Accessibility>,
+    cycle: &Rc<RefCell<read_aloud::SpaceCycle>>,
+    module: &'static str,
+    lookup: F,
+) where
+    F: Fn(usize) -> Option<(String, String, String)> + 'static,
+{
+    let list_handle = *list;
+    let a11y = a11y.clone();
+    let cycle = cycle.clone();
+    list.bind_internal(EventType::KEY_DOWN, move |event| {
+        // Skipped in every path, so the list keeps its own use of Space and
+        // of every other key. Read-aloud is an addition, not a replacement.
+        event.skip(true);
+        if event.get_key_code() != Some(32) {
+            return;
+        }
+        let selected = list_handle.get_first_selected_item();
+        if selected < 0 {
+            return;
+        }
+        let Some((id, short, full)) = lookup(selected as usize) else {
+            return;
+        };
+        let depth = if event.shift_down() {
+            cycle.borrow_mut().press_full(module, &id)
+        } else {
+            cycle.borrow_mut().press(module, &id)
+        };
+        let text = match depth {
+            read_aloud::Depth::Short => short,
+            read_aloud::Depth::Full => full,
+        };
+        if text.trim().is_empty() {
+            return;
+        }
+        // Record content, not interface chatter. This is what mute exists to
+        // stop: private mail and personal notes read aloud in a shared room.
+        let _ = a11y.announce_content(&text);
+    });
+}
+
 /// Read a module's records out of the cache and send them to the UI.
 ///
 /// Every panel outside mail was built, wired to a `UIUpdate` variant, and then
@@ -2724,6 +2839,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
         }
         UIUpdate::CalendarEventsLoaded(events) => {
+            lock_state(state).events = events.clone();
             pim.cal_date_label.set_label(&calendar_range_label(events));
             pim.cal_event_list.delete_all_items();
             for (i, e) in events.iter().enumerate() {
@@ -2855,6 +2971,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             frame.set_status_text(&msg, 0);
         }
         UIUpdate::TasksLoaded(tasks) => {
+            lock_state(state).tasks = tasks.clone();
             pim.task_list.delete_all_items();
             for (i, t) in tasks.iter().enumerate() {
                 let idx = i as i64;

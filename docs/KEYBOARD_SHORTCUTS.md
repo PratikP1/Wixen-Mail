@@ -32,6 +32,30 @@ and focus moves to that module's content area.
 | Tasks | `Ctrl+Shift+5` | Switch to the tasks module |
 | Notes | `Ctrl+Shift+6` | Switch to the notes module |
 
+### Reading the Item Under the Cursor
+
+The same two keys work in mail, contacts, calendar, reminders, tasks, and
+notes. A list row is read as its visible columns and nothing else, so
+everything else the record holds is invisible until you open it. These keys
+answer that without leaving the list.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Read the short form | `Space` | Subject, sender, and snippet in mail; the equivalent line in every other module |
+| Read the whole item | `Space` again | Adds recipients, dates, flags, attachments, and any description the record holds |
+| Read the whole item outright | `Shift+Space` | The full reading without counting presses |
+
+Pressing `Space` a third time goes back to the short form. Moving to another
+row starts again at the short form, so the same key always gives the same
+answer for a row you have just arrived at.
+
+There is no double-press timing window. The second press does the second thing
+however long you took, because a timing window is a timing trap (WCAG 2.2.1)
+and locks out anyone who types slowly.
+
+`Ctrl+Shift+M` mutes this reading without silencing status and error
+announcements.
+
 ### Speech Control
 
 | Action | Shortcut | Description |
