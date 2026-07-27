@@ -1524,7 +1524,19 @@ impl WxMailApp {
                     let _ = a11y.flush_announcements();
                 }
             });
-            timer.start(POLL_MS, false);
+            if !timer.start(POLL_MS, false) {
+                tracing::error!("UI timer refused to start; no update will ever reach the window");
+            }
+
+            // The timer has to outlive this setup function. Its Drop calls
+            // wxd_Timer_Destroy, so letting it fall out of scope here stopped
+            // it on the line after it started, and every UIUpdate ever sent was
+            // discarded: folders, messages, bodies, sync results, the lot.
+            //
+            // It must live for as long as the window does and there is no owner
+            // available to hand it to, so it is deliberately leaked. One object,
+            // for the lifetime of the process.
+            std::mem::forget(timer);
 
             // ── Initial status ──────────────────────────────────────────
             {
