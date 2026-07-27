@@ -1953,7 +1953,10 @@ document.addEventListener('keydown', function(e) {
                             }
                         }
                         _ if id == ID_QUIT => frame.close(false),
-                        _ if id == ID_CHECK_MAIL => send_status(&ui_tx, &runtime, "Checking for new mail..."),
+                        _ if id == ID_CHECK_MAIL => {
+                            send_status(&ui_tx, &runtime, "Checking for new mail...");
+                            spawn_mail_sync(&state, &ui_tx, &runtime);
+                        }
                         _ if id == ID_NEW_MESSAGE => open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, ComposeMode::New),
                         _ if id == ID_REPLY => {
                             let (to, subj, body) = msg_info(&state);
@@ -2619,6 +2622,23 @@ fn wire_read_aloud<F>(
 /// Runs on the UI thread rather than in a task: `MessageCache` wraps a rusqlite
 /// connection and is not `Sync`. The channel is unbounded, so sending never
 /// blocks.
+/// The folder tree, as the updates that redraw it.
+///
+/// Shared by the ordinary module load and by a finished mail sync, which both
+/// need the tree to say what the cache now holds. Two copies of it would be two
+/// places for the id map and the labels to fall out of step, and a tree whose
+/// labels do not match its ids opens the wrong folder.
+fn folder_tree_updates(
+    cache: &MessageCache,
+    account_id: &str,
+) -> crate::common::Result<Vec<UIUpdate>> {
+    let folders = cache.get_folders_for_account(account_id)?;
+    Ok(vec![
+        UIUpdate::FolderIdsLoaded(folders.iter().map(|f| (f.name.clone(), f.id)).collect()),
+        UIUpdate::FoldersLoaded(folders.into_iter().map(|f| f.name).collect()),
+    ])
+}
+
 fn load_module_data(
     module: PimModule,
     cache: &Option<Arc<MessageCache>>,
@@ -2640,15 +2660,8 @@ fn load_module_data(
         // Mail's folder list came from nowhere: the handler for
         // FoldersLoaded existed and nothing ever sent one, so the tree was
         // empty in every build no matter what had been synced.
-        PimModule::Mail => match cache.get_folders_for_account(&account_id) {
-            Ok(folders) => {
-                updates.push(UIUpdate::FolderIdsLoaded(
-                    folders.iter().map(|f| (f.name.clone(), f.id)).collect(),
-                ));
-                updates.push(UIUpdate::FoldersLoaded(
-                    folders.into_iter().map(|f| f.name).collect(),
-                ));
-            }
+        PimModule::Mail => match folder_tree_updates(cache, &account_id) {
+            Ok(folder_updates) => updates.extend(folder_updates),
             Err(e) => failures.push(format!("folders: {}", e)),
         },
         PimModule::Calendar => {
@@ -3739,6 +3752,182 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
             .map(|v| v.len())
             .unwrap_or(0);
         let _ = tx.send(UIUpdate::OutboxQueueCount(remaining)).await;
+    });
+}
+
+/// Fetch mail from the account's IMAP server into the cache.
+///
+/// Runs on a blocking thread because the cache holds a SQLite connection that
+/// is not `Sync`, which is the same reason the other syncs do.
+///
+/// Progress is reported as it happens rather than only at the end. A first sync
+/// of a large mailbox takes a while, and silence for a minute is
+/// indistinguishable from the application having stopped for somebody who
+/// cannot see that anything is happening.
+fn spawn_mail_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    let (accounts, account_id) = {
+        let s = lock_state(state);
+        (s.accounts.clone(), s.active_account_id.clone())
+    };
+    let account = account_id
+        .as_ref()
+        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned())
+        .or_else(|| accounts.first().cloned());
+
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        let fail = |reason: String| {
+            handle.block_on(async {
+                let _ = tx.send(UIUpdate::ErrorOccurred(reason)).await;
+                let _ = tx
+                    .send(UIUpdate::ConnectionStatusChanged(
+                        ConnectionStatus::Disconnected,
+                    ))
+                    .await;
+            });
+        };
+
+        let Some(account) = account else {
+            fail("Add an account before checking for mail".to_string());
+            return;
+        };
+        // Refused here rather than at the server, where the failure would be an
+        // authentication error the user cannot act on.
+        if account.use_oauth {
+            fail(
+                "This account signs in with OAuth, which fetching mail does not support yet"
+                    .to_string(),
+            );
+            return;
+        }
+        if account.imap_server.trim().is_empty() {
+            fail(format!("{} has no IMAP server set", account.name));
+            return;
+        }
+        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
+            fail(format!(
+                "{} has an IMAP port that is not a number: {}",
+                account.name, account.imap_port
+            ));
+            return;
+        };
+
+        let Some(dir) = dirs::cache_dir().map(|d| d.join("wixen-mail")) else {
+            fail("No cache directory available".to_string());
+            return;
+        };
+        let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
+            Ok(cache) => cache,
+            Err(e) => {
+                fail(format!("Cache error: {}", e));
+                return;
+            }
+        };
+
+        say(UIUpdate::ConnectionStatusChanged(
+            ConnectionStatus::Connecting,
+        ));
+        say(UIUpdate::StatusUpdated(format!(
+            "Connecting to {}...",
+            account.imap_server
+        )));
+
+        let controller = MailController::new();
+        if let Err(e) = handle.block_on(controller.connect_imap(
+            account.imap_server.clone(),
+            port,
+            account.username.clone(),
+            account.password.clone(),
+            account.imap_use_tls,
+        )) {
+            fail(e.to_string());
+            return;
+        }
+        say(UIUpdate::ConnectionStatusChanged(
+            ConnectionStatus::Connected,
+        ));
+
+        let folders = match handle.block_on(controller.fetch_folders()) {
+            Ok(folders) => folders,
+            Err(e) => {
+                fail(e.to_string());
+                return;
+            }
+        };
+        let stored =
+            match crate::application::mail_sync::store_folders(&cache, &account.id, &folders) {
+                Ok(stored) => stored,
+                Err(e) => {
+                    fail(format!("Could not store the folder list: {}", e));
+                    return;
+                }
+            };
+        say(UIUpdate::StatusUpdated(format!(
+            "{} folders on the server",
+            stored.len()
+        )));
+
+        let worth_syncing = crate::application::mail_sync::folders_to_sync(&folders);
+        let mut fetched = 0usize;
+        let mut problems: Vec<String> = Vec::new();
+
+        for folder in worth_syncing {
+            let Some((_, folder_id)) = stored.iter().find(|(f, _)| f.path == folder.path) else {
+                continue;
+            };
+            say(UIUpdate::StatusUpdated(format!(
+                "Checking {}...",
+                folder.name
+            )));
+            match handle.block_on(crate::application::mail_sync::sync_folder(
+                &controller,
+                &cache,
+                folder,
+                *folder_id,
+                crate::application::mail_sync::INITIAL_FETCH_LIMIT,
+            )) {
+                Ok(result) => {
+                    fetched += result.fetched;
+                    say(UIUpdate::StatusUpdated(format!(
+                        "{}: {} of {} messages",
+                        result.folder, result.fetched, result.total_on_server
+                    )));
+                }
+                // One folder that will not open is not a reason to abandon the
+                // rest, and naming it is the difference between a fixable
+                // problem and a sync that quietly did less than it said.
+                Err(e) => problems.push(format!("{}: {}", folder.name, e)),
+            }
+        }
+
+        let _ = handle.block_on(controller.disconnect_imap());
+
+        // The tree reads from the cache, which has changed underneath it.
+        match folder_tree_updates(&cache, &account.id) {
+            Ok(updates) => updates.into_iter().for_each(&say),
+            Err(e) => problems.push(format!("folder list: {}", e)),
+        }
+
+        if !problems.is_empty() {
+            say(UIUpdate::ErrorOccurred(format!(
+                "Some folders could not be read. {}",
+                problems.join("; ")
+            )));
+        }
+        say(UIUpdate::StatusUpdated(format!(
+            "Mail check finished. {} new {}.",
+            fetched,
+            if fetched == 1 { "message" } else { "messages" }
+        )));
+        say(UIUpdate::ConnectionStatusChanged(
+            ConnectionStatus::Disconnected,
+        ));
     });
 }
 

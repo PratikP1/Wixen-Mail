@@ -56,8 +56,23 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare(
+                // Ordered by what the folder is for, then by name. Alphabetical
+                // order alone puts Archive and Drafts above the inbox, so
+                // somebody arrowing down the tree passes them both every time
+                // to reach their mail. The cases match `FolderType::tree_order`.
                 "SELECT id, account_id, name, path, folder_type, unread_count, total_count
-             FROM folders WHERE account_id = ?1 ORDER BY name",
+             FROM folders WHERE account_id = ?1
+             ORDER BY CASE lower(folder_type)
+                          WHEN 'inbox' THEN 0
+                          WHEN 'drafts' THEN 1
+                          WHEN 'sent' THEN 2
+                          WHEN 'archive' THEN 3
+                          WHEN 'spam' THEN 4
+                          WHEN 'junk' THEN 4
+                          WHEN 'trash' THEN 5
+                          ELSE 6
+                      END,
+                      lower(name)",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
 
@@ -107,5 +122,60 @@ mod tests {
         let retrieved = cache.get_folder("test@example.com", "INBOX").unwrap();
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().name, "INBOX");
+    }
+
+    #[test]
+    fn test_the_tree_lists_the_inbox_first_and_ordinary_folders_last() {
+        // Alphabetical order alone means arrowing past Archive and Drafts to
+        // reach the inbox, every time.
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let cache = MessageCache::new(
+            env::temp_dir().join(format!("wixen_folder_order_{nanos}")),
+            None,
+        )
+        .unwrap();
+
+        for (name, folder_type) in [
+            ("Zebra project", "Custom"),
+            ("Archive", "Archive"),
+            ("INBOX", "Inbox"),
+            ("Deleted Items", "Trash"),
+            ("Drafts", "Drafts"),
+            ("Apple project", "Custom"),
+        ] {
+            cache
+                .save_folder(&CachedFolder {
+                    id: 0,
+                    account_id: "acc".to_string(),
+                    name: name.to_string(),
+                    path: name.to_string(),
+                    folder_type: folder_type.to_string(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .unwrap();
+        }
+
+        let order: Vec<String> = cache
+            .get_folders_for_account("acc")
+            .unwrap()
+            .into_iter()
+            .map(|f| f.name)
+            .collect();
+        assert_eq!(
+            order,
+            vec![
+                "INBOX",
+                "Drafts",
+                "Archive",
+                "Deleted Items",
+                "Apple project",
+                "Zebra project",
+            ]
+        );
     }
 }

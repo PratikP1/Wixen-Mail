@@ -11,6 +11,7 @@ pub mod contacts;
 pub mod contacts_sync;
 pub mod filters;
 pub mod mail_controller;
+pub mod mail_sync;
 pub mod messages;
 pub mod notes;
 pub mod reminders;

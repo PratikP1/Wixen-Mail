@@ -31,7 +31,164 @@ pub struct MessageListRow {
     pub has_attachments: bool,
 }
 
+/// A message as a sync knows it: headers and flags, and no body yet.
+///
+/// Separate from `CachedMessage` because a sync has different things in hand.
+/// It knows the size, the reference chain and whether the server said there
+/// are attachments; it does not have the body, and writing `NULL` over a body
+/// that is already cached would throw away the only copy.
+#[derive(Debug, Clone)]
+pub struct IncomingMessage {
+    pub folder_id: i64,
+    pub uid: u32,
+    pub message_id: String,
+    pub subject: String,
+    pub from_addr: String,
+    pub to_addr: String,
+    pub cc: Option<String>,
+    /// Sortable, so the listing's ORDER BY means what it says.
+    ///
+    /// The sender's Date header when it is usable, and the server's receipt
+    /// time when it is not, so the column is never blank.
+    pub date: String,
+    /// When the server received it, which is the one the sender cannot forge.
+    pub internal_date: Option<String>,
+    pub size_bytes: Option<i64>,
+    /// `References` and `In-Reply-To`, space separated.
+    pub refs_header: Option<String>,
+    pub read: bool,
+    pub starred: bool,
+    pub deleted: bool,
+    pub has_attachments: bool,
+}
+
 impl MessageCache {
+    /// Write a message a sync has fetched, updating one already stored.
+    ///
+    /// Deliberately not `save_message`, which is `INSERT OR REPLACE`. On a
+    /// repeat sync that replaces rather than updates: SQLite deletes the row
+    /// and inserts a new one, the delete cascades to `message_bodies`, and the
+    /// message loses its cached body, its snippet, its size and its reference
+    /// chain. Nothing shows that, because the listing still has a subject line.
+    /// The reader finds out when they open a message they have read before and
+    /// it has to be downloaded again, and when the snippet column goes blank
+    /// for the whole folder.
+    ///
+    /// So this updates in place, touching only what the server just told us.
+    /// Flags are included, because the server is the authority on those: a
+    /// message read on a phone should read as read here.
+    pub fn upsert_message(&self, incoming: &IncomingMessage) -> Result<i64> {
+        self.conn
+            .query_row(
+                "INSERT INTO messages
+                     (uid, folder_id, message_id, subject, from_addr, to_addr, cc, date,
+                      size_bytes, refs_header, read, starred, deleted, has_attachments,
+                      internaldate)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                 ON CONFLICT(folder_id, uid) DO UPDATE SET
+                     message_id = excluded.message_id,
+                     subject = excluded.subject,
+                     from_addr = excluded.from_addr,
+                     to_addr = excluded.to_addr,
+                     cc = excluded.cc,
+                     date = excluded.date,
+                     size_bytes = excluded.size_bytes,
+                     refs_header = excluded.refs_header,
+                     read = excluded.read,
+                     starred = excluded.starred,
+                     deleted = excluded.deleted,
+                     has_attachments = excluded.has_attachments,
+                     internaldate = excluded.internaldate
+                 RETURNING id",
+                params![
+                    incoming.uid,
+                    incoming.folder_id,
+                    incoming.message_id,
+                    incoming.subject,
+                    incoming.from_addr,
+                    incoming.to_addr,
+                    incoming.cc,
+                    incoming.date,
+                    incoming.size_bytes,
+                    incoming.refs_header,
+                    incoming.read,
+                    incoming.starred,
+                    incoming.deleted,
+                    incoming.has_attachments,
+                    incoming.internal_date,
+                ],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Other(format!("Failed to store message: {}", e)))
+    }
+
+    /// The UIDs already stored for a folder.
+    ///
+    /// A sync compares this with what the server lists, so it only fetches
+    /// headers it does not have.
+    pub fn stored_uids(&self, folder_id: i64) -> Result<Vec<u32>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT uid FROM messages WHERE folder_id = ?1")
+            .map_err(|e| Error::Other(format!("Failed to prepare uid query: {}", e)))?;
+        let uids = stmt
+            .query_map(params![folder_id], |row| row.get(0))
+            .map_err(|e| Error::Other(format!("Failed to query uids: {}", e)))?
+            .collect::<std::result::Result<Vec<u32>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect uids: {}", e)))?;
+        Ok(uids)
+    }
+
+    /// Forget one message the server no longer has.
+    pub fn forget_message(&self, folder_id: i64, uid: u32) -> Result<()> {
+        self.conn
+            .execute(
+                "DELETE FROM messages WHERE folder_id = ?1 AND uid = ?2",
+                params![folder_id, uid],
+            )
+            .map_err(|e| Error::Other(format!("Failed to remove message: {}", e)))?;
+        Ok(())
+    }
+
+    /// The UIDVALIDITY last seen for a folder, if one has been recorded.
+    pub fn folder_uid_validity(&self, folder_id: i64) -> Result<Option<u32>> {
+        self.conn
+            .query_row(
+                "SELECT uid_validity FROM folders WHERE id = ?1",
+                params![folder_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read folder validity: {}", e)))
+            .map(Option::flatten)
+    }
+
+    /// Record the UIDVALIDITY the server reported for a folder.
+    pub fn set_folder_uid_validity(&self, folder_id: i64, validity: u32) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE folders SET uid_validity = ?1 WHERE id = ?2",
+                params![validity, folder_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record folder validity: {}", e)))?;
+        Ok(())
+    }
+
+    /// Forget every message in a folder.
+    ///
+    /// Used when the server reports a new UIDVALIDITY, which means it has
+    /// renumbered the mailbox and every UID we hold now points at a different
+    /// message, or at none. Keeping them would show the reader one message and
+    /// open another.
+    pub fn forget_folder_messages(&self, folder_id: i64) -> Result<usize> {
+        self.conn
+            .execute(
+                "DELETE FROM messages WHERE folder_id = ?1",
+                params![folder_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to clear folder: {}", e)))
+    }
+
     /// Save a message to cache
     pub fn save_message(&self, msg: &CachedMessage) -> Result<i64> {
         self.conn.execute(
@@ -118,7 +275,8 @@ impl MessageCache {
             .prepare(
                 "SELECT m.id, m.uid, m.message_id, m.refs_header, m.subject, m.from_addr,
                         m.to_addr, m.cc, m.date, m.snippet, m.size_bytes, m.read, m.starred,
-                        EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)
+                        (m.has_attachments = 1
+                         OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id))
                  FROM messages m
                  INNER JOIN folders f ON m.folder_id = f.id
                  WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
@@ -206,7 +364,8 @@ impl MessageCache {
             .prepare(
                 "SELECT m.id, m.uid, m.message_id, m.refs_header, m.subject, m.from_addr,
                         m.to_addr, m.cc, m.date, m.snippet, m.size_bytes, m.read, m.starred,
-                        EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)
+                        (m.has_attachments = 1
+                         OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id))
                  FROM messages m
                  INNER JOIN folders f ON m.folder_id = f.id
                  WHERE f.account_id = ?1 AND m.deleted = 0
@@ -385,6 +544,174 @@ impl MessageCache {
 
 #[cfg(test)]
 mod tests {
+
+    fn incoming(folder_id: i64, uid: u32, subject: &str) -> super::IncomingMessage {
+        super::IncomingMessage {
+            folder_id,
+            uid,
+            message_id: format!("<{uid}@example.com>"),
+            subject: subject.to_string(),
+            from_addr: "Ada <ada@example.com>".to_string(),
+            to_addr: "me@example.com".to_string(),
+            cc: None,
+            date: "2026-07-26T10:00:00+00:00".to_string(),
+            internal_date: Some("2026-07-26T10:00:05+00:00".to_string()),
+            size_bytes: Some(2048),
+            refs_header: None,
+            read: false,
+            starred: false,
+            deleted: false,
+            has_attachments: false,
+        }
+    }
+
+    #[test]
+    fn test_a_second_sync_does_not_throw_away_the_cached_body() {
+        // The bug this method exists to prevent. `INSERT OR REPLACE` deletes
+        // the row and inserts a new one, the delete cascades to the body
+        // table, and the reader finds out when a message they have already
+        // read has to be downloaded again.
+        let (cache, folder_id) = listing_cache();
+        let id = cache
+            .upsert_message(&incoming(folder_id, 7, "Report"))
+            .unwrap();
+        cache
+            .save_message_body(id, Some("The numbers are attached."), None)
+            .unwrap();
+
+        let again = cache
+            .upsert_message(&incoming(folder_id, 7, "Report"))
+            .unwrap();
+
+        assert_eq!(again, id, "the message was replaced rather than updated");
+        let body = cache.get_message_body(id).unwrap();
+        assert!(body.is_some(), "the cached body was lost");
+    }
+
+    #[test]
+    fn test_a_second_sync_does_not_blank_the_snippet_or_the_size() {
+        // Both are written once and read on every row of the listing after
+        // that, so losing them empties two columns for the whole folder.
+        let (cache, folder_id) = listing_cache();
+        let id = cache
+            .upsert_message(&incoming(folder_id, 8, "Report"))
+            .unwrap();
+        cache
+            .save_message_body(id, Some("The numbers are attached."), None)
+            .unwrap();
+
+        cache
+            .upsert_message(&incoming(folder_id, 8, "Report"))
+            .unwrap();
+
+        let row = cache
+            .get_message_list(folder_id, "acc-1")
+            .unwrap()
+            .into_iter()
+            .find(|r| r.uid == 8)
+            .expect("the message should still be listed");
+        assert!(row.snippet.is_some(), "the snippet was blanked");
+        assert_eq!(row.size_bytes, Some(2048));
+    }
+
+    #[test]
+    fn test_a_flag_changed_on_another_device_is_taken_from_the_server() {
+        // Read on a phone should read as read here. The server is the
+        // authority on flags, so a repeat sync overwrites what we hold.
+        let (cache, folder_id) = listing_cache();
+        cache
+            .upsert_message(&incoming(folder_id, 9, "Report"))
+            .unwrap();
+
+        let mut updated = incoming(folder_id, 9, "Report");
+        updated.read = true;
+        updated.starred = true;
+        cache.upsert_message(&updated).unwrap();
+
+        let row = cache
+            .get_message_list(folder_id, "acc-1")
+            .unwrap()
+            .into_iter()
+            .find(|r| r.uid == 9)
+            .expect("should still be listed");
+        assert!(row.read);
+        assert!(row.starred);
+    }
+
+    #[test]
+    fn test_an_attachment_the_server_reported_shows_before_the_message_is_opened() {
+        // Attachment rows only exist once a message has been downloaded, so
+        // asking for them left the column blank for every unread message:
+        // exactly the ones somebody is deciding about.
+        let (cache, folder_id) = listing_cache();
+        let mut with_file = incoming(folder_id, 10, "Report");
+        with_file.has_attachments = true;
+        cache.upsert_message(&with_file).unwrap();
+
+        let row = cache
+            .get_message_list(folder_id, "acc-1")
+            .unwrap()
+            .into_iter()
+            .find(|r| r.uid == 10)
+            .expect("should be listed");
+        assert!(row.has_attachments);
+    }
+
+    #[test]
+    fn test_the_reference_chain_survives_a_repeat_sync() {
+        // Threading reads it, and a conversation that loses its chain becomes
+        // a folder of unrelated messages.
+        let (cache, folder_id) = listing_cache();
+        let mut threaded = incoming(folder_id, 11, "Re: Plan");
+        threaded.refs_header = Some("<first@example.com> <second@example.com>".to_string());
+        cache.upsert_message(&threaded).unwrap();
+        cache.upsert_message(&threaded).unwrap();
+
+        let row = cache
+            .get_message_list(folder_id, "acc-1")
+            .unwrap()
+            .into_iter()
+            .find(|r| r.uid == 11)
+            .expect("should be listed");
+        assert_eq!(
+            row.refs_header.as_deref(),
+            Some("<first@example.com> <second@example.com>")
+        );
+    }
+
+    #[test]
+    fn test_the_stored_uids_are_what_a_sync_compares_against() {
+        let (cache, folder_id) = listing_cache();
+        for uid in [3, 1, 2] {
+            cache
+                .upsert_message(&incoming(folder_id, uid, "Report"))
+                .unwrap();
+        }
+        let mut stored = cache.stored_uids(folder_id).unwrap();
+        stored.sort_unstable();
+        assert_eq!(stored, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_a_folder_with_nothing_in_it_reports_no_uids() {
+        let (cache, folder_id) = listing_cache();
+        assert!(cache.stored_uids(folder_id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_a_renumbered_mailbox_is_forgotten_rather_than_shown_wrong() {
+        // A new UIDVALIDITY means every UID we hold now points at a different
+        // message or at none, so the list would show one message and open
+        // another.
+        let (cache, folder_id) = listing_cache();
+        for uid in 1..=3 {
+            cache
+                .upsert_message(&incoming(folder_id, uid, "Report"))
+                .unwrap();
+        }
+        assert_eq!(cache.forget_folder_messages(folder_id).unwrap(), 3);
+        assert!(cache.stored_uids(folder_id).unwrap().is_empty());
+    }
 
     #[test]
     fn test_searching_finds_a_message_by_subject_sender_or_snippet() {

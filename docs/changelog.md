@@ -12,6 +12,13 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Added
 
+- **The client fetches real mail.** The IMAP layer returned invented folders and invented messages and never opened a socket. It now connects over TLS, lists mailboxes, fetches headers, reads message bodies, and changes flags. `F9`, Check Mail, does what it says: it connects, stores the folder list, and brings down the newest messages in each folder into the cache the message list already reads from.
+- **Folder names arrive readable.** IMAP carries non-ASCII mailbox names in a modified UTF-7 encoding, so a German Drafts folder is `Entw&APw-rfe` on the wire. Announced as-is, a synthesiser spells out the punctuation and the folder cannot be found by name. A name that cannot be decoded is shown as it arrived rather than dropped, because the folder is real and you still have to reach it.
+- **The folder tree opens in the order you expect.** The inbox first, then drafts, sent, archive, junk and trash, then your own folders by name. Alphabetical order put Archive above the inbox, which meant arrowing past it every time. Folder roles come from the server when it declares them and from the folder's name when it does not.
+- **The attachment column is right before you open a message.** Attachment presence now comes from what the server reports about a message's structure rather than from saved attachment records, which only exist once a message has been downloaded. The column used to be blank for every message you had not read: exactly the ones you are deciding about. A newsletter's spacer images do not count as attachments, and a named image sent in the body does.
+- **Messages carry the time the server received them**, as well as the date the sender wrote. Sorting by Received asked for a column that did not exist. The sender's date is used for display when it is usable and the arrival time when it is not, so the column is never blank.
+- **A message deleted on another device disappears here too.** A sync compares what the server holds with what is stored and forgets what is gone, so you do not arrow onto a row, press `Enter`, and get an error instead of mail.
+- **A mailbox the server has renumbered is read again from scratch.** When UIDVALIDITY changes, every identifier we hold names a different message or none, and showing them would list one message and open another.
 - **Message bodies go through Paperback's HTML converter**, vendored into `src/vendor/paperback/` with its MIT notice intact. Ours stripped tags and produced a wall of text, readable from the top and nothing else. This one returns the text along with the offset of every heading, link, list and table, which is what makes a long message navigable: `Ctrl+Down` in the reader now jumps between the headings in a message body, not just between the messages of a conversation.
 - **Link targets are gathered at the end of a message** under a "Links" heading rather than read out mid-sentence, and each is checked against the same rule the rest of the application uses before it is listed. A link to a `javascript:` target is not offered at all.
 - **Tables are rendered inline** rather than summarised. The converter's default is right for a document and wrong for mail, where a message is routinely wrapped in a layout table and summarising would reduce the whole body to the word "Table".
@@ -66,13 +73,20 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 ### Removed
 
 - **The Answered, Draft, and Tags columns.** They were offered in the column model with no data behind them, so switching one on would have given a column that read blank on every row. They return when IMAP flag sync lands and there is something real to put in them.
+- **The IMAP IDLE loop.** It announced arrivals on a timer with invented message numbers. That was harmless beside a client that invented everything else and is not harmless beside one that fetches real mail: it would announce mail that does not exist. Real IDLE needs a second connection, because the session cannot run other commands while it is idling, and it is tracked as its own piece of work.
 
 ### Known limitations
 
 - Sorting still happens in memory over the loaded folder rather than in SQL. That is fine for the folder sizes the application can currently reach, and it is the wrong shape for the hundreds of thousands of messages the storage design targets. The SQL ordering is written and tested; the listing query does not use it yet.
 - Earcons are Windows-only for now. On macOS and Linux the sound channel is silent and the text channels carry the event on their own; a port needs its own audio path.
 - Feedback preferences are per channel, not per event. The per-event overrides exist in the model and have no interface yet, because a grid of nine events by four channels is not the choice most people are making.
-- Threading runs over the loaded folder rather than incrementally as mail arrives, because no IMAP sync feeds it yet. The `References` headers have nowhere to come from until that lands, so in practice every message currently threads alone.
+- Threading runs over the loaded folder rather than incrementally as mail arrives. The `References` headers are now stored by the sync, so conversations form from real mail; rethreading still happens when a folder is opened rather than as messages arrive.
+- **Accounts that sign in with OAuth cannot fetch mail yet**, for the same reason they cannot send: there is no XOAUTH2 support. Check Mail says so plainly rather than failing at the server with an authentication error you cannot act on. This covers Gmail and Outlook accounts set up through the provider buttons.
+- **Check Mail brings down the newest 500 messages in each folder**, not the whole mailbox. Reading further back needs paging, which is not built. The count of what is on the server is reported, so the gap is visible rather than silent.
+- **The junk folder is not synced.** Downloading it costs the whole of it and fills the client with mail you did not ask for. It can still be opened.
+- **Deleting a message on a server without UIDPLUS marks it rather than removing it.** The only alternative such a server offers is a bare EXPUNGE, which removes every message in the mailbox marked deleted, including ones another client marked. That is somebody else's mail. The result says which happened rather than reporting a deletion that did not occur.
+- **The folder tree is one flat level.** Nested mailboxes are listed by their full path, so `Archive/2026` reads as itself rather than as a second folder called `2026`. A real hierarchy is a separate piece of work.
+- **None of this has been tested against a live server yet.** It is built and reachable from `F9`; the parsing is covered by tests and the transport is not. Treat the first run against a real account as the test.
 
 ### Added, earlier in this cycle
 

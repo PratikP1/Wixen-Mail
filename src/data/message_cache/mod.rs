@@ -12,7 +12,7 @@ mod drafts;
 mod filters;
 mod folders;
 mod messages;
-pub use messages::MessageListRow;
+pub use messages::{IncomingMessage, MessageListRow};
 pub mod notes;
 mod oauth;
 mod outbox;
@@ -940,6 +940,22 @@ impl MessageCache {
         // rethread the whole folder on every open.
         self.ensure_column_exists("messages", "thread_id", "TEXT")?;
         self.ensure_column_exists("messages", "thread_depth", "INTEGER")?;
+        // Whether the server said there are attachments, learned from
+        // BODYSTRUCTURE during a sync. The listing used to answer this by
+        // looking for saved attachment rows, which only exist once a message
+        // has been opened, so the column was blank for every message somebody
+        // had not read yet: exactly the ones they are deciding about.
+        self.ensure_column_exists("messages", "has_attachments", "BOOLEAN DEFAULT 0")?;
+        // When the server received the message, as opposed to the Date header,
+        // which the sender writes and sometimes gets wrong or forges. Sorting a
+        // mailbox by a forged date puts a message where its reader will not
+        // find it. The Received column's sort already asked for this; the
+        // column it asked for did not exist.
+        self.ensure_column_exists("messages", "internaldate", "TEXT")?;
+        // The server's UIDVALIDITY for this mailbox. When it changes, every UID
+        // we stored names a different message or none, so the folder has to be
+        // read again rather than shown wrong.
+        self.ensure_column_exists("folders", "uid_validity", "INTEGER")?;
         self.ensure_column_exists("calendar_events", "calendar_id", "TEXT")?;
         self.ensure_column_exists(
             "message_filter_rules",
