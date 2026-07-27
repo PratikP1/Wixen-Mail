@@ -792,26 +792,46 @@ impl MessageCache {
         out
     }
 
+    /// Wrap a vCard line to the length the format allows.
+    ///
+    /// RFC 6350 counts octets, not characters. Counting characters put a line
+    /// of 75 three-byte characters at 225 octets, which other clients reject
+    /// or re-fold themselves, and one that re-folds by octets without knowing
+    /// about UTF-8 can split a character in half. A contact with a Chinese or
+    /// emoji name is the ordinary case here, not an exotic one.
+    ///
+    /// A character is never split across a fold, so every piece is still valid
+    /// UTF-8 on its own.
     fn fold_vcard_line(line: &str) -> String {
         const LIMIT: usize = 75;
-        let chars: Vec<char> = line.chars().collect();
-        if chars.len() <= LIMIT {
+        if line.len() <= LIMIT {
             return format!("{}\r\n", line);
         }
+
         let mut out = String::new();
-        let mut start = 0usize;
-        while start < chars.len() {
-            let end = (start + LIMIT).min(chars.len());
-            let chunk: String = chars[start..end].iter().collect();
-            if start == 0 {
-                out.push_str(&chunk);
+        let mut piece = String::new();
+        let mut first = true;
+        for ch in line.chars() {
+            // The continuation space counts against the limit on every piece
+            // after the first, or the folded line is one octet over.
+            let budget = if first { LIMIT } else { LIMIT - 1 };
+            if piece.len() + ch.len_utf8() > budget {
+                if !first {
+                    out.push(' ');
+                }
+                out.push_str(&piece);
                 out.push_str("\r\n");
-            } else {
-                out.push(' ');
-                out.push_str(&chunk);
-                out.push_str("\r\n");
+                piece.clear();
+                first = false;
             }
-            start = end;
+            piece.push(ch);
+        }
+        if !piece.is_empty() {
+            if !first {
+                out.push(' ');
+            }
+            out.push_str(&piece);
+            out.push_str("\r\n");
         }
         out
     }
@@ -844,6 +864,146 @@ mod tests {
     use crate::data::message_cache::{CachedFolder, CachedMessage};
     use std::env;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    // ── Fuzzing the vCard reader ────────────────────────────────────────
+    //
+    // A .vcf file is chosen by the user and written by somebody else's
+    // software, so it is untrusted input in the same sense a message body is.
+    // The generator is deterministic, so a failure is reproducible from its
+    // seed alone and costs no dependency.
+
+    struct Lcg(u64);
+
+    impl Lcg {
+        fn next(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            self.0
+        }
+
+        fn pick<'a, T>(&mut self, items: &'a [T]) -> &'a T {
+            &items[(self.next() % items.len() as u64) as usize]
+        }
+    }
+
+    fn fuzz_vcard(seed: u64) -> String {
+        let mut rng = Lcg(seed);
+        let long = "x".repeat(200);
+        let pieces = [
+            "BEGIN:VCARD",
+            "END:VCARD",
+            "VERSION:3.0",
+            "VERSION:4.0",
+            "FN:",
+            "FN;CHARSET=UTF-8:",
+            "N:Doe;Jane;;;",
+            "EMAIL;TYPE=WORK:",
+            "EMAIL:",
+            "TEL;TYPE=CELL:",
+            "TEL:",
+            "ADR;TYPE=HOME:;;1 Main St;Town;;;Country",
+            "ORG:",
+            "TITLE:",
+            "URL:",
+            "BDAY:",
+            "NOTE:",
+            "PHOTO;VALUE=URI:",
+            "NICKNAME:",
+            "  continued",
+            "\tcontinued",
+            "jane@example.com",
+            "Jane Doe",
+            "\u{4f60}\u{597d}",
+            "\u{1f600}",
+            ";;;;;;;",
+            ":::",
+            r"\n\,\;",
+            "",
+            "   ",
+            "\r",
+            "GARBAGE",
+            long.as_str(),
+        ];
+        let mut out = String::new();
+        let lines = (rng.next() % 30) as usize;
+        for _ in 0..lines {
+            out.push_str(rng.pick(&pieces));
+            if !rng.next().is_multiple_of(3) {
+                out.push('\n');
+            }
+        }
+        out
+    }
+
+    fn fuzz_cache() -> MessageCache {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let dir = env::temp_dir().join(format!("wixen_vcard_fuzz_{}", nanos));
+        MessageCache::new(dir, None).expect("cache")
+    }
+
+    #[test]
+    fn test_fuzz_vcard_import_never_panics() {
+        let cache = fuzz_cache();
+        for seed in 0..500 {
+            // Only that it returns. A malformed card is a normal thing to be
+            // handed and refusing it is fine; falling over is not.
+            let _ = cache.import_contacts_from_vcard("acct", &fuzz_vcard(seed));
+        }
+    }
+
+    #[test]
+    fn test_fuzz_vcard_import_never_invents_a_contact_from_nothing() {
+        // A card with no name and no address is not a contact. Importing one
+        // fills the address book with blank rows nobody can identify or find.
+        let cache = fuzz_cache();
+        for seed in 0..300 {
+            let _ = cache.import_contacts_from_vcard("acct", &fuzz_vcard(seed));
+        }
+        for contact in cache.get_contacts_for_account("acct").expect("read back") {
+            assert!(
+                !contact.name.trim().is_empty() || !contact.email.trim().is_empty(),
+                "imported a contact with neither a name nor an address"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_folded_line_unfolds_back_to_what_it_was() {
+        // Export folds long lines and import unfolds them. If the two disagree,
+        // an exported contact does not survive being imported again, which is
+        // the one thing a .vcf file is for.
+        let ascii = format!("NOTE:{}", "a".repeat(300));
+        let wide = format!("FN:{}", "\u{4f60}".repeat(120));
+        for original in ["NOTE:short", ascii.as_str(), wide.as_str()] {
+            let folded = MessageCache::fold_vcard_line(original);
+            let unfolded = MessageCache::unfold_vcard_lines(&folded);
+            assert_eq!(
+                unfolded.join(""),
+                original,
+                "folding and unfolding changed the line"
+            );
+        }
+    }
+
+    #[test]
+    fn test_folding_counts_octets_rather_than_characters() {
+        // RFC 6350 counts octets. Folding by characters puts a 75 character
+        // line of three-byte characters at 225 octets, which other clients
+        // reject or re-fold in the middle of a character.
+        let line = format!("NOTE:{}", "\u{4f60}".repeat(100));
+        for folded in MessageCache::fold_vcard_line(&line).lines() {
+            assert!(
+                folded.len() <= 77,
+                "a folded line was {} octets",
+                folded.len()
+            );
+        }
+    }
 
     #[test]
     fn test_contact_operations() {

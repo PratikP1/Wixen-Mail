@@ -9,7 +9,7 @@ use crate::service::protocols::imap::{
 use crate::service::protocols::pop3::{Pop3Client, Pop3Config, Pop3Session};
 use crate::service::protocols::smtp::{Email, SmtpClient, SmtpConfig};
 use std::sync::Arc;
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 
 /// Parameters for sending an email via SMTP.
 #[derive(Debug, Clone)]
@@ -80,27 +80,38 @@ impl MailController {
         }
     }
 
-    /// Lock and return the IMAP session guard, or error if not connected.
+    /// Lock the IMAP session, or say we are not connected.
     ///
-    /// Callers unwrap the Option this yields. That is sound because the guard
-    /// still holds the lock, so nothing can clear the session between this
-    /// check and their use of it. Keep the check and the lock together if this
-    /// is ever refactored.
-    async fn require_imap(&self) -> Result<MutexGuard<'_, Option<ImapSession>>> {
+    /// The `Option` is unwrapped once, here, and the guard is mapped through
+    /// it, so callers get the session itself. Eleven call sites used to unwrap
+    /// it individually on the strength of a comment saying it was sound. It
+    /// was, but soundness that rests on every future caller reading a comment
+    /// is worse than soundness the type system holds.
+    async fn require_imap(&self) -> Result<MappedMutexGuard<'_, ImapSession>> {
         let guard = self.imap_session.lock().await;
         if guard.is_none() {
             return Err(Error::Protocol("Not connected to IMAP server".into()));
         }
-        Ok(guard)
+        Ok(MutexGuard::map(guard, |session| {
+            // Checked immediately above, under this same guard, so nothing can
+            // have cleared it in between.
+            session
+                .as_mut()
+                .expect("the session was present under this lock")
+        }))
     }
 
-    /// Lock and return the POP3 session guard, or error if not connected.
-    async fn require_pop3(&self) -> Result<MutexGuard<'_, Option<Pop3Session>>> {
+    /// Lock the POP3 session, or say we are not connected.
+    async fn require_pop3(&self) -> Result<MappedMutexGuard<'_, Pop3Session>> {
         let guard = self.pop3_session.lock().await;
         if guard.is_none() {
             return Err(Error::Protocol("Not connected to POP3 server".into()));
         }
-        Ok(guard)
+        Ok(MutexGuard::map(guard, |session| {
+            session
+                .as_mut()
+                .expect("the session was present under this lock")
+        }))
     }
 
     /// Connect to IMAP server
@@ -132,7 +143,7 @@ impl MailController {
     /// Fetch folders from IMAP
     pub async fn fetch_folders(&self) -> Result<Vec<String>> {
         let mut guard = self.require_imap().await?;
-        let session = guard.as_mut().unwrap();
+        let session = &mut *guard;
         let folders = session.list_folders().await?;
         Ok(folders.into_iter().map(|f| f.name).collect())
     }
@@ -140,7 +151,7 @@ impl MailController {
     /// Fetch messages from a folder
     pub async fn fetch_messages(&self, folder: &str) -> Result<Vec<MessagePreview>> {
         let mut guard = self.require_imap().await?;
-        let session = guard.as_mut().unwrap();
+        let session = &mut *guard;
         let messages = session.fetch_messages(folder, None).await?;
 
         Ok(messages
@@ -159,7 +170,7 @@ impl MailController {
     /// Fetch message body
     pub async fn fetch_message_body(&self, folder: &str, uid: u32) -> Result<String> {
         let mut guard = self.require_imap().await?;
-        let session = guard.as_mut().unwrap();
+        let session = &mut *guard;
         session.fetch_message_body(folder, uid).await
     }
 
@@ -193,7 +204,7 @@ impl MailController {
     /// Mark message as read
     pub async fn mark_as_read(&self, folder: &str, uid: u32) -> Result<()> {
         let mut guard = self.require_imap().await?;
-        let session = guard.as_mut().unwrap();
+        let session = &mut *guard;
         session.mark_as_read(folder, uid).await?;
         tracing::debug!("Marked message {} as read", uid);
         Ok(())
@@ -202,7 +213,7 @@ impl MailController {
     /// Mark message as starred
     pub async fn toggle_starred(&self, folder: &str, uid: u32) -> Result<()> {
         let mut guard = self.require_imap().await?;
-        let session = guard.as_mut().unwrap();
+        let session = &mut *guard;
         session.toggle_flag(folder, uid, "\\Flagged").await?;
         tracing::debug!("Toggled starred flag for message {}", uid);
         Ok(())
@@ -211,7 +222,7 @@ impl MailController {
     /// Delete a message
     pub async fn delete_message(&self, folder: &str, uid: u32) -> Result<()> {
         let mut guard = self.require_imap().await?;
-        let session = guard.as_mut().unwrap();
+        let session = &mut *guard;
         session.delete_message(folder, uid).await?;
         tracing::info!("Deleted message {}", uid);
         Ok(())
@@ -249,7 +260,7 @@ impl MailController {
     /// Fetch message list from POP3 mailbox.
     pub async fn list_pop3_messages(&self) -> Result<Vec<Pop3MessagePreview>> {
         let guard = self.require_pop3().await?;
-        let session = guard.as_ref().unwrap();
+        let session = &*guard;
         let list = session.list().await?;
         Ok(list
             .into_iter()
@@ -264,14 +275,14 @@ impl MailController {
     /// Fetch full POP3 message body by message id.
     pub async fn fetch_pop3_message_body(&self, id: u32) -> Result<String> {
         let guard = self.require_pop3().await?;
-        let session = guard.as_ref().unwrap();
+        let session = &*guard;
         Ok(session.retr(id).await?.raw)
     }
 
     /// Mark POP3 message for deletion.
     pub async fn delete_pop3_message(&self, id: u32) -> Result<()> {
         let mut guard = self.require_pop3().await?;
-        let session = guard.as_mut().unwrap();
+        let session = &mut *guard;
         session.dele(id).await
     }
 
@@ -288,7 +299,7 @@ impl MailController {
         options: ImapIdleOptions,
     ) -> Result<tokio::sync::mpsc::UnboundedReceiver<ImapIdleEvent>> {
         let mut guard = self.require_imap().await?;
-        let session = guard.as_mut().unwrap();
+        let session = &mut *guard;
         let (rx, handle) = session.start_idle_push_notifications(folder, options)?;
         let mut idle_handle = self.idle_handle.lock().await;
         if let Some(existing) = idle_handle.take() {

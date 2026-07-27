@@ -48,10 +48,14 @@ impl CompositionManager {
     }
 
     /// Create a new draft
+    ///
+    /// Indexed rather than unwrapping `last_mut`: the unwrap could not fail
+    /// after a push, but the rule in this codebase is no unwrap outside tests,
+    /// and an index that is provably in range needs no exception to it.
     pub fn create_draft(&mut self) -> &mut Draft {
-        let draft = Draft::new();
-        self.drafts.push(draft);
-        self.drafts.last_mut().unwrap()
+        self.drafts.push(Draft::new());
+        let last = self.drafts.len() - 1;
+        &mut self.drafts[last]
     }
 
     /// Get all drafts

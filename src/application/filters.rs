@@ -77,23 +77,35 @@ impl FilterEngine {
             if value { "true" } else { "false" }
         }
 
-        let target_text = match rule.field.as_str() {
-            "subject" => Some(message.subject.as_str()),
-            "from" => Some(message.from_addr.as_str()),
-            "to" => Some(message.to_addr.as_str()),
-            "cc" => message.cc.as_deref(),
-            "date" => Some(message.date.as_str()),
-            "message_id" => Some(message.message_id.as_str()),
-            "body_plain" => message.body_plain.as_deref(),
-            "body_html" => message.body_html.as_deref(),
-            "read" => Some(bool_to_str(message.read)),
-            "starred" => Some(bool_to_str(message.starred)),
-            "deleted" => Some(bool_to_str(message.deleted)),
+        // An unknown field is a rule this version cannot evaluate, and the
+        // only safe answer is no. Anything else, in particular a "not
+        // contains" reading as true, would turn a rule naming a field we do
+        // not have into one that fires on the whole mailbox.
+        let known_field = match rule.field.as_str() {
+            "subject" => Some(Some(message.subject.as_str())),
+            "from" => Some(Some(message.from_addr.as_str())),
+            "to" => Some(Some(message.to_addr.as_str())),
+            "cc" => Some(message.cc.as_deref()),
+            "date" => Some(Some(message.date.as_str())),
+            "message_id" => Some(Some(message.message_id.as_str())),
+            "body_plain" => Some(message.body_plain.as_deref()),
+            "body_html" => Some(message.body_html.as_deref()),
+            "read" => Some(Some(bool_to_str(message.read))),
+            "starred" => Some(Some(bool_to_str(message.starred))),
+            "deleted" => Some(Some(bool_to_str(message.deleted))),
             _ => None,
         };
-        let Some(target_text) = target_text else {
+        let Some(present) = known_field else {
             return false;
         };
+        // An absent field is an empty one, not a reason to stop.
+        //
+        // Leaving early here meant "cc is empty" was false for every message
+        // that had no cc, which is the only case the rule was written for, and
+        // "body is empty" could never fire on a message whose body had not
+        // been downloaded. Both are the exact situations someone writes such a
+        // rule to catch.
+        let target_text = present.unwrap_or("");
 
         let lhs = if rule.case_sensitive {
             target_text.to_string()
@@ -120,8 +132,13 @@ impl FilterEngine {
             // Built from the rule's own pattern rather than the pre-lowercased
             // `rhs`, because lowercasing a pattern would corrupt escapes like
             // \S and \W. Case folding belongs to the regex engine.
+            // Bounded, because a rule can be imported rather than typed, and
+            // a pattern that compiles to something enormous would take the
+            // window down with it. A megabyte is far more than any real rule
+            // and far less than enough to hurt.
             "regex" => match RegexBuilder::new(&rule.pattern)
                 .case_insensitive(!rule.case_sensitive)
+                .size_limit(1 << 20)
                 .build()
             {
                 Ok(regex) => regex.is_match(target_text),
@@ -179,6 +196,99 @@ impl FilterEngine {
 
 #[cfg(test)]
 mod tests {
+
+    /// A rule naming a specific field, for the absent-field cases.
+    fn field_rule(field: &str, match_type: &str, pattern: &str) -> FilterRule {
+        FilterRule {
+            id: "r1".to_string(),
+            name: "test".to_string(),
+            field: field.to_string(),
+            match_type: match_type.to_string(),
+            pattern: pattern.to_string(),
+            case_sensitive: false,
+            action: FilterAction::MarkAsRead,
+            enabled: true,
+        }
+    }
+
+    #[test]
+    fn test_an_absent_field_counts_as_empty() {
+        // "cc is empty" on a message with no cc has to be true. It returned
+        // false, because an absent field left the matcher before it reached the
+        // match type at all, so a rule for "no cc" could never fire and a rule
+        // for "not empty" was right by accident.
+        let message = message_with_subject("Anything");
+        assert!(message.cc.is_none());
+        assert!(
+            FilterEngine::matches(&field_rule("cc", "is_empty", ""), &message),
+            "a message with no cc did not count as having an empty cc"
+        );
+        assert!(!FilterEngine::matches(
+            &field_rule("cc", "is_not_empty", ""),
+            &message
+        ));
+    }
+
+    #[test]
+    fn test_an_absent_body_counts_as_empty_too() {
+        // Same shape, and it matters more: a message whose body has not been
+        // downloaded is exactly the case a "body is empty" rule is written for.
+        let message = message_with_subject("Anything");
+        assert!(FilterEngine::matches(
+            &field_rule("body_plain", "is_empty", ""),
+            &message
+        ));
+        assert!(FilterEngine::matches(
+            &field_rule("body_html", "is_empty", ""),
+            &message
+        ));
+    }
+
+    #[test]
+    fn test_an_absent_field_still_fails_the_content_match_types() {
+        // Absent is empty, not a match for everything. A "contains" rule must
+        // not start firing on every message with no cc.
+        let message = message_with_subject("Anything");
+        for match_type in ["contains", "equals", "starts_with", "ends_with"] {
+            assert!(
+                !FilterEngine::matches(&field_rule("cc", match_type, "anything"), &message),
+                "{} matched an absent field",
+                match_type
+            );
+        }
+        // And "not contains" is true of an absent field, because it does not
+        // contain it.
+        assert!(FilterEngine::matches(
+            &field_rule("cc", "not_contains", "anything"),
+            &message
+        ));
+    }
+
+    #[test]
+    fn test_an_unknown_field_matches_nothing_rather_than_everything() {
+        // A rule naming a field this version does not know must not silently
+        // become "true for all mail" and start moving the whole inbox.
+        let message = message_with_subject("Anything");
+        for match_type in ["contains", "is_empty", "not_contains", "not_equals"] {
+            assert!(
+                !FilterEngine::matches(&field_rule("invented_field", match_type, ""), &message),
+                "{} fired on a field that does not exist",
+                match_type
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_pattern_too_large_to_compile_is_refused_rather_than_hanging() {
+        // A rule can be imported, so the pattern is not always something the
+        // user typed. A compile that eats memory would take the window with it.
+        let message = message_with_subject("Anything");
+        let huge = format!("(?:{}){{100}}", "a|b|c|d|e|f|g|h".repeat(200));
+        assert!(!FilterEngine::matches(
+            &field_rule("subject", "regex", &huge),
+            &message
+        ));
+    }
     use super::*;
 
     #[test]
