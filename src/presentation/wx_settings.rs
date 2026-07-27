@@ -5,6 +5,7 @@
 //! and persisted through `AppConfig` / `ConfigManager`.
 
 use crate::data::config::AppConfig;
+use crate::presentation::accessibility::names::set_accessible_name;
 use crate::service::spellcheck::supported_languages;
 use wxdragon::prelude::*;
 
@@ -181,6 +182,7 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, Ch
         .with_choices(theme_choices)
         .with_selection(Some(theme_idx))
         .build();
+    set_accessible_name(&theme_choice, "Theme");
     theme_row.add(
         &theme_label,
         0,
@@ -193,6 +195,7 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, Ch
     let font_row = BoxSizer::builder(Orientation::Horizontal).build();
     let font_label = StaticText::builder(panel).with_label("Font size:").build();
     let font_field = TextCtrl::builder(panel).build();
+    set_accessible_name(&font_field, "Font size");
     font_field.set_value(&config.font_size.to_string());
     font_row.add(
         &font_label,
@@ -210,6 +213,7 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, Ch
     let notif_cb = CheckBox::builder(panel)
         .with_label("Enable &new-mail notifications")
         .build();
+    set_accessible_name(&notif_cb, "Enable new-mail notifications");
     notif_cb.set_value(config.enable_notifications);
     notif_sec.add(&notif_cb, 0, SizerFlag::All, 4);
     sizer.add_sizer(&notif_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
@@ -219,6 +223,7 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, Ch
     let update_cb = CheckBox::builder(panel)
         .with_label("Check for &updates on startup")
         .build();
+    set_accessible_name(&update_cb, "Check for updates on startup");
     update_cb.set_value(config.check_updates);
     upd_sec.add(&update_cb, 0, SizerFlag::All, 4);
     sizer.add_sizer(&upd_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
@@ -236,6 +241,7 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> CheckBox {
     let preview_cb = CheckBox::builder(panel)
         .with_label("Show &preview before sending")
         .build();
+    set_accessible_name(&preview_cb, "Show preview before sending");
     preview_cb.set_value(config.preview_before_send);
     send_sec.add(&preview_cb, 0, SizerFlag::All, 4);
 
@@ -251,6 +257,7 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> CheckBox {
         .with_choices(format_choices)
         .with_selection(Some(0))
         .build();
+    set_accessible_name(&format_choice, "Default format");
     format_row.add(
         &format_label,
         0,
@@ -267,6 +274,7 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> CheckBox {
     let autosave_cb = CheckBox::builder(panel)
         .with_label("&Auto-save drafts every 60 seconds")
         .build();
+    set_accessible_name(&autosave_cb, "Auto-save drafts every 60 seconds");
     autosave_cb.set_value(true);
     draft_sec.add(&autosave_cb, 0, SizerFlag::All, 4);
     sizer.add_sizer(&draft_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
@@ -276,6 +284,7 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> CheckBox {
     let sig_cb = CheckBox::builder(panel)
         .with_label("Automatically insert &signature on new messages")
         .build();
+    set_accessible_name(&sig_cb, "Automatically insert signature on new messages");
     sig_cb.set_value(true);
     sig_sec.add(&sig_cb, 0, SizerFlag::All, 4);
     sizer.add_sizer(&sig_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
@@ -320,6 +329,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> Choice {
         .with_choices(sort_choices)
         .with_selection(Some(sort_idx))
         .build();
+    set_accessible_name(&sort_choice, "Default sort order");
     sort_row.add(
         &sort_label,
         0,
@@ -332,6 +342,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> Choice {
     let thread_cb = CheckBox::builder(panel)
         .with_label("Enable &threaded view by default")
         .build();
+    set_accessible_name(&thread_cb, "Enable threaded view by default");
     thread_cb.set_value(false);
     list_sec.add(&thread_cb, 0, SizerFlag::All, 4);
     sizer.add_sizer(&list_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
@@ -356,6 +367,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> Choice {
         .with_choices(markread_choices)
         .with_selection(Some(0))
         .build();
+    set_accessible_name(&markread_choice, "Mark as read after");
     markread_row.add(
         &markread_label,
         0,
@@ -368,6 +380,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> Choice {
     let external_cb = CheckBox::builder(panel)
         .with_label("Load remote &images in messages")
         .build();
+    set_accessible_name(&external_cb, "Load remote images in messages");
     external_cb.set_value(false);
     read_sec.add(&external_cb, 0, SizerFlag::All, 4);
 
@@ -402,6 +415,7 @@ fn build_language_tab(panel: &Panel, config: &AppConfig) -> Choice {
         .with_choices(lang_names)
         .with_selection(Some(lang_idx))
         .build();
+    set_accessible_name(&lang_choice, "Interface language");
     lang_row.add(
         &lang_label,
         0,
@@ -419,12 +433,14 @@ fn build_language_tab(panel: &Panel, config: &AppConfig) -> Choice {
     let enable_spell = CheckBox::builder(panel)
         .with_label("&Enable spell checking in compose editor")
         .build();
+    set_accessible_name(&enable_spell, "Enable spell checking in compose editor");
     enable_spell.set_value(true);
     spell_sec.add(&enable_spell, 0, SizerFlag::All, 4);
 
     let autocorrect_cb = CheckBox::builder(panel)
         .with_label("Show su&ggestions as you type")
         .build();
+    set_accessible_name(&autocorrect_cb, "Show suggestions as you type");
     autocorrect_cb.set_value(true);
     spell_sec.add(&autocorrect_cb, 0, SizerFlag::All, 4);
 
@@ -467,6 +483,7 @@ fn build_calendar_pim_tab(
         .with_choices(view_choices)
         .with_selection(Some(view_idx))
         .build();
+    set_accessible_name(&view_choice, "Default view");
     view_row.add(
         &view_label,
         0,
@@ -479,6 +496,7 @@ fn build_calendar_pim_tab(
     let weekends_cb = CheckBox::builder(panel)
         .with_label("Show &weekends")
         .build();
+    set_accessible_name(&weekends_cb, "Show weekends");
     weekends_cb.set_value(config.calendar_show_weekends);
     view_sec.add(&weekends_cb, 0, SizerFlag::All, 4);
 
@@ -499,6 +517,7 @@ fn build_calendar_pim_tab(
         .with_choices(day_choices)
         .with_selection(Some(day_idx))
         .build();
+    set_accessible_name(&first_day_choice, "First day of week");
     first_day_row.add(
         &first_day_label,
         0,
@@ -518,6 +537,7 @@ fn build_calendar_pim_tab(
         .with_label("Default &reminder (minutes):")
         .build();
     let rem_field = TextCtrl::builder(panel).build();
+    set_accessible_name(&rem_field, "Default reminder in minutes");
     rem_field.set_value(&config.default_reminder_minutes.to_string());
     rem_row.add(
         &rem_label,
@@ -558,6 +578,7 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl) {
         .with_choices(log_choices)
         .with_selection(Some(log_idx))
         .build();
+    set_accessible_name(&log_choice, "Log level");
     log_row.add(
         &log_label,
         0,
@@ -577,6 +598,7 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl) {
         .with_label("Download folder:")
         .build();
     let dl_field = TextCtrl::builder(panel).build();
+    set_accessible_name(&dl_field, "Download folder");
     dl_field.set_value(&config.download_folder.to_string_lossy());
     let dl_browse = Button::builder(panel).with_label("&Browse...").build();
 

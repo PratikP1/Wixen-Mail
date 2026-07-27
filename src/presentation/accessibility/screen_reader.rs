@@ -110,17 +110,24 @@ mod native {
     /// separate is needed for braille.
     pub fn raise_notification(text: &str, processing: Processing, activity: &str) -> bool {
         unsafe {
+            // Each step logs why it gave up. This path cannot be unit tested and
+            // it failed silently once already, so when nothing is spoken the log
+            // has to say which link broke rather than leaving it to guesswork.
             if UiaClientsAreListening() == 0 {
+                tracing::debug!("No UI Automation client is listening; nothing to announce to");
                 return false;
             }
 
             let hwnd = GetForegroundWindow();
             if hwnd == 0 {
+                tracing::warn!("No foreground window, so the announcement had nowhere to go");
                 return false;
             }
 
             let mut provider: *mut c_void = std::ptr::null_mut();
-            if UiaHostProviderFromHwnd(hwnd, &mut provider) != 0 || provider.is_null() {
+            let host = UiaHostProviderFromHwnd(hwnd, &mut provider);
+            if host != 0 || provider.is_null() {
+                tracing::warn!("UiaHostProviderFromHwnd failed with 0x{:08x}", host);
                 return false;
             }
 
@@ -142,6 +149,11 @@ mod native {
             SysFreeString(activity_id);
             release(provider);
 
+            if result != 0 {
+                tracing::warn!("UiaRaiseNotificationEvent failed with 0x{:08x}", result);
+            } else {
+                tracing::trace!("Announced: {}", text);
+            }
             result == 0
         }
     }

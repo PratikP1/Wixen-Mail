@@ -1713,6 +1713,12 @@ impl WxMailApp {
             .build();
 
         let help = Menu::builder()
+            .append_item(
+                ID_LOAD_SCALE_SAMPLE,
+                "Load &Sample Mailbox",
+                "Fill the message list with 200,000 generated messages to test it at scale",
+            )
+            .append_separator()
             .append_item(ID_ABOUT, "&About\tF1", "About Wixen Mail")
             .build();
 
