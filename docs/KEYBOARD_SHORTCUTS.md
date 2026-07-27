@@ -190,7 +190,7 @@ in the heading, as in "Reply, level 8, from Ada Lovelace".
 | Columns | `F8` | Choose which message list columns are shown and in what order |
 | Refresh Folder | `F5` | Read the current folder again from the local store |
 | Next Pane | `F6` | Move focus between the folder tree and the message list |
-| Thread View Toggle | `Ctrl+T` | Toggle conversation threading on and off |
+| Thread View Toggle | `Ctrl+T` | Not available yet. It would collapse the list to one row per conversation. To read a conversation now, press `Enter` on a message that belongs to one. |
 | Check Mail | `F9` | Check for new messages |
 
 #### Inside the Columns dialog
