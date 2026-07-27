@@ -1,8 +1,31 @@
 //! Message persistence operations
 
-use super::{CachedMessage, MessageCache};
+use super::{CachedAttachment, CachedMessage, MessageCache};
 use crate::common::{Error, Result};
 use rusqlite::{params, OptionalExtension};
+
+/// One row of a folder listing.
+///
+/// Deliberately not `CachedMessage`. A listing needs the snippet, the size and
+/// whether there are attachments, and it must never carry body text: pulling
+/// bodies through SQLite to draw a subject line is what made the old table
+/// unusable at scale. Saving a message and listing one are different shapes,
+/// so they are different types.
+#[derive(Debug, Clone)]
+pub struct MessageListRow {
+    pub id: i64,
+    pub uid: u32,
+    pub subject: String,
+    pub from_addr: String,
+    pub to_addr: String,
+    pub cc: Option<String>,
+    pub date: String,
+    pub snippet: Option<String>,
+    pub size_bytes: Option<i64>,
+    pub read: bool,
+    pub starred: bool,
+    pub has_attachments: bool,
+}
 
 impl MessageCache {
     /// Save a message to cache
@@ -73,6 +96,104 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to collect messages: {}", e)))?;
 
         Ok(messages)
+    }
+
+    /// List a folder for display.
+    ///
+    /// Newest first, which is the default sort and what someone opening a
+    /// mailbox expects to land on. Attachment presence comes from an
+    /// `EXISTS`, so a message with forty attachments costs the same as one
+    /// with none.
+    pub fn get_message_list(
+        &self,
+        folder_id: i64,
+        account_id: &str,
+    ) -> Result<Vec<MessageListRow>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT m.id, m.uid, m.subject, m.from_addr, m.to_addr, m.cc, m.date,
+                        m.snippet, m.size_bytes, m.read, m.starred,
+                        EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)
+                 FROM messages m
+                 INNER JOIN folders f ON m.folder_id = f.id
+                 WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
+                 ORDER BY m.date DESC, m.uid DESC",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare listing query: {}", e)))?;
+
+        let rows = stmt
+            .query_map(params![folder_id, account_id], |row| {
+                Ok(MessageListRow {
+                    id: row.get(0)?,
+                    uid: row.get(1)?,
+                    subject: row.get(2)?,
+                    from_addr: row.get(3)?,
+                    to_addr: row.get(4)?,
+                    cc: row.get(5)?,
+                    date: row.get(6)?,
+                    snippet: row.get(7)?,
+                    size_bytes: row.get(8)?,
+                    read: row.get(9)?,
+                    starred: row.get(10)?,
+                    has_attachments: row.get(11)?,
+                })
+            })
+            .map_err(|e| Error::Other(format!("Failed to list messages: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect listing: {}", e)))?;
+
+        Ok(rows)
+    }
+
+    /// Store an attachment record.
+    ///
+    /// The record, not the file. What the list and the details reading need is
+    /// the name, type and size; the bytes are fetched when someone opens or
+    /// saves the attachment.
+    pub fn save_attachment(&self, attachment: &CachedAttachment) -> Result<i64> {
+        self.conn
+            .execute(
+                "INSERT INTO attachments (message_id, filename, mime_type, size, content_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    attachment.message_id,
+                    attachment.filename,
+                    attachment.mime_type,
+                    attachment.size,
+                    attachment.content_id,
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to save attachment: {}", e)))?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Every attachment recorded for a message.
+    pub fn get_attachments_for_message(&self, message_id: i64) -> Result<Vec<CachedAttachment>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, message_id, filename, mime_type, size, content_id
+                 FROM attachments WHERE message_id = ?1 ORDER BY id",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare attachment query: {}", e)))?;
+
+        let attachments = stmt
+            .query_map(params![message_id], |row| {
+                Ok(CachedAttachment {
+                    id: row.get(0)?,
+                    message_id: row.get(1)?,
+                    filename: row.get(2)?,
+                    mime_type: row.get(3)?,
+                    size: row.get(4)?,
+                    content_id: row.get(5)?,
+                })
+            })
+            .map_err(|e| Error::Other(format!("Failed to query attachments: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect attachments: {}", e)))?;
+
+        Ok(attachments)
     }
 
     /// Get a specific message by ID
@@ -165,6 +286,139 @@ impl MessageCache {
 
 #[cfg(test)]
 mod tests {
+
+    // ── The listing row ─────────────────────────────────────────────────
+    //
+    // A folder listing needs different fields from a saved message: it wants
+    // the snippet, the size, and whether there are attachments, and it must
+    // not drag body text through SQLite to show a subject line.
+
+    fn listing_cache() -> (MessageCache, i64) {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = env::temp_dir().join(format!("wixen_mail_listing_{}", nanos));
+        let cache = MessageCache::new(dir, None).unwrap();
+        let folder_id = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acc-1".to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .unwrap();
+        (cache, folder_id)
+    }
+
+    fn listing_message(folder_id: i64, uid: u32, subject: &str, date: &str) -> CachedMessage {
+        CachedMessage {
+            id: 0,
+            uid,
+            folder_id,
+            message_id: format!("{}@example.com", uid),
+            subject: subject.to_string(),
+            from_addr: "Ada Lovelace <ada@example.com>".to_string(),
+            to_addr: "me@example.com".to_string(),
+            cc: None,
+            date: date.to_string(),
+            body_plain: None,
+            body_html: None,
+            read: false,
+            starred: false,
+            deleted: false,
+        }
+    }
+
+    #[test]
+    fn test_a_listing_row_carries_what_the_columns_need() {
+        let (cache, folder_id) = listing_cache();
+        let id = cache
+            .save_message(&listing_message(
+                folder_id,
+                1,
+                "Quarterly report",
+                "2026-07-26",
+            ))
+            .unwrap();
+        cache
+            .save_message_body(id, Some("The numbers are attached."), None)
+            .unwrap();
+
+        let rows = cache.get_message_list(folder_id, "acc-1").unwrap();
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row.subject, "Quarterly report");
+        assert_eq!(row.snippet.as_deref(), Some("The numbers are attached."));
+        assert_eq!(row.to_addr, "me@example.com");
+        assert!(!row.has_attachments);
+    }
+
+    #[test]
+    fn test_a_listing_row_reports_attachments_without_loading_them() {
+        let (cache, folder_id) = listing_cache();
+        let id = cache
+            .save_message(&listing_message(folder_id, 2, "Invoice", "2026-07-25"))
+            .unwrap();
+        cache
+            .save_attachment(&crate::data::message_cache::CachedAttachment {
+                id: 0,
+                message_id: id,
+                filename: "invoice.pdf".to_string(),
+                mime_type: "application/pdf".to_string(),
+                size: 1024,
+                content_id: None,
+            })
+            .unwrap();
+
+        let rows = cache.get_message_list(folder_id, "acc-1").unwrap();
+        assert!(rows[0].has_attachments, "attachment was not reported");
+    }
+
+    #[test]
+    fn test_a_deleted_message_is_not_listed() {
+        let (cache, folder_id) = listing_cache();
+        let id = cache
+            .save_message(&listing_message(folder_id, 3, "Gone", "2026-07-24"))
+            .unwrap();
+        cache.delete_message(id).unwrap();
+        assert!(cache
+            .get_message_list(folder_id, "acc-1")
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn test_another_accounts_folder_is_not_listed() {
+        // The same folder id must not leak across accounts.
+        let (cache, folder_id) = listing_cache();
+        cache
+            .save_message(&listing_message(folder_id, 4, "Private", "2026-07-23"))
+            .unwrap();
+        assert!(cache
+            .get_message_list(folder_id, "someone-else")
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn test_the_newest_message_is_listed_first() {
+        let (cache, folder_id) = listing_cache();
+        cache
+            .save_message(&listing_message(folder_id, 5, "Older", "2026-07-01"))
+            .unwrap();
+        cache
+            .save_message(&listing_message(folder_id, 6, "Newer", "2026-07-20"))
+            .unwrap();
+
+        let rows = cache.get_message_list(folder_id, "acc-1").unwrap();
+        assert_eq!(rows[0].subject, "Newer");
+        assert_eq!(rows[1].subject, "Older");
+    }
     use super::*;
     use crate::data::message_cache::CachedFolder;
     use std::env;

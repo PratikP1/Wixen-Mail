@@ -62,12 +62,37 @@ pub fn cell_text(
         MessageColumn::Received | MessageColumn::Sent => {
             format_for_list(&message.date, now, dates.style, dates.order)
         }
-        MessageColumn::Snippet => String::new(),
+        MessageColumn::Snippet => message.snippet.clone(),
         MessageColumn::Thread => thread_cell(message),
-        MessageColumn::Size => String::new(),
+        MessageColumn::Size => message.size_bytes.map(size_cell).unwrap_or_default(),
         MessageColumn::Flagged => if message.starred { "Yes" } else { "" }.to_string(),
-        MessageColumn::Answered | MessageColumn::Draft => String::new(),
-        MessageColumn::To | MessageColumn::Cc | MessageColumn::Tags => String::new(),
+        MessageColumn::To => display_address(&message.to),
+        MessageColumn::Cc => display_address(&message.cc),
+    }
+}
+
+/// A size in units rather than raw bytes.
+///
+/// "2 KB" is one word to hear. "2048" is four digits a listener has to
+/// assemble into a number and then into a size, on every row.
+fn size_cell(bytes: i64) -> String {
+    const KB: i64 = 1024;
+    const MB: i64 = KB * 1024;
+    match bytes {
+        b if b < 0 => String::new(),
+        1 => "1 byte".to_string(),
+        b if b < KB => format!("{} bytes", b),
+        b if b < MB => format!("{} KB", b / KB),
+        b => {
+            let megabytes = b as f64 / MB as f64;
+            // One decimal place only when it says something: "1.5 MB" is
+            // useful, "1.0 MB" is a syllable that carries nothing.
+            if (megabytes - megabytes.round()).abs() < 0.05 {
+                format!("{} MB", megabytes.round() as i64)
+            } else {
+                format!("{:.1} MB", megabytes)
+            }
+        }
     }
 }
 
@@ -104,6 +129,87 @@ fn display_address(address: &str) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_the_snippet_column_reads_the_stored_snippet() {
+        assert_eq!(
+            cell_text(
+                &message(),
+                MessageColumn::Snippet,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            "The numbers are attached."
+        );
+    }
+
+    #[test]
+    fn test_size_is_spoken_in_units_not_raw_bytes() {
+        // "2 KB" is one word to hear; "2048" is four digits to assemble.
+        let mut m = message();
+        for (bytes, expected) in [
+            (0i64, "0 bytes"),
+            (1, "1 byte"),
+            (999, "999 bytes"),
+            (2048, "2 KB"),
+            (1_572_864, "1.5 MB"),
+        ] {
+            m.size_bytes = Some(bytes);
+            assert_eq!(
+                cell_text(
+                    &m,
+                    MessageColumn::Size,
+                    DateSettings::default(),
+                    chrono::Local::now()
+                ),
+                expected,
+                "for {} bytes",
+                bytes
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_unknown_size_says_nothing_rather_than_zero() {
+        // We do not know the size until the envelope has been fetched, and
+        // "0 bytes" is a claim, not an absence.
+        let mut m = message();
+        m.size_bytes = None;
+        assert_eq!(
+            cell_text(
+                &m,
+                MessageColumn::Size,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            ""
+        );
+    }
+
+    #[test]
+    fn test_to_and_cc_prefer_display_names_like_correspondent_does() {
+        let mut m = message();
+        m.to = "Grace Hopper <grace@example.com>".to_string();
+        m.cc = "Alan Turing <alan@example.com>".to_string();
+        assert_eq!(
+            cell_text(
+                &m,
+                MessageColumn::To,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            "Grace Hopper"
+        );
+        assert_eq!(
+            cell_text(
+                &m,
+                MessageColumn::Cc,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            "Alan Turing"
+        );
+    }
+
     fn message() -> MessageItem {
         MessageItem {
             uid: 1,
@@ -118,6 +224,10 @@ mod tests {
             thread_depth: 0,
             is_thread_parent: false,
             thread_id: None,
+            snippet: "The numbers are attached.".to_string(),
+            size_bytes: Some(2048),
+            to: "me@example.com".to_string(),
+            cc: String::new(),
         }
     }
 

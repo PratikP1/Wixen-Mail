@@ -86,6 +86,42 @@ pub struct MessageItem {
     pub thread_depth: usize,
     pub is_thread_parent: bool,
     pub thread_id: Option<String>,
+    /// First line of the body, stored beside the message rather than derived
+    /// from it, so the column keeps reading after the body cache evicts.
+    pub snippet: String,
+    /// Size on the server, where it is known. `None` reads as blank rather
+    /// than as "0 bytes", which would be a claim we cannot make.
+    pub size_bytes: Option<i64>,
+    pub to: String,
+    pub cc: String,
+}
+
+impl MessageItem {
+    /// Build a list row from what the cache stores.
+    ///
+    /// Threading is not computed yet, so `thread_id` stays `None` and the
+    /// Thread column reads blank rather than claiming a structure that has not
+    /// been worked out.
+    pub fn from_row(row: &crate::data::message_cache::MessageListRow) -> Self {
+        Self {
+            uid: row.uid,
+            message_id: row.id,
+            subject: row.subject.clone(),
+            from: row.from_addr.clone(),
+            date: row.date.clone(),
+            read: row.read,
+            starred: row.starred,
+            has_attachments: row.has_attachments,
+            attachments: Vec::new(),
+            thread_depth: 0,
+            is_thread_parent: false,
+            thread_id: None,
+            snippet: row.snippet.clone().unwrap_or_default(),
+            size_bytes: row.size_bytes,
+            to: row.to_addr.clone(),
+            cc: row.cc.clone().unwrap_or_default(),
+        }
+    }
 }
 
 /// Attachment item for display
@@ -147,6 +183,11 @@ pub struct CompositionData {
 pub enum UIUpdate {
     FoldersLoaded(Vec<String>),
     MessagesLoaded(Vec<MessageItem>),
+    /// Folder names paired with their database ids.
+    ///
+    /// The tree shows names, but reading a folder needs its id, and looking
+    /// one up by name would break the moment two accounts both have an INBOX.
+    FolderIdsLoaded(Vec<(String, i64)>),
     MessageBodyLoaded(String),
     ConnectionStatusChanged(ConnectionStatus),
     ErrorOccurred(String),

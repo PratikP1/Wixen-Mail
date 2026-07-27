@@ -12,6 +12,7 @@ use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::ui_types::*;
 use crate::presentation::wx_account_manager::{self, AccountManagerAction};
 use crate::presentation::wx_calendar;
+use crate::presentation::wx_columns;
 use crate::presentation::wx_compose::{self, ComposeMode, ComposeResult};
 use crate::presentation::wx_managers;
 use crate::presentation::wx_settings;
@@ -94,6 +95,7 @@ const ID_MODULE_NOTES: Id = ID_HIGHEST + 65;
 const ID_VIEW_FOLDER_PANE: Id = ID_HIGHEST + 75;
 const ID_VIEW_PREVIEW_PANE: Id = ID_HIGHEST + 76;
 const ID_VIEW_MODULE_BUTTONS: Id = ID_HIGHEST + 77;
+const ID_VIEW_COLUMNS: Id = ID_HIGHEST + 78;
 // New item creation IDs
 const ID_NEW_CALENDAR: Id = ID_HIGHEST + 70;
 const ID_NEW_EVENT: Id = ID_HIGHEST + 71;
@@ -108,6 +110,8 @@ pub struct WxUIState {
     pub folders: Vec<String>,
     pub messages: Vec<MessageItem>,
     pub selected_folder: Option<String>,
+    /// Folder name to database id, so selecting a folder can read it.
+    pub folder_ids: std::collections::HashMap<String, i64>,
     pub selected_message_index: Option<usize>,
     pub message_preview: String,
     pub connection_status: ConnectionStatus,
@@ -136,6 +140,7 @@ impl Default for WxUIState {
             folders: Vec::new(),
             messages: Vec::new(),
             selected_folder: None,
+            folder_ids: std::collections::HashMap::new(),
             selected_message_index: None,
             message_preview: String::new(),
             connection_status: ConnectionStatus::Disconnected,
@@ -492,24 +497,38 @@ impl WxMailApp {
             // Columns come from the layout, so hiding and reordering has one
             // source of truth rather than a hard coded list here and a model
             // somewhere else.
-            let column_layout = Rc::new(RefCell::new(ColumnLayout::defaults_for(
-                message_columns::FolderKind::Inbox,
-            )));
-
+            //
             // Read once rather than per row: the paint callback runs for every
             // visible cell and must not touch configuration.
-            let date_settings = {
+            let stored_config = {
                 let mut mgr = crate::data::config::ConfigManager::default();
-                let cfg = mgr.load().map(|()| mgr.app_config().clone()).ok();
-                match cfg {
-                    Some(cfg) => message_rows::DateSettings {
-                        style: date_display::DateStyle::from_setting(&cfg.date_style),
-                        order: date_display::DateOrder::from_setting(&cfg.date_order),
-                    },
-                    None => message_rows::DateSettings::default(),
-                }
+                mgr.load().map(|()| mgr.app_config().clone()).ok()
             };
+            let date_settings = match &stored_config {
+                Some(cfg) => message_rows::DateSettings {
+                    style: date_display::DateStyle::from_setting(&cfg.date_style),
+                    order: date_display::DateOrder::from_setting(&cfg.date_order),
+                },
+                None => message_rows::DateSettings::default(),
+            };
+            let column_layout = Rc::new(RefCell::new(
+                match stored_config.as_ref().map(|c| c.message_columns.as_str()) {
+                    Some(stored) if !stored.is_empty() => {
+                        ColumnLayout::from_stored(stored, message_columns::FolderKind::Inbox)
+                    }
+                    _ => ColumnLayout::defaults_for(message_columns::FolderKind::Inbox),
+                },
+            ));
             apply_columns(&msg_list, &column_layout.borrow());
+
+            // A restored layout carries a restored sort. Without this the menu
+            // came up ticking Date (Newest First) whatever the list was
+            // actually doing, and the first header click toggled from the
+            // wrong direction.
+            if let Some(order) = column_layout.borrow().sort.as_mail_sort_option() {
+                sync_sort_menu(&frame, order);
+                lock_state(&state).sort_order = order;
+            }
 
             // The callback runs while wxWidgets paints, so it reads what is
             // already in memory and never touches the database.
@@ -737,6 +756,22 @@ impl WxMailApp {
             panel_sizer.add(&right_panel, 1, SizerFlag::Expand | SizerFlag::All, 0);
             panel.set_sizer(panel_sizer, true);
 
+            // Where focus lands after a switch. A module that changes what is
+            // on screen and leaves focus behind is one a keyboard user has to
+            // go hunting through, so each names its starting point and the list
+            // is sorted the same way the panels are.
+            let mut focus_targets = vec![
+                (PimModule::Mail, folder_tree),
+                (PimModule::Calendar, cal_sb.tree),
+                (PimModule::Contacts, contacts_sb.tree),
+                (PimModule::Reminders, reminders_sb.tree),
+                (PimModule::Tasks, tasks_sb.tree),
+                (PimModule::Notes, notes_sb.tree),
+            ];
+            focus_targets.sort_by_key(|(module, _)| module.index());
+            let module_focus: Vec<TreeCtrl> =
+                focus_targets.into_iter().map(|(_, tree)| tree).collect();
+
             // ── Module switching helper ──────────────────────────────────
             // Collect sidebar and content panel references for switching
             // Each panel is tagged with the module it belongs to and then sorted
@@ -775,6 +810,7 @@ impl WxMailApp {
                 let a11y = a11y.clone();
                 let switch_cache = message_cache.clone();
                 let switch_tx = ui_tx.clone();
+                let module_focus = module_focus.clone();
                 move |module: PimModule| {
                     // Pressing the shortcut for the module you are already in
                     // is a question, not a request. Saying where you are
@@ -831,6 +867,13 @@ impl WxMailApp {
                         &format!("Switching to {}", label),
                         crate::presentation::accessibility::announcements::Priority::Normal,
                     );
+
+                    // Focus follows the switch. Announcing a new module and
+                    // leaving focus on the last one's controls is how a
+                    // keyboard user ends up somewhere they cannot identify.
+                    if let Some(target) = module_focus.get(idx) {
+                        target.set_focus();
+                    }
 
                     // Fill the panel that was just shown. Without this the
                     // module opens empty however much is stored.
@@ -1201,16 +1244,21 @@ impl WxMailApp {
                 let state = state.clone();
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
+                let folder_cache = message_cache.clone();
                 move |event| {
                     if let Some(item) = event.get_item() {
                         if let Some(name) = folder_tree.get_item_text(&item) {
                             if name == "Mail Folders" {
                                 return;
                             }
-                            {
+                            let (folder_id, account_id) = {
                                 let mut s = lock_state(&state);
                                 s.selected_folder = Some(name.clone());
-                            }
+                                (
+                                    s.folder_ids.get(&name).copied(),
+                                    s.active_account_id.clone(),
+                                )
+                            };
                             // Update title bar with folder context
                             frame.set_title(&format!("{} - Mail - Wixen Mail", name));
                             let tx = ui_tx.clone();
@@ -1219,6 +1267,10 @@ impl WxMailApp {
                                     .send(UIUpdate::StatusUpdated(format!("Loading {}...", name)))
                                     .await;
                             });
+                            // Selecting a folder used to announce "Loading
+                            // INBOX..." and then load nothing at all. This is
+                            // the read that makes the status true.
+                            load_folder_messages(&folder_cache, folder_id, account_id, &ui_tx);
                         }
                     }
                 }
@@ -1244,6 +1296,48 @@ impl WxMailApp {
                             )))
                             .await;
                     });
+                }
+            });
+
+            // ── Header click sorting ─────────────────────────────────────
+            //
+            // A header is a button to a mouse user and nothing at all to
+            // someone arrowing through rows, so the same sorts are on the Sort
+            // Messages submenu and the two are kept in step. Clicking is the
+            // convenience; the menu is the guarantee.
+            msg_list.on_column_click({
+                let state = state.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                let a11y = a11y.clone();
+                let column_layout = column_layout.clone();
+                move |event| {
+                    let Some(clicked) = event.get_column() else {
+                        return;
+                    };
+                    let Some(column) = column_layout
+                        .borrow()
+                        .visible()
+                        .get(clicked as usize)
+                        .copied()
+                    else {
+                        return;
+                    };
+                    let (said, option) = {
+                        let mut layout = column_layout.borrow_mut();
+                        let said = layout.sort_by(column);
+                        (said, layout.sort.as_mail_sort_option())
+                    };
+                    let Some(option) = option else {
+                        return;
+                    };
+                    apply_sort(&state, &ui_tx, &runtime, option);
+                    persist_column_layout(&column_layout.borrow());
+                    sync_sort_menu(&frame, option);
+                    let _ = a11y.announce(
+                        &said,
+                        crate::presentation::accessibility::announcements::Priority::Normal,
+                    );
                 }
             });
 
@@ -1316,6 +1410,36 @@ impl WxMailApp {
                                 },
                                 crate::presentation::accessibility::announcements::Priority::High,
                             );
+                        }
+                        _ if id == ID_VIEW_COLUMNS => {
+                            let current = column_layout.borrow().clone();
+                            if let wx_columns::ColumnDialogResult::Updated(chosen) =
+                                wx_columns::show_column_dialog(
+                                    &frame,
+                                    &current,
+                                    message_columns::FolderKind::Inbox,
+                                    &a11y,
+                                )
+                            {
+                                let count = chosen.visible().len();
+                                *column_layout.borrow_mut() = *chosen;
+                                apply_columns(&msg_list, &column_layout.borrow());
+                                // Virtual mode draws from the callback, so the
+                                // row count has to be set again after the
+                                // columns are rebuilt or the list comes back
+                                // empty.
+                                let rows = state.lock().map(|s| s.messages.len()).unwrap_or(0);
+                                msg_list.set_item_count(rows as i64);
+                                persist_column_layout(&column_layout.borrow());
+                                let _ = a11y.announce(
+                                    &format!(
+                                        "{} column{} shown",
+                                        count,
+                                        if count == 1 { "" } else { "s" }
+                                    ),
+                                    crate::presentation::accessibility::announcements::Priority::Normal,
+                                );
+                            }
                         }
                         _ if id == ID_VIEW_MODULE_BUTTONS => {
                             let visible = btn_panel.is_shown();
@@ -1505,13 +1629,15 @@ impl WxMailApp {
                             send_status(&ui_tx, &runtime, "Flushing outbox queue...");
                             flush_outbox(&state, &ui_tx, &runtime);
                         }
-                        _ if id == ID_SORT_DATE_NEWEST => apply_sort(&state, &ui_tx, &runtime, MailSortOption::DateNewestFirst),
-                        _ if id == ID_SORT_DATE_OLDEST => apply_sort(&state, &ui_tx, &runtime, MailSortOption::DateOldestFirst),
-                        _ if id == ID_SORT_SENDER_AZ => apply_sort(&state, &ui_tx, &runtime, MailSortOption::SenderAZ),
-                        _ if id == ID_SORT_SENDER_ZA => apply_sort(&state, &ui_tx, &runtime, MailSortOption::SenderZA),
-                        _ if id == ID_SORT_SUBJECT_AZ => apply_sort(&state, &ui_tx, &runtime, MailSortOption::SubjectAZ),
-                        _ if id == ID_SORT_SUBJECT_ZA => apply_sort(&state, &ui_tx, &runtime, MailSortOption::SubjectZA),
-                        _ if id == ID_SORT_UNREAD_FIRST => apply_sort(&state, &ui_tx, &runtime, MailSortOption::UnreadFirst),
+                        // Each of these also moves the column layout, so the
+                        // headers and the menu never disagree about the order.
+                        _ if id == ID_SORT_DATE_NEWEST => sort_from_menu(&state, &ui_tx, &runtime, &a11y, &column_layout, MailSortOption::DateNewestFirst),
+                        _ if id == ID_SORT_DATE_OLDEST => sort_from_menu(&state, &ui_tx, &runtime, &a11y, &column_layout, MailSortOption::DateOldestFirst),
+                        _ if id == ID_SORT_SENDER_AZ => sort_from_menu(&state, &ui_tx, &runtime, &a11y, &column_layout, MailSortOption::SenderAZ),
+                        _ if id == ID_SORT_SENDER_ZA => sort_from_menu(&state, &ui_tx, &runtime, &a11y, &column_layout, MailSortOption::SenderZA),
+                        _ if id == ID_SORT_SUBJECT_AZ => sort_from_menu(&state, &ui_tx, &runtime, &a11y, &column_layout, MailSortOption::SubjectAZ),
+                        _ if id == ID_SORT_SUBJECT_ZA => sort_from_menu(&state, &ui_tx, &runtime, &a11y, &column_layout, MailSortOption::SubjectZA),
+                        _ if id == ID_SORT_UNREAD_FIRST => sort_from_menu(&state, &ui_tx, &runtime, &a11y, &column_layout, MailSortOption::UnreadFirst),
                         _ if id == ID_LOAD_SCALE_SAMPLE => {
                             tracing::info!(
                                 "Generating a sample mailbox of {} messages",
@@ -1710,6 +1836,16 @@ impl WxMailApp {
                 "Toggle the module navigation buttons",
             )
             .append_separator()
+            // A bare function key on purpose. Choosing columns is something
+            // someone who navigates by ear does often, and it should not cost
+            // a three finger stretch. F1, F3, F5, F6 and F9 are taken; F8 is
+            // free.
+            .append_item(
+                ID_VIEW_COLUMNS,
+                "&Columns...\tF8",
+                "Choose which message list columns are shown and in what order",
+            )
+            .append_separator()
             .append_check_item(
                 ID_MUTE_CONTENT,
                 "&Mute Message Reading	Ctrl+Shift+M",
@@ -1887,6 +2023,10 @@ fn sample_mailbox(count: usize) -> Vec<MessageItem> {
             thread_depth: i % 5,
             is_thread_parent: i % 5 == 0,
             thread_id: (i % 5 != 0).then(|| format!("thread-{}", i / 5)),
+            snippet: format!("Sample message {} for testing the list at scale.", i + 1),
+            size_bytes: Some(((i % 40) as i64 + 1) * 1024),
+            to: "me@example.com".to_string(),
+            cc: String::new(),
         })
         .collect()
 }
@@ -1951,7 +2091,20 @@ fn load_module_data(
     let mut failures: Vec<String> = Vec::new();
 
     match module {
-        PimModule::Mail => return,
+        // Mail's folder list came from nowhere: the handler for
+        // FoldersLoaded existed and nothing ever sent one, so the tree was
+        // empty in every build no matter what had been synced.
+        PimModule::Mail => match cache.get_folders_for_account(&account_id) {
+            Ok(folders) => {
+                updates.push(UIUpdate::FolderIdsLoaded(
+                    folders.iter().map(|f| (f.name.clone(), f.id)).collect(),
+                ));
+                updates.push(UIUpdate::FoldersLoaded(
+                    folders.into_iter().map(|f| f.name).collect(),
+                ));
+            }
+            Err(e) => failures.push(format!("folders: {}", e)),
+        },
         PimModule::Calendar => {
             // A fresh account has no containers, so the sidebar would be empty
             // even with everything else wired. These are idempotent.
@@ -2113,6 +2266,100 @@ fn persist_mute_preference(muted: bool) {
     mgr.app_config_mut().mute_message_reading = muted;
     if let Err(e) = mgr.save() {
         tracing::warn!("Mute preference not saved: {}", e);
+    }
+}
+
+/// Read a folder's messages out of the cache and send them to the list.
+///
+/// Runs on the UI thread for the same reason `load_module_data` does:
+/// `MessageCache` wraps a rusqlite connection and is not `Sync`. The channel
+/// is unbounded, so sending never blocks.
+///
+/// A read failure is announced rather than swallowed. An empty list because
+/// the query failed sounds exactly like an empty folder, and those are not the
+/// same thing to someone who cannot see the window.
+fn load_folder_messages(
+    cache: &Option<Arc<MessageCache>>,
+    folder_id: Option<i64>,
+    account_id: Option<String>,
+    tx: &Sender<UIUpdate>,
+) {
+    let (Some(cache), Some(folder_id), Some(account_id)) = (cache.as_ref(), folder_id, account_id)
+    else {
+        return;
+    };
+    match cache.get_message_list(folder_id, &account_id) {
+        Ok(rows) => {
+            let items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
+            let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
+        }
+        Err(e) => {
+            tracing::error!("Failed to read folder {}: {}", folder_id, e);
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "Could not read this folder: {}",
+                e
+            )));
+        }
+    }
+}
+
+/// Sort from the Sort Messages menu, keeping the column layout in step.
+///
+/// `apply_sort` alone reorders the list and leaves the layout holding the
+/// previous sort, so the next header click would toggle from a direction that
+/// was no longer in effect and land on the opposite of what was announced.
+#[allow(clippy::too_many_arguments)]
+fn sort_from_menu(
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+    layout: &Rc<RefCell<ColumnLayout>>,
+    order: MailSortOption,
+) {
+    apply_sort(state, tx, rt, order);
+    layout.borrow_mut().set_sort_from_option(order);
+    persist_column_layout(&layout.borrow());
+    let said = layout.borrow().sort.spoken();
+    let _ = a11y.announce(
+        &said,
+        crate::presentation::accessibility::announcements::Priority::Normal,
+    );
+}
+
+/// Tick the Sort Messages radio item that matches the sort now in effect.
+///
+/// Sorting from a column header used to leave the menu showing the previous
+/// order, so the one place that states the sort in words disagreed with the
+/// list. For anyone who checks the menu rather than the header, that is the
+/// only answer they get.
+fn sync_sort_menu(frame: &Frame, order: MailSortOption) {
+    let id = match order {
+        MailSortOption::DateNewestFirst => ID_SORT_DATE_NEWEST,
+        MailSortOption::DateOldestFirst => ID_SORT_DATE_OLDEST,
+        MailSortOption::SenderAZ => ID_SORT_SENDER_AZ,
+        MailSortOption::SenderZA => ID_SORT_SENDER_ZA,
+        MailSortOption::SubjectAZ => ID_SORT_SUBJECT_AZ,
+        MailSortOption::SubjectZA => ID_SORT_SUBJECT_ZA,
+        MailSortOption::UnreadFirst => ID_SORT_UNREAD_FIRST,
+    };
+    sync_menu_check(frame, id, true);
+}
+
+/// Remember the chosen columns across restarts.
+///
+/// A failure here is logged rather than announced. The layout is already in
+/// effect on screen, so telling someone their columns did not save while they
+/// are looking at the new columns is confusing; the log is where it belongs.
+fn persist_column_layout(layout: &ColumnLayout) {
+    let mut mgr = crate::data::config::ConfigManager::default();
+    if let Err(e) = mgr.load() {
+        tracing::warn!("Column layout not saved, config unreadable: {}", e);
+        return;
+    }
+    mgr.app_config_mut().message_columns = layout.to_stored();
+    if let Err(e) = mgr.save() {
+        tracing::warn!("Column layout not saved: {}", e);
     }
 }
 
@@ -2310,6 +2557,10 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let msg = format!("{} folders loaded", folders.len());
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "folders");
+        }
+        UIUpdate::FolderIdsLoaded(pairs) => {
+            let mut s = lock_state(state);
+            s.folder_ids = pairs.iter().cloned().collect();
         }
         UIUpdate::MessagesLoaded(messages) => {
             {
@@ -3487,10 +3738,98 @@ mod tests {
     }
 
     #[test]
-    fn test_mail_module_is_left_to_its_own_loading_path() {
+    fn test_opening_mail_loads_its_folders() {
+        // The handler for FoldersLoaded existed and nothing ever sent one, so
+        // the folder tree was empty in every build no matter what was stored.
         let (_dir, cache) = test_cache();
         let (tx, rx) = async_channel::unbounded();
+        if let Some(cache) = cache.as_ref() {
+            cache
+                .save_folder(&crate::data::message_cache::CachedFolder {
+                    id: 0,
+                    account_id: "acct-1".to_string(),
+                    name: "INBOX".to_string(),
+                    path: "INBOX".to_string(),
+                    folder_type: "Inbox".to_string(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .expect("seed folder");
+        }
+
         load_module_data(PimModule::Mail, &cache, Some("acct-1".to_string()), &tx);
+
+        let updates = drain(&rx);
+        assert!(
+            updates
+                .iter()
+                .any(|u| matches!(u, UIUpdate::FoldersLoaded(names) if names == &["INBOX"])),
+            "mail did not load its folders"
+        );
+        // And the ids come with them, because reading a folder needs the id
+        // and looking one up by name breaks the moment two accounts both have
+        // an INBOX.
+        assert!(updates
+            .iter()
+            .any(|u| matches!(u, UIUpdate::FolderIdsLoaded(pairs) if pairs.len() == 1)));
+    }
+
+    #[test]
+    fn test_selecting_a_folder_loads_its_messages() {
+        // Selecting a folder used to set the status to "Loading INBOX..." and
+        // then load nothing at all, so the list only ever filled from the
+        // sample data on the Help menu.
+        let (_dir, cache) = test_cache();
+        let (tx, rx) = async_channel::unbounded();
+        let folder_id = cache
+            .as_ref()
+            .map(|c| {
+                let id = c
+                    .save_folder(&crate::data::message_cache::CachedFolder {
+                        id: 0,
+                        account_id: "acct-1".to_string(),
+                        name: "INBOX".to_string(),
+                        path: "INBOX".to_string(),
+                        folder_type: "Inbox".to_string(),
+                        unread_count: 0,
+                        total_count: 0,
+                    })
+                    .expect("seed folder");
+                c.save_message(&crate::data::message_cache::CachedMessage {
+                    id: 0,
+                    uid: 1,
+                    folder_id: id,
+                    message_id: "m1@example.com".to_string(),
+                    subject: "Quarterly report".to_string(),
+                    from_addr: "ada@example.com".to_string(),
+                    to_addr: "me@example.com".to_string(),
+                    cc: None,
+                    date: "2026-07-26".to_string(),
+                    body_plain: None,
+                    body_html: None,
+                    read: false,
+                    starred: false,
+                    deleted: false,
+                })
+                .expect("seed message");
+                id
+            })
+            .expect("cache");
+
+        load_folder_messages(&cache, Some(folder_id), Some("acct-1".to_string()), &tx);
+
+        assert!(drain(&rx).iter().any(
+            |u| matches!(u, UIUpdate::MessagesLoaded(items) if items.len() == 1
+                && items[0].subject == "Quarterly report")
+        ));
+    }
+
+    #[test]
+    fn test_a_folder_with_no_id_yet_loads_nothing_rather_than_panicking() {
+        // The tree can be clicked before the ids have arrived.
+        let (_dir, cache) = test_cache();
+        let (tx, rx) = async_channel::unbounded();
+        load_folder_messages(&cache, None, Some("acct-1".to_string()), &tx);
         assert!(drain(&rx).is_empty());
     }
 

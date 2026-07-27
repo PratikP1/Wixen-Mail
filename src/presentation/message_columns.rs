@@ -10,6 +10,7 @@
 //! "status". A single column reading "unread, flagged, attachment" costs all
 //! three on every row; separate ones let someone keep unread and drop the rest.
 
+use crate::presentation::ui_types::MailSortOption;
 use std::fmt;
 
 /// A column the message list can show.
@@ -30,16 +31,13 @@ pub enum MessageColumn {
     Thread,
     Size,
     Flagged,
-    Answered,
-    Draft,
     To,
     Cc,
-    Tags,
 }
 
 impl MessageColumn {
     /// Every column, in the order the column dialog lists them.
-    pub const ALL: [MessageColumn; 15] = [
+    pub const ALL: [MessageColumn; 12] = [
         MessageColumn::Unread,
         MessageColumn::Attachment,
         MessageColumn::Subject,
@@ -50,11 +48,8 @@ impl MessageColumn {
         MessageColumn::Thread,
         MessageColumn::Size,
         MessageColumn::Flagged,
-        MessageColumn::Answered,
-        MessageColumn::Draft,
         MessageColumn::To,
         MessageColumn::Cc,
-        MessageColumn::Tags,
     ];
 
     /// The column heading, and what a screen reader reads for the column.
@@ -73,11 +68,8 @@ impl MessageColumn {
             MessageColumn::Thread => "Thread",
             MessageColumn::Size => "Size",
             MessageColumn::Flagged => "Flagged",
-            MessageColumn::Answered => "Answered",
-            MessageColumn::Draft => "Draft",
             MessageColumn::To => "To",
             MessageColumn::Cc => "Cc",
-            MessageColumn::Tags => "Tags",
         }
     }
 
@@ -94,11 +86,8 @@ impl MessageColumn {
             MessageColumn::Thread => "thread",
             MessageColumn::Size => "size",
             MessageColumn::Flagged => "flagged",
-            MessageColumn::Answered => "answered",
-            MessageColumn::Draft => "draft",
             MessageColumn::To => "to",
             MessageColumn::Cc => "cc",
-            MessageColumn::Tags => "tags",
         }
     }
 
@@ -116,17 +105,17 @@ impl MessageColumn {
             MessageColumn::Attachment => "m.has_attachments",
             MessageColumn::Subject => "m.subject COLLATE NOCASE",
             MessageColumn::Correspondent => "m.from_addr COLLATE NOCASE",
-            MessageColumn::Received => "m.internaldate",
+            // No INTERNALDATE is stored until IMAP sync lands, so the
+            // received date falls back to the sender's date rather than
+            // sorting on a column that is empty for every row.
+            MessageColumn::Received => "COALESCE(m.internaldate, m.date)",
             MessageColumn::Sent => "m.date",
             MessageColumn::Snippet => "m.snippet COLLATE NOCASE",
             MessageColumn::Thread => "m.thread_id",
             MessageColumn::Size => "m.size_bytes",
             MessageColumn::Flagged => "m.starred",
-            MessageColumn::Answered => "m.answered",
-            MessageColumn::Draft => "m.draft",
             MessageColumn::To => "m.to_addr COLLATE NOCASE",
             MessageColumn::Cc => "m.cc COLLATE NOCASE",
-            MessageColumn::Tags => "m.tags COLLATE NOCASE",
         }
     }
 }
@@ -185,6 +174,31 @@ impl Sort {
             self.column.heading().to_lowercase(),
             self.direction.spoken_for(self.column)
         )
+    }
+
+    /// The ordering the message list actually runs for this sort.
+    ///
+    /// Not every column has its own comparison. Rather than let a header
+    /// announce a sort that nothing performs, columns without one fall to the
+    /// nearest ordering that is meaningful: anything derived from the message
+    /// body or its position sorts by date, and the flag columns group their
+    /// flagged rows together. Every column therefore sorts, and the
+    /// announcement is always true.
+    pub fn as_mail_sort_option(&self) -> Option<MailSortOption> {
+        let ascending = self.direction == SortDirection::Ascending;
+        Some(match self.column {
+            MessageColumn::Subject if ascending => MailSortOption::SubjectAZ,
+            MessageColumn::Subject => MailSortOption::SubjectZA,
+            MessageColumn::Correspondent | MessageColumn::To | MessageColumn::Cc if ascending => {
+                MailSortOption::SenderAZ
+            }
+            MessageColumn::Correspondent | MessageColumn::To | MessageColumn::Cc => {
+                MailSortOption::SenderZA
+            }
+            MessageColumn::Unread => MailSortOption::UnreadFirst,
+            _ if ascending => MailSortOption::DateOldestFirst,
+            _ => MailSortOption::DateNewestFirst,
+        })
     }
 }
 
@@ -316,6 +330,71 @@ impl ColumnLayout {
     }
 
     /// Return to the default layout for a kind of folder.
+    /// Adopt the sort chosen from the Sort Messages menu.
+    ///
+    /// Sender maps back to Correspondent rather than To, because that is the
+    /// column the menu item is about in every folder but Sent, and Sent shows
+    /// Correspondent too.
+    pub fn set_sort_from_option(&mut self, option: MailSortOption) {
+        self.sort = match option {
+            MailSortOption::DateNewestFirst => Sort {
+                column: MessageColumn::Received,
+                direction: SortDirection::Descending,
+            },
+            MailSortOption::DateOldestFirst => Sort {
+                column: MessageColumn::Received,
+                direction: SortDirection::Ascending,
+            },
+            MailSortOption::SenderAZ => Sort {
+                column: MessageColumn::Correspondent,
+                direction: SortDirection::Ascending,
+            },
+            MailSortOption::SenderZA => Sort {
+                column: MessageColumn::Correspondent,
+                direction: SortDirection::Descending,
+            },
+            MailSortOption::SubjectAZ => Sort {
+                column: MessageColumn::Subject,
+                direction: SortDirection::Ascending,
+            },
+            MailSortOption::SubjectZA => Sort {
+                column: MessageColumn::Subject,
+                direction: SortDirection::Descending,
+            },
+            MailSortOption::UnreadFirst => Sort {
+                column: MessageColumn::Unread,
+                direction: SortDirection::Descending,
+            },
+        };
+    }
+
+    /// Sort by a column, reversing if it is already the sort column.
+    ///
+    /// Returns what to announce. A header click that changes the order without
+    /// saying so is a silent change to the thing under the user's cursor, and
+    /// the first click has to pick the direction people actually want: newest
+    /// first for a date, A to Z for text.
+    pub fn sort_by(&mut self, column: MessageColumn) -> String {
+        self.sort = if self.sort.column == column {
+            Sort {
+                column,
+                direction: match self.sort.direction {
+                    SortDirection::Ascending => SortDirection::Descending,
+                    SortDirection::Descending => SortDirection::Ascending,
+                },
+            }
+        } else {
+            Sort {
+                column,
+                direction: match column {
+                    MessageColumn::Received | MessageColumn::Sent => SortDirection::Descending,
+                    _ => SortDirection::Ascending,
+                },
+            }
+        };
+        self.sort.spoken()
+    }
+
     pub fn reset(&mut self, kind: FolderKind) {
         *self = Self::defaults_for(kind);
     }
@@ -372,6 +451,98 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_a_menu_sort_moves_the_layout_with_it() {
+        // The menu and the column headers must not end up disagreeing about
+        // how the list is ordered; the menu is the only place that states it
+        // in words, so it is the one people check.
+        let mut layout = ColumnLayout::defaults_for(FolderKind::Inbox);
+        for option in [
+            MailSortOption::DateNewestFirst,
+            MailSortOption::DateOldestFirst,
+            MailSortOption::SenderAZ,
+            MailSortOption::SenderZA,
+            MailSortOption::SubjectAZ,
+            MailSortOption::SubjectZA,
+            MailSortOption::UnreadFirst,
+        ] {
+            layout.set_sort_from_option(option);
+            assert_eq!(
+                layout.sort.as_mail_sort_option(),
+                Some(option),
+                "{:?} did not survive the round trip",
+                option
+            );
+        }
+    }
+
+    #[test]
+    fn test_clicking_a_header_sorts_then_reverses() {
+        // The first click picks a sensible direction for the column, the
+        // second reverses it. Anything else means someone who cannot see the
+        // header has no way to reach descending order by clicking at all.
+        let mut layout = ColumnLayout::defaults_for(FolderKind::Inbox);
+        layout.sort = Sort {
+            column: MessageColumn::Received,
+            direction: SortDirection::Descending,
+        };
+
+        let said = layout.sort_by(MessageColumn::Subject);
+        assert_eq!(layout.sort.column, MessageColumn::Subject);
+        assert_eq!(layout.sort.direction, SortDirection::Ascending);
+        assert_eq!(said, "Sorted by subject, ascending");
+
+        let said = layout.sort_by(MessageColumn::Subject);
+        assert_eq!(layout.sort.direction, SortDirection::Descending);
+        assert_eq!(said, "Sorted by subject, descending");
+    }
+
+    #[test]
+    fn test_a_date_column_starts_at_newest_first() {
+        // Nobody opens a mailbox wanting the oldest message at the top.
+        let mut layout = ColumnLayout::defaults_for(FolderKind::Inbox);
+        layout.sort = Sort {
+            column: MessageColumn::Subject,
+            direction: SortDirection::Ascending,
+        };
+        let said = layout.sort_by(MessageColumn::Received);
+        assert_eq!(layout.sort.direction, SortDirection::Descending);
+        assert_eq!(said, "Sorted by received, newest first");
+    }
+
+    #[test]
+    fn test_every_column_maps_to_a_sort_that_runs() {
+        // A header that announces a sort and does not perform one is worse
+        // than a header that cannot be sorted.
+        for column in MessageColumn::ALL {
+            for direction in [SortDirection::Ascending, SortDirection::Descending] {
+                let sort = Sort { column, direction };
+                assert!(
+                    sort.as_mail_sort_option().is_some(),
+                    "{:?} {:?} has no sort to run",
+                    column,
+                    direction
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_unread_sorts_unread_to_the_top_either_way() {
+        // There is one unread-first ordering, so both directions land on it
+        // rather than one of them silently doing nothing.
+        for direction in [SortDirection::Ascending, SortDirection::Descending] {
+            let sort = Sort {
+                column: MessageColumn::Unread,
+                direction,
+            };
+            assert_eq!(
+                sort.as_mail_sort_option(),
+                Some(crate::presentation::ui_types::MailSortOption::UnreadFirst)
+            );
+        }
+    }
+
+    #[test]
     fn test_inbox_defaults_match_the_agreed_set() {
         let layout = ColumnLayout::defaults_for(FolderKind::Inbox);
         assert_eq!(
@@ -425,7 +596,10 @@ mod tests {
             column: MessageColumn::Received,
             direction: SortDirection::Descending,
         };
-        assert_eq!(sort.order_by_clause(), "m.internaldate DESC");
+        assert_eq!(
+            sort.order_by_clause(),
+            "COALESCE(m.internaldate, m.date) DESC"
+        );
     }
 
     #[test]

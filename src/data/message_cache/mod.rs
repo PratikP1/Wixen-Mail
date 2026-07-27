@@ -12,6 +12,7 @@ mod drafts;
 mod filters;
 mod folders;
 mod messages;
+pub use messages::MessageListRow;
 pub mod notes;
 mod oauth;
 mod outbox;
@@ -905,6 +906,11 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to create message_bodies table: {}", e)))?;
 
         // Schema migrations
+        // The snippet lives on the message rather than the body because
+        // bodies are evicted under a budget and the snippet column has to keep
+        // reading on every row after that happens.
+        self.ensure_column_exists("messages", "snippet", "TEXT")?;
+        self.ensure_column_exists("messages", "size_bytes", "INTEGER")?;
         self.ensure_column_exists("calendar_events", "calendar_id", "TEXT")?;
         self.ensure_column_exists(
             "message_filter_rules",

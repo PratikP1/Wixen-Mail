@@ -50,6 +50,14 @@ pub struct AppConfig {
     /// mail to stay quiet without switching it off again every session.
     #[serde(default)]
     pub mute_message_reading: bool,
+    /// Which message list columns are shown, in what order, and the sort.
+    ///
+    /// Stored as the compact form `ColumnLayout::to_stored` writes. Empty means
+    /// nothing has been chosen yet and the per-folder defaults apply. Anyone
+    /// who arranges a list they navigate by ear has spent real effort on it,
+    /// and losing that on restart is not a small annoyance.
+    #[serde(default)]
+    pub message_columns: String,
     /// Calendar default view: "agenda", "day", "week", "month"
     #[serde(default = "default_calendar_view")]
     pub calendar_default_view: String,
@@ -99,6 +107,7 @@ impl Default for AppConfig {
             date_style: default_date_style(),
             date_order: default_date_order(),
             mute_message_reading: false,
+            message_columns: String::new(),
             enable_notifications: true,
             log_level: "info".to_string(),
             preview_before_send: true,

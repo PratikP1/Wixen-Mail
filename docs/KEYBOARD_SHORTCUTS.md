@@ -107,9 +107,38 @@ and focus moves to that module's content area.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
+| Folder Pane | `Alt+1` | Show or hide the folder pane |
+| Preview Pane | `Alt+2` | Show or hide the message preview |
+| Module Buttons | `Alt+3` | Show or hide the module navigation buttons |
+| Columns | `F8` | Choose which message list columns are shown and in what order |
 | Thread View Toggle | (checkbox) | Toggle conversation threading on/off |
 | Refresh Folder | `F5` | Reload messages in current folder |
 | Check Mail | `F9` | Check for new messages |
+
+#### Inside the Columns dialog
+
+A bare `F8` on purpose: choosing columns is a verbosity control, something you
+reach for often when you navigate a list by ear, and it should not cost a
+three-finger stretch.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Show or hide a column | `Space` | Toggles the highlighted column. The last remaining column cannot be hidden, and the refusal is announced. |
+| Move a column up | `Alt+Up` | Also the Move Up button |
+| Move a column down | `Alt+Down` | Also the Move Down button |
+| Restore the defaults | `Alt+R` | Puts back the default columns for this kind of folder |
+
+Every column reads its own position, for example "Subject, shown, position 3 of
+6", because moving something in a list you cannot see is otherwise a silent
+action with an invisible result.
+
+#### Sorting
+
+Clicking a column header sorts by it; clicking the same header again reverses
+the order. Dates start at newest first, text at A to Z. The keyboard path is
+View, Sort Messages, which uses radio items so a screen reader announces which
+sort is currently selected. The two are kept in step: sorting from a header
+moves the menu, and sorting from the menu moves the headers.
 
 ### Message Actions
 

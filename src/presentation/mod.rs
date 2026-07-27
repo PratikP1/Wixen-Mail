@@ -12,6 +12,7 @@ pub mod wx_account_manager;
 pub mod wx_app;
 pub mod wx_calendar;
 pub mod wx_calendar_module;
+pub mod wx_columns;
 pub mod wx_compose;
 pub mod wx_contacts_module;
 pub mod wx_managers;

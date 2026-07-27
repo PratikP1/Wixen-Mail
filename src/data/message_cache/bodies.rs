@@ -29,6 +29,54 @@ impl MessageBody {
     }
 }
 
+/// How many characters of a snippet are kept.
+///
+/// The snippet is read aloud on every row while someone arrows through a
+/// mailbox, so it is a hint about the message and not a preview of it. Two
+/// hundred characters is roughly one spoken sentence at a normal rate.
+const SNIPPET_LIMIT: usize = 200;
+
+/// Reduce body text to a single bounded line.
+///
+/// Newlines and runs of whitespace collapse to single spaces: a list control
+/// renders a newline as a box, and a screen reader reading a cell pauses at
+/// each one, so a multi-line cell sounds broken even when it looks fine.
+fn snippet_from(text: &str) -> String {
+    let mut snippet = String::new();
+    for word in text.split_whitespace() {
+        if !snippet.is_empty() {
+            snippet.push(' ');
+        }
+        snippet.push_str(word);
+        if snippet.chars().count() >= SNIPPET_LIMIT {
+            break;
+        }
+    }
+    snippet.chars().take(SNIPPET_LIMIT).collect()
+}
+
+/// Crude tag removal for deriving a snippet from an HTML-only body.
+///
+/// Not sanitizing: nothing here is rendered. It exists so a message with no
+/// plain part still gets a snippet instead of a silently empty column, which
+/// is a large share of newsletters and most marketing mail.
+fn strip_markup(html: &str) -> String {
+    let mut text = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for ch in html.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => {
+                in_tag = false;
+                text.push(' ');
+            }
+            _ if !in_tag => text.push(ch),
+            _ => {}
+        }
+    }
+    text
+}
+
 impl MessageCache {
     /// Store a message body, replacing any previous one.
     pub fn save_message_body(
@@ -59,6 +107,31 @@ impl MessageCache {
                 ],
             )
             .map_err(|e| Error::Other(format!("Failed to save message body: {}", e)))?;
+
+        // Written now, while the body is in hand. The list needs the snippet
+        // long after this body has been evicted, so deriving it at display
+        // time would leave the column blank for exactly the older messages
+        // someone is scrolling back through.
+        let source = body
+            .body_plain
+            .as_deref()
+            .filter(|text| !text.trim().is_empty())
+            .map(str::to_string)
+            .or_else(|| body.body_html.as_deref().map(strip_markup));
+        let snippet = source.as_deref().map(snippet_from).unwrap_or_default();
+        self.conn
+            .execute(
+                "UPDATE messages SET snippet = ?1 WHERE id = ?2",
+                rusqlite::params![
+                    if snippet.is_empty() {
+                        None
+                    } else {
+                        Some(snippet)
+                    },
+                    message_id
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to save message snippet: {}", e)))?;
         Ok(())
     }
 
@@ -198,6 +271,76 @@ fn now() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── The snippet is stored with the message, not the body ────────────
+    //
+    // The list shows a snippet on every row and bodies are evicted under a
+    // budget, so reading the snippet from the body would leave rows going
+    // blank as the cache filled. It is small enough to keep beside the
+    // subject and never evicted.
+
+    #[test]
+    fn test_saving_a_body_fills_the_snippet_on_the_message() {
+        let (cache, _dir) = body_test_cache();
+        let id = cache.save_message(&cached(1, "Quarterly report")).unwrap();
+        cache
+            .save_message_body(id, Some("The numbers are attached. Ada"), None)
+            .unwrap();
+
+        let snippet: Option<String> = cache
+            .conn
+            .query_row(
+                "SELECT snippet FROM messages WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(snippet.as_deref(), Some("The numbers are attached. Ada"));
+    }
+
+    #[test]
+    fn test_a_snippet_is_one_line_and_bounded() {
+        // It is read aloud on every row while arrowing, so it cannot be a
+        // paragraph and it cannot contain newlines that the list would
+        // render as boxes.
+        let long = format!("first line\nsecond line\n{}", "x".repeat(500));
+        let snippet = snippet_from(&long);
+        assert!(!snippet.contains('\n'), "snippet kept a newline");
+        assert!(snippet.chars().count() <= 200, "snippet was not bounded");
+        assert!(snippet.starts_with("first line second line"));
+    }
+
+    #[test]
+    fn test_an_html_only_body_still_gives_a_snippet() {
+        // Plenty of mail has no plain part at all. Falling back to the HTML
+        // means the column is not silently empty for half a mailbox.
+        let (cache, _dir) = body_test_cache();
+        let id = cache.save_message(&cached(2, "Newsletter")).unwrap();
+        cache
+            .save_message_body(id, None, Some("<p>Hello <b>there</b></p>"))
+            .unwrap();
+
+        let snippet: Option<String> = cache
+            .conn
+            .query_row(
+                "SELECT snippet FROM messages WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(snippet.as_deref(), Some("Hello there"));
+    }
+
+    #[test]
+    fn test_an_empty_body_leaves_no_snippet_rather_than_an_empty_one() {
+        assert_eq!(
+            snippet_from(
+                "   
+  	 "
+            ),
+            ""
+        );
+    }
     use crate::data::message_cache::CachedMessage;
     use tempfile::TempDir;
 
