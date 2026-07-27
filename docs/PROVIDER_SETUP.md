@@ -82,18 +82,31 @@ keeps working until it is revoked.
 You need two-step verification turned on first. Google does not offer app
 passwords without it, and it does not accept your ordinary password for mail.
 
-1. Go to your Google Account (https://myaccount.google.com)
-2. Navigate to **Security**
-3. Under "Signing in to Google," select **App passwords**
-4. You may need to sign in again
-5. At the bottom, click **Select app** → **Mail**
-6. Click **Select device** → **Other (Custom name)**
-7. Enter "Wixen Mail" as the name
-8. Click **Generate**
-9. **Important:** Copy the 16-character password shown
-   - Save it securely
-   - You won't be able to see it again
-10. Click **Done**
+Go straight to the page:
+
+**https://myaccount.google.com/apppasswords**
+
+The account dialog in Wixen Mail opens this for you: the button next to the
+password box is "Get an app password in your browser".
+
+If that page says the setting is not available for your account, two-step
+verification is off. Turn it on at
+https://myaccount.google.com/signinoptions/two-step-verification and come back.
+
+Once you are on the page:
+
+1. Enter a name for the password, such as "Wixen Mail"
+2. Select **Create**
+3. Copy the 16-character password shown. Google will not show it again, so
+   paste it into Wixen Mail before closing the page
+4. Select **Done**
+
+The password is shown in four groups of four with spaces. The spaces are for
+reading and Google ignores them, so it does not matter whether you paste them.
+
+If you would rather navigate there yourself: your Google Account, then
+**Security**, then **App passwords**. That entry only appears once two-step
+verification is on, which is why the direct link is easier.
 
 #### 3. Configure Wixen Mail
 
