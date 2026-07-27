@@ -663,16 +663,34 @@ impl WxMailApp {
                     }
                 });
 
-                // Custom context menu via JS injection
+                // Custom context menu, and the way out.
+                //
+                // A WebView hosts an out of process browser, and it consumes
+                // the keystrokes that would otherwise move focus back to the
+                // application: Escape, F6 and the menu accelerators never
+                // reach wxWidgets. Someone who lands in the preview is then
+                // stuck in it, with no screen reader path out and no keyboard
+                // path either, and the only way to leave is the system menu.
+                //
+                // So the escape route is injected into the document itself.
+                // The page listens for Escape and F6 and posts back to the
+                // host, which moves focus to the message list. It is the same
+                // channel the context menu already uses.
                 preview.add_script_message_handler("contextMenu");
                 preview.add_user_script(
                     r#"document.addEventListener('contextmenu', function(e) {
     e.preventDefault();
     var link = e.target.closest('a');
-    var data = { x: e.clientX, y: e.clientY };
+    var data = { kind: 'context', x: e.clientX, y: e.clientY };
     if (link) { data.href = link.href; data.text = link.textContent; }
     window.contextMenu.postMessage(JSON.stringify(data));
-});"#,
+});
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' || e.key === 'F6') {
+        e.preventDefault();
+        window.contextMenu.postMessage(JSON.stringify({ kind: 'leave' }));
+    }
+}, true);"#,
                     WebViewUserScriptInjectionTime::AtDocumentStart,
                 );
 
@@ -680,8 +698,29 @@ impl WxMailApp {
                 // show popup menu, let events bubble to frame.on_menu handler.
                 preview.on_script_message_received({
                     let state = state.clone();
+                    let a11y = a11y.clone();
                     move |event: WebViewEventData| {
                         if let Some(json) = event.get_string() {
+                            // The way out. Checked before anything else, so a
+                            // malformed context menu payload can never swallow
+                            // the only keystroke that frees a trapped user.
+                            let leaving = serde_json::from_str::<serde_json::Value>(&json)
+                                .ok()
+                                .and_then(|v| {
+                                    v.get("kind")
+                                        .and_then(|k| k.as_str())
+                                        .map(|k| k == "leave")
+                                })
+                                .unwrap_or(false);
+                            if leaving {
+                                msg_list.set_focus();
+                                let _ = a11y.announce_topic(
+                                    "Messages",
+                                    crate::presentation::accessibility::announcements::Priority::Normal,
+                                    "pane",
+                                );
+                                return;
+                            }
                             // serde_json handles the escaping that a hand
                             // rolled scan does not, and the href is a value the
                             // sender controls, so it is validated before it is
@@ -1602,8 +1641,25 @@ impl WxMailApp {
                                 preview.show(true);
                                 inner.split_horizontally(&msg_list, &preview, 300);
                                 preview_visible.set(true);
+                                // A WebView takes focus when it is realized,
+                                // which put the user inside a control that
+                                // eats every key and reads nothing. Showing a
+                                // pane is not a request to go and stand in it.
+                                msg_list.set_focus();
                             }
                             sync_menu_check(&frame, ID_VIEW_PREVIEW_PANE, preview_visible.get());
+                            // Said, because the whole change is off screen for
+                            // someone who cannot see the window: a pane that
+                            // silently appeared is a pane they do not know is
+                            // there, and F6 now reaches somewhere new.
+                            let _ = a11y.announce(
+                                if preview_visible.get() {
+                                    "Preview pane shown. F6 moves to it, Escape comes back."
+                                } else {
+                                    "Preview pane hidden"
+                                },
+                                crate::presentation::accessibility::announcements::Priority::Normal,
+                            );
                         }
                         _ if id == ID_MUTE_CONTENT => {
                             let muted = !a11y.is_content_muted();
@@ -3119,8 +3175,14 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // the key did nothing.
             preview.set_page(html, "about:blank");
             preview.show(true);
+            // Focus moves here deliberately: opening a conversation is a
+            // request to read it. The way back is said in the same breath,
+            // because a WebView eats the keys that would normally reveal it.
             preview.set_focus();
-            let _ = a11y.announce("Conversation opened", Priority::Normal);
+            let _ = a11y.announce(
+                "Conversation opened. Escape goes back to the message list.",
+                Priority::Normal,
+            );
         }
         UIUpdate::MessageBodyLoaded(body) => {
             {

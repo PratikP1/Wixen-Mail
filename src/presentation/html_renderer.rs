@@ -278,7 +278,7 @@ impl HtmlRenderer {
 
         format!(
             r#"<!DOCTYPE html>
-<html><head><meta charset="utf-8"><style>
+<html lang="en"><head><meta charset="utf-8"><style>
 body {{
     font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
     font-size: 14px; line-height: 1.6;
@@ -295,7 +295,21 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
     a {{ color: #569cd6; }} pre, code {{ background: #2d2d2d; }}
     blockquote {{ border-color: #555; color: #999; }}
 }}
-</style></head><body>{}</body></html>"#,
+.leave {{
+    font-size: 13px; color: #1a1a1a; background: #f0f0f0;
+    border: 1px solid #767676; border-radius: 3px;
+    padding: 8px 12px; margin: 0 0 12px 0;
+    min-height: 24px; min-width: 24px; cursor: pointer;
+    font-family: inherit;
+}}
+.leave:focus {{ outline: 3px solid #0066cc; outline-offset: 2px; }}
+@media (prefers-color-scheme: dark) {{
+    .leave {{ background: #2d2d2d; color: #d4d4d4; border-color: #9a9a9a; }}
+    .leave:focus {{ outline-color: #569cd6; }}
+}}
+</style></head><body>
+<button type="button" class="leave" onclick="window.contextMenu.postMessage('{{&quot;kind&quot;:&quot;leave&quot;}}')">Back to message list (Escape)</button>
+<main>{}</main></body></html>"#,
             content
         )
     }
@@ -474,6 +488,58 @@ pub struct LinkInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_a_preview_document_starts_with_a_focusable_way_out() {
+        // Two independent routes, because one is not enough here. The Escape
+        // key depends on a keydown listener; this depends only on the document
+        // having rendered. It is the first focusable thing on the page, so Tab
+        // reaches it before anything the sender wrote.
+        let renderer = HtmlRenderer::new();
+        let html = renderer.wrap_for_webview("Hello");
+        let button = html.find("<button").expect("no way out control");
+        let content = html.find("<main").expect("no main");
+        assert!(button < content, "the way out is not reachable first");
+        assert!(html.contains("Back to message list"));
+    }
+
+    #[test]
+    fn test_the_way_out_does_not_depend_on_the_injected_script() {
+        // If it were wired up by the user script, both routes would fail
+        // together, which is not two routes.
+        let renderer = HtmlRenderer::new();
+        assert!(renderer.wrap_for_webview("Hello").contains("onclick="));
+    }
+
+    #[test]
+    fn test_a_preview_document_has_a_main_landmark() {
+        // A screen reader user arriving in the preview needs somewhere to be.
+        // A bare run of text in a body with no landmark gives nothing to jump
+        // to and no way to tell the message from the chrome around it.
+        let renderer = HtmlRenderer::new();
+        let html = renderer.wrap_for_webview("Hello");
+        assert!(html.contains("<main"), "no main landmark: {}", html);
+        assert!(html.contains("</main>"));
+    }
+
+    #[test]
+    fn test_a_preview_document_declares_its_language() {
+        // Without a lang attribute a screen reader reads the message in
+        // whatever voice it was last using, which turns English mail read by a
+        // German voice into noise (WCAG 3.1.1).
+        let renderer = HtmlRenderer::new();
+        assert!(renderer.wrap_for_webview("Hello").contains("<html lang="));
+    }
+
+    #[test]
+    fn test_a_preview_document_says_how_to_leave_it() {
+        // The preview is a WebView, which swallows the keystrokes that would
+        // normally move focus out. Someone who cannot see the window has no
+        // way to discover the way back unless the document says it.
+        let renderer = HtmlRenderer::new();
+        let html = renderer.wrap_for_webview("Hello");
+        assert!(html.contains("Escape"), "no way out is stated: {}", html);
+    }
 
     fn part(sender: &str, depth: usize, body: &str) -> ThreadPart {
         ThreadPart {

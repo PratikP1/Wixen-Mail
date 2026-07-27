@@ -56,6 +56,23 @@ and locks out anyone who types slowly.
 `Ctrl+Shift+M` mutes this reading without silencing status and error
 announcements.
 
+### The Preview Pane
+
+The preview is a WebView, which hosts a browser and swallows the keys that
+normally move focus back to the application. Two things follow from that, and
+both are deliberate.
+
+Showing the pane with `Alt+2` leaves focus on the message list. You go to the
+preview when you mean to, with `F6`.
+
+Every preview page carries two ways back, because inside a WebView one is not
+enough:
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Back to the message list | `Esc` | Handled inside the page |
+| Back to the message list | `Tab` then `Enter` | The first focusable thing on every preview page is a "Back to message list" button |
+
 ### Conversations
 
 | Where | Key | Result |
