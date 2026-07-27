@@ -96,7 +96,6 @@ pub struct ImapFolder {
     /// for any name we could not decode in the first place, and that is exactly
     /// the folder that would then become unreachable.
     pub path: String,
-    pub delimiter: Option<String>,
     pub folder_type: FolderType,
     /// Whether the mailbox can be selected, or is only a name in the hierarchy.
     pub selectable: bool,
@@ -381,6 +380,10 @@ impl ImapSession {
                 let path = name.name().to_string();
                 let delimiter = name.delimiter().map(str::to_string);
                 let display_path = mailbox_name::decode(&path);
+                // The delimiter is read here to find the last segment and to
+                // classify the folder. It is not carried on the struct: the
+                // tree is one flat level, so nothing downstream has anything to
+                // do with it. It comes back when the tree gains a hierarchy.
                 let leaf = match delimiter.as_deref().filter(|d| !d.is_empty()) {
                     Some(sep) => display_path.rsplit(sep).next().unwrap_or(&display_path),
                     None => display_path.as_str(),
@@ -393,9 +396,8 @@ impl ImapSession {
                         delimiter.as_deref(),
                     ),
                     selectable: special_use::selectable(&attributes),
-                    display_path: display_path.clone(),
+                    display_path,
                     path,
-                    delimiter,
                 }
             })
             .collect();

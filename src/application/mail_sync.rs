@@ -433,7 +433,6 @@ mod tests {
             name: name.to_string(),
             display_path: name.to_string(),
             path: name.to_string(),
-            delimiter: Some("/".to_string()),
             folder_type,
             selectable,
         }
