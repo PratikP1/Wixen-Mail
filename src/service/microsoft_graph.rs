@@ -396,7 +396,7 @@ impl MsGraphClient {
         Err(Error::Api {
             status,
             provider: "microsoft".to_string(),
-            message: body,
+            message: crate::common::error::redact_provider_message(&body),
         })
     }
 
@@ -414,7 +414,7 @@ impl MsGraphClient {
             return Err(Error::Api {
                 status,
                 provider: provider.to_string(),
-                message: body,
+                message: crate::common::error::redact_provider_message(&body),
             });
         }
 
