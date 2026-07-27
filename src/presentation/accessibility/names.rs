@@ -9,6 +9,12 @@
 //! wxWidgets identifier used for resource lookup and never reaches assistive
 //! technology. Only a `wxAccessible` attached to the window does, which is
 //! what this module provides.
+//!
+//! **This is Windows only.** `wxAccessible` is implemented against Microsoft
+//! Active Accessibility and has no GTK or macOS counterpart in wxWidgets, so on
+//! those platforms these calls are accepted and have no effect. A port would
+//! need `setAccessibilityLabel:` on the NSView for macOS and an ATK name for
+//! GTK, written as separate bridges rather than as a change here.
 
 use wxdragon::accessible::{AccStatus, Accessible, AccessibleImpl};
 use wxdragon::ffi;

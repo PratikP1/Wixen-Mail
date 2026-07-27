@@ -188,8 +188,13 @@ the gap stays visible.
 - **No AI attribution anywhere.** No `Co-Authored-By` lines naming an AI, no AI or assistant names in
   commit messages, branch names, code comments, or documentation. This applies to every commit going
   forward.
-- **Windows-first.** Windows is the supported platform. Platform-specific code sits behind
-  `#[cfg(target_os = "windows")]` with a sane fallback for other targets so the crate still builds.
+- **Windows-first, and the accessibility layer is more Windows-only than it looks.** wxWidgets
+  gives native, accessible controls on all three platforms, but two things this project relies on
+  exist only on Windows: `wxAccessible`, which is how `set_accessible_name` reaches the
+  accessibility tree, and `UiaRaiseNotificationEvent`, which is how announcements are spoken and
+  brailled. Both compile and silently do nothing elsewhere. A macOS or Linux port needs its own
+  bridge for each, not a framework change. Platform-specific code sits behind
+  `#[cfg(target_os = "windows")]` with a fallback that keeps the crate building.
 - **Secrets stay out of the tree.** OAuth client credentials load from `oauth.toml` (gitignored) with
   `oauth.toml.example` as the tracked template. Tokens go to the OS keychain via `keyring`; cached
   data is encrypted with AES-256-GCM. Never log a token, password, or message body.
