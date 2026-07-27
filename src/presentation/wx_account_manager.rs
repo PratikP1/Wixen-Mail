@@ -7,7 +7,7 @@
 //! user adds such an account (press OK), the browser opens immediately
 //! for authorization with no extra steps or checkboxes.
 
-use crate::data::account::{Account, oauth_is_default, offers_app_passwords};
+use crate::data::account::{Account, app_password_url, oauth_is_default, offers_app_passwords};
 use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
 
 /// What to put in the password box when the provider wants an app password.
@@ -29,6 +29,8 @@ const ID_EDIT: Id = ID_HIGHEST + 201;
 const ID_DELETE: Id = ID_HIGHEST + 202;
 const ID_SET_ACTIVE: Id = ID_HIGHEST + 203;
 const ID_TEST: Id = ID_HIGHEST + 204;
+const ID_REAUTHORIZE: Id = ID_HIGHEST + 205;
+const ID_APP_PASSWORD: Id = ID_HIGHEST + 206;
 
 #[derive(Debug, Clone)]
 pub enum AccountManagerAction {
@@ -89,11 +91,20 @@ pub fn show_account_manager_dialog(
         .with_label("&Test Connection")
         .with_id(ID_TEST)
         .build();
+    // Signing in again is a thing people have to do, not an error they have to
+    // read about. A token can be revoked, a password can change, and Google
+    // expires browser sign-in weekly until the application is verified. Without
+    // a control, the only way back was to edit the account and clear a field
+    // that is not shown.
+    let reauth = Button::builder(&dlg)
+        .with_label("&Sign In Again")
+        .with_id(ID_REAUTHORIZE)
+        .build();
     let close = Button::builder(&dlg)
         .with_label("&Close")
         .with_id(ID_OK)
         .build();
-    for b in [&add, &edit, &del, &active, &test] {
+    for b in [&add, &edit, &del, &active, &test, &reauth] {
         btns.add(b, 0, SizerFlag::All, 4);
     }
     btns.add_spacer(16);
@@ -130,6 +141,12 @@ pub fn show_account_manager_dialog(
         let d = dlg;
         move |_| {
             d.end_modal(ID_DELETE);
+        }
+    });
+    reauth.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_REAUTHORIZE);
         }
     });
     active.on_click({
@@ -188,6 +205,37 @@ pub fn show_account_manager_dialog(
                     working.push(a);
                     changed = true;
                     populate(&list, &working, active_id.as_deref());
+                }
+            }
+            r if r == ID_REAUTHORIZE => {
+                match get_selected(&list) {
+                    Some(idx) if working[idx].use_oauth => {
+                        let name = working[idx].name.clone();
+                        status.set_label(&format!("Signing in to {name}. Finish in the browser."));
+                        let mut account = working[idx].clone();
+                        match run_oauth_flow(&mut account) {
+                            OAuthFlowResult::Authorized => {
+                                working[idx] = account;
+                                changed = true;
+                                populate(&list, &working, active_id.as_deref());
+                                status.set_label(&format!("{name} is signed in again"));
+                            }
+                            OAuthFlowResult::NoCreds => {
+                                status.set_label(
+                                    "No client credentials are configured for this provider. See docs/PROVIDER_SETUP.md.",
+                                );
+                            }
+                            OAuthFlowResult::Failed(msg) => {
+                                status.set_label(&format!("Signing in failed: {msg}"));
+                            }
+                        }
+                    }
+                    // Saying which of the two it is, because they need
+                    // different things done about them.
+                    Some(_) => status.set_label(
+                        "This account signs in with a password, so there is nothing to authorise. Edit it to change its password.",
+                    ),
+                    None => status.set_label("Select an account to sign in again"),
                 }
             }
             r if r == ID_EDIT => {
@@ -363,6 +411,19 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
         fields.add(&f, 1, SizerFlag::Expand | SizerFlag::All, 4);
         f
     };
+    // Opening the page rather than describing where it is. It sits three levels
+    // into account settings and does not come up from searching the settings
+    // for "app password", so finding it is the whole difficulty of this route.
+    let get_app_password = {
+        let l = StaticText::builder(&dlg).with_label("").build();
+        let b = Button::builder(&dlg)
+            .with_label("&Get an app password in your browser")
+            .with_id(ID_APP_PASSWORD)
+            .build();
+        fields.add(&l, 0, SizerFlag::All, 4);
+        fields.add(&b, 0, SizerFlag::All, 4);
+        b
+    };
 
     section("── Settings ──");
     let interval_f = tf("Check &Interval (min):", "5");
@@ -432,6 +493,21 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
                     auth_hint.set_label("");
                 }
             }
+        }
+    });
+
+    get_app_password.on_click({
+        move |_| match app_password_url(&email_f.get_value()) {
+            Some(url) => {
+                if open::that(url).is_err() {
+                    // Saying the address rather than only that it failed, so
+                    // the page is still reachable by typing it.
+                    auth_hint.set_label(&format!("Could not open a browser. The page is {url}"));
+                }
+            }
+            None => auth_hint.set_label(
+                "Enter your email address first, or ask your provider where it hands out app passwords.",
+            ),
         }
     });
 

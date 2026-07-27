@@ -64,9 +64,13 @@ pub async fn for_account(account: &Account) -> Result<MailAuth> {
         &credentials.client_id,
         credentials.client_secret.as_deref(),
     );
+    // Naming the control rather than only the problem. Signing in again is
+    // something the user does, and until this said where, the only route back
+    // was to guess. Google expires browser sign-in weekly until the
+    // application is verified, so this is a message people will meet often.
     let token = manager.get_valid_token().await.map_err(|e| {
         Error::Authentication(format!(
-            "{} needs to be authorised again: {e}",
+            "{} needs to sign in again. Open Accounts and choose Sign In Again. ({e})",
             account.name
         ))
     })?;
@@ -106,6 +110,24 @@ mod tests {
     async fn test_a_password_account_uses_its_password() {
         let auth = for_account(&account()).await.expect("should resolve");
         assert!(matches!(auth, MailAuth::Password(p) if p == "hunter2"));
+    }
+
+    #[tokio::test]
+    async fn test_an_account_needing_a_new_token_is_told_which_control_to_press() {
+        // A message that names the problem and not the remedy leaves somebody
+        // to guess, and with weekly expiry they would guess weekly.
+        let mut expired = account();
+        expired.use_oauth = true;
+        expired.id = "no-such-account-in-the-keychain".into();
+        let error = for_account(&expired).await.expect_err("no token is stored");
+        let message = error.to_string();
+        // Either it could not find credentials for the provider, or it could
+        // not find a token. Only the second names a control; the first names a
+        // file. Both have to say what to do.
+        assert!(
+            message.contains("Sign In Again") || message.contains("PROVIDER_SETUP"),
+            "no remedy offered: {message}"
+        );
     }
 
     #[tokio::test]
