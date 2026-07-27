@@ -76,6 +76,9 @@ quick-xml = "0.41"
 scraper = "0.27.0"
 ego-tree = "0.11.0"
 bitflags = "2.13.1"
+async-imap = { version = "0.11.3", default-features = false, features = ["runtime-tokio"] }
+tokio-native-tls = "0.3"
+native-tls = "0.2"
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

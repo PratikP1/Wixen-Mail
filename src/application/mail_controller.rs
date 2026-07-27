@@ -4,7 +4,7 @@
 
 use crate::common::{Error, Result};
 use crate::service::protocols::imap::{
-    ImapClient, ImapConfig, ImapIdleEvent, ImapIdleHandle, ImapIdleOptions, ImapSession,
+    ImapClient, ImapConfig, ImapFolder, ImapMessage, ImapSession, MailboxStatus,
 };
 use crate::service::protocols::pop3::{Pop3Client, Pop3Config, Pop3Session};
 use crate::service::protocols::smtp::{Email, SmtpClient, SmtpConfig};
@@ -67,7 +67,6 @@ impl SendEmailRequest {
 pub struct MailController {
     imap_session: Arc<Mutex<Option<ImapSession>>>,
     pop3_session: Arc<Mutex<Option<Pop3Session>>>,
-    idle_handle: Arc<Mutex<Option<ImapIdleHandle>>>,
 }
 
 impl MailController {
@@ -76,7 +75,6 @@ impl MailController {
         Self {
             imap_session: Arc::new(Mutex::new(None)),
             pop3_session: Arc::new(Mutex::new(None)),
-            idle_handle: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -140,38 +138,55 @@ impl MailController {
         Ok(())
     }
 
-    /// Fetch folders from IMAP
-    pub async fn fetch_folders(&self) -> Result<Vec<String>> {
+    /// Fetch the mailbox list, in the order the folder tree should show it.
+    pub async fn fetch_folders(&self) -> Result<Vec<ImapFolder>> {
         let mut guard = self.require_imap().await?;
         let session = &mut *guard;
-        let folders = session.list_folders().await?;
-        Ok(folders.into_iter().map(|f| f.name).collect())
+        session.list_folders().await
     }
 
-    /// Fetch messages from a folder
-    pub async fn fetch_messages(&self, folder: &str) -> Result<Vec<MessagePreview>> {
+    /// Open a folder, and say what is in it.
+    pub async fn select_folder(&self, folder: &str) -> Result<MailboxStatus> {
         let mut guard = self.require_imap().await?;
         let session = &mut *guard;
-        let messages = session.fetch_messages(folder, None).await?;
-
-        Ok(messages
-            .into_iter()
-            .map(|m| MessagePreview {
-                uid: m.uid,
-                subject: m.subject,
-                from: m.from,
-                date: m.date,
-                read: m.flags.contains(&"\\Seen".to_string()),
-                starred: m.flags.contains(&"\\Flagged".to_string()),
-            })
-            .collect())
+        session.select_folder(folder).await
     }
 
-    /// Fetch message body
-    pub async fn fetch_message_body(&self, folder: &str, uid: u32) -> Result<String> {
+    /// Every UID in a folder, oldest first.
+    pub async fn list_uids(&self, folder: &str) -> Result<Vec<u32>> {
         let mut guard = self.require_imap().await?;
         let session = &mut *guard;
-        session.fetch_message_body(folder, uid).await
+        session.select_folder(folder).await?;
+        session.all_uids().await
+    }
+
+    /// Fetch headers for the UIDs given.
+    ///
+    /// Takes UIDs rather than fetching a whole folder, so the caller can ask
+    /// for a page at a time and show the first messages while the rest arrive.
+    /// A mailbox of two hundred thousand messages cannot be a single call that
+    /// either returns everything or fails.
+    pub async fn fetch_headers(&self, folder: &str, uids: &[u32]) -> Result<Vec<ImapMessage>> {
+        let mut guard = self.require_imap().await?;
+        let session = &mut *guard;
+        if session.selected_folder() != Some(folder) {
+            session.select_folder(folder).await?;
+        }
+        session.fetch_headers(uids).await
+    }
+
+    /// Fetch one message exactly as it arrived.
+    ///
+    /// Raw bytes, for `service::mime` to decode. Handing back a `String` here
+    /// would mean guessing a character set before the headers that name it have
+    /// been read.
+    pub async fn fetch_message_body(&self, folder: &str, uid: u32) -> Result<Vec<u8>> {
+        let mut guard = self.require_imap().await?;
+        let session = &mut *guard;
+        if session.selected_folder() != Some(folder) {
+            session.select_folder(folder).await?;
+        }
+        session.fetch_body(uid).await
     }
 
     /// Send an email via SMTP
@@ -203,29 +218,41 @@ impl MailController {
 
     /// Mark message as read
     pub async fn mark_as_read(&self, folder: &str, uid: u32) -> Result<()> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        session.mark_as_read(folder, uid).await?;
-        tracing::debug!("Marked message {} as read", uid);
-        Ok(())
+        self.set_flag(folder, uid, "\\Seen", true).await
     }
 
-    /// Mark message as starred
-    pub async fn toggle_starred(&self, folder: &str, uid: u32) -> Result<()> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        session.toggle_flag(folder, uid, "\\Flagged").await?;
-        tracing::debug!("Toggled starred flag for message {}", uid);
-        Ok(())
+    /// Flag or unflag a message.
+    ///
+    /// The wanted state is passed in rather than toggled here. Toggling needs
+    /// to know the current state, and the list already does; asking the server
+    /// again would be a round trip to learn something we hold.
+    pub async fn set_starred(&self, folder: &str, uid: u32, starred: bool) -> Result<()> {
+        self.set_flag(folder, uid, "\\Flagged", starred).await
     }
 
-    /// Delete a message
-    pub async fn delete_message(&self, folder: &str, uid: u32) -> Result<()> {
+    /// Add or remove a flag on a message in a folder.
+    pub async fn set_flag(&self, folder: &str, uid: u32, flag: &str, on: bool) -> Result<()> {
         let mut guard = self.require_imap().await?;
         let session = &mut *guard;
-        session.delete_message(folder, uid).await?;
-        tracing::info!("Deleted message {}", uid);
-        Ok(())
+        if session.selected_folder() != Some(folder) {
+            session.select_folder(folder).await?;
+        }
+        session.set_flag(uid, flag, on).await
+    }
+
+    /// Delete a message, and say whether it is really gone.
+    ///
+    /// `false` means the server has no UIDPLUS, so the message is marked for
+    /// removal and still there. The caller has to tell the user that, because
+    /// announcing "deleted" over a message that is still in the folder is worse
+    /// than saying what actually happened.
+    pub async fn delete_message(&self, folder: &str, uid: u32) -> Result<bool> {
+        let mut guard = self.require_imap().await?;
+        let session = &mut *guard;
+        if session.selected_folder() != Some(folder) {
+            session.select_folder(folder).await?;
+        }
+        session.delete_message(uid).await
     }
 
     /// Check if connected
@@ -292,28 +319,11 @@ impl MailController {
         pop3_session.is_some()
     }
 
-    /// Start IMAP IDLE push notification loop for selected folder.
-    pub async fn start_imap_idle(
-        &self,
-        folder: Option<String>,
-        options: ImapIdleOptions,
-    ) -> Result<tokio::sync::mpsc::UnboundedReceiver<ImapIdleEvent>> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        let (rx, handle) = session.start_idle_push_notifications(folder, options)?;
-        let mut idle_handle = self.idle_handle.lock().await;
-        if let Some(existing) = idle_handle.take() {
-            let _ = existing.stop().await;
-        }
-        *idle_handle = Some(handle);
-        Ok(rx)
-    }
-
-    /// Stop running IMAP IDLE loop, if present.
-    pub async fn stop_imap_idle(&self) -> Result<()> {
-        let mut idle_handle = self.idle_handle.lock().await;
-        if let Some(handle) = idle_handle.take() {
-            handle.stop().await?;
+    /// Close the IMAP session, if one is open.
+    pub async fn disconnect_imap(&self) -> Result<()> {
+        let session = self.imap_session.lock().await.take();
+        if let Some(session) = session {
+            session.logout().await?;
         }
         Ok(())
     }
@@ -323,17 +333,6 @@ impl Default for MailController {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Message preview for UI display
-#[derive(Debug, Clone)]
-pub struct MessagePreview {
-    pub uid: u32,
-    pub subject: String,
-    pub from: String,
-    pub date: String,
-    pub read: bool,
-    pub starred: bool,
 }
 
 /// POP3 message preview for UI display
@@ -361,32 +360,63 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mail_controller_start_and_stop_idle() {
+    async fn test_every_imap_command_refuses_politely_when_nothing_is_connected() {
+        // These used to run against a mock session that answered whatever was
+        // asked of it. Against a real client the honest answer with no
+        // connection is an error that names the problem, and a caller that
+        // gets one instead of an empty list can say so.
+        let controller = MailController::new();
+        assert!(!controller.is_connected().await);
+
+        let refusals = [
+            controller.fetch_folders().await.err(),
+            controller.list_uids("INBOX").await.err(),
+            controller.fetch_headers("INBOX", &[1]).await.err(),
+            controller.fetch_message_body("INBOX", 1).await.err(),
+            controller.mark_as_read("INBOX", 1).await.err(),
+            controller.set_starred("INBOX", 1, true).await.err(),
+            controller.delete_message("INBOX", 1).await.err(),
+        ];
+        for refusal in refusals {
+            let message = refusal
+                .expect("should refuse without a connection")
+                .to_string();
+            assert!(message.contains("Not connected"), "got {message}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_disconnecting_when_nothing_is_connected_is_not_an_error() {
+        // Called on the way out of a window, where a connection may never have
+        // been made.
+        let controller = MailController::new();
+        assert!(controller.disconnect_imap().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_a_refused_connection_says_the_server_could_not_be_reached() {
+        // Port 1 on the loopback refuses at once, so this is a real failure
+        // path without a network or a wait.
+        let error = controller_connect_error().await;
+        assert!(
+            error.contains("Could not reach the mail server"),
+            "got {error}"
+        );
+    }
+
+    async fn controller_connect_error() -> String {
         let controller = MailController::new();
         controller
             .connect_imap(
-                "imap.example.com".to_string(),
-                993,
+                "127.0.0.1".to_string(),
+                1,
                 "test@example.com".to_string(),
                 "password".to_string(),
-                true,
+                false,
             )
             .await
-            .unwrap();
-
-        let mut rx = controller
-            .start_imap_idle(
-                Some("INBOX".to_string()),
-                ImapIdleOptions {
-                    keepalive_interval: std::time::Duration::from_millis(20),
-                    simulated_exists_interval: std::time::Duration::from_millis(25),
-                },
-            )
-            .await
-            .unwrap();
-        let event = rx.recv().await;
-        assert!(event.is_some());
-        controller.stop_imap_idle().await.unwrap();
+            .expect_err("nothing listens on port 1")
+            .to_string()
     }
 
     #[tokio::test]

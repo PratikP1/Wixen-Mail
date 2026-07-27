@@ -8,6 +8,7 @@ pub mod caldav;
 pub mod google_api;
 pub mod ical_subscription;
 pub mod microsoft_graph;
+pub mod mime;
 pub mod oauth;
 pub mod oauth_credentials;
 pub mod protocols;
