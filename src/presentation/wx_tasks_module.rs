@@ -29,7 +29,18 @@ pub fn build_tasks_panel(parent: &Panel) -> TasksPanelHandles {
 
     // Task list
     let task_list = ListCtrl::builder(&panel)
-        .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
+        .with_style(
+            ListCtrlStyle::Report
+                | ListCtrlStyle::SingleSel
+                | ListCtrlStyle::HRules
+                // Virtual, for the same reason the message list is:
+                // a native list filled row by row stops being usable
+                // somewhere around ten thousand items, and an address
+                // book or a task history reaches that. In virtual mode
+                // UI Automation still reports the real count, so a
+                // screen reader says "row 12 of 40,000" and means it.
+                | ListCtrlStyle::Virtual,
+        )
         .build();
     set_accessible_name(&task_list, "Tasks");
     task_list.insert_column(0, "Done", ListColumnFormat::Centre, 50);

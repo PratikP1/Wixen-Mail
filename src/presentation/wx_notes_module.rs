@@ -32,7 +32,18 @@ pub fn build_notes_panel(parent: &Panel) -> NotesPanelHandles {
     let btn_new = Button::builder(&list_panel).with_label("&New Note").build();
 
     let note_list = ListCtrl::builder(&list_panel)
-        .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
+        .with_style(
+            ListCtrlStyle::Report
+                | ListCtrlStyle::SingleSel
+                | ListCtrlStyle::HRules
+                // Virtual, for the same reason the message list is:
+                // a native list filled row by row stops being usable
+                // somewhere around ten thousand items, and an address
+                // book or a task history reaches that. In virtual mode
+                // UI Automation still reports the real count, so a
+                // screen reader says "row 12 of 40,000" and means it.
+                | ListCtrlStyle::Virtual,
+        )
         .build();
     set_accessible_name(&note_list, "Notes");
     note_list.insert_column(0, "Title", ListColumnFormat::Left, 200);

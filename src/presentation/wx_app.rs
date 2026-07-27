@@ -23,6 +23,7 @@ use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::date_display;
 use crate::presentation::message_columns::{self, ColumnLayout, MessageColumn};
 use crate::presentation::message_rows;
+use crate::presentation::pim_rows;
 use crate::presentation::read_aloud::{self, ReadAloud};
 use async_channel::{Receiver, Sender};
 use std::cell::RefCell;
@@ -766,6 +767,50 @@ impl WxMailApp {
                 note_list: notes_cp.note_list,
                 notes_tree: notes_sb.tree,
             };
+
+            // The five other lists paint from memory too. Registering the
+            // callbacks here rather than in each panel builder keeps the
+            // builders free of shared state and puts every list's data source
+            // in one place.
+            //
+            // A refused callback is logged rather than swallowed: a virtual
+            // list whose callback never registered renders completely empty,
+            // and an empty panel looks exactly like a panel with no data.
+            for (list, name) in [
+                (&pim_refs.contact_list, "contacts"),
+                (&pim_refs.cal_event_list, "calendar"),
+                (&pim_refs.reminder_list, "reminders"),
+                (&pim_refs.task_list, "tasks"),
+                (&pim_refs.note_list, "notes"),
+            ] {
+                let state = state.clone();
+                let registered = list.set_virtual_text_callback(move |row, column| {
+                    let Ok(s) = state.lock() else {
+                        return pim_rows::PLACEHOLDER.to_string();
+                    };
+                    let row = row as usize;
+                    match name {
+                        "contacts" => s
+                            .contacts
+                            .get(row)
+                            .map(|c| pim_rows::contact_cell(c, column)),
+                        "calendar" => s.events.get(row).map(|e| pim_rows::event_cell(e, column)),
+                        "reminders" => s
+                            .reminders
+                            .get(row)
+                            .map(|r| pim_rows::reminder_cell(r, column)),
+                        "tasks" => s.tasks.get(row).map(|t| pim_rows::task_cell(t, column)),
+                        _ => s.notes.get(row).map(|n| pim_rows::note_cell(n, column)),
+                    }
+                    .unwrap_or_else(|| pim_rows::PLACEHOLDER.to_string())
+                });
+                if !registered {
+                    tracing::error!(
+                        "Virtual text callback refused for {}; that list will render empty",
+                        name
+                    );
+                }
+            }
 
             // Space cycles short then full on the item under the cursor;
             // Shift+Space goes straight to full. One cycle shared across the
@@ -3168,27 +3213,10 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         UIUpdate::CalendarEventsLoaded(events) => {
             lock_state(state).events = events.clone();
             pim.cal_date_label.set_label(&calendar_range_label(events));
-            pim.cal_event_list.delete_all_items();
-            for (i, e) in events.iter().enumerate() {
-                let idx = i as i64;
-                let time = if e.is_all_day {
-                    "All day".to_string()
-                } else {
-                    e.start.clone()
-                };
-                pim.cal_event_list.insert_item(idx, &time, None);
-                pim.cal_event_list
-                    .set_item_text_by_column(idx, 1, &e.summary);
-                pim.cal_event_list.set_item_text_by_column(
-                    idx,
-                    2,
-                    e.calendar_name.as_deref().unwrap_or(""),
-                );
-                pim.cal_event_list
-                    .set_item_text_by_column(idx, 3, &e.location);
-                pim.cal_event_list
-                    .set_item_text_by_column(idx, 4, &e.status);
-            }
+            // Virtual mode: the row count, and the callback answers for
+            // each cell as it paints. Filling row by row is what put a
+            // ceiling of a few thousand items on these lists.
+            pim.cal_event_list.set_item_count(events.len() as i64);
             let msg = format!("{} calendar events loaded", events.len());
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "calendar-events");
@@ -3250,20 +3278,10 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 let mut s = lock_state(state);
                 s.reminders = reminders.clone();
             }
-            pim.reminder_list.delete_all_items();
-            for (i, r) in reminders.iter().enumerate() {
-                let idx = i as i64;
-                let done = if r.is_completed { "Done" } else { "" };
-                pim.reminder_list.insert_item(idx, done, None);
-                pim.reminder_list.set_item_text_by_column(idx, 1, &r.title);
-                pim.reminder_list.set_item_text_by_column(
-                    idx,
-                    2,
-                    r.due_datetime.as_deref().unwrap_or("No due date"),
-                );
-                pim.reminder_list
-                    .set_item_text_by_column(idx, 3, &r.priority);
-            }
+            // Virtual mode: the row count, and the callback answers for
+            // each cell as it paints. Filling row by row is what put a
+            // ceiling of a few thousand items on these lists.
+            pim.reminder_list.set_item_count(reminders.len() as i64);
 
             // Sidebar groups reminders by urgency, matching how the tasks and
             // notes sidebars group their own items.
@@ -3299,16 +3317,10 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         }
         UIUpdate::TasksLoaded(tasks) => {
             lock_state(state).tasks = tasks.clone();
-            pim.task_list.delete_all_items();
-            for (i, t) in tasks.iter().enumerate() {
-                let idx = i as i64;
-                let done = if t.is_completed { "Done" } else { "" };
-                pim.task_list.insert_item(idx, done, None);
-                pim.task_list.set_item_text_by_column(idx, 1, &t.title);
-                pim.task_list
-                    .set_item_text_by_column(idx, 2, t.due_date.as_deref().unwrap_or(""));
-                pim.task_list.set_item_text_by_column(idx, 3, &t.priority);
-            }
+            // Virtual mode: the row count, and the callback answers for
+            // each cell as it paints. Filling row by row is what put a
+            // ceiling of a few thousand items on these lists.
+            pim.task_list.set_item_count(tasks.len() as i64);
             let msg = format!("{} tasks loaded", tasks.len());
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "tasks");
@@ -3328,17 +3340,10 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 let mut s = lock_state(state);
                 s.notes = notes.clone();
             }
-            pim.note_list.delete_all_items();
-            for (i, n) in notes.iter().enumerate() {
-                let idx = i as i64;
-                let title = if n.pinned {
-                    format!("* {}", n.title)
-                } else {
-                    n.title.clone()
-                };
-                pim.note_list.insert_item(idx, &title, None);
-                pim.note_list.set_item_text_by_column(idx, 1, &n.updated_at);
-            }
+            // Virtual mode: the row count, and the callback answers for
+            // each cell as it paints. Filling row by row is what put a
+            // ceiling of a few thousand items on these lists.
+            pim.note_list.set_item_count(notes.len() as i64);
             let msg = format!("{} notes loaded", notes.len());
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "notes");
@@ -3348,14 +3353,10 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 let mut s = lock_state(state);
                 s.contacts = contacts.clone();
             }
-            pim.contact_list.delete_all_items();
-            for (i, c) in contacts.iter().enumerate() {
-                let idx = i as i64;
-                pim.contact_list.insert_item(idx, &c.name, None);
-                pim.contact_list.set_item_text_by_column(idx, 1, &c.email);
-                pim.contact_list.set_item_text_by_column(idx, 2, &c.phone);
-                pim.contact_list.set_item_text_by_column(idx, 3, &c.company);
-            }
+            // Virtual mode: the row count, and the callback answers for
+            // each cell as it paints. Filling row by row is what put a
+            // ceiling of a few thousand items on these lists.
+            pim.contact_list.set_item_count(contacts.len() as i64);
             let msg = format!("{} contacts loaded", contacts.len());
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "contacts");
