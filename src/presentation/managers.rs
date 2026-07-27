@@ -11,6 +11,7 @@
 
 use crate::application::collection_sync;
 use crate::data::message_cache::MessageCache;
+use crate::presentation::contact_convert;
 use crate::presentation::ui_types::{CalendarEventItem, UIUpdate};
 use crate::presentation::wx_app::{WxUIState, lock_state, send_status};
 use crate::presentation::{wx_calendar, wx_managers};
@@ -387,6 +388,177 @@ pub fn event_entry(
             .then(|| format!("[{{\"minutes\":{}}}]", data.reminder_minutes)),
         created_at: now_stamp(),
         updated_at: now_stamp(),
+    }
+}
+
+/// Search every folder of the active account and show what turns up.
+///
+/// The dialog used to say "Searching: report..." and search nothing at all.
+/// Results replace the message list, and the status line says how many there
+/// were, because a list that silently changed under you is worse than no
+/// search: with no result count, an empty result and a broken search look the
+/// same.
+pub fn search_messages(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    query: &str,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    /// Enough to be useful, few enough to fill the list without a pause.
+    const LIMIT: usize = 500;
+
+    let (cache, account) = match manager_account(state, cache) {
+        Ok(pair) => pair,
+        Err(reason) => return send_status(tx, rt, reason),
+    };
+    match cache.search_messages(&account, query, LIMIT) {
+        Ok(rows) => {
+            let items: Vec<crate::presentation::ui_types::MessageItem> = rows
+                .iter()
+                .map(crate::presentation::ui_types::MessageItem::from_row)
+                .collect();
+            let found = items.len();
+            let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
+            send_status(
+                tx,
+                rt,
+                &if found == 0 {
+                    format!("No messages match {}", query)
+                } else if found == LIMIT {
+                    format!("First {} matches for {}", LIMIT, query)
+                } else {
+                    format!(
+                        "{} match{} for {}",
+                        found,
+                        if found == 1 { "" } else { "es" },
+                        query
+                    )
+                },
+            );
+        }
+        Err(e) => {
+            tracing::error!("Search failed: {}", e);
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+        }
+    }
+}
+
+/// Create a contact and save it.
+///
+/// The dialog returned the contact it built and the caller dropped it, so
+/// filling the form in and pressing OK did nothing at all.
+pub fn new_contact(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    let (cache, account) = match manager_account(state, cache) {
+        Ok(pair) => pair,
+        Err(reason) => return send_status(tx, rt, reason),
+    };
+    let Some(mut edited) = wx_managers::show_new_contact_dialog(frame) else {
+        return;
+    };
+    // The dialog does not know which account it is for, and a contact saved
+    // against the wrong one is invisible in the panel.
+    if edited.id.trim().is_empty() {
+        edited.id = new_id("contact");
+    }
+    let contact = contact_convert::to_stored(&edited, &account, None);
+    match cache.save_contact(&contact) {
+        Ok(()) => {
+            send_status(tx, rt, &format!("Contact saved: {}", contact.name));
+            reload_contacts(&cache, &account, tx);
+        }
+        Err(e) => {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "Contact could not be saved: {}",
+                e
+            )));
+        }
+    }
+}
+
+/// The contact manager, with the account's real contacts in it.
+pub fn manage_contacts(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) -> bool {
+    let (cache, account) = match manager_account(state, cache) {
+        Ok(pair) => pair,
+        Err(reason) => {
+            send_status(tx, rt, reason);
+            return false;
+        }
+    };
+    let stored = match cache.get_contacts_for_account(&account) {
+        Ok(items) => items,
+        Err(e) => {
+            send_status(tx, rt, &format!("Contacts could not be read: {}", e));
+            return false;
+        }
+    };
+
+    let rows: Vec<wx_managers::ContactEntry> =
+        stored.iter().map(contact_convert::to_editor).collect();
+
+    match wx_managers::show_contact_manager_dialog(frame, &rows) {
+        wx_managers::ContactManagerAction::SyncRequested => return true,
+        wx_managers::ContactManagerAction::None => return false,
+        wx_managers::ContactManagerAction::Updated(updated) => {
+            let changes = collection_sync::changes_between(
+                &stored,
+                updated,
+                |c| c.id.clone(),
+                |c| c.id.clone(),
+            );
+            let mut failures = Vec::new();
+            for id in &changes.removed {
+                if let Err(e) = cache.delete_contact(id) {
+                    failures.push(format!("delete {}: {}", id, e));
+                }
+            }
+            for row in &changes.written {
+                let mut edited = row.clone();
+                if edited.id.trim().is_empty() {
+                    edited.id = new_id("contact");
+                }
+                // Keep the date the contact was added rather than resetting it
+                // on every edit.
+                let created = stored
+                    .iter()
+                    .find(|c| c.id == edited.id)
+                    .map(|c| c.created_at.clone());
+                let contact = contact_convert::to_stored(&edited, &account, created.as_deref());
+                if let Err(e) = cache.save_contact(&contact) {
+                    failures.push(format!("{}: {}", contact.name, e));
+                }
+            }
+            report(tx, rt, "contacts", failures);
+            reload_contacts(&cache, &account, tx);
+        }
+    }
+    false
+}
+
+/// Push the stored contacts back into the panel.
+fn reload_contacts(cache: &Arc<MessageCache>, account: &str, tx: &Sender<UIUpdate>) {
+    match cache.get_contacts_for_account(account) {
+        Ok(contacts) => {
+            let _ = tx.try_send(UIUpdate::ContactsLoaded(
+                contacts
+                    .iter()
+                    .map(crate::presentation::ui_types::ContactItem::from_entry)
+                    .collect(),
+            ));
+        }
+        Err(e) => tracing::error!("Contacts could not be reloaded: {}", e),
     }
 }
 

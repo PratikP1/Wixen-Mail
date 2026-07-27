@@ -1,0 +1,387 @@
+//! Moving a contact between what the editor holds and what the cache stores.
+//!
+//! The two shapes differ on purpose. The editor keeps emails, phones and
+//! addresses as lists, because a person has more than one of each. The cache
+//! keeps a primary of each as a column, for the list view and for searching,
+//! plus the full lists as JSON.
+//!
+//! Nothing here may lose a field. A conversion that quietly drops the second
+//! phone number is worse than one that refuses: the contact still looks saved,
+//! and the loss is only discovered when someone needs that number.
+
+use crate::data::message_cache::{
+    AddressEntry, ContactEntry as StoredContact, CustomFieldEntry, EmailEntry, PhoneEntry,
+};
+use crate::presentation::wx_managers::{
+    AddressItem, ContactEntry as EditorContact, CustomFieldItem, EmailItem, PhoneItem,
+};
+
+/// Read a JSON list, or an empty list if it is missing or unreadable.
+///
+/// Unreadable rather than fatal: a contact whose phone list will not parse
+/// should still open, with the fields that do parse, rather than being
+/// unopenable.
+fn parse_list<T: serde::de::DeserializeOwned>(json: Option<&String>) -> Vec<T> {
+    json.map(|text| {
+        serde_json::from_str(text).unwrap_or_else(|e| {
+            tracing::warn!("A contact's stored list could not be read: {}", e);
+            Vec::new()
+        })
+    })
+    .unwrap_or_default()
+}
+
+/// Write a list as JSON, or nothing when it is empty.
+fn store_list<T: serde::Serialize>(items: &[T]) -> Option<String> {
+    if items.is_empty() {
+        return None;
+    }
+    serde_json::to_string(items).ok()
+}
+
+/// The editor's shape, from what is stored.
+pub fn to_editor(stored: &StoredContact) -> EditorContact {
+    let mut emails: Vec<EmailItem> = parse_list::<EmailEntry>(stored.emails_json.as_ref())
+        .into_iter()
+        .map(|e| EmailItem {
+            label: e.label,
+            address: e.address,
+        })
+        .collect();
+    // The primary column is the source of truth when there is no list yet,
+    // which is every contact written before the lists existed.
+    if emails.is_empty() && !stored.email.trim().is_empty() {
+        emails.push(EmailItem {
+            label: "Personal".to_string(),
+            address: stored.email.clone(),
+        });
+    }
+
+    let mut phones: Vec<PhoneItem> = parse_list::<PhoneEntry>(stored.phones_json.as_ref())
+        .into_iter()
+        .map(|p| PhoneItem {
+            label: p.label,
+            number: p.number,
+        })
+        .collect();
+    if phones.is_empty()
+        && let Some(phone) = stored.phone.as_ref().filter(|p| !p.trim().is_empty())
+    {
+        phones.push(PhoneItem {
+            label: "Mobile".to_string(),
+            number: phone.clone(),
+        });
+    }
+
+    let addresses: Vec<AddressItem> = parse_list::<AddressEntry>(stored.addresses_json.as_ref())
+        .into_iter()
+        .map(|a| AddressItem {
+            label: a.label,
+            street: a.street,
+            city: a.city,
+            state: a.state,
+            zip: a.zip,
+            country: a.country,
+        })
+        .collect();
+
+    let custom_fields: Vec<CustomFieldItem> =
+        parse_list::<CustomFieldEntry>(stored.custom_fields_json.as_ref())
+            .into_iter()
+            .map(|c| CustomFieldItem {
+                label: c.label,
+                value: c.value,
+            })
+            .collect();
+
+    EditorContact {
+        id: stored.id.clone(),
+        name: stored.name.clone(),
+        nickname: stored.nickname.clone().unwrap_or_default(),
+        company: stored.company.clone().unwrap_or_default(),
+        department: stored.department.clone().unwrap_or_default(),
+        job_title: stored.job_title.clone().unwrap_or_default(),
+        emails,
+        phones,
+        addresses,
+        birthday: stored.birthday.clone().unwrap_or_default(),
+        website: stored.website.clone().unwrap_or_default(),
+        relationship: stored.relationship.clone().unwrap_or_default(),
+        notes: stored.notes.clone().unwrap_or_default(),
+        custom_fields,
+        avatar_url: stored.avatar_url.clone().unwrap_or_default(),
+        favorite: stored.favorite,
+    }
+}
+
+/// What to store, from what the editor holds.
+///
+/// `created_at` comes from the record being replaced where there is one, so
+/// editing a contact does not reset the date it was added.
+pub fn to_stored(
+    editor: &EditorContact,
+    account_id: &str,
+    created_at: Option<&str>,
+) -> StoredContact {
+    let now = chrono::Utc::now().to_rfc3339();
+    let emails: Vec<EmailEntry> = editor
+        .emails
+        .iter()
+        .filter(|e| !e.address.trim().is_empty())
+        .map(|e| EmailEntry {
+            label: e.label.clone(),
+            address: e.address.clone(),
+        })
+        .collect();
+    let phones: Vec<PhoneEntry> = editor
+        .phones
+        .iter()
+        .filter(|p| !p.number.trim().is_empty())
+        .map(|p| PhoneEntry {
+            label: p.label.clone(),
+            number: p.number.clone(),
+        })
+        .collect();
+    let addresses: Vec<AddressEntry> = editor
+        .addresses
+        .iter()
+        .map(|a| AddressEntry {
+            label: a.label.clone(),
+            street: a.street.clone(),
+            city: a.city.clone(),
+            state: a.state.clone(),
+            zip: a.zip.clone(),
+            country: a.country.clone(),
+        })
+        .collect();
+    let custom: Vec<CustomFieldEntry> = editor
+        .custom_fields
+        .iter()
+        .filter(|c| !c.label.trim().is_empty())
+        .map(|c| CustomFieldEntry {
+            label: c.label.clone(),
+            value: c.value.clone(),
+        })
+        .collect();
+
+    let blank_to_none = |value: &str| Some(value.trim().to_string()).filter(|v| !v.is_empty());
+
+    StoredContact {
+        id: editor.id.clone(),
+        account_id: account_id.to_string(),
+        name: editor.name.clone(),
+        // The primary is the first of the list, which is the order the editor
+        // shows and the user can rearrange.
+        email: emails
+            .first()
+            .map(|e| e.address.clone())
+            .unwrap_or_default(),
+        provider_contact_id: None,
+        phone: phones.first().map(|p| p.number.clone()),
+        company: blank_to_none(&editor.company),
+        job_title: blank_to_none(&editor.job_title),
+        website: blank_to_none(&editor.website),
+        address: addresses.first().map(|a| {
+            [
+                a.street.as_str(),
+                a.city.as_str(),
+                a.state.as_str(),
+                a.zip.as_str(),
+                a.country.as_str(),
+            ]
+            .iter()
+            .filter(|part| !part.trim().is_empty())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ")
+        }),
+        birthday: blank_to_none(&editor.birthday),
+        avatar_url: blank_to_none(&editor.avatar_url),
+        avatar_data_base64: None,
+        source_provider: Some("local".to_string()),
+        last_synced_at: None,
+        vcard_raw: None,
+        notes: blank_to_none(&editor.notes),
+        favorite: editor.favorite,
+        created_at: created_at.unwrap_or(&now).to_string(),
+        nickname: blank_to_none(&editor.nickname),
+        department: blank_to_none(&editor.department),
+        relationship: blank_to_none(&editor.relationship),
+        emails_json: store_list(&emails),
+        phones_json: store_list(&phones),
+        addresses_json: store_list(&addresses),
+        custom_fields_json: store_list(&custom),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn editor_contact() -> EditorContact {
+        EditorContact {
+            id: "c1".to_string(),
+            name: "Grace Hopper".to_string(),
+            nickname: "Amazing Grace".to_string(),
+            company: "Navy".to_string(),
+            department: "Research".to_string(),
+            job_title: "Rear Admiral".to_string(),
+            emails: vec![
+                EmailItem {
+                    label: "Work".to_string(),
+                    address: "grace@navy.example".to_string(),
+                },
+                EmailItem {
+                    label: "Personal".to_string(),
+                    address: "grace@example.com".to_string(),
+                },
+            ],
+            phones: vec![
+                PhoneItem {
+                    label: "Work".to_string(),
+                    number: "555 0100".to_string(),
+                },
+                PhoneItem {
+                    label: "Mobile".to_string(),
+                    number: "555 0101".to_string(),
+                },
+            ],
+            addresses: vec![AddressItem {
+                label: "Work".to_string(),
+                street: "1 Navy Way".to_string(),
+                city: "Arlington".to_string(),
+                state: "VA".to_string(),
+                zip: "22202".to_string(),
+                country: "USA".to_string(),
+            }],
+            birthday: "1906-12-09".to_string(),
+            website: "https://example.com".to_string(),
+            relationship: "Colleague".to_string(),
+            notes: "Invented the compiler".to_string(),
+            custom_fields: vec![CustomFieldItem {
+                label: "Badge".to_string(),
+                value: "COBOL".to_string(),
+            }],
+            avatar_url: String::new(),
+            favorite: true,
+        }
+    }
+
+    #[test]
+    fn test_a_contact_survives_a_round_trip_with_every_field_intact() {
+        // A conversion that quietly drops the second phone number is worse
+        // than one that refuses: the contact still looks saved, and the loss
+        // shows up only when someone needs that number.
+        let original = editor_contact();
+        let restored = to_editor(&to_stored(&original, "acct", None));
+
+        assert_eq!(restored.name, original.name);
+        assert_eq!(restored.nickname, original.nickname);
+        assert_eq!(restored.company, original.company);
+        assert_eq!(restored.department, original.department);
+        assert_eq!(restored.job_title, original.job_title);
+        assert_eq!(restored.birthday, original.birthday);
+        assert_eq!(restored.website, original.website);
+        assert_eq!(restored.relationship, original.relationship);
+        assert_eq!(restored.notes, original.notes);
+        assert_eq!(restored.favorite, original.favorite);
+        assert_eq!(restored.emails.len(), 2, "an email address was lost");
+        assert_eq!(restored.phones.len(), 2, "a phone number was lost");
+        assert_eq!(restored.addresses.len(), 1, "an address was lost");
+        assert_eq!(restored.custom_fields.len(), 1, "a custom field was lost");
+        assert_eq!(restored.emails[1].address, "grace@example.com");
+        assert_eq!(restored.phones[1].number, "555 0101");
+        assert_eq!(restored.addresses[0].city, "Arlington");
+    }
+
+    #[test]
+    fn test_the_first_email_and_phone_become_the_searchable_primaries() {
+        // The list view and the search read the primary columns, so a contact
+        // whose primaries are empty cannot be found by address or number.
+        let stored = to_stored(&editor_contact(), "acct", None);
+        assert_eq!(stored.email, "grace@navy.example");
+        assert_eq!(stored.phone.as_deref(), Some("555 0100"));
+        assert!(
+            stored
+                .address
+                .as_deref()
+                .unwrap_or("")
+                .contains("Arlington")
+        );
+    }
+
+    #[test]
+    fn test_a_contact_stored_before_the_lists_existed_still_opens_with_its_details() {
+        // Records written by an earlier version have the primary columns and
+        // no JSON. Reading them as empty lists would look like data loss to
+        // the user, because it would be.
+        let mut stored = to_stored(&editor_contact(), "acct", None);
+        stored.emails_json = None;
+        stored.phones_json = None;
+        let restored = to_editor(&stored);
+        assert_eq!(restored.emails.len(), 1);
+        assert_eq!(restored.emails[0].address, "grace@navy.example");
+        assert_eq!(restored.phones.len(), 1);
+        assert_eq!(restored.phones[0].number, "555 0100");
+    }
+
+    #[test]
+    fn test_an_unreadable_stored_list_does_not_make_the_contact_unopenable() {
+        let mut stored = to_stored(&editor_contact(), "acct", None);
+        stored.phones_json = Some("{not json".to_string());
+        let restored = to_editor(&stored);
+        assert_eq!(restored.name, "Grace Hopper");
+        // Falls back to the primary column rather than to nothing.
+        assert_eq!(restored.phones.len(), 1);
+    }
+
+    #[test]
+    fn test_blank_rows_the_editor_left_behind_are_not_stored() {
+        // The editor adds an empty row when someone clicks Add and changes
+        // their mind. Storing it gives a contact an address that is nothing.
+        let mut contact = editor_contact();
+        contact.emails.push(EmailItem {
+            label: "Other".to_string(),
+            address: "   ".to_string(),
+        });
+        contact.phones.push(PhoneItem {
+            label: "Other".to_string(),
+            number: String::new(),
+        });
+        let restored = to_editor(&to_stored(&contact, "acct", None));
+        assert_eq!(restored.emails.len(), 2);
+        assert_eq!(restored.phones.len(), 2);
+    }
+
+    #[test]
+    fn test_editing_a_contact_keeps_the_date_it_was_added() {
+        let stored = to_stored(&editor_contact(), "acct", Some("2020-01-01T00:00:00Z"));
+        assert_eq!(stored.created_at, "2020-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn test_a_contact_with_nothing_in_it_converts_without_panicking() {
+        let empty = EditorContact {
+            id: String::new(),
+            name: String::new(),
+            nickname: String::new(),
+            company: String::new(),
+            department: String::new(),
+            job_title: String::new(),
+            emails: Vec::new(),
+            phones: Vec::new(),
+            addresses: Vec::new(),
+            birthday: String::new(),
+            website: String::new(),
+            relationship: String::new(),
+            notes: String::new(),
+            custom_fields: Vec::new(),
+            avatar_url: String::new(),
+            favorite: false,
+        };
+        let stored = to_stored(&empty, "acct", None);
+        assert_eq!(stored.email, "");
+        assert_eq!(stored.phone, None);
+        assert!(to_editor(&stored).emails.is_empty());
+    }
+}

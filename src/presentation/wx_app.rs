@@ -14,7 +14,6 @@ use crate::presentation::ui_types::*;
 use crate::presentation::wx_account_manager::{self, AccountManagerAction};
 use crate::presentation::wx_columns;
 use crate::presentation::wx_compose::{self, ComposeMode, ComposeResult};
-use crate::presentation::wx_managers;
 use crate::presentation::wx_settings;
 use crate::presentation::wx_thread_view;
 
@@ -2037,21 +2036,34 @@ document.addEventListener('keydown', function(e) {
                             }
                         }
                         _ if id == ID_SEARCH => {
+                            // It used to say "Searching: report..." and search
+                            // nothing at all.
                             if let Some(q) = show_search_dialog(&frame) {
-                                let tx = ui_tx.clone();
-                                runtime.spawn(async move {
-                                    let _ = tx.send(UIUpdate::StatusUpdated(format!("Searching: {}...", q))).await;
-                                });
+                                managers::search_messages(
+                                    &state,
+                                    &message_cache,
+                                    &q,
+                                    &ui_tx,
+                                    &runtime,
+                                );
+                                msg_list.set_focus();
                             }
                         }
                         _ if id == ID_ACCOUNT_MGR => handle_account_mgr(&frame, &state),
-                        _ if id == ID_NEW_CONTACT => { wx_managers::show_new_contact_dialog(&frame); }
+                        _ if id == ID_NEW_CONTACT => {
+                            managers::new_contact(&state, &message_cache, &frame, &ui_tx, &runtime)
+                        }
                         _ if id == ID_NEW_ACCOUNT => handle_account_mgr(&frame, &state),
                         _ if id == ID_SAVE => send_status(&ui_tx, &runtime, "No active draft to save"),
                         _ if id == ID_SAVE_AS => send_status(&ui_tx, &runtime, "Save As: no message selected"),
                         _ if id == ID_CONTACT_MGR => {
-                            let result = wx_managers::show_contact_manager_dialog(&frame, &[]);
-                            if matches!(result, wx_managers::ContactManagerAction::SyncRequested) {
+                            if managers::manage_contacts(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                            ) {
                                 send_status(&ui_tx, &runtime, "Contacts sync requested...");
                                 spawn_contacts_sync(&state, &ui_tx, &runtime);
                             }

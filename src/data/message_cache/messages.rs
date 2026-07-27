@@ -181,6 +181,70 @@ impl MessageCache {
         Ok(())
     }
 
+    /// Search an account's messages across every folder.
+    ///
+    /// Subject, correspondent and snippet, which is what someone remembers
+    /// about a message they are trying to find again. Not the body: bodies live
+    /// in their own table and are evicted, so searching them would return a
+    /// different answer depending on what happened to still be cached, which
+    /// is worse than not searching them at all.
+    ///
+    /// Bounded, because a search that returns two hundred thousand rows is a
+    /// search nobody can use and a list that takes a visible moment to fill.
+    pub fn search_messages(
+        &self,
+        account_id: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<MessageListRow>> {
+        if query.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+        let pattern = super::like_pattern(query);
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT m.id, m.uid, m.message_id, m.refs_header, m.subject, m.from_addr,
+                        m.to_addr, m.cc, m.date, m.snippet, m.size_bytes, m.read, m.starred,
+                        EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)
+                 FROM messages m
+                 INNER JOIN folders f ON m.folder_id = f.id
+                 WHERE f.account_id = ?1 AND m.deleted = 0
+                   AND (
+                        LOWER(m.subject) LIKE ?2 ESCAPE '!' OR
+                        LOWER(m.from_addr) LIKE ?2 ESCAPE '!' OR
+                        LOWER(COALESCE(m.snippet, '')) LIKE ?2 ESCAPE '!'
+                   )
+                 ORDER BY m.date DESC, m.uid DESC
+                 LIMIT ?3",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare search: {}", e)))?;
+
+        let rows = stmt
+            .query_map(params![account_id, pattern, limit as i64], |row| {
+                Ok(MessageListRow {
+                    id: row.get(0)?,
+                    uid: row.get(1)?,
+                    message_id: row.get(2)?,
+                    refs_header: row.get(3)?,
+                    subject: row.get(4)?,
+                    from_addr: row.get(5)?,
+                    to_addr: row.get(6)?,
+                    cc: row.get(7)?,
+                    date: row.get(8)?,
+                    snippet: row.get(9)?,
+                    size_bytes: row.get(10)?,
+                    read: row.get(11)?,
+                    starred: row.get(12)?,
+                    has_attachments: row.get(13)?,
+                })
+            })
+            .map_err(|e| Error::Other(format!("Failed to search messages: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect search results: {}", e)))?;
+        Ok(rows)
+    }
+
     /// Store an attachment record.
     ///
     /// The record, not the file. What the list and the details reading need is
@@ -321,6 +385,105 @@ impl MessageCache {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_searching_finds_a_message_by_subject_sender_or_snippet() {
+        let (cache, folder_id) = listing_cache();
+        let id = cache
+            .save_message(&listing_message(
+                folder_id,
+                20,
+                "Quarterly report",
+                "2026-07-26",
+            ))
+            .unwrap();
+        cache
+            .save_message_body(id, Some("The numbers are attached."), None)
+            .unwrap();
+
+        for query in ["quarterly", "ADA", "numbers"] {
+            let found = cache.search_messages("acc-1", query, 50).unwrap();
+            assert_eq!(found.len(), 1, "searching for {} found nothing", query);
+        }
+    }
+
+    #[test]
+    fn test_searching_is_bounded() {
+        // A search returning the whole mailbox is a search nobody can use.
+        let (cache, folder_id) = listing_cache();
+        for uid in 0..20 {
+            cache
+                .save_message(&listing_message(folder_id, uid, "Report", "2026-07-26"))
+                .unwrap();
+        }
+        assert_eq!(
+            cache.search_messages("acc-1", "report", 5).unwrap().len(),
+            5
+        );
+    }
+
+    #[test]
+    fn test_an_empty_search_returns_nothing_rather_than_everything() {
+        // A blank box is not a request for the entire mailbox.
+        let (cache, folder_id) = listing_cache();
+        cache
+            .save_message(&listing_message(folder_id, 21, "Report", "2026-07-26"))
+            .unwrap();
+        assert!(
+            cache
+                .search_messages("acc-1", "   ", 50)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_a_wildcard_in_a_search_is_taken_literally() {
+        let (cache, folder_id) = listing_cache();
+        cache
+            .save_message(&listing_message(
+                folder_id,
+                22,
+                "Up 100% this year",
+                "2026-07-26",
+            ))
+            .unwrap();
+        cache
+            .save_message(&listing_message(folder_id, 23, "100 units", "2026-07-25"))
+            .unwrap();
+        let found = cache.search_messages("acc-1", "100%", 50).unwrap();
+        assert_eq!(found.len(), 1, "the percent sign acted as a wildcard");
+        assert!(found[0].subject.contains("100%"));
+    }
+
+    #[test]
+    fn test_searching_does_not_cross_into_another_account() {
+        let (cache, folder_id) = listing_cache();
+        cache
+            .save_message(&listing_message(folder_id, 24, "Private", "2026-07-26"))
+            .unwrap();
+        assert!(
+            cache
+                .search_messages("someone-else", "private", 50)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_a_deleted_message_is_not_found() {
+        let (cache, folder_id) = listing_cache();
+        let id = cache
+            .save_message(&listing_message(folder_id, 25, "Gone", "2026-07-26"))
+            .unwrap();
+        cache.delete_message(id).unwrap();
+        assert!(
+            cache
+                .search_messages("acc-1", "gone", 50)
+                .unwrap()
+                .is_empty()
+        );
+    }
 
     #[test]
     fn test_references_round_trip_through_the_listing() {
