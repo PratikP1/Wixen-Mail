@@ -1513,6 +1513,7 @@ document.addEventListener('keydown', function(e) {
                 let ui_tx = ui_tx.clone();
                 let a11y = a11y.clone();
                 let body_cache = message_cache.clone();
+                let runtime = runtime.clone();
                 move |event| {
                     let idx = event.get_item_index() as usize;
                     let in_thread = {
@@ -1531,11 +1532,11 @@ document.addEventListener('keydown', function(e) {
                     // message 3..." and then loaded nothing: the handler for a
                     // loaded body existed and no code ever sent one, so the
                     // preview was empty for every message ever selected.
-                    let body = {
+                    let selected = {
                         let s = lock_state(&state);
-                        s.messages.get(idx).map(|m| m.message_id)
-                    }
-                    .and_then(|id| {
+                        s.messages.get(idx).map(|m| (m.message_id, m.uid))
+                    };
+                    let body = selected.and_then(|(id, _)| {
                         body_cache
                             .as_ref()
                             .and_then(|c| c.get_message_body(id).ok().flatten())
@@ -1553,9 +1554,16 @@ document.addEventListener('keydown', function(e) {
                             let _ = ui_tx.try_send(UIUpdate::MessageBodyLoaded(body));
                         }
                         None => {
+                            // After a sync a folder holds headers and no
+                            // bodies, so this is the ordinary case rather than
+                            // the exception. Say what is happening and go and
+                            // get it.
                             let _ = ui_tx.try_send(UIUpdate::MessageBodyLoaded(
-                                "This message has not been downloaded yet.".to_string(),
+                                "Downloading this message...".to_string(),
                             ));
+                            if let Some((id, uid)) = selected {
+                                spawn_body_fetch(&state, &ui_tx, &runtime, id, uid);
+                            }
                         }
                     }
                 }
@@ -3752,6 +3760,127 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
             .map(|v| v.len())
             .unwrap_or(0);
         let _ = tx.send(UIUpdate::OutboxQueueCount(remaining)).await;
+    });
+}
+
+/// Download one message body that is not cached yet, and store it.
+///
+/// Started when a message is selected and its body is not held, so that
+/// pressing Enter on it opens something rather than an apology. Selecting is
+/// what triggers it rather than opening, because a download that begins when
+/// the reader is already on screen is a wait somebody sits through.
+///
+/// Arrowing quickly down a folder starts several of these. That is bounded by
+/// the check at the end: a body only reaches the preview if its message is
+/// still the selected one, so passing over a message costs a fetch and never a
+/// preview that belongs to a different row.
+fn spawn_body_fetch(
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    message_row_id: i64,
+    uid: u32,
+) {
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    let state = state.clone();
+    let (accounts, account_id) = {
+        let s = lock_state(&state);
+        (s.accounts.clone(), s.active_account_id.clone())
+    };
+    let account = account_id
+        .as_ref()
+        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned())
+        .or_else(|| accounts.first().cloned());
+
+    rt.spawn_blocking(move || {
+        // Nothing here is announced. A message that cannot be downloaded is
+        // reported when somebody asks for it by opening it, not as a sentence
+        // spoken over every row they pass.
+        let Some(account) = account else { return };
+        if account.use_oauth || account.imap_server.trim().is_empty() {
+            return;
+        }
+        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
+            return;
+        };
+        let Some(dir) = dirs::cache_dir().map(|d| d.join("wixen-mail")) else {
+            return;
+        };
+        let Ok(cache) = crate::data::message_cache::MessageCache::new(dir, None) else {
+            return;
+        };
+        let Ok(Some(folder_path)) = cache.folder_path_for_message(message_row_id) else {
+            return;
+        };
+
+        let controller = MailController::new();
+        if let Err(e) = handle.block_on(controller.connect_imap(
+            account.imap_server.clone(),
+            port,
+            account.username.clone(),
+            account.password.clone(),
+            account.imap_use_tls,
+        )) {
+            tracing::warn!("Could not connect to fetch a message body: {}", e);
+            return;
+        }
+
+        let raw = match handle.block_on(controller.fetch_message_body(&folder_path, uid)) {
+            Ok(raw) => raw,
+            Err(e) => {
+                tracing::warn!("Could not fetch message {}: {}", uid, e);
+                let _ = handle.block_on(controller.disconnect_imap());
+                return;
+            }
+        };
+        let _ = handle.block_on(controller.disconnect_imap());
+
+        let parsed = match crate::service::mime::parse(&raw) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                tracing::warn!("Could not read message {}: {}", uid, e);
+                return;
+            }
+        };
+
+        if let Err(e) = cache.save_message_body(
+            message_row_id,
+            parsed.body_plain.as_deref(),
+            parsed.body_html.as_deref(),
+        ) {
+            tracing::warn!("Could not store the message body: {}", e);
+            return;
+        }
+        for attachment in &parsed.attachments {
+            let _ = cache.save_attachment(&crate::data::message_cache::CachedAttachment {
+                id: 0,
+                message_id: message_row_id,
+                filename: attachment.display_name(),
+                mime_type: attachment.mime_type.clone(),
+                size: attachment.size as i64,
+                content_id: None,
+            });
+        }
+
+        // Only if this is still the message somebody is looking at. Otherwise
+        // the preview would fill with a message they have already arrowed past.
+        let still_selected = {
+            let s = lock_state(&state);
+            s.selected_message_index
+                .and_then(|i| s.messages.get(i))
+                .is_some_and(|m| m.message_id == message_row_id)
+        };
+        if !still_selected {
+            return;
+        }
+        let body = parsed
+            .body_html
+            .or(parsed.body_plain)
+            .unwrap_or_else(|| "This message has no readable body.".to_string());
+        handle.block_on(async {
+            let _ = tx.send(UIUpdate::MessageBodyLoaded(body)).await;
+        });
     });
 }
 

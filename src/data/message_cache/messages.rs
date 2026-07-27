@@ -150,6 +150,25 @@ impl MessageCache {
         Ok(())
     }
 
+    /// The server's path for the folder a message is in.
+    ///
+    /// What a body fetch needs and the only thing it needs: given a row in the
+    /// list, which mailbox to select before asking for it. Answered in one
+    /// query so the caller does not have to carry the folder around alongside
+    /// every message.
+    pub fn folder_path_for_message(&self, message_id: i64) -> Result<Option<String>> {
+        self.conn
+            .query_row(
+                "SELECT f.path FROM messages m
+                 INNER JOIN folders f ON m.folder_id = f.id
+                 WHERE m.id = ?1",
+                params![message_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to find the message's folder: {}", e)))
+    }
+
     /// The UIDVALIDITY last seen for a folder, if one has been recorded.
     pub fn folder_uid_validity(&self, folder_id: i64) -> Result<Option<u32>> {
         self.conn
