@@ -47,6 +47,59 @@ pub enum FolderType {
     Custom,
 }
 
+impl FolderType {
+    /// The spelling stored in the `folders.folder_type` column.
+    ///
+    /// Fixed, because it is written to a database that outlives the process.
+    /// Renaming one of these strings would orphan every row already holding it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FolderType::Inbox => "Inbox",
+            FolderType::Sent => "Sent",
+            FolderType::Drafts => "Drafts",
+            FolderType::Trash => "Trash",
+            FolderType::Spam => "Spam",
+            FolderType::Archive => "Archive",
+            FolderType::Custom => "Custom",
+        }
+    }
+
+    /// Read a stored value back.
+    ///
+    /// Case-insensitive, because rows written before this conversion existed
+    /// used whatever spelling the caller happened to pass. Anything
+    /// unrecognised is an ordinary folder rather than an error: the folder is
+    /// real and the user still needs to reach it.
+    pub fn from_stored(stored: &str) -> Self {
+        match stored.trim().to_ascii_lowercase().as_str() {
+            "inbox" => FolderType::Inbox,
+            "sent" => FolderType::Sent,
+            "drafts" => FolderType::Drafts,
+            "trash" => FolderType::Trash,
+            "spam" | "junk" => FolderType::Spam,
+            "archive" => FolderType::Archive,
+            _ => FolderType::Custom,
+        }
+    }
+
+    /// Where this folder sits in the tree, before names are compared.
+    ///
+    /// Mail clients have put the inbox first for thirty years, and a reader
+    /// arrowing down a tree should not have to pass Archive and Drafts to reach
+    /// it. Ordinary folders sort last, among themselves by name.
+    pub fn tree_order(&self) -> u8 {
+        match self {
+            FolderType::Inbox => 0,
+            FolderType::Drafts => 1,
+            FolderType::Sent => 2,
+            FolderType::Archive => 3,
+            FolderType::Spam => 4,
+            FolderType::Trash => 5,
+            FolderType::Custom => 6,
+        }
+    }
+}
+
 /// Server configuration for email protocols
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
@@ -256,5 +309,66 @@ mod tests {
         assert_eq!(folder.unread_count, 0);
         assert_eq!(folder.total_count, 0);
         assert!(folder.parent_id.is_none());
+    }
+
+    #[test]
+    fn test_every_folder_type_survives_a_trip_through_the_database() {
+        for folder_type in [
+            FolderType::Inbox,
+            FolderType::Sent,
+            FolderType::Drafts,
+            FolderType::Trash,
+            FolderType::Spam,
+            FolderType::Archive,
+            FolderType::Custom,
+        ] {
+            assert_eq!(
+                FolderType::from_stored(folder_type.as_str()),
+                folder_type,
+                "{folder_type:?} did not survive"
+            );
+        }
+    }
+
+    #[test]
+    fn test_rows_written_before_the_spelling_was_fixed_still_read() {
+        // Callers passed whatever they liked, so the column holds both cases.
+        assert_eq!(FolderType::from_stored("inbox"), FolderType::Inbox);
+        assert_eq!(FolderType::from_stored("INBOX"), FolderType::Inbox);
+        assert_eq!(FolderType::from_stored("  Sent  "), FolderType::Sent);
+        // "Junk" is what a server calls it and "Spam" is what we store.
+        assert_eq!(FolderType::from_stored("Junk"), FolderType::Spam);
+    }
+
+    #[test]
+    fn test_an_unknown_stored_value_is_an_ordinary_folder() {
+        // The folder is real and the user still has to reach it, so an
+        // unreadable type must not turn into an error or a missing row.
+        assert_eq!(FolderType::from_stored("Wombat"), FolderType::Custom);
+        assert_eq!(FolderType::from_stored(""), FolderType::Custom);
+    }
+
+    #[test]
+    fn test_the_inbox_comes_first_and_ordinary_folders_come_last() {
+        // Somebody arrowing down the tree should not pass Archive and Drafts
+        // to reach their mail.
+        assert_eq!(FolderType::Inbox.tree_order(), 0);
+        for other in [
+            FolderType::Sent,
+            FolderType::Drafts,
+            FolderType::Trash,
+            FolderType::Spam,
+            FolderType::Archive,
+            FolderType::Custom,
+        ] {
+            assert!(
+                other.tree_order() > FolderType::Inbox.tree_order(),
+                "{other:?} sorted above the inbox"
+            );
+            assert!(
+                other.tree_order() <= FolderType::Custom.tree_order(),
+                "{other:?} sorted below an ordinary folder"
+            );
+        }
     }
 }

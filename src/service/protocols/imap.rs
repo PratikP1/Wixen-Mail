@@ -2,6 +2,10 @@
 //!
 //! Handles IMAP4rev1 protocol for receiving email.
 
+pub mod mailbox_name;
+pub mod sequence_set;
+pub mod special_use;
+
 use crate::common::Result;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
