@@ -143,6 +143,12 @@ pub struct WxUIState {
     pub selected_folder: Option<String>,
     /// Folder name to database id, so selecting a folder can read it.
     pub folder_ids: std::collections::HashMap<String, i64>,
+    /// The connection watching the inbox for arrivals, when one is running.
+    ///
+    /// Held so a new sync can stop the old watch before starting another.
+    /// Without that, every check for mail would leave a connection behind and
+    /// a server would eventually refuse to open any more.
+    pub mail_watch: Option<crate::service::protocols::imap::ImapIdleHandle>,
     pub selected_message_index: Option<usize>,
     pub message_preview: String,
     pub connection_status: ConnectionStatus,
@@ -174,6 +180,7 @@ impl Default for WxUIState {
             messages: Vec::new(),
             selected_folder: None,
             folder_ids: std::collections::HashMap::new(),
+            mail_watch: None,
             selected_message_index: None,
             message_preview: String::new(),
             connection_status: ConnectionStatus::Disconnected,
@@ -1796,13 +1803,13 @@ document.addEventListener('keydown', function(e) {
                                     Some(idx) if idx < s.messages.len() => {
                                         s.messages[idx].starred = !s.messages[idx].starred;
                                         let m = &s.messages[idx];
-                                        Some((m.message_id, m.read, m.starred, m.subject.clone()))
+                                        Some((m.message_id, m.uid, m.read, m.starred, m.subject.clone()))
                                     }
                                     _ => None,
                                 }
                             };
                             match toggled {
-                                Some((cache_id, read, starred, subject)) => {
+                                Some((cache_id, uid, read, starred, subject)) => {
                                     if let Some(cache) = message_cache.as_ref()
                                         && let Err(e) =
                                             cache.update_message_flags(cache_id, read, starred)
@@ -1816,6 +1823,17 @@ document.addEventListener('keydown', function(e) {
                                             subject
                                         ),
                                         crate::presentation::accessibility::announcements::Priority::Normal,
+                                    );
+                                    // And the server, so the flag is still
+                                    // there on another device.
+                                    spawn_server_change(
+                                        &state,
+                                        &ui_tx,
+                                        &runtime,
+                                        cache_id,
+                                        uid,
+                                        subject,
+                                        ServerChange::Flagged(starred),
                                     );
                                 }
                                 None => {
@@ -1963,7 +1981,7 @@ document.addEventListener('keydown', function(e) {
                         _ if id == ID_QUIT => frame.close(false),
                         _ if id == ID_CHECK_MAIL => {
                             send_status(&ui_tx, &runtime, "Checking for new mail...");
-                            spawn_mail_sync(&state, &ui_tx, &runtime);
+                            spawn_mail_sync(&state, &ui_tx, &runtime, None);
                         }
                         _ if id == ID_NEW_MESSAGE => open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, ComposeMode::New),
                         _ if id == ID_REPLY => {
@@ -1979,37 +1997,29 @@ document.addEventListener('keydown', function(e) {
                             open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, ComposeMode::Forward { subject: subj, body });
                         }
                         _ if id == ID_DELETE => {
-                            let deleted = {
-                                let mut s = lock_state(&state);
-                                if let Some(idx) = s.selected_message_index {
-                                    if idx < s.messages.len() {
-                                        let msg = s.messages.remove(idx);
-                                        let list_idx = idx as i64;
-                                        // Adjust selection
-                                        if s.messages.is_empty() {
-                                            s.selected_message_index = None;
-                                        } else if idx >= s.messages.len() {
-                                            s.selected_message_index = Some(s.messages.len() - 1);
-                                        }
-                                        Some((msg.message_id, msg.subject.clone(), list_idx))
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    None
-                                }
+                            // The row is not removed here. Deleting is
+                            // destructive and cannot be put back by sending an
+                            // update, so the server is asked first and the row
+                            // leaves the list once the server has agreed.
+                            // Announcing "deleted" and then finding the message
+                            // still there on another device is the kind of wrong
+                            // nobody discovers until it matters.
+                            let selected = {
+                                let s = lock_state(&state);
+                                s.selected_message_index
+                                    .and_then(|idx| s.messages.get(idx))
+                                    .map(|msg| (msg.message_id, msg.uid, msg.subject.clone()))
                             };
-                            if let Some((cache_id, subject, list_idx)) = deleted {
-                                msg_list.delete_item(list_idx);
-                                let announce_msg = format!("Message deleted: {}", subject);
-                                let tx = ui_tx.clone();
-                                runtime.spawn(async move {
-                                    let _ = tx.send(UIUpdate::MessageDeletedFromCache(cache_id)).await;
-                                    let _ = tx.send(UIUpdate::StatusUpdated(format!("Deleted: {}", subject))).await;
-                                });
-                                let _ = a11y.announce(
-                                    &announce_msg,
-                                    crate::presentation::accessibility::announcements::Priority::Normal,
+                            if let Some((cache_id, uid, subject)) = selected {
+                                send_status(&ui_tx, &runtime, &format!("Deleting {}...", subject));
+                                spawn_server_change(
+                                    &state,
+                                    &ui_tx,
+                                    &runtime,
+                                    cache_id,
+                                    uid,
+                                    subject,
+                                    ServerChange::Deleted,
                                 );
                             } else {
                                 send_status(&ui_tx, &runtime, "No message selected to delete");
@@ -2022,7 +2032,7 @@ document.addEventListener('keydown', function(e) {
                                     if idx < s.messages.len() {
                                         s.messages[idx].read = !s.messages[idx].read;
                                         let msg = &s.messages[idx];
-                                        Some((msg.message_id, msg.read, msg.subject.clone()))
+                                        Some((msg.message_id, msg.uid, msg.read, msg.subject.clone()))
                                     } else {
                                         None
                                     }
@@ -2030,17 +2040,27 @@ document.addEventListener('keydown', function(e) {
                                     None
                                 }
                             };
-                            if let Some((cache_id, new_read, subject)) = toggled {
+                            if let Some((cache_id, uid, new_read, subject)) = toggled {
                                 let label = if new_read { "read" } else { "unread" };
                                 let announce_msg = format!("Marked as {}: {}", label, subject);
                                 let tx = ui_tx.clone();
+                                let stored_subject = subject.clone();
                                 runtime.spawn(async move {
                                     let _ = tx.send(UIUpdate::MessageReadToggled(cache_id, new_read)).await;
-                                    let _ = tx.send(UIUpdate::StatusUpdated(format!("Marked {}: {}", label, subject))).await;
+                                    let _ = tx.send(UIUpdate::StatusUpdated(format!("Marked {}: {}", label, stored_subject))).await;
                                 });
                                 let _ = a11y.announce(
                                     &announce_msg,
                                     crate::presentation::accessibility::announcements::Priority::Normal,
+                                );
+                                spawn_server_change(
+                                    &state,
+                                    &ui_tx,
+                                    &runtime,
+                                    cache_id,
+                                    uid,
+                                    subject,
+                                    ServerChange::Read(new_read),
                                 );
                             } else {
                                 send_status(&ui_tx, &runtime, "No message selected");
@@ -2182,6 +2202,8 @@ document.addEventListener('keydown', function(e) {
                                 a11y: &a11y,
                                 pim: &pim_refs,
                                 message_cache: &message_cache,
+                                tx: &ui_tx,
+                                rt: &runtime,
                             },
                         );
                     }
@@ -2518,6 +2540,8 @@ fn sample_mailbox(count: usize) -> Vec<MessageItem> {
             date: format!("2026-07-26 {:02}:{:02}", (i / 60) % 24, i % 60),
             read: i % 3 != 0,
             starred: i % 17 == 0,
+            answered: i % 11 == 0,
+            draft: false,
             has_attachments: i % 7 == 0,
             attachments: Vec::new(),
             thread_depth: i % 5,
@@ -2527,6 +2551,7 @@ fn sample_mailbox(count: usize) -> Vec<MessageItem> {
             size_bytes: Some(((i % 40) as i64 + 1) * 1024),
             to: "me@example.com".to_string(),
             cc: String::new(),
+            reply_to: String::new(),
         })
         .collect()
 }
@@ -2641,10 +2666,30 @@ fn folder_tree_updates(
     account_id: &str,
 ) -> crate::common::Result<Vec<UIUpdate>> {
     let folders = cache.get_folders_for_account(account_id)?;
+    // The tree label carries the unread count, because a folder name alone
+    // does not answer the question somebody is asking when they arrow onto it.
+    //
+    // Selecting a folder looks its id up by the text of the tree item, so the
+    // map has to be keyed on the same label the tree shows. Keyed on the bare
+    // name it would miss every folder that had unread mail, which is the set
+    // somebody is most likely to open.
     Ok(vec![
-        UIUpdate::FolderIdsLoaded(folders.iter().map(|f| (f.name.clone(), f.id)).collect()),
-        UIUpdate::FoldersLoaded(folders.into_iter().map(|f| f.name).collect()),
+        UIUpdate::FolderIdsLoaded(folders.iter().map(|f| (folder_label(f), f.id)).collect()),
+        UIUpdate::FoldersLoaded(folders.iter().map(folder_label).collect()),
     ])
+}
+
+/// How a folder reads in the tree.
+///
+/// "Inbox, 12 unread" rather than "Inbox". A count of zero is left off: a
+/// folder with nothing new in it should be one word, not three, when somebody
+/// is arrowing through twenty of them.
+fn folder_label(folder: &crate::data::message_cache::CachedFolder) -> String {
+    if folder.unread_count > 0 {
+        format!("{}, {} unread", folder.name, folder.unread_count)
+    } else {
+        folder.name.clone()
+    }
 }
 
 fn load_module_data(
@@ -2878,6 +2923,8 @@ fn open_conversation(
                     date: node.date.clone(),
                     read: node.read,
                     starred: false,
+                    answered: false,
+                    draft: false,
                     has_attachments: false,
                     attachments: Vec::new(),
                     thread_depth: node.depth,
@@ -2887,6 +2934,7 @@ fn open_conversation(
                     size_bytes: None,
                     to: String::new(),
                     cc: String::new(),
+                    reply_to: String::new(),
                 },
                 body,
                 depth: node.depth,
@@ -3106,7 +3154,15 @@ fn msg_info(state: &Arc<StdMutex<WxUIState>>) -> (String, String, String) {
         .map(|s| {
             s.selected_message_index
                 .and_then(|i| s.messages.get(i))
-                .map(|m| (m.from.clone(), m.subject.clone(), s.message_preview.clone()))
+                // The reply address, not the sender: a mailing list sets
+                // Reply-To so a reply reaches the list rather than one member.
+                .map(|m| {
+                    (
+                        m.reply_address().to_string(),
+                        m.subject.clone(),
+                        s.message_preview.clone(),
+                    )
+                })
                 .unwrap_or_default()
         })
         .unwrap_or_default()
@@ -3265,6 +3321,10 @@ struct UpdateTargets<'a> {
     a11y: &'a Accessibility,
     pim: &'a PimPanelRefs,
     message_cache: &'a Option<Arc<MessageCache>>,
+    /// So an update can start further work: a finished sync asks for the inbox
+    /// to be watched again, and an arrival asks for that folder to be re-read.
+    tx: &'a Sender<UIUpdate>,
+    rt: &'a Arc<Runtime>,
 }
 
 /// Process a single UIUpdate, updating widgets + accessibility.
@@ -3278,6 +3338,8 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         a11y,
         pim,
         message_cache,
+        tx,
+        rt,
     } = targets;
 
     use crate::presentation::accessibility::announcements::Priority;
@@ -3594,20 +3656,99 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             {
                 tracing::error!("Failed to delete message {} from cache: {}", cache_id, e);
             }
+            // The row leaves the list here rather than when Delete was pressed,
+            // because this is the point at which the server has agreed. If it
+            // refuses, no row was removed and nothing has to be put back.
+            let removed = {
+                let mut s = lock_state(state);
+                match s.messages.iter().position(|m| m.message_id == *cache_id) {
+                    Some(idx) => {
+                        s.messages.remove(idx);
+                        // Keep focus somewhere real. Landing on nothing after a
+                        // delete leaves a reader with no idea where they are.
+                        s.selected_message_index = if s.messages.is_empty() {
+                            None
+                        } else {
+                            Some(idx.min(s.messages.len() - 1))
+                        };
+                        Some(s.messages.len())
+                    }
+                    None => None,
+                }
+            };
+            if let Some(count) = removed {
+                msg_list.set_item_count(count as i64);
+                msg_list.refresh(true, None);
+            }
         }
         UIUpdate::MessageReadToggled(cache_id, new_read) => {
+            // The row on screen as well as the row in the database. Writing
+            // only the database leaves the list showing the old state until
+            // the folder is read again, which is how a refused change would
+            // stay visible after being undone.
+            let starred = {
+                let mut s = lock_state(state);
+                let row = s.messages.iter_mut().find(|m| m.message_id == *cache_id);
+                match row {
+                    Some(row) => {
+                        row.read = *new_read;
+                        Some(row.starred)
+                    }
+                    None => None,
+                }
+            };
             if let Some(cache) = &message_cache {
-                // Preserve starred state — read the current value first
-                let starred = cache
-                    .get_message(*cache_id)
-                    .ok()
-                    .flatten()
-                    .map(|m| m.starred)
-                    .unwrap_or(false);
+                let starred = starred.unwrap_or_else(|| {
+                    cache
+                        .get_message(*cache_id)
+                        .ok()
+                        .flatten()
+                        .map(|m| m.starred)
+                        .unwrap_or(false)
+                });
                 if let Err(e) = cache.update_message_flags(*cache_id, *new_read, starred) {
                     tracing::error!("Failed to update flags for message {}: {}", cache_id, e);
                 }
             }
+            msg_list.refresh(true, None);
+        }
+        UIUpdate::MailboxWatchRequested => {
+            spawn_mail_watch(state, tx, rt);
+        }
+        UIUpdate::MailboxChanged(folder) => {
+            // Signalled rather than spoken, so somebody who wants a tone for
+            // new mail gets a tone and somebody who wants the words gets the
+            // words. The routing is a setting, not a decision made here.
+            let _ = a11y.signal(FeedbackEvent::NewMail, "New mail");
+            // Only the folder that changed. Re-reading the whole account
+            // because one message arrived is work nobody asked for.
+            spawn_mail_sync(state, tx, rt, Some(folder.clone()));
+        }
+        UIUpdate::MessageStarredToggled(cache_id, new_starred) => {
+            let read = {
+                let mut s = lock_state(state);
+                match s.messages.iter_mut().find(|m| m.message_id == *cache_id) {
+                    Some(row) => {
+                        row.starred = *new_starred;
+                        Some(row.read)
+                    }
+                    None => None,
+                }
+            };
+            if let Some(cache) = &message_cache {
+                let read = read.unwrap_or_else(|| {
+                    cache
+                        .get_message(*cache_id)
+                        .ok()
+                        .flatten()
+                        .map(|m| m.read)
+                        .unwrap_or(false)
+                });
+                if let Err(e) = cache.update_message_flags(*cache_id, read, *new_starred) {
+                    tracing::error!("Failed to update flags for message {}: {}", cache_id, e);
+                }
+            }
+            msg_list.refresh(true, None);
         }
     }
 }
@@ -3763,6 +3904,281 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
     });
 }
 
+/// Watch the inbox for arrivals on a connection of its own.
+///
+/// Started when a check for mail finishes, so the client learns about new mail
+/// as it lands instead of only when somebody presses F9. IDLE takes a
+/// connection over for as long as it runs, so this is a second connection and
+/// not the one everything else uses.
+///
+/// Any watch already running is stopped first. Without that, every check for
+/// mail would leave a connection behind, and a server refuses new ones long
+/// before the count gets interesting.
+fn spawn_mail_watch(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    let state_for_task = state.clone();
+    let (accounts, account_id, previous) = {
+        let mut s = lock_state(state);
+        (
+            s.accounts.clone(),
+            s.active_account_id.clone(),
+            s.mail_watch.take(),
+        )
+    };
+    if let Some(previous) = previous {
+        rt.spawn(async move {
+            let _ = previous.stop().await;
+        });
+    }
+
+    let account = account_id
+        .as_ref()
+        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned())
+        .or_else(|| accounts.first().cloned());
+
+    rt.spawn_blocking(move || {
+        // Nothing here is announced. Failing to watch means mail arrives
+        // silently until the next check, which is where the client was before
+        // watching existed, and is not worth interrupting somebody to say.
+        let Some(account) = account else { return };
+        if account.use_oauth || account.imap_server.trim().is_empty() {
+            return;
+        }
+        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
+            return;
+        };
+        let Some(dir) = dirs::cache_dir().map(|d| d.join("wixen-mail")) else {
+            return;
+        };
+        let Ok(cache) = crate::data::message_cache::MessageCache::new(dir, None) else {
+            return;
+        };
+        // Whichever folder the server calls the inbox, which is not always
+        // spelled "INBOX" once a hierarchy is involved.
+        let Ok(folders) = cache.get_folders_for_account(&account.id) else {
+            return;
+        };
+        let Some(inbox) = folders
+            .iter()
+            .find(|f| {
+                crate::common::types::FolderType::from_stored(&f.folder_type)
+                    == crate::common::types::FolderType::Inbox
+            })
+            .or_else(|| folders.first())
+        else {
+            return;
+        };
+
+        let watching = handle.block_on(crate::application::mail_sync::watch_folder(
+            &account.imap_server,
+            port,
+            &account.username,
+            &account.password,
+            account.imap_use_tls,
+            &inbox.path,
+        ));
+        let (mut events, watch) = match watching {
+            Ok(watching) => watching,
+            Err(e) => {
+                tracing::warn!("Could not watch the inbox: {}", e);
+                return;
+            }
+        };
+        if let Ok(mut s) = state_for_task.lock() {
+            s.mail_watch = Some(watch);
+        }
+        tracing::info!("Watching {} for new mail", inbox.name);
+
+        handle.block_on(async move {
+            while let Some(event) = events.recv().await {
+                match event {
+                    crate::service::protocols::imap::ImapIdleEvent::Changed { folder, .. } => {
+                        let _ = tx.send(UIUpdate::MailboxChanged(folder)).await;
+                        // One report per watch. The folder is re-read, and that
+                        // starts a fresh watch when it finishes, so a busy
+                        // mailbox cannot turn into a stream of announcements.
+                        break;
+                    }
+                    crate::service::protocols::imap::ImapIdleEvent::StillWatching { .. } => {}
+                    crate::service::protocols::imap::ImapIdleEvent::Stopped { folder, reason } => {
+                        tracing::info!("Stopped watching {}: {}", folder, reason);
+                        break;
+                    }
+                }
+            }
+        });
+    });
+}
+
+/// A change to a message the server has to be told about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ServerChange {
+    Read(bool),
+    Flagged(bool),
+    Deleted,
+}
+
+impl ServerChange {
+    /// What to say when it worked.
+    fn done(&self, subject: &str) -> String {
+        match self {
+            ServerChange::Read(true) => format!("Marked read: {subject}"),
+            ServerChange::Read(false) => format!("Marked unread: {subject}"),
+            ServerChange::Flagged(true) => format!("Flagged: {subject}"),
+            ServerChange::Flagged(false) => format!("Unflagged: {subject}"),
+            ServerChange::Deleted => format!("Deleted: {subject}"),
+        }
+    }
+}
+
+/// Tell the server about a change to a message.
+///
+/// Flag changes were written to the local cache and nowhere else, so a message
+/// read here still read as unread on a phone, and one deleted here came back on
+/// the next sync because the server still had it.
+///
+/// Reads and flags are applied locally first and announced at once, because
+/// waiting on a round trip before confirming a keystroke makes the application
+/// feel broken. If the server refuses, the local change is put back and the
+/// reason is said out loud: an announcement that was wrong is worse than a
+/// slower one, so it gets corrected rather than left standing.
+///
+/// Deleting is not done that way. It is destructive and it cannot be put back
+/// by sending an update, so the server is asked first and the row only leaves
+/// the list once the server has agreed.
+fn spawn_server_change(
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    message_row_id: i64,
+    uid: u32,
+    subject: String,
+    change: ServerChange,
+) {
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    let (accounts, account_id) = {
+        let s = lock_state(state);
+        (s.accounts.clone(), s.active_account_id.clone())
+    };
+    let account = account_id
+        .as_ref()
+        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned())
+        .or_else(|| accounts.first().cloned());
+
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        // Undo the optimistic local change and say why. Deleting never takes
+        // this path, because nothing was undone yet.
+        let refuse = |reason: String| {
+            match change {
+                ServerChange::Read(applied) => {
+                    say(UIUpdate::MessageReadToggled(message_row_id, !applied));
+                }
+                ServerChange::Flagged(applied) => {
+                    say(UIUpdate::MessageStarredToggled(message_row_id, !applied));
+                }
+                ServerChange::Deleted => {}
+            }
+            say(UIUpdate::ErrorOccurred(format!(
+                "The change did not reach the server, so it has been undone here: {reason}"
+            )));
+        };
+
+        let Some(account) = account else {
+            refuse("no account is set up".to_string());
+            return;
+        };
+        if account.use_oauth {
+            refuse(
+                "this account signs in with OAuth, which mail access does not support yet"
+                    .to_string(),
+            );
+            return;
+        }
+        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
+            refuse(format!("{} has no usable IMAP port", account.name));
+            return;
+        };
+        let Some(dir) = dirs::cache_dir().map(|d| d.join("wixen-mail")) else {
+            refuse("there is no cache directory".to_string());
+            return;
+        };
+        let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
+            Ok(cache) => cache,
+            Err(e) => {
+                refuse(e.to_string());
+                return;
+            }
+        };
+        let folder_path = match cache.folder_path_for_message(message_row_id) {
+            Ok(Some(path)) => path,
+            _ => {
+                refuse("the message is not in a folder we know about".to_string());
+                return;
+            }
+        };
+
+        let controller = MailController::new();
+        if let Err(e) = handle.block_on(controller.connect_imap(
+            account.imap_server.clone(),
+            port,
+            account.username.clone(),
+            account.password.clone(),
+            account.imap_use_tls,
+        )) {
+            refuse(e.to_string());
+            return;
+        }
+
+        let outcome = match change {
+            ServerChange::Read(read) => handle
+                .block_on(controller.set_flag(&folder_path, uid, "\\Seen", read))
+                .map(|()| true),
+            ServerChange::Flagged(flagged) => handle
+                .block_on(controller.set_starred(&folder_path, uid, flagged))
+                .map(|()| true),
+            ServerChange::Deleted => handle.block_on(controller.delete_message(&folder_path, uid)),
+        };
+        let _ = handle.block_on(controller.disconnect_imap());
+
+        match outcome {
+            Ok(removed) => {
+                if change == ServerChange::Deleted {
+                    // Only now does the row leave the list, because only now is
+                    // it gone on the server.
+                    say(UIUpdate::MessageDeletedFromCache(message_row_id));
+                    if !removed {
+                        // The server has no UIDPLUS, so it was marked for
+                        // removal rather than removed. Saying "deleted" over a
+                        // message still sitting in the folder is the kind of
+                        // wrong that is only discovered from another device.
+                        say(UIUpdate::StatusUpdated(format!(
+                            "Marked for deletion: {subject}. This server cannot remove one message at a time, so it stays in the folder until the mailbox is next cleaned up."
+                        )));
+                        return;
+                    }
+                }
+                say(UIUpdate::StatusUpdated(change.done(&subject)));
+            }
+            Err(e) => {
+                if change == ServerChange::Deleted {
+                    say(UIUpdate::ErrorOccurred(format!(
+                        "{subject} was not deleted: {e}"
+                    )));
+                } else {
+                    refuse(e.to_string());
+                }
+            }
+        }
+    });
+}
+
 /// Download one message body that is not cached yet, and store it.
 ///
 /// Started when a message is selected and its body is not held, so that
@@ -3893,7 +4309,12 @@ fn spawn_body_fetch(
 /// of a large mailbox takes a while, and silence for a minute is
 /// indistinguishable from the application having stopped for somebody who
 /// cannot see that anything is happening.
-fn spawn_mail_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
+fn spawn_mail_sync(
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    only: Option<String>,
+) {
     let tx = tx.clone();
     let handle = rt.handle().clone();
     let (accounts, account_id) = {
@@ -4002,7 +4423,14 @@ fn spawn_mail_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: 
             stored.len()
         )));
 
-        let worth_syncing = crate::application::mail_sync::folders_to_sync(&folders);
+        // A watch that fires names one folder, and re-reading the whole
+        // account because one message arrived in the inbox is work nobody
+        // asked for.
+        let worth_syncing: Vec<&crate::service::protocols::imap::ImapFolder> =
+            crate::application::mail_sync::folders_to_sync(&folders)
+                .into_iter()
+                .filter(|f| only.as_deref().is_none_or(|path| f.path == path))
+                .collect();
         let mut fetched = 0usize;
         let mut problems: Vec<String> = Vec::new();
 
@@ -4023,10 +4451,21 @@ fn spawn_mail_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: 
             )) {
                 Ok(result) => {
                     fetched += result.fetched;
-                    say(UIUpdate::StatusUpdated(format!(
+                    // Messages that went away and a mailbox the server
+                    // renumbered are both things the reader will notice as rows
+                    // disappearing. Saying so turns that from unexplained into
+                    // expected.
+                    let mut report = format!(
                         "{}: {} of {} messages",
                         result.folder, result.fetched, result.total_on_server
-                    )));
+                    );
+                    if result.forgotten > 0 {
+                        report.push_str(&format!(", {} removed elsewhere", result.forgotten));
+                    }
+                    if result.renumbered {
+                        report.push_str(", read again after the server renumbered it");
+                    }
+                    say(UIUpdate::StatusUpdated(report));
                 }
                 // One folder that will not open is not a reason to abandon the
                 // rest, and naming it is the difference between a fixable
@@ -4057,6 +4496,7 @@ fn spawn_mail_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: 
         say(UIUpdate::ConnectionStatusChanged(
             ConnectionStatus::Disconnected,
         ));
+        say(UIUpdate::MailboxWatchRequested);
     });
 }
 
@@ -4790,6 +5230,8 @@ mod tests {
             date: date.to_string(),
             read: true,
             starred: false,
+            answered: false,
+            draft: false,
             has_attachments: false,
             attachments: Vec::new(),
             thread_depth: depth,
@@ -4799,6 +5241,7 @@ mod tests {
             size_bytes: None,
             to: String::new(),
             cc: String::new(),
+            reply_to: String::new(),
         }
     }
 
@@ -4861,6 +5304,8 @@ mod tests {
             date: "2026-07-26".to_string(),
             read: r,
             starred: false,
+            answered: false,
+            draft: false,
             has_attachments: false,
             attachments: Vec::new(),
             thread_depth: 0,
@@ -4870,6 +5315,7 @@ mod tests {
             size_bytes: None,
             to: String::new(),
             cc: String::new(),
+            reply_to: String::new(),
         };
         let messages = vec![read(true), read(false), read(true), read(false)];
 
@@ -4902,6 +5348,8 @@ mod tests {
             date: "2026-07-26".to_string(),
             read: true,
             starred: false,
+            answered: false,
+            draft: false,
             has_attachments: false,
             attachments: Vec::new(),
             thread_depth: 0,
@@ -4911,6 +5359,7 @@ mod tests {
             size_bytes: None,
             to: String::new(),
             cc: String::new(),
+            reply_to: String::new(),
         };
         m.read = false;
         let messages = vec![m];
@@ -5226,6 +5675,53 @@ mod tests {
         let state = Arc::new(StdMutex::new(WxUIState::default()));
         lock_state(&state).outbox_count = 7;
         assert_eq!(lock_state(&state).outbox_count, 7);
+    }
+}
+
+#[cfg(test)]
+mod folder_labels {
+    use super::folder_label;
+    use crate::data::message_cache::CachedFolder;
+
+    fn folder(name: &str, unread: i32) -> CachedFolder {
+        CachedFolder {
+            id: 1,
+            account_id: "acc".to_string(),
+            name: name.to_string(),
+            path: name.to_string(),
+            folder_type: "Inbox".to_string(),
+            unread_count: unread,
+            total_count: 100,
+        }
+    }
+
+    #[test]
+    fn test_a_folder_with_unread_mail_says_how_much() {
+        // The question somebody is asking when they arrow onto a folder.
+        assert_eq!(folder_label(&folder("Inbox", 12)), "Inbox, 12 unread");
+    }
+
+    #[test]
+    fn test_a_folder_with_nothing_new_is_one_word() {
+        // "Inbox, 0 unread" on twenty folders is sixty words to say nothing.
+        assert_eq!(folder_label(&folder("Inbox", 0)), "Inbox");
+    }
+
+    #[test]
+    fn test_the_label_is_what_the_id_map_is_keyed_on() {
+        // Selecting a folder looks its id up by the tree item's text. If the
+        // map were keyed on the bare name, every folder with unread mail would
+        // miss, which is the set somebody is most likely to open.
+        let rows = [folder("Inbox", 3), folder("Archive", 0)];
+        let map: std::collections::HashMap<String, i64> =
+            rows.iter().map(|f| (folder_label(f), f.id)).collect();
+        for row in &rows {
+            assert!(
+                map.contains_key(&folder_label(row)),
+                "{} could not be looked up",
+                row.name
+            );
+        }
     }
 }
 

@@ -9,6 +9,11 @@
 //! Two differences from ordinary Base64 UTF-7: `/` is written as `,` because
 //! `/` is a common hierarchy delimiter, and the padding `=` is omitted.
 //!
+//! Only decoding lives here. Nothing sends a mailbox name the client made up:
+//! a name goes back to the server exactly as the server spelled it, which is
+//! also the only way a name we could not decode stays reachable. An encoder
+//! belongs here the day something creates or renames a mailbox.
+//!
 //! RFC 6855 lets a client ask for UTF-8 mailbox names with `ENABLE UTF8=ACCEPT`,
 //! and plenty of servers still do not offer it, so decoding stays necessary.
 
@@ -85,63 +90,14 @@ fn decode_run(chunk: &str) -> Option<String> {
         .ok()
 }
 
-/// Turn readable text into a mailbox name for the wire.
-///
-/// Needed whenever a name goes back to the server: SELECT, CREATE, RENAME, and
-/// the folder argument of a COPY.
-pub fn encode(name: &str) -> String {
-    let mut out = String::with_capacity(name.len());
-    let mut pending: Vec<u16> = Vec::new();
-
-    for ch in name.chars() {
-        if is_direct(ch) {
-            flush(&mut pending, &mut out);
-            if ch == '&' {
-                out.push_str("&-");
-            } else {
-                out.push(ch);
-            }
-        } else {
-            let mut buf = [0u16; 2];
-            pending.extend_from_slice(ch.encode_utf16(&mut buf));
-        }
-    }
-    flush(&mut pending, &mut out);
-    out
-}
-
-/// Whether a character stands for itself on the wire.
-///
-/// Printable ASCII only. `&` is printable and stands for itself as `&-`, which
-/// the caller handles; everything else here is copied through.
-fn is_direct(ch: char) -> bool {
-    matches!(ch, ' '..='~')
-}
-
-/// Emit the pending UTF-16 run as one `&...-` group.
-fn flush(pending: &mut Vec<u16>, out: &mut String) {
-    if pending.is_empty() {
-        return;
-    }
-    let mut bytes = Vec::with_capacity(pending.len() * 2);
-    for unit in pending.drain(..) {
-        bytes.extend_from_slice(&unit.to_be_bytes());
-    }
-    out.push('&');
-    out.push_str(&MODIFIED_BASE64.encode(&bytes));
-    out.push('-');
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_an_ascii_name_is_unchanged_both_ways() {
+    fn test_an_ascii_name_is_unchanged() {
         assert_eq!(decode("INBOX"), "INBOX");
-        assert_eq!(encode("INBOX"), "INBOX");
         assert_eq!(decode("INBOX/Work/2026"), "INBOX/Work/2026");
-        assert_eq!(encode("INBOX/Work/2026"), "INBOX/Work/2026");
     }
 
     #[test]
@@ -149,7 +105,6 @@ mod tests {
         // The label a screen reader would otherwise spell out as
         // "Entw ampersand A P w hyphen r f e".
         assert_eq!(decode("Entw&APw-rfe"), "Entw\u{fc}rfe");
-        assert_eq!(encode("Entw\u{fc}rfe"), "Entw&APw-rfe");
     }
 
     #[test]
@@ -158,25 +113,6 @@ mod tests {
             decode("~peter/mail/&U,BTFw-/&ZeVnLIqe-"),
             "~peter/mail/\u{53f0}\u{5317}/\u{65e5}\u{672c}\u{8a9e}"
         );
-        assert_eq!(
-            encode("~peter/mail/\u{53f0}\u{5317}/\u{65e5}\u{672c}\u{8a9e}"),
-            "~peter/mail/&U,BTFw-/&ZeVnLIqe-"
-        );
-    }
-
-    #[test]
-    fn test_a_literal_ampersand_survives_the_round_trip() {
-        assert_eq!(decode("R&-D"), "R&D");
-        assert_eq!(encode("R&D"), "R&-D");
-        assert_eq!(decode(&encode("Bed & Breakfast")), "Bed & Breakfast");
-    }
-
-    #[test]
-    fn test_a_name_outside_the_basic_plane_survives() {
-        // Emoji are two UTF-16 units, and a folder named with one is a real
-        // thing people do.
-        let name = "Fun \u{1f600}";
-        assert_eq!(decode(&encode(name)), name);
     }
 
     #[test]
@@ -218,23 +154,6 @@ mod tests {
             // Valid UTF-8 by construction; the round trip proves nothing was
             // cut mid-character.
             assert_eq!(decoded, String::from_utf8_lossy(decoded.as_bytes()));
-        }
-    }
-
-    #[test]
-    fn test_every_name_we_encode_decodes_back_to_itself() {
-        for name in [
-            "INBOX",
-            "Entw\u{fc}rfe",
-            "\u{53f0}\u{5317}",
-            "R&D",
-            "&",
-            "Fun \u{1f600}",
-            "Mixed \u{4f60}\u{597d} and ASCII",
-            "INBOX/\u{440}\u{430}\u{431}\u{43e}\u{442}\u{430}",
-            " leading and trailing ",
-        ] {
-            assert_eq!(decode(&encode(name)), name, "round trip failed for {name}");
         }
     }
 }

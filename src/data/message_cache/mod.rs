@@ -956,6 +956,14 @@ impl MessageCache {
         // we stored names a different message or none, so the folder has to be
         // read again rather than shown wrong.
         self.ensure_column_exists("folders", "uid_validity", "INTEGER")?;
+        // Answered and Draft, from the server's flags. The columns for these
+        // were withdrawn because nothing could fill them; a sync fills them.
+        self.ensure_column_exists("messages", "answered", "BOOLEAN DEFAULT 0")?;
+        self.ensure_column_exists("messages", "draft", "BOOLEAN DEFAULT 0")?;
+        // Reply-To, which is where a reply is supposed to go when the sender
+        // names somewhere. Mailing lists rely on it, and a reply that ignores
+        // it goes to one person instead of the list, or to a no-reply address.
+        self.ensure_column_exists("messages", "reply_to", "TEXT")?;
         self.ensure_column_exists("calendar_events", "calendar_id", "TEXT")?;
         self.ensure_column_exists(
             "message_filter_rules",

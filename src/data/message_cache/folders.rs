@@ -23,6 +23,22 @@ impl MessageCache {
         Ok(self.conn.last_insert_rowid())
     }
 
+    /// Record how many messages a folder holds and how many are unread.
+    ///
+    /// Written by a sync from what the server says, not counted from the rows
+    /// stored here: only part of a large folder is cached, so counting locally
+    /// would tell somebody their inbox holds five hundred messages when it
+    /// holds forty thousand.
+    pub fn set_folder_counts(&self, folder_id: i64, unread: usize, total: usize) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE folders SET unread_count = ?1, total_count = ?2 WHERE id = ?3",
+                params![unread as i64, total as i64, folder_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record folder counts: {}", e)))?;
+        Ok(())
+    }
+
     /// Get folder by account and path
     pub fn get_folder(&self, account_id: &str, path: &str) -> Result<Option<CachedFolder>> {
         let mut stmt = self

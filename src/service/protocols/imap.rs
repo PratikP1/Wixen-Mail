@@ -105,9 +105,8 @@ pub struct ImapFolder {
 /// What a mailbox looked like when it was selected.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MailboxStatus {
+    /// How many messages the mailbox holds.
     pub exists: u32,
-    pub unseen: Option<u32>,
-    pub uid_next: Option<u32>,
     /// Changes when the server has renumbered every UID in the mailbox.
     ///
     /// When it differs from the stored value, cached UIDs mean nothing and the
@@ -429,8 +428,6 @@ impl ImapSession {
         self.selected = Some(path.to_string());
         Ok(MailboxStatus {
             exists: mailbox.exists,
-            unseen: mailbox.unseen,
-            uid_next: mailbox.uid_next,
             uid_validity: mailbox.uid_validity,
         })
     }
@@ -459,6 +456,17 @@ impl ImapSession {
     /// Every UID in the selected mailbox, oldest first.
     pub async fn all_uids(&mut self) -> Result<Vec<u32>> {
         self.search_uids("ALL").await
+    }
+
+    /// How many messages in the selected mailbox are unread.
+    ///
+    /// Asked for rather than taken from SELECT, whose UNSEEN is the sequence
+    /// number of the first unseen message and not a count. Reading it as a
+    /// count would put a plausible wrong number beside every folder name, and
+    /// a wrong count is worse than none: it is the number somebody decides
+    /// whether to open the folder on.
+    pub async fn unread_count(&mut self) -> Result<usize> {
+        Ok(self.search_uids("UNSEEN").await?.len())
     }
 
     /// Fetch the header fields the message list shows.
@@ -604,6 +612,189 @@ impl ImapSession {
             return Err(Error::Protocol("No folder is open".into()));
         }
         Ok(())
+    }
+}
+
+/// Something happened in a mailbox somebody is watching.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImapIdleEvent {
+    /// The mailbox changed.
+    ///
+    /// The server reports how many messages the mailbox now holds, not which
+    /// ones are new: EXISTS carries a count. Finding out what arrived means
+    /// leaving IDLE and asking, which is the watcher's caller's job.
+    Changed { folder: String, messages: u32 },
+    /// Nothing has happened and the connection is still up.
+    ///
+    /// Worth saying, because the alternative is silence, and silence is what a
+    /// dropped connection also looks like.
+    StillWatching { folder: String },
+    /// The watch ended and no more events are coming.
+    Stopped { folder: String, reason: String },
+}
+
+/// How long to hold one IDLE before renewing it.
+///
+/// RFC 2177 tells clients to re-issue at least every 29 minutes, because
+/// servers and the boxes between them drop connections that look idle for
+/// half an hour.
+const IDLE_WINDOW: Duration = Duration::from_secs(29 * 60);
+
+/// Stops a running watch.
+#[derive(Debug)]
+pub struct ImapIdleHandle {
+    stop: Option<tokio::sync::oneshot::Sender<()>>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl ImapIdleHandle {
+    /// End the watch and wait for the connection to close.
+    pub async fn stop(mut self) -> Result<()> {
+        if let Some(stop) = self.stop.take() {
+            let _ = stop.send(());
+        }
+        let _ = self.task.await;
+        Ok(())
+    }
+}
+
+impl ImapSession {
+    /// Watch the selected mailbox for changes until told to stop.
+    ///
+    /// Consumes the session, because IDLE takes the connection over: no other
+    /// command can run on it while it is idling. A client that wants to watch a
+    /// mailbox and still fetch from it needs two connections, and this is the
+    /// one that does the watching.
+    pub fn watch(
+        self,
+        folder: String,
+    ) -> (
+        tokio::sync::mpsc::UnboundedReceiver<ImapIdleEvent>,
+        ImapIdleHandle,
+    ) {
+        let (events, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (stop, mut stop_rx) = tokio::sync::oneshot::channel();
+        // Held in an `Option` because IDLE takes the session by value and hands
+        // it back only when DONE succeeds. On a connection that has already
+        // failed there is nothing to hand back, and the socket closes with it.
+        let mut session = Some(self.session);
+
+        let task = tokio::spawn(async move {
+            let ended = loop {
+                let Some(ready) = session.take() else {
+                    break "the watch connection was lost".to_string();
+                };
+                let mut idle = ready.idle();
+                if let Err(e) = idle.init().await {
+                    break format!("the mail server would not start watching: {e}");
+                }
+
+                enum Woke {
+                    Server(
+                        std::result::Result<
+                            async_imap::extensions::idle::IdleResponse,
+                            async_imap::error::Error,
+                        >,
+                    ),
+                    Asked,
+                }
+                let woke = {
+                    let (waiting, interrupt) = idle.wait_with_timeout(IDLE_WINDOW);
+                    tokio::pin!(waiting);
+                    tokio::select! {
+                        outcome = &mut waiting => Woke::Server(outcome),
+                        _ = &mut stop_rx => {
+                            // Dropping the source is how the wait is cut short.
+                            drop(interrupt);
+                            Woke::Asked
+                        }
+                    }
+                };
+
+                // Leave IDLE before doing anything else: the connection is not
+                // usable, and not closable cleanly, until DONE has been sent.
+                match idle.done().await {
+                    Ok(ready) => session = Some(ready),
+                    Err(e) => break format!("the watch connection failed: {e}"),
+                }
+
+                match woke {
+                    Woke::Asked => break "the watch was stopped".to_string(),
+                    Woke::Server(Err(e)) => break format!("the watch connection failed: {e}"),
+                    Woke::Server(Ok(response)) => {
+                        match interpret(&response, &folder) {
+                            Some(event) => {
+                                if events.send(event).is_err() {
+                                    // Nobody is listening any more.
+                                    break "nobody was listening".to_string();
+                                }
+                            }
+                            None => continue,
+                        }
+                    }
+                }
+            };
+
+            if let Some(mut session) = session {
+                let _ = session.logout().await;
+            }
+            let _ = events.send(ImapIdleEvent::Stopped {
+                folder,
+                reason: ended,
+            });
+        });
+
+        (
+            receiver,
+            ImapIdleHandle {
+                stop: Some(stop),
+                task,
+            },
+        )
+    }
+}
+
+/// Turn one IDLE response into an event, or into nothing worth reporting.
+fn interpret(
+    response: &async_imap::extensions::idle::IdleResponse,
+    folder: &str,
+) -> Option<ImapIdleEvent> {
+    use async_imap::extensions::idle::IdleResponse;
+
+    match response {
+        IdleResponse::Timeout => Some(ImapIdleEvent::StillWatching {
+            folder: folder.to_string(),
+        }),
+        IdleResponse::ManualInterrupt => None,
+        IdleResponse::NewData(data) => event_for(data.parsed(), folder),
+    }
+}
+
+/// Which unsolicited responses mean the mailbox changed.
+///
+/// Separate from the wire type so it can be tested: a server sends plenty
+/// during IDLE that does not mean new mail, and treating each one as an arrival
+/// would re-sync the folder for nothing and signal new mail that is not there.
+fn event_for(
+    response: &async_imap::imap_proto::Response<'_>,
+    folder: &str,
+) -> Option<ImapIdleEvent> {
+    use async_imap::imap_proto::{MailboxDatum, Response};
+
+    match response {
+        // EXISTS is the arrival, and carries a count rather than the UIDs.
+        Response::MailboxData(MailboxDatum::Exists(messages)) => Some(ImapIdleEvent::Changed {
+            folder: folder.to_string(),
+            messages: *messages,
+        }),
+        // Something went away, which also changes what the list should show.
+        Response::Expunge(_) => Some(ImapIdleEvent::Changed {
+            folder: folder.to_string(),
+            messages: 0,
+        }),
+        // RECENT, flag updates and the rest. Reporting them would make the
+        // caller re-sync for nothing.
+        _ => None,
     }
 }
 
@@ -786,6 +977,65 @@ mod tests {
         assert!(!special_use::selectable(&[attribute_name(
             &NameAttribute::NoSelect
         )]));
+    }
+
+    #[test]
+    fn test_an_arrival_while_watching_is_reported_with_the_new_total() {
+        use async_imap::imap_proto::{MailboxDatum, Response};
+        assert_eq!(
+            event_for(&Response::MailboxData(MailboxDatum::Exists(42)), "INBOX"),
+            Some(ImapIdleEvent::Changed {
+                folder: "INBOX".to_string(),
+                messages: 42,
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_message_removed_elsewhere_is_reported_too() {
+        use async_imap::imap_proto::Response;
+        assert!(matches!(
+            event_for(&Response::Expunge(3), "INBOX"),
+            Some(ImapIdleEvent::Changed { .. })
+        ));
+    }
+
+    #[test]
+    fn test_the_other_chatter_a_server_sends_while_idling_is_ignored() {
+        // A server sends RECENT and flag updates during IDLE. Treating each as
+        // an arrival would re-sync the folder for nothing and signal new mail
+        // that is not there, which is exactly the noise the feedback rules
+        // exist to prevent.
+        use async_imap::imap_proto::{MailboxDatum, Response};
+        assert_eq!(
+            event_for(&Response::MailboxData(MailboxDatum::Recent(2)), "INBOX"),
+            None
+        );
+        assert_eq!(
+            event_for(
+                &Response::MailboxData(MailboxDatum::Flags(Vec::new())),
+                "INBOX"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn test_a_quiet_watch_still_says_it_is_alive() {
+        use async_imap::extensions::idle::IdleResponse;
+        // Silence and a dropped connection look the same from outside.
+        assert_eq!(
+            interpret(&IdleResponse::Timeout, "INBOX"),
+            Some(ImapIdleEvent::StillWatching {
+                folder: "INBOX".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_stopping_the_watch_ourselves_is_not_an_event() {
+        use async_imap::extensions::idle::IdleResponse;
+        assert_eq!(interpret(&IdleResponse::ManualInterrupt, "INBOX"), None);
     }
 
     #[tokio::test]

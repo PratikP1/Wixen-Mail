@@ -23,11 +23,15 @@ pub struct MessageListRow {
     pub from_addr: String,
     pub to_addr: String,
     pub cc: Option<String>,
+    /// Where the sender asked replies to go, when they asked.
+    pub reply_to: Option<String>,
     pub date: String,
     pub snippet: Option<String>,
     pub size_bytes: Option<i64>,
     pub read: bool,
     pub starred: bool,
+    pub answered: bool,
+    pub draft: bool,
     pub has_attachments: bool,
 }
 
@@ -46,6 +50,8 @@ pub struct IncomingMessage {
     pub from_addr: String,
     pub to_addr: String,
     pub cc: Option<String>,
+    /// Where the sender asked replies to go, when they asked.
+    pub reply_to: Option<String>,
     /// Sortable, so the listing's ORDER BY means what it says.
     ///
     /// The sender's Date header when it is usable, and the server's receipt
@@ -58,6 +64,8 @@ pub struct IncomingMessage {
     pub refs_header: Option<String>,
     pub read: bool,
     pub starred: bool,
+    pub answered: bool,
+    pub draft: bool,
     pub deleted: bool,
     pub has_attachments: bool,
 }
@@ -83,8 +91,9 @@ impl MessageCache {
                 "INSERT INTO messages
                      (uid, folder_id, message_id, subject, from_addr, to_addr, cc, date,
                       size_bytes, refs_header, read, starred, deleted, has_attachments,
-                      internaldate)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                      internaldate, answered, draft, reply_to)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
+                         ?16, ?17, ?18)
                  ON CONFLICT(folder_id, uid) DO UPDATE SET
                      message_id = excluded.message_id,
                      subject = excluded.subject,
@@ -98,7 +107,10 @@ impl MessageCache {
                      starred = excluded.starred,
                      deleted = excluded.deleted,
                      has_attachments = excluded.has_attachments,
-                     internaldate = excluded.internaldate
+                     internaldate = excluded.internaldate,
+                     answered = excluded.answered,
+                     draft = excluded.draft,
+                     reply_to = excluded.reply_to
                  RETURNING id",
                 params![
                     incoming.uid,
@@ -116,6 +128,9 @@ impl MessageCache {
                     incoming.deleted,
                     incoming.has_attachments,
                     incoming.internal_date,
+                    incoming.answered,
+                    incoming.draft,
+                    incoming.reply_to,
                 ],
                 |row| row.get(0),
             )
@@ -293,7 +308,8 @@ impl MessageCache {
             .conn
             .prepare(
                 "SELECT m.id, m.uid, m.message_id, m.refs_header, m.subject, m.from_addr,
-                        m.to_addr, m.cc, m.date, m.snippet, m.size_bytes, m.read, m.starred,
+                        m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
+                        m.read, m.starred, m.answered, m.draft,
                         (m.has_attachments = 1
                          OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id))
                  FROM messages m
@@ -314,12 +330,15 @@ impl MessageCache {
                     from_addr: row.get(5)?,
                     to_addr: row.get(6)?,
                     cc: row.get(7)?,
-                    date: row.get(8)?,
-                    snippet: row.get(9)?,
-                    size_bytes: row.get(10)?,
-                    read: row.get(11)?,
-                    starred: row.get(12)?,
-                    has_attachments: row.get(13)?,
+                    reply_to: row.get(8)?,
+                    date: row.get(9)?,
+                    snippet: row.get(10)?,
+                    size_bytes: row.get(11)?,
+                    read: row.get(12)?,
+                    starred: row.get(13)?,
+                    answered: row.get(14)?,
+                    draft: row.get(15)?,
+                    has_attachments: row.get(16)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to list messages: {}", e)))?
@@ -382,7 +401,8 @@ impl MessageCache {
             .conn
             .prepare(
                 "SELECT m.id, m.uid, m.message_id, m.refs_header, m.subject, m.from_addr,
-                        m.to_addr, m.cc, m.date, m.snippet, m.size_bytes, m.read, m.starred,
+                        m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
+                        m.read, m.starred, m.answered, m.draft,
                         (m.has_attachments = 1
                          OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id))
                  FROM messages m
@@ -409,12 +429,15 @@ impl MessageCache {
                     from_addr: row.get(5)?,
                     to_addr: row.get(6)?,
                     cc: row.get(7)?,
-                    date: row.get(8)?,
-                    snippet: row.get(9)?,
-                    size_bytes: row.get(10)?,
-                    read: row.get(11)?,
-                    starred: row.get(12)?,
-                    has_attachments: row.get(13)?,
+                    reply_to: row.get(8)?,
+                    date: row.get(9)?,
+                    snippet: row.get(10)?,
+                    size_bytes: row.get(11)?,
+                    read: row.get(12)?,
+                    starred: row.get(13)?,
+                    answered: row.get(14)?,
+                    draft: row.get(15)?,
+                    has_attachments: row.get(16)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to search messages: {}", e)))?
@@ -573,9 +596,12 @@ mod tests {
             from_addr: "Ada <ada@example.com>".to_string(),
             to_addr: "me@example.com".to_string(),
             cc: None,
+            reply_to: None,
             date: "2026-07-26T10:00:00+00:00".to_string(),
             internal_date: Some("2026-07-26T10:00:05+00:00".to_string()),
             size_bytes: Some(2048),
+            answered: false,
+            draft: false,
             refs_header: None,
             read: false,
             starred: false,

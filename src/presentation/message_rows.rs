@@ -77,6 +77,11 @@ pub fn cell_text(
         MessageColumn::Thread => thread_cell(message),
         MessageColumn::Size => message.size_bytes.map(size_cell).unwrap_or_default(),
         MessageColumn::Flagged => if message.starred { "Flagged" } else { "" }.to_string(),
+        // Self-describing like the other flag cells: the column heading is not
+        // announced with the cell, so "Yes" in a row would be a word with
+        // nothing attached to it.
+        MessageColumn::Answered => if message.answered { "Answered" } else { "" }.to_string(),
+        MessageColumn::Draft => if message.draft { "Draft" } else { "" }.to_string(),
         MessageColumn::To => display_address(&message.to),
         MessageColumn::Cc => display_address(&message.cc),
     }
@@ -230,6 +235,8 @@ mod tests {
             date: "2026-07-26".to_string(),
             read: false,
             starred: false,
+            answered: false,
+            draft: false,
             has_attachments: false,
             attachments: Vec::new(),
             thread_depth: 0,
@@ -239,6 +246,7 @@ mod tests {
             size_bytes: Some(2048),
             to: "me@example.com".to_string(),
             cc: String::new(),
+            reply_to: String::new(),
         }
     }
 
@@ -275,6 +283,45 @@ mod tests {
                 chrono::Local::now()
             ),
             "Flagged"
+        );
+    }
+
+    #[test]
+    fn test_the_answered_and_draft_cells_stand_on_their_own_too() {
+        // Both columns were withdrawn because nothing could fill them. The
+        // server's flags fill them now, and they follow the same rule as the
+        // others: the cell says what it means, or says nothing.
+        let mut replied = message();
+        replied.answered = true;
+        assert_eq!(
+            cell_text(
+                &replied,
+                MessageColumn::Answered,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            "Answered"
+        );
+        assert_eq!(
+            cell_text(
+                &message(),
+                MessageColumn::Answered,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            ""
+        );
+
+        let mut unsent = message();
+        unsent.draft = true;
+        assert_eq!(
+            cell_text(
+                &unsent,
+                MessageColumn::Draft,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            "Draft"
         );
     }
 

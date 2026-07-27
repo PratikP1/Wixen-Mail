@@ -31,13 +31,17 @@ pub enum MessageColumn {
     Thread,
     Size,
     Flagged,
+    /// Whether you have replied. Only meaningful once flags come from a server.
+    Answered,
+    /// Whether the message is an unsent draft.
+    Draft,
     To,
     Cc,
 }
 
 impl MessageColumn {
     /// Every column, in the order the column dialog lists them.
-    pub const ALL: [MessageColumn; 12] = [
+    pub const ALL: [MessageColumn; 14] = [
         MessageColumn::Unread,
         MessageColumn::Attachment,
         MessageColumn::Subject,
@@ -48,6 +52,8 @@ impl MessageColumn {
         MessageColumn::Thread,
         MessageColumn::Size,
         MessageColumn::Flagged,
+        MessageColumn::Answered,
+        MessageColumn::Draft,
         MessageColumn::To,
         MessageColumn::Cc,
     ];
@@ -68,6 +74,8 @@ impl MessageColumn {
             MessageColumn::Thread => "Thread",
             MessageColumn::Size => "Size",
             MessageColumn::Flagged => "Flagged",
+            MessageColumn::Answered => "Answered",
+            MessageColumn::Draft => "Draft",
             MessageColumn::To => "To",
             MessageColumn::Cc => "Cc",
         }
@@ -86,6 +94,8 @@ impl MessageColumn {
             MessageColumn::Thread => "thread",
             MessageColumn::Size => "size",
             MessageColumn::Flagged => "flagged",
+            MessageColumn::Answered => "answered",
+            MessageColumn::Draft => "draft",
             MessageColumn::To => "to",
             MessageColumn::Cc => "cc",
         }
@@ -105,15 +115,16 @@ impl MessageColumn {
             MessageColumn::Attachment => "m.has_attachments",
             MessageColumn::Subject => "m.subject COLLATE NOCASE",
             MessageColumn::Correspondent => "m.from_addr COLLATE NOCASE",
-            // No INTERNALDATE is stored until IMAP sync lands, so the
-            // received date falls back to the sender's date rather than
-            // sorting on a column that is empty for every row.
+            // The server's arrival time, falling back to the sender's date for
+            // rows stored before arrival times were kept.
             MessageColumn::Received => "COALESCE(m.internaldate, m.date)",
             MessageColumn::Sent => "m.date",
             MessageColumn::Snippet => "m.snippet COLLATE NOCASE",
             MessageColumn::Thread => "m.thread_id",
             MessageColumn::Size => "m.size_bytes",
             MessageColumn::Flagged => "m.starred",
+            MessageColumn::Answered => "m.answered",
+            MessageColumn::Draft => "m.draft",
             MessageColumn::To => "m.to_addr COLLATE NOCASE",
             MessageColumn::Cc => "m.cc COLLATE NOCASE",
         }

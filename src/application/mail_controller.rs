@@ -216,9 +216,14 @@ impl MailController {
         Ok(())
     }
 
-    /// Mark message as read
-    pub async fn mark_as_read(&self, folder: &str, uid: u32) -> Result<()> {
-        self.set_flag(folder, uid, "\\Seen", true).await
+    /// How many messages in a folder are unread.
+    pub async fn unread_count(&self, folder: &str) -> Result<usize> {
+        let mut guard = self.require_imap().await?;
+        let session = &mut *guard;
+        if session.selected_folder() != Some(folder) {
+            session.select_folder(folder).await?;
+        }
+        session.unread_count().await
     }
 
     /// Flag or unflag a message.
@@ -373,7 +378,7 @@ mod tests {
             controller.list_uids("INBOX").await.err(),
             controller.fetch_headers("INBOX", &[1]).await.err(),
             controller.fetch_message_body("INBOX", 1).await.err(),
-            controller.mark_as_read("INBOX", 1).await.err(),
+            controller.unread_count("INBOX").await.err(),
             controller.set_starred("INBOX", 1, true).await.err(),
             controller.delete_message("INBOX", 1).await.err(),
         ];

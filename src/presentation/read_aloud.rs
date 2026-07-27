@@ -329,6 +329,8 @@ mod tests {
             date: "2026-07-26".to_string(),
             read: false,
             starred: true,
+            answered: false,
+            draft: false,
             has_attachments: true,
             attachments: Vec::new(),
             thread_depth: 0,
@@ -338,6 +340,7 @@ mod tests {
             size_bytes: Some(2048),
             to: "me@example.com".to_string(),
             cc: String::new(),
+            reply_to: String::new(),
         }
     }
 

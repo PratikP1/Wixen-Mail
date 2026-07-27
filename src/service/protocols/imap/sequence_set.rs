@@ -17,19 +17,6 @@
 /// are already down in the noise.
 pub const MAX_SET_LENGTH: usize = 1024;
 
-/// Build one sequence set covering every UID given.
-///
-/// The input is sorted and deduplicated, so callers do not have to. UID 0 is
-/// dropped: IMAP numbers messages from 1, and a zero in the set makes the
-/// server reject the whole command, losing every other message in the batch.
-pub fn set(uids: &[u32]) -> String {
-    let mut parts = Vec::new();
-    for (first, last) in runs(uids) {
-        parts.push(format_run(first, last));
-    }
-    parts.join(",")
-}
-
 /// Split the UIDs across as many sequence sets as the length limit needs.
 ///
 /// Every UID appears in exactly one of the returned sets. A set is never
@@ -109,46 +96,53 @@ mod tests {
         out
     }
 
+    /// The one set a small list of UIDs produces.
+    fn one_set(uids: &[u32]) -> String {
+        chunks(uids, MAX_SET_LENGTH)
+            .into_iter()
+            .next()
+            .unwrap_or_default()
+    }
+
     #[test]
     fn test_nothing_to_ask_for_produces_nothing() {
-        assert_eq!(set(&[]), "");
         assert!(chunks(&[], MAX_SET_LENGTH).is_empty());
     }
 
     #[test]
     fn test_a_single_uid_is_written_alone() {
-        assert_eq!(set(&[42]), "42");
+        assert_eq!(one_set(&[42]), "42");
     }
 
     #[test]
     fn test_consecutive_uids_become_a_range() {
-        assert_eq!(set(&[1, 2, 3, 4, 5]), "1:5");
-        assert_eq!(set(&[7, 8]), "7:8");
+        assert_eq!(one_set(&[1, 2, 3, 4, 5]), "1:5");
+        assert_eq!(one_set(&[7, 8]), "7:8");
     }
 
     #[test]
     fn test_gaps_split_the_set_into_parts() {
-        assert_eq!(set(&[1, 2, 3, 7, 10, 11, 12]), "1:3,7,10:12");
+        assert_eq!(one_set(&[1, 2, 3, 7, 10, 11, 12]), "1:3,7,10:12");
     }
 
     #[test]
     fn test_unsorted_input_still_produces_a_correct_set() {
         // A caller reading UIDs out of a hash set has no order to offer, and a
         // set built in arrival order would be wrong rather than merely untidy.
-        assert_eq!(set(&[12, 3, 1, 11, 2, 10, 7]), "1:3,7,10:12");
+        assert_eq!(one_set(&[12, 3, 1, 11, 2, 10, 7]), "1:3,7,10:12");
     }
 
     #[test]
     fn test_duplicates_are_asked_for_once() {
-        assert_eq!(set(&[5, 5, 5, 6, 6]), "5:6");
+        assert_eq!(one_set(&[5, 5, 5, 6, 6]), "5:6");
     }
 
     #[test]
     fn test_uid_zero_is_dropped_rather_than_sent() {
         // IMAP numbers from 1. A zero makes the server reject the command, and
         // with it every other message in the batch.
-        assert_eq!(set(&[0, 1, 2]), "1:2");
-        assert_eq!(set(&[0]), "");
+        assert_eq!(one_set(&[0, 1, 2]), "1:2");
+        assert_eq!(one_set(&[0]), "");
     }
 
     #[test]
@@ -182,7 +176,7 @@ mod tests {
         // The whole reason for ranges. A hundred thousand consecutive messages
         // are eight characters, not eight hundred thousand.
         let uids: Vec<u32> = (1..=100_000).collect();
-        assert_eq!(set(&uids), "1:100000");
+        assert_eq!(one_set(&uids), "1:100000");
         assert_eq!(chunks(&uids, MAX_SET_LENGTH).len(), 1);
     }
 
@@ -208,8 +202,11 @@ mod tests {
     }
 
     #[test]
-    fn test_chunking_matches_the_single_set_when_everything_fits() {
+    fn test_everything_that_fits_goes_in_one_command() {
         let uids = [1, 2, 3, 9, 40, 41];
-        assert_eq!(chunks(&uids, MAX_SET_LENGTH), vec![set(&uids)]);
+        assert_eq!(
+            chunks(&uids, MAX_SET_LENGTH),
+            vec!["1:3,9,40:41".to_string()]
+        );
     }
 }

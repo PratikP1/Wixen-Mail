@@ -81,6 +81,10 @@ pub struct MessageItem {
     pub date: String,
     pub read: bool,
     pub starred: bool,
+    /// Whether the reader has replied, from the server's `\Answered` flag.
+    pub answered: bool,
+    /// Whether this is an unsent draft, from the server's `\Draft` flag.
+    pub draft: bool,
     pub has_attachments: bool,
     pub attachments: Vec<AttachmentItem>,
     pub thread_depth: usize,
@@ -94,6 +98,26 @@ pub struct MessageItem {
     pub size_bytes: Option<i64>,
     pub to: String,
     pub cc: String,
+    /// Where the sender asked replies to go, when they asked.
+    pub reply_to: String,
+}
+
+impl MessageItem {
+    /// Where a reply to this message should be addressed.
+    ///
+    /// `Reply-To` when the sender set one, and `From` otherwise. Ignoring it
+    /// is not a small thing: mailing lists set it so a reply reaches the list,
+    /// and plenty of automated senders set it because `From` is a no-reply
+    /// address that bounces. Replying to `From` regardless sends the message
+    /// to one person instead of the list, or into a void.
+    pub fn reply_address(&self) -> &str {
+        let reply_to = self.reply_to.trim();
+        if reply_to.is_empty() {
+            self.from.trim()
+        } else {
+            reply_to
+        }
+    }
 }
 
 impl MessageItem {
@@ -111,6 +135,8 @@ impl MessageItem {
             date: row.date.clone(),
             read: row.read,
             starred: row.starred,
+            answered: row.answered,
+            draft: row.draft,
             has_attachments: row.has_attachments,
             attachments: Vec::new(),
             thread_depth: 0,
@@ -120,6 +146,7 @@ impl MessageItem {
             size_bytes: row.size_bytes,
             to: row.to_addr.clone(),
             cc: row.cc.clone().unwrap_or_default(),
+            reply_to: row.reply_to.clone().unwrap_or_default(),
         }
     }
 }
@@ -245,6 +272,23 @@ pub enum UIUpdate {
     MessageDeletedFromCache(i64),
     /// A message's read flag was toggled in the cache (cache_id, new_read_state)
     MessageReadToggled(i64, bool),
+    /// A sync finished, so the inbox can be watched again.
+    ///
+    /// Sent rather than acted on directly because the watch handle lives with
+    /// the rest of the window state, on the thread that owns it.
+    MailboxWatchRequested,
+    /// The server said a watched folder changed (folder path).
+    ///
+    /// Carries the path rather than a count, because the server reports how
+    /// many messages a mailbox now holds and not which ones are new. Finding
+    /// out means asking, which is what the handler does.
+    MailboxChanged(String),
+    /// A message's flagged state changed (cache_id, new_flagged_state)
+    ///
+    /// Sent when the server accepts the change, and again with the opposite
+    /// value when it refuses one that was already applied here, so the list
+    /// never keeps showing a state the server did not take.
+    MessageStarredToggled(i64, bool),
 }
 
 /// Calendar event item for UI display
@@ -1096,5 +1140,51 @@ mod tests {
         // Truncating a multibyte body by byte offset would panic.
         let item = NoteItem::from_entry(&note(&"\u{4f60}".repeat(400)));
         assert!(item.body_preview.chars().count() <= NOTE_PREVIEW_CHARS + 1);
+    }
+
+    fn addressed(from: &str, reply_to: &str) -> MessageItem {
+        MessageItem {
+            uid: 1,
+            message_id: 1,
+            subject: "Notes".to_string(),
+            from: from.to_string(),
+            date: String::new(),
+            read: false,
+            starred: false,
+            answered: false,
+            draft: false,
+            has_attachments: false,
+            attachments: Vec::new(),
+            thread_depth: 0,
+            is_thread_parent: false,
+            thread_id: None,
+            snippet: String::new(),
+            size_bytes: None,
+            to: String::new(),
+            cc: String::new(),
+            reply_to: reply_to.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_a_reply_goes_where_the_sender_asked() {
+        // A mailing list sets Reply-To so a reply reaches the list. Replying
+        // to From instead sends it to one member, which is both the wrong
+        // recipient and, on a private thread, a disclosure.
+        let listed = addressed("Ada <ada@example.com>", "list@example.com");
+        assert_eq!(listed.reply_address(), "list@example.com");
+    }
+
+    #[test]
+    fn test_a_reply_falls_back_to_the_sender() {
+        let ordinary = addressed("Ada <ada@example.com>", "");
+        assert_eq!(ordinary.reply_address(), "Ada <ada@example.com>");
+    }
+
+    #[test]
+    fn test_a_blank_reply_to_is_not_treated_as_an_address() {
+        // A header present but empty is not somewhere to send mail.
+        let blank = addressed("Ada <ada@example.com>", "   ");
+        assert_eq!(blank.reply_address(), "Ada <ada@example.com>");
     }
 }

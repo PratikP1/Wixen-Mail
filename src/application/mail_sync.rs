@@ -13,7 +13,9 @@
 use crate::application::mail_controller::MailController;
 use crate::common::{Result, types::FolderType};
 use crate::data::message_cache::{CachedFolder, IncomingMessage, MessageCache};
-use crate::service::protocols::imap::{ImapFolder, ImapMessage};
+use crate::service::protocols::imap::{
+    ImapClient, ImapConfig, ImapFolder, ImapIdleEvent, ImapIdleHandle, ImapMessage,
+};
 
 /// How many messages a first look at a folder brings down.
 ///
@@ -31,6 +33,8 @@ pub struct FolderSync {
     pub fetched: usize,
     pub forgotten: usize,
     pub total_on_server: usize,
+    /// How many of them are unread, as the server counts.
+    pub unread: usize,
     /// Whether the server had renumbered the mailbox since the last sync.
     pub renumbered: bool,
 }
@@ -86,6 +90,7 @@ pub fn to_incoming(message: &ImapMessage, folder_id: i64) -> IncomingMessage {
         from_addr: join_addresses(&message.from),
         to_addr: join_addresses(&message.to),
         cc: Some(join_addresses(&message.cc)).filter(|cc| !cc.is_empty()),
+        reply_to: Some(join_addresses(&message.reply_to)).filter(|to| !to.is_empty()),
         // The sender's date when it is usable, the server's when it is not, so
         // the column is never blank and the folder never sorts a message to an
         // end its reader will not look at.
@@ -99,6 +104,8 @@ pub fn to_incoming(message: &ImapMessage, folder_id: i64) -> IncomingMessage {
         refs_header: reference_chain(message),
         read: message.seen(),
         starred: message.flagged(),
+        answered: message.answered(),
+        draft: message.draft(),
         deleted: message.deleted(),
         has_attachments: message.has_attachments,
     }
@@ -211,13 +218,48 @@ pub async fn sync_folder(
         cache.upsert_message(&to_incoming(message, folder_id))?;
     }
 
+    // Counts for the folder tree. The server's, not the cache's: only part of
+    // a large folder is stored, so counting rows here would tell somebody
+    // their inbox holds five hundred messages when it holds forty thousand.
+    let unread = controller.unread_count(&folder.path).await?;
+    cache.set_folder_counts(folder_id, unread, status.exists as usize)?;
+
     Ok(FolderSync {
         folder: folder.name.clone(),
         fetched: fetched.len(),
         forgotten: forgotten.len(),
         total_on_server: on_server.len(),
+        unread,
         renumbered,
     })
+}
+
+/// Open a connection whose only job is to watch one folder for changes.
+///
+/// A second connection, not the one the rest of the client uses. IDLE takes a
+/// connection over: no other command can run on it until the watch ends, so
+/// watching the inbox on the working connection would mean nothing else could
+/// happen while it watched.
+pub async fn watch_folder(
+    server: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+    use_tls: bool,
+    folder: &str,
+) -> Result<(
+    tokio::sync::mpsc::UnboundedReceiver<ImapIdleEvent>,
+    ImapIdleHandle,
+)> {
+    let client = ImapClient::new(ImapConfig {
+        server: server.to_string(),
+        port,
+        use_tls,
+        username: username.to_string(),
+    })?;
+    let mut session = client.connect(password).await?;
+    session.select_folder(folder).await?;
+    Ok(session.watch(folder.to_string()))
 }
 
 /// The folders worth syncing, and the order to do them in.
