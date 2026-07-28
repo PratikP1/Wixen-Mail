@@ -77,6 +77,7 @@ menu_ids!(
     ID_NEW_MESSAGE,
     ID_NEW_DEFAULT,
     ID_OPEN_DRAFT,
+    ID_GET_OLDER,
     ID_QUIT,
     ID_SEARCH,
     ID_REPLY,
@@ -2174,6 +2175,32 @@ document.addEventListener('keydown', function(e) {
                                     &frame,
                                     &ui_tx,
                                     &runtime,
+                                ),
+                            }
+                        }
+                        // The same sync, aimed at one folder. Nothing special
+                        // is needed to page: the fetch skips what is already
+                        // stored, so asking again brings the next oldest.
+                        _ if id == ID_GET_OLDER => {
+                            let folder = lock_state(&state).selected_folder.clone();
+                            match folder {
+                                Some(folder) => {
+                                    send_status(
+                                        &ui_tx,
+                                        &runtime,
+                                        "Getting older messages...",
+                                    );
+                                    spawn_mail_sync(
+                                        &state,
+                                        &ui_tx,
+                                        &runtime,
+                                        Some(folder),
+                                    );
+                                }
+                                None => send_status(
+                                    &ui_tx,
+                                    &runtime,
+                                    "Choose a folder first",
                                 ),
                             }
                         }
@@ -5049,10 +5076,19 @@ fn spawn_mail_sync(
                     // renumbered are both things the reader will notice as rows
                     // disappearing. Saying so turns that from unexplained into
                     // expected.
+                    // How many are held, not how many arrived this round. On
+                    // a forty thousand message inbox "500 messages" reads as a
+                    // complete answer and is not one.
                     let mut report = format!(
-                        "{}: {} of {} messages",
-                        result.folder, result.fetched, result.total_on_server
+                        "{}: {} of {} messages downloaded",
+                        result.folder, result.held, result.total_on_server
                     );
+                    if crate::application::mail_sync::more_to_fetch(
+                        result.held,
+                        result.total_on_server,
+                    ) {
+                        report.push_str(", Ctrl+Shift+G for older");
+                    }
                     if result.forgotten > 0 {
                         report.push_str(&format!(", {} removed elsewhere", result.forgotten));
                     }

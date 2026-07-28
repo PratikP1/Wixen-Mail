@@ -203,6 +203,7 @@ dialog once you have more than one.
 | Save | `Ctrl+S` | Save current draft |
 | Save As | (none) | Save message or attachment to file |
 | Check Mail | `F9` | Check for new messages |
+| Get Older Messages | `Ctrl+Shift+G` | Bring down the next page of older mail in the folder you are in |
 | Quit | `Ctrl+Q` | Exit the application |
 
 ### Edit Menu

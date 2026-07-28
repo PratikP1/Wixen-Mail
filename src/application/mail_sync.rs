@@ -17,6 +17,15 @@ use crate::service::protocols::imap::{
     ImapClient, ImapConfig, ImapFolder, ImapIdleEvent, ImapIdleHandle, ImapMessage,
 };
 
+/// Whether there is older mail still to fetch.
+///
+/// The pure half of "get older messages": the command is worth offering only
+/// when it would do something, and when it would not, saying so is better than
+/// a key that appears to be broken.
+pub fn more_to_fetch(held: usize, total_on_server: usize) -> bool {
+    held < total_on_server
+}
+
 /// How many messages a first look at a folder brings down.
 ///
 /// Enough that somebody opening their inbox sees a full screen and can keep
@@ -35,6 +44,13 @@ pub struct FolderSync {
     pub total_on_server: usize,
     /// How many of them are unread, as the server counts.
     pub unread: usize,
+    /// How many are now downloaded, out of `total_on_server`.
+    ///
+    /// The number worth saying on a large mailbox. "500 messages" after a sync
+    /// of a forty thousand message inbox reads as a complete answer and is
+    /// not one; "1,000 of 40,000" says there is more and that asking again
+    /// will get it.
+    pub held: usize,
     /// Whether the server had renumbered the mailbox since the last sync.
     pub renumbered: bool,
 }
@@ -241,6 +257,13 @@ pub async fn sync_folder(
         forgotten: forgotten.len(),
         total_on_server: on_server.len(),
         unread,
+        // Counted after the write, so it includes what this round brought
+        // down. Asking the cache rather than adding up, because a message
+        // already held and re-fetched is not a new one.
+        held: cache
+            .stored_uids(folder_id)
+            .map(|held| held.len())
+            .unwrap_or(0),
         renumbered,
     })
 }
@@ -355,6 +378,26 @@ mod tests {
     #[test]
     fn test_nothing_is_forgotten_when_the_server_still_has_it_all() {
         assert!(uids_to_forget(&[1, 2, 3], &[1, 2, 3]).is_empty());
+    }
+
+    #[test]
+    fn test_there_is_more_to_fetch_until_everything_is_held() {
+        assert!(more_to_fetch(500, 40_000));
+        assert!(more_to_fetch(39_999, 40_000));
+        assert!(!more_to_fetch(40_000, 40_000));
+    }
+
+    #[test]
+    fn test_an_empty_folder_has_nothing_older_to_ask_for() {
+        // Offering the command here would be a key that does nothing, which
+        // reads as a key that is broken.
+        assert!(!more_to_fetch(0, 0));
+    }
+
+    #[test]
+    fn test_holding_more_than_the_server_lists_is_not_more_to_fetch() {
+        // Reachable between an expunge on the server and the next sync.
+        assert!(!more_to_fetch(600, 500));
     }
 
     #[test]
