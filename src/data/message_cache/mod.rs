@@ -14,7 +14,6 @@ mod folders;
 mod messages;
 pub use messages::{IncomingMessage, MessageListRow};
 pub mod notes;
-mod oauth;
 mod outbox;
 pub mod reminders;
 mod signatures;
@@ -219,20 +218,6 @@ pub struct ContactEntry {
     pub addresses_json: Option<String>,
     /// JSON array of `CustomFieldEntry`
     pub custom_fields_json: Option<String>,
-}
-
-/// OAuth token set for an account/provider
-#[derive(Debug, Clone)]
-pub struct OAuthTokenEntry {
-    pub id: String,
-    pub account_id: String,
-    pub provider: String,
-    pub access_token: String,
-    pub refresh_token: Option<String>,
-    pub token_type: String,
-    pub scope: Option<String>,
-    pub expires_at: Option<String>,
-    pub created_at: String,
 }
 
 /// Queued outbound message for offline send
@@ -655,25 +640,6 @@ impl MessageCache {
 
         self.conn
             .execute(
-                "CREATE TABLE IF NOT EXISTS oauth_tokens (
-                id TEXT PRIMARY KEY,
-                account_id TEXT NOT NULL,
-                provider TEXT NOT NULL,
-                access_token TEXT NOT NULL,
-                refresh_token TEXT,
-                token_type TEXT NOT NULL DEFAULT 'Bearer',
-                scope TEXT,
-                expires_at TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                UNIQUE(account_id, provider)
-            )",
-                [],
-            )
-            .map_err(|e| Error::Other(format!("Failed to create oauth_tokens table: {}", e)))?;
-
-        self.conn
-            .execute(
                 "CREATE TABLE IF NOT EXISTS outbox_queue (
                 id TEXT PRIMARY KEY,
                 account_id TEXT NOT NULL,
@@ -995,13 +961,17 @@ impl MessageCache {
         self.ensure_column_exists("contacts", "phones_json", "TEXT")?;
         self.ensure_column_exists("contacts", "addresses_json", "TEXT")?;
         self.ensure_column_exists("contacts", "custom_fields_json", "TEXT")?;
-        self.ensure_column_exists(
-            "oauth_tokens",
-            "token_type",
-            "TEXT NOT NULL DEFAULT 'Bearer'",
-        )?;
-        self.ensure_column_exists("oauth_tokens", "scope", "TEXT")?;
-        self.ensure_column_exists("oauth_tokens", "expires_at", "TEXT")?;
+
+        // Dropped rather than left alone, which is the exception to the rule
+        // that schema changes only ever add. This table held access and refresh
+        // tokens, and nothing ever read it: the tokens in use live in the
+        // Windows credential store. So every row in it is a secret that no code
+        // path would ever rotate, expire or delete, sitting in a file that gets
+        // copied when somebody backs up their profile. Keeping it costs
+        // something and keeping it gains nothing.
+        self.conn
+            .execute("DROP TABLE IF EXISTS oauth_tokens", [])
+            .map_err(|e| Error::Other(format!("Failed to drop oauth_tokens table: {}", e)))?;
 
         // Indexes for performance
         let indexes = [
@@ -1010,7 +980,6 @@ impl MessageCache {
             "CREATE INDEX IF NOT EXISTS idx_message_tags_tag_id ON message_tags(tag_id)",
             "CREATE INDEX IF NOT EXISTS idx_message_tags_message_id ON message_tags(message_id)",
             "CREATE INDEX IF NOT EXISTS idx_contacts_account_email ON contacts(account_id, email)",
-            "CREATE INDEX IF NOT EXISTS idx_oauth_tokens_account_provider ON oauth_tokens(account_id, provider)",
             "CREATE INDEX IF NOT EXISTS idx_outbox_queue_account_created ON outbox_queue(account_id, created_at)",
             "CREATE INDEX IF NOT EXISTS idx_calendar_events_account_dates ON calendar_events(account_id, start_datetime, end_datetime)",
             "CREATE INDEX IF NOT EXISTS idx_calendar_events_provider_id ON calendar_events(account_id, provider_event_id)",

@@ -2,7 +2,6 @@
 //!
 //! This layer handles email protocols, security, caching, and other services.
 
-pub mod attachments;
 pub mod cache;
 pub mod caldav;
 pub mod google_api;
@@ -15,7 +14,6 @@ pub mod protocols;
 pub mod security;
 pub mod spellcheck;
 
-pub use attachments::AttachmentHandler;
 pub use cache::CacheService;
 pub use caldav::{CalDavClient, CalDavEvent};
 pub use google_api::GoogleApiClient;

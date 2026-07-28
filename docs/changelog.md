@@ -7,6 +7,10 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Removed
 
+- **A table of access and refresh tokens that nothing ever read.** The tokens actually in use are in the Windows credential store. This was a second copy, encrypted at rest and then abandoned: no code path would ever have rotated it, expired it or deleted it, and it travelled with the database whenever somebody copied their profile. It is dropped from existing databases on the next start, which is the one case where a schema change is allowed to take something away.
+- **A dialog for pasting OAuth codes and client secrets by hand**, which nothing opened. A comment said it was kept for advanced manual token management, and it had been kept for nobody. Sign-in happens in the browser.
+- **Two modules for storing files that nothing stored files with.** They will come back as one thing, wired, when attachments can be downloaded.
+
 - **A second copy of the application.** Two executables were built from near-identical files, and the installer shipped one while the release archive shipped the other, so a setup file and a portable download were not the same program. There is one now, `wixen-mail.exe`, and `cargo run` starts it without naming a binary.
 - **A database nothing ever read.** A second SQLite file was created in the roaming profile on every start by a module no code called. Roaming a database is a way to corrupt it, and this one held nothing worth corrupting.
 

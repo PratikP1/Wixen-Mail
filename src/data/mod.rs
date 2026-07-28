@@ -6,10 +6,8 @@ pub mod account;
 pub mod config;
 pub mod email_providers;
 pub mod message_cache;
-pub mod storage;
 
 pub use account::{Account, AccountManager};
 pub use config::ConfigManager;
 pub use email_providers::*;
 pub use message_cache::MessageCache;
-pub use storage::Storage;

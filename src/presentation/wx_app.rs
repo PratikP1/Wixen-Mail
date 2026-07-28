@@ -3862,10 +3862,6 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
     }
 }
 
-// OAuth authorization is now handled inline during account setup
-// in wx_account_manager::run_oauth_flow(). The standalone OAuth Manager
-// dialog (wx_oauth) is retained for advanced manual token management.
-
 /// Flush all queued outbox messages (attempt to send via SMTP).
 fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
     // The account travels with the task: sending needs its SMTP settings and

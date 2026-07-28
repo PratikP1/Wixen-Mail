@@ -22,7 +22,6 @@ pub mod wx_compose;
 pub mod wx_contacts_module;
 pub mod wx_managers;
 pub mod wx_notes_module;
-pub mod wx_oauth;
 pub mod wx_reader;
 pub mod wx_reminders_module;
 pub mod wx_settings;
