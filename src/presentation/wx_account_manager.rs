@@ -188,7 +188,7 @@ pub fn show_account_manager_dialog(
                             }
                             OAuthFlowResult::NoCreds => {
                                 status.set_label(
-                                    "Account added. OAuth credentials are not configured; see ~/.wixen-mail/oauth.toml"
+                                    "Account added. No client credentials are configured for this provider. See docs/PROVIDER_SETUP.md.",
                                 );
                             }
                             OAuthFlowResult::Failed(msg) => {

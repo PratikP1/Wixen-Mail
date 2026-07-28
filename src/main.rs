@@ -1,6 +1,7 @@
 #![windows_subsystem = "windows"]
 
 use wixen_mail::common::logging::{LoggerConfig, init_logging};
+use wixen_mail::common::paths::{AppPaths, LegacyLocations, MigrationReport};
 use wixen_mail::presentation::WxMailApp;
 
 fn main() {
@@ -8,8 +9,12 @@ fn main() {
     // even when running as a GUI app with no console.
     install_panic_hook();
 
+    // Before anything opens a file, including the log the next line writes.
+    let migration = prepare_data_folder();
+
     let _log_guard = init_logging(LoggerConfig::default()).ok();
     tracing::info!("Starting Wixen Mail v{}", env!("CARGO_PKG_VERSION"));
+    report_migration(migration.as_ref());
 
     match WxMailApp::new() {
         Ok(app) => {
@@ -26,6 +31,42 @@ fn main() {
             show_error_dialog(&format!("Wixen Mail failed to start:\n{}", e));
             std::process::exit(1);
         }
+    }
+}
+
+/// Make the data folders, and collect files earlier versions left elsewhere.
+///
+/// Earlier versions kept the security key in the roaming profile, oauth.toml in
+/// a dotfolder in the home directory, and the message database beside the
+/// settings. This runs once per start and does nothing on an install that has
+/// already been collected.
+fn prepare_data_folder() -> Option<MigrationReport> {
+    let paths = match AppPaths::resolve() {
+        Ok(paths) => paths,
+        Err(e) => {
+            log_crash(&format!("Could not work out where to keep data: {e}"));
+            return None;
+        }
+    };
+    if let Err(e) = paths.create() {
+        log_crash(&format!("Could not create the data folder: {e}"));
+        return None;
+    }
+    Some(paths.migrate_legacy(&LegacyLocations::detect()))
+}
+
+/// Say what the migration did, once logging can record it.
+fn report_migration(report: Option<&MigrationReport>) {
+    let Some(report) = report.filter(|report| !report.is_empty()) else {
+        return;
+    };
+    for path in &report.moved {
+        tracing::info!("Collected into the data folder: {}", path.display());
+    }
+    for (path, reason) in &report.failed {
+        // Not silently absorbed: the file is still readable where it is, and
+        // somebody has to be able to find out why it did not move.
+        tracing::warn!("Left in place, could not move {}: {reason}", path.display());
     }
 }
 
@@ -65,10 +106,7 @@ fn install_panic_hook() {
 
 /// Write a crash/error message to a persistent log file.
 fn log_crash(message: &str) {
-    let crash_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("wixen-mail")
-        .join("logs");
+    let crash_dir = wixen_mail::common::logging::default_log_dir();
     let _ = std::fs::create_dir_all(&crash_dir);
     let crash_file = crash_dir.join("crash.log");
     let timestamped = format!(

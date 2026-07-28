@@ -2,6 +2,7 @@
 //!
 //! Handles application settings, account configurations, and persistence.
 
+use crate::common::paths::AppPaths;
 use crate::common::{Error, Result, types::Id};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -239,33 +240,35 @@ pub struct ConfigManager {
 impl ConfigManager {
     /// Create a new configuration manager
     pub fn new() -> Result<Self> {
-        let config_dir = Self::get_config_dir()?;
+        Self::in_dir(AppPaths::resolve()?.config_dir())
+    }
+
+    /// Open the settings folder and read what is in it.
+    ///
+    /// Most callers want this rather than [`new`](Self::new): they need the
+    /// stored values, and both steps fail the same way from their point of
+    /// view.
+    pub fn load_stored() -> Result<Self> {
+        let mut manager = Self::new()?;
+        manager.load()?;
+        Ok(manager)
+    }
+
+    /// Keep configuration in a directory of the caller's choosing.
+    ///
+    /// Tests use this so they never write into the profile of whoever is
+    /// running them.
+    pub fn in_dir(config_dir: PathBuf) -> Result<Self> {
+        fs::create_dir_all(&config_dir).map_err(|e| {
+            Error::Config(format!("Could not create {}: {e}", config_dir.display()))
+        })?;
+
         Ok(Self {
             config: Config::new(),
             app_config: AppConfig::default(),
             account_configs: HashMap::new(),
             config_dir,
         })
-    }
-
-    /// Get the configuration directory
-    fn get_config_dir() -> Result<PathBuf> {
-        let base_dir = if cfg!(windows) {
-            dirs::data_local_dir().or_else(dirs::config_dir)
-        } else {
-            dirs::config_dir()
-        };
-
-        let config_dir = base_dir
-            .ok_or_else(|| Error::Config("Could not determine config directory".to_string()))?
-            .join("wixen-mail");
-
-        if !config_dir.exists() {
-            fs::create_dir_all(&config_dir)
-                .map_err(|e| Error::Config(format!("Failed to create config directory: {}", e)))?;
-        }
-
-        Ok(config_dir)
     }
 
     /// Get app config file path
@@ -394,17 +397,6 @@ impl ConfigManager {
     }
 }
 
-impl Default for ConfigManager {
-    fn default() -> Self {
-        Self::new().unwrap_or_else(|_| Self {
-            config: Config::new(),
-            app_config: AppConfig::default(),
-            account_configs: HashMap::new(),
-            config_dir: PathBuf::from("."),
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -418,20 +410,32 @@ mod tests {
 
     #[test]
     fn test_config_manager() {
-        let manager = ConfigManager::new();
+        let dir = tempfile::TempDir::new().unwrap();
+        let manager = ConfigManager::in_dir(dir.path().join("config"));
         assert!(manager.is_ok());
     }
 
     #[test]
-    fn test_config_manager_uses_app_directory() {
-        let config_dir = ConfigManager::get_config_dir().unwrap();
-        assert!(config_dir.ends_with("wixen-mail"));
+    fn test_settings_are_written_to_the_folder_they_were_given() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let config_dir = dir.path().join("config");
+        let manager = ConfigManager::in_dir(config_dir.clone()).unwrap();
 
-        if cfg!(windows)
-            && let Some(base) = dirs::data_local_dir().or_else(dirs::config_dir)
-        {
-            assert!(config_dir.starts_with(base));
-        }
+        manager.save().unwrap();
+
+        assert!(config_dir.join("app_config.json").is_file());
+    }
+
+    #[test]
+    fn test_the_settings_folder_is_created_if_it_is_not_there() {
+        // A first run has an empty application data folder, and the manager is
+        // built before anything asks it to save.
+        let dir = tempfile::TempDir::new().unwrap();
+        let config_dir = dir.path().join("missing").join("config");
+
+        ConfigManager::in_dir(config_dir.clone()).unwrap();
+
+        assert!(config_dir.is_dir());
     }
 
     #[test]

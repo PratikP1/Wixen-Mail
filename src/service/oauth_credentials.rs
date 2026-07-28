@@ -2,7 +2,7 @@
 //!
 //! Credentials are resolved in priority order:
 //!   1. Environment variables (`WIXEN_GMAIL_CLIENT_ID`, etc.)
-//!   2. Local config file `~/.wixen-mail/oauth.toml`
+//!   2. `oauth.toml` in the settings folder, see [`crate::common::paths`]
 //!   3. Built-in defaults (compile-time via `env!` / `option_env!`)
 //!
 //! The local config file is NOT committed to the repository. Developers
@@ -132,9 +132,11 @@ fn resolve_outlook() -> Option<ClientCredentials> {
     None
 }
 
-/// Path to the TOML config file: `~/.wixen-mail/oauth.toml`
+/// Path to the TOML config file in the settings folder.
 fn oauth_toml_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".wixen-mail").join("oauth.toml"))
+    crate::common::paths::AppPaths::resolve()
+        .ok()
+        .map(|paths| paths.oauth_toml())
 }
 
 fn load_from_toml(provider: &str) -> Option<ClientCredentials> {

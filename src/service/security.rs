@@ -96,14 +96,14 @@ impl SecurityService {
     }
 
     fn key_path() -> Result<PathBuf> {
-        let base = dirs::config_dir()
-            .ok_or_else(|| Error::Config("Could not determine config directory".to_string()))?
-            .join("wixen-mail");
-        if !base.exists() {
-            fs::create_dir_all(&base)
-                .map_err(|e| Error::Config(format!("Failed to create config directory: {}", e)))?;
-        }
-        Ok(base.join("security.key"))
+        // The key sits beside the data it unlocks. It used to live in the
+        // roaming profile while the encrypted database stayed local, so the key
+        // crossed the network at every logon and the mail it protects did not.
+        let paths = crate::common::paths::AppPaths::resolve()?;
+        fs::create_dir_all(paths.root()).map_err(|e| {
+            Error::Config(format!("Could not create {}: {e}", paths.root().display()))
+        })?;
+        Ok(paths.security_key())
     }
 
     fn load_or_create_key() -> Result<[u8; 32]> {

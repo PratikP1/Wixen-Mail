@@ -83,14 +83,22 @@ impl Default for LoggerConfig {
         Self {
             level: LogLevel::Info,
             log_to_file: true,
-            log_dir: dirs::data_local_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("wixen-mail")
-                .join("logs"),
+            log_dir: default_log_dir(),
             log_file_prefix: "wixen-mail".to_string(),
             console_logging: true,
         }
     }
+}
+
+/// Where logs go when nobody says otherwise.
+///
+/// Falling back to the current directory, which this used to do, scattered logs
+/// into whichever folder the shortcut started in and made them impossible to
+/// ask somebody for. The temporary folder is at least a fixed place to look.
+pub fn default_log_dir() -> PathBuf {
+    crate::common::paths::AppPaths::resolve()
+        .map(|paths| paths.logs_dir())
+        .unwrap_or_else(|_| std::env::temp_dir().join("wixen-mail").join("logs"))
 }
 
 /// Initialize the logging system

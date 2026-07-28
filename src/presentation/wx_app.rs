@@ -6,6 +6,7 @@
 use crate::application::mail_controller::{MailController, SendEmailRequest};
 use crate::application::reply::ReplyMode;
 use crate::common::Result;
+use crate::common::paths::AppPaths;
 use crate::data::account::Account;
 use crate::data::message_cache::MessageCache;
 use crate::presentation::accessibility::Accessibility;
@@ -246,9 +247,7 @@ impl WxMailApp {
         );
         let (ui_tx, ui_rx) = async_channel::unbounded();
 
-        let cache_dir = dirs::cache_dir()
-            .ok_or_else(|| crate::common::Error::Other("No cache dir".into()))?
-            .join("wixen-mail");
+        let cache_dir = AppPaths::resolve()?.cache_dir();
         let security = crate::service::security::SecurityService::new().ok();
         let message_cache = MessageCache::new(cache_dir, security).ok();
 
@@ -312,10 +311,8 @@ impl WxMailApp {
 
             // Restore the stored mute preference before anything can speak.
             {
-                let mut mgr = crate::data::config::ConfigManager::default();
-                let muted = mgr
-                    .load()
-                    .map(|()| mgr.app_config().mute_message_reading)
+                let muted = crate::data::config::ConfigManager::load_stored()
+                    .map(|mgr| mgr.app_config().mute_message_reading)
                     .unwrap_or(false);
                 a11y.set_content_muted(muted);
                 sync_menu_check(&frame, ID_MUTE_CONTENT, muted);
@@ -551,10 +548,9 @@ impl WxMailApp {
             //
             // Read once rather than per row: the paint callback runs for every
             // visible cell and must not touch configuration.
-            let stored_config = {
-                let mut mgr = crate::data::config::ConfigManager::default();
-                mgr.load().map(|()| mgr.app_config().clone()).ok()
-            };
+            let stored_config = crate::data::config::ConfigManager::load_stored()
+                .map(|mgr| mgr.app_config().clone())
+                .ok();
             let date_settings = match &stored_config {
                 Some(cfg) => message_rows::DateSettings {
                     style: date_display::DateStyle::from_setting(&cfg.date_style),
@@ -2879,11 +2875,13 @@ fn sync_menu_check(frame: &Frame, id: Id, checked: bool) {
 /// toggle itself has already taken effect, so the session is correct even if
 /// the preference does not stick.
 fn persist_mute_preference(muted: bool) {
-    let mut mgr = crate::data::config::ConfigManager::default();
-    if let Err(e) = mgr.load() {
-        tracing::warn!("Mute preference not saved, config unreadable: {}", e);
-        return;
-    }
+    let mut mgr = match crate::data::config::ConfigManager::load_stored() {
+        Ok(mgr) => mgr,
+        Err(e) => {
+            tracing::warn!("Mute preference not saved, config unreadable: {}", e);
+            return;
+        }
+    };
     mgr.app_config_mut().mute_message_reading = muted;
     if let Err(e) = mgr.save() {
         tracing::warn!("Mute preference not saved: {}", e);
@@ -3136,11 +3134,13 @@ fn sync_sort_menu(frame: &Frame, order: MailSortOption) {
 /// effect on screen, so telling someone their columns did not save while they
 /// are looking at the new columns is confusing; the log is where it belongs.
 fn persist_column_layout(layout: &ColumnLayout) {
-    let mut mgr = crate::data::config::ConfigManager::default();
-    if let Err(e) = mgr.load() {
-        tracing::warn!("Column layout not saved, config unreadable: {}", e);
-        return;
-    }
+    let mut mgr = match crate::data::config::ConfigManager::load_stored() {
+        Ok(mgr) => mgr,
+        Err(e) => {
+            tracing::warn!("Column layout not saved, config unreadable: {}", e);
+            return;
+        }
+    };
     mgr.app_config_mut().message_columns = layout.to_stored();
     if let Err(e) = mgr.save() {
         tracing::warn!("Column layout not saved: {}", e);
@@ -3381,8 +3381,22 @@ fn handle_settings(
     a11y: &Arc<Accessibility>,
 ) {
     use crate::data::config::ConfigManager;
-    let mut mgr = ConfigManager::default();
-    let _ = mgr.load();
+    let mut mgr = match ConfigManager::new() {
+        Ok(mut mgr) => {
+            // Nothing stored yet is normal on a first run. Something stored
+            // and unreadable is not, but the dialog can still open on
+            // defaults, and saving will overwrite whatever went wrong.
+            if let Err(e) = mgr.load() {
+                tracing::warn!("Stored settings not read, showing defaults: {}", e);
+            }
+            mgr
+        }
+        Err(e) => {
+            tracing::error!("Settings folder unavailable: {}", e);
+            send_status(tx, rt, &format!("Cannot open settings: {}", e));
+            return;
+        }
+    };
     let config = mgr.app_config().clone();
     match wx_settings::show_settings_dialog(frame, &config) {
         wx_settings::SettingsResult::Updated(new_config) => {
@@ -3865,7 +3879,7 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
         (id, account)
     };
     let tx = tx.clone();
-    let cache_dir = dirs::cache_dir().map(|d| d.join("wixen-mail"));
+    let cache_dir = AppPaths::resolve().ok().map(|paths| paths.cache_dir());
 
     rt.spawn(async move {
         let Some(dir) = cache_dir else {
@@ -4047,7 +4061,7 @@ fn spawn_mail_watch(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt:
         let Ok(port) = account.imap_port.trim().parse::<u16>() else {
             return;
         };
-        let Some(dir) = dirs::cache_dir().map(|d| d.join("wixen-mail")) else {
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
             return;
         };
         let Ok(cache) = crate::data::message_cache::MessageCache::new(dir, None) else {
@@ -4200,7 +4214,7 @@ fn spawn_server_change(
             refuse(format!("{} has no usable IMAP port", account.name));
             return;
         };
-        let Some(dir) = dirs::cache_dir().map(|d| d.join("wixen-mail")) else {
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
             refuse("there is no cache directory".to_string());
             return;
         };
@@ -4323,7 +4337,7 @@ fn spawn_body_fetch(
         let Ok(port) = account.imap_port.trim().parse::<u16>() else {
             return;
         };
-        let Some(dir) = dirs::cache_dir().map(|d| d.join("wixen-mail")) else {
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
             return;
         };
         let Ok(cache) = crate::data::message_cache::MessageCache::new(dir, None) else {
@@ -4465,7 +4479,7 @@ fn spawn_mail_sync(
             return;
         };
 
-        let Some(dir) = dirs::cache_dir().map(|d| d.join("wixen-mail")) else {
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
             fail("No cache directory available".to_string());
             return;
         };
@@ -4616,7 +4630,7 @@ fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
 
     rt.spawn_blocking(move || {
         let aid = account_id.as_deref().unwrap_or("default");
-        let cache_dir = dirs::cache_dir().map(|d| d.join("wixen-mail"));
+        let cache_dir = AppPaths::resolve().ok().map(|paths| paths.cache_dir());
         let Some(dir) = cache_dir else {
             handle.block_on(async {
                 let _ = tx
@@ -4724,7 +4738,7 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
 
     rt.spawn_blocking(move || {
         let aid = account_id.as_deref().unwrap_or("default");
-        let cache_dir = dirs::cache_dir().map(|d| d.join("wixen-mail"));
+        let cache_dir = AppPaths::resolve().ok().map(|paths| paths.cache_dir());
         let Some(dir) = cache_dir else {
             handle.block_on(async {
                 let _ = tx

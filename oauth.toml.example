@@ -1,6 +1,10 @@
 # OAuth Client Credentials for Wixen Mail
 #
-# Copy this file to ~/.wixen-mail/oauth.toml and fill in your credentials.
+# Copy this file to the settings folder as oauth.toml and fill in your
+# credentials. On Windows that is:
+#
+#     %LOCALAPPDATA%\wixen-mail\config\oauth.toml
+#
 # Alternatively, set the environment variables listed below.
 #
 # DO NOT commit your actual credentials to the repository.

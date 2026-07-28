@@ -319,12 +319,9 @@ impl Default for SpellChecker {
 fn default_dict_search_paths() -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
-    // Application data directory
-    if let Some(data) = dirs::data_dir() {
-        paths.push(data.join("wixen-mail").join("dictionaries"));
-    }
-    if let Some(data) = dirs::data_local_dir() {
-        paths.push(data.join("wixen-mail").join("dictionaries"));
+    // Dictionaries somebody has added by hand, in the application data folder.
+    if let Ok(app) = crate::common::paths::AppPaths::resolve() {
+        paths.push(app.root().join("dictionaries"));
     }
 
     // Platform-standard Hunspell locations
