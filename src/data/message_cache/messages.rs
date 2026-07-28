@@ -33,6 +33,8 @@ pub struct MessageListRow {
     pub answered: bool,
     pub draft: bool,
     pub has_attachments: bool,
+    /// What the provider's filter, and the folder it is in, make of it.
+    pub safety: crate::service::safety::Safety,
 }
 
 /// A message as a sync knows it: headers and flags, and no body yet.
@@ -68,6 +70,8 @@ pub struct IncomingMessage {
     pub draft: bool,
     pub deleted: bool,
     pub has_attachments: bool,
+    /// What the provider's filter said, and why, merged with the folder.
+    pub safety: crate::service::safety::Verdict,
 }
 
 impl MessageCache {
@@ -91,9 +95,9 @@ impl MessageCache {
                 "INSERT INTO messages
                      (uid, folder_id, message_id, subject, from_addr, to_addr, cc, date,
                       size_bytes, refs_header, read, starred, deleted, has_attachments,
-                      internaldate, answered, draft, reply_to)
+                      internaldate, answered, draft, reply_to, safety, safety_reasons)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                         ?16, ?17, ?18)
+                         ?16, ?17, ?18, ?19, ?20)
                  ON CONFLICT(folder_id, uid) DO UPDATE SET
                      message_id = excluded.message_id,
                      subject = excluded.subject,
@@ -110,7 +114,9 @@ impl MessageCache {
                      internaldate = excluded.internaldate,
                      answered = excluded.answered,
                      draft = excluded.draft,
-                     reply_to = excluded.reply_to
+                     reply_to = excluded.reply_to,
+                     safety = excluded.safety,
+                     safety_reasons = excluded.safety_reasons
                  RETURNING id",
                 params![
                     incoming.uid,
@@ -131,6 +137,11 @@ impl MessageCache {
                     incoming.answered,
                     incoming.draft,
                     incoming.reply_to,
+                    incoming.safety.level.as_str(),
+                    // One reason per line: the notification bar reads them as
+                    // separate sentences and SQLite has no list type worth the
+                    // trouble here.
+                    incoming.safety.reasons.join("\n"),
                 ],
                 |row| row.get(0),
             )
@@ -311,7 +322,8 @@ impl MessageCache {
                         m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
                         m.read, m.starred, m.answered, m.draft,
                         (m.has_attachments = 1
-                         OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id))
+                         OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
+                        m.safety
                  FROM messages m
                  INNER JOIN folders f ON m.folder_id = f.id
                  WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
@@ -339,6 +351,9 @@ impl MessageCache {
                     answered: row.get(14)?,
                     draft: row.get(15)?,
                     has_attachments: row.get(16)?,
+                    safety: crate::service::safety::Safety::from_stored(
+                        &row.get::<_, Option<String>>(17)?.unwrap_or_default(),
+                    ),
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to list messages: {}", e)))?
@@ -404,7 +419,8 @@ impl MessageCache {
                         m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
                         m.read, m.starred, m.answered, m.draft,
                         (m.has_attachments = 1
-                         OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id))
+                         OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
+                        m.safety
                  FROM messages m
                  INNER JOIN folders f ON m.folder_id = f.id
                  WHERE f.account_id = ?1 AND m.deleted = 0
@@ -438,6 +454,9 @@ impl MessageCache {
                     answered: row.get(14)?,
                     draft: row.get(15)?,
                     has_attachments: row.get(16)?,
+                    safety: crate::service::safety::Safety::from_stored(
+                        &row.get::<_, Option<String>>(17)?.unwrap_or_default(),
+                    ),
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to search messages: {}", e)))?
@@ -607,6 +626,7 @@ mod tests {
             starred: false,
             deleted: false,
             has_attachments: false,
+            safety: crate::service::safety::Verdict::ordinary(),
         }
     }
 
@@ -681,6 +701,46 @@ mod tests {
             .expect("should still be listed");
         assert!(row.read);
         assert!(row.starred);
+    }
+
+    #[test]
+    fn test_a_phishing_verdict_survives_being_stored() {
+        // The verdict is read out of headers that are fetched once and not
+        // kept. If it does not survive the round trip it is gone until the
+        // whole mailbox is fetched again.
+        use crate::service::safety::Safety;
+        let (cache, folder_id) = listing_cache();
+        let mut flagged = incoming(folder_id, 11, "Your account is suspended");
+        flagged.safety = crate::service::safety::from_headers(
+            "Authentication-Results: mx.google.com; dmarc=fail\r\n",
+        );
+
+        cache.upsert_message(&flagged).unwrap();
+
+        let row = cache
+            .get_message_list(folder_id, "acc-1")
+            .unwrap()
+            .into_iter()
+            .find(|r| r.uid == 11)
+            .expect("should be listed");
+        assert_eq!(row.safety, Safety::Phishing);
+    }
+
+    #[test]
+    fn test_an_ordinary_message_is_stored_as_ordinary() {
+        use crate::service::safety::Safety;
+        let (cache, folder_id) = listing_cache();
+        cache
+            .upsert_message(&incoming(folder_id, 12, "Lunch"))
+            .unwrap();
+
+        let row = cache
+            .get_message_list(folder_id, "acc-1")
+            .unwrap()
+            .into_iter()
+            .find(|r| r.uid == 12)
+            .expect("should be listed");
+        assert_eq!(row.safety, Safety::Ordinary);
     }
 
     #[test]

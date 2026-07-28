@@ -81,7 +81,7 @@ pub fn uids_to_forget(on_server: &[u32], stored: &[u32]) -> Vec<u32> {
 }
 
 /// Turn a fetched message into the row the cache stores.
-pub fn to_incoming(message: &ImapMessage, folder_id: i64) -> IncomingMessage {
+pub fn to_incoming(message: &ImapMessage, folder_id: i64, in_junk_folder: bool) -> IncomingMessage {
     IncomingMessage {
         folder_id,
         uid: message.uid,
@@ -108,6 +108,13 @@ pub fn to_incoming(message: &ImapMessage, folder_id: i64) -> IncomingMessage {
         draft: message.draft(),
         deleted: message.deleted(),
         has_attachments: message.has_attachments,
+        // Two sources, worst wins. The headers carry what a filter decided;
+        // the folder carries what Gmail decided, which is all Gmail tells an
+        // IMAP client.
+        safety: message
+            .safety
+            .clone()
+            .and(crate::service::safety::from_folder(in_junk_folder)),
     }
 }
 
@@ -215,7 +222,11 @@ pub async fn sync_folder(
     let wanted = uids_to_fetch(&on_server, &stored, limit);
     let fetched = controller.fetch_headers(&folder.path, &wanted).await?;
     for message in &fetched {
-        cache.upsert_message(&to_incoming(message, folder_id))?;
+        cache.upsert_message(&to_incoming(
+            message,
+            folder_id,
+            folder.folder_type == crate::common::types::FolderType::Spam,
+        ))?;
     }
 
     // Counts for the folder tree. The server's, not the cache's: only part of
@@ -353,7 +364,7 @@ mod tests {
 
     #[test]
     fn test_a_message_becomes_the_row_the_list_shows() {
-        let stored = to_incoming(&message(42), 7);
+        let stored = to_incoming(&message(42), 7, false);
         assert_eq!(stored.folder_id, 7);
         assert_eq!(stored.uid, 42);
         assert_eq!(stored.subject, "Notes on the engine");
@@ -370,14 +381,14 @@ mod tests {
         // reader will not look for it.
         let mut without = message(1);
         without.date = None;
-        let stored = to_incoming(&without, 1);
+        let stored = to_incoming(&without, 1, false);
         assert_eq!(stored.date, "2026-07-20T10:00:05+00:00");
     }
 
     #[test]
     fn test_the_arrival_time_is_kept_as_well_as_the_senders_date() {
         // The Date header is written by the sender and is sometimes wrong.
-        let stored = to_incoming(&message(1), 1);
+        let stored = to_incoming(&message(1), 1, false);
         assert_eq!(stored.date, "2026-07-20T10:00:00+00:00");
         assert_eq!(
             stored.internal_date.as_deref(),
@@ -387,7 +398,7 @@ mod tests {
 
     #[test]
     fn test_no_recipients_in_copy_is_stored_as_nothing_rather_than_an_empty_line() {
-        let stored = to_incoming(&message(1), 1);
+        let stored = to_incoming(&message(1), 1, false);
         assert_eq!(stored.cc, None);
     }
 
@@ -398,7 +409,7 @@ mod tests {
         let mut reply = message(2);
         reply.references = vec!["first@example.com".to_string()];
         reply.in_reply_to = Some("second@example.com".to_string());
-        let stored = to_incoming(&reply, 1);
+        let stored = to_incoming(&reply, 1, false);
         assert_eq!(
             stored.refs_header.as_deref(),
             Some("first@example.com second@example.com")
@@ -410,13 +421,13 @@ mod tests {
         let mut reply = message(2);
         reply.references = vec!["first@example.com".to_string()];
         reply.in_reply_to = Some("first@example.com".to_string());
-        let stored = to_incoming(&reply, 1);
+        let stored = to_incoming(&reply, 1, false);
         assert_eq!(stored.refs_header.as_deref(), Some("first@example.com"));
     }
 
     #[test]
     fn test_a_message_starting_a_conversation_has_no_chain() {
-        assert_eq!(to_incoming(&message(1), 1).refs_header, None);
+        assert_eq!(to_incoming(&message(1), 1, false).refs_header, None);
     }
 
     #[test]
@@ -425,7 +436,7 @@ mod tests {
         // worse than showing it alone.
         let mut anonymous = message(1);
         anonymous.message_id = None;
-        assert_eq!(to_incoming(&anonymous, 1).message_id, "");
+        assert_eq!(to_incoming(&anonymous, 1, false).message_id, "");
     }
 
     fn folder(name: &str, folder_type: FolderType, selectable: bool) -> ImapFolder {

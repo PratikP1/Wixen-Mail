@@ -922,6 +922,10 @@ impl MessageCache {
         // names somewhere. Mailing lists rely on it, and a reply that ignores
         // it goes to one person instead of the list, or to a no-reply address.
         self.ensure_column_exists("messages", "reply_to", "TEXT")?;
+        // What the provider's own filter made of the message, and why, so a
+        // mailbox already synced does not have to be fetched again to say it.
+        self.ensure_column_exists("messages", "safety", "TEXT")?;
+        self.ensure_column_exists("messages", "safety_reasons", "TEXT")?;
         self.ensure_column_exists("calendar_events", "calendar_id", "TEXT")?;
         self.ensure_column_exists(
             "message_filter_rules",

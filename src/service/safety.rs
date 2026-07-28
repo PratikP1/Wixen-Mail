@@ -51,6 +51,33 @@ impl Safety {
     pub fn worth_announcing(self) -> bool {
         self != Safety::Ordinary
     }
+
+    /// How it is written in the database.
+    ///
+    /// Words rather than numbers, so a stored mailbox can be read by somebody
+    /// looking at it with a SQLite browser, and so inserting a level later
+    /// cannot renumber the ones already written.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Safety::Ordinary => "ordinary",
+            Safety::Suspicious => "suspicious",
+            Safety::Spam => "spam",
+            Safety::Phishing => "phishing",
+        }
+    }
+
+    /// Read it back.
+    ///
+    /// Anything unrecognised is ordinary. A row written by a newer version
+    /// should not make an older one refuse to show the mailbox.
+    pub fn from_stored(stored: &str) -> Self {
+        match stored {
+            "suspicious" => Safety::Suspicious,
+            "spam" => Safety::Spam,
+            "phishing" => Safety::Phishing,
+            _ => Safety::Ordinary,
+        }
+    }
 }
 
 /// A verdict, and why.
@@ -436,6 +463,26 @@ mod tests {
         assert_eq!(Safety::Phishing.label(), "Phishing");
         assert!(!Safety::Ordinary.worth_announcing());
         assert!(Safety::Phishing.worth_announcing());
+    }
+
+    #[test]
+    fn test_every_level_survives_a_trip_through_the_database() {
+        for level in [
+            Safety::Ordinary,
+            Safety::Suspicious,
+            Safety::Spam,
+            Safety::Phishing,
+        ] {
+            assert_eq!(Safety::from_stored(level.as_str()), level);
+        }
+    }
+
+    #[test]
+    fn test_a_level_written_by_a_newer_version_does_not_break_the_mailbox() {
+        // Showing the message as ordinary is wrong but harmless. Refusing to
+        // list the folder because one row is unfamiliar is not.
+        assert_eq!(Safety::from_stored("catastrophic"), Safety::Ordinary);
+        assert_eq!(Safety::from_stored(""), Safety::Ordinary);
     }
 
     #[test]

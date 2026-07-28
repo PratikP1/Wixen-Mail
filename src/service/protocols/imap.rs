@@ -44,7 +44,13 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 /// signatures and a long Received chain runs to several kilobytes, and over a
 /// hundred thousand messages that is the difference between a first sync that
 /// finishes and one that does not.
-const HEADER_FIELDS: &str = "SUBJECT FROM TO CC REPLY-TO DATE MESSAGE-ID IN-REPLY-TO REFERENCES";
+/// The last five are the verdict the provider's own filter already reached.
+/// They are short, unlike the DKIM signatures and Received chain deliberately
+/// left out, and they are the difference between telling somebody a message is
+/// a phishing attempt and having no idea.
+const HEADER_FIELDS: &str = "SUBJECT FROM TO CC REPLY-TO DATE MESSAGE-ID IN-REPLY-TO REFERENCES \
+     AUTHENTICATION-RESULTS X-SPAM-FLAG X-SPAM-STATUS X-FOREFRONT-ANTISPAM-REPORT \
+     X-MICROSOFT-ANTISPAM";
 
 /// IMAP client configuration
 #[derive(Debug, Clone)]
@@ -161,6 +167,11 @@ pub struct ImapMessage {
     pub in_reply_to: Option<String>,
     pub references: Vec<String>,
     pub has_attachments: bool,
+    /// What the provider's own spam and phishing filter made of it.
+    ///
+    /// Read here rather than worked out later, because the headers it comes
+    /// from are fetched once and not kept.
+    pub safety: crate::service::safety::Verdict,
 }
 
 impl ImapMessage {
@@ -873,6 +884,7 @@ fn message_from_fetch(fetch: &Fetch) -> Option<ImapMessage> {
         has_attachments: fetch
             .bodystructure()
             .is_some_and(structure::has_attachments),
+        safety: crate::service::safety::from_headers(&String::from_utf8_lossy(headers)),
     })
 }
 
