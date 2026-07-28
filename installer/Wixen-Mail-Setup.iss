@@ -50,10 +50,11 @@ UninstallDisplayIcon={app}\wixen-mail.exe
 CloseApplications=yes
 RestartApplications=no
 
-; Spelled the older way on purpose: x64compatible needs Inno 6.3, and this has
-; to compile on whatever version a build machine happens to have.
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+; "compatible" rather than "os": Windows on ARM runs x64 programs under
+; emulation, and the stricter spelling would refuse to install on a Surface for
+; no reason anybody could act on. Needs Inno 6.3 or newer.
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 
 WizardStyle=modern
 SetupLogging=yes
@@ -90,10 +91,11 @@ Filename: "{app}\wixen-mail.exe"; Description: "Start {#AppName}"; Flags: nowait
 ; credential store, and the data folder moves when WIXEN_MAIL_DATA says so. The
 ; program knows where both are, so it clears them before the files go.
 ;
-; runasoriginaluser is the part that matters. Elevated, this would clear the
-; administrator's credential store and leave the tokens belonging to the person
-; whose mail it is exactly where they were.
-Filename: "{app}\wixen-mail.exe"; Parameters: "--erase-all-data"; RunOnceId: "EraseData"; Flags: runhidden waituntilterminated runasoriginaluser
+; runascurrentuser is the part that matters, and it is the flag this section
+; takes rather than the runasoriginaluser that [Run] takes. Elevated, this would
+; clear the administrator's credential store and leave the tokens belonging to
+; the person whose mail it is exactly where they were.
+Filename: "{app}\wixen-mail.exe"; Parameters: "--erase-all-data"; RunOnceId: "EraseData"; Flags: runhidden waituntilterminated runascurrentuser
 
 [UninstallDelete]
 ; Belt and braces for the default location, for the case where the step above

@@ -30,3 +30,6 @@ client_secret*.json
 # Added by cargo
 
 /target
+
+# Built setup executables. The published one comes from CI, not from here.
+/dist
