@@ -241,6 +241,47 @@ fn warning_for(level: crate::service::safety::Safety, reasons: &[String]) -> Opt
     })
 }
 
+/// Compose a PDF attachment for the reader.
+///
+/// The note goes first, before a word of the document, because what it says
+/// changes how the rest should be taken: headings that are the author's are
+/// something to navigate by, and headings that were guessed from typography
+/// are something to be sceptical of. Putting that at the end would be telling
+/// somebody after they had already relied on it.
+pub fn pdf_document(name: &str, reading: &crate::service::pdf::PdfReading) -> ReaderDocument {
+    let title = if name.trim().is_empty() {
+        "Attachment".to_string()
+    } else {
+        name.trim().to_string()
+    };
+    let heading = format!("{title}\n{}\n\n", reading.note);
+    let shift = heading.chars().count();
+
+    let mut landmarks = vec![Landmark {
+        offset: 0,
+        level: 1,
+        label: title.clone(),
+    }];
+    landmarks.extend(reading.headings.iter().map(|found| Landmark {
+        offset: found.offset + shift,
+        level: found.level,
+        label: found.label.clone(),
+    }));
+
+    ReaderDocument {
+        title,
+        text: format!("{heading}{}", reading.text),
+        landmarks,
+        // A PDF gets no warning bar of its own. The bar says what the mail
+        // provider's filter made of the message, and that verdict belongs to
+        // the message this arrived in, which has its own tab already showing
+        // it.
+        warning: None,
+        // Nothing hangs off a PDF, so no list and nothing extra to tab past.
+        attachments: Vec::new(),
+    }
+}
+
 /// One message of a conversation, with the body already fetched.
 #[derive(Debug, Clone)]
 pub struct ConversationPart {
@@ -625,6 +666,74 @@ mod tests {
 
         assert!(row.starts_with("Attachment"), "{row}");
         assert!(row.contains("PDF document"), "{row}");
+    }
+
+    #[test]
+    fn test_a_pdf_says_where_its_structure_came_from_before_anything_else() {
+        // Whether the headings are the author's or a guess changes how the
+        // rest should be taken, so it goes above the document rather than
+        // after it. Saying it afterwards is telling somebody once they have
+        // already relied on it.
+        let reading = crate::service::pdf::read(&fake_pdf()).expect("a PDF");
+
+        let doc = pdf_document("Report.pdf", &reading);
+
+        let before_the_body = doc
+            .text
+            .split("Page 1")
+            .next()
+            .expect("text before the first page");
+        assert!(
+            before_the_body.contains("no structure of its own"),
+            "the note is not above the document: {before_the_body:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_pdfs_landmarks_point_at_their_headings_in_the_finished_document() {
+        // Every offset has to move by exactly the length of the title and the
+        // note now sitting above it. Off by one puts the caret in the wrong
+        // place and somebody listening cannot tell.
+        let reading = crate::service::pdf::read(&fake_pdf()).expect("a PDF");
+
+        let doc = pdf_document("Report.pdf", &reading);
+
+        let characters: Vec<char> = doc.text.chars().collect();
+        for landmark in &doc.landmarks {
+            let at: String = characters[landmark.offset..]
+                .iter()
+                .take(landmark.label.chars().count())
+                .collect();
+            assert_eq!(at, landmark.label, "landmark {landmark:?} is misplaced");
+        }
+    }
+
+    #[test]
+    fn test_a_pdf_tab_has_no_attachment_list_of_its_own() {
+        // Nothing hangs off a PDF, and an empty list would be one more stop in
+        // the tab order of every document opened.
+        let reading = crate::service::pdf::read(&fake_pdf()).expect("a PDF");
+
+        assert!(pdf_document("Report.pdf", &reading).attachments.is_empty());
+    }
+
+    /// One page, one line of text, no tags. Enough to compose from.
+    fn fake_pdf() -> Vec<u8> {
+        let content = "BT /F1 12 Tf 72 700 Td (The quarterly numbers.) Tj ET";
+        let mut pdf = String::from("%PDF-1.4\n");
+        pdf.push_str("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        pdf.push_str("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        pdf.push_str(
+            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] \
+             /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n",
+        );
+        pdf.push_str(&format!(
+            "4 0 obj\n<< /Length {} >>\nstream\n{content}\nendstream\nendobj\n",
+            content.len()
+        ));
+        pdf.push_str("5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n");
+        pdf.push_str("trailer\n<< /Size 6 /Root 1 0 R >>\n%%EOF\n");
+        pdf.into_bytes()
     }
 
     #[test]

@@ -79,6 +79,7 @@ bitflags = "2.13.1"
 async-imap = { version = "0.11.3", default-features = false, features = ["runtime-tokio"] }
 tokio-native-tls = "0.3"
 native-tls = "0.2"
+pdfpurr = { version = "0.4.0", default-features = false }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

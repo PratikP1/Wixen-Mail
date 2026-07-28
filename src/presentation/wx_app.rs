@@ -963,6 +963,15 @@ document.addEventListener('keydown', function(e) {
                     save_attachment(&frame, &state, &ui_tx, &runtime, &a11y, attachment);
                 }
             });
+            reader.on_read_attachment({
+                let state = state.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                let a11y = a11y.clone();
+                move |attachment| {
+                    read_attachment(&state, &ui_tx, &runtime, &a11y, attachment);
+                }
+            });
 
             // Space cycles short then full on the item under the cursor;
             // Shift+Space goes straight to full. One cycle shared across the
@@ -2451,6 +2460,7 @@ document.addEventListener('keydown', function(e) {
                                 a11y: &a11y,
                                 pim: &pim_refs,
                                 message_cache: &message_cache,
+                                reader: &reader,
                                 tx: &ui_tx,
                                 rt: &runtime,
                             },
@@ -3951,6 +3961,9 @@ struct UpdateTargets<'a> {
     a11y: &'a Accessibility,
     pim: &'a PimPanelRefs,
     message_cache: &'a Option<Arc<MessageCache>>,
+    /// So a fetched attachment can be opened as a tab. Reading one happens on
+    /// a worker and the window it opens into may only be touched here.
+    reader: &'a Rc<wx_reader::ReaderWindow>,
     /// So an update can start further work: a finished sync asks for the inbox
     /// to be watched again, and an arrival asks for that folder to be re-read.
     tx: &'a Sender<UIUpdate>,
@@ -3968,6 +3981,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         a11y,
         pim,
         message_cache,
+        reader,
         tx,
         rt,
     } = targets;
@@ -4008,6 +4022,11 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let msg = format!("{} messages, {} unread", messages.len(), unread);
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Normal, "messages");
+        }
+        UIUpdate::AttachmentRead(document) => {
+            // On the UI thread, which is the only place a window may be
+            // touched. The fetch and the parse both happened on a worker.
+            reader.open((**document).clone());
         }
         UIUpdate::MessageBodyLoaded(body) => {
             {
@@ -4813,6 +4832,52 @@ fn spawn_server_change(
     });
 }
 
+/// Fetch an attachment and open it as a tab of its own.
+///
+/// Only PDFs so far, and the reader window refuses anything else before it gets
+/// here, so this does not have to guess. The fetch and the parse both happen on
+/// a worker: a hundred page PDF takes real time to read, and doing it on the UI
+/// thread would freeze the window, which a screen reader reports as the
+/// application having stopped responding.
+fn read_attachment(
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+    attachment: &reader_text::ReaderAttachment,
+) {
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let name = attachment.suggested_file_name();
+    let _ = a11y.announce(&format!("Opening {name}"), Priority::Normal);
+    let _ = tx.try_send(UIUpdate::StatusUpdated(format!("Opening {name}...")));
+
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    let attachment = attachment.clone();
+    let (accounts, account_id) = {
+        let s = lock_state(state);
+        (s.accounts.clone(), s.active_account_id.clone())
+    };
+    let account = account_id
+        .as_ref()
+        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned())
+        .or_else(|| accounts.first().cloned());
+
+    rt.spawn_blocking(move || {
+        let outcome = fetch_attachment_bytes(&handle, account, &attachment)
+            .and_then(|bytes| crate::service::pdf::read(&bytes));
+        let _ = match outcome {
+            Ok(reading) => tx.try_send(UIUpdate::AttachmentRead(Box::new(
+                reader_text::pdf_document(&attachment.name, &reading),
+            ))),
+            Err(e) => tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "Could not open the attachment: {e}"
+            ))),
+        };
+    });
+}
+
 /// Ask where to put an attachment, then go and get it.
 ///
 /// The dialog runs here, on the UI thread, because a modal dialog has to.
@@ -4896,6 +4961,22 @@ fn fetch_and_write_attachment(
     attachment: &reader_text::ReaderAttachment,
     destination: &str,
 ) -> crate::common::Result<()> {
+    let bytes = fetch_attachment_bytes(handle, account, attachment)?;
+    std::fs::write(destination, bytes)
+        .map_err(|e| crate::common::Error::Other(format!("The file could not be written: {e}")))?;
+    Ok(())
+}
+
+/// Fetch the message an attachment hangs off and take the part out of it.
+///
+/// Shared by saving and by reading, which differ only in what they do with the
+/// bytes afterwards. Every failure comes back as a sentence rather than as a
+/// silence: the two commands each report it their own way.
+fn fetch_attachment_bytes(
+    handle: &tokio::runtime::Handle,
+    account: Option<crate::data::account::Account>,
+    attachment: &reader_text::ReaderAttachment,
+) -> crate::common::Result<Vec<u8>> {
     use crate::common::Error;
 
     let account = account.ok_or_else(|| Error::Other("No account is set up".into()))?;
@@ -4923,10 +5004,7 @@ fn fetch_and_write_attachment(
     let _ = handle.block_on(controller.disconnect_imap());
     let raw = raw?;
 
-    let bytes = crate::service::mime::attachment_bytes(&raw, attachment.index)?;
-    std::fs::write(destination, bytes)
-        .map_err(|e| Error::Other(format!("The file could not be written: {e}")))?;
-    Ok(())
+    crate::service::mime::attachment_bytes(&raw, attachment.index)
 }
 
 /// Download one message body that is not cached yet, and store it.

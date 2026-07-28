@@ -80,7 +80,8 @@ where the caret is.
 | Previous message in the conversation | `Ctrl+Up` | |
 | Security warning | `F7` | Moves between the message and the warning above it, when there is one |
 | Attachments | `F8` | Moves between the message and the list of attachments, when there is one |
-| Save an attachment | `Ctrl+S` | Saves the attachment the list is on. `Enter` on a row does the same |
+| Read an attachment | `Ctrl+O` | Opens a PDF as a tab of its own. `Enter` on a row does the same |
+| Save an attachment | `Ctrl+S` | Saves the attachment the list is on, to a file |
 
 #### Attachments
 
@@ -92,10 +93,38 @@ document, 240 KB".
 `F8` jumps to the list from anywhere in the message, and `F8` again goes back to
 the message.
 
-`Ctrl+S`, or `Enter` on a row, opens the standard Save dialog with the name
-already filled in. The file is downloaded when you save it rather than kept on
-your computer in advance, so saving a large attachment takes as long as
-downloading it does. The status line says when it is saved and where it went.
+`Ctrl+S` opens the standard Save dialog with the name already filled in. The
+file is downloaded when you save it rather than kept on your computer in
+advance, so saving a large attachment takes as long as downloading it does. The
+status line says when it is saved and where it went.
+
+`Enter` on a row, or `Ctrl+O`, reads the attachment here, in a tab of its own.
+That works for PDFs. Anything else says so and names `Ctrl+S` instead, rather
+than opening a screenful of nonsense or doing nothing.
+
+#### Reading a PDF
+
+A PDF opens as another tab in the reader, so everything that works on a message
+works on it: arrow keys, `Ctrl+F`, selection and copy, `Ctrl+Down` and `Ctrl+Up`
+to move between pages and headings. Each page starts with a line saying which
+page it is, so a long document can be moved through a page at a time.
+
+**The first thing the tab says is where its structure came from.** That matters
+more than it sounds:
+
+- A tagged PDF has headings its author marked, and they can be trusted.
+- A PDF with incomplete tagging has some structure declared and some worked out.
+- An untagged PDF has none, so any headings were guessed from the size and
+  position of the text. They are usually right and they are still a guess.
+- A PDF with no text at all is a scan: a picture of a page rather than words.
+  Nothing can read it aloud, and the tab says so plainly instead of opening
+  empty and leaving you to work out why.
+
+Most applications do not draw that distinction, which is how a scanned document
+comes to be handed over as though it were readable.
+
+Very long documents stop after 200 pages, and the note says so. Save the file to
+read the rest.
 
 **A file Windows would run is called a program.** If an attachment ends in
 `.exe`, `.msi`, `.scr`, `.bat`, `.ps1`, `.lnk` or anything else Windows executes,

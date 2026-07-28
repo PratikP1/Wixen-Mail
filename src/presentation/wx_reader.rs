@@ -33,6 +33,7 @@ const ID_PREV_LANDMARK: Id = ID_HIGHEST + 902;
 const ID_READER_FIND: Id = ID_HIGHEST + 903;
 const ID_SAVE_ATTACHMENT: Id = ID_HIGHEST + 904;
 const ID_GO_ATTACHMENTS: Id = ID_HIGHEST + 905;
+const ID_READ_ATTACHMENT: Id = ID_HIGHEST + 906;
 
 /// What the window does when somebody asks to save an attachment.
 ///
@@ -40,6 +41,12 @@ const ID_GO_ATTACHMENTS: Id = ID_HIGHEST + 905;
 /// message again, which needs the account, the credentials and the runtime,
 /// and none of those belong to a window whose job is to show text.
 type SaveHandler = Box<dyn Fn(&ReaderAttachment)>;
+
+/// What the window does when somebody asks to read an attachment here.
+///
+/// Set by the application for the same reason as the save handler: reading one
+/// means fetching the message again first.
+type ReadHandler = Box<dyn Fn(&ReaderAttachment)>;
 
 /// A reader window, kept alive for as long as it is open.
 pub struct ReaderWindow {
@@ -54,6 +61,7 @@ pub struct ReaderWindow {
     /// row is chosen without walking the window's children.
     attachment_lists: Rc<RefCell<Vec<Option<ListBox>>>>,
     save_attachment: Rc<RefCell<Option<SaveHandler>>>,
+    read_attachment: Rc<RefCell<Option<ReadHandler>>>,
     a11y: Arc<Accessibility>,
 }
 
@@ -68,6 +76,7 @@ fn save_chosen(
     a11y: &Arc<Accessibility>,
     page: usize,
     chosen: Option<u32>,
+    what: Doing,
 ) {
     let documents = documents.borrow();
     let Some(document) = documents.get(page) else {
@@ -84,11 +93,61 @@ fn save_chosen(
         let _ = a11y.announce("That attachment is no longer there", Priority::Normal);
         return;
     };
+    if what == Doing::Reading && !can_be_read_here(attachment) {
+        // Named rather than a shrug. "Cannot open" leaves somebody wondering
+        // what would have worked; this says what to do instead.
+        let _ = a11y.announce(
+            &format!(
+                "Wixen Mail cannot read a {}. Control S saves it.",
+                describe_for_refusal(attachment)
+            ),
+            Priority::High,
+        );
+        return;
+    }
     match handler.borrow().as_ref() {
-        Some(save) => save(attachment),
+        Some(act) => act(attachment),
         None => {
-            let _ = a11y.announce("Saving attachments is not available", Priority::High);
+            let _ = a11y.announce(
+                match what {
+                    Doing::Saving => "Saving attachments is not available",
+                    Doing::Reading => "Reading attachments is not available",
+                },
+                Priority::High,
+            );
         }
+    }
+}
+
+/// Which of the two things is being asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Doing {
+    Saving,
+    Reading,
+}
+
+/// Whether this is something the reader can turn into text.
+///
+/// PDF, and nothing else yet. A message body arrives as text or HTML and is
+/// already handled; everything else is a file for another application.
+pub fn can_be_read_here(attachment: &ReaderAttachment) -> bool {
+    attachment
+        .mime_type
+        .trim()
+        .eq_ignore_ascii_case("application/pdf")
+        || attachment
+            .name
+            .rsplit_once('.')
+            .is_some_and(|(_, extension)| extension.trim().eq_ignore_ascii_case("pdf"))
+}
+
+/// What to call the thing that cannot be read, for the sentence that says so.
+fn describe_for_refusal(attachment: &ReaderAttachment) -> String {
+    match attachment.name.rsplit_once('.') {
+        Some((_, extension)) if !extension.trim().is_empty() => {
+            format!("{} file", extension.trim().to_uppercase())
+        }
+        _ => "file of this kind".to_string(),
     }
 }
 
@@ -160,6 +219,11 @@ impl ReaderWindow {
         // out what the window does instead of having to be told.
         let file = Menu::builder()
             .append_item(
+                ID_READ_ATTACHMENT,
+                "&Read Attachment	Ctrl+O",
+                "Read the chosen attachment in a tab of its own",
+            )
+            .append_item(
                 ID_SAVE_ATTACHMENT,
                 "&Save Attachment...\tCtrl+S",
                 "Save the chosen attachment to a file",
@@ -212,6 +276,7 @@ impl ReaderWindow {
             current,
             attachment_lists: Rc::new(RefCell::new(Vec::new())),
             save_attachment: Rc::new(RefCell::new(None)),
+            read_attachment: Rc::new(RefCell::new(None)),
             a11y: a11y.clone(),
         }
     }
@@ -223,6 +288,11 @@ impl ReaderWindow {
     /// whether they pressed the key.
     pub fn on_save_attachment(&self, handler: impl Fn(&ReaderAttachment) + 'static) {
         *self.save_attachment.borrow_mut() = Some(Box::new(handler));
+    }
+
+    /// Say what to do when somebody asks to read an attachment here.
+    pub fn on_read_attachment(&self, handler: impl Fn(&ReaderAttachment) + 'static) {
+        *self.read_attachment.borrow_mut() = Some(Box::new(handler));
     }
 
     /// Add a document as a new tab and show the window.
@@ -355,16 +425,38 @@ impl ReaderWindow {
     /// somewhere to jump to is only useful with a way back.
     fn wire_attachment_list(&self, list: ListBox, index: usize) {
         let documents = self.documents.clone();
-        let handler = self.save_attachment.clone();
+        let save = self.save_attachment.clone();
+        let read = self.read_attachment.clone();
         let a11y = self.a11y.clone();
         let notebook = self.notebook;
 
         list.bind_internal(EventType::KEY_DOWN, move |event| {
             event.skip(true);
             match event.get_key_code() {
-                // WXK_RETURN and the numeric keypad's Enter.
+                // WXK_RETURN and the numeric keypad's Enter. Reading is what
+                // Enter does, because reading it here is what this
+                // application is for and saving has its own key. A file that
+                // cannot be read says so and names the key that would work.
                 Some(13) | Some(370) => {
-                    save_chosen(&documents, &handler, &a11y, index, list.get_selection());
+                    save_chosen(
+                        &documents,
+                        &read,
+                        &a11y,
+                        index,
+                        list.get_selection(),
+                        Doing::Reading,
+                    );
+                }
+                // Ctrl+S reaches the same command as the menu, from the list.
+                Some(83) if event.control_down() => {
+                    save_chosen(
+                        &documents,
+                        &save,
+                        &a11y,
+                        index,
+                        list.get_selection(),
+                        Doing::Saving,
+                    );
                 }
                 // WXK_F8 goes back to the message, which is the first control
                 // on the page after any warning bar.
@@ -479,7 +571,8 @@ impl ReaderWindow {
         let current = self.current.clone();
         let a11y = self.a11y.clone();
         let lists = self.attachment_lists.clone();
-        let handler = self.save_attachment.clone();
+        let save = self.save_attachment.clone();
+        let read = self.read_attachment.clone();
 
         frame.on_menu(move |event| {
             let id = event.get_id();
@@ -487,13 +580,18 @@ impl ReaderWindow {
                 frame.show(false);
                 return;
             }
-            if id == ID_SAVE_ATTACHMENT {
+            if id == ID_SAVE_ATTACHMENT || id == ID_READ_ATTACHMENT {
                 let page = current.get();
                 let chosen = lists
                     .borrow()
                     .get(page)
                     .and_then(|list| list.as_ref().and_then(ListBox::get_selection));
-                save_chosen(&documents, &handler, &a11y, page, chosen);
+                let (act, what) = if id == ID_SAVE_ATTACHMENT {
+                    (&save, Doing::Saving)
+                } else {
+                    (&read, Doing::Reading)
+                };
+                save_chosen(&documents, act, &a11y, page, chosen, what);
                 return;
             }
             if id == ID_GO_ATTACHMENTS {
@@ -572,6 +670,38 @@ mod tests {
             name: name.to_string(),
             mime_type: "application/pdf".to_string(),
             size: 1024,
+        }
+    }
+
+    #[test]
+    fn test_a_pdf_can_be_read_here_whichever_way_it_says_so() {
+        // Some senders label a PDF application/octet-stream, and some name it
+        // without an extension. Either one on its own is enough, because
+        // refusing to read a PDF somebody was sent because its label was
+        // sloppy helps nobody.
+        let mut by_type = attachment("report");
+        by_type.mime_type = "application/pdf".to_string();
+        let mut by_name = attachment("report.PDF");
+        by_name.mime_type = "application/octet-stream".to_string();
+
+        assert!(can_be_read_here(&by_type));
+        assert!(can_be_read_here(&by_name));
+    }
+
+    #[test]
+    fn test_everything_else_is_not_pretended_to_be_readable() {
+        // Opening a spreadsheet in a text control produces a screenful of
+        // nonsense, which is worse than saying it cannot be read.
+        for (name, mime_type) in [
+            ("book.epub", "application/epub+zip"),
+            ("sheet.xlsx", "application/vnd.ms-excel"),
+            ("photo.jpg", "image/jpeg"),
+            ("archive.zip", "application/zip"),
+        ] {
+            let mut file = attachment(name);
+            file.mime_type = mime_type.to_string();
+
+            assert!(!can_be_read_here(&file), "{name}");
         }
     }
 

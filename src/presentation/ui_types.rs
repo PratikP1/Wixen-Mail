@@ -227,6 +227,11 @@ pub enum UIUpdate {
     /// one up by name would break the moment two accounts both have an INBOX.
     FolderIdsLoaded(Vec<(String, i64)>),
     MessageBodyLoaded(String),
+    /// An attachment was fetched and read, and is ready to open as a tab.
+    ///
+    /// Boxed because the whole document travels in it and every other variant
+    /// would otherwise be sized to fit this one.
+    AttachmentRead(Box<crate::presentation::reader_text::ReaderDocument>),
     ConnectionStatusChanged(ConnectionStatus),
     ErrorOccurred(String),
     StatusUpdated(String),
