@@ -4831,15 +4831,17 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
             .filter(|c| c.source_provider.as_deref() == Some("caldav"))
         {
             // Retrieve credentials from OS keychain (same pattern as OAuth)
-            let service = format!("wixen-mail-caldav-{}", cal.id);
-            let username: String = keyring::Entry::new(&service, "username")
-                .ok()
-                .and_then(|e| e.get_password().ok())
-                .unwrap_or_default();
-            let password: String = keyring::Entry::new(&service, "password")
-                .ok()
-                .and_then(|e| e.get_password().ok())
-                .unwrap_or_default();
+            let service = crate::service::caldav::keyring_service(&cal.id);
+            let username: String =
+                keyring::Entry::new(&service, crate::service::caldav::KEYRING_USERNAME)
+                    .ok()
+                    .and_then(|e| e.get_password().ok())
+                    .unwrap_or_default();
+            let password: String =
+                keyring::Entry::new(&service, crate::service::caldav::KEYRING_PASSWORD)
+                    .ok()
+                    .and_then(|e| e.get_password().ok())
+                    .unwrap_or_default();
             if !username.is_empty() && !password.is_empty() {
                 match handle.block_on(crate::application::caldav_sync::sync_caldav_calendar(
                     &cache,

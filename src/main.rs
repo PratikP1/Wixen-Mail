@@ -4,10 +4,25 @@ use wixen_mail::common::logging::{LoggerConfig, init_logging};
 use wixen_mail::common::paths::{AppPaths, LegacyLocations, MigrationReport};
 use wixen_mail::presentation::WxMailApp;
 
+/// Erase everything this installation stored, then exit without starting.
+///
+/// The uninstaller runs this first. It can delete the program's own folder, but
+/// it cannot reach the credential store, and it does not know where the data
+/// folder is when `WIXEN_MAIL_DATA` has moved it.
+const ERASE_FLAG: &str = "--erase-all-data";
+
 fn main() {
     // Install a panic hook FIRST so crashes are always captured to a file,
     // even when running as a GUI app with no console.
     install_panic_hook();
+
+    if std::env::args().skip(1).any(|arg| arg == ERASE_FLAG) {
+        // Deliberately before logging is set up. The log file would be opened
+        // inside the folder being removed, and an open file is exactly what
+        // stops Windows removing it.
+        erase_all_data();
+        return;
+    }
 
     // Before anything opens a file, including the log the next line writes.
     let migration = prepare_data_folder();
@@ -32,6 +47,56 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+/// Remove the credential store entries and the data folder.
+///
+/// Nothing is shown on screen. This runs from the uninstaller, where a dialog
+/// would be a window nobody asked for in the middle of somebody else's progress
+/// bar. Anything that could not be removed is written to a file in the
+/// temporary directory, because the folder that would normally hold the log is
+/// the one being deleted.
+fn erase_all_data() {
+    let mut left_behind = Vec::new();
+
+    let outcome = wixen_mail::application::forget::run();
+    left_behind.extend(
+        outcome
+            .refused
+            .iter()
+            .map(|refusal| format!("Credential left in the store, {refusal}")),
+    );
+
+    match AppPaths::resolve() {
+        Ok(paths) => {
+            if paths.root().exists()
+                && let Err(e) = std::fs::remove_dir_all(paths.root())
+            {
+                left_behind.push(format!("Could not remove {}: {e}", paths.root().display()));
+            }
+        }
+        Err(e) => left_behind.push(format!(
+            "Could not find the data folder, so none of it was removed: {e}"
+        )),
+    }
+
+    if !left_behind.is_empty() {
+        report_what_was_left(&left_behind);
+    }
+}
+
+/// Leave a note somewhere that survives the uninstall.
+///
+/// Silence would mean somebody believes their mail and their stored passwords
+/// are gone when they are not.
+fn report_what_was_left(problems: &[String]) {
+    let path = std::env::temp_dir().join("wixen-mail-uninstall.log");
+    let body = format!(
+        "Wixen Mail v{} could not remove everything:\n{}\n",
+        env!("CARGO_PKG_VERSION"),
+        problems.join("\n")
+    );
+    let _ = std::fs::write(path, body);
 }
 
 /// Make the data folders, and collect files earlier versions left elsewhere.

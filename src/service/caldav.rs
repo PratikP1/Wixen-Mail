@@ -31,6 +31,20 @@ pub struct CalDavEvent {
     pub status: String,
 }
 
+/// Credential store service name holding one calendar's sign-in details.
+///
+/// One owner, because uninstalling has to delete the same entries this names.
+/// The two accounts stored under it are [`KEYRING_USERNAME`] and
+/// [`KEYRING_PASSWORD`].
+pub fn keyring_service(calendar_id: &str) -> String {
+    format!("wixen-mail-caldav-{calendar_id}")
+}
+
+/// Account name under [`keyring_service`] holding the user name.
+pub const KEYRING_USERNAME: &str = "username";
+/// Account name under [`keyring_service`] holding the password.
+pub const KEYRING_PASSWORD: &str = "password";
+
 /// CalDAV HTTP client.
 pub struct CalDavClient {
     http: reqwest::Client,

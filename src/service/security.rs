@@ -71,6 +71,15 @@ pub struct MessageSecurityReport {
 }
 
 /// Security service for credential management and security operations
+/// Credential store entry holding the master key.
+///
+/// Named here rather than written out at the one place that reads it, because
+/// uninstalling has to delete the same entry. Changing either string orphans
+/// the key on every machine that already has one.
+pub const KEYRING_SERVICE: &str = "wixen-mail";
+/// Account name under [`KEYRING_SERVICE`] for the master key.
+pub const KEYRING_MASTER_KEY: &str = "master-key";
+
 pub struct SecurityService {
     key: [u8; 32],
 }
@@ -122,7 +131,7 @@ impl SecurityService {
     /// Store/retrieve master key via OS credential manager (Windows Credential Manager).
     #[cfg(target_os = "windows")]
     fn load_or_create_key_keyring() -> Result<[u8; 32]> {
-        let entry = keyring::Entry::new("wixen-mail", "master-key")
+        let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_MASTER_KEY)
             .map_err(|e| Error::Security(format!("Failed to access credential store: {}", e)))?;
 
         // Try loading existing key

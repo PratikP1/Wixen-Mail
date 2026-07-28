@@ -449,6 +449,14 @@ pub fn wait_for_redirect_code(expected_state: Option<&str>, timeout_secs: u64) -
 ///
 /// Encapsulates the full lifecycle: authorize, retrieve valid token, refresh.
 /// Tokens are stored in the OS keychain via `keyring`.
+/// Credential store service name holding one provider's tokens.
+///
+/// One owner, because uninstalling has to delete the same entries this
+/// creates. Changing the shape orphans every token already stored.
+pub fn keyring_service(provider: &str) -> String {
+    format!("wixen-mail-{provider}")
+}
+
 pub struct AuthManager {
     /// Account identifier (used as keyring username).
     account_id: String,
@@ -611,7 +619,7 @@ impl AuthManager {
 
     /// Store tokens in the OS keychain.
     pub fn store_tokens(&self, tokens: &OAuthTokenSet) {
-        let service = format!("wixen-mail-{}", self.provider);
+        let service = keyring_service(&self.provider);
         match keyring::Entry::new(&service, &self.account_id) {
             Ok(entry) => {
                 if let Ok(json) = serde_json::to_string(tokens)
@@ -628,7 +636,7 @@ impl AuthManager {
 
     /// Load tokens from the OS keychain.
     pub fn load_tokens(&self) -> Result<OAuthTokenSet> {
-        let service = format!("wixen-mail-{}", self.provider);
+        let service = keyring_service(&self.provider);
         let entry = keyring::Entry::new(&service, &self.account_id)
             .map_err(|e| Error::Authentication(format!("Keyring entry error: {}", e)))?;
         let json = entry
@@ -640,7 +648,7 @@ impl AuthManager {
 
     /// Delete stored tokens from the OS keychain.
     pub fn revoke_stored_tokens(&self) {
-        let service = format!("wixen-mail-{}", self.provider);
+        let service = keyring_service(&self.provider);
         if let Ok(entry) = keyring::Entry::new(&service, &self.account_id) {
             let _ = entry.delete_credential();
         }
