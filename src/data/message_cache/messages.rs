@@ -35,6 +35,8 @@ pub struct MessageListRow {
     pub has_attachments: bool,
     /// What the provider's filter, and the folder it is in, make of it.
     pub safety: crate::service::safety::Safety,
+    /// Why, in the sentences the warning bar shows.
+    pub safety_reasons: Vec<String>,
 }
 
 /// A message as a sync knows it: headers and flags, and no body yet.
@@ -323,7 +325,7 @@ impl MessageCache {
                         m.read, m.starred, m.answered, m.draft,
                         (m.has_attachments = 1
                          OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                        m.safety
+                        m.safety, m.safety_reasons
                  FROM messages m
                  INNER JOIN folders f ON m.folder_id = f.id
                  WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
@@ -354,6 +356,15 @@ impl MessageCache {
                     safety: crate::service::safety::Safety::from_stored(
                         &row.get::<_, Option<String>>(17)?.unwrap_or_default(),
                     ),
+                    // Stored one per line, because SQLite has no list type
+                    // worth the trouble and the bar reads them as sentences.
+                    safety_reasons: row
+                        .get::<_, Option<String>>(18)?
+                        .unwrap_or_default()
+                        .lines()
+                        .filter(|line| !line.trim().is_empty())
+                        .map(str::to_string)
+                        .collect(),
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to list messages: {}", e)))?
@@ -420,7 +431,7 @@ impl MessageCache {
                         m.read, m.starred, m.answered, m.draft,
                         (m.has_attachments = 1
                          OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                        m.safety
+                        m.safety, m.safety_reasons
                  FROM messages m
                  INNER JOIN folders f ON m.folder_id = f.id
                  WHERE f.account_id = ?1 AND m.deleted = 0
@@ -457,6 +468,15 @@ impl MessageCache {
                     safety: crate::service::safety::Safety::from_stored(
                         &row.get::<_, Option<String>>(17)?.unwrap_or_default(),
                     ),
+                    // Stored one per line, because SQLite has no list type
+                    // worth the trouble and the bar reads them as sentences.
+                    safety_reasons: row
+                        .get::<_, Option<String>>(18)?
+                        .unwrap_or_default()
+                        .lines()
+                        .filter(|line| !line.trim().is_empty())
+                        .map(str::to_string)
+                        .collect(),
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to search messages: {}", e)))?
@@ -724,6 +744,10 @@ mod tests {
             .find(|r| r.uid == 11)
             .expect("should be listed");
         assert_eq!(row.safety, Safety::Phishing);
+        assert!(
+            !row.safety_reasons.is_empty(),
+            "the reason is what the warning bar shows"
+        );
     }
 
     #[test]

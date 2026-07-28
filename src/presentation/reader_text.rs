@@ -194,7 +194,7 @@ pub fn single_message(message: &MessageItem, body: &str) -> ReaderDocument {
         title,
         text: format!("{}\n\n{}\n", header_block, body),
         landmarks,
-        warning: warning_for(message.safety),
+        warning: warning_for(message.safety, &message.safety_reasons),
     }
 }
 
@@ -202,11 +202,11 @@ pub fn single_message(message: &MessageItem, body: &str) -> ReaderDocument {
 ///
 /// `None` for ordinary mail, so the reader has no bar at all rather than an
 /// empty one to tab past on every message.
-fn warning_for(level: crate::service::safety::Safety) -> Option<String> {
+fn warning_for(level: crate::service::safety::Safety, reasons: &[String]) -> Option<String> {
     level.worth_announcing().then(|| {
         crate::service::safety::Verdict {
             level,
-            reasons: Vec::new(),
+            reasons: reasons.to_vec(),
         }
         .summary()
         .trim_end()
@@ -285,21 +285,12 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
         // The worst verdict in the conversation. One reply being a phishing
         // attempt makes the whole thread worth a warning, and burying that
         // under "the first message is fine" is how somebody misses it.
+        // The worst message in the conversation, and its reasons, so the bar
+        // says why rather than only how bad.
         warning: parts
             .iter()
-            .map(|part| part.message.safety)
-            .max()
-            .and_then(|worst| {
-                worst.worth_announcing().then(|| {
-                    crate::service::safety::Verdict {
-                        level: worst,
-                        reasons: Vec::new(),
-                    }
-                    .summary()
-                    .trim_end()
-                    .to_string()
-                })
-            }),
+            .max_by_key(|part| part.message.safety)
+            .and_then(|worst| warning_for(worst.message.safety, &worst.message.safety_reasons)),
     }
 }
 
@@ -428,6 +419,7 @@ mod tests {
             cc: String::new(),
             reply_to: String::new(),
             safety: crate::service::safety::Safety::Ordinary,
+            safety_reasons: Vec::new(),
         }
     }
 
@@ -657,6 +649,20 @@ mod warning_tests {
 
         let warning = document.warning.expect("should warn");
         assert!(warning.starts_with("Warning:"), "got {warning}");
+    }
+
+    #[test]
+    fn test_the_warning_says_why_and_not_only_how_bad() {
+        // "This message was marked as spam" leaves somebody with nothing to
+        // judge. The reason is the part they can act on.
+        let mut flagged = message(Safety::Spam);
+        flagged.safety_reasons = vec!["Your mail provider put it in the junk folder.".to_string()];
+
+        let warning = single_message(&flagged, "Buy things")
+            .warning
+            .expect("should warn");
+
+        assert!(warning.contains("junk folder"), "got {warning}");
     }
 
     #[test]

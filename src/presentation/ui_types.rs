@@ -102,6 +102,8 @@ pub struct MessageItem {
     pub reply_to: String,
     /// What the provider's spam and phishing filter made of it.
     pub safety: crate::service::safety::Safety,
+    /// Why, in the sentences the warning bar shows.
+    pub safety_reasons: Vec<String>,
 }
 
 impl MessageItem {
@@ -150,6 +152,7 @@ impl MessageItem {
             cc: row.cc.clone().unwrap_or_default(),
             reply_to: row.reply_to.clone().unwrap_or_default(),
             safety: row.safety,
+            safety_reasons: row.safety_reasons.clone(),
         }
     }
 }
@@ -1167,6 +1170,7 @@ mod tests {
             cc: String::new(),
             reply_to: reply_to.to_string(),
             safety: crate::service::safety::Safety::Ordinary,
+            safety_reasons: Vec::new(),
         }
     }
 

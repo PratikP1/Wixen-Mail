@@ -252,6 +252,7 @@ mod tests {
             cc: String::new(),
             reply_to: String::new(),
             safety: crate::service::safety::Safety::Ordinary,
+            safety_reasons: Vec::new(),
         }
     }
 
