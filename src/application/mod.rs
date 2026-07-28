@@ -15,6 +15,7 @@ pub mod mail_auth;
 pub mod mail_controller;
 pub mod mail_sync;
 pub mod messages;
+pub mod new_item;
 pub mod notes;
 pub mod reminders;
 pub mod reply;
