@@ -85,6 +85,50 @@ impl ItemKind {
     }
 }
 
+/// The containers items are kept in.
+///
+/// Separate from [`ItemKind`] because these are made and named rather than
+/// filled in, but they follow the same placement rule through [`Self::holds`]:
+/// a calendar belongs wherever the events in it would belong, so a container
+/// and its contents can never end up in different accounts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContainerKind {
+    Calendar,
+    TaskList,
+    NoteFolder,
+    ContactGroup,
+}
+
+impl ContainerKind {
+    /// Every container, so menus and tests cover the whole set.
+    pub const ALL: [ContainerKind; 4] = [
+        ContainerKind::Calendar,
+        ContainerKind::TaskList,
+        ContainerKind::NoteFolder,
+        ContainerKind::ContactGroup,
+    ];
+
+    /// What it is called in a menu, after "New".
+    pub fn label(self) -> &'static str {
+        match self {
+            ContainerKind::Calendar => "Calendar",
+            ContainerKind::TaskList => "Task list",
+            ContainerKind::NoteFolder => "Note folder",
+            ContainerKind::ContactGroup => "Contact group",
+        }
+    }
+
+    /// The kind of item it holds, which is what decides where it goes.
+    pub fn holds(self) -> ItemKind {
+        match self {
+            ContainerKind::Calendar => ItemKind::Event,
+            ContainerKind::TaskList => ItemKind::Task,
+            ContainerKind::NoteFolder => ItemKind::Note,
+            ContainerKind::ContactGroup => ItemKind::Contact,
+        }
+    }
+}
+
 /// The account id items kept only on this computer are filed under.
 ///
 /// A reserved id rather than a null, because every stored item is scoped to an
@@ -373,6 +417,53 @@ mod tests {
     #[test]
     fn test_deleting_the_last_account_leaves_no_default() {
         assert_eq!(default_after_change(&[], Some("a1")), None);
+    }
+
+    #[test]
+    fn test_a_container_goes_where_the_things_it_holds_go() {
+        // A calendar in one account holding events in another would be a
+        // sidebar entry that never matches its list.
+        let accounts = vec![account("a1", "me@myhost.example")];
+
+        for container in ContainerKind::ALL {
+            assert_eq!(
+                destination(container.holds(), &accounts, Some("a1")),
+                destination(container.holds(), &accounts, Some("a1")),
+            );
+        }
+
+        // The mail-only account holds none of them, so all four are local.
+        for container in ContainerKind::ALL {
+            assert_eq!(
+                destination(container.holds(), &accounts, Some("a1")),
+                Some(Destination::Local),
+                "{container:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_gmail_account_keeps_its_calendars_and_contact_groups() {
+        let accounts = vec![account("a1", "me@gmail.com")];
+
+        for container in [ContainerKind::Calendar, ContainerKind::ContactGroup] {
+            assert_eq!(
+                destination(container.holds(), &accounts, Some("a1")),
+                Some(Destination::Account("a1".to_string())),
+                "{container:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_container_is_named_for_a_menu() {
+        for container in ContainerKind::ALL {
+            let label = container.label();
+            assert!(!label.is_empty(), "{container:?}");
+            // Read aloud in a status line, so it is words rather than a
+            // compressed identifier.
+            assert!(!label.contains('_'), "{label} reads as an identifier");
+        }
     }
 
     #[test]

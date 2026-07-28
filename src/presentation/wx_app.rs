@@ -1198,16 +1198,18 @@ document.addEventListener('keydown', function(e) {
 
             // Contacts sidebar buttons
             contacts_sb.btn_new_group.on_click({
-                let gate_tx = ui_tx.clone();
-                let gate_rt = runtime.clone();
+                let state = state.clone();
+                let message_cache = message_cache.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
                 move |_| {
-                    // Gated rather than faked. The dialog this used to open
-                    // took a name, logged it and threw it away, and said
-                    // "created" on the way out.
-                    send_status(
-                        &gate_tx,
-                        &gate_rt,
-                        "Creating a contact group is not built yet",
+                    managers::new_container(
+                        crate::application::new_item::ContainerKind::ContactGroup,
+                        &state,
+                        &message_cache,
+                        &frame,
+                        &ui_tx,
+                        &runtime,
                     );
                 }
             });
@@ -1332,13 +1334,19 @@ document.addEventListener('keydown', function(e) {
                 }
             });
             tasks_sb.btn_new_list.on_click({
-                let gate_tx = ui_tx.clone();
-                let gate_rt = runtime.clone();
+                let state = state.clone();
+                let message_cache = message_cache.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
                 move |_| {
-                    // Gated rather than faked. The dialog this used to open
-                    // took a name, logged it and threw it away, and said
-                    // "created" on the way out.
-                    send_status(&gate_tx, &gate_rt, "Creating a task list is not built yet");
+                    managers::new_container(
+                        crate::application::new_item::ContainerKind::TaskList,
+                        &state,
+                        &message_cache,
+                        &frame,
+                        &ui_tx,
+                        &runtime,
+                    );
                 }
             });
 
@@ -1483,16 +1491,18 @@ document.addEventListener('keydown', function(e) {
 
             // Notes sidebar button
             notes_sb.btn_new_folder.on_click({
-                let gate_tx = ui_tx.clone();
-                let gate_rt = runtime.clone();
+                let state = state.clone();
+                let message_cache = message_cache.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
                 move |_| {
-                    // Gated rather than faked. The dialog this used to open
-                    // took a name, logged it and threw it away, and said
-                    // "created" on the way out.
-                    send_status(
-                        &gate_tx,
-                        &gate_rt,
-                        "Creating a note folder is not built yet",
+                    managers::new_container(
+                        crate::application::new_item::ContainerKind::NoteFolder,
+                        &state,
+                        &message_cache,
+                        &frame,
+                        &ui_tx,
+                        &runtime,
                     );
                 }
             });
@@ -2012,13 +2022,13 @@ document.addEventListener('keydown', function(e) {
                         // New item creation (File > New submenu)
                         _ if id == ID_NEW_CALENDAR => {
                             do_switch(PimModule::Calendar);
-                            // Gated rather than faked. The dialog this used to
-                            // open took a name, logged it, threw it away, and
-                            // said "created" on the way out.
-                            send_status(
+                            managers::new_container(
+                                crate::application::new_item::ContainerKind::Calendar,
+                                &state,
+                                &message_cache,
+                                &frame,
                                 &ui_tx,
                                 &runtime,
-                                "Creating a calendar is not built yet",
                             );
                         }
                         _ if id == ID_NEW_EVENT => {

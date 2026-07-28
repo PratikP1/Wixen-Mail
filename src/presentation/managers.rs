@@ -636,6 +636,142 @@ pub fn new_pim_item(
     }
 }
 
+/// Create a calendar, task list, note folder or contact group.
+///
+/// These four had no create path at all. Until now the controls opened the
+/// same discard-everything dialog the items used, so a name was typed, logged
+/// and lost while the application said it had been created.
+///
+/// A container goes wherever the things it holds go, so a calendar and its
+/// events can never end up in different accounts.
+pub fn new_container(
+    kind: crate::application::new_item::ContainerKind,
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    use crate::application::new_item;
+
+    let Some(cache) = cache.clone() else {
+        return send_status(tx, rt, "No storage is open, so nothing can be saved");
+    };
+    let (accounts, default_id) = {
+        let s = lock_state(state);
+        (s.accounts.clone(), s.default_account_id.clone())
+    };
+    let Some(destination) = new_item::destination(kind.holds(), &accounts, default_id.as_deref())
+    else {
+        return send_status(tx, rt, "Add an account first");
+    };
+
+    let Some(name) = crate::presentation::wx_app::prompt_for_new_item(frame, kind.label()) else {
+        return;
+    };
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        // A container with no name is a row in a sidebar that reads as
+        // nothing, and the only way to tell two apart would be their order.
+        return send_status(tx, rt, &format!("{} needs a name", kind.label()));
+    }
+
+    let account_id = destination.account_id().to_string();
+    match store_new_container(&cache, kind, &account_id, &name) {
+        Ok(()) => {
+            send_status(
+                tx,
+                rt,
+                &format!(
+                    "{} \"{}\" created in {}",
+                    kind.label(),
+                    name,
+                    destination.spoken(&accounts)
+                ),
+            );
+            crate::presentation::wx_app::load_module_data(
+                module_for(kind.holds()),
+                &Some(cache),
+                Some(account_id),
+                tx,
+            );
+        }
+        Err(e) => {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "{} could not be saved: {}",
+                kind.label(),
+                e
+            )));
+        }
+    }
+}
+
+/// Write the new container to the cache.
+fn store_new_container(
+    cache: &MessageCache,
+    kind: crate::application::new_item::ContainerKind,
+    account_id: &str,
+    name: &str,
+) -> crate::common::Result<()> {
+    use crate::application::new_item::ContainerKind;
+    use crate::data::message_cache::{
+        CalendarContainer, ContactGroup, NoteFolderEntry, TaskListEntry,
+    };
+    use chrono::Utc;
+
+    let stamp = Utc::now().to_rfc3339();
+
+    match kind {
+        ContainerKind::Calendar => cache.save_calendar(&CalendarContainer {
+            id: new_id("calendar"),
+            account_id: account_id.to_string(),
+            name: name.to_string(),
+            // The same blue the default calendar uses. Colour is decoration
+            // here: nothing is distinguished by it alone, and a colour picker
+            // in a create dialog is a control most people would tab past.
+            color: "#4285F4".to_string(),
+            source_provider: Some("local".to_string()),
+            caldav_url: None,
+            subscription_url: None,
+            // Never the default. That belongs to the one the account started
+            // with, and moving it would move where every unfiled event lands.
+            is_default: false,
+            is_visible: true,
+            is_read_only: false,
+            display_order: 0,
+            etag: None,
+            ctag: None,
+            sync_token: None,
+            refresh_interval_minutes: None,
+            created_at: stamp.clone(),
+            updated_at: stamp,
+        }),
+        ContainerKind::TaskList => cache.save_task_list(&TaskListEntry {
+            id: new_id("tasklist"),
+            account_id: account_id.to_string(),
+            name: name.to_string(),
+            color: "#4285F4".to_string(),
+            display_order: 0,
+            created_at: stamp,
+        }),
+        ContainerKind::NoteFolder => cache.save_note_folder(&NoteFolderEntry {
+            id: new_id("notefolder"),
+            account_id: account_id.to_string(),
+            name: name.to_string(),
+            display_order: 0,
+            created_at: stamp,
+        }),
+        ContainerKind::ContactGroup => cache.create_contact_group(&ContactGroup {
+            id: new_id("group"),
+            account_id: account_id.to_string(),
+            name: name.to_string(),
+            description: None,
+            created_at: stamp,
+            member_ids: Vec::new(),
+        }),
+    }
+}
+
 /// Which panel shows this kind of item.
 fn module_for(
     kind: crate::application::new_item::ItemKind,
