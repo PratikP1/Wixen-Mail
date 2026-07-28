@@ -76,6 +76,7 @@ menu_ids!(
     ID_CHECK_MAIL,
     ID_NEW_MESSAGE,
     ID_NEW_DEFAULT,
+    ID_OPEN_DRAFT,
     ID_QUIT,
     ID_SEARCH,
     ID_REPLY,
@@ -2176,6 +2177,24 @@ document.addEventListener('keydown', function(e) {
                                 ),
                             }
                         }
+                        _ if id == ID_OPEN_DRAFT => {
+                            if let Some(draft) = managers::open_draft(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                            ) {
+                                open_compose(
+                                    &frame,
+                                    &state,
+                                    &ui_tx,
+                                    &runtime,
+                                    &message_cache,
+                                    ComposeMode::Draft(draft),
+                                );
+                            }
+                        }
                         _ if id == ID_NEW_MESSAGE => open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, ComposeMode::New),
                         _ if id == ID_REPLY => {
                             start_reply(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ReplyMode::Default);
@@ -3578,7 +3597,12 @@ fn open_compose(
 
     // One id for this window, shared by the automatic saves and the button, so
     // every save after the first updates the same draft.
-    let draft_id: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    // Seeded from the draft being reopened, so saving updates that row rather
+    // than making a second draft every time somebody comes back to one.
+    let draft_id: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(match &mode {
+        ComposeMode::Draft(data) => data.id.clone(),
+        _ => None,
+    }));
     let (autosave, preview_first) = crate::data::config::ConfigManager::load_stored()
         .map(|mgr| {
             let cfg = mgr.app_config();

@@ -204,6 +204,11 @@ pub struct AccountConfig {
 /// Composition data for email drafts
 #[derive(Clone, Debug, Default)]
 pub struct CompositionData {
+    /// The draft this came from, when it came from one.
+    ///
+    /// Carried so that saving a reopened draft updates it rather than leaving
+    /// a second copy beside it. `None` for a message being written fresh.
+    pub id: Option<String>,
     pub to: String,
     pub cc: String,
     pub bcc: String,

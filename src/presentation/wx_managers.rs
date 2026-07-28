@@ -2121,6 +2121,72 @@ fn show_sig_edit(parent: &Dialog, existing: Option<&SignatureEntry>) -> Option<S
     }
 }
 
+/// Pick one item from a list, or nothing.
+///
+/// A single-selection list box with OK and Cancel. Deliberately plain: it is
+/// reached by keyboard, read by a screen reader, and closed with Escape, and
+/// none of that is improved by anything more elaborate.
+///
+/// Returns the index chosen, or `None` if it was cancelled.
+pub fn choose_from_list(
+    parent: &Frame,
+    title: &str,
+    label: &str,
+    items: &[String],
+) -> Option<usize> {
+    let dlg = Dialog::builder(parent, title)
+        .with_size(520, 380)
+        .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
+        .build();
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    let heading = StaticText::builder(&dlg).with_label(label).build();
+    sizer.add(&heading, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    let list = ListBox::builder(&dlg).build();
+    // Named from the label, with the ampersand stripped: a mnemonic read out
+    // as "and" in the accessible name is a syllable that means nothing.
+    set_accessible_name(&list, &label.replace(['&', ':'], ""));
+    for item in items {
+        list.append(item);
+    }
+    if !items.is_empty() {
+        // Something is always selected, so Enter always has an answer and the
+        // first row is read on arrival rather than after an arrow press.
+        list.set_selection(0, true);
+    }
+    sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
+
+    let buttons = BoxSizer::builder(Orientation::Horizontal).build();
+    let ok = Button::builder(&dlg)
+        .with_label("&Open")
+        .with_id(ID_OK)
+        .build();
+    let cancel = Button::builder(&dlg)
+        .with_label("Cancel")
+        .with_id(ID_CANCEL)
+        .build();
+    buttons.add_spacer(0);
+    buttons.add(&ok, 0, SizerFlag::All, 4);
+    buttons.add(&cancel, 0, SizerFlag::All, 4);
+    sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
+    dlg.set_sizer(sizer, true);
+
+    ok.on_click({
+        let d = dlg;
+        move |_| d.end_modal(ID_OK)
+    });
+    cancel.on_click({
+        let d = dlg;
+        move |_| d.end_modal(ID_CANCEL)
+    });
+    if dlg.show_modal() == ID_OK {
+        list.get_selection().map(|chosen| chosen as usize)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

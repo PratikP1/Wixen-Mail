@@ -199,6 +199,7 @@ dialog once you have more than one.
 | New > Task | `Ctrl+Shift+T` | |
 | New > Note | `Ctrl+Shift+N` | |
 | New > Account | (none) | Open Account Manager |
+| Open Draft | `Ctrl+D` | Reopen a message you saved to finish later |
 | Save | `Ctrl+S` | Save current draft |
 | Save As | (none) | Save message or attachment to file |
 | Check Mail | `F9` | Check for new messages |

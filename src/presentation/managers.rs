@@ -887,6 +887,81 @@ fn store_new_item(
     }
 }
 
+// ── Reopening a draft ───────────────────────────────────────────────────────
+
+/// Show the saved drafts and open the chosen one.
+///
+/// Drafts were saved and then unreachable: `load_drafts` existed and nothing
+/// called it, so a draft went into the database and was never seen again,
+/// which is worse than not saving it because it looks like it worked.
+pub fn open_draft(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) -> Option<crate::presentation::ui_types::CompositionData> {
+    let (cache, account) = match manager_account(state, cache) {
+        Ok(pair) => pair,
+        Err(reason) => {
+            send_status(tx, rt, reason);
+            return None;
+        }
+    };
+
+    let drafts = match cache.load_drafts(&account) {
+        Ok(drafts) => drafts,
+        Err(e) => {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "Drafts could not be read: {e}"
+            )));
+            return None;
+        }
+    };
+    if drafts.is_empty() {
+        // Said, rather than opening an empty list. An empty dialog is a thing
+        // to get out of; a sentence is an answer.
+        send_status(tx, rt, "No saved drafts");
+        return None;
+    }
+
+    let labels: Vec<String> = drafts.iter().map(draft_label).collect();
+    let chosen = wx_managers::choose_from_list(frame, "Open Draft", "&Saved drafts:", &labels)?;
+    let draft = drafts.get(chosen)?;
+
+    Some(crate::presentation::ui_types::CompositionData {
+        // Carried so that saving it again updates this row rather than
+        // leaving a second copy beside it.
+        id: Some(draft.id.clone()),
+        to: draft.to_addr.clone(),
+        cc: draft.cc.clone().unwrap_or_default(),
+        bcc: draft.bcc.clone().unwrap_or_default(),
+        subject: draft.subject.clone(),
+        body: draft.body.clone(),
+    })
+}
+
+/// One line for the drafts list, written to be heard.
+///
+/// Subject first because that is what somebody is looking for, then who it was
+/// going to, then when it was last touched. A row that led with a date would
+/// make every row start the same way.
+fn draft_label(draft: &crate::data::message_cache::CachedDraft) -> String {
+    let subject = if draft.subject.trim().is_empty() {
+        "No subject"
+    } else {
+        draft.subject.trim()
+    };
+    let recipient = draft.to_addr.trim();
+    let when = draft.updated_at.split('T').next().unwrap_or_default();
+
+    if recipient.is_empty() {
+        format!("{subject}, no recipient yet, {when}")
+    } else {
+        format!("{subject}, to {recipient}, {when}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
