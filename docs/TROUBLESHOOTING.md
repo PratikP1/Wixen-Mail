@@ -563,9 +563,13 @@ Comprehensive solutions for common issues with Wixen Mail.
 
 ### Check Application Logs
 
-1. **Location:** Usually in `%APPDATA%\wixen-mail\logs`
+1. **Location:** `%LOCALAPPDATA%\wixen-mail\logs`. Paste that into File Explorer's address
+   bar to open it.
 2. **Look for:** Error messages, stack traces
-3. **Recent logs:** Check most recent log file
+3. **Recent logs:** Check most recent log file. Crashes are in `crash.log`.
+
+Everything else Wixen Mail keeps is alongside it, under `%LOCALAPPDATA%\wixen-mail`. See
+[installing.md](installing.md) for what is in there.
 
 ### Report Issues
 

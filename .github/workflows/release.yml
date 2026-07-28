@@ -89,21 +89,22 @@ jobs:
           "prerelease=$prerelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           Write-Host "Publishing $tag with prerelease=$prerelease"
 
-      - name: Build release binary
-        run: cargo build --release --verbose
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
 
-      - name: Build installer executable
-        uses: Minionguyjpro/Inno-Setup-Action@7547f78e92afc13352b946775483c5392b7fda10 # v1.2.5
-        with:
-          path: installer/Wixen-Mail-Setup.iss
+      # The same script CI runs and the same one you run locally, so the file
+      # people download is built the way the one you tested was. It reads the
+      # version from Cargo.toml, which cargo-release has already bumped, so the
+      # installer cannot be labelled with a different number from the tag.
+      - name: Build the release binary and the setup executable
+        shell: bash
+        run: bash scripts/build-installer.sh
 
-      - name: Prepare setup executable artifacts
+      - name: Prepare the portable download
         shell: pwsh
         run: |
           $tag = "${{ steps.release_tag.outputs.tag }}"
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item "target/release/wixen-mail.exe" "dist/wixen-mail-$tag.exe"
-          Copy-Item "dist/Wixen-Mail-Setup.exe" "dist/Wixen-Mail-Setup-$tag.exe"
           Compress-Archive -Path "target/release/wixen-mail.exe" -DestinationPath "dist/Wixen-Mail-$tag-windows.zip" -Force
 
       - name: Upload release artifacts

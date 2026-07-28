@@ -18,13 +18,26 @@ what is finished.
 - Offline mode with outbox queue and sync-on-reconnect
 - AES-256-GCM credential encryption and phishing detection
 
-## Quick Start
+## Installing
+
+Download `Wixen-Mail-Setup-<version>.exe` from the
+[releases page](https://github.com/PratikP1/Wixen-Mail/releases) and run it. Installing for
+yourself needs no administrator rights. See [installing.md](docs/installing.md) for the
+silent install switches, where your data is kept, and what uninstalling removes.
+
+## Building from source
 
 ```bash
 git clone https://github.com/PratikP1/Wixen-Mail.git
 cd Wixen-Mail
 cargo build
 cargo run
+```
+
+To build the setup file, which needs [Inno Setup 6](https://jrsoftware.org/isdl.php):
+
+```bash
+bash scripts/build-installer.sh
 ```
 
 ## Development Commands

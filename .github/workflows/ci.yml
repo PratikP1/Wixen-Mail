@@ -170,7 +170,49 @@ jobs:
     - name: Build (Debug)
       if: matrix.profile == 'debug'
       run: cargo build --verbose
-      
+
     - name: Build (Release)
       if: matrix.profile == 'release'
       run: cargo build --release --verbose
+
+  installer:
+    name: Setup Executable
+    runs-on: windows-latest
+
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-release-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Install Inno Setup
+      run: choco install innosetup --no-progress -y
+
+    # Built on every push rather than only at release time. A mistake in the
+    # setup script is otherwise found while cutting a release, which is the
+    # worst moment to find it, and the same script runs here and there.
+    - name: Build the setup executable
+      shell: bash
+      run: bash scripts/build-installer.sh
+
+    - name: Keep the setup executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: setup-executable
+        path: dist/Wixen-Mail-Setup-*.exe
