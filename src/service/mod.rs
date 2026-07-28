@@ -2,6 +2,7 @@
 //!
 //! This layer handles email protocols, security, caching, and other services.
 
+pub mod attachment_name;
 pub mod cache;
 pub mod caldav;
 pub mod credentials;
