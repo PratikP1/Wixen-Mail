@@ -380,24 +380,10 @@ fn test_search_across_folders() {
 
 // ── Security Service Tests ──────────────────────────────────────────────────
 
-#[test]
-fn test_encryption_round_trip_various_data() {
-    let service = SecurityService::new().unwrap();
-
-    // Short data
-    let short = b"hi";
-    let enc = service.encrypt(short).unwrap();
-    assert_eq!(service.decrypt(&enc).unwrap(), short.to_vec());
-
-    // Long data
-    let long = "x".repeat(10_000);
-    let enc = service.encrypt(long.as_bytes()).unwrap();
-    assert_eq!(service.decrypt(&enc).unwrap(), long.as_bytes().to_vec());
-
-    // Empty data
-    let enc = service.encrypt(b"").unwrap();
-    assert_eq!(service.decrypt(&enc).unwrap(), b"".to_vec());
-}
+// Encryption at rest is gone: passwords are in the Windows credential store and
+// the database holds no secrets. What remains is a reader for passwords an
+// older version wrote, and it is tested beside itself in src/service/security.rs
+// because building a payload to read is no longer something the crate exposes.
 
 #[test]
 fn test_phishing_no_risk_normal_email() {

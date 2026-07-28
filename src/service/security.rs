@@ -7,7 +7,6 @@ use crate::common::{Error, Result};
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use rand::Rng;
 use regex::Regex;
 use std::fs;
 use std::path::PathBuf;
@@ -81,7 +80,12 @@ pub const KEYRING_SERVICE: &str = "wixen-mail";
 pub const KEYRING_MASTER_KEY: &str = "master-key";
 
 pub struct SecurityService {
-    key: [u8; 32],
+    /// The key an older version used to encrypt passwords in the database.
+    ///
+    /// `None` on a fresh install, which is the normal case now and not a
+    /// failure. Nothing is encrypted at rest any more, so there is nothing for
+    /// a new machine to make a key for.
+    key: Option<[u8; 32]>,
 }
 
 impl SecurityService {
@@ -115,108 +119,46 @@ impl SecurityService {
         Ok(paths.security_key())
     }
 
-    fn load_or_create_key() -> Result<[u8; 32]> {
-        // On Windows, prefer OS credential store for the master key.
+    /// Find the key an older version made, if this machine still has one.
+    ///
+    /// It is never created any more. Nothing is written encrypted: passwords
+    /// are in the credential store, so a fresh install has no key and needs
+    /// none. This finds the one left behind on a machine that has been
+    /// upgraded, so the passwords it protects can be moved across, once.
+    fn find_existing_key() -> Option<[u8; 32]> {
         #[cfg(target_os = "windows")]
+        if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, KEYRING_MASTER_KEY)
+            && let Ok(encoded) = entry.get_password()
+            && let Some(key) = Self::decode_key(&encoded)
         {
-            if let Ok(key) = Self::load_or_create_key_keyring() {
-                return Ok(key);
-            }
-            tracing::warn!("OS credential store unavailable, falling back to file-based key");
+            return Some(key);
         }
 
-        Self::load_or_create_key_file()
+        let path = Self::key_path().ok()?;
+        let encoded = fs::read_to_string(path).ok()?;
+        Self::decode_key(&encoded)
     }
 
-    /// Store/retrieve master key via OS credential manager (Windows Credential Manager).
-    #[cfg(target_os = "windows")]
-    fn load_or_create_key_keyring() -> Result<[u8; 32]> {
-        let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_MASTER_KEY)
-            .map_err(|e| Error::Security(format!("Failed to access credential store: {}", e)))?;
-
-        // Try loading existing key
-        if let Ok(encoded) = entry.get_password() {
-            let decoded = STANDARD
-                .decode(encoded.trim())
-                .map_err(|e| Error::Security(format!("Failed decoding keyring key: {}", e)))?;
-            let key: [u8; 32] = decoded
-                .try_into()
-                .map_err(|_| Error::Security("Keyring key length is invalid".to_string()))?;
-            return Ok(key);
-        }
-
-        // Generate and store new key
-        let mut key = [0u8; 32];
-        rand::rng().fill_bytes(&mut key);
-        let encoded = STANDARD.encode(key);
-        entry.set_password(&encoded).map_err(|e| {
-            Error::Security(format!("Failed storing key in credential store: {}", e))
-        })?;
-        Ok(key)
-    }
-
-    /// File-based key storage (Unix with 0o600 perms, fallback on Windows).
-    fn load_or_create_key_file() -> Result<[u8; 32]> {
-        let path = Self::key_path()?;
-        if path.exists() {
-            let encoded = fs::read_to_string(&path)
-                .map_err(|e| Error::Security(format!("Failed reading security key: {}", e)))?;
-            let decoded = STANDARD
-                .decode(encoded.trim())
-                .map_err(|e| Error::Security(format!("Failed decoding security key: {}", e)))?;
-            let key: [u8; 32] = decoded
-                .try_into()
-                .map_err(|_| Error::Security("Security key length is invalid".to_string()))?;
-            return Ok(key);
-        }
-
-        let mut key = [0u8; 32];
-        rand::rng().fill_bytes(&mut key);
-        let encoded = STANDARD.encode(key);
-        fs::write(&path, &encoded)
-            .map_err(|e| Error::Security(format!("Failed writing security key: {}", e)))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(0o600);
-            fs::set_permissions(&path, perms).map_err(|e| {
-                Error::Security(format!("Failed setting security key permissions: {}", e))
-            })?;
-        }
-        Ok(key)
+    fn decode_key(encoded: &str) -> Option<[u8; 32]> {
+        STANDARD.decode(encoded.trim()).ok()?.try_into().ok()
     }
 
     /// Create a new security service
     pub fn new() -> Result<Self> {
         Ok(Self {
-            key: Self::load_or_create_key()?,
+            key: Self::find_existing_key(),
         })
     }
 
-    /// Encrypt data for local-at-rest storage.
+    /// Decrypt a password an older version wrote into the database.
     ///
-    /// Uses AES-256-GCM with machine-local key derivation.
-    pub fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
-        let cipher = Aes256Gcm::new_from_slice(&self.key)
-            .map_err(|e| Error::Security(format!("Failed to initialize cipher: {}", e)))?;
-        let mut nonce_bytes = [0u8; AES_NONCE_LEN];
-        rand::rng().fill_bytes(&mut nonce_bytes);
-        // aes-gcm 0.11 deprecated Array::from_slice in favour of TryFrom,
-        // which surfaces a wrong-length nonce as an error rather than a panic.
-        let nonce = Nonce::try_from(&nonce_bytes[..])
-            .map_err(|_| Error::Security("Nonce is the wrong length".to_string()))?;
-        let nonce = &nonce;
-        let ciphertext = cipher
-            .encrypt(nonce, data)
-            .map_err(|e| Error::Security(format!("Encryption failed: {}", e)))?;
-        let mut payload = nonce_bytes.to_vec();
-        payload.extend_from_slice(&ciphertext);
-        let encoded = STANDARD.encode(payload);
-        Ok(format!("{}{}", ENCRYPTION_PREFIX, encoded).into_bytes())
-    }
-
-    /// Decrypt data encrypted with `encrypt`.
+    /// There is no matching `encrypt`. Nothing is written this way any more.
     pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
+        let key = self.key.ok_or_else(|| {
+            Error::Security(
+                "This computer has no key for the password saved in the database".to_string(),
+            )
+        })?;
         if data.is_empty() {
             return Err(Error::Security("Cannot decrypt empty payload".to_string()));
         }
@@ -234,7 +176,7 @@ impl SecurityService {
             ));
         }
         let (nonce_bytes, ciphertext) = decoded.split_at(AES_NONCE_LEN);
-        let cipher = Aes256Gcm::new_from_slice(&self.key)
+        let cipher = Aes256Gcm::new_from_slice(&key)
             .map_err(|e| Error::Security(format!("Failed to initialize cipher: {}", e)))?;
         let nonce = Nonce::try_from(nonce_bytes)
             .map_err(|_| Error::Security("Stored nonce is the wrong length".to_string()))?;
@@ -419,6 +361,37 @@ impl SecurityService {
     }
 }
 
+/// Writing the old format, so there is something to test the reader against.
+///
+/// Only the reader ships. Nothing in the application encrypts any more, and a
+/// decryptor with no way to make a payload is a decryptor nobody can test.
+#[cfg(test)]
+impl SecurityService {
+    fn with_key(key: [u8; 32]) -> Self {
+        Self { key: Some(key) }
+    }
+
+    fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
+        use rand::Rng;
+
+        let key = self
+            .key
+            .ok_or_else(|| Error::Security("No key".to_string()))?;
+        let cipher = Aes256Gcm::new_from_slice(&key)
+            .map_err(|e| Error::Security(format!("Failed to initialize cipher: {}", e)))?;
+        let mut nonce_bytes = [0u8; AES_NONCE_LEN];
+        rand::rng().fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::try_from(&nonce_bytes[..])
+            .map_err(|_| Error::Security("Nonce is the wrong length".to_string()))?;
+        let ciphertext = cipher
+            .encrypt(&nonce, data)
+            .map_err(|e| Error::Security(format!("Encryption failed: {}", e)))?;
+        let mut payload = nonce_bytes.to_vec();
+        payload.extend_from_slice(&ciphertext);
+        Ok(format!("{}{}", ENCRYPTION_PREFIX, STANDARD.encode(payload)).into_bytes())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -430,13 +403,28 @@ mod tests {
     }
 
     #[test]
-    fn test_encrypt_decrypt_round_trip() {
-        let service = SecurityService::new().unwrap();
+    fn test_a_password_written_by_an_older_version_can_still_be_read() {
+        let service = SecurityService::with_key([7u8; 32]);
         let original = b"super-secret-password";
-        let encrypted = service.encrypt(original).unwrap();
-        assert_ne!(encrypted, original);
-        let decrypted = service.decrypt(&encrypted).unwrap();
-        assert_eq!(decrypted, original);
+
+        let stored = service.encrypt(original).unwrap();
+
+        assert_ne!(stored, original);
+        assert_eq!(service.decrypt(&stored).unwrap(), original);
+    }
+
+    #[test]
+    fn test_a_machine_with_no_key_says_so_rather_than_returning_nothing() {
+        // This is the case where somebody has moved their database to a new
+        // computer. The password is unreadable and they have to type it again,
+        // which they can only do if they are told.
+        let with_key = SecurityService::with_key([7u8; 32]);
+        let stored = with_key.encrypt(b"secret").unwrap();
+        let fresh = SecurityService { key: None };
+
+        let error = fresh.decrypt(&stored).expect_err("no key, no plaintext");
+
+        assert!(error.to_string().contains("no key"), "got {error}");
     }
 
     #[test]

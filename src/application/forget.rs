@@ -11,7 +11,7 @@
 
 use crate::application::mail_auth::provider_of;
 use crate::data::account::Account;
-use crate::service::{caldav, oauth, security};
+use crate::service::{caldav, credentials, oauth, security};
 
 /// One entry in the operating system's credential store.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +43,10 @@ pub fn entries_for(accounts: &[Account], caldav_calendar_ids: &[String]) -> Vec<
     }];
 
     for account in accounts {
+        entries.push(CredentialEntry {
+            service: credentials::KEYRING_SERVICE.to_string(),
+            user: account.id.clone(),
+        });
         // Not filtered on `use_oauth`: an account switched back to a password
         // keeps whatever token it was given, and that is exactly the one
         // nobody would think to remove.
@@ -172,10 +176,28 @@ mod tests {
     }
 
     #[test]
-    fn test_an_address_belonging_to_no_provider_contributes_nothing() {
+    fn test_every_account_gives_up_its_saved_password() {
         let entries = entries_for(&[account("a1", "me@example.com")], &[]);
 
-        assert_eq!(entries.len(), 1, "only the master key was expected");
+        assert!(entries.contains(&CredentialEntry {
+            service: "wixen-mail-account".to_string(),
+            user: "a1".to_string(),
+        }));
+    }
+
+    #[test]
+    fn test_an_address_belonging_to_no_provider_has_no_token_to_forget() {
+        // Its password still counts, so this checks for the token entry rather
+        // than for the account contributing nothing at all.
+        let entries = entries_for(&[account("a1", "me@example.com")], &[]);
+
+        assert!(
+            !entries
+                .iter()
+                .any(|entry| entry.service.starts_with("wixen-mail-")
+                    && entry.service != "wixen-mail-account"),
+            "an account with no OAuth provider listed a token entry: {entries:?}"
+        );
     }
 
     #[test]

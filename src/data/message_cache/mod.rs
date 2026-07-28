@@ -434,19 +434,11 @@ impl MessageCache {
         Ok(cache)
     }
 
-    /// Encrypt a string value for storage. Falls back to base64 if no SecurityService.
-    fn encrypt_value(&self, value: &str) -> Result<String> {
-        if let Some(ref sec) = self.security {
-            let encrypted = sec.encrypt(value.as_bytes())?;
-            Ok(String::from_utf8(encrypted)
-                .map_err(|e| Error::Security(format!("Encrypted output not UTF-8: {}", e)))?)
-        } else {
-            use base64::{Engine as _, engine::general_purpose};
-            Ok(general_purpose::STANDARD.encode(value))
-        }
-    }
-
     /// Decrypt a stored value. Tries AES decryption first, falls back to base64 for migration.
+    ///
+    /// Reading only. Nothing is written encrypted any more: passwords are in
+    /// the credential store, and this exists to collect the ones left in the
+    /// database by an older version.
     fn decrypt_value(&self, stored: &str) -> Result<String> {
         // Try AES decryption first (encrypted values have WXM2: prefix)
         if let Some(ref sec) = self.security

@@ -195,12 +195,21 @@ the gap stays visible.
   brailled. Both compile and silently do nothing elsewhere. A macOS or Linux port needs its own
   bridge for each, not a framework change. Platform-specific code sits behind
   `#[cfg(target_os = "windows")]` with a fallback that keeps the crate building.
-- **Secrets stay out of the tree.** OAuth client credentials load from `oauth.toml` (gitignored) with
-  `oauth.toml.example` as the tracked template. Tokens go to the OS keychain via `keyring`; cached
-  data is encrypted with AES-256-GCM. Never log a token, password, or message body.
+- **Secrets stay out of the tree, and out of the database.** OAuth client credentials load from
+  `oauth.toml` (gitignored) with `oauth.toml.example` as the tracked template. Every other secret
+  goes to the OS credential store via `keyring`: account passwords through `service::credentials`,
+  tokens through `service::oauth`, CalDAV sign-ins through `service::caldav`. Nothing sensitive is
+  written to `message_cache.db`, so the database can be copied and backed up without carrying
+  credentials, and uninstalling can clear the secrets by clearing one place. Each service name has
+  exactly one owner, because the code that erases them has to name the same entries as the code that
+  wrote them. Never log a token, password, or message body.
+- **The cached mail is not encrypted, and the docs say so.** Do not claim otherwise anywhere.
+  Encrypting it means encrypting the whole database, which is a decision with a build cost, not
+  something to imply in a feature list.
 - **Schema changes are additive.** `MessageCache` opens existing user databases, so add tables with
   `CREATE TABLE IF NOT EXISTS` and columns with `ensure_column_exists`. Never drop or rename a column
-  that shipped.
+  that shipped. The one exception taken so far is dropping a table that held secrets nothing read;
+  if that case comes up again, say why in the commit.
 
 ### Versioning and releases
 

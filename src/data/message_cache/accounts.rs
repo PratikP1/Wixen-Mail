@@ -1,7 +1,8 @@
-//! Account persistence operations (with encrypted passwords)
+//! Account persistence. The password is not part of it.
 
 use super::MessageCache;
 use crate::common::{Error, Result};
+use crate::service::credentials::{self, StoredPassword};
 use rusqlite::params;
 
 impl MessageCache {
@@ -9,7 +10,11 @@ impl MessageCache {
     pub fn save_account(&self, account: &crate::data::account::Account) -> Result<()> {
         use chrono::Utc;
 
-        let encoded_password = self.encrypt_value(&account.password)?;
+        // The password goes to the credential store and the column is left
+        // empty. Failing here rather than falling back to the database on
+        // purpose: a quiet fallback would put the secret in the one place this
+        // change exists to keep it out of.
+        credentials::store(&account.id, &account.password)?;
 
         let now = Utc::now().to_rfc3339();
 
@@ -31,7 +36,7 @@ impl MessageCache {
                 &account.smtp_port,
                 &account.smtp_use_tls,
                 &account.username,
-                &encoded_password,
+                "",
                 &account.enabled,
                 &account.check_interval_minutes,
                 &account.provider,
@@ -99,17 +104,82 @@ impl MessageCache {
 
         let mut result = Vec::new();
         for row in accounts {
-            let (encoded_password, mut account) =
+            let (in_the_row, mut account) =
                 row.map_err(|e| Error::Other(format!("Failed to parse account: {}", e)))?;
-            account.password = self.decrypt_value(&encoded_password).unwrap_or_default();
+            account.password = self.password_for(&account.id, &in_the_row);
             result.push(account);
         }
 
         Ok(result)
     }
 
+    /// An account's password, moving it out of the database if that is still
+    /// where it is.
+    fn password_for(&self, account_id: &str, in_the_row: &str) -> String {
+        let in_the_store = credentials::load(account_id).unwrap_or_else(|e| {
+            tracing::warn!("Could not read the saved password for {account_id}: {e}");
+            None
+        });
+
+        match credentials::stored_password(in_the_store, in_the_row) {
+            StoredPassword::Ready(password) => password,
+            StoredPassword::NeedsMoving(encrypted) => self.move_password(account_id, &encrypted),
+            StoredPassword::Missing => String::new(),
+        }
+    }
+
+    /// Move a password left over from the version that kept it in the database.
+    fn move_password(&self, account_id: &str, encrypted: &str) -> String {
+        let password = match self.decrypt_value(encrypted) {
+            Ok(password) => password,
+            Err(e) => {
+                // Said out loud rather than quietly turned into an empty
+                // password, which is what this used to do. The account then
+                // reported "authentication failed" and sent somebody looking
+                // for a wrong password instead of typing the right one again.
+                tracing::warn!(
+                    "The saved password for {account_id} cannot be read on this computer and has to be entered again: {e}"
+                );
+                return String::new();
+            }
+        };
+
+        if let Err(e) = credentials::store(account_id, &password) {
+            // Usable this session, still in the database, and tried again next
+            // time. Better than refusing to load the account.
+            tracing::warn!(
+                "Could not move the password for {account_id} to the credential store: {e}"
+            );
+            return password;
+        }
+        if let Err(e) = self.forget_stored_password(account_id) {
+            tracing::warn!(
+                "The password for {account_id} is in the credential store, but the old copy is still in the database: {e}"
+            );
+        } else {
+            tracing::info!("Moved the password for {account_id} into the credential store");
+        }
+        password
+    }
+
+    fn forget_stored_password(&self, account_id: &str) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE accounts SET password = '' WHERE id = ?1",
+                params![account_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to clear stored password: {}", e)))?;
+        Ok(())
+    }
+
     /// Delete an account from the database
     pub fn delete_account(&self, account_id: &str) -> Result<()> {
+        // The password goes with it. Removing the account and leaving its
+        // password in the credential store would leave a secret behind with
+        // nothing left that names it.
+        if let Err(e) = credentials::forget(account_id) {
+            tracing::warn!("Removed {account_id} but its saved password is still stored: {e}");
+        }
         self.conn
             .execute("DELETE FROM accounts WHERE id = ?1", params![account_id])
             .map_err(|e| Error::Other(format!("Failed to delete account: {}", e)))?;

@@ -16,7 +16,7 @@ what is finished.
 - Contact management with vCard import/export, groups, and autocomplete
 - Advanced search (FTS), message rules engine, and tag-based filtering
 - Offline mode with outbox queue and sync-on-reconnect
-- AES-256-GCM credential encryption and phishing detection
+- Passwords and sign-in tokens kept in the Windows credential store, never in a file
 
 ## Installing
 

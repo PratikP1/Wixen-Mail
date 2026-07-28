@@ -39,15 +39,21 @@ Everything Wixen Mail stores about you is in one folder:
 ```text
 %LOCALAPPDATA%\wixen-mail\
     config\        your settings and one file per account
-    cache\         the mail that has been downloaded, encrypted
+    cache\         the mail that has been downloaded
     logs\          the running log and crash.log
-    security.key   used only when Windows will not hold the key for us
 ```
 
 Paste `%LOCALAPPDATA%\wixen-mail` into File Explorer's address bar to open it.
 
 Your passwords and sign-in tokens are not in that folder. They are in the Windows credential
-store, which is the same place Windows keeps its own saved sign-ins.
+store, which is the same place Windows keeps its own saved sign-ins, protected per user by
+Windows itself.
+
+**The downloaded mail is not encrypted.** Windows stops other people who use the computer
+from reading the folder, but anything running as you can read it, and so can anyone who takes
+the drive out unless the disk itself is encrypted. Turn on BitLocker if that matters to you.
+This is the same position as Outlook's offline folders and Thunderbird's local store, and it
+is stated here rather than left to be discovered.
 
 **To back up:** copy the whole `wixen-mail` folder. `config` is the part worth keeping.
 `cache` is a copy of what is on the mail server and comes back on its own.

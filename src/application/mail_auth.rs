@@ -43,6 +43,17 @@ pub fn provider_of(account: &Account) -> Option<String> {
 /// The credential this account signs in with, fetching a token if it needs one.
 pub async fn for_account(account: &Account) -> Result<MailAuth> {
     if !account.use_oauth {
+        // Sending an empty password produces "authentication failed", which
+        // reads as a wrong password and sends somebody checking one that is
+        // perfectly correct. There are two ways to arrive here and both are
+        // fixed by typing it again: the account was never given a password, or
+        // it was saved on a different computer and this one cannot read it.
+        if account.password.is_empty() {
+            return Err(Error::Authentication(format!(
+                "No password is saved for {} on this computer. Open Accounts, edit it, and enter the password again.",
+                account.name
+            )));
+        }
         return Ok(MailAuth::Password(account.password.clone()));
     }
 
@@ -110,6 +121,24 @@ mod tests {
     async fn test_a_password_account_uses_its_password() {
         let auth = for_account(&account()).await.expect("should resolve");
         assert!(matches!(auth, MailAuth::Password(p) if p == "hunter2"));
+    }
+
+    #[tokio::test]
+    async fn test_an_account_with_no_saved_password_says_so_rather_than_failing_to_sign_in() {
+        // A password saved on another computer cannot be read on this one, and
+        // an empty one sent to the server comes back as "authentication
+        // failed", which is the wrong thing to go and check.
+        let mut forgotten = account();
+        forgotten.password = String::new();
+
+        let error = for_account(&forgotten)
+            .await
+            .expect_err("should refuse to try")
+            .to_string();
+
+        assert!(error.contains("No password is saved"), "got {error}");
+        assert!(error.contains("Work"), "the account is not named: {error}");
+        assert!(error.contains("Accounts"), "no remedy offered: {error}");
     }
 
     #[tokio::test]
