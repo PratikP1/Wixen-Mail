@@ -55,7 +55,7 @@ There is no double-press timing window. The second press does the second thing
 however long you took, because a timing window is a timing trap (WCAG 2.2.1)
 and locks out anyone who types slowly.
 
-`Ctrl+Shift+M` mutes this reading without silencing status and error
+`Ctrl+M` mutes this reading without silencing status and error
 announcements.
 
 ### The Reader Window
@@ -143,7 +143,7 @@ in the heading, as in "Reply, level 8, from Ada Lovelace".
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Mute Message Reading | `Ctrl+Shift+M` | Stop reading message text aloud. Status and error announcements keep working, so muting before a screen share does not cost you your error messages. |
+| Mute Message Reading | `Ctrl+M` | Stop reading message text aloud. Status and error announcements keep working, so muting before a screen share does not cost you your error messages. |
 
 ### Application Control
 
@@ -168,11 +168,30 @@ in the heading, as in "Reply, level 8, from Ada Lovelace".
 
 ### File Menu
 
+`Ctrl+N` makes the thing the area you are in is for: a message in Mail, a
+contact in Contacts, an event in Calendar, and so on. The six `Ctrl+Shift`
+keys each make one particular kind from anywhere, so you never have to switch
+module first.
+
+New items go to your default account when that account can hold them, and to
+this computer when it cannot. A plain mail account, which is every POP account
+and most IMAP ones, holds mail and nothing else, so contacts and events made
+while it is the default are kept here rather than pretending to sync. Tasks,
+notes and reminders are kept here for everybody. Wixen Mail says where each new
+item went as it makes it.
+
+Your first account becomes the default on its own. Change it in the accounts
+dialog once you have more than one.
+
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| New > Message | `Ctrl+N` | Open composition window (File > New > Message) |
-| New > Contact | (none) | Open Contact Manager (File > New > Contact) |
-| New > Account | (none) | Open Account Manager (File > New > Account) |
+| New > Message | `Ctrl+N` or `Ctrl+Shift+M` | Compose a message |
+| New > Contact | `Ctrl+Shift+C` | |
+| New > Event | `Ctrl+Shift+E` | |
+| New > Reminder | `Ctrl+Shift+D` | `D` for due. `Ctrl+Shift+R` is Reply All, here and in every other mail client |
+| New > Task | `Ctrl+Shift+T` | |
+| New > Note | `Ctrl+Shift+N` | |
+| New > Account | (none) | Open Account Manager |
 | Save | `Ctrl+S` | Save current draft |
 | Save As | (none) | Save message or attachment to file |
 | Check Mail | `F9` | Check for new messages |
@@ -256,8 +275,8 @@ moves the menu, and sorting from the menu moves the headers.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Next Unread | `Ctrl+Shift+N` | Next unread message, wrapping at the end. Says so when there is none, rather than doing nothing. |
-| Previous Unread | `Ctrl+Shift+P` | Previous unread message, wrapping at the start |
+| Next Unread | `Ctrl+]` | Next unread message, wrapping at the end. Says so when there is none, rather than doing nothing. |
+| Previous Unread | `Ctrl+[` | Previous unread message, wrapping at the start |
 | Next Message | `↓` | Move to next message in list |
 | Previous Message | `↑` | Move to previous message in list |
 | First Message | `Home` | Jump to first message |
@@ -444,7 +463,7 @@ the field accelerators for letters without making anything more reachable.
 1. **Use `F6` to move between the folder tree and the message list** - Much faster than using the mouse
 2. **Learn the message action shortcuts** - `Ctrl+R`, `Ctrl+L`, `Delete` are the most common
 3. **Press `Space` on any row** to hear the item, and again to hear all of it. It works the same in every module.
-4. **Use `Ctrl+Shift+N` to jump to unread messages** - Quickly find messages that need attention. It wraps at the end and tells you when there are none left.
+4. **Use `Ctrl+]` to jump to unread messages** - Quickly find messages that need attention. It wraps at the end and tells you when there are none left.
 5. **Master the composition shortcuts** - `Ctrl+Enter` to send, `Esc` to cancel
 6. **Context menus are your friend** - `Shift+F10` opens context menu for selected item
 

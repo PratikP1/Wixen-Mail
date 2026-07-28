@@ -2272,19 +2272,45 @@ document.addEventListener('keydown', function(e) {
 
     fn build_menu_bar() -> MenuBar {
         // ── "New" submenu (expanded for all PIM modules) ────────────
+        //
+        // The keys come from `ItemKind` rather than being typed here, so the
+        // menu and the model cannot drift apart. In a menu rather than as bare
+        // accelerators because a key nobody can find is a key nobody uses.
+        use crate::application::new_item::ItemKind;
+        let key_for = |kind: ItemKind| kind.shortcut();
         let new_sub = Menu::builder()
             .append_item(
                 ID_NEW_MESSAGE,
-                "&Message\tCtrl+N",
+                &format!("&Message\tCtrl+N, {}", key_for(ItemKind::Mail)),
                 "Compose a new email message",
             )
             .append_separator()
-            .append_item(ID_NEW_EVENT, "&Event", "Create a calendar event")
-            .append_item(ID_NEW_REMINDER, "&Reminder", "Create a reminder")
-            .append_item(ID_NEW_TASK, "Tas&k", "Create a task")
-            .append_item(ID_NEW_NOTE, "N&ote", "Create a note")
+            .append_item(
+                ID_NEW_EVENT,
+                &format!("&Event\t{}", key_for(ItemKind::Event)),
+                "Create a calendar event",
+            )
+            .append_item(
+                ID_NEW_REMINDER,
+                &format!("&Reminder\t{}", key_for(ItemKind::Reminder)),
+                "Create a reminder",
+            )
+            .append_item(
+                ID_NEW_TASK,
+                &format!("Tas&k\t{}", key_for(ItemKind::Task)),
+                "Create a task",
+            )
+            .append_item(
+                ID_NEW_NOTE,
+                &format!("N&ote\t{}", key_for(ItemKind::Note)),
+                "Create a note",
+            )
             .append_separator()
-            .append_item(ID_NEW_CONTACT, "Co&ntact", "Create a new contact")
+            .append_item(
+                ID_NEW_CONTACT,
+                &format!("Co&ntact\t{}", key_for(ItemKind::Contact)),
+                "Create a new contact",
+            )
             .append_item(ID_NEW_ACCOUNT, "&Account", "Open Account Manager")
             .build();
 
@@ -2375,7 +2401,10 @@ document.addEventListener('keydown', function(e) {
             .append_separator()
             .append_check_item(
                 ID_MUTE_CONTENT,
-                "&Mute Message Reading	Ctrl+Shift+M",
+                // Moved off Ctrl+Shift+M, which is New Message now, as it is in
+                // Outlook. Ctrl+M is free, mnemonic, and one key easier to
+                // press than what it had.
+                "&Mute Message Reading\tCtrl+M",
                 "Stop reading message text aloud. Status and error announcements continue.",
             )
             .append_separator()

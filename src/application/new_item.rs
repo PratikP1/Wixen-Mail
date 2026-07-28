@@ -12,8 +12,24 @@
 //! to belong to an account. It goes to the local account instead, which is the
 //! honest version of the same thing.
 //!
-//! Tasks, notes and reminders are local for everybody today, because nothing
-//! here syncs them anywhere yet.
+//! Tasks, notes and reminders are local for everybody today. That is a fact
+//! about this application and not about the providers, which is worth writing
+//! down because the obvious reading is wrong:
+//!
+//! - **Tasks do sync.** Google has the Tasks API and Microsoft has To Do
+//!   through Graph. Both are ordinary, documented, and available to consumer
+//!   accounts. We have written neither.
+//! - **Notes sync on Microsoft**, through OneNote in Graph. Google Keep has an
+//!   API but it is Workspace only, so a consumer Gmail account cannot use it.
+//! - **Reminders are not a thing to sync on either.** In Outlook and Exchange a
+//!   reminder is a property of an event or a task rather than an item of its
+//!   own, and Google folded its Reminders into Tasks. So a standalone reminder
+//!   is ours to keep however good the sync gets.
+//!
+//! What decides the rule below is what we actually sync, not what could be
+//! synced. Putting a task in a Gmail account today would promise something
+//! that never happens, and the promise only breaks on a second device, which
+//! is the worst place to find out.
 
 use crate::data::account::Account;
 
@@ -113,8 +129,10 @@ pub fn supports(account: &Account, kind: ItemKind) -> bool {
         ItemKind::Mail => true,
         ItemKind::Contact => provider.is_some_and(|p| CONTACT_PROVIDERS.contains(&p.as_str())),
         ItemKind::Event => provider.is_some_and(|p| CALENDAR_PROVIDERS.contains(&p.as_str())),
-        // Nothing syncs these anywhere yet. Offering an account for them would
-        // promise a sync that does not exist.
+        // False because *we* sync none of them, not because the providers
+        // cannot. Google Tasks and Microsoft To Do both exist; see the module
+        // note. This flips to true per provider the day the sync is written,
+        // and not a moment before.
         ItemKind::Reminder | ItemKind::Task | ItemKind::Note => false,
     }
 }
@@ -219,9 +237,11 @@ mod tests {
     }
 
     #[test]
-    fn test_nothing_syncs_tasks_notes_or_reminders_yet() {
-        // Saying an account holds them would promise a sync that does not
-        // exist, and the promise only breaks on a second device.
+    fn test_we_do_not_claim_to_sync_tasks_notes_or_reminders_yet() {
+        // Not because the providers cannot: Google Tasks and Microsoft To Do
+        // both exist, and OneNote covers notes on Microsoft. This asserts what
+        // *we* do, and it is meant to be changed by whoever writes the sync,
+        // in the same commit that writes it.
         let gmail = account("a1", "me@gmail.com");
 
         for kind in [ItemKind::Task, ItemKind::Note, ItemKind::Reminder] {
