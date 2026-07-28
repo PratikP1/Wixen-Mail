@@ -24,7 +24,7 @@ what is finished.
 git clone https://github.com/PratikP1/Wixen-Mail.git
 cd Wixen-Mail
 cargo build
-cargo run --bin ui_integrated
+cargo run
 ```
 
 ## Development Commands

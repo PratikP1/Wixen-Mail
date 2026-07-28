@@ -13,7 +13,7 @@ This page is intentionally brief and points to canonical docs to avoid duplicati
 git clone https://github.com/PratikP1/Wixen-Mail.git
 cd Wixen-Mail
 cargo build
-cargo run --bin ui_integrated
+cargo run
 ```
 
 ## Validate Locally

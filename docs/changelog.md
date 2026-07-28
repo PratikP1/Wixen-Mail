@@ -5,6 +5,11 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ## [Unreleased]
 
+### Removed
+
+- **A second copy of the application.** Two executables were built from near-identical files, and the installer shipped one while the release archive shipped the other, so a setup file and a portable download were not the same program. There is one now, `wixen-mail.exe`, and `cargo run` starts it without naming a binary.
+- **A database nothing ever read.** A second SQLite file was created in the roaming profile on every start by a module no code called. Roaming a database is a way to corrupt it, and this one held nothing worth corrupting.
+
 ### Changed
 
 - **The crate moved to Rust edition 2024.** Foreign function declarations are now marked `unsafe extern`, an `unsafe fn` no longer makes its whole body an implicit unsafe block, and `if let` releases a temporary before its `else` arm. The minimum Rust version is now stated in `Cargo.toml` as 1.87, so an older toolchain says which version it wants instead of failing partway through with a parse error.
