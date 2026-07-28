@@ -27,6 +27,7 @@ use crate::presentation::message_rows;
 use crate::presentation::pim_rows;
 use crate::presentation::read_aloud::{self, ReadAloud};
 use crate::presentation::reader_text;
+use crate::presentation::theme;
 use crate::presentation::wx_reader;
 use async_channel::{Receiver, Sender};
 use std::cell::RefCell;
@@ -440,7 +441,19 @@ impl WxMailApp {
 
             // ── Left pane: module buttons + context sidebar ───────
             let left_panel = Panel::builder(&panel).build();
-            left_panel.set_background_color(Colour::rgb(240, 240, 245));
+            // The palette, not two numbers somebody picked. `None` means high
+            // contrast is on, or the system is set up in a way we should not
+            // paint over, so nothing is set and Windows decides.
+            // Read once here rather than per control: a settings file opened
+            // once per widget is a file opened a hundred times at startup.
+            let palette = theme::current(
+                &crate::data::config::ConfigManager::load_stored()
+                    .map(|mgr| mgr.app_config().theme.clone())
+                    .unwrap_or_default(),
+            );
+            if let Some(palette) = palette {
+                theme::paint(&left_panel, palette.surface_alt);
+            }
             let left_sizer = BoxSizer::builder(Orientation::Vertical).build();
 
             // Module navigation buttons (2x3 grid) — wrapped in a panel for show/hide
@@ -480,7 +493,9 @@ impl WxMailApp {
             let mail_sb_sizer = BoxSizer::builder(Orientation::Vertical).build();
             let folder_tree = TreeCtrl::builder(&mail_sidebar).build();
             set_accessible_name(&folder_tree, "Mail folders");
-            folder_tree.set_background_color(Colour::rgb(245, 245, 250));
+            if let Some(palette) = palette {
+                theme::paint(&folder_tree, palette.surface_alt);
+            }
             // A tree without its root is a degraded folder pane, not a
             // reason to refuse to start.
             if let Some(root_id) = folder_tree.add_root("Mail Folders", None, None) {

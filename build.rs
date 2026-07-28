@@ -5,6 +5,12 @@ fn main() {
     {
         let mut res = winresource::WindowsResource::new();
         res.set_manifest_file("wixen-mail.exe.manifest");
+        // The executable had no icon at all, so Windows drew the generic one
+        // everywhere: the taskbar, Alt+Tab, the shortcut, and Apps and
+        // Features, where the installer points at this file for its own.
+        // Generated from assets/icon.svg by scripts/make-icon.py.
+        res.set_icon("assets/icon.ico");
+        println!("cargo:rerun-if-changed=assets/icon.ico");
         if let Err(e) = res.compile() {
             // Non-fatal: the application still runs, just with a deprecation warning.
             eprintln!("cargo:warning=Failed to embed manifest: {}", e);

@@ -44,6 +44,9 @@ DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\wixen-mail.exe
+; The wizard's own icon, so setup is recognisable in the taskbar before the
+; application it installs exists.
+SetupIconFile=..\assets\icon.ico
 
 ; Ask a running copy to close rather than failing on a locked file, and leave
 ; it closed afterwards rather than reopening a window nobody asked for.

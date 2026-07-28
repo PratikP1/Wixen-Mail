@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img"
+     aria-label="Wixen Mail">
+  <title>Wixen Mail</title>
+  <desc>An envelope whose flap is drawn as a W, in violet on a warm off-white
+  field.</desc>
+
+  <!-- The mark has to survive being 16 pixels wide in a taskbar and being
+       described in words in an alt attribute. Both push the same way: one
+       shape, high contrast, no gradient, no small detail. -->
+
+  <rect width="256" height="256" rx="56" fill="#5B21B6"/>
+
+  <!-- The envelope body. Off-white rather than white, matching the light
+       theme's surface, so the icon and the application are the same object. -->
+  <rect x="40" y="72" width="176" height="120" rx="14" fill="#FBFAF9"/>
+
+  <!-- The flap, drawn as a W rather than the usual single V. It is the one
+       thing that makes this envelope this application's envelope, and at 16
+       pixels it still reads as a folded flap rather than as a letter. -->
+  <path d="M40 86 L84 140 L128 96 L172 140 L216 86"
+        fill="none" stroke="#5B21B6" stroke-width="16"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

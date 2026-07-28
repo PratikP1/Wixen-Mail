@@ -222,6 +222,93 @@ pub const MIN_TARGET: i32 = 24;
 /// What a control that is a primary action should be.
 pub const COMFORTABLE_TARGET: i32 = 44;
 
+// ── Putting it on the screen ────────────────────────────────────────────────
+
+impl Rgb {
+    /// The colour as wxWidgets wants it.
+    pub fn wx(self) -> wxdragon::prelude::Colour {
+        wxdragon::prelude::Colour::rgb(self.r, self.g, self.b)
+    }
+}
+
+/// The palette to draw with right now.
+///
+/// `None` means draw nothing of our own and let Windows decide, which is the
+/// answer both for high contrast and for anybody whose system is set up in a
+/// way we have not thought of.
+pub fn current(setting: &str) -> Option<Palette> {
+    if windows_high_contrast() {
+        // Whatever the setting says. Somebody running high contrast has chosen
+        // their colours, usually because nothing else is legible to them, and
+        // an application that paints over that has removed the reason they set
+        // it. This wins over an explicit Light or Dark for the same reason.
+        return None;
+    }
+    Theme::from_setting(setting).palette(wxdragon::is_system_dark_mode())
+}
+
+/// Whether Windows is in a high contrast theme.
+///
+/// `SystemParametersInfo` with `SPI_GETHIGHCONTRAST`, because there is no
+/// cross-platform way to ask and this is a Windows-first application. Anywhere
+/// else the answer is no, which leaves the palette in charge, and that is
+/// correct on a platform with no such mode.
+pub fn windows_high_contrast() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        #[repr(C)]
+        struct HighContrast {
+            size: u32,
+            flags: u32,
+            scheme: *mut u16,
+        }
+        const SPI_GETHIGHCONTRAST: u32 = 0x0042;
+        const HCF_HIGHCONTRASTON: u32 = 0x0000_0001;
+
+        #[link(name = "user32")]
+        unsafe extern "system" {
+            fn SystemParametersInfoW(
+                action: u32,
+                param: u32,
+                data: *mut core::ffi::c_void,
+                update: u32,
+            ) -> i32;
+        }
+
+        let mut info = HighContrast {
+            size: size_of::<HighContrast>() as u32,
+            flags: 0,
+            scheme: std::ptr::null_mut(),
+        };
+        // Safe: the struct is the shape the API documents, its size field is
+        // set as the API requires, and nothing is read back unless the call
+        // reported success.
+        let ok = unsafe {
+            SystemParametersInfoW(
+                SPI_GETHIGHCONTRAST,
+                size_of::<HighContrast>() as u32,
+                (&raw mut info).cast(),
+                0,
+            )
+        };
+        ok != 0 && info.flags & HCF_HIGHCONTRASTON != 0
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
+}
+
+/// Paint a container, and only a container.
+///
+/// Colours go on panels rather than on the controls inside them. A control
+/// given explicit colours stops following Windows high contrast, which is the
+/// one setting that must always win, and stops following whatever else the
+/// user has done to their system theme.
+pub fn paint(window: &impl wxdragon::prelude::WxWidget, colour: Rgb) {
+    window.set_background_color(colour.wx());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
