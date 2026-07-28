@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 550 200" role="img"
+     aria-label="Wixen">
+  <title>Wixen</title>
+  <desc>A burnt-orange fox's head, ears up, with a dark band across where its
+  eyes would be, and the word Wixen in capitals beside it.</desc>
+
+  <!-- Mark and word together, for a README header, a title slide, or anywhere
+       the fox alone would not say what it is.
+
+       The word is set at a cap height a little shorter than the fox so the
+       animal stays the thing you see first, and the gap between them is about
+       a third of the fox's width, which is wide enough that they read as two
+       objects rather than one crowded one.
+
+       Use the fox on its own wherever the name is already on the page. Two
+       statements of the same name next to each other is one too many. -->
+
+  <clipPath id="head">
+    <polygon points="40,14 96,86 160,86 216,14 226,110 204,152 128,222 52,152 30,110"/>
+  </clipPath>
+
+  <!-- The mark. Identical points to wixen-fox.svg; make-brand.py checks. -->
+  <g transform="translate(-1.64, 14.90) scale(0.7212)">
+    <polygon points="40,14 96,86 160,86 216,14 226,110 204,152 128,222 52,152 30,110"
+             fill="#C2410C"/>
+    <g clip-path="url(#head)">
+      <rect x="20" y="110" width="216" height="40" fill="#1C1917"/>
+    </g>
+    <polygon points="110,186 146,186 128,208" fill="#1C1917"/>
+  </g>
+
+  <!-- The word. Identical points to wixen-wordmark.svg. -->
+  <g transform="translate(217.56, 58) scale(0.84)"
+     fill="none" stroke="#1C1917" stroke-width="18"
+     stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="0,0 18,100 40,34 62,100 80,0"/>
+    <polyline points="106,0 106,100"/>
+    <polyline points="142,0 200,100"/>
+    <polyline points="200,0 142,100"/>
+    <polyline points="228,0 228,100"/>
+    <polyline points="228,0 280,0"/>
+    <polyline points="228,50 272,50"/>
+    <polyline points="228,100 280,100"/>
+    <polyline points="304,100 304,0 362,100 362,0"/>
+  </g>
+</svg>

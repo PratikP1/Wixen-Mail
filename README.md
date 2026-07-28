@@ -1,3 +1,5 @@
+<img src="assets/brand/wixen-fox.png" alt="The Wixen fox" width="96">
+
 # Wixen Mail
 
 Wixen Mail is an accessibility-first email client built with Rust and wxdragon (wxWidgets).
@@ -73,6 +75,7 @@ cargo build
 ### Technical
 
 - [Architecture](docs/architecture.md)
+- [Brand](docs/brand.md)
 - [Roadmap](docs/roadmap.md)
 - [Implementation Status](docs/IMPLEMENTATION_STATUS.md)
 - [wxdragon Integration](docs/wxdragon-integration.md)

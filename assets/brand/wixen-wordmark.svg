@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-12 -12 386 124" role="img"
+     aria-label="Wixen">
+  <title>Wixen</title>
+  <desc>The word Wixen in capitals, drawn as five letters made from straight
+  strokes of even weight.</desc>
+
+  <!-- Every letter in WIXEN is made of straight lines. There is not a curve in
+       the word, which is a gift: the wordmark can be five stroked polylines
+       rather than an outlined typeface, so it needs no font file, cannot be
+       substituted by whatever the reader happens to have installed, and stays
+       one shape at any size.
+
+       That decision goes further than the wordmark. It settles the question of
+       what type this project ships, and the answer is none. Everything that is
+       not this word is set in the system font at the size the reader chose,
+       because a mail client that overrides the font size of somebody who set
+       it deliberately has broken the one thing they asked for.
+
+       The stroke is 18 on a cap height of 100, which is a little heavier than
+       a text face, so the word holds together at the sizes a logo is put at
+       and survives being knocked out of a dark background where thin strokes
+       close up. Round caps and joins throughout: the ends are the only soft
+       thing in the whole system, and they keep the word from reading as a
+       warning sign. -->
+
+  <g fill="none" stroke="#1C1917" stroke-width="18"
+     stroke-linecap="round" stroke-linejoin="round">
+    <!-- W -->
+    <polyline points="0,0 18,100 40,34 62,100 80,0"/>
+    <!-- I -->
+    <polyline points="106,0 106,100"/>
+    <!-- X. Set tighter than the even metric gap the others use: its arms lean
+         away from their neighbours, so a measured gap looks like a hole. -->
+    <polyline points="142,0 200,100"/>
+    <polyline points="200,0 142,100"/>
+    <!-- E: the middle arm is shorter than the other two, which is what stops
+         the letter reading as a comb. -->
+    <polyline points="228,0 228,100"/>
+    <polyline points="228,0 280,0"/>
+    <polyline points="228,50 272,50"/>
+    <polyline points="228,100 280,100"/>
+    <!-- N -->
+    <polyline points="304,100 304,0 362,100 362,0"/>
+  </g>
+</svg>

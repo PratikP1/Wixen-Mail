@@ -147,6 +147,28 @@ impl Palette {
     }
 }
 
+/// The colours of the mark, which are not the colours of the interface.
+///
+/// Wixen Mail is one of a family, so the mark belongs to the family and not to
+/// this application. It has to hold up in places the palette never goes: a
+/// README on a white page, a GitHub avatar on a dark page, a favicon at sixteen
+/// pixels, a printed page with no colour at all.
+///
+/// So it is two colours and one silhouette, and both colours are chosen to
+/// clear 3:1 against every surface either theme can put behind them. That is
+/// WCAG 1.4.11's floor for a meaningful graphic, and a logo that identifies the
+/// application is meaningful by definition.
+pub mod brand {
+    use super::Rgb;
+
+    /// The fox's coat. Deep enough to read as text if it ever has to.
+    pub const FOX: Rgb = Rgb::new(0xC2, 0x41, 0x0C);
+    /// The blindfold, the nose, and the wordmark on a light page.
+    pub const INK: Rgb = Rgb::new(0x1C, 0x19, 0x17);
+    /// The wordmark on a dark page, and the field behind the mark on a badge.
+    pub const PAPER: Rgb = Rgb::new(0xFB, 0xFA, 0xF9);
+}
+
 /// Which palette to draw with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Theme {
@@ -389,6 +411,90 @@ mod tests {
         for (name, palette) in [("light", Palette::LIGHT), ("dark", Palette::DARK)] {
             let ratio = contrast(palette.surface, palette.surface_alt);
             assert!(ratio > 1.05, "{name}: the surfaces are the same colour");
+        }
+    }
+
+    /// Every surface the mark can be asked to sit on.
+    ///
+    /// Both themes, plus plain white and plain black, because a README, a
+    /// GitHub avatar and a printed page are none of our surfaces and the mark
+    /// still has to work on them.
+    #[cfg(test)]
+    const MARK_BACKGROUNDS: [(&str, Rgb); 6] = [
+        ("light surface", Palette::LIGHT.surface),
+        ("light surface_alt", Palette::LIGHT.surface_alt),
+        ("dark surface", Palette::DARK.surface),
+        ("dark surface_alt", Palette::DARK.surface_alt),
+        ("white", Rgb::new(0xFF, 0xFF, 0xFF)),
+        ("black", Rgb::new(0x00, 0x00, 0x00)),
+    ];
+
+    #[test]
+    fn test_the_mark_is_visible_wherever_it_is_put() {
+        // 1.4.11. A logo that identifies the application is a meaningful
+        // graphic, so 3:1 is a floor and not a preference. The dark surface is
+        // the tight one: a fox orange light enough for black backgrounds is too
+        // light for white ones, and this sits where both hold.
+        for (name, background) in MARK_BACKGROUNDS {
+            let ratio = contrast(brand::FOX, background);
+            assert!(
+                ratio >= 3.0,
+                "the coat on {name} is {ratio:.2}:1, needs 3.0"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_blindfold_can_be_told_from_the_coat() {
+        // The band is the one piece of the mark carried by colour rather than
+        // by outline, because it sits inside the silhouette. If it does not
+        // separate from the coat it is not a blindfold, it is a smudge.
+        let ratio = contrast(brand::INK, brand::FOX);
+        assert!(ratio >= 3.0, "the band on the coat is {ratio:.2}:1");
+    }
+
+    #[test]
+    fn test_the_knocked_out_form_holds_up_too() {
+        // On a badge the mark inverts: a coloured field, the fox in cream, the
+        // band still in ink. That is the form a favicon, an avatar and a
+        // taskbar button all use, so it is the one most people see, and each
+        // of its three layers has to separate from the one under it.
+        assert!(
+            contrast(brand::PAPER, brand::FOX) >= 3.0,
+            "the cream fox does not separate from the field it sits on"
+        );
+        assert!(
+            contrast(brand::INK, brand::PAPER) >= 3.0,
+            "the band does not separate from the cream fox"
+        );
+    }
+
+    #[test]
+    fn test_the_wordmark_is_readable_as_text_on_either_page() {
+        // It is a word, so 4.5:1 rather than 3:1, whichever way round it runs.
+        for (light, dark) in [
+            (Palette::LIGHT.surface, Palette::DARK.surface),
+            (Rgb::new(0xFF, 0xFF, 0xFF), Rgb::new(0x00, 0x00, 0x00)),
+        ] {
+            assert!(contrast(brand::INK, light) >= 4.5, "ink on a light page");
+            assert!(contrast(brand::PAPER, dark) >= 4.5, "paper on a dark page");
+        }
+    }
+
+    #[test]
+    fn test_the_mark_still_works_with_the_colour_taken_away() {
+        // Printed in one colour, or faxed, or rendered by something that only
+        // does black and white, the two parts collapse into one. That is fine
+        // as long as what is left is a silhouette rather than a blank: both
+        // brand colours are dark, so both land on the same side of any
+        // sensible threshold and the fox stays a fox.
+        for (name, colour) in [("coat", brand::FOX), ("band", brand::INK)] {
+            assert!(
+                contrast(colour, Rgb::new(0xFF, 0xFF, 0xFF))
+                    > contrast(colour, Rgb::new(0x00, 0x00, 0x00)),
+                "{name} is closer to white than to black, so it drops out when \
+                 the colour goes"
+            );
         }
     }
 

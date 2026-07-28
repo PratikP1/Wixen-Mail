@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img"
+     aria-label="The Wixen fox">
+  <title>The Wixen fox</title>
+  <desc>A fox's head seen face on, in burnt orange, with tall pointed ears and
+  a dark band across where its eyes would be.</desc>
+
+  <!-- Two colours and one silhouette, and nothing else.
+
+       The mark has to hold up as a sixteen pixel favicon, as a stencil on a
+       sticker, and printed in one colour, so every part of it is either the
+       outline or a band wide enough to survive being three pixels tall. There
+       are no gradients, no highlights, no inner-ear shading and no whiskers,
+       because each of those is a detail that turns to mud at the size the mark
+       is actually seen at.
+
+       The ears are the reason the proportions are what they are. They are more
+       than a third of the height and they point forward, because they are what
+       is doing the work the eyes are not, and a fox drawn with its ears back
+       reads as a frightened animal rather than a listening one. That is the
+       whole difference between the two things this mark could say. -->
+
+  <clipPath id="head">
+    <polygon points="40,14 96,86 160,86 216,14 226,110 204,152 128,222 52,152 30,110"/>
+  </clipPath>
+
+  <!-- The coat. -->
+  <polygon points="40,14 96,86 160,86 216,14 226,110 204,152 128,222 52,152 30,110"
+           fill="#C2410C"/>
+
+  <!-- The blindfold, clipped to the head so it ends exactly where the cheeks
+       do. Letting it overhang would read more obviously as something tied on,
+       but the overhanging ends would be ink on whatever is behind the mark,
+       and on a dark page that is ink on near-black. A band that disappears on
+       half the backgrounds it will be put on is not a band. -->
+  <g clip-path="url(#head)">
+    <rect x="20" y="110" width="216" height="40" fill="#1C1917"/>
+  </g>
+
+  <!-- The nose. Small enough to vanish at favicon sizes, which is correct: at
+       that size the silhouette is the whole mark. At the sizes where it does
+       show, it is what makes the shape read as a face rather than a leaf. -->
+  <polygon points="110,186 146,186 128,208" fill="#1C1917"/>
+</svg>

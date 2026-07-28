@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img"
+     aria-label="Wixen">
+  <title>Wixen</title>
+  <desc>A rounded burnt-orange tile with a cream fox's head on it, ears up, a
+  dark band across where its eyes would be.</desc>
+
+  <!-- The badge is the mark in the form a platform asks for it: an avatar, a
+       favicon, a taskbar button, a Start tile. Those places crop, round and
+       shrink whatever they are given, so the mark goes on a field rather than
+       floating on whatever colour the page happens to be.
+
+       Knocked out rather than laid on, and this is the rule the whole family
+       follows: a coloured field, a cream figure, and the detail in either the
+       field colour or ink. Wixen Mail is a violet field with a cream envelope
+       and a violet W. Put the two side by side and they are visibly the same
+       object with different jobs, without either one having to carry the
+       other's picture. -->
+
+  <clipPath id="head">
+    <polygon points="40,14 96,86 160,86 216,14 226,110 204,152 128,222 52,152 30,110"/>
+  </clipPath>
+
+  <rect width="256" height="256" rx="56" fill="#C2410C"/>
+
+  <!-- The same fox, at the same coordinates, moved and scaled to sit on the
+       field with room around it. The points below are identical to the ones in
+       wixen-fox.svg and scripts/make-brand.py fails if they ever stop being. -->
+  <g transform="translate(24.62, 32.69) scale(0.8077)">
+    <polygon points="40,14 96,86 160,86 216,14 226,110 204,152 128,222 52,152 30,110"
+             fill="#FBFAF9"/>
+    <g clip-path="url(#head)">
+      <rect x="20" y="110" width="216" height="40" fill="#1C1917"/>
+    </g>
+    <polygon points="110,186 146,186 128,208" fill="#1C1917"/>
+  </g>
+</svg>

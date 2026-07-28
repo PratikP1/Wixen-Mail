@@ -33,3 +33,7 @@ client_secret*.json
 
 # Built setup executables. The published one comes from CI, not from here.
 /dist
+
+# Python bytecode from the asset scripts
+__pycache__/
+*.pyc
