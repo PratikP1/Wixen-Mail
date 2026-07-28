@@ -2557,6 +2557,7 @@ fn sample_mailbox(count: usize) -> Vec<MessageItem> {
             to: "me@example.com".to_string(),
             cc: String::new(),
             reply_to: String::new(),
+            safety: crate::service::safety::Safety::Ordinary,
         })
         .collect()
 }
@@ -2942,6 +2943,7 @@ fn open_conversation(
                     to: String::new(),
                     cc: String::new(),
                     reply_to: String::new(),
+                    safety: crate::service::safety::Safety::Ordinary,
                 },
                 body,
                 depth: node.depth,
@@ -5362,6 +5364,7 @@ mod tests {
             to: String::new(),
             cc: String::new(),
             reply_to: String::new(),
+            safety: crate::service::safety::Safety::Ordinary,
         }
     }
 
@@ -5436,6 +5439,7 @@ mod tests {
             to: String::new(),
             cc: String::new(),
             reply_to: String::new(),
+            safety: crate::service::safety::Safety::Ordinary,
         };
         let messages = vec![read(true), read(false), read(true), read(false)];
 
@@ -5480,6 +5484,7 @@ mod tests {
             to: String::new(),
             cc: String::new(),
             reply_to: String::new(),
+            safety: crate::service::safety::Safety::Ordinary,
         };
         m.read = false;
         let messages = vec![m];

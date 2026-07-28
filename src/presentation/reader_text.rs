@@ -387,6 +387,7 @@ mod tests {
             to: "me@example.com".to_string(),
             cc: String::new(),
             reply_to: String::new(),
+            safety: crate::service::safety::Safety::Ordinary,
         }
     }
 

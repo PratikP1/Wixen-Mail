@@ -100,6 +100,8 @@ pub struct MessageItem {
     pub cc: String,
     /// Where the sender asked replies to go, when they asked.
     pub reply_to: String,
+    /// What the provider's spam and phishing filter made of it.
+    pub safety: crate::service::safety::Safety,
 }
 
 impl MessageItem {
@@ -147,6 +149,7 @@ impl MessageItem {
             to: row.to_addr.clone(),
             cc: row.cc.clone().unwrap_or_default(),
             reply_to: row.reply_to.clone().unwrap_or_default(),
+            safety: row.safety,
         }
     }
 }
@@ -1163,6 +1166,7 @@ mod tests {
             to: String::new(),
             cc: String::new(),
             reply_to: reply_to.to_string(),
+            safety: crate::service::safety::Safety::Ordinary,
         }
     }
 

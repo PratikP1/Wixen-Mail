@@ -35,13 +35,19 @@ pub enum MessageColumn {
     Answered,
     /// Whether the message is an unsent draft.
     Draft,
+    /// What the provider's spam and phishing filter made of it.
+    ///
+    /// Off by default. Most mail is ordinary, so on for everybody it would be
+    /// an empty column read past on every row; on for those who want it, it is
+    /// the fastest way to see the verdict without opening anything.
+    Safety,
     To,
     Cc,
 }
 
 impl MessageColumn {
     /// Every column, in the order the column dialog lists them.
-    pub const ALL: [MessageColumn; 14] = [
+    pub const ALL: [MessageColumn; 15] = [
         MessageColumn::Unread,
         MessageColumn::Attachment,
         MessageColumn::Subject,
@@ -54,6 +60,7 @@ impl MessageColumn {
         MessageColumn::Flagged,
         MessageColumn::Answered,
         MessageColumn::Draft,
+        MessageColumn::Safety,
         MessageColumn::To,
         MessageColumn::Cc,
     ];
@@ -76,6 +83,7 @@ impl MessageColumn {
             MessageColumn::Flagged => "Flagged",
             MessageColumn::Answered => "Answered",
             MessageColumn::Draft => "Draft",
+            MessageColumn::Safety => "Safety",
             MessageColumn::To => "To",
             MessageColumn::Cc => "Cc",
         }
@@ -96,6 +104,7 @@ impl MessageColumn {
             MessageColumn::Flagged => "flagged",
             MessageColumn::Answered => "answered",
             MessageColumn::Draft => "draft",
+            MessageColumn::Safety => "safety",
             MessageColumn::To => "to",
             MessageColumn::Cc => "cc",
         }
@@ -125,6 +134,7 @@ impl MessageColumn {
             MessageColumn::Flagged => "m.starred",
             MessageColumn::Answered => "m.answered",
             MessageColumn::Draft => "m.draft",
+            MessageColumn::Safety => "m.safety",
             MessageColumn::To => "m.to_addr COLLATE NOCASE",
             MessageColumn::Cc => "m.cc COLLATE NOCASE",
         }

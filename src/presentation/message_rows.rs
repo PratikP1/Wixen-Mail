@@ -82,6 +82,10 @@ pub fn cell_text(
         // nothing attached to it.
         MessageColumn::Answered => if message.answered { "Answered" } else { "" }.to_string(),
         MessageColumn::Draft => if message.draft { "Draft" } else { "" }.to_string(),
+        // "Spam", "Phishing", "Suspicious", or nothing at all. Like the other
+        // flag cells it costs listening time only when it has something to say,
+        // which for most of a mailbox is never.
+        MessageColumn::Safety => message.safety.label().to_string(),
         MessageColumn::To => display_address(&message.to),
         MessageColumn::Cc => display_address(&message.cc),
     }
@@ -247,6 +251,47 @@ mod tests {
             to: "me@example.com".to_string(),
             cc: String::new(),
             reply_to: String::new(),
+            safety: crate::service::safety::Safety::Ordinary,
+        }
+    }
+
+    #[test]
+    fn test_the_safety_cell_is_empty_unless_there_is_something_to_say() {
+        // Most of a mailbox is ordinary mail. A column that read "Safe" on
+        // every row would be a word read past a thousand times a day.
+        let ordinary = message();
+
+        assert_eq!(
+            cell_text(
+                &ordinary,
+                MessageColumn::Safety,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            ""
+        );
+    }
+
+    #[test]
+    fn test_the_safety_cell_names_the_verdict() {
+        use crate::service::safety::Safety;
+        for (level, expected) in [
+            (Safety::Suspicious, "Suspicious"),
+            (Safety::Spam, "Spam"),
+            (Safety::Phishing, "Phishing"),
+        ] {
+            let mut flagged = message();
+            flagged.safety = level;
+
+            assert_eq!(
+                cell_text(
+                    &flagged,
+                    MessageColumn::Safety,
+                    DateSettings::default(),
+                    chrono::Local::now()
+                ),
+                expected
+            );
         }
     }
 
