@@ -582,6 +582,34 @@ impl MessageCache {
         Ok(self.conn.last_insert_rowid())
     }
 
+    /// Record exactly this list of attachments for a message.
+    ///
+    /// Replaces rather than adds, because the same message gets parsed more
+    /// than once: a body evicted from the cache is downloaded again, and
+    /// appending a second copy of the list makes the reader show every
+    /// attachment twice while everything past the first copy points at a part
+    /// the message does not have.
+    ///
+    /// The order is the order given, which is the order the parser found them
+    /// in, which is the order the reader lists them in, which is the position
+    /// the bytes are taken from. All four have to be the same one.
+    pub fn replace_attachments(
+        &self,
+        message_id: i64,
+        attachments: &[CachedAttachment],
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "DELETE FROM attachments WHERE message_id = ?1",
+                params![message_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to clear attachments: {}", e)))?;
+        for attachment in attachments {
+            self.save_attachment(attachment)?;
+        }
+        Ok(())
+    }
+
     /// Every attachment recorded for a message.
     pub fn get_attachments_for_message(&self, message_id: i64) -> Result<Vec<CachedAttachment>> {
         let mut stmt = self
@@ -746,6 +774,75 @@ mod tests {
         assert_eq!(again, id, "the message was replaced rather than updated");
         let body = cache.get_message_body(id).unwrap();
         assert!(body.is_some(), "the cached body was lost");
+    }
+
+    #[test]
+    fn test_downloading_a_message_twice_does_not_double_its_attachments() {
+        // Saving an attachment fetches the message again and takes the part at
+        // the position the reader listed. A body evicted from the cache and
+        // downloaded again used to append a second copy of the list, so the
+        // reader showed each attachment twice and everything past the first
+        // copy pointed at a part that was not there.
+        let (cache, folder_id) = listing_cache();
+        let id = cache
+            .upsert_message(&incoming(folder_id, 9, "Report"))
+            .unwrap();
+        let attachments = [
+            super::CachedAttachment {
+                id: 0,
+                message_id: id,
+                filename: "first.pdf".to_string(),
+                mime_type: "application/pdf".to_string(),
+                size: 10,
+                content_id: None,
+            },
+            super::CachedAttachment {
+                id: 0,
+                message_id: id,
+                filename: "second.pdf".to_string(),
+                mime_type: "application/pdf".to_string(),
+                size: 20,
+                content_id: None,
+            },
+        ];
+
+        cache.replace_attachments(id, &attachments).unwrap();
+        cache.replace_attachments(id, &attachments).unwrap();
+
+        let stored = cache.get_attachments_for_message(id).unwrap();
+        assert_eq!(stored.len(), 2, "the list was appended to, not replaced");
+        // Order matters as much as count: the position in this list is the
+        // position the bytes are taken from.
+        assert_eq!(stored[0].filename, "first.pdf");
+        assert_eq!(stored[1].filename, "second.pdf");
+    }
+
+    #[test]
+    fn test_a_message_with_no_attachments_clears_the_ones_it_used_to_have() {
+        // A message can be replaced on the server by one with the same UID in
+        // a rebuilt mailbox. Leaving the old rows behind means offering to
+        // save files the message no longer has.
+        let (cache, folder_id) = listing_cache();
+        let id = cache
+            .upsert_message(&incoming(folder_id, 10, "Report"))
+            .unwrap();
+        cache
+            .replace_attachments(
+                id,
+                &[super::CachedAttachment {
+                    id: 0,
+                    message_id: id,
+                    filename: "gone.pdf".to_string(),
+                    mime_type: "application/pdf".to_string(),
+                    size: 10,
+                    content_id: None,
+                }],
+            )
+            .unwrap();
+
+        cache.replace_attachments(id, &[]).unwrap();
+
+        assert!(cache.get_attachments_for_message(id).unwrap().is_empty());
     }
 
     #[test]

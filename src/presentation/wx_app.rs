@@ -954,6 +954,15 @@ document.addEventListener('keydown', function(e) {
             // your way back out of, and Ctrl+Tab through tabs is one gesture.
             let reader = Rc::new(wx_reader::ReaderWindow::new(&frame, &a11y));
             reader.wire_menu();
+            reader.on_save_attachment({
+                let state = state.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                let a11y = a11y.clone();
+                move |attachment| {
+                    save_attachment(&frame, &state, &ui_tx, &runtime, &a11y, attachment);
+                }
+            });
 
             // Space cycles short then full on the item under the cursor;
             // Shift+Space goes straight to full. One cycle shared across the
@@ -3238,7 +3247,30 @@ fn open_single_message(
         .and_then(|c| c.get_message_body(message.message_id).ok().flatten())
         .and_then(|b| b.body_html.or(b.body_plain))
         .unwrap_or_default();
-    reader.open(reader_text::single_message(message, &body));
+    // The list row does not carry the attachments, only whether there are any,
+    // because a folder listing that loaded them would do a query per row. The
+    // reader is the one place that needs them.
+    let mut message = message.clone();
+    message.attachments = attachments_of(cache, message.message_id);
+    reader.open(reader_text::single_message(&message, &body));
+}
+
+/// The attachments recorded for one message, as the reader wants them.
+///
+/// In the order they were recorded, which is the order the parser found them,
+/// which is the position `mime::attachment_bytes` counts to.
+fn attachments_of(cache: &Option<Arc<MessageCache>>, message_id: i64) -> Vec<AttachmentItem> {
+    cache
+        .as_ref()
+        .and_then(|c| c.get_attachments_for_message(message_id).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|record| AttachmentItem {
+            filename: record.filename,
+            mime_type: record.mime_type,
+            size: record.size.max(0) as usize,
+        })
+        .collect()
 }
 
 /// Open a whole conversation in the reader window as one document.
@@ -3256,9 +3288,10 @@ fn open_conversation(
                 .and_then(|c| c.get_message_body(node.message_id).ok().flatten())
                 .and_then(|b| b.body_html.or(b.body_plain))
                 .unwrap_or_default();
+            let attachments = attachments_of(cache, node.message_id);
             reader_text::ConversationPart {
                 message: MessageItem {
-                    uid: 0,
+                    uid: node.uid,
                     message_id: node.message_id,
                     subject: node.subject.clone(),
                     from: node.sender.clone(),
@@ -3267,8 +3300,8 @@ fn open_conversation(
                     starred: false,
                     answered: false,
                     draft: false,
-                    has_attachments: false,
-                    attachments: Vec::new(),
+                    has_attachments: !attachments.is_empty(),
+                    attachments,
                     thread_depth: node.depth,
                     is_thread_parent: node.depth == 0,
                     thread_id: None,
@@ -3322,6 +3355,7 @@ fn conversation_nodes(
             .map(|(index, _)| index);
         nodes.push(wx_thread_view::ThreadNode {
             message_id: message.message_id,
+            uid: message.uid,
             sender: message.from.clone(),
             subject: message.subject.clone(),
             date: message.date.clone(),
@@ -4779,6 +4813,122 @@ fn spawn_server_change(
     });
 }
 
+/// Ask where to put an attachment, then go and get it.
+///
+/// The dialog runs here, on the UI thread, because a modal dialog has to.
+/// Everything after it is a network fetch and a write, so it goes to a worker:
+/// a message with a large attachment would otherwise freeze the window while it
+/// downloads, and a frozen window is one a screen reader reports as not
+/// responding.
+///
+/// The bytes are never cached. Attachments are the largest thing in a mailbox,
+/// and the whole message comes down again to take one part out of it, which is
+/// the trade that keeps the database small enough to sit in a profile folder.
+fn save_attachment(
+    frame: &Frame,
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+    attachment: &reader_text::ReaderAttachment,
+) {
+    // Already through safe_file_name, because a file dialog handed something
+    // that looks like a path will use it as one.
+    let suggested = attachment.suggested_file_name();
+    let dialog = FileDialog::builder(frame)
+        .with_message("Save attachment")
+        .with_default_file(&suggested)
+        .with_style(FileDialogStyle::Save | FileDialogStyle::OverwritePrompt)
+        .build();
+    if dialog.show_modal() != ID_OK {
+        // Cancelling is a decision, and saying nothing after it is right:
+        // there is no outcome to report.
+        return;
+    }
+    let Some(destination) = dialog.get_path() else {
+        let _ = a11y.announce(
+            "No file name was chosen",
+            crate::presentation::accessibility::announcements::Priority::High,
+        );
+        return;
+    };
+
+    let _ = a11y.announce(
+        &format!("Saving {suggested}"),
+        crate::presentation::accessibility::announcements::Priority::Normal,
+    );
+    let _ = tx.try_send(UIUpdate::StatusUpdated(format!("Saving {suggested}...")));
+
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    let attachment = attachment.clone();
+    let (accounts, account_id) = {
+        let s = lock_state(state);
+        (s.accounts.clone(), s.active_account_id.clone())
+    };
+    let account = account_id
+        .as_ref()
+        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned())
+        .or_else(|| accounts.first().cloned());
+
+    rt.spawn_blocking(move || {
+        let outcome = fetch_and_write_attachment(&handle, account, &attachment, &destination);
+        let _ = match outcome {
+            Ok(()) => tx.try_send(UIUpdate::StatusUpdated(format!("Saved to {destination}"))),
+            // Through ErrorOccurred rather than the status line: a save that
+            // did not happen has to interrupt, because the next thing somebody
+            // does is go looking for a file that is not there.
+            Err(e) => tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "Could not save the attachment: {e}"
+            ))),
+        };
+    });
+}
+
+/// Fetch the message the attachment hangs off, take the part, write it.
+///
+/// Split out from the dialog so the whole of the fallible half is one function
+/// that returns a `Result`, rather than a worker full of early returns that
+/// each have to remember to report themselves.
+fn fetch_and_write_attachment(
+    handle: &tokio::runtime::Handle,
+    account: Option<crate::data::account::Account>,
+    attachment: &reader_text::ReaderAttachment,
+    destination: &str,
+) -> crate::common::Result<()> {
+    use crate::common::Error;
+
+    let account = account.ok_or_else(|| Error::Other("No account is set up".into()))?;
+    let port = account
+        .imap_port
+        .trim()
+        .parse::<u16>()
+        .map_err(|_| Error::Other("The account has no usable IMAP port".into()))?;
+    let paths = AppPaths::resolve()?;
+    let cache = crate::data::message_cache::MessageCache::new(paths.cache_dir(), None)?;
+    let folder = cache
+        .folder_path_for_message(attachment.message_row_id)?
+        .ok_or_else(|| Error::Other("The message is no longer in the folder list".into()))?;
+
+    let auth = handle.block_on(crate::application::mail_auth::for_account(&account))?;
+    let controller = MailController::new();
+    handle.block_on(controller.connect_imap(
+        account.imap_server.clone(),
+        port,
+        account.username.clone(),
+        auth,
+        account.imap_use_tls,
+    ))?;
+    let raw = handle.block_on(controller.fetch_message_body(&folder, attachment.uid));
+    let _ = handle.block_on(controller.disconnect_imap());
+    let raw = raw?;
+
+    let bytes = crate::service::mime::attachment_bytes(&raw, attachment.index)?;
+    std::fs::write(destination, bytes)
+        .map_err(|e| Error::Other(format!("The file could not be written: {e}")))?;
+    Ok(())
+}
+
 /// Download one message body that is not cached yet, and store it.
 ///
 /// Started when a message is selected and its body is not held, so that
@@ -4904,15 +5054,25 @@ fn spawn_body_fetch(
             }
         }
 
-        for attachment in &parsed.attachments {
-            let _ = cache.save_attachment(&crate::data::message_cache::CachedAttachment {
+        // Replaced rather than added to. A body evicted from the cache is
+        // downloaded again, and appending would show every attachment twice
+        // while everything past the first copy pointed at a part that is not
+        // there. The order is the parser's, which is the order the reader
+        // lists them in, which is the position the bytes are taken from.
+        let records: Vec<crate::data::message_cache::CachedAttachment> = parsed
+            .attachments
+            .iter()
+            .map(|attachment| crate::data::message_cache::CachedAttachment {
                 id: 0,
                 message_id: message_row_id,
                 filename: attachment.display_name(),
                 mime_type: attachment.mime_type.clone(),
                 size: attachment.size as i64,
                 content_id: None,
-            });
+            })
+            .collect();
+        if let Err(e) = cache.replace_attachments(message_row_id, &records) {
+            tracing::warn!("Could not record the attachments: {}", e);
         }
 
         // Only if this is still the message somebody is looking at. Otherwise

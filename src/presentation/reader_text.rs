@@ -44,6 +44,11 @@ pub struct ReaderDocument {
     /// `None` for ordinary mail, and then the reader has no warning bar at all
     /// rather than an empty one to tab past on every message.
     pub warning: Option<String>,
+    /// What is attached, and enough to fetch each one again.
+    ///
+    /// Empty for a message with no attachments, and then the reader has no
+    /// list at all rather than an empty one in the tab order of every message.
+    pub attachments: Vec<ReaderAttachment>,
 }
 
 /// The header block shown above a body.
@@ -195,7 +200,29 @@ pub fn single_message(message: &MessageItem, body: &str) -> ReaderDocument {
         text: format!("{}\n\n{}\n", header_block, body),
         landmarks,
         warning: warning_for(message.safety, &message.safety_reasons),
+        attachments: attachments_of(message),
     }
+}
+
+/// The attachments of one message, as the reader needs them.
+///
+/// The index is the position in the list, and that is the whole contract: it
+/// is what gets handed back to `mime::attachment_bytes`, which counts the same
+/// parts in the same order.
+fn attachments_of(message: &MessageItem) -> Vec<ReaderAttachment> {
+    message
+        .attachments
+        .iter()
+        .enumerate()
+        .map(|(index, item)| ReaderAttachment {
+            message_row_id: message.message_id,
+            uid: message.uid,
+            index,
+            name: item.filename.clone(),
+            mime_type: item.mime_type.clone(),
+            size: item.size,
+        })
+        .collect()
 }
 
 /// The warning shown above a message, when it has earned one.
@@ -291,6 +318,175 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
             .iter()
             .max_by_key(|part| part.message.safety)
             .and_then(|worst| warning_for(worst.message.safety, &worst.message.safety_reasons)),
+        // Every message's attachments, in the order the messages are read, so
+        // one list covers the whole conversation. Each row remembers which
+        // message it came from, which is what makes that possible.
+        attachments: parts
+            .iter()
+            .flat_map(|part| attachments_of(&part.message))
+            .collect(),
+    }
+}
+
+/// One attachment in the reader, and enough to fetch it again.
+///
+/// The bytes are not kept. Attachments are the largest thing in a mailbox and
+/// caching every one would undo the work that keeps the database small enough
+/// to live in a profile folder, so saving one re-fetches its message and takes
+/// the part by index.
+///
+/// That index is the position in [`crate::service::mime::ParsedMessage`]'s
+/// attachment list, and it has to stay that: the wrong index saves a different
+/// file under the name of the one somebody asked for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReaderAttachment {
+    /// The message it hangs off, for finding the folder again.
+    pub message_row_id: i64,
+    /// The message's UID on the server, for fetching it again.
+    pub uid: u32,
+    /// Its position in that message's attachment list.
+    pub index: usize,
+    /// The name the sender gave, exactly as they gave it.
+    pub name: String,
+    pub mime_type: String,
+    pub size: usize,
+}
+
+impl ReaderAttachment {
+    /// The single sentence a screen reader says when this row is reached.
+    ///
+    /// Name, kind and size, because that is the whole of what somebody needs
+    /// to decide whether to open it and there is nowhere else for them to
+    /// look.
+    pub fn label(&self) -> String {
+        let name = match self.name.trim() {
+            "" => "Attachment with no name",
+            named => named,
+        };
+        format!(
+            "{}, {}, {}",
+            name,
+            describe_kind(&self.mime_type, &self.name),
+            human_size(self.size)
+        )
+    }
+
+    /// Whether Windows would run this rather than open it.
+    pub fn is_runnable(&self) -> bool {
+        extension_of(&self.name).is_some_and(|ext| RUNNABLE.contains(&ext.as_str()))
+    }
+
+    /// What to offer the save dialog as the name.
+    ///
+    /// Through [`safe_file_name`] before it goes anywhere near a dialog. A
+    /// file dialog handed something that looks like a path will use it as one.
+    pub fn suggested_file_name(&self) -> String {
+        crate::service::attachment_name::safe_file_name(&self.name)
+    }
+}
+
+/// Extensions Windows executes. Lowercased, without the dot.
+///
+/// By extension rather than by MIME type, because the type is written by
+/// whoever sent the message and the type on a malicious attachment is usually
+/// the harmless one. The extension is a claim too, but it is the claim Windows
+/// acts on, so it is the one worth believing here.
+const RUNNABLE: [&str; 21] = [
+    "exe", "com", "scr", "pif", "bat", "cmd", "msi", "msp", "cpl", "dll", "hta", "jar", "js",
+    "jse", "lnk", "ps1", "reg", "vbe", "vbs", "wsf", "wsh",
+];
+
+/// The last extension in a name, lowercased.
+fn extension_of(name: &str) -> Option<String> {
+    name.rsplit_once('.')
+        .map(|(_, extension)| extension.trim().to_ascii_lowercase())
+        .filter(|extension| !extension.is_empty())
+}
+
+/// What kind of thing this is, in words.
+///
+/// Never the MIME type as it arrived: a synthesiser reads `application/pdf` as
+/// "application slash pdf", which tells nobody anything and costs a second on
+/// every row.
+fn describe_kind(mime_type: &str, name: &str) -> String {
+    // Before anything the sender claimed, because this is the one that
+    // changes what somebody should do.
+    if extension_of(name).is_some_and(|ext| RUNNABLE.contains(&ext.as_str())) {
+        return "program".to_string();
+    }
+
+    let normalised = mime_type.trim().to_ascii_lowercase();
+    let known = match normalised.as_str() {
+        "application/pdf" => Some("PDF document"),
+        "text/plain" => Some("text file"),
+        "text/html" => Some("web page"),
+        "text/csv" => Some("CSV spreadsheet"),
+        "text/calendar" => Some("calendar invitation"),
+        "message/rfc822" => Some("email message"),
+        "image/jpeg" => Some("JPEG image"),
+        "image/png" => Some("PNG image"),
+        "image/gif" => Some("GIF image"),
+        "image/svg+xml" => Some("SVG image"),
+        "image/webp" => Some("WebP image"),
+        "application/zip" | "application/x-zip-compressed" => Some("zip archive"),
+        "application/msword"
+        | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
+            Some("Word document")
+        }
+        "application/vnd.ms-excel"
+        | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => {
+            Some("Excel spreadsheet")
+        }
+        "application/vnd.ms-powerpoint"
+        | "application/vnd.openxmlformats-officedocument.presentationml.presentation" => {
+            Some("PowerPoint presentation")
+        }
+        _ => None,
+    };
+    if let Some(known) = known {
+        return known.to_string();
+    }
+
+    // Not a type we know, but the top half of it still says something.
+    match normalised.split('/').next().unwrap_or_default() {
+        "image" => "image",
+        "audio" => "audio",
+        "video" => "video",
+        "text" => "text file",
+        // Better than reading out a type nobody can act on.
+        _ => "file",
+    }
+    .to_string()
+}
+
+/// A size in units somebody can hold in their head.
+///
+/// Two hundred and forty KB is a fact about a file. Two hundred and forty-five
+/// thousand seven hundred and sixty bytes is a number being read at somebody.
+fn human_size(bytes: usize) -> String {
+    const UNIT: f64 = 1024.0;
+    if bytes == 1 {
+        return "1 byte".to_string();
+    }
+    if bytes < UNIT as usize {
+        return format!("{bytes} bytes");
+    }
+    let mut value = bytes as f64;
+    let mut unit = "bytes";
+    for next in ["KB", "MB", "GB", "TB"] {
+        value /= UNIT;
+        unit = next;
+        if value < UNIT {
+            break;
+        }
+    }
+    // One decimal, and only when it says something. "1.0 KB" is a decimal
+    // place spent on nothing, and it is spoken as one.
+    let rounded = (value * 10.0).round() / 10.0;
+    if (rounded.fract()).abs() < f64::EPSILON {
+        format!("{} {unit}", rounded as i64)
+    } else {
+        format!("{rounded} {unit}")
     }
 }
 
@@ -310,6 +506,191 @@ impl ReaderDocument {
 mod tests {
     use super::*;
     use crate::presentation::ui_types::AttachmentItem;
+
+    fn attachment(name: &str, mime_type: &str, size: usize) -> ReaderAttachment {
+        ReaderAttachment {
+            message_row_id: 1,
+            uid: 7,
+            index: 0,
+            name: name.to_string(),
+            mime_type: mime_type.to_string(),
+            size,
+        }
+    }
+
+    #[test]
+    fn test_an_attachment_reads_as_a_name_a_kind_and_a_size() {
+        // One row, arrowed onto, spoken once. Everything somebody needs to
+        // decide whether to open it has to be in that sentence, because there
+        // is nowhere else to look.
+        let row = attachment("Report.pdf", "application/pdf", 245_760).label();
+
+        assert_eq!(row, "Report.pdf, PDF document, 240 KB");
+    }
+
+    #[test]
+    fn test_the_kind_is_words_rather_than_a_mime_type() {
+        // "application slash pdf" is what a synthesiser makes of the type as
+        // it arrives, and it tells nobody anything.
+        for (mime_type, name, expected) in [
+            ("application/pdf", "a.pdf", "PDF document"),
+            ("image/jpeg", "a.jpg", "JPEG image"),
+            ("text/plain", "a.txt", "text file"),
+            ("application/zip", "a.zip", "zip archive"),
+            ("message/rfc822", "a.eml", "email message"),
+            ("text/calendar", "a.ics", "calendar invitation"),
+            // Unknown, but the top level still says something useful.
+            ("image/x-something-new", "a.bin", "image"),
+            ("audio/x-something-new", "a.bin", "audio"),
+            // Nothing known at all, and saying so beats guessing.
+            ("application/vnd.made-up", "a.bin", "file"),
+        ] {
+            assert_eq!(describe_kind(mime_type, name), expected, "for {mime_type}");
+        }
+    }
+
+    #[test]
+    fn test_a_program_is_called_a_program_whatever_it_says_it_is() {
+        // The type is written by whoever sent the message, so it is a claim
+        // rather than a fact, and the claim on a malicious attachment is
+        // usually the harmless one. The name is a claim too, but the part of
+        // it Windows acts on is the extension, so that is what gets believed
+        // here as well.
+        for name in [
+            "invoice.exe",
+            "invoice.pdf.exe",
+            "setup.MSI",
+            "photo.scr",
+            "notes.ps1",
+            "run.bat",
+            "thing.lnk",
+        ] {
+            let row = attachment(name, "application/pdf", 1024);
+
+            assert!(row.is_runnable(), "{name} did not read as a program");
+            assert_eq!(describe_kind("application/pdf", name), "program");
+        }
+    }
+
+    #[test]
+    fn test_an_ordinary_attachment_is_not_called_a_program() {
+        // A warning that fires on ordinary mail is one people learn to ignore,
+        // and then it is not there when it matters.
+        for name in ["report.pdf", "photo.jpg", "notes.txt", "archive.zip"] {
+            assert!(
+                !attachment(name, "application/pdf", 10).is_runnable(),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_size_is_said_in_units_somebody_can_hold_in_their_head() {
+        for (bytes, expected) in [
+            (0, "0 bytes"),
+            (1, "1 byte"),
+            (900, "900 bytes"),
+            (1024, "1 KB"),
+            (1536, "1.5 KB"),
+            (245_760, "240 KB"),
+            (5 * 1024 * 1024, "5 MB"),
+            (3 * 1024 * 1024 * 1024, "3 GB"),
+        ] {
+            assert_eq!(human_size(bytes), expected, "for {bytes}");
+        }
+    }
+
+    #[test]
+    fn test_the_name_offered_to_the_save_dialog_is_already_safe() {
+        // The sender chose this string. By the time it reaches a file dialog
+        // as the suggested name it has to be something that can only ever be a
+        // filename, because a dialog handed a path will happily use it.
+        let disguised = attachment("annexe\u{202E}cod.exe", "application/pdf", 10);
+
+        let suggested = disguised.suggested_file_name();
+
+        assert!(!suggested.contains('\u{202E}'), "{suggested:?}");
+        assert!(!suggested.contains(['/', '\\']), "{suggested:?}");
+        assert!(
+            suggested.ends_with(".exe"),
+            "the extension moved: {suggested}"
+        );
+    }
+
+    #[test]
+    fn test_an_attachment_with_no_name_still_has_a_row_to_land_on() {
+        // The sender's omission, not the reader's problem. A blank row is
+        // something you arrow onto and cannot identify.
+        let row = attachment("", "application/pdf", 1024).label();
+
+        assert!(row.starts_with("Attachment"), "{row}");
+        assert!(row.contains("PDF document"), "{row}");
+    }
+
+    #[test]
+    fn test_each_message_in_a_conversation_counts_its_own_attachments() {
+        // One list covers the whole conversation, so the rows run 0, 1, 0
+        // rather than 0, 1, 2. Numbering them straight through would fetch the
+        // third attachment of a message that has one.
+        let mut first = message();
+        first.message_id = 11;
+        first.uid = 101;
+        first.attachments = vec![
+            AttachmentItem {
+                filename: "a.pdf".to_string(),
+                mime_type: "application/pdf".to_string(),
+                size: 1,
+            },
+            AttachmentItem {
+                filename: "b.pdf".to_string(),
+                mime_type: "application/pdf".to_string(),
+                size: 2,
+            },
+        ];
+        let mut second = message();
+        second.message_id = 12;
+        second.uid = 102;
+        second.attachments = vec![AttachmentItem {
+            filename: "c.pdf".to_string(),
+            mime_type: "application/pdf".to_string(),
+            size: 3,
+        }];
+
+        let doc = conversation(
+            "Report",
+            &[
+                ConversationPart {
+                    message: first,
+                    body: String::new(),
+                    depth: 0,
+                },
+                ConversationPart {
+                    message: second,
+                    body: String::new(),
+                    depth: 1,
+                },
+            ],
+        );
+
+        let found: Vec<(i64, u32, usize, &str)> = doc
+            .attachments
+            .iter()
+            .map(|a| (a.message_row_id, a.uid, a.index, a.name.as_str()))
+            .collect();
+        assert_eq!(
+            found,
+            vec![
+                (11, 101, 0, "a.pdf"),
+                (11, 101, 1, "b.pdf"),
+                (12, 102, 0, "c.pdf"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_nothing_attached_has_no_list_to_tab_past() {
+        assert!(single_message(&message(), "Hello.").attachments.is_empty());
+    }
 
     #[test]
     fn test_headings_in_a_message_body_become_landmarks_the_reader_can_jump_to() {

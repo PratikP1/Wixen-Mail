@@ -79,6 +79,34 @@ where the caret is.
 | Next message in the conversation | `Ctrl+Down` | Announces the message it lands on, and says "Last message" at the end |
 | Previous message in the conversation | `Ctrl+Up` | |
 | Security warning | `F7` | Moves between the message and the warning above it, when there is one |
+| Attachments | `F8` | Moves between the message and the list of attachments, when there is one |
+| Save an attachment | `Ctrl+S` | Saves the attachment the list is on. `Enter` on a row does the same |
+
+#### Attachments
+
+A message with attachments gets a list of them below the message text, so it is
+the next thing after the message in the tab order. Each row reads as the name,
+what kind of file it is in plain words, and how big it is: "Report.pdf, PDF
+document, 240 KB".
+
+`F8` jumps to the list from anywhere in the message, and `F8` again goes back to
+the message.
+
+`Ctrl+S`, or `Enter` on a row, opens the standard Save dialog with the name
+already filled in. The file is downloaded when you save it rather than kept on
+your computer in advance, so saving a large attachment takes as long as
+downloading it does. The status line says when it is saved and where it went.
+
+**A file Windows would run is called a program.** If an attachment ends in
+`.exe`, `.msi`, `.scr`, `.bat`, `.ps1`, `.lnk` or anything else Windows executes,
+the row says "program" rather than whatever the message claimed the file was.
+The opening announcement says so too, before you have reached the list. The type
+a message gives its own attachment is written by whoever sent it, so it is a
+claim rather than a fact, and on a malicious attachment the claim is usually the
+harmless one.
+
+Messages with nothing attached have no list at all, so there is nothing extra to
+tab past on ordinary mail.
 
 #### The security warning
 

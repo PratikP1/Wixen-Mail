@@ -20,6 +20,8 @@ use wxdragon::prelude::*;
 pub struct ThreadNode {
     /// The cache row id, so a choice can be acted on.
     pub message_id: i64,
+    /// The message's UID on the server, so its attachments can be fetched.
+    pub uid: u32,
     pub sender: String,
     pub subject: String,
     pub date: String,
@@ -185,6 +187,7 @@ mod tests {
 
     fn node(sender: &str, read: bool) -> ThreadNode {
         ThreadNode {
+            uid: 0,
             message_id: 1,
             sender: sender.to_string(),
             subject: "Quarterly report".to_string(),

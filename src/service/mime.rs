@@ -70,9 +70,7 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage> {
         .parse(raw)
         .ok_or_else(|| Error::Protocol("The message could not be read".into()))?;
 
-    let attachments = message
-        .attachments()
-        .filter(|part| !is_embedded_in_the_body(part))
+    let attachments = attachment_parts(&message)
         .map(|part| AttachmentInfo {
             filename: part.attachment_name().map(str::to_string),
             mime_type: content_type_of(part),
@@ -103,6 +101,46 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage> {
         }),
         attachments,
     })
+}
+
+/// The parts a reader would call attachments, in the order they are shown.
+///
+/// One definition, used by [`parse`] to list them and by [`attachment_bytes`]
+/// to fetch one. Two walks of the parts written separately would be two chances
+/// to disagree about whether a newsletter's inline spacer counts, and the cost
+/// of disagreeing is saving a tracking pixel under the name of the invoice
+/// somebody asked for.
+fn attachment_parts<'a>(
+    message: &'a mail_parser::Message<'a>,
+) -> impl Iterator<Item = &'a mail_parser::MessagePart<'a>> {
+    message
+        .attachments()
+        .filter(|part| !is_embedded_in_the_body(part))
+}
+
+/// The contents of one attachment, by its position in the list.
+///
+/// Decoded, so what comes back is the file rather than the base64 that carried
+/// it. The message has to be fetched again to call this: attachments are the
+/// largest thing in a mailbox, and keeping every one of them would undo the
+/// work that keeps the cache small enough to sit in a profile folder.
+///
+/// The index is the one [`ParsedMessage::attachments`] used. Anything else is
+/// a different attachment saved under the name of the one that was asked for.
+pub fn attachment_bytes(raw: &[u8], index: usize) -> Result<Vec<u8>> {
+    let message = MessageParser::default()
+        .parse(raw)
+        .ok_or_else(|| Error::Protocol("The message could not be read".into()))?;
+
+    attachment_parts(&message)
+        .nth(index)
+        .map(|part| part.contents().to_vec())
+        .ok_or_else(|| {
+            Error::Protocol(format!(
+                "The message no longer has an attachment {}",
+                index + 1
+            ))
+        })
 }
 
 /// The first body part that really is the kind asked for.
@@ -373,6 +411,132 @@ mod tests {
                 .as_deref()
                 .unwrap()
                 .contains("See attached")
+        );
+    }
+
+    #[test]
+    fn test_the_bytes_come_back_for_the_attachment_at_that_index() {
+        let raw = concat!(
+            "From: a@example.com\r\n",
+            "Content-Type: multipart/mixed; boundary=\"b\"\r\n",
+            "\r\n",
+            "--b\r\n",
+            "Content-Type: text/plain\r\n",
+            "\r\n",
+            "See attached.\r\n",
+            "--b\r\n",
+            "Content-Type: text/plain; name=\"first.txt\"\r\n",
+            "Content-Disposition: attachment; filename=\"first.txt\"\r\n",
+            "\r\n",
+            "the first one\r\n",
+            "--b\r\n",
+            "Content-Type: text/plain; name=\"second.txt\"\r\n",
+            "Content-Disposition: attachment; filename=\"second.txt\"\r\n",
+            "\r\n",
+            "the second one\r\n",
+            "--b--\r\n"
+        );
+
+        let first = attachment_bytes(raw.as_bytes(), 0).expect("first");
+        let second = attachment_bytes(raw.as_bytes(), 1).expect("second");
+
+        assert!(String::from_utf8_lossy(&first).contains("the first one"));
+        assert!(String::from_utf8_lossy(&second).contains("the second one"));
+    }
+
+    #[test]
+    fn test_the_index_is_the_one_the_list_showed() {
+        // The whole reason this function exists rather than a second walk of
+        // the parts. The reader lists what `parse` found, which skips a
+        // newsletter's inline spacers; if fetching the bytes did not skip the
+        // same parts, choosing the second attachment in the list would save
+        // the spacer sitting between them and call it by the second
+        // attachment's name.
+        let raw = concat!(
+            "From: news@example.com\r\n",
+            "Content-Type: multipart/mixed; boundary=\"b\"\r\n",
+            "\r\n",
+            "--b\r\n",
+            "Content-Type: text/html\r\n",
+            "\r\n",
+            "<p>Hello <img src=\"cid:spacer\"></p>\r\n",
+            "--b\r\n",
+            "Content-Type: text/plain; name=\"first.txt\"\r\n",
+            "Content-Disposition: attachment; filename=\"first.txt\"\r\n",
+            "\r\n",
+            "the first one\r\n",
+            "--b\r\n",
+            "Content-Type: image/gif\r\n",
+            "Content-ID: <spacer>\r\n",
+            "Content-Disposition: inline\r\n",
+            "\r\n",
+            "GIF89a\r\n",
+            "--b\r\n",
+            "Content-Type: text/plain; name=\"second.txt\"\r\n",
+            "Content-Disposition: attachment; filename=\"second.txt\"\r\n",
+            "\r\n",
+            "the second one\r\n",
+            "--b--\r\n"
+        );
+
+        let parsed = parse(raw.as_bytes()).expect("should parse");
+        assert_eq!(parsed.attachments.len(), 2, "{:?}", parsed.attachments);
+        assert_eq!(parsed.attachments[1].display_name(), "second.txt");
+
+        let bytes = attachment_bytes(raw.as_bytes(), 1).expect("second");
+
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(
+            text.contains("the second one"),
+            "index 1 of the list and index 1 of the bytes are different \
+             attachments: got {text:?}"
+        );
+    }
+
+    #[test]
+    fn test_the_bytes_arrive_decoded() {
+        // What is on the wire is base64. What somebody saves has to be the
+        // file, not the transfer encoding wrapped around it.
+        let raw = concat!(
+            "From: a@example.com\r\n",
+            "Content-Type: multipart/mixed; boundary=\"b\"\r\n",
+            "\r\n",
+            "--b\r\n",
+            "Content-Type: text/plain\r\n",
+            "\r\n",
+            "See attached.\r\n",
+            "--b\r\n",
+            "Content-Type: application/octet-stream; name=\"data.bin\"\r\n",
+            "Content-Disposition: attachment; filename=\"data.bin\"\r\n",
+            "Content-Transfer-Encoding: base64\r\n",
+            "\r\n",
+            "SGVsbG8sIHdvcmxkIQ==\r\n",
+            "--b--\r\n"
+        );
+
+        let bytes = attachment_bytes(raw.as_bytes(), 0).expect("only attachment");
+
+        assert_eq!(bytes, b"Hello, world!");
+    }
+
+    #[test]
+    fn test_asking_for_an_attachment_that_is_not_there_says_so() {
+        // A message can change between being listed and being saved: the
+        // reader holds what was parsed a while ago and the server holds what
+        // is there now. Whatever the reason, an index past the end is a
+        // sentence somebody can act on and never a panic.
+        let raw = concat!(
+            "From: a@example.com\r\n",
+            "Subject: Nothing attached\r\n",
+            "\r\n",
+            "Just text.\r\n"
+        );
+
+        let error = attachment_bytes(raw.as_bytes(), 0).expect_err("no attachments");
+
+        assert!(
+            error.to_string().contains("attachment"),
+            "unhelpful message: {error}"
         );
     }
 

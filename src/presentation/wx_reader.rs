@@ -21,7 +21,7 @@ use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::accessibility::names::set_accessible_name;
-use crate::presentation::reader_text::ReaderDocument;
+use crate::presentation::reader_text::{ReaderAttachment, ReaderDocument};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -31,6 +31,15 @@ const ID_CLOSE_TAB: Id = ID_HIGHEST + 900;
 const ID_NEXT_LANDMARK: Id = ID_HIGHEST + 901;
 const ID_PREV_LANDMARK: Id = ID_HIGHEST + 902;
 const ID_READER_FIND: Id = ID_HIGHEST + 903;
+const ID_SAVE_ATTACHMENT: Id = ID_HIGHEST + 904;
+const ID_GO_ATTACHMENTS: Id = ID_HIGHEST + 905;
+
+/// What the window does when somebody asks to save an attachment.
+///
+/// Set by the application rather than done here. Saving means fetching the
+/// message again, which needs the account, the credentials and the runtime,
+/// and none of those belong to a window whose job is to show text.
+type SaveHandler = Box<dyn Fn(&ReaderAttachment)>;
 
 /// A reader window, kept alive for as long as it is open.
 pub struct ReaderWindow {
@@ -41,7 +50,74 @@ pub struct ReaderWindow {
     /// Which tab is showing. Tracked here because the notebook reports its
     /// selection on the page-changed event and not on demand.
     current: Rc<std::cell::Cell<usize>>,
+    /// The attachment list of each tab, so a Save command can find out which
+    /// row is chosen without walking the window's children.
+    attachment_lists: Rc<RefCell<Vec<Option<ListBox>>>>,
+    save_attachment: Rc<RefCell<Option<SaveHandler>>>,
     a11y: Arc<Accessibility>,
+}
+
+/// Hand one attachment to whatever the application said to do with it.
+///
+/// Every way of failing says something. A command that reports nothing leaves
+/// somebody pressing the key again to find out whether it worked, and the
+/// answer both times is silence.
+fn save_chosen(
+    documents: &Rc<RefCell<Vec<ReaderDocument>>>,
+    handler: &Rc<RefCell<Option<SaveHandler>>>,
+    a11y: &Arc<Accessibility>,
+    page: usize,
+    chosen: Option<u32>,
+) {
+    let documents = documents.borrow();
+    let Some(document) = documents.get(page) else {
+        return;
+    };
+    if document.attachments.is_empty() {
+        let _ = a11y.announce("This message has no attachments", Priority::Normal);
+        return;
+    }
+    // No selection means the list was never reached, so the first row is the
+    // one meant. A list with a selection is asking about that row.
+    let index = chosen.unwrap_or(0) as usize;
+    let Some(attachment) = document.attachments.get(index) else {
+        let _ = a11y.announce("That attachment is no longer there", Priority::Normal);
+        return;
+    };
+    match handler.borrow().as_ref() {
+        Some(save) => save(attachment),
+        None => {
+            let _ = a11y.announce("Saving attachments is not available", Priority::High);
+        }
+    }
+}
+
+/// What the opening announcement says about the attachments, if anything.
+///
+/// Said on the way in because the list is at the bottom of the tab order, and
+/// somebody who reads the message and closes it would otherwise never learn it
+/// was there. It names the key, since a feature nobody can find is a feature
+/// nobody has.
+///
+/// A program among them is called out by name. It is the one fact that should
+/// change what somebody does next, and it is exactly the fact a message
+/// pretending to be an invoice is relying on them not noticing.
+pub fn attachment_summary(attachments: &[ReaderAttachment]) -> String {
+    if attachments.is_empty() {
+        return String::new();
+    }
+    let runnable = attachments.iter().filter(|a| a.is_runnable()).count();
+    let count = match attachments.len() {
+        1 => "1 attachment".to_string(),
+        many => format!("{many} attachments"),
+    };
+    let programs = match (runnable, attachments.len()) {
+        (0, _) => String::new(),
+        (1, 1) => ", which is a program".to_string(),
+        (1, _) => ", one of them a program".to_string(),
+        (many, _) => format!(", {many} of them programs"),
+    };
+    format!(" {count}{programs}, F8 for the list.")
 }
 
 /// Shorten a subject to something that works as a tab label.
@@ -83,6 +159,12 @@ impl ReaderWindow {
         // discoverable: someone who cannot see the window can walk it and find
         // out what the window does instead of having to be told.
         let file = Menu::builder()
+            .append_item(
+                ID_SAVE_ATTACHMENT,
+                "&Save Attachment...\tCtrl+S",
+                "Save the chosen attachment to a file",
+            )
+            .append_separator()
             .append_item(ID_CLOSE_TAB, "&Close Tab\tCtrl+W", "Close this message")
             .append_item(ID_CANCEL, "Close &Window\tEsc", "Close the reader window")
             .build();
@@ -98,6 +180,11 @@ impl ReaderWindow {
                 "Move to the previous message in this conversation",
             )
             .append_separator()
+            .append_item(
+                ID_GO_ATTACHMENTS,
+                "&Attachments\tF8",
+                "Move to the list of attachments",
+            )
             .append_item(ID_READER_FIND, "&Find\tCtrl+F", "Find text in this message")
             .build();
         let menu_bar = MenuBar::builder()
@@ -123,8 +210,19 @@ impl ReaderWindow {
             notebook,
             documents: Rc::new(RefCell::new(Vec::new())),
             current,
+            attachment_lists: Rc::new(RefCell::new(Vec::new())),
+            save_attachment: Rc::new(RefCell::new(None)),
             a11y: a11y.clone(),
         }
+    }
+
+    /// Say what to do when somebody asks to save an attachment.
+    ///
+    /// Until this is called the Save command reports that saving is not
+    /// available, rather than doing nothing and leaving somebody to work out
+    /// whether they pressed the key.
+    pub fn on_save_attachment(&self, handler: impl Fn(&ReaderAttachment) + 'static) {
+        *self.save_attachment.borrow_mut() = Some(Box::new(handler));
     }
 
     /// Add a document as a new tab and show the window.
@@ -173,11 +271,47 @@ impl ReaderWindow {
         // begins.
         text.set_insertion_point(0);
         sizer.add(&text, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+        // Below the message and therefore after it in the tab order, because
+        // an attachment is something you deal with once you know what the
+        // message says. It exists only when there is something in it: an empty
+        // list on every ordinary message is another stop to tab past, and a
+        // control that is usually empty is one people stop checking.
+        let attachments = (!document.attachments.is_empty()).then(|| {
+            let list = ListBox::builder(&panel).build();
+            for attachment in &document.attachments {
+                list.append(&attachment.label());
+            }
+            // The count is in the name because a list announces its name
+            // before its first row, so "Attachments, 2 items" arrives before
+            // anything has to be read to find that out. The word "program" is
+            // in the name too when one of them is, since that is the thing
+            // somebody needs to hear before they start opening files a
+            // stranger sent them.
+            let runnable = document
+                .attachments
+                .iter()
+                .filter(|a| a.is_runnable())
+                .count();
+            let name = match (document.attachments.len(), runnable) {
+                (1, 0) => "Attachments, 1 item".to_string(),
+                (count, 0) => format!("Attachments, {count} items"),
+                (1, _) => "Attachments, 1 item, a program".to_string(),
+                (count, 1) => format!("Attachments, {count} items, one is a program"),
+                (count, many) => format!("Attachments, {count} items, {many} are programs"),
+            };
+            set_accessible_name(&list, &name);
+            list.set_selection(0, true);
+            sizer.add(&list, 0, SizerFlag::Expand | SizerFlag::All, 4);
+            list
+        });
+
         panel.set_sizer(sizer, true);
 
         let label = tab_label(&document.title);
         self.notebook.add_page(&panel, &label, true, None);
         self.documents.borrow_mut().push(document.clone());
+        self.attachment_lists.borrow_mut().push(attachments);
 
         let index = self.documents.borrow().len().saturating_sub(1);
         self.current.set(index);
@@ -191,7 +325,11 @@ impl ReaderWindow {
         text.set_focus();
 
         let _ = self.a11y.announce(
-            &format!("{}, reading. Escape closes.", document.title),
+            &format!(
+                "{}, reading.{} Escape closes.",
+                document.title,
+                attachment_summary(&document.attachments)
+            ),
             Priority::Normal,
         );
         // Through `signal` rather than `announce`, so it obeys the feedback
@@ -204,6 +342,41 @@ impl ReaderWindow {
         if let Some(bar) = warning {
             self.wire_warning_jump(&text, bar);
         }
+        if let Some(list) = attachments {
+            self.wire_attachment_list(list, index);
+        }
+    }
+
+    /// Enter on an attachment row saves it, and F8 goes back to the message.
+    ///
+    /// Enter because that is what pressing Enter on a row means everywhere
+    /// else, and a list where the obvious key does nothing reads as broken.
+    /// F8 both ways for the same reason F7 goes both ways on the warning bar:
+    /// somewhere to jump to is only useful with a way back.
+    fn wire_attachment_list(&self, list: ListBox, index: usize) {
+        let documents = self.documents.clone();
+        let handler = self.save_attachment.clone();
+        let a11y = self.a11y.clone();
+        let notebook = self.notebook;
+
+        list.bind_internal(EventType::KEY_DOWN, move |event| {
+            event.skip(true);
+            match event.get_key_code() {
+                // WXK_RETURN and the numeric keypad's Enter.
+                Some(13) | Some(370) => {
+                    save_chosen(&documents, &handler, &a11y, index, list.get_selection());
+                }
+                // WXK_F8 goes back to the message, which is the first control
+                // on the page after any warning bar.
+                Some(347) => {
+                    if let Some(page) = notebook.get_page(index) {
+                        page.set_focus();
+                        let _ = a11y.announce("Message", Priority::Normal);
+                    }
+                }
+                _ => {}
+            }
+        });
     }
 
     /// F7 moves between the message and the warning above it.
@@ -305,11 +478,38 @@ impl ReaderWindow {
         let documents = self.documents.clone();
         let current = self.current.clone();
         let a11y = self.a11y.clone();
+        let lists = self.attachment_lists.clone();
+        let handler = self.save_attachment.clone();
 
         frame.on_menu(move |event| {
             let id = event.get_id();
             if id == ID_CANCEL {
                 frame.show(false);
+                return;
+            }
+            if id == ID_SAVE_ATTACHMENT {
+                let page = current.get();
+                let chosen = lists
+                    .borrow()
+                    .get(page)
+                    .and_then(|list| list.as_ref().and_then(ListBox::get_selection));
+                save_chosen(&documents, &handler, &a11y, page, chosen);
+                return;
+            }
+            if id == ID_GO_ATTACHMENTS {
+                let page = current.get();
+                match lists.borrow().get(page).and_then(Option::as_ref) {
+                    Some(list) => {
+                        list.set_focus();
+                        // The list announces its own name and row on focus, so
+                        // saying anything here would repeat it.
+                    }
+                    None => {
+                        // Said rather than left silent: a key that does
+                        // nothing is indistinguishable from one that is broken.
+                        let _ = a11y.announce("No attachments", Priority::Normal);
+                    }
+                }
                 return;
             }
             if id == ID_CLOSE_TAB {
@@ -322,6 +522,11 @@ impl ReaderWindow {
                 if page < open.len() {
                     open.remove(page);
                 }
+                let mut open_lists = lists.borrow_mut();
+                if page < open_lists.len() {
+                    open_lists.remove(page);
+                }
+                drop(open_lists);
                 if open.is_empty() {
                     // An empty tabbed window is a window with nothing in it and
                     // no way to tell what it is for.
@@ -358,6 +563,64 @@ impl ReaderWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn attachment(name: &str) -> ReaderAttachment {
+        ReaderAttachment {
+            message_row_id: 1,
+            uid: 1,
+            index: 0,
+            name: name.to_string(),
+            mime_type: "application/pdf".to_string(),
+            size: 1024,
+        }
+    }
+
+    #[test]
+    fn test_a_message_with_nothing_attached_says_nothing_about_attachments() {
+        // The announcement is read on every message that opens, so anything
+        // in it that is not worth hearing is a cost paid on every message.
+        assert_eq!(attachment_summary(&[]), "");
+    }
+
+    #[test]
+    fn test_the_announcement_names_the_key_that_reaches_the_list() {
+        // The list is last in the tab order, so somebody who reads the message
+        // and closes it would never find out it was there.
+        let said = attachment_summary(&[attachment("report.pdf")]);
+
+        assert!(said.contains("1 attachment"), "{said}");
+        assert!(said.contains("F8"), "{said}");
+    }
+
+    #[test]
+    fn test_a_program_among_the_attachments_is_said_out_loud() {
+        // The one fact that should change what somebody does next, and the one
+        // a message pretending to be an invoice needs them not to notice.
+        let said = attachment_summary(&[attachment("invoice.pdf"), attachment("invoice.pdf.exe")]);
+
+        assert!(said.contains("2 attachments"), "{said}");
+        assert!(said.contains("program"), "{said}");
+    }
+
+    #[test]
+    fn test_several_programs_are_counted_rather_than_mentioned_once() {
+        let said = attachment_summary(&[
+            attachment("a.exe"),
+            attachment("b.scr"),
+            attachment("c.pdf"),
+        ]);
+
+        assert!(said.contains("3 attachments"), "{said}");
+        assert!(said.contains("2 of them programs"), "{said}");
+    }
+
+    #[test]
+    fn test_a_lone_program_is_described_as_what_it_is() {
+        let said = attachment_summary(&[attachment("invoice.exe")]);
+
+        assert!(said.contains("1 attachment"), "{said}");
+        assert!(said.contains("which is a program"), "{said}");
+    }
 
     #[test]
     fn test_a_long_subject_is_cut_for_the_tab_label() {
