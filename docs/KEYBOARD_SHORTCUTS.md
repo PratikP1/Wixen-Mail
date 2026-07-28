@@ -77,6 +77,26 @@ where the caret is.
 | Previous tab | `Ctrl+Shift+Tab` | |
 | Next message in the conversation | `Ctrl+Down` | Announces the message it lands on, and says "Last message" at the end |
 | Previous message in the conversation | `Ctrl+Up` | |
+| Security warning | `F7` | Moves between the message and the warning above it, when there is one |
+
+#### The security warning
+
+When your mail provider's filter marked a message as spam, or when the message
+looks like a phishing attempt, the reader puts a warning above it. The warning
+is a read-only text box, so you can read it as many times as you like, move
+through it with the arrow keys, and copy it.
+
+It comes before the message in the tab order, so `Shift+Tab` from the message
+reaches it, and `F7` jumps to it from anywhere in the text. `F7` again goes
+back to where you were reading.
+
+The warning is also announced when the message opens. That announcement is an
+ordinary feedback event, so you can turn it off, change which channels it uses,
+or make it a tone instead of speech, in Settings. Turning the announcement off
+does not remove the warning: the bar is still there and `F7` still reaches it.
+
+Messages with nothing wrong with them have no warning bar at all, so there is
+nothing extra to tab past on ordinary mail.
 
 ### The Preview Pane
 

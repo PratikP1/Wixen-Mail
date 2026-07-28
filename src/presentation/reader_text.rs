@@ -39,6 +39,11 @@ pub struct ReaderDocument {
     /// Where each message begins, so `Ctrl+Down` can move between them in a
     /// conversation and a reader can jump by structure rather than by line.
     pub landmarks: Vec<Landmark>,
+    /// What is wrong with this message, when something is.
+    ///
+    /// `None` for ordinary mail, and then the reader has no warning bar at all
+    /// rather than an empty one to tab past on every message.
+    pub warning: Option<String>,
 }
 
 /// The header block shown above a body.
@@ -189,7 +194,24 @@ pub fn single_message(message: &MessageItem, body: &str) -> ReaderDocument {
         title,
         text: format!("{}\n\n{}\n", header_block, body),
         landmarks,
+        warning: warning_for(message.safety),
     }
+}
+
+/// The warning shown above a message, when it has earned one.
+///
+/// `None` for ordinary mail, so the reader has no bar at all rather than an
+/// empty one to tab past on every message.
+fn warning_for(level: crate::service::safety::Safety) -> Option<String> {
+    level.worth_announcing().then(|| {
+        crate::service::safety::Verdict {
+            level,
+            reasons: Vec::new(),
+        }
+        .summary()
+        .trim_end()
+        .to_string()
+    })
 }
 
 /// One message of a conversation, with the body already fetched.
@@ -260,6 +282,24 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
         title,
         text,
         landmarks,
+        // The worst verdict in the conversation. One reply being a phishing
+        // attempt makes the whole thread worth a warning, and burying that
+        // under "the first message is fine" is how somebody misses it.
+        warning: parts
+            .iter()
+            .map(|part| part.message.safety)
+            .max()
+            .and_then(|worst| {
+                worst.worth_announcing().then(|| {
+                    crate::service::safety::Verdict {
+                        level: worst,
+                        reasons: Vec::new(),
+                    }
+                    .summary()
+                    .trim_end()
+                    .to_string()
+                })
+            }),
     }
 }
 
@@ -366,7 +406,7 @@ mod tests {
         assert!(doc.text.contains("5 < 6 and 7 > 6, so all is well."));
     }
 
-    fn message() -> MessageItem {
+    pub(super) fn message() -> MessageItem {
         MessageItem {
             uid: 1,
             message_id: 1,
@@ -587,5 +627,44 @@ mod tests {
         let doc = conversation("Report", &[]);
         assert!(doc.text.contains("0 messages"));
         assert_eq!(doc.landmarks.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod warning_tests {
+    use super::*;
+    use crate::service::safety::Safety;
+
+    fn message(safety: Safety) -> MessageItem {
+        let mut m = super::tests::message();
+        m.safety = safety;
+        m
+    }
+
+    #[test]
+    fn test_an_ordinary_message_has_no_warning_bar() {
+        // An empty bar in the tab order of every message is a stop on the way
+        // to the text, and it teaches people to tab straight past the one that
+        // matters.
+        let document = single_message(&message(Safety::Ordinary), "Hello");
+
+        assert_eq!(document.warning, None);
+    }
+
+    #[test]
+    fn test_a_phishing_message_leads_its_warning_with_the_word_warning() {
+        let document = single_message(&message(Safety::Phishing), "Click here");
+
+        let warning = document.warning.expect("should warn");
+        assert!(warning.starts_with("Warning:"), "got {warning}");
+    }
+
+    #[test]
+    fn test_spam_warns_without_shouting() {
+        let document = single_message(&message(Safety::Spam), "Buy things");
+
+        let warning = document.warning.expect("should warn");
+        assert!(warning.contains("spam"), "got {warning}");
+        assert!(!warning.starts_with("Warning:"), "got {warning}");
     }
 }

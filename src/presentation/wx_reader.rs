@@ -19,6 +19,7 @@
 
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
+use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::reader_text::ReaderDocument;
 use std::cell::RefCell;
@@ -131,6 +132,29 @@ impl ReaderWindow {
         let panel = Panel::builder(&self.notebook).build();
         let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
+        // The warning goes above the message and therefore first in the tab
+        // order, so it is met on the way in rather than found afterwards. A
+        // sighted reader gets a coloured strip without asking for it; this is
+        // the equivalent that does not depend on catching an announcement as it
+        // goes past, because an announcement cannot be replayed and this can be
+        // read as many times as somebody likes.
+        //
+        // It exists only when there is something to say. An empty bar in the
+        // tab order of every ordinary message is a stop on the way to the text
+        // that teaches people to tab straight past the one that matters.
+        let warning = document.warning.as_ref().map(|text| {
+            let bar = TextCtrl::builder(&panel)
+                .with_style(TextCtrlStyle::ReadOnly | TextCtrlStyle::MultiLine)
+                .build();
+            bar.set_value(text);
+            // Named for what it is, not where it is. "Security warning" says
+            // why to stop; "Notification bar" says there is furniture here.
+            set_accessible_name(&bar, "Security warning");
+            bar.set_insertion_point(0);
+            sizer.add(&bar, 0, SizerFlag::Expand | SizerFlag::All, 4);
+            bar
+        });
+
         // Rich2 because the plain multiline control on Windows has a text
         // length limit that a long conversation reaches, and because it is the
         // control a screen reader reports a caret position for.
@@ -161,12 +185,50 @@ impl ReaderWindow {
 
         self.frame.show(true);
         self.frame.raise();
+        // Focus starts in the message, not in the bar. Landing in the warning
+        // would mean pressing a key to get to the mail every time, and the
+        // warning is announced anyway. Shift+Tab and F7 both reach it.
         text.set_focus();
 
         let _ = self.a11y.announce(
             &format!("{}, reading. Escape closes.", document.title),
             Priority::Normal,
         );
+        // Through `signal` rather than `announce`, so it obeys the feedback
+        // settings like every other event and can be switched off or moved to
+        // a tone by somebody who reads their junk folder on purpose.
+        if let Some(warning) = document.warning.as_deref() {
+            let _ = self.a11y.signal(FeedbackEvent::UnsafeMessage, warning);
+        }
+
+        if let Some(bar) = warning {
+            self.wire_warning_jump(&text, bar);
+        }
+    }
+
+    /// F7 moves between the message and the warning above it.
+    ///
+    /// A key rather than only the tab order, because the bar is one stop away
+    /// when you are at the top of a message and a very long way away when you
+    /// are not. It goes both ways: somewhere to jump to is only useful with a
+    /// way back.
+    fn wire_warning_jump(&self, text: &TextCtrl, bar: TextCtrl) {
+        let body = *text;
+        let a11y = self.a11y.clone();
+
+        for (control, target, spoken) in [(*text, bar, "Security warning"), (bar, body, "Message")]
+        {
+            let a11y = a11y.clone();
+            control.bind_internal(EventType::KEY_DOWN, move |event| {
+                event.skip(true);
+                // WXK_F7
+                if event.get_key_code() != Some(346) {
+                    return;
+                }
+                target.set_focus();
+                let _ = a11y.announce(spoken, Priority::Normal);
+            });
+        }
     }
 
     /// Give one tab's text control its keys.

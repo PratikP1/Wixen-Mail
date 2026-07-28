@@ -48,11 +48,18 @@ pub enum Event {
     SyncComplete,
     /// Something the user asked for could not be done.
     ActionRefused,
+    /// A message that was opened is spam, or looks like a phishing attempt.
+    ///
+    /// Configurable like every other event, and switchable off. Somebody who
+    /// only ever reads their junk folder deliberately does not need to be told
+    /// each time, and somebody who has heard it once about a message they are
+    /// still reading does not need it again.
+    UnsafeMessage,
 }
 
 impl Event {
     /// Every event, so settings and tests can cover the whole set.
-    pub const ALL: [Event; 9] = [
+    pub const ALL: [Event; 10] = [
         Event::ThreadLanded,
         Event::EdgeOfList,
         Event::NewMail,
@@ -62,6 +69,7 @@ impl Event {
         Event::ConnectionRestored,
         Event::SyncComplete,
         Event::ActionRefused,
+        Event::UnsafeMessage,
     ];
 
     /// The identifier used when preferences are stored.
@@ -76,6 +84,7 @@ impl Event {
             Event::ConnectionRestored => "connection_restored",
             Event::SyncComplete => "sync_complete",
             Event::ActionRefused => "action_refused",
+            Event::UnsafeMessage => "unsafe_message",
         }
     }
 
@@ -99,6 +108,7 @@ impl Event {
             Event::ConnectionRestored => "Connected",
             Event::SyncComplete => "Sync finished",
             Event::ActionRefused => "Not available",
+            Event::UnsafeMessage => "Unsafe message",
         }
     }
 
@@ -108,7 +118,11 @@ impl Event {
     /// "message not sent" costs the message.
     pub fn priority(&self) -> Priority {
         match self {
-            Event::SendFailed | Event::ConnectionLost => Priority::Urgent,
+            // Urgent alongside a failed send. Somebody is about to read a
+            // message that is trying to deceive them, and an announcement that
+            // waits its turn behind a sync notice arrives after they have
+            // started reading it.
+            Event::SendFailed | Event::ConnectionLost | Event::UnsafeMessage => Priority::Urgent,
             Event::ActionRefused | Event::ConnectionRestored => Priority::High,
             Event::NewMail | Event::MessageSent | Event::SyncComplete => Priority::Normal,
             Event::ThreadLanded | Event::EdgeOfList => Priority::Low,
@@ -133,6 +147,11 @@ impl Event {
             Event::ConnectionRestored => Tone::new(740, 120),
             Event::SyncComplete => Tone::new(560, 110),
             Event::ActionRefused => Tone::new(330, 140),
+            // The lowest and the longest in the set, which nothing else is, so
+            // it cannot be mistaken for a status noise. Not lower still: the
+            // floor here is 200 Hz, because a tone below that is felt more than
+            // heard on the speakers most laptops have.
+            Event::UnsafeMessage => Tone::new(240, 280),
         }
     }
 }
