@@ -85,6 +85,14 @@ impl ItemKind {
     }
 }
 
+/// The account id items kept only on this computer are filed under.
+///
+/// A reserved id rather than a null, because every stored item is scoped to an
+/// account and a null would mean touching six tables to allow one. It is not a
+/// mail account and never appears in the account list; the panels show it as a
+/// second source alongside whichever account is being looked at.
+pub const LOCAL_ACCOUNT_ID: &str = "local";
+
 /// Where a new item is created.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Destination {
@@ -95,6 +103,14 @@ pub enum Destination {
 }
 
 impl Destination {
+    /// The account id to file the item under.
+    pub fn account_id(&self) -> &str {
+        match self {
+            Destination::Account(id) => id,
+            Destination::Local => LOCAL_ACCOUNT_ID,
+        }
+    }
+
     /// How the destination is announced when the item is made.
     ///
     /// Said every time rather than only when it is surprising, because the
@@ -357,6 +373,24 @@ mod tests {
     #[test]
     fn test_deleting_the_last_account_leaves_no_default() {
         assert_eq!(default_after_change(&[], Some("a1")), None);
+    }
+
+    #[test]
+    fn test_a_local_item_is_filed_under_the_reserved_account() {
+        assert_eq!(Destination::Local.account_id(), "local");
+        assert_eq!(Destination::Account("a1".to_string()).account_id(), "a1");
+    }
+
+    #[test]
+    fn test_no_real_account_can_be_mistaken_for_the_local_one() {
+        // An account whose id happened to be "local" would have its items
+        // merged with everybody's local ones. Ids are generated, so this is a
+        // guard on the generator rather than on user input.
+        assert!(!LOCAL_ACCOUNT_ID.is_empty());
+        assert!(
+            !LOCAL_ACCOUNT_ID.contains('-'),
+            "generated ids contain a dash"
+        );
     }
 
     #[test]

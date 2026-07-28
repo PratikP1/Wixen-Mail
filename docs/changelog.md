@@ -5,6 +5,11 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ## [Unreleased]
 
+### Fixed
+
+- **Creating an event, reminder, task or note now keeps it.** The dialog took a title, wrote a line to the log, announced "created" and threw the item away. Four of the six New commands looked like they worked and none of them stored anything. They store it now, in the right account, and the panel refreshes so you can see it.
+- **Making a calendar, task list, note folder or contact group says it is not built yet**, instead of opening the same dialog and quietly discarding the name.
+
 ### Removed
 
 - **A table of access and refresh tokens that nothing ever read.** The tokens actually in use are in the Windows credential store. This was a second copy, encrypted at rest and then abandoned: no code path would ever have rotated it, expired it or deleted it, and it travelled with the database whenever somebody copied their profile. It is dropped from existing databases on the next start, which is the one case where a schema change is allowed to take something away.
@@ -15,6 +20,10 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 - **A database nothing ever read.** A second SQLite file was created in the roaming profile on every start by a module no code called. Roaming a database is a way to corrupt it, and this one held nothing worth corrupting.
 
 ### Added
+
+- **`Ctrl+N` makes whatever the area you are in is for**: a message in Mail, a contact in Contacts, an event in Calendar, and the same in Reminders, Tasks and Notes. It used to be New Message everywhere, which was the wrong answer in five of the six.
+- **Six keys that make one particular thing from anywhere**, so you never have to switch module first: `Ctrl+Shift+M` message, `Ctrl+Shift+C` contact, `Ctrl+Shift+E` event, `Ctrl+Shift+D` reminder, `Ctrl+Shift+T` task, `Ctrl+Shift+N` note. Reminder takes `D` for due, because `Ctrl+Shift+R` is Reply All here as it is in every other mail client, and that is not worth making anybody relearn. Three keys moved to make room: Mute Message Reading to `Ctrl+M`, Next and Previous Unread to `Ctrl+]` and `Ctrl+[`.
+- **New items go somewhere, and Wixen Mail says where.** Your default account when it can hold that kind of thing, and this computer when it cannot. A plain mail account holds mail and nothing else, so a contact made while one is the default is kept here rather than filed into an account that will never sync it. Your first account becomes the default on its own; change it with Set as Default in the accounts dialog. Items kept on this computer show up in the panels alongside your account's own.
 
 - **Wixen Mail tells you when a message is spam or a phishing attempt.** The verdict comes from the filter your provider already ran: SpamAssassin's headers, Microsoft's confidence levels, what the receiving server made of the sender's anti-forgery records, and, for Gmail, the junk folder, which is the whole of what Gmail tells a mail application. Nothing is sent anywhere to work this out. DMARC failing counts as impersonation, because it is the sender's own published records saying the message did not come from them; SPF failing on its own does not, because forwarding and mailing lists break it routinely and a warning that fires on half an inbox is one people learn to ignore.
 - **A warning above the message, which stays there.** An announcement can be missed and cannot be replayed. The reader now puts the warning in a read-only text box above the message, first in the tab order so you meet it on the way in, and `F7` moves between it and the text in both directions. You can read it as many times as you like, arrow through it, and copy it. A message with nothing wrong with it has no bar at all, so ordinary mail has nothing extra to tab past.

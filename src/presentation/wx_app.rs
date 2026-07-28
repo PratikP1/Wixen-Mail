@@ -74,6 +74,7 @@ menu_ids!(
     ID_LOAD_SCALE_SAMPLE,
     ID_CHECK_MAIL,
     ID_NEW_MESSAGE,
+    ID_NEW_DEFAULT,
     ID_QUIT,
     ID_SEARCH,
     ID_REPLY,
@@ -159,6 +160,12 @@ pub struct WxUIState {
     pub error_message: Option<String>,
     pub accounts: Vec<Account>,
     pub active_account_id: Option<String>,
+    /// Which account new items are created in.
+    ///
+    /// Distinct from `active_account_id`, which is whichever mailbox is being
+    /// looked at. Browsing another account should not quietly change where a
+    /// new note is filed.
+    pub default_account_id: Option<String>,
     pub offline_mode: bool,
     pub outbox_count: usize,
     pub sort_order: MailSortOption,
@@ -191,6 +198,7 @@ impl Default for WxUIState {
             error_message: None,
             accounts: Vec::new(),
             active_account_id: None,
+            default_account_id: None,
             offline_mode: false,
             outbox_count: 0,
             sort_order: MailSortOption::DateNewestFirst,
@@ -257,6 +265,18 @@ impl WxMailApp {
             && let Ok(accounts) = cache.load_accounts()
         {
             state.active_account_id = accounts.first().map(|a| a.id.clone());
+            // The stored default, corrected against what is actually
+            // configured. It may name an account that has since been deleted,
+            // and every new-item key would then point at nothing.
+            let stored = crate::data::config::ConfigManager::load_stored()
+                .ok()
+                .map(|mgr| mgr.app_config().default_account_id.clone())
+                .filter(|id| !id.is_empty());
+            state.default_account_id =
+                crate::application::new_item::default_after_change(&accounts, stored.as_deref());
+            if state.default_account_id != stored {
+                persist_default_account(state.default_account_id.as_deref());
+            }
             state.accounts = accounts;
         }
 
@@ -1178,9 +1198,17 @@ document.addEventListener('keydown', function(e) {
 
             // Contacts sidebar buttons
             contacts_sb.btn_new_group.on_click({
-                let a11y = a11y.clone();
+                let gate_tx = ui_tx.clone();
+                let gate_rt = runtime.clone();
                 move |_| {
-                    show_new_item_dialog(&frame, "Contact Group", &a11y);
+                    // Gated rather than faked. The dialog this used to open
+                    // took a name, logged it and threw it away, and said
+                    // "created" on the way out.
+                    send_status(
+                        &gate_tx,
+                        &gate_rt,
+                        "Creating a contact group is not built yet",
+                    );
                 }
             });
             contacts_sb.btn_import.on_click({
@@ -1270,31 +1298,65 @@ document.addEventListener('keydown', function(e) {
 
             // ── Reminders panel button handlers ─────────────────────────
             reminders_cp.btn_new.on_click({
-                let a11y = a11y.clone();
+                let state = state.clone();
+                let message_cache = message_cache.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
                 move |_| {
-                    show_new_item_dialog(&frame, "Reminder", &a11y);
+                    managers::new_pim_item(
+                        crate::application::new_item::ItemKind::Reminder,
+                        &state,
+                        &message_cache,
+                        &frame,
+                        &ui_tx,
+                        &runtime,
+                    );
                 }
             });
 
             // ── Tasks panel button handlers ─────────────────────────────
             tasks_cp.btn_new.on_click({
-                let a11y = a11y.clone();
+                let state = state.clone();
+                let message_cache = message_cache.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
                 move |_| {
-                    show_new_item_dialog(&frame, "Task", &a11y);
+                    managers::new_pim_item(
+                        crate::application::new_item::ItemKind::Task,
+                        &state,
+                        &message_cache,
+                        &frame,
+                        &ui_tx,
+                        &runtime,
+                    );
                 }
             });
             tasks_sb.btn_new_list.on_click({
-                let a11y = a11y.clone();
+                let gate_tx = ui_tx.clone();
+                let gate_rt = runtime.clone();
                 move |_| {
-                    show_new_item_dialog(&frame, "Task List", &a11y);
+                    // Gated rather than faked. The dialog this used to open
+                    // took a name, logged it and threw it away, and said
+                    // "created" on the way out.
+                    send_status(&gate_tx, &gate_rt, "Creating a task list is not built yet");
                 }
             });
 
             // ── Notes panel button handlers ─────────────────────────────
             notes_cp.btn_new.on_click({
-                let a11y = a11y.clone();
+                let state = state.clone();
+                let message_cache = message_cache.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
                 move |_| {
-                    show_new_item_dialog(&frame, "Note", &a11y);
+                    managers::new_pim_item(
+                        crate::application::new_item::ItemKind::Note,
+                        &state,
+                        &message_cache,
+                        &frame,
+                        &ui_tx,
+                        &runtime,
+                    );
                 }
             });
             notes_cp.note_list.on_item_selected({
@@ -1421,9 +1483,17 @@ document.addEventListener('keydown', function(e) {
 
             // Notes sidebar button
             notes_sb.btn_new_folder.on_click({
-                let a11y = a11y.clone();
+                let gate_tx = ui_tx.clone();
+                let gate_rt = runtime.clone();
                 move |_| {
-                    show_new_item_dialog(&frame, "Note Folder", &a11y);
+                    // Gated rather than faked. The dialog this used to open
+                    // took a name, logged it and threw it away, and said
+                    // "created" on the way out.
+                    send_status(
+                        &gate_tx,
+                        &gate_rt,
+                        "Creating a note folder is not built yet",
+                    );
                 }
             });
 
@@ -1942,23 +2012,58 @@ document.addEventListener('keydown', function(e) {
                         // New item creation (File > New submenu)
                         _ if id == ID_NEW_CALENDAR => {
                             do_switch(PimModule::Calendar);
-                            show_new_item_dialog(&frame, "Calendar", &a11y);
+                            // Gated rather than faked. The dialog this used to
+                            // open took a name, logged it, threw it away, and
+                            // said "created" on the way out.
+                            send_status(
+                                &ui_tx,
+                                &runtime,
+                                "Creating a calendar is not built yet",
+                            );
                         }
                         _ if id == ID_NEW_EVENT => {
                             do_switch(PimModule::Calendar);
-                            show_new_item_dialog(&frame, "Event", &a11y);
+                            managers::new_pim_item(
+                                crate::application::new_item::ItemKind::Event,
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                            );
                         }
                         _ if id == ID_NEW_REMINDER => {
                             do_switch(PimModule::Reminders);
-                            show_new_item_dialog(&frame, "Reminder", &a11y);
+                            managers::new_pim_item(
+                                crate::application::new_item::ItemKind::Reminder,
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                            );
                         }
                         _ if id == ID_NEW_TASK => {
                             do_switch(PimModule::Tasks);
-                            show_new_item_dialog(&frame, "Task", &a11y);
+                            managers::new_pim_item(
+                                crate::application::new_item::ItemKind::Task,
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                            );
                         }
                         _ if id == ID_NEW_NOTE => {
                             do_switch(PimModule::Notes);
-                            show_new_item_dialog(&frame, "Note", &a11y);
+                            managers::new_pim_item(
+                                crate::application::new_item::ItemKind::Note,
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                            );
                         }
                         // Context menu actions from WebView popup
                         _ if id == ID_CTX_SELECT_ALL => { preview.select_all(); }
@@ -1986,6 +2091,65 @@ document.addEventListener('keydown', function(e) {
                         _ if id == ID_CHECK_MAIL => {
                             send_status(&ui_tx, &runtime, "Checking for new mail...");
                             spawn_mail_sync(&state, &ui_tx, &runtime, None);
+                        }
+                        // Ctrl+N: the primary action for wherever you are.
+                        // A key whose meaning depends on focus is normally a
+                        // bad idea for somebody who cannot see what has focus,
+                        // but this is the one case where it holds: the module
+                        // is announced on every switch, it is what the whole
+                        // window is showing, and "new" reads the same in every
+                        // one of them.
+                        _ if id == ID_NEW_DEFAULT => {
+                            let module = lock_state(&state).active_module;
+                            match module {
+                                PimModule::Mail => open_compose(
+                                    &frame,
+                                    &state,
+                                    &ui_tx,
+                                    &runtime,
+                                    &message_cache,
+                                    ComposeMode::New,
+                                ),
+                                PimModule::Contacts => managers::new_contact(
+                                    &state,
+                                    &message_cache,
+                                    &frame,
+                                    &ui_tx,
+                                    &runtime,
+                                ),
+                                PimModule::Calendar => managers::new_pim_item(
+                                    crate::application::new_item::ItemKind::Event,
+                                    &state,
+                                    &message_cache,
+                                    &frame,
+                                    &ui_tx,
+                                    &runtime,
+                                ),
+                                PimModule::Reminders => managers::new_pim_item(
+                                    crate::application::new_item::ItemKind::Reminder,
+                                    &state,
+                                    &message_cache,
+                                    &frame,
+                                    &ui_tx,
+                                    &runtime,
+                                ),
+                                PimModule::Tasks => managers::new_pim_item(
+                                    crate::application::new_item::ItemKind::Task,
+                                    &state,
+                                    &message_cache,
+                                    &frame,
+                                    &ui_tx,
+                                    &runtime,
+                                ),
+                                PimModule::Notes => managers::new_pim_item(
+                                    crate::application::new_item::ItemKind::Note,
+                                    &state,
+                                    &message_cache,
+                                    &frame,
+                                    &ui_tx,
+                                    &runtime,
+                                ),
+                            }
                         }
                         _ if id == ID_NEW_MESSAGE => open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, ComposeMode::New),
                         _ if id == ID_REPLY => {
@@ -2279,6 +2443,16 @@ document.addEventListener('keydown', function(e) {
         use crate::application::new_item::ItemKind;
         let key_for = |kind: ItemKind| kind.shortcut();
         let new_sub = Menu::builder()
+            // Ctrl+N makes whatever the area you are in is for. Listed first
+            // and named for that, rather than being a second key on Message,
+            // which is what it used to be and was wrong in five of the six
+            // modules.
+            .append_item(
+                ID_NEW_DEFAULT,
+                "&New	Ctrl+N",
+                "Create the kind of item this area is for",
+            )
+            .append_separator()
             .append_item(
                 ID_NEW_MESSAGE,
                 &format!("&Message\tCtrl+N, {}", key_for(ItemKind::Mail)),
@@ -2727,7 +2901,59 @@ fn folder_label(folder: &crate::data::message_cache::CachedFolder) -> String {
     }
 }
 
-fn load_module_data(
+/// Every account a panel draws from: the one being looked at, and the local one.
+///
+/// Items no provider syncs are filed under a reserved local id, so a panel that
+/// showed only the active account would hide them completely. Somebody would
+/// make a note and watch it disappear.
+fn sources_for(account_id: &str) -> Vec<String> {
+    let mut sources = vec![account_id.to_string()];
+    if account_id != crate::application::new_item::LOCAL_ACCOUNT_ID {
+        sources.push(crate::application::new_item::LOCAL_ACCOUNT_ID.to_string());
+    }
+    sources
+}
+
+/// Run one lookup against every source and gather what came back.
+///
+/// A source that fails is reported and the others still load, because one
+/// broken table should not blank a whole panel.
+fn from_every<T>(
+    sources: &[String],
+    failures: &mut Vec<String>,
+    label: &str,
+    mut lookup: impl FnMut(&str) -> crate::common::Result<Vec<T>>,
+) -> Vec<T> {
+    let mut gathered = Vec::new();
+    for source in sources {
+        match lookup(source) {
+            Ok(items) => gathered.extend(items),
+            Err(e) => failures.push(format!("{label}: {e}")),
+        }
+    }
+    gathered
+}
+
+/// Remember which account new items go to.
+///
+/// A failure is logged rather than announced: the choice has already taken
+/// effect for this session, and telling somebody it did not save while it is
+/// visibly working is confusing.
+pub(crate) fn persist_default_account(id: Option<&str>) {
+    let mut mgr = match crate::data::config::ConfigManager::load_stored() {
+        Ok(mgr) => mgr,
+        Err(e) => {
+            tracing::warn!("Default account not saved, settings unreadable: {}", e);
+            return;
+        }
+    };
+    mgr.app_config_mut().default_account_id = id.unwrap_or_default().to_string();
+    if let Err(e) = mgr.save() {
+        tracing::warn!("Default account not saved: {}", e);
+    }
+}
+
+pub(crate) fn load_module_data(
     module: PimModule,
     cache: &Option<Arc<MessageCache>>,
     account_id: Option<String>,
@@ -2741,6 +2967,7 @@ fn load_module_data(
         // through its own status line; the other panels would just be blank.
         return;
     };
+    let sources = sources_for(&account_id);
     let mut updates: Vec<UIUpdate> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
 
@@ -2755,32 +2982,36 @@ fn load_module_data(
         PimModule::Calendar => {
             // A fresh account has no containers, so the sidebar would be empty
             // even with everything else wired. These are idempotent.
-            if let Err(e) = cache.ensure_default_calendar(&account_id) {
-                failures.push(format!("default calendar: {}", e));
+            for source in &sources {
+                // A fresh account has no containers, so the sidebar would be
+                // empty even with everything else wired. Idempotent.
+                if let Err(e) = cache.ensure_default_calendar(source) {
+                    failures.push(format!("default calendar: {}", e));
+                }
             }
-            match cache.get_calendars_for_account(&account_id) {
-                Ok(containers) => updates.push(UIUpdate::CalendarContainersLoaded(
-                    containers
-                        .iter()
-                        .map(CalendarContainerItem::from_entry)
-                        .collect(),
-                )),
-                Err(e) => failures.push(format!("calendars: {}", e)),
-            }
-            match cache.get_all_events_for_account(&account_id) {
-                Ok(events) => updates.push(UIUpdate::CalendarEventsLoaded(
-                    events.iter().map(CalendarEventItem::from_entry).collect(),
-                )),
-                Err(e) => failures.push(format!("events: {}", e)),
-            }
+            let containers = from_every(&sources, &mut failures, "calendars", |id| {
+                cache.get_calendars_for_account(id)
+            });
+            updates.push(UIUpdate::CalendarContainersLoaded(
+                containers
+                    .iter()
+                    .map(CalendarContainerItem::from_entry)
+                    .collect(),
+            ));
+            let events = from_every(&sources, &mut failures, "events", |id| {
+                cache.get_all_events_for_account(id)
+            });
+            updates.push(UIUpdate::CalendarEventsLoaded(
+                events.iter().map(CalendarEventItem::from_entry).collect(),
+            ));
         }
         PimModule::Contacts => {
-            match cache.get_contacts_for_account(&account_id) {
-                Ok(contacts) => updates.push(UIUpdate::ContactsLoaded(
-                    contacts.iter().map(ContactItem::from_entry).collect(),
-                )),
-                Err(e) => failures.push(format!("contacts: {}", e)),
-            }
+            let contacts = from_every(&sources, &mut failures, "contacts", |id| {
+                cache.get_contacts_for_account(id)
+            });
+            updates.push(UIUpdate::ContactsLoaded(
+                contacts.iter().map(ContactItem::from_entry).collect(),
+            ));
             match cache.load_contact_groups(&account_id) {
                 Ok(groups) => updates.push(UIUpdate::ContactGroupsLoaded(
                     groups
@@ -2795,25 +3026,28 @@ fn load_module_data(
                 Err(e) => failures.push(format!("contact groups: {}", e)),
             }
         }
-        PimModule::Reminders => match cache.get_reminders_for_account(&account_id) {
-            Ok(reminders) => updates.push(UIUpdate::RemindersLoaded(
+        PimModule::Reminders => {
+            let reminders = from_every(&sources, &mut failures, "reminders", |id| {
+                cache.get_reminders_for_account(id)
+            });
+            updates.push(UIUpdate::RemindersLoaded(
                 reminders.iter().map(ReminderItem::from_entry).collect(),
-            )),
-            Err(e) => failures.push(format!("reminders: {}", e)),
-        },
+            ));
+        }
         PimModule::Tasks => {
-            if let Err(e) = cache.ensure_default_task_list(&account_id) {
-                failures.push(format!("default task list: {}", e));
-            }
-            let tasks = match cache.get_all_tasks_for_account(&account_id) {
-                Ok(tasks) => tasks,
-                Err(e) => {
-                    failures.push(format!("tasks: {}", e));
-                    Vec::new()
+            for source in &sources {
+                if let Err(e) = cache.ensure_default_task_list(source) {
+                    failures.push(format!("default task list: {}", e));
                 }
-            };
-            match cache.get_task_lists_for_account(&account_id) {
-                Ok(lists) => updates.push(UIUpdate::TaskListsLoaded(
+            }
+            let tasks = from_every(&sources, &mut failures, "tasks", |id| {
+                cache.get_all_tasks_for_account(id)
+            });
+            {
+                let lists = from_every(&sources, &mut failures, "task lists", |id| {
+                    cache.get_task_lists_for_account(id)
+                });
+                updates.push(UIUpdate::TaskListsLoaded(
                     lists
                         .iter()
                         .map(|list| {
@@ -2824,26 +3058,26 @@ fn load_module_data(
                             TaskListItem::from_entry(list, count)
                         })
                         .collect(),
-                )),
-                Err(e) => failures.push(format!("task lists: {}", e)),
+                ));
             }
             updates.push(UIUpdate::TasksLoaded(
                 tasks.iter().map(TaskItem::from_entry).collect(),
             ));
         }
         PimModule::Notes => {
-            if let Err(e) = cache.ensure_default_note_folder(&account_id) {
-                failures.push(format!("default note folder: {}", e));
-            }
-            let notes = match cache.get_all_notes_for_account(&account_id) {
-                Ok(notes) => notes,
-                Err(e) => {
-                    failures.push(format!("notes: {}", e));
-                    Vec::new()
+            for source in &sources {
+                if let Err(e) = cache.ensure_default_note_folder(source) {
+                    failures.push(format!("default note folder: {}", e));
                 }
-            };
-            match cache.get_note_folders_for_account(&account_id) {
-                Ok(folders) => updates.push(UIUpdate::NoteFoldersLoaded(
+            }
+            let notes = from_every(&sources, &mut failures, "notes", |id| {
+                cache.get_all_notes_for_account(id)
+            });
+            {
+                let folders = from_every(&sources, &mut failures, "note folders", |id| {
+                    cache.get_note_folders_for_account(id)
+                });
+                updates.push(UIUpdate::NoteFoldersLoaded(
                     folders
                         .iter()
                         .map(|folder| {
@@ -2854,8 +3088,7 @@ fn load_module_data(
                             NoteFolderItem::from_entry(folder, count)
                         })
                         .collect(),
-                )),
-                Err(e) => failures.push(format!("note folders: {}", e)),
+                ));
             }
             updates.push(UIUpdate::NotesLoaded(
                 notes.iter().map(NoteItem::from_entry).collect(),
@@ -3381,13 +3614,23 @@ fn queue_for_sending(
 
 /// Handle Account Manager dialog result.
 fn handle_account_mgr(frame: &Frame, state: &Arc<StdMutex<WxUIState>>) {
-    let (accounts, active_id) = {
+    let (accounts, active_id, default_id) = {
         let s = lock_state(state);
-        (s.accounts.clone(), s.active_account_id.clone())
+        (
+            s.accounts.clone(),
+            s.active_account_id.clone(),
+            s.default_account_id.clone(),
+        )
     };
-    if let AccountManagerAction::Updated(new) =
-        wx_account_manager::show_account_manager_dialog(frame, &accounts, active_id.as_deref())
-    {
+    if let AccountManagerAction::Updated {
+        accounts: new,
+        default_id: chosen,
+    } = wx_account_manager::show_account_manager_dialog(
+        frame,
+        &accounts,
+        active_id.as_deref(),
+        default_id.as_deref(),
+    ) {
         let mut s = lock_state(state);
         if !new.is_empty() {
             if s.active_account_id
@@ -3399,6 +3642,12 @@ fn handle_account_mgr(frame: &Frame, state: &Arc<StdMutex<WxUIState>>) {
         } else {
             s.active_account_id = None;
         }
+        // Written straight away rather than at shutdown. Somebody who sets the
+        // default and then loses power should not have to set it twice.
+        if chosen != s.default_account_id {
+            persist_default_account(chosen.as_deref());
+        }
+        s.default_account_id = chosen;
         tracing::info!("Accounts updated: {}", new.len());
         s.accounts = new;
     }
@@ -5127,7 +5376,12 @@ fn show_search_dialog(parent: &Frame) -> Option<String> {
 /// Show a dialog to create a new PIM item (Event, Reminder, Task, Note, etc.).
 ///
 /// Presents a simple title-entry dialog and announces the result via screen reader.
-fn show_new_item_dialog(frame: &Frame, item_type: &str, a11y: &Arc<Accessibility>) {
+/// Ask for a title for a new item, and nothing else.
+///
+/// Returns what was typed, or `None` if it was cancelled. Deliberately does not
+/// store anything or announce success: it used to do both, announcing "created"
+/// for an item that was written to a log line and thrown away.
+pub(crate) fn prompt_for_new_item(frame: &Frame, item_type: &str) -> Option<String> {
     let dlg = Dialog::builder(frame, &format!("New {}", item_type))
         .with_size(400, 180)
         .build();
@@ -5183,19 +5437,33 @@ fn show_new_item_dialog(frame: &Frame, item_type: &str, a11y: &Arc<Accessibility
     });
 
     if dlg.show_modal() == ID_OK {
-        let title = title_field.get_value();
-        if !title.trim().is_empty() {
-            tracing::info!("New {} created: {}", item_type, title);
-            let _ = a11y.announce(
-                &format!("{} '{}' created", item_type, title),
-                crate::presentation::accessibility::announcements::Priority::Normal,
-            );
-        }
+        Some(title_field.get_value())
+    } else {
+        None
     }
 }
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_a_panel_always_shows_local_items_as_well() {
+        // Items no provider syncs are filed under a reserved local id. A panel
+        // that drew only from the active account would hide them, so somebody
+        // would make a note and watch it vanish.
+        let sources = super::sources_for("acc-1");
+
+        assert_eq!(sources, vec!["acc-1".to_string(), "local".to_string()]);
+    }
+
+    #[test]
+    fn test_the_local_account_is_not_listed_twice() {
+        // Reachable when the local account is itself what is being looked at.
+        // Two sources would double every row in the list.
+        let sources = super::sources_for("local");
+
+        assert_eq!(sources, vec!["local".to_string()]);
+    }
 
     #[test]
     fn test_no_two_menu_ids_are_the_same() {

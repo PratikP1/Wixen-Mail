@@ -67,6 +67,13 @@ pub struct AppConfig {
     /// office swap a sentence of speech for a short tone.
     #[serde(default)]
     pub feedback_channels: String,
+    /// Which account new items are created in.
+    ///
+    /// Set to the first account configured, without asking, because for most
+    /// people it is the only one. Empty means nothing has been chosen yet, and
+    /// the first account added takes it.
+    #[serde(default)]
+    pub default_account_id: String,
     /// Calendar default view: "agenda", "day", "week", "month"
     #[serde(default = "default_calendar_view")]
     pub calendar_default_view: String,
@@ -116,6 +123,7 @@ impl Default for AppConfig {
             date_style: default_date_style(),
             date_order: default_date_order(),
             mute_message_reading: false,
+            default_account_id: String::new(),
             message_columns: String::new(),
             feedback_channels: String::new(),
             enable_notifications: true,

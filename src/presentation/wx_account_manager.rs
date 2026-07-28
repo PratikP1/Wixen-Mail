@@ -31,17 +31,23 @@ const ID_SET_ACTIVE: Id = ID_HIGHEST + 203;
 const ID_TEST: Id = ID_HIGHEST + 204;
 const ID_REAUTHORIZE: Id = ID_HIGHEST + 205;
 const ID_APP_PASSWORD: Id = ID_HIGHEST + 206;
+const ID_SET_DEFAULT: Id = ID_HIGHEST + 207;
 
 #[derive(Debug, Clone)]
 pub enum AccountManagerAction {
     None,
-    Updated(Vec<Account>),
+    Updated {
+        accounts: Vec<Account>,
+        /// Which account new items are created in.
+        default_id: Option<String>,
+    },
 }
 
 pub fn show_account_manager_dialog(
     parent: &Frame,
     accounts: &[Account],
     active_account_id: Option<&str>,
+    default_account_id: Option<&str>,
 ) -> AccountManagerAction {
     let dlg = Dialog::builder(parent, "Account Manager")
         .with_size(650, 450)
@@ -100,11 +106,18 @@ pub fn show_account_manager_dialog(
         .with_label("&Sign In Again")
         .with_id(ID_REAUTHORIZE)
         .build();
+    // Separate from Active, which is the mailbox being looked at. This is
+    // where a new contact, event or note is filed, and browsing another
+    // account should not quietly move it.
+    let set_default = Button::builder(&dlg)
+        .with_label("Set as &Default")
+        .with_id(ID_SET_DEFAULT)
+        .build();
     let close = Button::builder(&dlg)
         .with_label("&Close")
         .with_id(ID_OK)
         .build();
-    for b in [&add, &edit, &del, &active, &test, &reauth] {
+    for b in [&add, &edit, &del, &active, &set_default, &test, &reauth] {
         btns.add(b, 0, SizerFlag::All, 4);
     }
     btns.add_spacer(16);
@@ -122,8 +135,9 @@ pub fn show_account_manager_dialog(
 
     let mut working = accounts.to_vec();
     let mut active_id: Option<String> = active_account_id.map(|s| s.to_string());
+    let mut default_id: Option<String> = default_account_id.map(|s| s.to_string());
     let mut changed = false;
-    populate(&list, &working, active_id.as_deref());
+    populate(&list, &working, active_id.as_deref(), default_id.as_deref());
 
     add.on_click({
         let d = dlg;
@@ -147,6 +161,12 @@ pub fn show_account_manager_dialog(
         let d = dlg;
         move |_| {
             d.end_modal(ID_REAUTHORIZE);
+        }
+    });
+    set_default.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_SET_DEFAULT);
         }
     });
     active.on_click({
@@ -204,7 +224,7 @@ pub fn show_account_manager_dialog(
 
                     working.push(a);
                     changed = true;
-                    populate(&list, &working, active_id.as_deref());
+                    populate(&list, &working, active_id.as_deref(), default_id.as_deref());
                 }
             }
             r if r == ID_REAUTHORIZE => {
@@ -217,7 +237,7 @@ pub fn show_account_manager_dialog(
                             OAuthFlowResult::Authorized => {
                                 working[idx] = account;
                                 changed = true;
-                                populate(&list, &working, active_id.as_deref());
+                                populate(&list, &working, active_id.as_deref(), default_id.as_deref());
                                 status.set_label(&format!("{name} is signed in again"));
                             }
                             OAuthFlowResult::NoCreds => {
@@ -264,7 +284,7 @@ pub fn show_account_manager_dialog(
                         }
                         working[idx] = u;
                         changed = true;
-                        populate(&list, &working, active_id.as_deref());
+                        populate(&list, &working, active_id.as_deref(), default_id.as_deref());
                     }
                 } else {
                     status.set_label("Select an account to edit");
@@ -292,17 +312,30 @@ pub fn show_account_manager_dialog(
                     if active_id.as_deref() == Some(&rid) {
                         active_id = working.first().map(|a| a.id.clone());
                     }
-                    populate(&list, &working, active_id.as_deref());
+                    populate(&list, &working, active_id.as_deref(), default_id.as_deref());
                     status.set_label(&format!("Deleted: {}", name));
                 } else {
                     status.set_label("Select an account to delete");
+                }
+            }
+            r if r == ID_SET_DEFAULT => {
+                if let Some(idx) = get_selected(&list) {
+                    default_id = Some(working[idx].id.clone());
+                    changed = true;
+                    populate(&list, &working, active_id.as_deref(), default_id.as_deref());
+                    status.set_label(&format!(
+                        "New contacts, events, tasks and notes go to {} from now on",
+                        working[idx].name
+                    ));
+                } else {
+                    status.set_label("Select an account to make it the default");
                 }
             }
             r if r == ID_SET_ACTIVE => {
                 if let Some(idx) = get_selected(&list) {
                     active_id = Some(working[idx].id.clone());
                     changed = true;
-                    populate(&list, &working, active_id.as_deref());
+                    populate(&list, &working, active_id.as_deref(), default_id.as_deref());
                     status.set_label(&format!("Active: {}", working[idx].name));
                 } else {
                     status.set_label("Select an account");
@@ -323,7 +356,15 @@ pub fn show_account_manager_dialog(
     }
 
     if changed {
-        AccountManagerAction::Updated(working)
+        AccountManagerAction::Updated {
+            // Corrected against what is actually configured, in case the
+            // default account was the one just deleted.
+            default_id: crate::application::new_item::default_after_change(
+                &working,
+                default_id.as_deref(),
+            ),
+            accounts: working,
+        }
     } else {
         AccountManagerAction::None
     }
@@ -632,21 +673,34 @@ fn run_oauth_flow(account: &mut Account) -> OAuthFlowResult {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-fn populate(list: &ListCtrl, accounts: &[Account], active_id: Option<&str>) {
+fn populate(
+    list: &ListCtrl,
+    accounts: &[Account],
+    active_id: Option<&str>,
+    default_id: Option<&str>,
+) {
     list.delete_all_items();
     for (i, a) in accounts.iter().enumerate() {
         let idx = i as i64;
         list.insert_item(idx, &a.name, None);
         list.set_item_text_by_column(idx, 1, &a.email);
         list.set_item_text_by_column(idx, 2, &a.imap_server);
-        let status = if !a.enabled {
-            "Disabled"
-        } else if active_id == Some(a.id.as_str()) {
-            "★ Active"
+        // Spelled out rather than marked with a symbol. A star is read as
+        // "black star" or skipped entirely depending on the screen reader and
+        // its punctuation level, so the state is words in the cell.
+        let mut state: Vec<&str> = Vec::new();
+        if !a.enabled {
+            state.push("Disabled");
         } else {
-            "Enabled"
-        };
-        list.set_item_text_by_column(idx, 3, status);
+            state.push("Enabled");
+        }
+        if active_id == Some(a.id.as_str()) {
+            state.push("Active");
+        }
+        if default_id == Some(a.id.as_str()) {
+            state.push("Default for new items");
+        }
+        list.set_item_text_by_column(idx, 3, &state.join(", "));
     }
 }
 

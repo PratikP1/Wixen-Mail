@@ -562,6 +562,195 @@ fn reload_contacts(cache: &Arc<MessageCache>, account: &str, tx: &Sender<UIUpdat
     }
 }
 
+// ── Making a new PIM item ───────────────────────────────────────────────────
+
+/// Create an event, reminder, task or note and store it.
+///
+/// This used to be a dialog that took a title, wrote a log line, announced
+/// "created" and threw the item away. Four of the six New commands looked like
+/// they worked and none of them kept anything.
+///
+/// Where it goes is decided by `application::new_item`: the default account
+/// when that account's provider syncs this kind of thing, and the local account
+/// when it does not. The destination is announced every time, because the case
+/// worth knowing about is the one somebody did not expect and there is no way
+/// to tell in advance which that is.
+pub fn new_pim_item(
+    kind: crate::application::new_item::ItemKind,
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    use crate::application::new_item;
+
+    let Some(cache) = cache.clone() else {
+        return send_status(tx, rt, "No storage is open, so nothing can be saved");
+    };
+    let (accounts, default_id) = {
+        let s = lock_state(state);
+        (s.accounts.clone(), s.default_account_id.clone())
+    };
+    let Some(destination) = new_item::destination(kind, &accounts, default_id.as_deref()) else {
+        return send_status(tx, rt, "Add an account before composing a message");
+    };
+
+    let Some(title) = crate::presentation::wx_app::prompt_for_new_item(frame, kind.label()) else {
+        return;
+    };
+    let title = title.trim().to_string();
+    if title.is_empty() {
+        // An empty title makes a row nothing can identify in a list read
+        // aloud, so it is refused rather than stored as a blank line.
+        return send_status(tx, rt, &format!("{} needs a title", kind.label()));
+    }
+
+    let account_id = destination.account_id().to_string();
+    match store_new_item(&cache, kind, &account_id, &title) {
+        Ok(()) => {
+            send_status(
+                tx,
+                rt,
+                &format!(
+                    "{} \"{}\" created in {}",
+                    kind.label(),
+                    title,
+                    destination.spoken(&accounts)
+                ),
+            );
+            crate::presentation::wx_app::load_module_data(
+                module_for(kind),
+                &Some(cache),
+                Some(account_id),
+                tx,
+            );
+        }
+        Err(e) => {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "{} could not be saved: {}",
+                kind.label(),
+                e
+            )));
+        }
+    }
+}
+
+/// Which panel shows this kind of item.
+fn module_for(
+    kind: crate::application::new_item::ItemKind,
+) -> crate::presentation::ui_types::PimModule {
+    use crate::application::new_item::ItemKind;
+    use crate::presentation::ui_types::PimModule;
+    match kind {
+        ItemKind::Mail => PimModule::Mail,
+        ItemKind::Contact => PimModule::Contacts,
+        ItemKind::Event => PimModule::Calendar,
+        ItemKind::Reminder => PimModule::Reminders,
+        ItemKind::Task => PimModule::Tasks,
+        ItemKind::Note => PimModule::Notes,
+    }
+}
+
+/// Write the new item to the cache.
+///
+/// Only the title is asked for. Everything else takes a defensible default and
+/// is edited afterwards in the panel, because a create dialog that demands a
+/// start time, an end time, a priority and a folder before it will accept
+/// anything is a dialog people stop using.
+fn store_new_item(
+    cache: &MessageCache,
+    kind: crate::application::new_item::ItemKind,
+    account_id: &str,
+    title: &str,
+) -> crate::common::Result<()> {
+    use crate::application::new_item::ItemKind;
+    use crate::data::message_cache::{CalendarEventEntry, NoteEntry, ReminderEntry, TaskEntry};
+    use chrono::{Duration, Utc};
+
+    let now = Utc::now();
+    let stamp = now.to_rfc3339();
+
+    match kind {
+        ItemKind::Event => {
+            // An hour from now, which is the guess least likely to be wrong in
+            // a way that matters: it is visible in today's agenda, so it gets
+            // corrected rather than lost.
+            cache.save_calendar_event(&CalendarEventEntry {
+                id: new_id("event"),
+                account_id: account_id.to_string(),
+                provider_event_id: None,
+                calendar_id: None,
+                summary: title.to_string(),
+                description: None,
+                location: None,
+                start_datetime: stamp.clone(),
+                end_datetime: (now + Duration::hours(1)).to_rfc3339(),
+                start_date: None,
+                end_date: None,
+                is_all_day: false,
+                time_zone: None,
+                status: "confirmed".to_string(),
+                recurrence_rule: None,
+                source_provider: Some("local".to_string()),
+                etag: None,
+                web_link: None,
+                show_as: "busy".to_string(),
+                last_modified_remote: None,
+                last_synced_at: None,
+                attendees_json: None,
+                reminders_json: None,
+                created_at: stamp.clone(),
+                updated_at: stamp,
+            })
+        }
+        ItemKind::Reminder => cache.save_reminder(&ReminderEntry {
+            id: new_id("reminder"),
+            account_id: account_id.to_string(),
+            title: title.to_string(),
+            description: None,
+            // No due time until somebody sets one. A reminder that silently
+            // arrived with one would go off at a moment nobody chose.
+            due_datetime: None,
+            is_completed: false,
+            priority: "normal".to_string(),
+            repeat_rule: None,
+            related_event_id: None,
+            created_at: stamp.clone(),
+            updated_at: stamp,
+        }),
+        ItemKind::Task => cache.save_task(&TaskEntry {
+            id: new_id("task"),
+            account_id: account_id.to_string(),
+            task_list_id: None,
+            title: title.to_string(),
+            description: None,
+            due_date: None,
+            is_completed: false,
+            completed_at: None,
+            priority: "normal".to_string(),
+            display_order: 0,
+            parent_task_id: None,
+            created_at: stamp.clone(),
+            updated_at: stamp,
+        }),
+        ItemKind::Note => cache.save_note(&NoteEntry {
+            id: new_id("note"),
+            account_id: account_id.to_string(),
+            folder_id: None,
+            title: title.to_string(),
+            body: String::new(),
+            format: "plain".to_string(),
+            pinned: false,
+            created_at: stamp.clone(),
+            updated_at: stamp,
+        }),
+        // Both have their own paths: mail opens the composer, a contact opens
+        // the contact dialog, and neither is a title in a box.
+        ItemKind::Mail | ItemKind::Contact => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

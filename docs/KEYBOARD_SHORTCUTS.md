@@ -7,7 +7,8 @@ Complete reference of all keyboard shortcuts in Wixen Mail for efficient, access
 ### Most Common Shortcuts
 | Action | Shortcut |
 |--------|----------|
-| New Message | `Ctrl+N` |
+| New, whatever the area is for | `Ctrl+N` |
+| New Message | `Ctrl+Shift+M` |
 | Reply | `Ctrl+R` |
 | Reply All | `Ctrl+Shift+R` |
 | Reply to Sender Only | `Alt+Shift+R` |
@@ -174,7 +175,8 @@ keys each make one particular kind from anywhere, so you never have to switch
 module first.
 
 New items go to your default account when that account can hold them, and to
-this computer when it cannot. A plain mail account, which is every POP account
+this computer when it cannot. Anything kept here still appears in the panels
+alongside your account's own items, so a note you make is where you expect it. A plain mail account, which is every POP account
 and most IMAP ones, holds mail and nothing else, so contacts and events made
 while it is the default are kept here rather than pretending to sync. Tasks,
 notes and reminders are kept here for everybody. Wixen Mail says where each new
@@ -185,7 +187,8 @@ dialog once you have more than one.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| New > Message | `Ctrl+N` or `Ctrl+Shift+M` | Compose a message |
+| New | `Ctrl+N` | Makes what the area you are in is for |
+| New > Message | `Ctrl+Shift+M` | Compose a message |
 | New > Contact | `Ctrl+Shift+C` | |
 | New > Event | `Ctrl+Shift+E` | |
 | New > Reminder | `Ctrl+Shift+D` | `D` for due. `Ctrl+Shift+R` is Reply All, here and in every other mail client |
