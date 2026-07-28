@@ -12,6 +12,7 @@ pub mod mime;
 pub mod oauth;
 pub mod oauth_credentials;
 pub mod protocols;
+pub mod safebrowsing;
 pub mod safety;
 pub mod security;
 pub mod spellcheck;
