@@ -157,6 +157,72 @@ pub fn from_headers(headers: &str) -> Verdict {
     verdict
 }
 
+/// The verdict from our own reading of the message.
+///
+/// The third source, and the only one that looks at the message rather than at
+/// what somebody else concluded about it. Filters are good at bulk and blunt
+/// about the targeted message written to one person, which is the one that
+/// costs somebody their bank account. This catches what they miss: a link whose
+/// text and target disagree, a lookalike domain, a raw IP address, a reply-to
+/// pointing somewhere the sender is not.
+///
+/// Deliberately never worse than [`Safety::Suspicious`] on its own. Calling
+/// something a phishing attempt on a heuristic score is how a warning becomes
+/// the thing people click past; the provider's filter and DMARC are the two
+/// sources allowed to say that word. Ours says "look at this".
+pub fn from_analysis(risk: PhishingRisk, indicators: &[String]) -> Verdict {
+    let level = match risk {
+        PhishingRisk::High | PhishingRisk::Medium => Safety::Suspicious,
+        PhishingRisk::Low | PhishingRisk::None => return Verdict::ordinary(),
+    };
+
+    Verdict {
+        level,
+        reasons: indicators.iter().map(|it| as_sentence(it)).collect(),
+    }
+}
+
+/// How likely our own checks think a message is an impersonation.
+///
+/// Mirrors `service::security::PhishingRiskLevel`, converted at the boundary so
+/// this module does not depend on the analyser's shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhishingRisk {
+    None,
+    Low,
+    Medium,
+    High,
+}
+
+/// Turn an indicator into something worth reading aloud.
+///
+/// The analyser writes them as notes to a developer: "Sender/response
+/// instruction mismatch". Read out to somebody deciding whether to trust an
+/// email, that is a phrase to decode rather than a fact to act on.
+fn as_sentence(indicator: &str) -> String {
+    let plain = match indicator {
+        "Sender/response instruction mismatch" => {
+            "A reply to this would go to a different address from the one it claims to be from."
+        }
+        "Contains URL using raw IP address" => {
+            "A link points at a bare numeric address rather than a name."
+        }
+        "Contains punycode-like domain (possible homograph)" => {
+            "A link uses a domain built to look like a different one."
+        }
+        "Detected deceptive link text/href mismatch" => {
+            "A link says it goes one place and goes somewhere else."
+        }
+        other if other.starts_with("Urgency or account pressure phrase") => {
+            "The wording pushes for an urgent response, which is how these messages work."
+        }
+        // Anything added to the analyser later still reaches somebody, as
+        // itself, rather than being dropped for not being on this list.
+        other => return format!("{}.", other.trim_end_matches('.')),
+    };
+    plain.to_string()
+}
+
 /// The verdict implied by the message sitting in a junk folder.
 pub fn from_folder(is_junk_folder: bool) -> Verdict {
     if is_junk_folder {
@@ -409,6 +475,70 @@ mod tests {
 
         assert_eq!(verdict.level, Safety::Phishing);
         assert_eq!(verdict.reasons.len(), 2, "both reasons should survive");
+    }
+
+    #[test]
+    fn test_our_own_checks_never_call_something_phishing_on_their_own() {
+        // A heuristic score saying "phishing" is how a warning becomes the
+        // thing people learn to click past. Only the provider's filter and
+        // DMARC get to use that word.
+        for risk in [PhishingRisk::High, PhishingRisk::Medium] {
+            let verdict =
+                from_analysis(risk, &["Detected deceptive link text/href mismatch".into()]);
+
+            assert_eq!(verdict.level, Safety::Suspicious, "{risk:?}");
+        }
+    }
+
+    #[test]
+    fn test_a_low_score_is_not_worth_saying_anything_about() {
+        for risk in [PhishingRisk::Low, PhishingRisk::None] {
+            assert_eq!(
+                from_analysis(risk, &["something".into()]).level,
+                Safety::Ordinary
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_indicator_is_turned_into_something_worth_hearing() {
+        // "Sender/response instruction mismatch" is a note to a developer. It
+        // is read out to somebody deciding whether to trust an email.
+        let verdict = from_analysis(
+            PhishingRisk::High,
+            &["Sender/response instruction mismatch".to_string()],
+        );
+
+        let reason = &verdict.reasons[0];
+        assert!(reason.contains("reply"), "got {reason}");
+        assert!(reason.ends_with('.'), "not a sentence: {reason}");
+    }
+
+    #[test]
+    fn test_an_indicator_nobody_has_reworded_still_reaches_somebody() {
+        // Anything added to the analyser later should read badly rather than
+        // vanish. A dropped warning is worse than an awkward one.
+        let verdict = from_analysis(PhishingRisk::High, &["Something new".to_string()]);
+
+        assert_eq!(verdict.reasons, vec!["Something new.".to_string()]);
+    }
+
+    #[test]
+    fn test_our_checks_merge_with_the_providers_rather_than_replacing_them() {
+        let provider = from_headers(
+            "X-Spam-Flag: YES
+",
+        );
+        let ours = from_analysis(
+            PhishingRisk::High,
+            &["Detected deceptive link text/href mismatch".to_string()],
+        );
+
+        let both = provider.and(ours);
+
+        // Spam outranks suspicious, and both reasons survive.
+        assert_eq!(both.level, Safety::Spam);
+        assert_eq!(both.reasons.len(), 2);
     }
 
     #[test]

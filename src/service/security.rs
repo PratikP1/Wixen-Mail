@@ -56,6 +56,19 @@ pub enum PhishingRiskLevel {
     High,
 }
 
+impl From<PhishingRiskLevel> for crate::service::safety::PhishingRisk {
+    /// Converted at the boundary, so `safety` does not depend on this module's
+    /// shape and this module does not have to know what a verdict is.
+    fn from(level: PhishingRiskLevel) -> Self {
+        match level {
+            PhishingRiskLevel::None => Self::None,
+            PhishingRiskLevel::Low => Self::Low,
+            PhishingRiskLevel::Medium => Self::Medium,
+            PhishingRiskLevel::High => Self::High,
+        }
+    }
+}
+
 /// Security analysis report for a message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageSecurityReport {

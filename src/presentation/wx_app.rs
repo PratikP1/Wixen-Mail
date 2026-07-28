@@ -4788,6 +4788,39 @@ fn spawn_body_fetch(
             tracing::warn!("Could not store the message body: {}", e);
             return;
         }
+        // Our own checks need the body, so they run here rather than during
+        // the header sync, and merge with what the provider already said
+        // rather than replacing it. A message can be both in the junk folder
+        // and carrying a link that lies about where it goes.
+        if let Ok(security) = crate::service::security::SecurityService::new() {
+            let report = security.analyze_message_security(
+                &parsed
+                    .from
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                &parsed.subject,
+                parsed.body_plain.as_deref().unwrap_or_default(),
+                parsed.body_html.as_deref(),
+            );
+            if let Ok(report) = report {
+                let ours = crate::service::safety::from_analysis(
+                    report.phishing_risk.into(),
+                    &report.phishing_indicators,
+                );
+                if ours.level != crate::service::safety::Safety::Ordinary {
+                    let merged = cache
+                        .message_safety(message_row_id)
+                        .unwrap_or_default()
+                        .and(ours);
+                    if let Err(e) = cache.set_message_safety(message_row_id, &merged) {
+                        tracing::warn!("Could not store the safety verdict: {}", e);
+                    }
+                }
+            }
+        }
+
         for attachment in &parsed.attachments {
             let _ = cache.save_attachment(&crate::data::message_cache::CachedAttachment {
                 id: 0,

@@ -150,6 +150,57 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to store message: {}", e)))
     }
 
+    /// Record what the message turned out to be, once its body has been read.
+    ///
+    /// The header verdict is written during a sync, before there is a body to
+    /// look at. Our own checks need the body, so they arrive later and are
+    /// merged in here rather than replacing what the provider said.
+    pub fn set_message_safety(
+        &self,
+        message_id: i64,
+        verdict: &crate::service::safety::Verdict,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE messages SET safety = ?2, safety_reasons = ?3 WHERE id = ?1",
+                params![
+                    message_id,
+                    verdict.level.as_str(),
+                    verdict.reasons.join(
+                        "
+"
+                    )
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to store the safety verdict: {}", e)))?;
+        Ok(())
+    }
+
+    /// What is currently recorded about a message.
+    pub fn message_safety(&self, message_id: i64) -> Result<crate::service::safety::Verdict> {
+        self.conn
+            .query_row(
+                "SELECT safety, safety_reasons FROM messages WHERE id = ?1",
+                params![message_id],
+                |row| {
+                    let level: Option<String> = row.get(0)?;
+                    let reasons: Option<String> = row.get(1)?;
+                    Ok(crate::service::safety::Verdict {
+                        level: crate::service::safety::Safety::from_stored(
+                            &level.unwrap_or_default(),
+                        ),
+                        reasons: reasons
+                            .unwrap_or_default()
+                            .lines()
+                            .filter(|line| !line.trim().is_empty())
+                            .map(str::to_string)
+                            .collect(),
+                    })
+                },
+            )
+            .map_err(|e| Error::Other(format!("Failed to read the safety verdict: {}", e)))
+    }
+
     /// The UIDs already stored for a folder.
     ///
     /// A sync compares this with what the server lists, so it only fetches
