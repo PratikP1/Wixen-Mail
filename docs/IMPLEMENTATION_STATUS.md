@@ -29,7 +29,8 @@ configuration.
 
 **Local storage.** An encrypted SQLite cache holds messages, contacts, contact
 groups, calendars, calendar events, reminders, task lists, tasks, note folders,
-and notes. Encryption is AES-256-GCM with the key in the OS keychain.
+and notes. Nothing sensitive is stored in it: passwords and tokens go to the
+Windows credential store, and the cached mail is not encrypted.
 
 **The six modules.** Mail, contacts, calendar, reminders, tasks, and notes share
 one window, switched with `Ctrl+Shift+1` through `Ctrl+Shift+6`. Opening a module

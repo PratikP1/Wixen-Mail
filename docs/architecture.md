@@ -52,8 +52,8 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                      Data Layer                              │
 │  ┌──────────────┐ ┌──────────────┐ ┌───────────────────┐  │
-│  │   Database   │ │  File System │ │   Configuration   │  │
-│  │   (SQLite)   │ │   Storage    │ │   Manager         │  │
+│  │ MessageCache │ │  Credential  │ │   Configuration   │  │
+│  │   (SQLite)   │ │    Store     │ │   Manager         │  │
 │  └──────────────┘ └──────────────┘ └───────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -187,6 +187,14 @@
 ### Data Layer
 
 #### Database (SQLite)
+
+One database, `cache\message_cache.db`, opened through `data::message_cache`.
+Schema changes are additive: tables with `CREATE TABLE IF NOT EXISTS`, columns
+with `ensure_column_exists`, and no dropping or renaming of anything that has
+shipped. The one exception taken so far was a table of OAuth tokens that
+nothing read, which was dropped because leaving secrets nobody rotates in a
+file people copy is worse than the rule it broke.
+
 - **Schema**:
   - Accounts table
   - Messages table (with FTS for search)
@@ -197,22 +205,32 @@
   - Filters/Rules table
   - Configuration/Settings
 
-#### File System Storage
-- **Structure**:
-  ```
-  %APPDATA%/WixenMail/
-  ├── accounts/
-  │   ├── [account-id]/
-  │   │   ├── cache/
-  │   │   │   ├── messages/
-  │   │   │   └── attachments/
-  │   │   └── config.json
-  ├── database/
-  │   └── wixen-mail.db
-  ├── logs/
-  │   └── wixen-mail.log
-  └── config.json
-  ```
+#### Where files live
+
+One root, owned by `common::paths`, so there is a single answer to "where is my
+mail" for backups, for support, and for the uninstaller. `WIXEN_MAIL_DATA`
+moves the root, which is what a memory stick install needs.
+
+```
+%LOCALAPPDATA%\wixen-mail├── config\                 settings, one file per account, oauth.toml
+├── cache\                  message_cache.db and its SQLite sidecars
+└── logs\                   the running log and crash.log
+```
+
+Nothing roams. An earlier layout put the encryption key in the roaming profile
+while the database it unlocked stayed local, so the key crossed the network at
+every sign-in and the mail it protected did not.
+
+**No secrets are in the database.** Account passwords go to the Windows
+credential store through `service::credentials`, OAuth tokens through
+`service::oauth`, and CalDAV sign-ins through `service::caldav`. Each service
+name has exactly one owner, because the code that erases them on uninstall has
+to name the same entries as the code that wrote them.
+
+**The cached mail is not encrypted**, and the documentation says so rather than
+implying otherwise. Windows keeps other users out of the folder; anything
+running as that user can read it, and so can anyone who takes the drive out of
+an unencrypted machine. See [installing.md](installing.md).
 
 #### Configuration Manager
 - **Settings Categories**:
@@ -346,20 +364,32 @@ struct Folder {
 
 ## Security Considerations
 
-### Credential Storage
-- Windows DPAPI for credential encryption
-- No plaintext passwords
-- Secure memory handling
+### Credential storage
+
+Everything goes to the Windows credential store, which is DPAPI-backed and
+per-user. Nothing sensitive is written to the database or to any file this
+application owns, so a database copied for a backup or handed over for support
+carries no credentials with it.
+
+There is no master key any more. It encrypted exactly one thing, a password
+that can be typed again, and the key itself was one more thing to lose.
+Uninstalling clears the credential store entries by running the application
+once as the user, because an uninstaller cannot reach them.
 
 ### Network Security
 - Mandatory TLS for all connections
 - Certificate validation
 - Optional certificate pinning
 
-### Data Protection
-- Database encryption option
-- Secure deletion of sensitive data
-- Memory scrubbing for sensitive information
+### Data protection
+
+- The cached mail is not encrypted at rest. Encrypting it means encrypting the
+  whole database, which is a decision with a build cost rather than something
+  to imply in a feature list.
+- Uninstalling removes the data folder and the credential store entries, and
+  writes what it could not remove to the temporary folder rather than claiming
+  success.
+- Nothing logs a token, a password, or a message body.
 
 ## Testing Strategy
 

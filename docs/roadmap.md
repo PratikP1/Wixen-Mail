@@ -129,7 +129,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [x] PGP signature detection and status display
 - [x] S/MIME signature verification
 - [x] Phishing detection with risk scoring
-- [x] AES-256-GCM credential encryption
+- [x] Credentials in the Windows credential store, never in a file we own
 - [x] HTML sanitization (XSS protection)
 
 ## Phase 6: OAuth & Multi-Account (Complete)
