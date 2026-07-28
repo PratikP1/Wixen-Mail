@@ -3577,7 +3577,15 @@ fn open_compose(
                 }
             }
         }
-        ComposeResult::SaveDraft(_data) => send_status(tx, rt, "Draft saving is not implemented"),
+        ComposeResult::SaveDraft(data) => match save_as_draft(state, cache, &data) {
+            Ok(subject) => send_status(tx, rt, &format!("Draft saved: {}", subject)),
+            Err(reason) => {
+                let tx = tx.clone();
+                rt.spawn(async move {
+                    let _ = tx.send(UIUpdate::ErrorOccurred(reason)).await;
+                });
+            }
+        },
         ComposeResult::Cancelled => {}
     }
 }
@@ -3587,6 +3595,54 @@ fn open_compose(
 /// Returns the recipient on success, or a reason the message could not be
 /// queued. Queueing rather than sending directly means a failure is retried on
 /// the next flush instead of being lost with the dialog.
+/// Keep a message somebody chose not to send yet.
+///
+/// Save Draft used to answer "Draft saving is not implemented", which is at
+/// least honest, but the button was still there and the storage has been
+/// waiting for it: a drafts table, a save, and a load, none of them reached.
+///
+/// Unlike sending, an empty recipient is fine. A draft is by definition
+/// unfinished, and refusing to keep one because it has no address yet loses
+/// exactly the work somebody was trying to protect.
+fn save_as_draft(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    data: &wx_compose::ComposeData,
+) -> std::result::Result<String, String> {
+    let Some(cache) = cache.as_ref() else {
+        return Err("No message store is available, so the draft cannot be saved".to_string());
+    };
+    let account_id = lock_state(state)
+        .active_account_id
+        .clone()
+        .ok_or_else(|| "Select an account before saving a draft".to_string())?;
+
+    let subject = if data.subject.trim().is_empty() {
+        // Named rather than left blank, so the drafts list has something to
+        // read out. A row that announces nothing cannot be picked from a list.
+        "No subject".to_string()
+    } else {
+        data.subject.trim().to_string()
+    };
+
+    let draft = crate::data::message_cache::CachedDraft {
+        id: uuid::Uuid::new_v4().to_string(),
+        account_id,
+        to_addr: data.to.trim().to_string(),
+        cc: Some(data.cc.trim().to_string()).filter(|cc| !cc.is_empty()),
+        bcc: Some(data.bcc.trim().to_string()).filter(|bcc| !bcc.is_empty()),
+        subject: subject.clone(),
+        body: data.body.clone(),
+        created_at: chrono::Local::now().to_rfc3339(),
+        updated_at: chrono::Local::now().to_rfc3339(),
+    };
+
+    cache
+        .save_draft(&draft)
+        .map_err(|e| format!("Draft could not be saved: {}", e))?;
+    Ok(subject)
+}
+
 fn queue_for_sending(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,

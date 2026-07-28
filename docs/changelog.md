@@ -8,6 +8,7 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 ### Fixed
 
 - **Creating an event, reminder, task or note now keeps it.** The dialog took a title, wrote a line to the log, announced "created" and threw the item away. Four of the six New commands looked like they worked and none of them stored anything. They store it now, in the right account, and the panel refreshes so you can see it.
+- **Save Draft saves the draft.** It answered "Draft saving is not implemented" while the button sat there and the storage waited unused. A draft with no recipient is kept too, because a draft is unfinished by definition and refusing one for having no address yet loses exactly the work somebody was trying to protect.
 - **Calendars, task lists, note folders and contact groups can be created**, which they could not before: the controls opened the same discarding dialog the items used, so a name was typed, logged and lost while the application said it had been created. A container is filed wherever the things it holds are filed, so a calendar and its events can never end up in different accounts.
 
 ### Removed
