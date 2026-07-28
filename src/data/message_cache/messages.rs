@@ -368,20 +368,44 @@ impl MessageCache {
         folder_id: i64,
         account_id: &str,
     ) -> Result<Vec<MessageListRow>> {
+        self.get_message_list_sorted(folder_id, account_id, None)
+    }
+
+    /// List a folder in a chosen order.
+    ///
+    /// The order goes into the query rather than being applied to the rows
+    /// afterwards. Sorting in memory is fine at five hundred rows and wrong at
+    /// forty thousand, which is reachable now that older mail can be fetched,
+    /// and it means the database does the one thing it is good at.
+    ///
+    /// `order_by` must come from `Sort::order_by_clause`, which builds it from
+    /// fixed strings chosen by matching on an enum. Nothing a user typed
+    /// reaches it, which is what makes interpolating it here safe.
+    pub fn get_message_list_sorted(
+        &self,
+        folder_id: i64,
+        account_id: &str,
+        order_by: Option<&str>,
+    ) -> Result<Vec<MessageListRow>> {
+        // The uid is the tie-break in every order, so a folder where forty
+        // messages share a timestamp does not shuffle between refreshes and
+        // move a row out from under somebody's cursor.
+        let order = order_by.unwrap_or("m.date DESC");
+        let query = format!(
+            "SELECT m.id, m.uid, m.message_id, m.refs_header, m.subject, m.from_addr,
+                    m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
+                    m.read, m.starred, m.answered, m.draft,
+                    (m.has_attachments = 1
+                     OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
+                    m.safety, m.safety_reasons
+             FROM messages m
+             INNER JOIN folders f ON m.folder_id = f.id
+             WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
+             ORDER BY {order}, m.uid DESC"
+        );
         let mut stmt = self
             .conn
-            .prepare(
-                "SELECT m.id, m.uid, m.message_id, m.refs_header, m.subject, m.from_addr,
-                        m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
-                        m.read, m.starred, m.answered, m.draft,
-                        (m.has_attachments = 1
-                         OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                        m.safety, m.safety_reasons
-                 FROM messages m
-                 INNER JOIN folders f ON m.folder_id = f.id
-                 WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
-                 ORDER BY m.date DESC, m.uid DESC",
-            )
+            .prepare(&query)
             .map_err(|e| Error::Other(format!("Failed to prepare listing query: {}", e)))?;
 
         let rows = stmt
@@ -772,6 +796,46 @@ mod tests {
             .expect("should still be listed");
         assert!(row.read);
         assert!(row.starred);
+    }
+
+    #[test]
+    fn test_a_folder_can_be_listed_in_a_chosen_order() {
+        // The sort belongs in the query. Sorting after loading is fine at five
+        // hundred rows and wrong at forty thousand, which is reachable now
+        // that older mail can be fetched.
+        let (cache, folder_id) = listing_cache();
+        for (uid, subject) in [(1, "Zebra"), (2, "Apple"), (3, "Mango")] {
+            cache
+                .upsert_message(&incoming(folder_id, uid, subject))
+                .unwrap();
+        }
+
+        let ascending = cache
+            .get_message_list_sorted(folder_id, "acc-1", Some("m.subject COLLATE NOCASE ASC"))
+            .unwrap();
+
+        let subjects: Vec<&str> = ascending.iter().map(|r| r.subject.as_str()).collect();
+        assert_eq!(subjects, vec!["Apple", "Mango", "Zebra"]);
+    }
+
+    #[test]
+    fn test_no_order_given_still_puts_the_newest_first() {
+        // What a mailbox opens to, and what every caller got before the sort
+        // was configurable.
+        let (cache, folder_id) = listing_cache();
+        for (uid, subject) in [(1, "Older"), (2, "Newer")] {
+            let mut row = incoming(folder_id, uid, subject);
+            row.date = if uid == 1 {
+                "2026-01-01T00:00:00Z".to_string()
+            } else {
+                "2026-07-01T00:00:00Z".to_string()
+            };
+            cache.upsert_message(&row).unwrap();
+        }
+
+        let rows = cache.get_message_list(folder_id, "acc-1").unwrap();
+
+        assert_eq!(rows[0].subject, "Newer");
     }
 
     #[test]

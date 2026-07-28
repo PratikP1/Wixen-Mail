@@ -3406,7 +3406,24 @@ fn load_folder_messages(
     else {
         return;
     };
-    match cache.get_message_list(folder_id, &account_id) {
+    // The stored column layout carries the sort, so a folder opens in the
+    // order somebody arranged rather than always by date. Read here rather
+    // than passed in, because this runs on a background thread and the layout
+    // lives with the settings.
+    let order = crate::data::config::ConfigManager::load_stored()
+        .ok()
+        .map(|mgr| mgr.app_config().message_columns.clone())
+        .filter(|stored| !stored.is_empty())
+        .map(|stored| {
+            crate::presentation::message_columns::ColumnLayout::from_stored(
+                &stored,
+                crate::presentation::message_columns::FolderKind::Inbox,
+            )
+            .sort
+            .order_by_clause()
+        });
+
+    match cache.get_message_list_sorted(folder_id, &account_id, order.as_deref()) {
         Ok(rows) => {
             let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
             apply_threading(&rows, &mut items);
