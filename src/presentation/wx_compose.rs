@@ -134,6 +134,33 @@ pub fn show_compose_dialog_with_options(
     active_account_index: u32,
     preview_before_send: bool,
 ) -> ComposeResult {
+    show_compose_dialog_full(
+        parent,
+        mode,
+        account_names,
+        active_account_index,
+        preview_before_send,
+        crate::application::autosave::AutosaveInterval::off(),
+        |_| {},
+    )
+}
+
+/// The compose dialog, with automatic draft saving.
+///
+/// `autosave` decides how often, and `on_autosave` is handed the fields as
+/// they stand each time. The callback rather than a return value because the
+/// dialog is modal: it does not come back until somebody is finished, and a
+/// draft that is only kept at the end is not a draft that survives a crash.
+#[allow(clippy::too_many_arguments)]
+pub fn show_compose_dialog_full(
+    parent: &Frame,
+    mode: ComposeMode,
+    account_names: &[String],
+    active_account_index: u32,
+    preview_before_send: bool,
+    autosave: crate::application::autosave::AutosaveInterval,
+    on_autosave: impl Fn(&ComposeData) + 'static,
+) -> ComposeResult {
     // ── Create Dialog ────────────────────────────────────────────────────
     let title = compose_title(&mode);
 
@@ -467,6 +494,41 @@ pub fn show_compose_dialog_with_options(
         move |_| {
             dialog.end_modal(ID_CANCEL);
         }
+    });
+
+    // ── Automatic draft saving ────────────────────────────────────────
+    //
+    // Started before the modal loop, because a modal dialog does not return
+    // until somebody has finished and a draft kept only at the end is not a
+    // draft that survives anything. The timer belongs to the dialog and stops
+    // with it.
+    // Held for the life of the dialog: dropping the timer stops it, and the
+    // dialog is what it belongs to.
+    let _autosave_timer = autosave.interval().map(|every| {
+        let timer = Timer::new(&dialog);
+        timer.on_tick(move |_| {
+            let data = ComposeData {
+                to: to_field.get_value(),
+                cc: cc_field.get_value(),
+                bcc: bcc_field.get_value(),
+                subject: subject_field.get_value(),
+                body: body_editor.get_value(),
+                html_mode: true,
+                account_index: account_choice.get_selection(),
+            };
+            // Nothing typed yet is not worth a row in the drafts list, and
+            // it would be one that reads as blank.
+            if data.to.trim().is_empty()
+                && data.subject.trim().is_empty()
+                && data.body.trim().is_empty()
+            {
+                return;
+            }
+            on_autosave(&data);
+        });
+        // Milliseconds, and the cast is safe: the range stops at ten minutes.
+        timer.start(every.as_millis() as i32, false);
+        timer
     });
 
     // ── Show dialog modally (loop for preview-then-send) ───────────────

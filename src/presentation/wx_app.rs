@@ -3559,7 +3559,53 @@ fn open_compose(
         })
         .unwrap_or_default();
 
-    match wx_compose::show_compose_dialog(frame, mode, &names, active) {
+    // One id for this window, shared by the automatic saves and the button, so
+    // every save after the first updates the same draft.
+    let draft_id: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    let (autosave, preview_first) = crate::data::config::ConfigManager::load_stored()
+        .map(|mgr| {
+            let cfg = mgr.app_config();
+            (
+                crate::application::autosave::AutosaveInterval::from_setting(
+                    cfg.draft_autosave_minutes,
+                ),
+                cfg.preview_before_send,
+            )
+        })
+        .unwrap_or_else(|_| (Default::default(), true));
+
+    let saver = {
+        let state = state.clone();
+        let cache = cache.clone();
+        let tx = tx.clone();
+        let rt = rt.clone();
+        let draft_id = draft_id.clone();
+        move |data: &wx_compose::ComposeData| {
+            match save_as_draft(&state, &cache, data, draft_id.borrow().clone()) {
+                Ok((id, _)) => {
+                    *draft_id.borrow_mut() = Some(id);
+                    // Said, not silent. Somebody who relies on this needs to
+                    // know it is happening, and the status line is where it
+                    // belongs rather than interrupting typing with speech.
+                    send_status(&tx, &rt, "Draft saved");
+                }
+                // Logged rather than announced. An automatic save failing
+                // mid-sentence is not something to interrupt writing with, and
+                // pressing Save Draft will report it properly.
+                Err(reason) => tracing::warn!("Automatic draft save failed: {}", reason),
+            }
+        }
+    };
+
+    match wx_compose::show_compose_dialog_full(
+        frame,
+        mode,
+        &names,
+        active,
+        preview_first,
+        autosave,
+        saver,
+    ) {
         ComposeResult::Send(data) => {
             // Queue first, then flush. Nothing used to reach the outbox at all,
             // so pressing Send only ever produced a status line. Queueing also
@@ -3577,15 +3623,20 @@ fn open_compose(
                 }
             }
         }
-        ComposeResult::SaveDraft(data) => match save_as_draft(state, cache, &data) {
-            Ok(subject) => send_status(tx, rt, &format!("Draft saved: {}", subject)),
-            Err(reason) => {
-                let tx = tx.clone();
-                rt.spawn(async move {
-                    let _ = tx.send(UIUpdate::ErrorOccurred(reason)).await;
-                });
+        ComposeResult::SaveDraft(data) => {
+            match save_as_draft(state, cache, &data, draft_id.borrow().clone()) {
+                Ok((id, subject)) => {
+                    *draft_id.borrow_mut() = Some(id);
+                    send_status(tx, rt, &format!("Draft saved: {}", subject))
+                }
+                Err(reason) => {
+                    let tx = tx.clone();
+                    rt.spawn(async move {
+                        let _ = tx.send(UIUpdate::ErrorOccurred(reason)).await;
+                    });
+                }
             }
-        },
+        }
         ComposeResult::Cancelled => {}
     }
 }
@@ -3608,7 +3659,8 @@ fn save_as_draft(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
     data: &wx_compose::ComposeData,
-) -> std::result::Result<String, String> {
+    existing: Option<String>,
+) -> std::result::Result<(String, String), String> {
     let Some(cache) = cache.as_ref() else {
         return Err("No message store is available, so the draft cannot be saved".to_string());
     };
@@ -3625,8 +3677,12 @@ fn save_as_draft(
         data.subject.trim().to_string()
     };
 
+    // The same id every time, so saving again updates the row rather than
+    // leaving a trail of near-identical drafts behind. With automatic saving
+    // on that would be one new draft a minute for as long as somebody writes.
+    let id = existing.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let draft = crate::data::message_cache::CachedDraft {
-        id: uuid::Uuid::new_v4().to_string(),
+        id: id.clone(),
         account_id,
         to_addr: data.to.trim().to_string(),
         cc: Some(data.cc.trim().to_string()).filter(|cc| !cc.is_empty()),
@@ -3640,7 +3696,7 @@ fn save_as_draft(
     cache
         .save_draft(&draft)
         .map_err(|e| format!("Draft could not be saved: {}", e))?;
-    Ok(subject)
+    Ok((id, subject))
 }
 
 fn queue_for_sending(

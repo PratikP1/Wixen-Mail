@@ -136,9 +136,13 @@ The first row of the tree is labelled "Whole conversation, 5 messages" rather
 than the subject, because `Enter` does two different things in that tree and
 the row has to say which one it will do.
 
-In the combined document every message has a heading, so `H` moves between
-them. Levels stop at level 6 and never skip; past that the real depth is spoken
-in the heading, as in "Reply, level 8, from Ada Lovelace".
+In the combined document every message is numbered and `Ctrl+Down` and
+`Ctrl+Up` move between them, announcing the one they land on.
+
+`H` does not work here yet. The reader is a plain text control, which has no
+headings for a screen reader to find, so the message boundaries exist as
+positions this application jumps to rather than as structure your screen reader
+can navigate. Making them real headings is being worked on.
 
 ### Speech Control
 

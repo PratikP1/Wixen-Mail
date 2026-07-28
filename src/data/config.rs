@@ -74,6 +74,12 @@ pub struct AppConfig {
     /// the first account added takes it.
     #[serde(default)]
     pub default_account_id: String,
+    /// How often a draft is saved while composing, in minutes.
+    ///
+    /// Nought means never. See `application::autosave` for why the range stops
+    /// at ten.
+    #[serde(default = "default_autosave_minutes")]
+    pub draft_autosave_minutes: u32,
     /// Calendar default view: "agenda", "day", "week", "month"
     #[serde(default = "default_calendar_view")]
     pub calendar_default_view: String,
@@ -112,6 +118,10 @@ fn default_reminder_minutes() -> u32 {
     15
 }
 
+fn default_autosave_minutes() -> u32 {
+    crate::application::autosave::AutosaveInterval::default().minutes()
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -124,6 +134,7 @@ impl Default for AppConfig {
             date_order: default_date_order(),
             mute_message_reading: false,
             default_account_id: String::new(),
+            draft_autosave_minutes: default_autosave_minutes(),
             message_columns: String::new(),
             feedback_channels: String::new(),
             enable_notifications: true,

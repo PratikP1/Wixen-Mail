@@ -7,7 +7,10 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Fixed
 
+- **The conversation reader claimed you could navigate it by heading.** You cannot: it is a plain text control, which has no headings for a screen reader to find. `Ctrl+Down` and `Ctrl+Up` do move between messages and always did. The documentation now says what is true, and real headings are being worked on.
+
 - **Creating an event, reminder, task or note now keeps it.** The dialog took a title, wrote a line to the log, announced "created" and threw the item away. Four of the six New commands looked like they worked and none of them stored anything. They store it now, in the right account, and the panel refreshes so you can see it.
+- **Drafts save themselves while you write.** Settings has a box for how often, in minutes, from nought to ten, stepped with the arrow keys. Nought means never. It defaults to every two minutes, on, because the people it protects most are the ones who would never go looking for the setting. Every save updates the same draft rather than leaving a trail of near-identical ones, and the status line says when it happens. The checkbox that used to sit there said "auto-save drafts every 60 seconds", was ticked, was never read back, and nothing saved anything.
 - **Save Draft saves the draft.** It answered "Draft saving is not implemented" while the button sat there and the storage waited unused. A draft with no recipient is kept too, because a draft is unfinished by definition and refusing one for having no address yet loses exactly the work somebody was trying to protect.
 - **Calendars, task lists, note folders and contact groups can be created**, which they could not before: the controls opened the same discarding dialog the items used, so a name was typed, logged and lost while the application said it had been created. A container is filed wherever the things it holds are filed, so a calendar and its events can never end up in different accounts.
 

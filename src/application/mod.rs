@@ -3,6 +3,7 @@
 //! This layer contains the core business logic and management components.
 
 pub mod accounts;
+pub mod autosave;
 pub mod caldav_sync;
 pub mod calendar;
 pub mod collection_sync;

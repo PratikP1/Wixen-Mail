@@ -4,6 +4,7 @@
 //! commonly used email client configuration options.  Settings are read from
 //! and persisted through `AppConfig` / `ConfigManager`.
 
+use crate::application::autosave::AutosaveInterval;
 use crate::data::config::AppConfig;
 use crate::presentation::accessibility::feedback::{Channel, FeedbackSettings};
 use crate::presentation::accessibility::names::set_accessible_name;
@@ -35,6 +36,7 @@ struct SettingsWidgets {
     check_updates: CheckBox,
     // Compose
     preview_before_send: CheckBox,
+    draft_autosave: SpinCtrl,
     // Reading
     sort_order: Choice,
     // Language
@@ -84,7 +86,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 
     // ── Tab 2: Compose
     let compose_panel = Panel::builder(&notebook).build();
-    let preview_before_send = build_compose_tab(&compose_panel, config);
+    let (preview_before_send, draft_autosave) = build_compose_tab(&compose_panel, config);
     notebook.add_page(&compose_panel, "Compose", false, None);
 
     // ── Tab 3: Reading
@@ -151,6 +153,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         notifications,
         check_updates,
         preview_before_send,
+        draft_autosave,
         sort_order,
         language,
         cal_default_view,
@@ -245,7 +248,7 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, Ch
 }
 
 /// Compose settings: preview-before-send, default format, signatures.
-fn build_compose_tab(panel: &Panel, config: &AppConfig) -> CheckBox {
+fn build_compose_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, SpinCtrl) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Sending
@@ -283,12 +286,32 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> CheckBox {
 
     // -- Drafts
     let draft_sec = section(panel, "Drafts");
-    let autosave_cb = CheckBox::builder(panel)
-        .with_label("&Auto-save drafts every 60 seconds")
+    // A spin box rather than the checkbox that used to be here. That claimed
+    // "every 60 seconds", was ticked, was never read back, and nothing saved
+    // anything. Minutes are the right grain: the difference between ninety
+    // seconds and two minutes is not a decision anybody can make usefully, and
+    // a spin box steps with the arrow keys rather than needing a number typed.
+    let autosave_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let autosave_label = StaticText::builder(panel)
+        .with_label("Save &drafts automatically every (minutes, 0 for never):")
         .build();
-    set_accessible_name(&autosave_cb, "Auto-save drafts every 60 seconds");
-    autosave_cb.set_value(true);
-    draft_sec.add(&autosave_cb, 0, SizerFlag::All, 4);
+    let autosave_spin = SpinCtrl::builder(panel)
+        .with_range(0, AutosaveInterval::MAX_MINUTES as i32)
+        .build();
+    set_accessible_name(
+        &autosave_spin,
+        "Save drafts automatically every, minutes, 0 for never",
+    );
+    autosave_spin
+        .set_value(AutosaveInterval::from_setting(config.draft_autosave_minutes).minutes() as i32);
+    autosave_row.add(
+        &autosave_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    autosave_row.add(&autosave_spin, 0, SizerFlag::All, 4);
+    draft_sec.add_sizer(&autosave_row, 0, SizerFlag::Expand, 0);
     sizer.add_sizer(&draft_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     // -- Signatures
@@ -302,7 +325,7 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> CheckBox {
     sizer.add_sizer(&sig_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    preview_cb
+    (preview_cb, autosave_spin)
 }
 
 /// Reading settings: sort order, mark-as-read, threading.
@@ -750,6 +773,8 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
 
     // Compose
     cfg.preview_before_send = w.preview_before_send.get_value();
+    cfg.draft_autosave_minutes =
+        AutosaveInterval::from_setting(w.draft_autosave.value().max(0) as u32).minutes();
 
     // Reading
     cfg.default_sort_order = match sel(&w.sort_order) {
