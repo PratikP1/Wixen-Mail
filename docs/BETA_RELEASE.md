@@ -2,6 +2,24 @@
 
 First beta tag target: `v0.1.0-beta.1`
 
+## Tell testers about the SmartScreen warning
+
+Every alpha and beta build is unsigned, so everyone who downloads one meets
+"Windows protected your PC" before they meet Wixen Mail. Say so in the message
+that invites them, not only in the documentation, because somebody who hits an
+unexplained security warning on the first thing you asked them to do reasonably
+stops there.
+
+The wording to give them:
+
+> Windows will warn you that it does not recognise this program. It is not
+> signed yet. Choose **More info**, then **Run anyway**. The button you land on
+> first is **Don't run**, so do not just press Enter.
+
+That last sentence is the one that matters for screen reader users: the Run
+button only exists after the More info link is activated, and the default
+button cancels.
+
 ## Tag-driven release flow
 
 Wixen Mail now has a dedicated release workflow:

@@ -3,6 +3,28 @@
 Wixen Mail is a Windows application. Download `Wixen-Mail-Setup-<version>.exe` from the
 [releases page](https://github.com/PratikP1/Wixen-Mail/releases) and run it.
 
+## The warning you will see first
+
+Wixen Mail is not yet code signed, so Windows does not recognise it. On a copy
+you downloaded, SmartScreen shows a blue box saying **"Windows protected your
+PC"**.
+
+The Run button is not on that box. It is hidden behind a link, and the button
+you can see cancels the install. To get past it:
+
+1. Activate the **More info** link. It sits just below the message text, above
+   the buttons.
+2. A **Run anyway** button appears. Activate that.
+
+With a screen reader, tab to **More info** and press Enter, then tab to **Run
+anyway** and press Enter. Do not press the button you land on first: that is
+**Don't run**.
+
+This is not a fault in the download and it is not a virus warning. It means
+nobody has paid a certificate authority to vouch for the publisher yet, which
+is being sorted out during testing. Once the setup file is signed, this box
+stops appearing.
+
 ## Choosing how to install
 
 The first page of setup asks who the installation is for.
