@@ -1002,7 +1002,7 @@ fn check_spelling(
                 // Last in the message first, so replacing one never moves one
                 // that has not been replaced yet, and the place this one is
                 // standing on survives until its turn.
-                let places = session::same_word_places(&found, &finding.word);
+                let places = session::same_word_places(&found, &finding.word, finding.at);
                 let ends: std::collections::HashMap<_, _> =
                     found.iter().map(|f| (f.at, f.end)).collect();
                 let mut landed = None;

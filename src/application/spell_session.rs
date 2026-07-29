@@ -165,14 +165,19 @@ pub fn next_finding<'a>(
     })
 }
 
-/// Every place the same word appears, for Change All.
+/// Every place the same word appears from here on, for Change All.
 ///
 /// Last in the message first, so replacing them in order never moves one that
 /// has not been replaced yet.
-pub fn same_word_places(found: &[Finding], word: &str) -> Vec<Position> {
+///
+/// From `from` rather than from the beginning, because an occurrence before it
+/// is one somebody has already been asked about and chosen to leave. Going
+/// back and rewriting it overrides that decision without saying so, and Ignore
+/// means "leave this one".
+pub fn same_word_places(found: &[Finding], word: &str, from: Position) -> Vec<Position> {
     let mut places: Vec<Position> = found
         .iter()
-        .filter(|finding| same_word(&finding.word, word))
+        .filter(|finding| finding.at >= from && same_word(&finding.word, word))
         .map(|finding| finding.at)
         .collect();
     places.sort_unstable_by(|left, right| right.cmp(left));
@@ -403,6 +408,25 @@ mod tests {
     }
 
     #[test]
+    fn test_change_all_leaves_alone_what_was_already_passed_over() {
+        // Ignore means "leave this one". Going back and rewriting it later
+        // overrides a decision somebody made, and nothing tells them. Word
+        // applies Change All from where you are forward for this reason.
+        let found = findings(
+            &words("teh cat teh dog teh"),
+            |w| w == "teh",
+            no_suggestions,
+        );
+
+        // Standing on the second, having passed the first with Ignore.
+        assert_eq!(
+            same_word_places(&found, "teh", place(8)),
+            vec![place(16), place(8)],
+            "it went back over one that was ignored"
+        );
+    }
+
+    #[test]
     fn test_change_all_replaces_from_the_end_backwards() {
         // Otherwise replacing the first occurrence with a longer word moves
         // every later one, and the second replacement lands in the wrong
@@ -413,7 +437,7 @@ mod tests {
             no_suggestions,
         );
         assert_eq!(
-            same_word_places(&found, "teh"),
+            same_word_places(&found, "teh", place(0)),
             vec![place(16), place(8), place(0)]
         );
     }
@@ -425,7 +449,10 @@ mod tests {
             |w| w.to_lowercase() == "teh",
             no_suggestions,
         );
-        assert_eq!(same_word_places(&found, "teh"), vec![place(8), place(0)]);
+        assert_eq!(
+            same_word_places(&found, "teh", place(0)),
+            vec![place(8), place(0)]
+        );
     }
 
     #[test]

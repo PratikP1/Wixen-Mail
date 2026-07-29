@@ -7,6 +7,8 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Fixed
 
+- **Change All no longer goes back over words you chose to keep.** It rewrote every occurrence in the message, including ones you had already passed with Ignore, and said nothing about it. Ignore means leave this one, so Change All now applies from where you are forward, which is what Word does and for the same reason.
+
 - **Spell checking knows what a word is.** It used to look for runs of letters, which got three things wrong. "3rd" was read as the word "rd", so the check announced a fragment that is not in your message and accepting a correction spliced it into the middle of a word that was already right. A sentence with no spaces in it, which is how Japanese, Chinese and Thai are written, was read as a single enormous word: F7 selected a whole paragraph, called it a misspelling, and Change would have replaced the lot. And "the end. The next" was reported as a repeated word, where the fix offered is to delete one of them, so taking it would have removed a word that was right.
   Word boundaries are a Unicode standard and Wixen Mail now uses it, so all three are right. Two words either side of a paragraph break are no longer treated as neighbours either.
   **Carrying on after a correction** used to be worked out by counting how many words a replacement was, which was wrong for a deletion and silently skipped the misspelling straight after it. The editor now reports where it left the cursor and the check carries on from there, so there is nothing left to get wrong.
