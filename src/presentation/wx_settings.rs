@@ -466,26 +466,23 @@ fn build_language_tab(panel: &Panel, config: &AppConfig) -> Choice {
     sizer.add_sizer(&lang_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     // -- Spell Check
+    //
+    // Two checkboxes used to sit here, "enable spell checking in compose
+    // editor" and "show suggestions as you type". Both were ticked, neither
+    // was ever read back, and nothing checked anything, so they were three
+    // claims in a row. What replaces them says what this machine actually has,
+    // which is worth more than a switch for something that does not happen.
     let spell_sec = section(panel, "Spell Check");
 
-    let enable_spell = CheckBox::builder(panel)
-        .with_label("&Enable spell checking in compose editor")
+    let speller = crate::service::spellcheck::for_language(&config.language);
+    let checker_note = StaticText::builder(panel)
+        .with_label(&format!(
+            "Spelling is checked by {}.\n\nMessages are checked when you send \
+             one. If anything looks misspelled, you are asked before it goes.",
+            speller.source().describe()
+        ))
         .build();
-    set_accessible_name(&enable_spell, "Enable spell checking in compose editor");
-    enable_spell.set_value(true);
-    spell_sec.add(&enable_spell, 0, SizerFlag::All, 4);
-
-    let autocorrect_cb = CheckBox::builder(panel)
-        .with_label("Show su&ggestions as you type")
-        .build();
-    set_accessible_name(&autocorrect_cb, "Show suggestions as you type");
-    autocorrect_cb.set_value(true);
-    spell_sec.add(&autocorrect_cb, 0, SizerFlag::All, 4);
-
-    let hunspell_note = StaticText::builder(panel)
-        .with_label("Hunspell dictionaries are loaded automatically from system paths.\nInstall additional language packs for more spell-check languages.")
-        .build();
-    spell_sec.add(&hunspell_note, 0, SizerFlag::All, 4);
+    spell_sec.add(&checker_note, 0, SizerFlag::All, 4);
 
     sizer.add_sizer(&spell_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 

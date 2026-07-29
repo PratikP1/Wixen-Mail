@@ -9,6 +9,7 @@
 //! The `Locale` struct and `I18n` registry provide the plumbing for localizing
 //! UI strings, date/number formatting, and message templates.
 
+use crate::common::{Error, Result};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -89,6 +90,211 @@ pub struct SpellError {
     pub offset: usize,
     /// Suggested corrections (up to 5)
     pub suggestions: Vec<String>,
+    /// This word is the same as the one before it.
+    ///
+    /// A different fault with a different fix, and it has no suggestions
+    /// because the correction is to delete it. Without this the row would read
+    /// as a misspelling nothing could be suggested for, which is the one thing
+    /// a spell checker should never say about a correctly spelled word.
+    pub repeated: bool,
+}
+
+impl SpellError {
+    /// The sentence read out when this error is reached.
+    ///
+    /// Says what is wrong before what to do about it, because the first is what
+    /// decides whether somebody wants the second.
+    pub fn spoken(&self) -> String {
+        if self.repeated {
+            return format!("{}, repeated word. Delete it.", self.word);
+        }
+        match self.suggestions.len() {
+            0 => format!("{}, not in the dictionary, no suggestions", self.word),
+            1 => format!(
+                "{}, not in the dictionary. Suggestion: {}",
+                self.word, self.suggestions[0]
+            ),
+            many => format!(
+                "{}, not in the dictionary. {} suggestions, first is {}",
+                self.word, many, self.suggestions[0]
+            ),
+        }
+    }
+}
+
+#[cfg(windows)]
+pub mod windows_speller;
+
+/// Which checker answered.
+///
+/// Worth saying out loud rather than hiding behind the trait. The two are not
+/// equivalent: one knows the words this person has taught Windows and the other
+/// knows twelve thousand English words and nothing about anybody. Somebody
+/// getting a wall of false positives deserves to be able to find out which they
+/// have.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    /// Windows' own checker, shared with every other application here.
+    Windows,
+    /// A Hunspell dictionary found on this machine, through `spellbook`.
+    Hunspell,
+    /// The built-in word list, which is small.
+    Builtin,
+}
+
+impl Source {
+    /// How it reads in Settings, and in the sentence that explains a result.
+    pub const fn describe(self) -> &'static str {
+        match self {
+            Self::Windows => "Windows, so it knows the words you have added in Windows Settings",
+            Self::Hunspell => "a dictionary installed on this computer",
+            Self::Builtin => {
+                "a small built-in word list, which will not know names or \
+                 technical terms"
+            }
+        }
+    }
+}
+
+/// One spell checker, whichever the platform provides.
+///
+/// Deliberately not `Send`. A COM interface pointer belongs to the apartment it
+/// was created in, so the Windows implementation is made where it is used, and
+/// the trait does not promise more than the strictest implementation can keep.
+pub trait Speller {
+    /// Every misspelling in a piece of text, with byte offsets into it.
+    fn check(&self, text: &str) -> Vec<SpellError>;
+
+    /// What this word might have been meant to be.
+    fn suggest(&self, word: &str, max: usize) -> Vec<String>;
+
+    /// Learn a word for good.
+    ///
+    /// On Windows this writes to the dictionary every application shares, so a
+    /// word taught here is known in Word and Edge too. That is the point: being
+    /// asked to teach the same surname to one application after another is
+    /// WCAG 3.3.7 Redundant Entry, and it falls hardest on the people who type
+    /// the most to get the least done.
+    fn add_to_dictionary(&self, word: &str) -> Result<()>;
+
+    /// Pass over this word for the rest of the session, and no longer.
+    fn ignore(&self, word: &str);
+
+    /// The language tag being checked against.
+    fn language(&self) -> &str;
+
+    /// Which checker this is, so the interface can say.
+    fn source(&self) -> Source;
+}
+
+/// What to say before a message goes out with misspellings in it.
+///
+/// `None` when there is nothing worth stopping for, and then sending is not
+/// interrupted at all. A confirmation that appears on every message is one
+/// people learn to dismiss without reading, which costs them the one time it
+/// mattered.
+///
+/// The words are named rather than counted. "Three words look misspelled" is a
+/// number; "recieve, teh and mesage" is something somebody can decide about
+/// without opening anything.
+pub fn before_sending(errors: &[SpellError]) -> Option<String> {
+    /// Past this many, listing them is worse than counting them.
+    const NAMED: usize = 3;
+
+    if errors.is_empty() {
+        return None;
+    }
+
+    let mut words: Vec<&str> = errors.iter().map(|error| error.word.as_str()).collect();
+    words.dedup();
+
+    let listed = match words.len() {
+        1 => format!("{} does not look like a word.", words[0]),
+        2 => format!("{} and {} do not look like words.", words[0], words[1]),
+        count if count <= NAMED => format!(
+            "{} and {} do not look like words.",
+            words[..count - 1].join(", "),
+            words[count - 1]
+        ),
+        count => format!(
+            "{} and {} others do not look like words.",
+            words[..NAMED].join(", "),
+            count - NAMED
+        ),
+    };
+    Some(listed)
+}
+
+/// The best checker this machine has for a language.
+///
+/// Windows first, because it holds the words this person has already taught it.
+/// The checker in this crate second, which needs no dictionary installed and
+/// knows nobody's name.
+///
+/// Never fails. A machine with no spell checking at all still gets the built-in
+/// list, and [`Speller::source`] says which arrived so the interface can be
+/// honest about what it is offering.
+pub fn for_language(tag: &str) -> Box<dyn Speller> {
+    #[cfg(windows)]
+    {
+        if let Some(windows) = windows_speller::WindowsSpeller::for_language(tag) {
+            return Box::new(windows);
+        }
+        tracing::info!(
+            "Windows has no spell checker for {}, using the built-in one",
+            tag
+        );
+    }
+    Box::new(SpellChecker::with_language(short_code(tag)))
+}
+
+/// The language half of a tag: `en-GB` is English.
+///
+/// Windows wants a full BCP 47 tag and the checker in this crate is keyed by
+/// language alone, so the tag is narrowed on the way to the fallback rather
+/// than the fallback being asked a question it cannot answer.
+fn short_code(tag: &str) -> &str {
+    tag.split(['-', '_']).next().unwrap_or(tag)
+}
+
+impl Speller for SpellChecker {
+    fn check(&self, text: &str) -> Vec<SpellError> {
+        SpellChecker::check_text(self, text)
+    }
+
+    fn suggest(&self, word: &str, max: usize) -> Vec<String> {
+        SpellChecker::suggest(self, word, max)
+    }
+
+    fn add_to_dictionary(&self, _word: &str) -> Result<()> {
+        // Deliberately refused rather than quietly kept in memory. `add_word`
+        // takes `&mut self` and lasts until the process ends, so accepting the
+        // word here would look like learning it and be forgotten by the next
+        // message. Saying so is the honest answer, and the fix is Windows
+        // having a dictionary for this language.
+        Err(Error::Other(
+            "Words can only be learned when Windows is doing the spell \
+             checking. This computer is using the built-in word list."
+                .into(),
+        ))
+    }
+
+    fn ignore(&self, _word: &str) {
+        // Nothing to do: the built-in checker has no session state, and the
+        // caller keeps its own ignore list for exactly this reason.
+    }
+
+    fn language(&self) -> &str {
+        SpellChecker::language(self)
+    }
+
+    fn source(&self) -> Source {
+        if self.has_hunspell() {
+            Source::Hunspell
+        } else {
+            Source::Builtin
+        }
+    }
 }
 
 // ── Backend enum ─────────────────────────────────────────────────────────────
@@ -176,7 +382,7 @@ impl SpellChecker {
         lang_code: &str,
         aff_content: &str,
         dic_content: &str,
-    ) -> Result<Self, String> {
+    ) -> std::result::Result<Self, String> {
         // spellbook::Dictionary requires 'static lifetime, so we leak the strings.
         // This is acceptable because dictionaries live for the application lifetime.
         let aff: &'static str = Box::leak(aff_content.to_string().into_boxed_str());
@@ -259,6 +465,10 @@ impl SpellChecker {
                     word: word.to_string(),
                     offset: word_offset,
                     suggestions: self.suggest(word, 5),
+                    // The built-in checker looks at one word at a time and has
+                    // no idea what came before it. Repeated words are Windows'
+                    // to find.
+                    repeated: false,
                 });
             }
             offset += segment.len() + 1;
@@ -442,7 +652,7 @@ fn generate_edits(word: &str, alphabet: &str) -> Vec<String> {
 
 /// Core English word list (~12K words). Used as fallback when no Hunspell
 /// dictionary is installed.
-const CORE_ENGLISH_WORDS: &str = include_str!("../../data/dictionary_en.txt");
+const CORE_ENGLISH_WORDS: &str = include_str!("../../../data/dictionary_en.txt");
 
 // ── I18n / Localization Infrastructure ──────────────────────────────────────
 
@@ -656,6 +866,104 @@ impl Default for I18n {
 
 #[cfg(test)]
 mod tests {
+
+    fn wrong(word: &str, suggestions: &[&str]) -> SpellError {
+        SpellError {
+            word: word.to_string(),
+            offset: 0,
+            suggestions: suggestions.iter().map(|s| s.to_string()).collect(),
+            repeated: false,
+        }
+    }
+
+    #[test]
+    fn test_a_clean_message_is_not_interrupted() {
+        // A confirmation that appears every time is one people learn to
+        // dismiss without reading, which costs them the time it mattered.
+        assert_eq!(before_sending(&[]), None);
+    }
+
+    #[test]
+    fn test_one_word_is_named_rather_than_counted() {
+        // "1 word looks misspelled" makes somebody open a dialog to find out
+        // which. Naming it lets them decide without opening anything.
+        let said = before_sending(&[wrong("recieve", &["receive"])]).expect("something to say");
+
+        assert!(said.contains("recieve"), "{said}");
+    }
+
+    #[test]
+    fn test_a_few_words_are_all_named() {
+        let said = before_sending(&[
+            wrong("recieve", &[]),
+            wrong("teh", &[]),
+            wrong("mesage", &[]),
+        ])
+        .expect("something to say");
+
+        for word in ["recieve", "teh", "mesage"] {
+            assert!(said.contains(word), "{word} missing from {said}");
+        }
+    }
+
+    #[test]
+    fn test_a_lot_of_words_are_counted_rather_than_recited() {
+        // Past a few, listing them is a paragraph read aloud before somebody
+        // can answer a yes or no question.
+        let errors: Vec<SpellError> = (0..20).map(|n| wrong(&format!("wrng{n}"), &[])).collect();
+
+        let said = before_sending(&errors).expect("something to say");
+
+        assert!(said.contains("wrng0"), "{said}");
+        assert!(said.contains("17 others"), "{said}");
+        assert!(!said.contains("wrng19"), "it recited the lot: {said}");
+    }
+
+    #[test]
+    fn test_the_same_word_twice_is_said_once() {
+        // A word misspelled consistently is one mistake, not five.
+        let said = before_sending(&[wrong("recieve", &[]), wrong("recieve", &[])])
+            .expect("something to say");
+
+        assert_eq!(said.matches("recieve").count(), 1, "{said}");
+    }
+
+    #[test]
+    fn test_a_repeated_word_is_not_called_a_misspelling() {
+        // "the the" is two correctly spelled words and one mistake, and being
+        // told there are no suggestions for "the" is the one thing a spell
+        // checker must never say about a word that is spelled right.
+        let repeated = SpellError {
+            word: "the".to_string(),
+            offset: 4,
+            suggestions: Vec::new(),
+            repeated: true,
+        };
+
+        let spoken = repeated.spoken();
+
+        assert!(spoken.contains("repeated"), "{spoken}");
+        assert!(!spoken.contains("dictionary"), "{spoken}");
+    }
+
+    #[test]
+    fn test_a_misspelling_says_what_is_wrong_before_what_to_do() {
+        // The first decides whether somebody wants the second.
+        let spoken = wrong("recieve", &["receive", "recipe"]).spoken();
+
+        assert!(
+            spoken.starts_with("recieve, not in the dictionary"),
+            "{spoken}"
+        );
+        assert!(spoken.contains("receive"), "{spoken}");
+    }
+
+    #[test]
+    fn test_a_word_with_no_suggestions_says_so_rather_than_trailing_off() {
+        let spoken = wrong("qwertyuiop", &[]).spoken();
+
+        assert!(spoken.contains("no suggestions"), "{spoken}");
+    }
     use super::*;
 
     #[test]

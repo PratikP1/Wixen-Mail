@@ -551,6 +551,13 @@ pub fn show_compose_dialog_full(
                     tracing::warn!("Send attempted with empty To field");
                     return ComposeResult::Cancelled;
                 }
+                // Before the preview rather than after it. Somebody who has
+                // already confirmed a message is somebody who has decided, and
+                // stopping them then reads as the application changing its
+                // mind.
+                if !confirm_spelling(&dialog, &data.body) {
+                    continue;
+                }
                 if preview_before_send {
                     // Show preview-before-send dialog
                     match show_send_preview(&dialog, &data, account_names) {
@@ -565,6 +572,52 @@ pub fn show_compose_dialog_full(
             _ => return ComposeResult::Cancelled,
         }
     }
+}
+
+/// Check the body, and ask once if anything looks wrong.
+///
+/// `true` to carry on sending. `false` to go back to the message, which is what
+/// happens when somebody chooses to look at the words rather than send anyway.
+///
+/// Silent when there is nothing to say, which is the common case and has to
+/// stay free: a confirmation on every message is one people learn to dismiss
+/// without reading, and then it is not there the time it mattered.
+fn confirm_spelling(parent: &Dialog, body: &str) -> bool {
+    use crate::service::spellcheck;
+
+    if body.trim().is_empty() {
+        return true;
+    }
+    let language = crate::data::config::ConfigManager::load_stored()
+        .map(|config| config.app_config().language.clone())
+        .unwrap_or_else(|_| "en".to_string());
+
+    let speller = spellcheck::for_language(&language);
+    let Some(said) = spellcheck::before_sending(&speller.check(body)) else {
+        return true;
+    };
+
+    // Send is the default, so Enter sends. Somebody who meant to send and
+    // heard the warning should not have to find a button, and the words are in
+    // the question, so the decision can be made from hearing it alone.
+    let answer = MessageDialog::builder(
+        parent,
+        // The buttons are Yes and No, which this builder cannot relabel, so
+        // the question has to say what each one means. "Send anyway?" answered
+        // Yes or No is unambiguous; "Send anyway, or go back?" answered Yes is
+        // not.
+        &format!(
+            "{said}
+
+Send it anyway?"
+        ),
+        "Check the spelling",
+    )
+    .with_style(MessageDialogStyle::YesNo | MessageDialogStyle::IconQuestion)
+    .build()
+    .show_modal();
+
+    answer == ID_YES
 }
 
 // ── Preview Before Send ─────────────────────────────────────────────────────
