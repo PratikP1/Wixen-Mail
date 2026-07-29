@@ -78,7 +78,13 @@ impl MessageCache {
         Ok(())
     }
 
-    /// Ensure a default task list exists.
+    /// Ensure a default task list exists, and say which one it is.
+    ///
+    /// The first list the account has. Lists are ordered by `display_order`,
+    /// which the sync fills in from the order the provider returned them, and
+    /// both providers lead with their default list: Google Tasks with "My
+    /// Tasks", Microsoft To Do with "Tasks". So the first is the one a new
+    /// task belongs in.
     pub fn ensure_default_task_list(&self, account_id: &str) -> Result<TaskListEntry> {
         let existing = self.get_task_lists_for_account(account_id)?;
         if let Some(first) = existing.into_iter().next() {
@@ -90,7 +96,12 @@ impl MessageCache {
             account_id: account_id.to_string(),
             name: "My Tasks".to_string(),
             color: "#4285F4".to_string(),
-            display_order: 0,
+            // Behind anything a provider sends. This is somewhere to put a
+            // task on an account that has never synced, and the moment real
+            // lists arrive a new task belongs in one of those. Without this
+            // the placeholder competes with the provider's own "My Tasks" on
+            // name, and which one wins is not something to leave to sorting.
+            display_order: i32::MAX,
             created_at: now,
         };
         self.save_task_list(&tl)?;

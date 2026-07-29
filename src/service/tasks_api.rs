@@ -209,7 +209,7 @@ fn due_date_only(timestamp: &str) -> Option<String> {
 }
 
 /// One of Google's lists as this application stores it.
-pub fn google_list_to_entry(list: &GoogleTaskList, account_id: &str) -> TaskListEntry {
+pub fn google_list_to_entry(list: &GoogleTaskList, account_id: &str, order: i32) -> TaskListEntry {
     TaskListEntry {
         id: format!("google:{}", list.id),
         account_id: account_id.to_string(),
@@ -219,7 +219,11 @@ pub fn google_list_to_entry(list: &GoogleTaskList, account_id: &str) -> TaskList
             list.title.trim().to_string()
         },
         color: String::new(),
-        display_order: 0,
+        // The order the provider sent them in. Both lead with their default
+        // list, so keeping it is what makes "the account's first list" mean
+        // the one a new task belongs in, rather than whichever name happens
+        // to sort earliest.
+        display_order: order,
         created_at: String::new(),
     }
 }
@@ -289,7 +293,7 @@ pub fn entry_to_google_task(task: &TaskEntry) -> GoogleTask {
 }
 
 /// One of Microsoft's lists as this application stores it.
-pub fn ms_list_to_entry(list: &MsTodoList, account_id: &str) -> TaskListEntry {
+pub fn ms_list_to_entry(list: &MsTodoList, account_id: &str, order: i32) -> TaskListEntry {
     TaskListEntry {
         id: format!("ms:{}", list.id),
         account_id: account_id.to_string(),
@@ -299,7 +303,11 @@ pub fn ms_list_to_entry(list: &MsTodoList, account_id: &str) -> TaskListEntry {
             list.display_name.trim().to_string()
         },
         color: String::new(),
-        display_order: 0,
+        // The order the provider sent them in. Both lead with their default
+        // list, so keeping it is what makes "the account's first list" mean
+        // the one a new task belongs in, rather than whichever name happens
+        // to sort earliest.
+        display_order: order,
         created_at: String::new(),
     }
 }
@@ -882,11 +890,11 @@ mod tests {
     #[test]
     fn test_a_list_with_no_name_is_still_something_to_choose() {
         assert_eq!(
-            google_list_to_entry(&GoogleTaskList::default(), "acc-1").name,
+            google_list_to_entry(&GoogleTaskList::default(), "acc-1", 0).name,
             "Tasks"
         );
         assert_eq!(
-            ms_list_to_entry(&MsTodoList::default(), "acc-1").name,
+            ms_list_to_entry(&MsTodoList::default(), "acc-1", 0).name,
             "Tasks"
         );
     }

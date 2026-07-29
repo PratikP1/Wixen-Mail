@@ -1003,10 +1003,16 @@ fn store_new_item(
             created_at: stamp.clone(),
             updated_at: stamp,
         }),
+        // A task with no list can never leave this computer. The push skips
+        // any pending task whose list is absent, counts it as kept here, and
+        // does the same on every sync afterwards, and nothing in the interface
+        // can move it into one. So it goes in the account's first list, which
+        // is the provider's default list because the sync keeps the order the
+        // provider returned them in.
         ItemKind::Task => cache.save_task(&TaskEntry {
             id: new_id("task"),
             account_id: account_id.to_string(),
-            task_list_id: None,
+            task_list_id: Some(cache.ensure_default_task_list(account_id)?.id),
             title: title.to_string(),
             description: None,
             due_date: None,
@@ -1116,6 +1122,77 @@ fn draft_label(draft: &crate::data::message_cache::CachedDraft) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_cache() -> MessageCache {
+        let dir =
+            std::env::temp_dir().join(format!("wixen_managers_test_{}", uuid::Uuid::new_v4()));
+        MessageCache::new(dir, None).expect("a cache to test against")
+    }
+
+    #[test]
+    fn test_a_task_made_here_is_filed_in_a_list() {
+        // Without a list it can never be sent. `push_tasks` skips any pending
+        // task whose list is absent, counts it as kept on this computer, and
+        // does the same on every sync afterwards, and there is no control
+        // anywhere in the application that can move it into one. So every task
+        // anybody made was stranded, while the release notes said tasks go up.
+        //
+        // It is also why the sidebar could announce "My Tasks (0)" with the
+        // task visible in the list below it: the count matches on list id.
+        let cache = test_cache();
+        store_new_item(
+            &cache,
+            crate::application::new_item::ItemKind::Task,
+            "account-1",
+            "Book the dentist",
+        )
+        .expect("the task to be stored");
+
+        // Read back through the exact query the push reads, so the test
+        // fails for the reason the feature fails.
+        let waiting = cache.pending_tasks("account-1").expect("the task back");
+        let task = waiting.first().expect("exactly the task just made");
+        assert!(
+            task.task_list_id.is_some(),
+            "filed under no list, so it can never be sent: {task:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_task_made_here_goes_to_the_list_the_provider_puts_first() {
+        // Both providers return their default list first: Google Tasks leads
+        // with "My Tasks", Microsoft To Do with "Tasks". Keeping their order
+        // is what makes "the first list" mean the default one rather than
+        // whichever name happens to sort earliest.
+        let cache = test_cache();
+        for (order, name) in [(0, "My Tasks"), (1, "Admin")] {
+            cache
+                .save_task_list(&crate::data::message_cache::TaskListEntry {
+                    id: format!("google:{name}"),
+                    account_id: "account-1".to_string(),
+                    name: name.to_string(),
+                    color: String::new(),
+                    display_order: order,
+                    created_at: String::new(),
+                })
+                .expect("a list to file into");
+        }
+
+        store_new_item(
+            &cache,
+            crate::application::new_item::ItemKind::Task,
+            "account-1",
+            "Book the dentist",
+        )
+        .expect("the task to be stored");
+
+        let waiting = cache.pending_tasks("account-1").expect("the task back");
+        assert_eq!(
+            waiting.first().and_then(|t| t.task_list_id.as_deref()),
+            Some("google:My Tasks"),
+            "filed alphabetically rather than where the provider put it"
+        );
+    }
 
     fn data(all_day: bool) -> wx_calendar::CalendarEventData {
         wx_calendar::CalendarEventData {

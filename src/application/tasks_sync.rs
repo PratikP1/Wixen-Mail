@@ -57,6 +57,10 @@ pub struct TaskSyncResult {
     pub sent: usize,
     /// Pending changes to tasks that live in a list the provider has no copy of.
     ///
+    /// Reached only by a task made before the account ever synced, when there
+    /// were no provider lists to file it in. `store_new_item` files everything
+    /// else in the account's first list, which is the provider's default one.
+    ///
     /// Not an error and not a failure. A task filed in a list this computer
     /// made has nowhere at the other end to go, and saying so once as a count
     /// is honest without turning into a line of complaint on every sync.
@@ -368,11 +372,11 @@ pub async fn sync_google_tasks(
     .await;
 
     let lists = client.google_lists(token).await?;
-    for list in &lists {
+    for (order, list) in lists.iter().enumerate() {
         if list.id.trim().is_empty() {
             continue;
         }
-        let entry = google_list_to_entry(list, account_id);
+        let entry = google_list_to_entry(list, account_id, order as i32);
         if let Err(e) = cache.save_task_list(&entry) {
             result.errors.push(format!("{}: {e}", entry.name));
             continue;
@@ -471,11 +475,11 @@ pub async fn sync_microsoft_tasks(
     .await;
 
     let lists = client.ms_lists(token).await?;
-    for list in &lists {
+    for (order, list) in lists.iter().enumerate() {
         if list.id.trim().is_empty() {
             continue;
         }
-        let entry = ms_list_to_entry(list, account_id);
+        let entry = ms_list_to_entry(list, account_id, order as i32);
         if let Err(e) = cache.save_task_list(&entry) {
             result.errors.push(format!("{}: {e}", entry.name));
             continue;

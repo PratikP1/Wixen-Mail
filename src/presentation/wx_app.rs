@@ -5949,9 +5949,11 @@ fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
 /// an account that is signed in to neither costs nothing here: no credentials
 /// means the branch is skipped.
 ///
-/// One direction only. Reading is most of the value and cannot lose anything;
-/// writing back needs a conflict rule, and getting that wrong destroys somebody
-/// else's data quietly. See the note on `application::tasks_sync`.
+/// Both directions. Changes made here are pushed before anything is pulled,
+/// and when the same task changed in both places the provider's version wins
+/// and the count of replaced changes is said out loud, because a change that
+/// disappears silently is indistinguishable from one that never saved. See the
+/// note on `application::tasks_sync`.
 fn spawn_tasks_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
     use crate::application::tasks_sync::{TaskSyncResult, sync_google_tasks, sync_microsoft_tasks};
 

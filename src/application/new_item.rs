@@ -181,9 +181,9 @@ const CONTACT_PROVIDERS: [&str; 2] = ["gmail", "outlook"];
 const CALENDAR_PROVIDERS: [&str; 2] = ["gmail", "outlook"];
 /// Providers whose tasks we can sync.
 ///
-/// Google Tasks and Microsoft To Do. Both are read into the local lists by
-/// `application::tasks_sync`, one direction only, which is why a task made here
-/// still lives here: it appears in the account's list and is not sent up.
+/// Google Tasks and Microsoft To Do, both synced in each direction by
+/// `application::tasks_sync`. A task made here goes into the account's first
+/// list, which is the provider's default one, and is sent up at the next sync.
 const TASK_PROVIDERS: [&str; 2] = ["gmail", "outlook"];
 
 /// Whether this account's provider syncs this kind of item.

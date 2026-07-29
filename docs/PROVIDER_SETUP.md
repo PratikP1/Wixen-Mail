@@ -70,10 +70,18 @@ dropped for failing once.
 Sync with Tools, then Sync Tasks. It does not run on its own yet, so a change
 made here reaches your phone when you next sync rather than straight away.
 
-**One thing does not go up.** A task filed in a list this computer made, rather
-than one that came from your provider, has nowhere at the other end to be put.
-It stays here, and the sync says how many did: "2 kept on this computer". Move
-it into one of your provider's lists and it goes up at the next sync.
+A task you make goes into your account's first list, which is the one your
+provider treats as the default: "My Tasks" on Google Tasks, "Tasks" on
+Microsoft To Do. There is no list picker yet, so if you want it somewhere else,
+move it on your phone or on the web page after the next sync.
+
+**One case stays here.** If you make a task on an account that has never synced,
+there are no lists yet, so it goes into a list called "My Tasks" that this
+computer made. That list has no copy at your provider, so the task has nowhere
+at the other end to be put. It stays here and the sync says how many did: "1
+kept on this computer". Sync first and it will not happen. There is no way to
+move an existing task between lists in Wixen Mail yet, so a task in that state
+stays in it.
 
 ### Notes and reminders stay on this computer
 
