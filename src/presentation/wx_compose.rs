@@ -18,6 +18,12 @@ use wxdragon::widgets::{WebView, WebViewBackend};
 const ID_BOLD: Id = ID_HIGHEST + 100;
 const ID_ITALIC: Id = ID_HIGHEST + 101;
 const ID_UNDERLINE: Id = ID_HIGHEST + 102;
+/// The first of a run, one per `Format::ALL`, so the handler can subtract and
+/// index rather than matching thirteen constants against thirteen variants and
+/// getting one pair wrong.
+const ID_FORMAT_FIRST: Id = ID_HIGHEST + 120;
+const ID_INSERT_LINK: Id = ID_HIGHEST + 150;
+const ID_FORMAT_MENU: Id = ID_HIGHEST + 151;
 const ID_SEND: Id = ID_HIGHEST + 110;
 const ID_SAVE_DRAFT: Id = ID_HIGHEST + 111;
 const ID_DISCARD: Id = ID_HIGHEST + 112;
@@ -117,41 +123,6 @@ fn compose_title(mode: &ComposeMode) -> &'static str {
     }
 }
 
-/// Show the composition dialog modally and return the user's action.
-///
-/// This creates a Dialog with:
-/// - To/CC/BCC/Subject text fields
-/// - Account selector (Choice dropdown)
-/// - RichTextCtrl body editor with B/I/U formatting buttons
-/// - Send, Save Draft, Discard action buttons
-pub fn show_compose_dialog(
-    parent: &Frame,
-    mode: ComposeMode,
-    account_names: &[String],
-    active_account_index: u32,
-) -> ComposeResult {
-    show_compose_dialog_with_options(parent, mode, account_names, active_account_index, true)
-}
-
-/// Show the composition dialog with configurable preview-before-send.
-pub fn show_compose_dialog_with_options(
-    parent: &Frame,
-    mode: ComposeMode,
-    account_names: &[String],
-    active_account_index: u32,
-    preview_before_send: bool,
-) -> ComposeResult {
-    show_compose_dialog_full(
-        parent,
-        mode,
-        account_names,
-        active_account_index,
-        preview_before_send,
-        crate::application::autosave::AutosaveInterval::off(),
-        |_| {},
-    )
-}
-
 /// The compose dialog, with automatic draft saving.
 ///
 /// `autosave` decides how often, and `on_autosave` is handed the fields as
@@ -166,6 +137,7 @@ pub fn show_compose_dialog_full(
     active_account_index: u32,
     preview_before_send: bool,
     autosave: crate::application::autosave::AutosaveInterval,
+    a11y: std::sync::Arc<crate::presentation::accessibility::Accessibility>,
     on_autosave: impl Fn(&ComposeData) + 'static,
 ) -> ComposeResult {
     // ── Create Dialog ────────────────────────────────────────────────────
@@ -302,9 +274,18 @@ pub fn show_compose_dialog_full(
         .with_size(Size::new(32, 28))
         .build();
     underline_btn.set_name("Underline (Ctrl+U)");
+    // The other eight commands, and the link. Named as a word rather than a
+    // symbol: B, I and U are recognisable letters, and there is no glyph for
+    // "heading level 2" that anybody reads the same way.
+    let format_btn = Button::builder(&dialog)
+        .with_label("F&ormat...")
+        .with_id(ID_FORMAT_MENU)
+        .build();
+    set_accessible_name(&format_btn, "Format, opens a menu");
     toolbar_sizer.add(&bold_btn, 0, SizerFlag::All, 2);
     toolbar_sizer.add(&italic_btn, 0, SizerFlag::All, 2);
     toolbar_sizer.add(&underline_btn, 0, SizerFlag::All, 2);
+    toolbar_sizer.add(&format_btn, 0, SizerFlag::All, 2);
     toolbar_sizer.add_spacer(12);
 
     // Attach
@@ -441,12 +422,29 @@ pub fn show_compose_dialog_full(
         }
     }
 
-    // ── Wire formatting button events ────────────────────────────────────
-    // Each of these runs the command and puts the caret back where somebody
-    // was typing. A toolbar button takes focus, and without the second half
-    // applying bold leaves you on the button with the next keystroke going
-    // nowhere. Each one is announced, because a formatting change nobody is
-    // told about is one that happened to somebody rather than one they made.
+    // ── Formatting ───────────────────────────────────────────────────────
+    //
+    // One place that applies a command, announces it, and puts the caret back
+    // where somebody was typing. The last of those matters because a toolbar
+    // button takes focus, and without it applying bold leaves you on the button
+    // with the next keystroke going nowhere.
+    //
+    // Through the announcement queue rather than straight to the screen reader.
+    // These fire from keys as well as buttons, so somebody applying formatting
+    // as they write produces a stream of them, and the queue is what bounds and
+    // coalesces that. Going direct would be the one path in the application
+    // that can flood.
+    let apply_format = {
+        let a11y = a11y.clone();
+        move |format: editor_document::Format| {
+            body_editor.run_script(&editor_document::format_script(format));
+            let _ = a11y.announce(
+                format.spoken(),
+                crate::presentation::accessibility::announcements::Priority::Normal,
+            );
+        }
+    };
+
     for (button, format) in [
         (&bold_btn, editor_document::Format::Bold),
         (&italic_btn, editor_document::Format::Italic),
@@ -454,21 +452,70 @@ pub fn show_compose_dialog_full(
         (&undo_btn, editor_document::Format::Undo),
         (&redo_btn, editor_document::Format::Redo),
     ] {
-        button.on_click(move |_| {
-            body_editor.run_script(&editor_document::format_script(format));
-            // Straight to the screen reader rather than through the feedback
-            // system: this window has no Accessibility handle, and threading
-            // one in for five strings would put a parameter on every compose
-            // entry point. Worth revisiting when the formatting set grows past
-            // a handful, because these should obey the channel settings like
-            // every other event does.
-            if let Ok(bridge) =
-                crate::presentation::accessibility::screen_reader::ScreenReaderBridge::new()
-            {
-                let _ = bridge.announce(format.spoken());
-            }
-        });
+        let apply = apply_format.clone();
+        button.on_click(move |_| apply(format));
     }
+
+    // Every command on one menu, raised by a button.
+    //
+    // A menu bar would be the obvious home and a dialog cannot have one, so
+    // this is a button that pops the menu up. That is no worse for somebody
+    // working by keyboard: Tab reaches the button, Enter opens the menu, and
+    // the menu is arrowed and announced like any other. It is better than the
+    // alternative of keys alone, because a key nobody can discover is a key
+    // nobody has.
+    //
+    // The buttons on the toolbar cover five of the thirteen. The other eight
+    // include the headings and lists, which are the ones that decide whether
+    // the person receiving the message can navigate it.
+    // The menu's commands arrive as ordinary menu events on the dialog, which
+    // is where a popup menu sends them. Bound once here rather than inside the
+    // button's handler, so opening the menu twice does not bind it twice.
+    //
+    // wxdragon does not implement MenuEvents for Dialog, only for Frame and
+    // Panel, so this goes through the same bind_internal the reader window uses
+    // for its keys.
+    dialog.bind_internal(EventType::MENU, {
+        let apply = apply_format.clone();
+        let a11y = a11y.clone();
+        move |event| {
+            let id = event.get_id();
+            if id == ID_INSERT_LINK {
+                insert_link(&dialog, body_editor, &a11y);
+                return;
+            }
+            let Ok(index) = usize::try_from(id - ID_FORMAT_FIRST) else {
+                event.skip(true);
+                return;
+            };
+            match editor_document::Format::ALL.get(index) {
+                Some(format) => apply(*format),
+                // Not ours: the toolbar buttons raise menu events too, and
+                // swallowing them would stop Send working.
+                None => event.skip(true),
+            }
+        }
+    });
+
+    format_btn.on_click(move |_| {
+        let mut menu = Menu::builder();
+        for (index, format) in editor_document::Format::ALL.iter().enumerate() {
+            menu = menu.append_item(
+                ID_FORMAT_FIRST + index as Id,
+                &format.label(),
+                format.spoken(),
+            );
+        }
+        let mut menu = menu
+            .append_separator()
+            .append_item(
+                ID_INSERT_LINK,
+                "Insert &Link...",
+                "Turn the selected text into a link",
+            )
+            .build();
+        dialog.popup_menu(&mut menu, None);
+    });
 
     // Send button (in toolbar) closes dialog with ID_SEND
     send_toolbar_btn.on_click({
@@ -479,8 +526,12 @@ pub fn show_compose_dialog_full(
 
     // Ctrl+Enter, Ctrl+S and Escape come out of the page rather than from a
     // key handler on the control. A web view consumes keys once it has focus,
-    // so the page binds the three that have to leave and posts them here.
+    // so the page binds the ones that have to leave and posts them here. The
+    // formatting keys are bound there too, and arrive already applied: they
+    // come back only so the announcement goes through the same queue as every
+    // other one rather than straight at the screen reader.
     body_editor.on_script_message_received({
+        let a11y = a11y.clone();
         move |event| {
             let Some(raw) = event.get_string() else {
                 return;
@@ -489,6 +540,12 @@ pub fn show_compose_dialog_full(
                 Some(editor_document::EditorMessage::Send) => dialog.end_modal(ID_SEND),
                 Some(editor_document::EditorMessage::Save) => dialog.end_modal(ID_SAVE_DRAFT),
                 Some(editor_document::EditorMessage::Cancel) => dialog.end_modal(ID_CANCEL),
+                Some(editor_document::EditorMessage::Formatted(format)) => {
+                    let _ = a11y.announce(
+                        format.spoken(),
+                        crate::presentation::accessibility::announcements::Priority::Normal,
+                    );
+                }
                 // The page is ours, so an unknown message is a bug rather than
                 // an attack, and doing nothing beats guessing which command
                 // somebody meant when every one of them sends or discards.
@@ -673,6 +730,45 @@ Send it anyway?"
     .show_modal();
 
     answer == ID_YES
+}
+
+/// Ask for a URL and put it on the selected text.
+///
+/// The URL is checked before it goes anywhere near the document. That is the
+/// same guard the reader puts on a link a stranger sent, and it applies here
+/// for a reason worth stating: this message goes to somebody else, so a
+/// `javascript:` URL typed into a composer is a link posted to another person.
+fn insert_link(
+    dialog: &Dialog,
+    body_editor: WebView,
+    a11y: &std::sync::Arc<crate::presentation::accessibility::Accessibility>,
+) {
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let entry = TextEntryDialog::builder(dialog, "Address to link to:", "Insert Link").build();
+    if entry.show_modal() != ID_OK {
+        return;
+    }
+    let Some(typed) = entry.get_value() else {
+        return;
+    };
+    if typed.trim().is_empty() {
+        return;
+    }
+    match editor_document::link_script(&typed) {
+        Some(script) => {
+            body_editor.run_script(&script);
+            let _ = a11y.announce("Link added", Priority::Normal);
+        }
+        // Refused out loud, naming what was refused. A link that silently does
+        // not appear reads as the command being broken.
+        None => {
+            let _ = a11y.announce(
+                &format!("{typed} is not an address this can link to"),
+                Priority::High,
+            );
+        }
+    }
 }
 
 // ── Preview Before Send ─────────────────────────────────────────────────────

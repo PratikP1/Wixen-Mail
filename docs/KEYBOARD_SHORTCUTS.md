@@ -402,12 +402,40 @@ moves the menu, and sorting from the menu moves the headers.
 |--------|----------|-------------|
 | Send Message | `Ctrl+Enter` | Send the current message |
 | Save Draft | `Ctrl+S` | Save message as draft |
-| Bold Text | `Ctrl+B` | Toggle bold on selection |
-| Italic Text | `Ctrl+I` | Toggle italic on selection |
-| Underline Text | `Ctrl+U` | Toggle underline on selection |
+| Close Window | `Esc` | Close composition window without sending |
+
+**Formatting.** Every one of these is also on the Format menu, which the Format
+button opens, so none of them has to be memorised to be used. Each says what it
+applied when you use it.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Bold | `Ctrl+B` | Bold the selection |
+| Italic | `Ctrl+I` | Italicise the selection |
+| Underline | `Ctrl+U` | Underline the selection |
+| Heading 1 | `Ctrl+Alt+1` | Make the current line a top-level heading |
+| Heading 2 | `Ctrl+Alt+2` | Make the current line a second-level heading |
+| Heading 3 | `Ctrl+Alt+3` | Make the current line a third-level heading |
+| Normal Text | `Ctrl+Alt+0` | Turn a heading or quote back into an ordinary paragraph |
+| Bulleted List | `Ctrl+Shift+L` | Start or end a bulleted list |
+| Numbered List | `Ctrl+Shift+O` | Start or end a numbered list |
+| Quote | `Ctrl+Shift+Q` | Indent the current line as a quotation |
+| Remove Formatting | `Ctrl+Space` | Strip formatting from the selection |
 | Undo | `Ctrl+Z` | Undo last edit |
 | Redo | `Ctrl+Y` | Redo last undo |
-| Close Window | `Esc` | Close composition window without sending |
+
+Headings and lists are worth using. They are the structure the person receiving
+your message navigates by, and a long message without them can only be read
+straight through.
+
+Two limitations, stated rather than hidden:
+
+- The heading keys use `Ctrl+Alt`, which the keyboard sends as AltGr on many
+  non-US layouts. Where AltGr and a digit types a character, that character
+  still gets typed and the heading is not applied. Use the Format menu on those
+  layouts. Taking the character away would be the worse trade.
+- These keys work while the caret is in the message body. In the To, Cc, Bcc and
+  Subject fields there is nothing to format, so they do nothing there.
 
 **Button accelerators (Alt+key):**
 

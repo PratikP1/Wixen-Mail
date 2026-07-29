@@ -2200,13 +2200,7 @@ document.addEventListener('keydown', function(e) {
                         _ if id == ID_NEW_DEFAULT => {
                             let module = lock_state(&state).active_module;
                             match module {
-                                PimModule::Mail => open_compose(
-                                    &frame,
-                                    &state,
-                                    &ui_tx,
-                                    &runtime,
-                                    &message_cache,
-                                    ComposeMode::New,
+                                PimModule::Mail => open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ComposeMode::New,
                                 ),
                                 PimModule::Contacts => managers::new_contact(
                                     &state,
@@ -2283,17 +2277,11 @@ document.addEventListener('keydown', function(e) {
                                 &ui_tx,
                                 &runtime,
                             ) {
-                                open_compose(
-                                    &frame,
-                                    &state,
-                                    &ui_tx,
-                                    &runtime,
-                                    &message_cache,
-                                    ComposeMode::Draft(draft),
+                                open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ComposeMode::Draft(draft),
                                 );
                             }
                         }
-                        _ if id == ID_NEW_MESSAGE => open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, ComposeMode::New),
+                        _ if id == ID_NEW_MESSAGE => open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ComposeMode::New),
                         _ if id == ID_REPLY => {
                             start_reply(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ReplyMode::Default);
                         }
@@ -2305,7 +2293,7 @@ document.addEventListener('keydown', function(e) {
                         }
                         _ if id == ID_FORWARD => {
                             let (_to, subj, body) = msg_info(&state);
-                            open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, ComposeMode::Forward { subject: subj, body });
+                            open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ComposeMode::Forward { subject: subj, body });
                         }
                         // Delete acts on whatever is in front of you. In Mail
                         // that is a message, with server semantics behind it;
@@ -3773,7 +3761,7 @@ fn start_reply(
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
     cache: &Option<Arc<MessageCache>>,
-    a11y: &Accessibility,
+    a11y: &Arc<Accessibility>,
     mode: ReplyMode,
 ) {
     let (selected, own_addresses, preview) = {
@@ -3843,7 +3831,7 @@ fn start_reply(
             quoted_body: preview,
         },
     };
-    open_compose(frame, state, tx, rt, cache, compose);
+    open_compose(frame, state, tx, rt, cache, a11y, compose);
 }
 
 /// Extract selected message info for reply/forward.
@@ -3874,6 +3862,7 @@ fn open_compose(
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
     cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
     mode: ComposeMode,
 ) {
     let (names, active) = state
@@ -3939,6 +3928,7 @@ fn open_compose(
         active,
         preview_first,
         autosave,
+        a11y.clone(),
         saver,
     ) {
         ComposeResult::Send(data) => {
@@ -4100,7 +4090,7 @@ fn open_for_scanning(
         ScanTarget::Settings => handle_settings(frame, tx, rt, a11y),
         ScanTarget::Accounts => handle_account_mgr(frame, state),
         ScanTarget::Compose => {
-            open_compose(frame, state, tx, rt, &None, ComposeMode::New);
+            open_compose(frame, state, tx, rt, &None, a11y, ComposeMode::New);
         }
         ScanTarget::Reader => {
             // Not a dialog: the reader is a frame of its own, so it does not

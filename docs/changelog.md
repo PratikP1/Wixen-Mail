@@ -7,6 +7,8 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Fixed
 
+- **A message written with formatting would have arrived full of visible markup.** Between the editor changing and the multipart message being built, the whole message went into the plain text field, tags and all. Nothing shipped in that state.
+
 - **The conversation reader claimed you could navigate it by heading.** You cannot: it is a plain text control, which has no headings for a screen reader to find. `Ctrl+Down` and `Ctrl+Up` do move between messages and always did. The documentation now says what is true, and As Headings, below, is where real headings live.
 
 - **Creating an event, reminder, task or note now keeps it.** The dialog took a title, wrote a line to the log, announced "created" and threw the item away. Four of the six New commands looked like they worked and none of them stored anything. They store it now, in the right account, and the panel refreshes so you can see it.
@@ -35,6 +37,13 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 - **The message body is a different control**, and the reason is your screen reader rather than the formatting. The old one was drawn by wxWidgets itself, which means it could never mark a misspelling, never let a heading report itself, and every announcement had to be made by hand and be slightly wrong forever. The new one asks the browser engine your system already has, and gets all of that natively: misspellings are marked and announced by NVDA, VoiceOver or Orca themselves rather than by us.
   The keys that have to leave the editor are bound inside it and passed out: `Escape` closes, `Ctrl+Enter` sends, `Ctrl+S` saves a draft. Everything else belongs to the editor, which is what you want while writing. Bold, italic, underline, undo and redo each say what they did and put the caret back where you were typing, because a toolbar button takes focus and the next thing you type should not go to the button.
   **A reply quotes a stranger's message**, and this puts it in a live document, so every quoted body is cleaned before it reaches the editor and again on the way out. The old control rendered nothing, so it could afford less care. This cannot.
+
+- **Headings, lists and links can be put in a message.** Format, on the composition window, or the keys beside each item on that menu: `Ctrl+Alt+1` through `Ctrl+Alt+3` for headings, `Ctrl+Alt+0` to go back to ordinary text, `Ctrl+Shift+L` and `Ctrl+Shift+O` for bulleted and numbered lists, `Ctrl+Shift+Q` to quote, `Ctrl+Space` to strip formatting. Each says what it applied.
+  These are for whoever receives the message rather than for you. A heading is what they navigate by, and a long message without any can only be read from the top. It is the thing this application spends its time wishing other people's mail had, so it would be poor manners to send mail without it.
+  The menu exists so none of it has to be memorised: tab to Format, press Enter, and arrow through the same thirteen commands the keys apply. The keys and the menu are generated from one list, so a menu item cannot promise a key that nothing binds.
+  On layouts where AltGr and a digit types a character, the heading keys type that character instead: taking it away to save a trip to the menu would be the wrong trade. The Format menu still applies headings there.
+
+- **A formatted message now goes out as formatted mail.** It is sent as both halves of a `multipart/alternative`: the formatting for programs that show it, and a plain text version taken from the editor itself for programs and screen readers that prefer text. Plain text mail is still sent as plain text alone.
 
 - **Things can be deleted.** Contacts, events, reminders, tasks and notes could all be created and none of them could be removed. `Delete` now works on the row you are on, in every module, and asks first with the row named in the question: "Delete \"File the tax return\"? This cannot be undone." It is the same key that deletes a message in Mail, acting on whatever is in front of you, the way `Ctrl+N` makes whatever the area you are in is for.
 - **Tasks and reminders can be marked done**, with `Ctrl+Shift+K`, and **notes can be pinned**, with `Ctrl+Shift+P`. Both say which way they went, because a toggle you cannot see is one you have to be told about. Both are greyed out where they mean nothing, so a screen reader says "unavailable" rather than leaving you to press a key that does nothing.
