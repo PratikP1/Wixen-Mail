@@ -42,6 +42,8 @@ struct SettingsWidgets {
     // Language
     language: Choice,
     check_spelling_before_send: CheckBox,
+    allow_mail: CheckBox,
+    allow_pim: CheckBox,
     check_spelling_as_you_type: CheckBox,
     // Calendar & PIM
     cal_default_view: Choice,
@@ -99,7 +101,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 
     // ── Tab 4: Language & Spelling
     let lang_panel = Panel::builder(&notebook).build();
-    let (language, check_spelling_before_send, check_spelling_as_you_type) =
+    let (language, check_spelling_before_send, check_spelling_as_you_type, allow_mail, allow_pim) =
         build_language_tab(&lang_panel, config);
     notebook.add_page(&lang_panel, "Language", false, None);
 
@@ -163,6 +165,8 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         language,
         check_spelling_before_send,
         check_spelling_as_you_type,
+        allow_mail,
+        allow_pim,
         cal_default_view,
         cal_show_weekends,
         cal_first_day,
@@ -434,7 +438,10 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> Choice {
 }
 
 /// Language & Spelling: which language to check, and whether to check on send.
-fn build_language_tab(panel: &Panel, config: &AppConfig) -> (Choice, CheckBox, CheckBox) {
+fn build_language_tab(
+    panel: &Panel,
+    config: &AppConfig,
+) -> (Choice, CheckBox, CheckBox, CheckBox, CheckBox) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Language
@@ -493,6 +500,43 @@ fn build_language_tab(panel: &Panel, config: &AppConfig) -> (Choice, CheckBox, C
     // was ever read back, and nothing checked anything, so they were three
     // claims in a row. What replaces them says what this machine actually has,
     // which is worth more than a switch for something that does not happen.
+    // ── What may be changed at a server ──────────────────────────────────
+    //
+    // Two checkboxes rather than one, because the two cost different amounts
+    // to get wrong: a sent message cannot be recalled and a deleted one may
+    // have been the only copy, while a task in the wrong place can be moved
+    // back. Both say they are experimental, because they are: none of it has
+    // run against a real account.
+    let allowed_sec = section(panel, "Allowed Changes");
+
+    let allow_pim = CheckBox::builder(panel)
+        .with_label("Let Wixen Mail change my &tasks, contacts and calendar")
+        .build();
+    set_accessible_name(
+        &allow_pim,
+        "Let Wixen Mail change my tasks, contacts and calendar",
+    );
+    allow_pim.set_value(config.allowed_changes.personal_information);
+    allowed_sec.add(&allow_pim, 0, SizerFlag::All, 4);
+
+    let allow_mail = CheckBox::builder(panel)
+        .with_label("Let Wixen Mail &send and delete mail")
+        .build();
+    set_accessible_name(&allow_mail, "Let Wixen Mail send and delete mail");
+    allow_mail.set_value(config.allowed_changes.mail);
+    allowed_sec.add(&allow_mail, 0, SizerFlag::All, 4);
+
+    let allowed_note = StaticText::builder(panel)
+        .with_label(
+            "Both are experimental: none of this has been run against a real account yet,              so expect bugs. Reading your mail is the part that has been used. A message              that has been sent cannot be recalled, and a message deleted from a server              may have been the only copy.",
+        )
+        .build();
+    set_accessible_name(
+        &allowed_note,
+        "Both are experimental: none of this has been run against a real account yet,          so expect bugs. Reading your mail is the part that has been used. A message          that has been sent cannot be recalled, and a message deleted from a server          may have been the only copy.",
+    );
+    allowed_sec.add(&allowed_note, 0, SizerFlag::Expand | SizerFlag::All, 4);
+
     let spell_sec = section(panel, "Spell Check");
 
     let check_before_send = CheckBox::builder(panel)
@@ -536,7 +580,13 @@ fn build_language_tab(panel: &Panel, config: &AppConfig) -> (Choice, CheckBox, C
     sizer.add_sizer(&spell_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    (lang_choice, check_before_send, check_as_you_type)
+    (
+        lang_choice,
+        check_before_send,
+        check_as_you_type,
+        allow_mail,
+        allow_pim,
+    )
 }
 
 /// Calendar & PIM settings: default view, weekends, first day, reminder time.
@@ -833,6 +883,13 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         feedback.set_channel_enabled(channel, cb.get_value());
     }
     cfg.feedback_channels = feedback.to_stored();
+
+    // What may be changed at a server. Read back as two answers, because they
+    // are two: sending cannot be undone, a task can be moved back.
+    cfg.allowed_changes = crate::application::allowed::Allowed {
+        mail: w.allow_mail.get_value(),
+        personal_information: w.allow_pim.get_value(),
+    };
 
     // General
     cfg.theme = match sel(&w.theme) {

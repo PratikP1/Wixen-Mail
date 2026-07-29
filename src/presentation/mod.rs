@@ -9,6 +9,7 @@ pub mod date_display;
 pub mod editor_document;
 #[cfg(test)]
 pub mod editor_page_harness;
+pub mod first_run;
 pub mod html_renderer;
 pub mod managers;
 pub mod markdown_input;
@@ -27,6 +28,7 @@ pub mod wx_calendar_module;
 pub mod wx_columns;
 pub mod wx_compose;
 pub mod wx_contacts_module;
+pub mod wx_first_run;
 pub mod wx_managers;
 pub mod wx_notes_module;
 pub mod wx_reader;

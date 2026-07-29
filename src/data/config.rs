@@ -69,6 +69,13 @@ pub struct AppConfig {
     /// wrong that way.
     #[serde(default)]
     pub allowed_per_account: HashMap<String, crate::application::allowed::Allowed>,
+    /// Whether the person has been shown what this alpha can and cannot do.
+    ///
+    /// False on a fresh installation and on an upgrade from before this
+    /// existed, so somebody who has been using it already still gets told once
+    /// that writing has been switched on and has never been tried for real.
+    #[serde(default)]
+    pub told_about_the_alpha: bool,
     /// Whether misspellings are marked in the editor as you write.
     ///
     /// One setting, two things, deliberately. It turns on the engine's own
@@ -200,6 +207,7 @@ impl Default for AppConfig {
             check_spelling_before_send: true,
             allowed_changes: default_allowed(),
             allowed_per_account: HashMap::new(),
+            told_about_the_alpha: false,
             check_spelling_as_you_type: true,
             default_sort_order: "date_newest".to_string(),
             calendar_default_view: "agenda".to_string(),

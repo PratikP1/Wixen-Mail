@@ -2644,6 +2644,17 @@ document.addEventListener('keydown', function(e) {
             frame.show(true);
             tracing::info!("Main frame shown, entering event loop");
 
+            // Once, on a fresh installation or an upgrade from before this
+            // existed. Somebody already using it still gets told that writing
+            // is on and has never been tried against a real account.
+            //
+            // After show, because a dialog parented to a frame that is not on
+            // screen yet has nowhere to be modal to. Skipped during a scan
+            // run, which has nobody to answer it.
+            if scan_target.is_none() {
+                ask_about_the_alpha_once(&frame);
+            }
+
             // The accessibility scan asks for one window by name and walks the
             // whole process. Without this it walks a process that owns exactly
             // one window, which is how every dialog in the application came to
@@ -7310,5 +7321,35 @@ mod edition_2024_semantics {
 
         assert_eq!(count, 3);
         assert!(numbers.try_lock().is_ok());
+    }
+}
+
+/// Ask what Wixen Mail may change, the first time it is started.
+///
+/// Once. The answer is stored, so this does not appear again unless somebody
+/// clears their settings, and it can be changed afterwards in Settings.
+///
+/// An upgrade from before this existed counts as the first time, deliberately:
+/// somebody who has been using this already has had writing switched on
+/// without ever being told it is unproven, and they should hear it once.
+fn ask_about_the_alpha_once(frame: &Frame) {
+    let Ok(mut settings) = crate::data::config::ConfigManager::load_stored() else {
+        // No settings to read means no settings to write, so asking would
+        // throw the answer away. Nothing writes in that state anyway:
+        // `allowed_for` treats an unreadable config as allowing nothing.
+        tracing::warn!("Could not read settings, so the alpha notice was not shown");
+        return;
+    };
+    if settings.app_config().told_about_the_alpha {
+        return;
+    }
+
+    let allowed = crate::presentation::wx_first_run::ask_what_is_allowed(frame);
+    settings.app_config_mut().allowed_changes = allowed;
+    settings.app_config_mut().told_about_the_alpha = true;
+    if let Err(e) = settings.save() {
+        // Said rather than swallowed. Somebody who chose read-only and had it
+        // silently not stick would be trusting a setting that is not there.
+        tracing::error!("Could not save what you chose: {e}");
     }
 }
