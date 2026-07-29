@@ -549,6 +549,7 @@ fn test_message_cache_outbox_queue() {
         attempt_count: 0,
         last_error: None,
         created_at: chrono::Utc::now().to_rfc3339(),
+        body_html: None,
     };
     cache.queue_outbox_message(&msg).unwrap();
 

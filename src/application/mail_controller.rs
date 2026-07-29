@@ -22,7 +22,14 @@ pub struct SendEmailRequest {
     pub use_tls: bool,
     pub to: Vec<String>,
     pub subject: String,
+    /// The plain text alternative.
     pub body: String,
+    /// The HTML alternative, when there is one.
+    ///
+    /// Both go out as multipart/alternative, which the SMTP layer has always
+    /// been able to build and nothing has ever asked it for. Sending only HTML
+    /// leaves a text-only reader with raw markup on the screen.
+    pub body_html: Option<String>,
 }
 
 impl SendEmailRequest {
@@ -64,6 +71,7 @@ impl SendEmailRequest {
             to: recipients,
             subject: queued.subject.clone(),
             body: queued.body.clone(),
+            body_html: queued.body_html.clone(),
         })
     }
 }
@@ -213,7 +221,7 @@ impl MailController {
             bcc: vec![],
             subject: req.subject.clone(),
             body_text: req.body.clone(),
-            body_html: None,
+            body_html: req.body_html.clone(),
         };
 
         client.send_email(email, &req.auth).await?;
@@ -464,6 +472,7 @@ mod tests {
             to: vec!["to@example.com".to_string()],
             subject: "Hello".to_string(),
             body: "Body".to_string(),
+            body_html: None,
         };
         let result = controller.send_email(&req).await;
         assert!(result.is_err()); // expected in tests due placeholder/non-routable SMTP server
@@ -511,6 +520,7 @@ mod send_request_tests {
             attempt_count: 0,
             last_error: None,
             created_at: "2026-07-26".into(),
+            body_html: None,
         }
     }
 

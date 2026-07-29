@@ -43,7 +43,13 @@ pub struct ComposeData {
     pub cc: String,
     pub bcc: String,
     pub subject: String,
+    /// The message as HTML, which is what the editor holds.
     pub body: String,
+    /// The same message as plain text, for the other half of the multipart.
+    ///
+    /// Taken from the editor rather than converted here, so it is what the
+    /// engine computed somebody to be looking at.
+    pub body_plain: String,
     pub html_mode: bool,
     pub account_index: Option<u32>,
 }
@@ -532,24 +538,36 @@ pub fn show_compose_dialog_full(
     // until somebody has finished and a draft kept only at the end is not a
     // draft that survives anything. The timer belongs to the dialog and stops
     // with it.
+    // Everything the dialog holds, read at the moment it is asked for.
+    //
+    // One place rather than two. The autosave timer and the send path both
+    // need it, and when they each built their own a field added to ComposeData
+    // got filled in one and forgotten in the other.
+    let read_compose_data = move || ComposeData {
+        to: to_field.get_value(),
+        cc: cc_field.get_value(),
+        bcc: bcc_field.get_value(),
+        subject: subject_field.get_value(),
+        body: editor_document::body_from_editor(
+            &body_editor
+                .run_script(&editor_document::read_body_script())
+                .unwrap_or_default(),
+        ),
+        body_plain: editor_document::plain_from_editor(
+            &body_editor
+                .run_script(&editor_document::read_plain_script())
+                .unwrap_or_default(),
+        ),
+        html_mode: true,
+        account_index: account_choice.get_selection(),
+    };
+
     // Held for the life of the dialog: dropping the timer stops it, and the
     // dialog is what it belongs to.
     let _autosave_timer = autosave.interval().map(|every| {
         let timer = Timer::new(&dialog);
         timer.on_tick(move |_| {
-            let data = ComposeData {
-                to: to_field.get_value(),
-                cc: cc_field.get_value(),
-                bcc: bcc_field.get_value(),
-                subject: subject_field.get_value(),
-                body: editor_document::body_from_editor(
-                    &body_editor
-                        .run_script(&editor_document::read_body_script())
-                        .unwrap_or_default(),
-                ),
-                html_mode: true,
-                account_index: account_choice.get_selection(),
-            };
+            let data = read_compose_data();
             // Nothing typed yet is not worth a row in the drafts list, and
             // it would be one that reads as blank.
             if data.to.trim().is_empty()
@@ -569,19 +587,7 @@ pub fn show_compose_dialog_full(
     loop {
         let result = dialog.show_modal();
 
-        let data = ComposeData {
-            to: to_field.get_value(),
-            cc: cc_field.get_value(),
-            bcc: bcc_field.get_value(),
-            subject: subject_field.get_value(),
-            body: editor_document::body_from_editor(
-                &body_editor
-                    .run_script(&editor_document::read_body_script())
-                    .unwrap_or_default(),
-            ),
-            html_mode: true, // RichTextCtrl is always rich text
-            account_index: account_choice.get_selection(),
-        };
+        let data = read_compose_data();
 
         match result {
             _ if result == ID_SEND => {

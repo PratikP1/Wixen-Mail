@@ -8,11 +8,12 @@ impl MessageCache {
     /// Queue message for later sending when offline
     pub fn queue_outbox_message(&self, item: &QueuedOutboxMessage) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO outbox_queue (id, account_id, to_addr, subject, body, attempt_count, last_error, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO outbox_queue (id, account_id, to_addr, subject, body, body_html, attempt_count, last_error, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 &item.id, &item.account_id, &item.to_addr, &item.subject,
-                &item.body, &item.attempt_count, &item.last_error, &item.created_at,
+                &item.body, &item.body_html, &item.attempt_count, &item.last_error,
+                &item.created_at,
             ],
         ).map_err(|e| Error::Other(format!("Failed to queue outbox message: {}", e)))?;
         Ok(())
@@ -21,7 +22,7 @@ impl MessageCache {
     /// Load queued outbox messages for an account
     pub fn load_outbox_messages(&self, account_id: &str) -> Result<Vec<QueuedOutboxMessage>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, to_addr, subject, body, attempt_count, last_error, created_at
+            "SELECT id, account_id, to_addr, subject, body, body_html, attempt_count, last_error, created_at
              FROM outbox_queue
              WHERE account_id = ?1
              ORDER BY created_at ASC"
@@ -35,9 +36,10 @@ impl MessageCache {
                     to_addr: row.get(2)?,
                     subject: row.get(3)?,
                     body: row.get(4)?,
-                    attempt_count: row.get(5)?,
-                    last_error: row.get(6)?,
-                    created_at: row.get(7)?,
+                    body_html: row.get(5)?,
+                    attempt_count: row.get(6)?,
+                    last_error: row.get(7)?,
+                    created_at: row.get(8)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query outbox messages: {}", e)))?
@@ -92,6 +94,7 @@ mod tests {
             attempt_count: 0,
             last_error: None,
             created_at: chrono::Utc::now().to_rfc3339(),
+            body_html: None,
         };
         cache.queue_outbox_message(&item).unwrap();
 

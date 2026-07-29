@@ -4057,7 +4057,11 @@ fn queue_for_sending(
         account_id,
         to_addr: recipient.to_string(),
         subject: data.subject.clone(),
-        body: data.body.clone(),
+        // The plain text half is what everything that does not want HTML will
+        // show, and it is the half that goes in `body` because that is what
+        // `body` has always meant.
+        body: data.body_plain.clone(),
+        body_html: Some(data.body.clone()).filter(|html| !html.trim().is_empty()),
         attempt_count: 0,
         last_error: None,
         created_at: chrono::Local::now().to_rfc3339(),

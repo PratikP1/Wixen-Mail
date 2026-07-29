@@ -139,6 +139,17 @@ pub fn read_body_script() -> String {
     format!("document.getElementById({BODY_ID:?}).innerHTML")
 }
 
+/// The script that reads the message as plain text.
+///
+/// `innerText` rather than a conversion of the HTML, because it is what the
+/// engine computed the reader to be looking at: the line breaks are where they
+/// appear, the hidden things are absent, and the list markers are the ones on
+/// screen. A message goes out as multipart/alternative, and this is the half
+/// that everything which does not want HTML will show.
+pub fn read_plain_script() -> String {
+    format!("document.getElementById({BODY_ID:?}).innerText")
+}
+
 /// The script for one formatting command.
 ///
 /// `execCommand` is deprecated and is still the only thing every engine
@@ -211,6 +222,15 @@ pub fn parse_message(raw: &str) -> Option<EditorMessage> {
         "cancel" => Some(EditorMessage::Cancel),
         _ => None,
     }
+}
+
+/// Take the plain text back out of what the page returned.
+///
+/// Not sanitised, because it is text rather than markup and there is nothing in
+/// it left to execute. It is unwrapped for the same reason the HTML is: some
+/// backends hand a script result back as a JSON string.
+pub fn plain_from_editor(raw: &str) -> String {
+    serde_json::from_str::<String>(raw).unwrap_or_else(|_| raw.to_string())
 }
 
 /// Take the body back out of what the page returned.
@@ -394,6 +414,31 @@ mod tests {
 
         assert!(out.contains("Hello"), "{out}");
         assert!(!out.contains("\\\""), "the escaping survived: {out}");
+    }
+
+    #[test]
+    fn test_the_message_can_be_read_as_text_as_well_as_markup() {
+        // A message goes out as multipart/alternative, and this is the half
+        // everything that does not want HTML shows. Without it the markup
+        // itself is what a text-only reader sees, tags and all, which is what
+        // swapping the control to a web view broke until this existed.
+        assert!(read_plain_script().contains("innerText"));
+        assert!(read_body_script().contains("innerHTML"));
+    }
+
+    #[test]
+    fn test_plain_text_is_not_sanitised_because_it_is_not_markup() {
+        // Nothing in it is left to execute, and running it through the
+        // sanitiser would escape the angle brackets somebody deliberately
+        // typed into a message about markup.
+        let out = plain_from_editor("if a < b && c > d, see <notes>");
+
+        assert_eq!(out, "if a < b && c > d, see <notes>");
+    }
+
+    #[test]
+    fn test_the_plain_text_is_unwrapped_like_the_markup_is() {
+        assert_eq!(plain_from_editor(r#""Hello there""#), "Hello there");
     }
 
     #[test]

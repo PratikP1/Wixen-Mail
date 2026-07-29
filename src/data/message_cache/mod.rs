@@ -227,7 +227,15 @@ pub struct QueuedOutboxMessage {
     pub account_id: String,
     pub to_addr: String,
     pub subject: String,
+    /// The plain text alternative, which is what `body` has always been.
     pub body: String,
+    /// The HTML alternative, when the message has one.
+    ///
+    /// Both are kept because a message should go out as multipart/alternative:
+    /// the HTML for readers that want it, the plain text for everything else.
+    /// Sending only HTML leaves a text-only reader with raw markup, and sending
+    /// only text throws away everything the composer did.
+    pub body_html: Option<String>,
     pub attempt_count: i64,
     pub last_error: Option<String>,
     pub created_at: String,
@@ -940,6 +948,10 @@ impl MessageCache {
         // interface can change a task, only make one, so the column would have
         // no writer. It arrives with the task commands.
         self.ensure_column_exists("tasks", "remote_updated", "TEXT")?;
+        // The HTML half of a queued message. `body` stays the plain text
+        // half it always was, so a message queued by an older build still
+        // sends, as plain text, which is what it was.
+        self.ensure_column_exists("outbox_queue", "body_html", "TEXT")?;
         self.ensure_column_exists("calendar_events", "calendar_id", "TEXT")?;
         self.ensure_column_exists(
             "message_filter_rules",
