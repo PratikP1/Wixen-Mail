@@ -106,7 +106,8 @@ follows a build can be treated as fresh and report success without linting
 anything. That has already put a clippy failure on `main` after a local run
 reported clean. The script touches `src/lib.rs` first to force the work.
 
-Never silence a lint with `#[allow(...)]` to get a commit through.
+Never silence a lint with `#[allow(...)]` to get a commit through. Fix the code, or if the lint is
+genuinely wrong for this case, add the allow with a comment saying why.
 
 ### Tests that would notice
 
@@ -135,8 +136,7 @@ cargo llvm-cov --lib --summary-only
 Coverage is the cheap wide sweep and answers a weaker question: what never runs
 at all. Low coverage in `service/protocols`, `service/oauth` and the provider
 clients is the network transport that has never been run against a live account,
-which is tracked as work rather than fixable by writing more tests. Fix the code, or if the lint is
-genuinely wrong for this case, add the allow with a comment saying why.
+which is tracked as work rather than fixable by writing more tests.
 
 ### Done means it runs
 
