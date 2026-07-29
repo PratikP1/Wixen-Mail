@@ -166,7 +166,7 @@ struct DisjointSet {
 }
 
 impl DisjointSet {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 

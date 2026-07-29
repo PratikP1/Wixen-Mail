@@ -195,7 +195,7 @@ impl Channel {
     /// Whether this channel carries words rather than a sound.
     ///
     /// The never-sound-alone rule is written in terms of this.
-    pub fn carries_text(&self) -> bool {
+    fn carries_text(&self) -> bool {
         !matches!(self, Channel::Earcon)
     }
 
@@ -261,7 +261,7 @@ impl FeedbackSettings {
     }
 
     /// Choose the channels for one event, overriding the global setting.
-    pub fn set_event_channels(&mut self, event: Event, channels: BTreeSet<Channel>) {
+    fn set_event_channels(&mut self, event: Event, channels: BTreeSet<Channel>) {
         self.per_event.retain(|(e, _)| *e != event);
         self.per_event.push((event, channels));
     }
@@ -380,7 +380,7 @@ impl EarconPlayer {
     }
 
     /// The same decision with the clock passed in, so it can be tested.
-    pub fn play_at(&self, tone: Tone, now: std::time::Instant) -> bool {
+    fn play_at(&self, tone: Tone, now: std::time::Instant) -> bool {
         let Ok(mut last) = self.last_played.lock() else {
             // A poisoned lock means another thread panicked mid-play. Staying
             // silent is the safe answer; a stuck tone is worse than none.

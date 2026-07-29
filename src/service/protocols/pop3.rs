@@ -67,7 +67,7 @@ pub struct Pop3Session {
 }
 
 impl Pop3Session {
-    fn new(config: Pop3Config) -> Self {
+    pub fn new(config: Pop3Config) -> Self {
         let mut store = HashMap::new();
         for id in 1..=3u32 {
             let raw = format!(

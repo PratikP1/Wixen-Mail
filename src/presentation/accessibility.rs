@@ -125,7 +125,7 @@ impl Accessibility {
     }
 
     /// Register or update automation node.
-    pub fn register_node(&self, node: automation::AutomationNode) -> Result<()> {
+    fn register_node(&self, node: automation::AutomationNode) -> Result<()> {
         let node_id = node.id.clone();
         self.automation.upsert_node(node)?;
         self.screen_reader

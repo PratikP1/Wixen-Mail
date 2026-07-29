@@ -41,7 +41,7 @@ impl EmailProvider {
 }
 
 /// Get all known email provider presets
-pub fn get_providers() -> Vec<EmailProvider> {
+fn get_providers() -> Vec<EmailProvider> {
     vec![
         // Gmail
         EmailProvider {
@@ -117,7 +117,7 @@ pub fn get_providers() -> Vec<EmailProvider> {
 }
 
 /// Get provider by name
-pub fn get_provider_by_name(name: &str) -> Option<EmailProvider> {
+fn get_provider_by_name(name: &str) -> Option<EmailProvider> {
     get_providers()
         .into_iter()
         .find(|p| p.name.eq_ignore_ascii_case(name))

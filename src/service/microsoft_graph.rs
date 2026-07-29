@@ -85,7 +85,7 @@ pub struct MsRemovedInfo {
 
 /// Paginated response from Graph contacts endpoints.
 #[derive(Debug, Clone, Deserialize)]
-pub struct MsContactsResponse {
+struct MsContactsResponse {
     #[serde(default)]
     pub value: Vec<MsGraphContact>,
     #[serde(rename = "@odata.nextLink")]
@@ -172,7 +172,7 @@ pub struct MsAttendeeStatus {
 
 /// Paginated response from Graph calendar endpoints.
 #[derive(Debug, Clone, Deserialize)]
-pub struct MsEventsResponse {
+struct MsEventsResponse {
     #[serde(default)]
     pub value: Vec<MsGraphEvent>,
     #[serde(rename = "@odata.nextLink")]

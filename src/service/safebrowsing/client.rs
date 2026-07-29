@@ -160,7 +160,7 @@ pub struct RiceEncoded {
 // ── Turning a response into prefixes ────────────────────────────────────────
 
 /// Every prefix an addition set carries, whichever way it was encoded.
-pub fn additions_in(set: &ThreatEntrySet) -> Result<Vec<u32>> {
+fn additions_in(set: &ThreatEntrySet) -> Result<Vec<u32>> {
     if let Some(raw) = &set.raw_hashes {
         return decode_raw_hashes(raw);
     }
@@ -171,7 +171,7 @@ pub fn additions_in(set: &ThreatEntrySet) -> Result<Vec<u32>> {
 }
 
 /// Every index a removal set carries, whichever way it was encoded.
-pub fn removals_in(set: &ThreatEntrySet) -> Result<Vec<u32>> {
+fn removals_in(set: &ThreatEntrySet) -> Result<Vec<u32>> {
     if let Some(raw) = &set.raw_indices {
         return Ok(raw.indices.clone());
     }

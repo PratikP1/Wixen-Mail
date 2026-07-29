@@ -57,7 +57,7 @@ pub enum ThreadChoice {
 /// The unread state is first because it is the one thing that changes what you
 /// do next, and last would mean listening past the sender and the date to
 /// reach it.
-pub fn node_label(node: &ThreadNode) -> String {
+fn node_label(node: &ThreadNode) -> String {
     let unread = if node.read { "" } else { "Unread. " };
     let subject = if node.subject.trim().is_empty() {
         "No subject"
@@ -73,7 +73,7 @@ pub fn node_label(node: &ThreadNode) -> String {
 /// `Enter` means two different things in this tree and the row has to say
 /// which. A row labelled with the subject would give no clue that activating
 /// it opens all five messages rather than that one.
-pub fn root_label(count: usize) -> String {
+fn root_label(count: usize) -> String {
     format!(
         "Whole conversation, {} message{}",
         count,

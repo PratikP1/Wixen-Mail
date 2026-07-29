@@ -120,7 +120,7 @@ impl OAuthService {
     /// Build an `oauth2::BasicClient` for the given provider.
     ///
     /// `client_secret` is `None` for public clients (e.g. Microsoft desktop apps).
-    pub fn build_client(
+    fn build_client(
         provider: &OAuthProvider,
         client_id: &str,
         client_secret: Option<&str>,
@@ -149,7 +149,7 @@ impl OAuthService {
     /// Generate the full authorization URL with PKCE.
     ///
     /// Returns `(url, csrf_token, pkce_verifier)`.
-    pub fn build_authorization_url_pkce(
+    fn build_authorization_url_pkce(
         provider: &str,
         client_id: &str,
         client_secret: Option<&str>,
@@ -317,7 +317,7 @@ impl OAuthService {
     /// A missing expiry is not the same thing. Some providers do not send one,
     /// and refreshing on every single call because of that would be its own
     /// failure, so `None` is reported as not expiring.
-    pub fn expires_within(expires_at: Option<&str>, margin: chrono::TimeDelta) -> bool {
+    fn expires_within(expires_at: Option<&str>, margin: chrono::TimeDelta) -> bool {
         let Some(ts) = expires_at else {
             return false;
         };
@@ -336,7 +336,7 @@ const REFRESH_MARGIN_MINUTES: i64 = 5;
 const REDIRECT_PORT: u16 = 8087;
 
 /// The full redirect URI used in OAuth flows.
-pub fn local_redirect_uri() -> String {
+fn local_redirect_uri() -> String {
     format!("http://localhost:{}/oauth/callback", REDIRECT_PORT)
 }
 
@@ -348,7 +348,7 @@ pub fn local_redirect_uri() -> String {
 ///
 /// `expected_state` — if provided, the `state` query param must match.
 /// `timeout_secs` — how long to wait before giving up (default 120).
-pub fn wait_for_redirect_code(expected_state: Option<&str>, timeout_secs: u64) -> Result<String> {
+fn wait_for_redirect_code(expected_state: Option<&str>, timeout_secs: u64) -> Result<String> {
     let addr = format!("0.0.0.0:{}", REDIRECT_PORT);
     let server = tiny_http::Server::http(&addr).map_err(|e| {
         Error::Network(format!(
@@ -625,7 +625,7 @@ impl AuthManager {
     }
 
     /// Store tokens in the OS keychain.
-    pub fn store_tokens(&self, tokens: &OAuthTokenSet) {
+    fn store_tokens(&self, tokens: &OAuthTokenSet) {
         let service = keyring_service(&self.provider);
         match keyring::Entry::new(&service, &self.account_id) {
             Ok(entry) => {
@@ -642,7 +642,7 @@ impl AuthManager {
     }
 
     /// Load tokens from the OS keychain.
-    pub fn load_tokens(&self) -> Result<OAuthTokenSet> {
+    fn load_tokens(&self) -> Result<OAuthTokenSet> {
         let service = keyring_service(&self.provider);
         let entry = keyring::Entry::new(&service, &self.account_id)
             .map_err(|e| Error::Authentication(format!("Keyring entry error: {}", e)))?;
@@ -713,7 +713,7 @@ async fn post_token_request(url: &str, params: &[(&str, &str)]) -> Result<OAuthT
     })
 }
 
-fn percent_encode(input: &str) -> String {
+pub fn percent_encode(input: &str) -> String {
     input
         .bytes()
         .flat_map(|b| match b {

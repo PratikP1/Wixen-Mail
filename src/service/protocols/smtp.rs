@@ -12,7 +12,7 @@ use lettre::{
 
 /// How an SMTP connection is protected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SmtpSecurity {
+enum SmtpSecurity {
     /// TLS from the first byte, which is port 465.
     Tls,
     /// Plain to start with, upgraded by STARTTLS, which is port 587.

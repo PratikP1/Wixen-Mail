@@ -36,7 +36,7 @@ pub struct ForgetOutcome {
 /// Entries that were never stored are listed too. Deleting one that is not
 /// there costs nothing, and the alternative is deciding from a stale flag in a
 /// database whether a token exists, which is how secrets get left behind.
-pub fn entries_for(accounts: &[Account], caldav_calendar_ids: &[String]) -> Vec<CredentialEntry> {
+fn entries_for(accounts: &[Account], caldav_calendar_ids: &[String]) -> Vec<CredentialEntry> {
     let mut entries = vec![CredentialEntry {
         service: security::KEYRING_SERVICE.to_string(),
         user: security::KEYRING_MASTER_KEY.to_string(),

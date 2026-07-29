@@ -87,7 +87,7 @@ impl async_imap::Authenticator for XOAuth2 {
 
 /// How the connection is protected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ImapSecurity {
+enum ImapSecurity {
     /// TLS from the first byte, the usual arrangement on port 993.
     Tls,
     /// Plain to start with, upgraded by the STARTTLS command, as on port 143.
@@ -213,7 +213,7 @@ impl ImapMessage {
 /// not the connection is encrypted, and so STARTTLS can hand the plain socket
 /// over to the TLS layer partway through.
 #[derive(Debug)]
-pub enum ImapStream {
+enum ImapStream {
     Tls(Box<tokio_native_tls::TlsStream<TcpStream>>),
     Plain(TcpStream),
 }

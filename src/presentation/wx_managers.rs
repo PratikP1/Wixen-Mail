@@ -267,7 +267,7 @@ impl ContactEntry {
             .unwrap_or("")
     }
     /// Primary phone (first in list, or empty)
-    pub fn primary_phone(&self) -> &str {
+    fn primary_phone(&self) -> &str {
         self.phones.first().map(|p| p.number.as_str()).unwrap_or("")
     }
 }

@@ -21,7 +21,7 @@ fn newline_compact_re() -> &'static regex::Regex {
     RE.get_or_init(|| regex::Regex::new(r"\n\s*\n\s*\n+").expect("valid newline compact regex"))
 }
 
-fn image_alt_re() -> &'static regex::Regex {
+pub fn image_alt_re() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| {
         regex::Regex::new(r#"(?is)<img[^>]*?alt=(?:"([^"]*)"|'([^']*)')[^>]*?>"#)
@@ -29,7 +29,7 @@ fn image_alt_re() -> &'static regex::Regex {
     })
 }
 
-fn link_re() -> &'static regex::Regex {
+pub fn link_re() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| {
         regex::Regex::new(r#"(?is)<a[^>]*?href=(?:"([^"]*)"|'([^']*)')[^>]*?>([\s\S]*?)</a>"#)
@@ -37,17 +37,17 @@ fn link_re() -> &'static regex::Regex {
     })
 }
 
-fn img_tag_re() -> &'static regex::Regex {
+pub fn img_tag_re() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| regex::Regex::new(r"(?is)<img\b").expect("valid image tag regex"))
 }
 
-fn anchor_tag_re() -> &'static regex::Regex {
+pub fn anchor_tag_re() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| regex::Regex::new(r"(?is)<a\b").expect("valid anchor tag regex"))
 }
 
-fn script_tag_re() -> &'static regex::Regex {
+pub fn script_tag_re() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| regex::Regex::new(r"(?is)<\s*script\b").expect("valid script tag regex"))
 }
@@ -96,7 +96,7 @@ impl HtmlRenderer {
     /// entities, so a body containing `&lt;script&gt;` comes back out as live
     /// markup. Correct as plain text, and an injection the moment it is placed
     /// in the WebView, so it is escaped here.
-    pub fn sanitize_html(&self, html: &str) -> String {
+    fn sanitize_html(&self, html: &str) -> String {
         if self.plain_text_only {
             return html_escape::encode_text(&self.html_to_plain_text(html)).to_string();
         }
@@ -107,7 +107,7 @@ impl HtmlRenderer {
     /// Convert HTML to accessible plain text
     ///
     /// This is useful for screen readers and text-only displays.
-    pub fn html_to_plain_text(&self, html: &str) -> String {
+    fn html_to_plain_text(&self, html: &str) -> String {
         // Basic HTML to text conversion
         let mut text = html.to_string();
 
@@ -288,7 +288,7 @@ impl HtmlRenderer {
     ///
     /// Everything that comes from a message body has to have been through
     /// [`Self::sanitize_html`] before it reaches here.
-    pub fn wrap_prepared(&self, content: &str) -> String {
+    fn wrap_prepared(&self, content: &str) -> String {
         format!(
             r#"<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><style>
@@ -429,7 +429,7 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
         None
     }
 
-    fn build_warnings(
+    pub fn build_warnings(
         &self,
         original_html: &str,
         sanitized_html: &str,

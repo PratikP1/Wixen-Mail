@@ -153,7 +153,7 @@ impl SortDirection {
     ///
     /// Dates read as "newest first" rather than "descending", because that is
     /// what the user asked for rather than how it is implemented.
-    pub fn spoken_for(&self, column: MessageColumn) -> &'static str {
+    fn spoken_for(&self, column: MessageColumn) -> &'static str {
         let is_date = matches!(column, MessageColumn::Received | MessageColumn::Sent);
         match (self, is_date) {
             (SortDirection::Ascending, true) => "oldest first",

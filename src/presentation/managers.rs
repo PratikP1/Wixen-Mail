@@ -344,7 +344,7 @@ pub fn manage_calendar(
 /// An all-day event keeps its dates and drops its times rather than storing
 /// midnight to midnight, so it reads as "all day" everywhere instead of as a
 /// twenty-four hour appointment.
-pub fn event_entry(
+fn event_entry(
     id: String,
     account: &str,
     data: &wx_calendar::CalendarEventData,

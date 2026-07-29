@@ -286,7 +286,7 @@ impl ConfigManager {
     ///
     /// Tests use this so they never write into the profile of whoever is
     /// running them.
-    pub fn in_dir(config_dir: PathBuf) -> Result<Self> {
+    fn in_dir(config_dir: PathBuf) -> Result<Self> {
         fs::create_dir_all(&config_dir).map_err(|e| {
             Error::Config(format!("Could not create {}: {e}", config_dir.display()))
         })?;

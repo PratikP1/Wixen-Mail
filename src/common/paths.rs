@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 ///
 /// Set it to run from a memory stick, or to keep mail off a roaming profile
 /// without moving the whole application data folder.
-pub const DATA_DIR_ENV: &str = "WIXEN_MAIL_DATA";
+const DATA_DIR_ENV: &str = "WIXEN_MAIL_DATA";
 
 /// Folder created inside the platform's local application data directory.
 const FOLDER: &str = "wixen-mail";
@@ -56,7 +56,7 @@ impl AppPaths {
 
     /// The decision [`resolve`](Self::resolve) makes, with its two inputs
     /// handed in so it can be tested without setting process environment.
-    pub fn resolve_with(chosen: Option<OsString>, local_data: Option<PathBuf>) -> Result<Self> {
+    fn resolve_with(chosen: Option<OsString>, local_data: Option<PathBuf>) -> Result<Self> {
         if let Some(chosen) = chosen.filter(|value| !value.is_empty()) {
             return Ok(Self::under(chosen));
         }

@@ -72,7 +72,7 @@ pub enum ComposeMode {
 }
 
 /// Format a reply subject line — prepends "Re: " unless already present.
-pub fn format_reply_subject(subject: &str) -> String {
+fn format_reply_subject(subject: &str) -> String {
     if subject.starts_with("Re: ") {
         subject.to_string()
     } else {
@@ -81,7 +81,7 @@ pub fn format_reply_subject(subject: &str) -> String {
 }
 
 /// Format a forward subject line — prepends "Fwd: " unless already present.
-pub fn format_forward_subject(subject: &str) -> String {
+fn format_forward_subject(subject: &str) -> String {
     if subject.starts_with("Fwd: ") {
         subject.to_string()
     } else {
@@ -90,17 +90,17 @@ pub fn format_forward_subject(subject: &str) -> String {
 }
 
 /// Format a quoted body for reply.
-pub fn format_reply_body(quoted_body: &str) -> String {
+fn format_reply_body(quoted_body: &str) -> String {
     format!("\n\n--- Original Message ---\n{}", quoted_body)
 }
 
 /// Format a forwarded body.
-pub fn format_forward_body(body: &str) -> String {
+fn format_forward_body(body: &str) -> String {
     format!("\n\n---------- Forwarded message ----------\n{}", body)
 }
 
 /// Title for the compose dialog based on mode.
-pub fn compose_title(mode: &ComposeMode) -> &'static str {
+fn compose_title(mode: &ComposeMode) -> &'static str {
     match mode {
         ComposeMode::New => "Compose New Message",
         ComposeMode::Reply { .. } => "Reply",

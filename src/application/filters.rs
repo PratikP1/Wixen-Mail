@@ -72,7 +72,7 @@ impl FilterEngine {
         self.rules = rules.iter().filter_map(Self::from_persisted_rule).collect();
     }
 
-    fn matches(rule: &FilterRule, message: &CachedMessage) -> bool {
+    pub fn matches(rule: &FilterRule, message: &CachedMessage) -> bool {
         fn bool_to_str(value: bool) -> &'static str {
             if value { "true" } else { "false" }
         }
@@ -156,7 +156,7 @@ impl FilterEngine {
         }
     }
 
-    fn from_persisted_rule(rule: &MessageFilterRule) -> Option<FilterRule> {
+    pub fn from_persisted_rule(rule: &MessageFilterRule) -> Option<FilterRule> {
         let action = match rule.action_type.as_str() {
             "move_to_folder" => FilterAction::MoveToFolder(Self::validated_action_value(
                 rule.action_value.as_ref(),
@@ -184,7 +184,7 @@ impl FilterEngine {
         })
     }
 
-    fn validated_action_value(value: Option<&String>) -> Option<String> {
+    pub fn validated_action_value(value: Option<&String>) -> Option<String> {
         let value = value?.trim();
         if value.is_empty() {
             None

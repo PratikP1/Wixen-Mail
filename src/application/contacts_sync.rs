@@ -294,7 +294,7 @@ pub async fn sync_microsoft_contacts(
 
 // ── Conversion: Google ↔ Local ──────────────────────────────────────────────
 
-pub fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactEntry {
+fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactEntry {
     let name = person
         .names
         .first()
@@ -393,7 +393,7 @@ pub fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> Cont
     }
 }
 
-pub fn contact_to_google_person(contact: &ContactEntry) -> GooglePerson {
+fn contact_to_google_person(contact: &ContactEntry) -> GooglePerson {
     let names = if contact.name.is_empty() {
         vec![]
     } else {
@@ -456,7 +456,7 @@ pub fn contact_to_google_person(contact: &ContactEntry) -> GooglePerson {
 
 // ── Conversion: Microsoft ↔ Local ───────────────────────────────────────────
 
-pub fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry {
+fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry {
     let primary_email = ms
         .email_addresses
         .first()
@@ -543,7 +543,7 @@ pub fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEn
     }
 }
 
-pub fn contact_to_ms_contact(contact: &ContactEntry) -> MsGraphContact {
+fn contact_to_ms_contact(contact: &ContactEntry) -> MsGraphContact {
     let email_addresses = if contact.email.is_empty() {
         vec![]
     } else {

@@ -364,7 +364,7 @@ pub fn entry_to_ms_task(task: &TaskEntry) -> MsTodoTask {
 /// Ids are prefixed on the way in so a Google task and a Microsoft task can sit
 /// in the same table without one overwriting the other, and unprefixed on the
 /// way out so the provider recognises its own.
-fn strip_prefix(id: &str, prefix: &str) -> String {
+pub fn strip_prefix(id: &str, prefix: &str) -> String {
     id.strip_prefix(prefix).unwrap_or(id).to_string()
 }
 

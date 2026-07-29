@@ -40,7 +40,7 @@ impl AutosaveInterval {
     }
 
     /// Whether automatic saving is switched off.
-    pub fn is_off(self) -> bool {
+    fn is_off(self) -> bool {
         self.minutes == 0
     }
 

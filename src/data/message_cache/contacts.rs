@@ -565,7 +565,7 @@ impl MessageCache {
 
     // ===== vCard helper methods =====
 
-    fn parse_name_email(token: &str) -> Option<(String, String)> {
+    pub fn parse_name_email(token: &str) -> Option<(String, String)> {
         let trimmed = token.trim();
         if trimmed.is_empty() {
             return None;

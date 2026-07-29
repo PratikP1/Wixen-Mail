@@ -41,7 +41,7 @@ pub enum LogLevel {
 
 impl LogLevel {
     /// Convert to tracing Level
-    pub fn to_tracing_level(&self) -> Level {
+    fn to_tracing_level(self) -> Level {
         match self {
             LogLevel::Error => Level::ERROR,
             LogLevel::Warn => Level::WARN,

@@ -60,7 +60,7 @@ pub struct FolderSync {
 /// Newest first because that is where a reader starts, and bounded because the
 /// alternative on a large mailbox is a sync that never visibly finishes.
 /// Returned in ascending order, which is how they go into a sequence set.
-pub fn uids_to_fetch(on_server: &[u32], stored: &[u32], limit: usize) -> Vec<u32> {
+fn uids_to_fetch(on_server: &[u32], stored: &[u32], limit: usize) -> Vec<u32> {
     if limit == 0 {
         return Vec::new();
     }
@@ -85,7 +85,7 @@ pub fn uids_to_fetch(on_server: &[u32], stored: &[u32], limit: usize) -> Vec<u32
 ///
 /// The server list must be the whole mailbox, not the page just fetched.
 /// Comparing against a page would delete everything outside it.
-pub fn uids_to_forget(on_server: &[u32], stored: &[u32]) -> Vec<u32> {
+fn uids_to_forget(on_server: &[u32], stored: &[u32]) -> Vec<u32> {
     let present: std::collections::HashSet<u32> = on_server.iter().copied().collect();
     let mut gone: Vec<u32> = stored
         .iter()
@@ -97,7 +97,7 @@ pub fn uids_to_forget(on_server: &[u32], stored: &[u32]) -> Vec<u32> {
 }
 
 /// Turn a fetched message into the row the cache stores.
-pub fn to_incoming(message: &ImapMessage, folder_id: i64, in_junk_folder: bool) -> IncomingMessage {
+fn to_incoming(message: &ImapMessage, folder_id: i64, in_junk_folder: bool) -> IncomingMessage {
     IncomingMessage {
         folder_id,
         uid: message.uid,

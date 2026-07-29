@@ -17,13 +17,13 @@ use std::time::{Duration, Instant};
 
 /// Most announcements that may be waiting at once. Beyond this the queue is
 /// already further behind than anyone will listen to.
-pub const CAPACITY: usize = 32;
+const CAPACITY: usize = 32;
 
 /// Most announcements spoken per `WINDOW`.
-pub const MAX_PER_WINDOW: usize = 4;
+const MAX_PER_WINDOW: usize = 4;
 
 /// The period the rate limit applies over.
-pub const WINDOW: Duration = Duration::from_secs(1);
+const WINDOW: Duration = Duration::from_secs(1);
 
 /// Priority levels for announcements, lowest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

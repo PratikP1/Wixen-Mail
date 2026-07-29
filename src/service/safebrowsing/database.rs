@@ -24,7 +24,7 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 
 /// Prefixes are four bytes: the first 32 bits of the SHA-256 of an expression.
-pub const PREFIX_BYTES: usize = 4;
+const PREFIX_BYTES: usize = 4;
 
 /// The most prefixes to hold.
 ///
@@ -149,7 +149,7 @@ impl PrefixSet {
     /// The state token, then the prefixes big-endian. Deliberately dull: the
     /// file holds no user data of any kind, only a copy of a public list, so
     /// there is nothing here worth a format anybody has to maintain.
-    pub fn to_bytes(&self) -> Vec<u8> {
+    fn to_bytes(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(self.prefixes.len() * PREFIX_BYTES + 64);
         let state = self.state.as_bytes();
         out.extend_from_slice(&(state.len() as u32).to_be_bytes());

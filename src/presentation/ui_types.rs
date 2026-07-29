@@ -536,7 +536,7 @@ impl std::fmt::Display for ConnectionStatus {
 ///
 /// The preview is read out while arrowing through notes, so it has to be short
 /// enough to skim and long enough to tell two notes apart.
-pub const NOTE_PREVIEW_CHARS: usize = 80;
+const NOTE_PREVIEW_CHARS: usize = 80;
 
 impl CalendarContainerItem {
     /// Build a display item from a stored calendar.

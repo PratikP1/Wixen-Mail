@@ -104,7 +104,7 @@ pub struct Palette {
 impl Palette {
     /// Warm light. Off-white rather than white, which is easier to sit in
     /// front of for the hours a working day puts into a mail client.
-    pub const LIGHT: Palette = Palette {
+    const LIGHT: Palette = Palette {
         surface: Rgb::new(0xFB, 0xFA, 0xF9),
         surface_alt: Rgb::new(0xF3, 0xEF, 0xEA),
         text: Rgb::new(0x1A, 0x18, 0x17),
@@ -118,7 +118,7 @@ impl Palette {
 
     /// Warm dark. Not black: a pure black surface with light text produces
     /// halation for a lot of people, which is the opposite of the point.
-    pub const DARK: Palette = Palette {
+    const DARK: Palette = Palette {
         surface: Rgb::new(0x16, 0x13, 0x0F),
         surface_alt: Rgb::new(0x22, 0x1E, 0x19),
         text: Rgb::new(0xF5, 0xF0, 0xEA),
@@ -248,7 +248,7 @@ pub const COMFORTABLE_TARGET: i32 = 44;
 
 impl Rgb {
     /// The colour as wxWidgets wants it.
-    pub fn wx(self) -> wxdragon::prelude::Colour {
+    fn wx(self) -> wxdragon::prelude::Colour {
         wxdragon::prelude::Colour::rgb(self.r, self.g, self.b)
     }
 }
@@ -275,7 +275,7 @@ pub fn current(setting: &str) -> Option<Palette> {
 /// cross-platform way to ask and this is a Windows-first application. Anywhere
 /// else the answer is no, which leaves the palette in charge, and that is
 /// correct on a platform with no such mode.
-pub fn windows_high_contrast() -> bool {
+fn windows_high_contrast() -> bool {
     #[cfg(target_os = "windows")]
     {
         #[repr(C)]

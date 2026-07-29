@@ -130,7 +130,7 @@ enum Doing {
 ///
 /// PDF, and nothing else yet. A message body arrives as text or HTML and is
 /// already handled; everything else is a file for another application.
-pub fn can_be_read_here(attachment: &ReaderAttachment) -> bool {
+fn can_be_read_here(attachment: &ReaderAttachment) -> bool {
     attachment
         .mime_type
         .trim()
@@ -161,7 +161,7 @@ fn describe_for_refusal(attachment: &ReaderAttachment) -> String {
 /// A program among them is called out by name. It is the one fact that should
 /// change what somebody does next, and it is exactly the fact a message
 /// pretending to be an invoice is relying on them not noticing.
-pub fn attachment_summary(attachments: &[ReaderAttachment]) -> String {
+fn attachment_summary(attachments: &[ReaderAttachment]) -> String {
     if attachments.is_empty() {
         return String::new();
     }
@@ -184,7 +184,7 @@ pub fn attachment_summary(attachments: &[ReaderAttachment]) -> String {
 /// A tab is announced every time focus reaches it, so a fifty word subject is
 /// fifty words on every switch. The full subject is the first line of the
 /// document, so nothing is lost by cutting it here.
-pub fn tab_label(title: &str) -> String {
+fn tab_label(title: &str) -> String {
     const LIMIT: usize = 40;
     let trimmed = title.trim();
     if trimmed.is_empty() {

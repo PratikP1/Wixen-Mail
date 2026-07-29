@@ -56,7 +56,7 @@ impl ICalSubscriptionClient {
 }
 
 /// Parse a complete iCalendar (.ics) file into individual events.
-pub fn parse_ics(ical_data: &str) -> Result<Vec<CalDavEvent>> {
+fn parse_ics(ical_data: &str) -> Result<Vec<CalDavEvent>> {
     let mut events = Vec::new();
 
     // Split by VEVENT blocks
