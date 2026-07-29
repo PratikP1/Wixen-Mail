@@ -311,6 +311,97 @@ mod tests {
         }
     }
 
+    // ── Which input the rules run for ──────────────────────────────────────
+
+    #[test]
+    fn test_dictation_counts_as_typing() {
+        // It did not, and nothing said so. The handler took `insertText` and
+        // returned on everything else, so somebody dictating a message got no
+        // spelling sound at all: a whole way of writing, silently switched
+        // off, for the group these guardrails name first.
+        let mut page = page_rules();
+
+        assert_eq!(
+            ask(
+                &mut page,
+                r#"window.wixenRules.input("insertReplacementText")"#
+            ),
+            "true",
+            "dictation and Voice Access still get nothing"
+        );
+        assert_eq!(
+            ask(&mut page, r#"window.wixenRules.input("insertText")"#),
+            "true"
+        );
+    }
+
+    #[test]
+    fn test_composition_is_handled_somewhere_else_rather_than_here() {
+        // It fires on every intermediate state while a character is still
+        // being chosen, so a rule run then fires in the middle of a word being
+        // decided. The page listens for compositionend instead, where the word
+        // is finished.
+        let mut page = page_rules();
+
+        assert_eq!(
+            ask(
+                &mut page,
+                r#"window.wixenRules.input("insertCompositionText")"#
+            ),
+            "false"
+        );
+    }
+
+    #[test]
+    fn test_paste_and_delete_do_not_run_the_typing_rules() {
+        // The rules are about what was just written. A pasted block is checked
+        // by F7 with the rest of the message, and a deletion has not finished
+        // a word.
+        let mut page = page_rules();
+
+        for kind in ["insertFromPaste", "deleteContentBackward", "insertFromDrop"] {
+            assert_eq!(
+                ask(&mut page, &format!("window.wixenRules.input({kind:?})")),
+                "false",
+                "{kind} ran the typing rules"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_page_listens_for_the_end_of_a_composed_word() {
+        // The other half: taking composition out of the input handler is only
+        // right because it is picked up here instead.
+        let page = super::super::editor_document::editor_document(
+            &crate::common::types::MessageBody::Plain(String::new()),
+            "ja-JP",
+            true,
+        );
+
+        assert!(
+            page.contains("'compositionend'"),
+            "nothing hears a composed word"
+        );
+        assert!(
+            page.contains("wordAt(at);"),
+            "the composed word is not checked"
+        );
+    }
+
+    #[test]
+    fn test_with_marking_off_nothing_listens_for_words_at_all() {
+        // One setting, both routes. A handler that runs and decides to do
+        // nothing still runs on every keystroke.
+        let off = super::super::editor_document::editor_document(
+            &crate::common::types::MessageBody::Plain(String::new()),
+            "en-GB",
+            false,
+        );
+
+        assert!(!off.contains("wordAt(at);"), "{off}");
+        assert!(!off.contains("wordFinished(at);"), "{off}");
+    }
+
     // ── Moving through a table ─────────────────────────────────────────────
 
     #[test]

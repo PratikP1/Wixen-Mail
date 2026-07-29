@@ -115,6 +115,11 @@ pub fn editor_document(body: &MessageBody, language: &str, mark_spelling: bool) 
     } else {
         ""
     };
+    // The same check for input that arrives as a finished word rather than a
+    // character at a time: dictation, and composition for the scripts that
+    // need it. Without these two the sound was off for anybody not typing one
+    // key at a time, with nothing saying so.
+    let phrase_watch = if mark_spelling { "wordAt(at);" } else { "" };
     let format_keys = format_key_table();
     let link_id = LINK_PLACEHOLDER_ID;
     let block_markers = markdown_block_table();
@@ -526,6 +531,25 @@ img {{ max-width: 100%; height: auto; }}
     return {{ open: open, text: text, url: url }};
   }}
 
+  // Which kinds of input the typing rules run for.
+  //
+  // `insertText` is somebody typing. `insertReplacementText` is dictation and
+  // Windows Voice Access, which put a finished phrase in at once, and leaving
+  // it out meant somebody dictating a message got no spelling sound at all.
+  // That is the group these guardrails name first, and nothing said it was
+  // off.
+  //
+  // Composition is deliberately not here. It fires on every intermediate
+  // state while a character is still being chosen, so a rule running then
+  // would fire in the middle of a word being decided. `compositionend` is
+  // handled on its own, where the word is finished.
+  //
+  // Paste is not here either. These rules are about what was just written; a
+  // pasted block is checked by F7 with the rest of the message.
+  function typingInput(inputType) {{
+    return inputType === 'insertText' || inputType === 'insertReplacementText';
+  }}
+
   function wordEnded(before) {{
     var match = /[\p{{L}}\p{{M}}][\p{{L}}\p{{M}}'’\-]*$/u.exec(before);
     if (!match) {{ return null; }}
@@ -536,7 +560,8 @@ img {{ max-width: 100%; height: auto; }}
   }}
 
   window.wixenRules = {{ block: blockRule, inline: inlineRule,
-                        link: linkParts, word: wordEnded, table: tableStep }};
+                        link: linkParts, word: wordEnded, table: tableStep,
+                        input: typingInput }};
 
   // ── Applying ───────────────────────────────────────────────────────────
 
@@ -578,19 +603,40 @@ img {{ max-width: 100%; height: auto; }}
   // one Windows holds and the words somebody has taught it are in it. An
   // engine's own marking and our checker agreeing matters: on Windows they
   // are the same ISpellChecker.
+  // A delimiter was just typed, so the word is the one before it.
   function wordFinished(at) {{
     var word = wordEnded(at.before.slice(0, at.before.length - 1));
     if (word) {{ post({{ kind: 'word', text: word }}); }}
   }}
 
+  // No delimiter: the word ends at the caret. Dictation and composition both
+  // land a finished word in one go, so there is nothing to strip off it.
+  function wordAt(at) {{
+    var word = wordEnded(at.before);
+    if (word) {{ post({{ kind: 'word', text: word }}); }}
+  }}
+
   body.addEventListener('input', function (event) {{
-    if (event.inputType !== 'insertText' || !event.data) {{ return; }}
+    if (!typingInput(event.inputType) || !event.data) {{ return; }}
     var at = caretText();
     if (!at) {{ return; }}
+    // Dictation puts in a finished phrase rather than a character, so there is
+    // no delimiter to look at, and the Markdown rules have nothing to match: a
+    // marker is typed, and none of these is one character long.
+    if (event.inputType === 'insertReplacementText') {{ {phrase_watch} return; }}
     {word_watch}
     if (event.data === ' ') {{ blockMarkdown(at); return; }}
     if (event.data === ')') {{ linkMarkdown(at); return; }}
     inlineMarkdown(event.data, at);
+  }});
+
+  // A word finished by composition, which is how Japanese, Chinese and Korean
+  // are written. The Markdown rules are not run from here: their markers are
+  // typed directly, and one arriving through composition is a coincidence.
+  body.addEventListener('compositionend', function () {{
+    var at = caretText();
+    if (!at) {{ return; }}
+    {phrase_watch}
   }});
 
   // Focus lands in the message, at the start of it. A reply that opens with

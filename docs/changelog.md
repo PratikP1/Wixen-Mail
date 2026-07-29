@@ -7,6 +7,9 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Fixed
 
+- **Dictation gets the spelling sound, which it never did.** The editor listened for typing and returned on everything else, so if you write by dictating or with Windows Voice Access, the sound at the end of a misspelled word was simply off, and nothing said so. It works now. Words finished by composition, which is how Japanese, Chinese and Korean are written, are picked up too.
+  Pasting still does not set it off, on purpose: the sound is about the word you just finished, and a pasted block is checked by `F7` along with the rest of the message.
+
 - **A message that cannot be read is no longer treated as an empty one.** Reading the message out of the editor can fail, and a failure looked exactly like an empty message. So a draft saving itself in the background could write nothing over the message it exists to protect, and Send could queue a message with no body in it, both without a word. Nothing is written now unless the message was actually read, and if Send or Save Draft cannot read it, the window comes back and says so with your message still in it.
 
 - **Tab can leave a table going forwards, and a table cannot be grown without end.** Tab off the last cell adds a row, which is what every editor does, but it did so with no limit and it took the key every time. So holding Tab down built a table larger than the New Table dialog will make, and the only way out of a table was Shift+Tab back through every cell to the first one. Tab now stops taking the key once the table reaches the fifty-row limit, which gives a way out forwards and a bound at the same time.
