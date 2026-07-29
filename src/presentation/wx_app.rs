@@ -5978,12 +5978,7 @@ fn spawn_tasks_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt:
             match handle.block_on(auth.get_valid_token()) {
                 Ok(token) => {
                     match handle.block_on(sync_google_tasks(&cache, &client, &token, aid)) {
-                        Ok(result) => {
-                            total.lists += result.lists;
-                            total.stored += result.stored;
-                            total.deleted += result.deleted;
-                            total.errors.extend(result.errors);
-                        }
+                        Ok(result) => total.absorb(result),
                         Err(e) => total.errors.push(format!("Google Tasks: {e}")),
                     }
                 }
@@ -6001,12 +5996,7 @@ fn spawn_tasks_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt:
             match handle.block_on(auth.get_valid_graph_token()) {
                 Ok(token) => {
                     match handle.block_on(sync_microsoft_tasks(&cache, &client, &token, aid)) {
-                        Ok(result) => {
-                            total.lists += result.lists;
-                            total.stored += result.stored;
-                            total.deleted += result.deleted;
-                            total.errors.extend(result.errors);
-                        }
+                        Ok(result) => total.absorb(result),
                         Err(e) => total.errors.push(format!("Microsoft To Do: {e}")),
                     }
                 }
@@ -6939,6 +6929,7 @@ mod tests {
                 created_at: "2026-01-01".into(),
                 updated_at: "2026-01-01".into(),
                 remote_updated: None,
+                pending: false,
             })
             .unwrap();
 

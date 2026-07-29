@@ -1018,6 +1018,8 @@ fn store_new_item(
             created_at: stamp.clone(),
             updated_at: stamp,
             remote_updated: None,
+            // Made here, so it has to go up at the next sync.
+            pending: true,
         }),
         ItemKind::Note => cache.save_note(&NoteEntry {
             id: new_id("note"),

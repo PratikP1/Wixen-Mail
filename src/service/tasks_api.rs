@@ -55,7 +55,8 @@ pub struct GoogleTaskList {
 /// One of Google's tasks.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GoogleTask {
-    #[serde(default)]
+    /// Left out of a create, where there is no id yet to send.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub id: String,
     #[serde(default)]
     pub title: String,
@@ -115,7 +116,9 @@ pub struct MsTodoList {
 /// One of Microsoft's tasks.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MsTodoTask {
-    #[serde(default)]
+    /// Left out of a create, where there is no id yet to send. Graph refuses a
+    /// POST that carries one.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub id: String,
     #[serde(default)]
     pub title: String,
@@ -251,6 +254,8 @@ pub fn google_task_to_entry(task: &GoogleTask, account_id: &str, list_id: &str) 
         created_at: String::new(),
         updated_at: String::new(),
         remote_updated: task.updated.clone(),
+        // Arrived from the provider, so the two agree by definition.
+        pending: false,
     }
 }
 
@@ -340,6 +345,8 @@ pub fn ms_task_to_entry(task: &MsTodoTask, account_id: &str, list_id: &str) -> T
         created_at: String::new(),
         updated_at: String::new(),
         remote_updated: task.last_modified_date_time.clone(),
+        // Arrived from the provider, so the two agree by definition.
+        pending: false,
     }
 }
 
@@ -486,6 +493,171 @@ impl TasksClient {
             }
         }
         Ok(all)
+    }
+
+    /// Send a body and read the answer back.
+    ///
+    /// Used by create and update alike, because both get the stored task back
+    /// and both need the modification stamp it comes with: without that, the
+    /// next sync sees a stamp it has never seen and takes the provider's copy
+    /// over the one just pushed.
+    async fn send<B, T>(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        token: &str,
+        body: &B,
+    ) -> Result<T>
+    where
+        B: serde::Serialize,
+        T: serde::de::DeserializeOwned,
+    {
+        let response = self
+            .http
+            .request(method, url)
+            .bearer_auth(token)
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("Could not reach the task service: {e}")))?;
+        if !response.status().is_success() {
+            // The status and nothing else. A body from a failed request can
+            // carry the token back, and this goes to a log file.
+            return Err(Error::Protocol(format!(
+                "The task service refused the change: {}",
+                response.status()
+            )));
+        }
+        response.json::<T>().await.map_err(|e| {
+            Error::Protocol(format!("The task service sent something unreadable: {e}"))
+        })
+    }
+
+    /// Delete one thing.
+    ///
+    /// A 404 counts as done. The task is not there, which is the state that was
+    /// asked for, and treating it as a failure means retrying a deletion
+    /// forever against something that no longer exists.
+    async fn delete(&self, url: &str, token: &str) -> Result<()> {
+        let response = self
+            .http
+            .delete(url)
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("Could not reach the task service: {e}")))?;
+        if response.status().is_success() || response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(());
+        }
+        Err(Error::Protocol(format!(
+            "The task service refused the deletion: {}",
+            response.status()
+        )))
+    }
+
+    /// Put a new task in a Google list, and read back what was stored.
+    pub async fn google_create_task(
+        &self,
+        token: &str,
+        list_id: &str,
+        task: &GoogleTask,
+    ) -> Result<GoogleTask> {
+        let list = strip_prefix(list_id, "google:");
+        let body = GoogleTask {
+            id: String::new(),
+            ..task.clone()
+        };
+        self.send(
+            reqwest::Method::POST,
+            &format!("{GOOGLE_TASKS_BASE}/lists/{list}/tasks"),
+            token,
+            &body,
+        )
+        .await
+    }
+
+    /// Change a task Google already has.
+    pub async fn google_update_task(
+        &self,
+        token: &str,
+        list_id: &str,
+        task: &GoogleTask,
+    ) -> Result<GoogleTask> {
+        let list = strip_prefix(list_id, "google:");
+        let id = strip_prefix(&task.id, "google:");
+        self.send(
+            reqwest::Method::PATCH,
+            &format!("{GOOGLE_TASKS_BASE}/lists/{list}/tasks/{id}"),
+            token,
+            task,
+        )
+        .await
+    }
+
+    /// Remove a task from a Google list.
+    pub async fn google_delete_task(
+        &self,
+        token: &str,
+        list_id: &str,
+        task_id: &str,
+    ) -> Result<()> {
+        let list = strip_prefix(list_id, "google:");
+        let id = strip_prefix(task_id, "google:");
+        self.delete(
+            &format!("{GOOGLE_TASKS_BASE}/lists/{list}/tasks/{id}"),
+            token,
+        )
+        .await
+    }
+
+    /// Put a new task in a Microsoft list, and read back what was stored.
+    pub async fn ms_create_task(
+        &self,
+        token: &str,
+        list_id: &str,
+        task: &MsTodoTask,
+    ) -> Result<MsTodoTask> {
+        let list = strip_prefix(list_id, "ms:");
+        let body = MsTodoTask {
+            id: String::new(),
+            ..task.clone()
+        };
+        self.send(
+            reqwest::Method::POST,
+            &format!("{GRAPH_BASE}/me/todo/lists/{list}/tasks"),
+            token,
+            &body,
+        )
+        .await
+    }
+
+    /// Change a task Microsoft already has.
+    pub async fn ms_update_task(
+        &self,
+        token: &str,
+        list_id: &str,
+        task: &MsTodoTask,
+    ) -> Result<MsTodoTask> {
+        let list = strip_prefix(list_id, "ms:");
+        let id = strip_prefix(&task.id, "ms:");
+        self.send(
+            reqwest::Method::PATCH,
+            &format!("{GRAPH_BASE}/me/todo/lists/{list}/tasks/{id}"),
+            token,
+            task,
+        )
+        .await
+    }
+
+    /// Remove a task from a Microsoft list.
+    pub async fn ms_delete_task(&self, token: &str, list_id: &str, task_id: &str) -> Result<()> {
+        let list = strip_prefix(list_id, "ms:");
+        let id = strip_prefix(task_id, "ms:");
+        self.delete(
+            &format!("{GRAPH_BASE}/me/todo/lists/{list}/tasks/{id}"),
+            token,
+        )
+        .await
     }
 
     /// Every task in one Microsoft list.
@@ -699,6 +871,7 @@ mod tests {
             created_at: String::new(),
             updated_at: String::new(),
             remote_updated: None,
+            pending: false,
         };
 
         let sent = entry_to_ms_task(&entry).body.expect("a body");

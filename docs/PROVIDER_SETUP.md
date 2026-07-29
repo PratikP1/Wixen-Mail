@@ -27,7 +27,7 @@ What you get depends on what kind of account it is.
 | Mail | Yes | Yes | Yes |
 | Contacts | Yes, both ways | Yes, both ways | No |
 | Calendar | Yes, both ways | Yes, both ways | No |
-| Tasks | Yes, read only | Yes, read only | No |
+| Tasks | Yes, both ways | Yes, both ways | No |
 | Notes | No | No | No |
 | Reminders | No | No | No |
 
@@ -42,23 +42,38 @@ You can also add a calendar on its own, without an account, through CalDAV or an
 iCalendar subscription. That is in the Calendar module rather than the account
 dialog.
 
-### Tasks are read only
+### Tasks sync both ways
 
 Your task lists and their tasks come down from Google Tasks and from Microsoft
 To Do, with their due dates, whether they are done, and on Microsoft their
 priority. Ticking one off on your phone removes it here on the next sync.
 
-**Nothing goes back up.** A task you make in Wixen Mail stays in Wixen Mail. It
-appears in the list and it will not appear on your phone.
+Tasks you make, tick off or delete here go up to your provider on the next sync,
+so they reach your phone and the web page. A task made here gets its real
+identity from the provider the first time it is sent.
 
-That will change. The rule for what happens when the same task changed in both
-places is settled: your provider's version wins, because it is what your phone
-and the web page already agree on, and you will be told when one of your changes
-was replaced. What is missing is the other end. Nothing in Wixen Mail can yet
-edit a task, tick one off or delete one, so there is nothing to send. The
-sending arrives with those commands.
+**When the same task changed in both places, your provider's version wins.**
+That is a deliberate choice rather than an accident of the code. Your provider's
+copy is what your phone and the web page already agree on, so it is the one you
+most likely looked at last. A change you lose that way can be made again; a
+change made on your phone and overwritten by a stale copy from this computer
+cannot, because nobody would find out it happened.
 
-Sync with Tools, then Sync Tasks. It does not run on its own yet.
+You are told when it happens. The line after a sync says how many of your
+changes were replaced by the server, so a change that disappeared is never
+silent.
+
+A change that cannot be sent, because the network is down or the provider
+refuses it, keeps waiting and is tried again at the next sync. Nothing is
+dropped for failing once.
+
+Sync with Tools, then Sync Tasks. It does not run on its own yet, so a change
+made here reaches your phone when you next sync rather than straight away.
+
+**One thing does not go up.** A task filed in a list this computer made, rather
+than one that came from your provider, has nowhere at the other end to be put.
+It stays here, and the sync says how many did: "2 kept on this computer". Move
+it into one of your provider's lists and it goes up at the next sync.
 
 ### Notes and reminders stay on this computer
 
@@ -76,15 +91,20 @@ and Exchange make a reminder a property of an appointment or a task, and Google
 folded its Reminders into Tasks in 2023. There is nothing on the other side to
 sync one to, so this one is not going to change.
 
-### If you signed in before tasks existed
+### If you signed in before tasks synced both ways
 
-Tasks need permission that older sign-ins did not ask for, so an account you set
-up before this version will sync mail, contacts and the calendar as usual and
-find no task lists.
+Sending tasks up needs more permission than reading them did, and permission is
+granted once at sign-in. An account you set up before this version will keep
+syncing mail, contacts, the calendar and tasks downwards, and your changes will
+sit here waiting.
 
 Fix it by signing in again: open the account, switch the browser sign-in off and
-back on, and approve the list of permissions when the browser shows it. Tasks
-appear on the next sync.
+back on, and approve the list of permissions when the browser shows it. The
+waiting changes go up on the next sync.
+
+The permission is Google's "See, edit, create and delete your tasks" or
+Microsoft's Tasks.ReadWrite, in place of the read-only version. Nothing else
+about what Wixen Mail asks for has changed.
 
 ---
 

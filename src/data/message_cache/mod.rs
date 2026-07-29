@@ -361,6 +361,28 @@ pub struct TaskEntry {
     ///
     /// `None` for a task made here, which no provider knows about yet.
     pub remote_updated: Option<String>,
+    /// Whether this copy has changed here and not yet reached the provider.
+    ///
+    /// A field rather than something the cache infers, so the compiler names
+    /// every place a task is written. A local change that forgets to set this
+    /// is a change that silently never leaves, and nothing about it looks
+    /// wrong from the inside.
+    pub pending: bool,
+}
+
+/// A task that was deleted here and whose provider has not been told.
+///
+/// A deleted row cannot carry a flag, so the fact has to outlive it. Without
+/// this a task deleted here comes back on the next sync, which is worse than
+/// not syncing: it looks like the deletion never worked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeletedTask {
+    /// The id as it was held, provider prefix and all.
+    pub id: String,
+    pub account_id: String,
+    /// The list it was in, which the provider needs to find it again.
+    pub task_list_id: Option<String>,
+    pub deleted_at: String,
 }
 
 /// Note folder entry (container for notes)
@@ -850,6 +872,26 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to create tasks table: {}", e)))?;
 
+        // ── Deleted tasks ───────────────────────────────────────────────
+        //
+        // A deleted row cannot carry a "not yet sent" flag, so the fact that it
+        // was deleted has to outlive it. Without this a task deleted here comes
+        // back on the next sync, which is worse than not syncing at all: it
+        // reads as the deletion having silently failed.
+        //
+        // The row goes when the provider has been told.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS deleted_tasks (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                task_list_id TEXT,
+                deleted_at TEXT NOT NULL
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create deleted_tasks table: {}", e)))?;
+
         // ── Note folders ────────────────────────────────────────────────
         self.conn
             .execute(
@@ -944,10 +986,16 @@ impl MessageCache {
         // about whose clock is right.
         //
         // The other half of two-way sync, a flag saying this copy changed and
-        // has not been sent, is deliberately not here yet: nothing in the
-        // interface can change a task, only make one, so the column would have
-        // no writer. It arrives with the task commands.
         self.ensure_column_exists("tasks", "remote_updated", "TEXT")?;
+        // Changed here and not yet sent. Every local write path sets it and
+        // the push clears it, which is why it is a field on TaskEntry rather
+        // than something inferred: the compiler names each of those paths, and
+        // a local change that never sets this is a change that never leaves.
+        //
+        // Defaults to 0, so every task already in an existing database is
+        // treated as agreeing with the provider. That is the right assumption:
+        // until this shipped, nothing here could disagree.
+        self.ensure_column_exists("tasks", "pending", "INTEGER NOT NULL DEFAULT 0")?;
         // The HTML half of a queued message. `body` stays the plain text
         // half it always was, so a message queued by an older build still
         // sends, as plain text, which is what it was.

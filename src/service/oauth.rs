@@ -72,11 +72,15 @@ impl OAuthService {
                     "https://mail.google.com/".to_string(),
                     "https://www.googleapis.com/auth/contacts".to_string(),
                     "https://www.googleapis.com/auth/calendar".to_string(),
-                    // Read-only, because the sync reads. Asking for write
-                    // access we do not use is asking somebody to grant more
-                    // than the application does, on a consent screen that
-                    // lists it.
-                    "https://www.googleapis.com/auth/tasks.readonly".to_string(),
+                    // Read and write, because the sync now does both:
+                    // ticking a task off here reaches the phone. It was
+                    // read-only while the sync only read, on the rule that
+                    // asking for access the application does not use is asking
+                    // somebody to grant more than it does.
+                    //
+                    // Widening a scope means new consent, so everybody signs in
+                    // again once.
+                    "https://www.googleapis.com/auth/tasks".to_string(),
                 ],
             },
             OAuthProvider {
@@ -90,8 +94,8 @@ impl OAuthService {
                     "https://outlook.office.com/SMTP.Send".to_string(),
                     "https://graph.microsoft.com/Contacts.ReadWrite".to_string(),
                     "https://graph.microsoft.com/Calendars.ReadWrite".to_string(),
-                    // Read-only, for the same reason as Google's.
-                    "https://graph.microsoft.com/Tasks.Read".to_string(),
+                    // Read and write, for the same reason as Google's.
+                    "https://graph.microsoft.com/Tasks.ReadWrite".to_string(),
                 ],
             },
         ]
