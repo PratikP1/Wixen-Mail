@@ -7,6 +7,8 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Added
 
+- **A task list, note folder or contact group can be deleted.** Only calendars could before, so anything else you made by mistake you were stuck with. There is a Delete button beside the New button in each panel. It asks which one, and the question says what goes with it: "Delete the task list Shopping and the 12 tasks in it?" rather than "Are you sure?". It also says when the thing will come back at the next sync, because deleting it here does not delete it at your provider yet.
+
 - **Wixen Mail asks, the first time you start it, what it is allowed to change.** Everything that writes is experimental: sending mail, deleting mail, and sending your changes to tasks, contacts and the calendar back to your provider. None of that has been run against a real account, so expect bugs. Reading your mail is the part that has been used.
   You get three choices, starting on the middle one: read only, tasks and contacts but not mail, or everything. Each says what it costs rather than which is recommended. There is a button to open [what to test and what is known to be broken](ALPHA_TESTING.md).
   Change it later under Settings, Allowed Changes. You can also set it per account, which is the useful shape while testing: leave your real mail read only and allow everything on an account you do not mind breaking.

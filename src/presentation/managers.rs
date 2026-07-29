@@ -1280,3 +1280,245 @@ mod tests {
         assert_eq!(ids.len(), 50, "minted identifiers collided");
     }
 }
+
+/// Delete a container, and everything in it.
+///
+/// The other half of [`new_container`], and it was missing for three of the
+/// four kinds. A calendar could be removed and a task list, note folder or
+/// contact group could not, so somebody who made one by mistake kept it. The
+/// storage functions existed the whole time and nothing called them, which is
+/// invisible in Rust because a public item in a library is never reported as
+/// unused. Mutation testing found it.
+pub fn delete_container(
+    kind: crate::application::new_item::ContainerKind,
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    use crate::application::new_item;
+
+    let Some(cache) = cache.clone() else {
+        return send_status(tx, rt, "No storage is open");
+    };
+    let account_id = {
+        let s = lock_state(state);
+        s.active_account_id
+            .clone()
+            .unwrap_or_else(|| new_item::LOCAL_ACCOUNT_ID.to_string())
+    };
+
+    let choices = containers_in(&cache, kind, &account_id);
+    if choices.is_empty() {
+        return send_status(
+            tx,
+            rt,
+            &format!("There are no {}s to delete", kind.label().to_lowercase()),
+        );
+    }
+
+    let Some(chosen) = pick_one(frame, kind, &choices) else {
+        return;
+    };
+    let (id, name, holding) = choices[chosen].clone();
+
+    let mut asked = new_item::deletion_question(kind, &name, holding);
+    // Said before the deletion rather than discovered after it. Deleting a
+    // synced list here and watching it come back on the next sync looks
+    // exactly like the delete having failed.
+    if !new_item::deletion_reaches_provider(kind) && !account_id.starts_with("local") {
+        asked.push_str(new_item::STILL_AT_THE_PROVIDER);
+    }
+
+    let confirm = MessageDialog::builder(frame, &asked, &format!("Delete {}", kind.label()))
+        .with_style(MessageDialogStyle::YesNo | MessageDialogStyle::IconQuestion)
+        .build();
+    let answer = confirm.show_modal();
+    confirm.destroy();
+    if answer != ID_YES {
+        return;
+    }
+
+    match remove_container(&cache, kind, &id) {
+        Ok(()) => {
+            send_status(tx, rt, &format!("{} \"{}\" deleted", kind.label(), name));
+            crate::presentation::wx_app::load_module_data(
+                module_for(kind.holds()),
+                &Some(cache),
+                Some(account_id),
+                tx,
+            );
+        }
+        Err(e) => {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "{} could not be deleted: {}",
+                kind.label(),
+                e
+            )));
+        }
+    }
+}
+
+/// Every container of this kind, with what each one holds.
+///
+/// The count is read here rather than in the dialog, so the question can name
+/// it. A list that says "and the 12 tasks in it" is one somebody can answer.
+fn containers_in(
+    cache: &MessageCache,
+    kind: crate::application::new_item::ContainerKind,
+    account_id: &str,
+) -> Vec<(String, String, usize)> {
+    use crate::application::new_item::ContainerKind;
+
+    match kind {
+        ContainerKind::Calendar => cache
+            .get_calendars_for_account(account_id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|c| {
+                let holding = cache.get_events_for_calendar(&c.id).map_or(0, |e| e.len());
+                (c.id, c.name, holding)
+            })
+            .collect(),
+        ContainerKind::TaskList => cache
+            .get_task_lists_for_account(account_id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|l| {
+                let holding = cache.get_tasks_for_list(&l.id).map_or(0, |t| t.len());
+                (l.id, l.name, holding)
+            })
+            .collect(),
+        ContainerKind::NoteFolder => cache
+            .get_note_folders_for_account(account_id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|f| {
+                let holding = cache.get_notes_for_folder(&f.id).map_or(0, |n| n.len());
+                (f.id, f.name, holding)
+            })
+            .collect(),
+        ContainerKind::ContactGroup => cache
+            .load_contact_groups(account_id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|g| {
+                let holding = g.member_ids.len();
+                (g.id, g.name, holding)
+            })
+            .collect(),
+    }
+}
+
+/// Ask which one, by name.
+///
+/// A list rather than the sidebar selection, because the sidebar trees have no
+/// selection handler and adding one for this would be a second way to pick a
+/// thing. A list also reads the names out in order, which is how somebody
+/// who cannot see the tree finds the one they meant.
+fn pick_one(
+    frame: &Frame,
+    kind: crate::application::new_item::ContainerKind,
+    choices: &[(String, String, usize)],
+) -> Option<usize> {
+    let names: Vec<String> = choices
+        .iter()
+        .map(|(_, name, holding)| match holding {
+            0 => format!("{name}, empty"),
+            1 => format!("{name}, 1 item"),
+            many => format!("{name}, {many} items"),
+        })
+        .collect();
+
+    let borrowed: Vec<&str> = names.iter().map(String::as_str).collect();
+    let dialog = SingleChoiceDialog::builder(
+        frame,
+        &format!("Which {} should be deleted?", kind.label().to_lowercase()),
+        &format!("Delete {}", kind.label()),
+        &borrowed,
+    )
+    .build();
+    let answer = dialog.show_modal();
+    let chosen = dialog.get_selection();
+    dialog.destroy();
+
+    // A negative selection means nothing was chosen, which is the same answer
+    // as cancelling and is treated the same way.
+    if answer == ID_OK && chosen >= 0 {
+        Some(chosen as usize)
+    } else {
+        None
+    }
+}
+
+/// Remove it from storage.
+fn remove_container(
+    cache: &MessageCache,
+    kind: crate::application::new_item::ContainerKind,
+    id: &str,
+) -> crate::common::Result<()> {
+    use crate::application::new_item::ContainerKind;
+
+    match kind {
+        ContainerKind::Calendar => cache.delete_calendar(id),
+        ContainerKind::TaskList => cache.delete_task_list(id),
+        ContainerKind::NoteFolder => cache.delete_note_folder(id),
+        ContainerKind::ContactGroup => cache.delete_contact_group(id),
+    }
+}
+
+#[cfg(test)]
+mod deletion_wiring {
+    /// Where each container's Delete command is raised from.
+    ///
+    /// Three of the four could be created and never removed, and the storage
+    /// functions had existed the whole time with nothing calling them. Rust
+    /// never reports a public item in a library as unused, so two dead-code
+    /// passes missed it and mutation testing found it. This checks the button
+    /// exists, because a command nothing raises is the same bug again.
+    const RAISED_BY: [(&str, &str); 4] = [
+        (
+            "src/presentation/wx_app.rs",
+            "contacts_sb.btn_delete_group.on_click",
+        ),
+        (
+            "src/presentation/wx_app.rs",
+            "tasks_sb.btn_delete_list.on_click",
+        ),
+        (
+            "src/presentation/wx_app.rs",
+            "notes_sb.btn_delete_folder.on_click",
+        ),
+        ("src/presentation/wx_app.rs", "cal_sb.btn_delete.on_click"),
+    ];
+
+    #[test]
+    fn test_every_container_can_actually_be_deleted() {
+        let source =
+            std::fs::read_to_string("src/presentation/wx_app.rs").expect("the window layer");
+
+        for (_, raised) in RAISED_BY {
+            assert!(
+                source.contains(raised),
+                "nothing raises {raised}, so that container still cannot be deleted"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_command_they_raise_exists() {
+        let source = std::fs::read_to_string("src/presentation/managers.rs").expect("this file");
+
+        assert!(source.contains("pub fn delete_container"));
+        // All four kinds, so adding a fifth container without a delete fails.
+        for storage in [
+            "delete_calendar(id)",
+            "delete_task_list(id)",
+            "delete_note_folder(id)",
+            "delete_contact_group(id)",
+        ] {
+            assert!(source.contains(storage), "{storage} is never called");
+        }
+    }
+}

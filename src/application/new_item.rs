@@ -68,6 +68,22 @@ impl ItemKind {
         }
     }
 
+    /// What several of them are called.
+    ///
+    /// Written out rather than adding an "s", because a confirmation that says
+    /// "the 12 Tasks in it" reads as a proper noun and one that says "12
+    /// Messages" is not what anybody calls them.
+    pub fn plural(self) -> &'static str {
+        match self {
+            ItemKind::Mail => "messages",
+            ItemKind::Contact => "contacts",
+            ItemKind::Event => "events",
+            ItemKind::Reminder => "reminders",
+            ItemKind::Task => "tasks",
+            ItemKind::Note => "notes",
+        }
+    }
+
     /// The key that makes one from anywhere.
     ///
     /// `Ctrl+Shift+R` is missing on purpose. It is Reply All here, as it is in
@@ -547,5 +563,104 @@ mod tests {
                 .contains("Work")
         );
         assert_eq!(Destination::Local.spoken(&accounts), "On this computer");
+    }
+}
+
+/// What deleting a container takes with it, said before it happens.
+///
+/// Named rather than counted where it can be: "Delete Shopping and the 12
+/// tasks in it?" is a question somebody can answer, and "Are you sure?" is one
+/// they learn to say yes to without reading.
+///
+/// The count matters most when it is large and when it is nought. Somebody who
+/// thinks a list is empty and is told it holds forty things has just been
+/// saved, and somebody told a list is empty can answer instantly.
+pub fn deletion_question(kind: ContainerKind, name: &str, holding: usize) -> String {
+    let held = kind.holds().plural();
+    match holding {
+        0 => format!(
+            "Delete the {} \"{name}\"? It is empty.",
+            kind.label().to_lowercase()
+        ),
+        1 => format!(
+            "Delete the {} \"{name}\" and the 1 {} in it? This cannot be undone.",
+            kind.label().to_lowercase(),
+            kind.holds().label().to_lowercase()
+        ),
+        // Everything above one reads the same way, so the split is only
+        // between none, one, and more than one.
+        many => format!(
+            "Delete the {} \"{name}\" and the {many} {} in it? This cannot be undone.",
+            kind.label().to_lowercase(),
+            held.to_lowercase()
+        ),
+    }
+}
+
+/// Whether deleting this container also removes it at the provider.
+///
+/// It does not, and saying so matters: somebody who deletes a synced list here
+/// and watches it come back on the next sync will think the delete failed. It
+/// deletes the local copy, and the next sync brings the provider's copy back.
+pub fn deletion_reaches_provider(_kind: ContainerKind) -> bool {
+    false
+}
+
+/// What to add to the question when the provider still has a copy.
+pub const STILL_AT_THE_PROVIDER: &str = " It will come back at the next sync, because deleting it here does not \
+     delete it at your provider yet.";
+
+#[cfg(test)]
+mod deletion_tests {
+    use super::*;
+
+    #[test]
+    fn test_the_question_says_what_goes_with_it() {
+        // "Are you sure?" is a question people learn to answer yes to without
+        // reading. A number they did not expect is the thing that stops them.
+        let asked = deletion_question(ContainerKind::TaskList, "Shopping", 12);
+
+        assert!(asked.contains("Shopping"), "{asked}");
+        assert!(asked.contains("12 tasks"), "{asked}");
+        assert!(asked.contains("cannot be undone"), "{asked}");
+    }
+
+    #[test]
+    fn test_an_empty_container_says_it_is_empty() {
+        // Somebody told a list is empty can answer instantly, and somebody who
+        // thought it was empty and is told it holds forty things has just been
+        // saved. Both need the count to be accurate rather than omitted.
+        let asked = deletion_question(ContainerKind::NoteFolder, "Old", 0);
+
+        assert!(asked.contains("It is empty"), "{asked}");
+        assert!(!asked.contains("cannot be undone"), "{asked}");
+    }
+
+    #[test]
+    fn test_one_of_something_is_not_said_in_the_plural() {
+        let asked = deletion_question(ContainerKind::Calendar, "Trips", 1);
+
+        assert!(asked.contains("1 event in it"), "{asked}");
+    }
+
+    #[test]
+    fn test_every_container_can_be_asked_about() {
+        for kind in ContainerKind::ALL {
+            let asked = deletion_question(kind, "Whatever", 3);
+            assert!(
+                asked.contains("Whatever") && asked.contains('3'),
+                "{kind:?}: {asked}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_deleting_here_does_not_delete_it_at_the_provider_yet() {
+        // Worth stating rather than leaving somebody to find out. Deleting a
+        // synced list and watching it come back looks like the delete failed.
+        for kind in ContainerKind::ALL {
+            assert!(!deletion_reaches_provider(kind), "{kind:?}");
+        }
+        assert!(STILL_AT_THE_PROVIDER.contains("come back at the next sync"));
     }
 }

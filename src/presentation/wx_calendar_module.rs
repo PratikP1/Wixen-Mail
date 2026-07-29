@@ -22,6 +22,7 @@ pub struct CalendarSidebarHandles {
     pub panel: Panel,
     pub tree: TreeCtrl,
     pub btn_new: Button,
+    pub btn_delete: Button,
     pub btn_manage: Button,
 }
 
@@ -100,6 +101,9 @@ pub fn build_calendar_sidebar(parent: &Panel) -> CalendarSidebarHandles {
     }
 
     let btn_new = Button::builder(&panel).with_label("&New Calendar").build();
+    let btn_delete = Button::builder(&panel)
+        .with_label("De&lete Calendar")
+        .build();
     let btn_manage = Button::builder(&panel)
         .with_label("&Manage Calendars")
         .build();
@@ -107,6 +111,8 @@ pub fn build_calendar_sidebar(parent: &Panel) -> CalendarSidebarHandles {
     sizer.add(&label, 0, SizerFlag::Expand | SizerFlag::All, 4);
     sizer.add(&tree, 1, SizerFlag::Expand | SizerFlag::All, 2);
     sizer.add(&btn_new, 0, SizerFlag::Expand | SizerFlag::All, 2);
+    set_accessible_name(&btn_delete, "Delete calendar");
+    sizer.add(&btn_delete, 0, SizerFlag::Expand | SizerFlag::All, 2);
     sizer.add(&btn_manage, 0, SizerFlag::Expand | SizerFlag::All, 2);
     panel.set_sizer(sizer, true);
 
@@ -114,6 +120,7 @@ pub fn build_calendar_sidebar(parent: &Panel) -> CalendarSidebarHandles {
         panel,
         tree,
         btn_new,
+        btn_delete,
         btn_manage,
     }
 }

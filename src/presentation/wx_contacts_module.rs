@@ -18,6 +18,7 @@ pub struct ContactsSidebarHandles {
     pub panel: Panel,
     pub tree: TreeCtrl,
     pub btn_new_group: Button,
+    pub btn_delete_group: Button,
     pub btn_import: Button,
     pub btn_export: Button,
 }
@@ -97,11 +98,14 @@ pub fn build_contacts_sidebar(parent: &Panel) -> ContactsSidebarHandles {
     }
 
     let btn_new_group = Button::builder(&panel).with_label("New &Group").build();
+    let btn_delete_group = Button::builder(&panel).with_label("Delete G&roup").build();
     let btn_import = Button::builder(&panel).with_label("&Import vCard").build();
     let btn_export = Button::builder(&panel).with_label("&Export vCard").build();
 
     sizer.add(&tree, 1, SizerFlag::Expand | SizerFlag::All, 2);
     sizer.add(&btn_new_group, 0, SizerFlag::Expand | SizerFlag::All, 2);
+    set_accessible_name(&btn_delete_group, "Delete contact group");
+    sizer.add(&btn_delete_group, 0, SizerFlag::Expand | SizerFlag::All, 2);
     sizer.add(&btn_import, 0, SizerFlag::Expand | SizerFlag::All, 2);
     sizer.add(&btn_export, 0, SizerFlag::Expand | SizerFlag::All, 2);
     panel.set_sizer(sizer, true);
@@ -110,6 +114,7 @@ pub fn build_contacts_sidebar(parent: &Panel) -> ContactsSidebarHandles {
         panel,
         tree,
         btn_new_group,
+        btn_delete_group,
         btn_import,
         btn_export,
     }

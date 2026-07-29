@@ -15,6 +15,7 @@ pub struct TasksSidebarHandles {
     pub panel: Panel,
     pub tree: TreeCtrl,
     pub btn_new_list: Button,
+    pub btn_delete_list: Button,
 }
 
 /// Build the tasks module content panel.
@@ -72,14 +73,18 @@ pub fn build_tasks_sidebar(parent: &Panel) -> TasksSidebarHandles {
     }
 
     let btn_new_list = Button::builder(&panel).with_label("New &List").build();
+    let btn_delete_list = Button::builder(&panel).with_label("Delete Li&st").build();
 
     sizer.add(&tree, 1, SizerFlag::Expand | SizerFlag::All, 2);
     sizer.add(&btn_new_list, 0, SizerFlag::Expand | SizerFlag::All, 2);
+    set_accessible_name(&btn_delete_list, "Delete task list");
+    sizer.add(&btn_delete_list, 0, SizerFlag::Expand | SizerFlag::All, 2);
     panel.set_sizer(sizer, true);
 
     TasksSidebarHandles {
         panel,
         tree,
         btn_new_list,
+        btn_delete_list,
     }
 }

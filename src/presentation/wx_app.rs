@@ -132,7 +132,6 @@ menu_ids!(
     ID_TOGGLE_STAR,
     ID_REFRESH_FOLDER,
     ID_CYCLE_PANES,
-    ID_NEW_CALENDAR,
     ID_NEW_EVENT,
     ID_NEW_REMINDER,
     ID_NEW_TASK,
@@ -1244,6 +1243,14 @@ document.addEventListener('keydown', function(e) {
                     send_status(&ui_tx, &runtime, "New Calendar: use File > New > Calendar");
                 }
             });
+
+            cal_sb.btn_delete.on_click({
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                move |_| {
+                    send_status(&ui_tx, &runtime, "New Calendar: use File > New > Calendar");
+                }
+            });
             cal_sb.btn_manage.on_click({
                 let state = state.clone();
                 let cache = message_cache.clone();
@@ -1277,6 +1284,23 @@ document.addEventListener('keydown', function(e) {
                 let runtime = runtime.clone();
                 move |_| {
                     managers::new_container(
+                        crate::application::new_item::ContainerKind::ContactGroup,
+                        &state,
+                        &message_cache,
+                        &frame,
+                        &ui_tx,
+                        &runtime,
+                    );
+                }
+            });
+
+            contacts_sb.btn_delete_group.on_click({
+                let state = state.clone();
+                let message_cache = message_cache.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                move |_| {
+                    managers::delete_container(
                         crate::application::new_item::ContainerKind::ContactGroup,
                         &state,
                         &message_cache,
@@ -1413,6 +1437,23 @@ document.addEventListener('keydown', function(e) {
                 let runtime = runtime.clone();
                 move |_| {
                     managers::new_container(
+                        crate::application::new_item::ContainerKind::TaskList,
+                        &state,
+                        &message_cache,
+                        &frame,
+                        &ui_tx,
+                        &runtime,
+                    );
+                }
+            });
+
+            tasks_sb.btn_delete_list.on_click({
+                let state = state.clone();
+                let message_cache = message_cache.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                move |_| {
+                    managers::delete_container(
                         crate::application::new_item::ContainerKind::TaskList,
                         &state,
                         &message_cache,
@@ -1570,6 +1611,23 @@ document.addEventListener('keydown', function(e) {
                 let runtime = runtime.clone();
                 move |_| {
                     managers::new_container(
+                        crate::application::new_item::ContainerKind::NoteFolder,
+                        &state,
+                        &message_cache,
+                        &frame,
+                        &ui_tx,
+                        &runtime,
+                    );
+                }
+            });
+
+            notes_sb.btn_delete_folder.on_click({
+                let state = state.clone();
+                let message_cache = message_cache.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                move |_| {
+                    managers::delete_container(
                         crate::application::new_item::ContainerKind::NoteFolder,
                         &state,
                         &message_cache,
@@ -2119,17 +2177,6 @@ document.addEventListener('keydown', function(e) {
                         _ if id == ID_MODULE_TASKS => do_switch(PimModule::Tasks),
                         _ if id == ID_MODULE_NOTES => do_switch(PimModule::Notes),
                         // New item creation (File > New submenu)
-                        _ if id == ID_NEW_CALENDAR => {
-                            do_switch(PimModule::Calendar);
-                            managers::new_container(
-                                crate::application::new_item::ContainerKind::Calendar,
-                                &state,
-                                &message_cache,
-                                &frame,
-                                &ui_tx,
-                                &runtime,
-                            );
-                        }
                         _ if id == ID_NEW_EVENT => {
                             do_switch(PimModule::Calendar);
                             managers::new_pim_item(

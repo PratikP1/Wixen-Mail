@@ -71,8 +71,6 @@ Written down so you do not spend time reporting things already on the list.
 
 - **Nothing that writes has run against a real account.** Sending, deleting,
   and the three syncs that push changes.
-- **A task list, note folder or contact group cannot be deleted** once made.
-  Calendars can.
 - **A task cannot be moved between lists.** It goes into your provider's
   default list when you make it.
 - **Notes do not sync anywhere.** They stay on this computer.

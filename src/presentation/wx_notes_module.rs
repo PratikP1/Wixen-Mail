@@ -18,6 +18,7 @@ pub struct NotesSidebarHandles {
     pub panel: Panel,
     pub tree: TreeCtrl,
     pub btn_new_folder: Button,
+    pub btn_delete_folder: Button,
 }
 
 /// Build the notes module content panel.
@@ -104,14 +105,18 @@ pub fn build_notes_sidebar(parent: &Panel) -> NotesSidebarHandles {
     }
 
     let btn_new_folder = Button::builder(&panel).with_label("New &Folder").build();
+    let btn_delete_folder = Button::builder(&panel).with_label("Delete F&older").build();
 
     sizer.add(&tree, 1, SizerFlag::Expand | SizerFlag::All, 2);
     sizer.add(&btn_new_folder, 0, SizerFlag::Expand | SizerFlag::All, 2);
+    set_accessible_name(&btn_delete_folder, "Delete note folder");
+    sizer.add(&btn_delete_folder, 0, SizerFlag::Expand | SizerFlag::All, 2);
     panel.set_sizer(sizer, true);
 
     NotesSidebarHandles {
         panel,
         tree,
         btn_new_folder,
+        btn_delete_folder,
     }
 }
