@@ -869,6 +869,7 @@ fn store_new_item(
             parent_task_id: None,
             created_at: stamp.clone(),
             updated_at: stamp,
+            remote_updated: None,
         }),
         ItemKind::Note => cache.save_note(&NoteEntry {
             id: new_id("note"),

@@ -51,11 +51,12 @@ priority. Ticking one off on your phone removes it here on the next sync.
 **Nothing goes back up.** A task you make in Wixen Mail stays in Wixen Mail. It
 appears in the list and it will not appear on your phone.
 
-The reason is that sending changes back needs a rule for what happens when the
-same task changed in both places, and a wrong rule quietly destroys work. Reading
-is most of what a task list is for and it cannot lose anything, so that is what
-exists today. Two-way is a decision waiting to be made rather than a thing half
-built.
+That will change. The rule for what happens when the same task changed in both
+places is settled: your provider's version wins, because it is what your phone
+and the web page already agree on, and you will be told when one of your changes
+was replaced. What is missing is the other end. Nothing in Wixen Mail can yet
+edit a task, tick one off or delete one, so there is nothing to send. The
+sending arrives with those commands.
 
 Sync with Tools, then Sync Tasks. It does not run on its own yet.
 

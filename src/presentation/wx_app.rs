@@ -6799,6 +6799,7 @@ mod tests {
                 parent_task_id: None,
                 created_at: "2026-01-01".into(),
                 updated_at: "2026-01-01".into(),
+                remote_updated: None,
             })
             .unwrap();
 

@@ -77,6 +77,12 @@ pub struct GoogleTask {
     /// Google's tombstone. A deleted task still comes back in a sync.
     #[serde(default)]
     pub deleted: bool,
+    /// When Google last changed it, RFC 3339.
+    ///
+    /// Not written back: it is the server's to set. It is kept so the next
+    /// sync can tell a task that changed from one that did not.
+    #[serde(default, skip_serializing)]
+    pub updated: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -133,6 +139,10 @@ pub struct MsTodoTask {
         skip_serializing_if = "Option::is_none"
     )]
     pub completed_date_time: Option<MsDateTimeZone>,
+    /// When Graph last changed it. A plain timestamp, not the zoned shape the
+    /// date fields use.
+    #[serde(rename = "lastModifiedDateTime", default, skip_serializing)]
+    pub last_modified_date_time: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -240,6 +250,7 @@ pub fn google_task_to_entry(task: &GoogleTask, account_id: &str, list_id: &str) 
         parent_task_id: task.parent.as_ref().map(|id| format!("google:{id}")),
         created_at: String::new(),
         updated_at: String::new(),
+        remote_updated: task.updated.clone(),
     }
 }
 
@@ -267,6 +278,8 @@ pub fn entry_to_google_task(task: &TaskEntry) -> GoogleTask {
             .map(|id| strip_prefix(id, "google:")),
         position: None,
         deleted: false,
+        // The server sets this. Nothing here has an opinion about it.
+        updated: None,
     }
 }
 
@@ -326,6 +339,7 @@ pub fn ms_task_to_entry(task: &MsTodoTask, account_id: &str, list_id: &str) -> T
         parent_task_id: None,
         created_at: String::new(),
         updated_at: String::new(),
+        remote_updated: task.last_modified_date_time.clone(),
     }
 }
 
@@ -356,6 +370,8 @@ pub fn entry_to_ms_task(task: &TaskEntry) -> MsTodoTask {
             date_time: done.clone(),
             time_zone: "UTC".to_string(),
         }),
+        // The server sets this. Nothing here has an opinion about it.
+        last_modified_date_time: None,
     }
 }
 
@@ -682,6 +698,7 @@ mod tests {
             parent_task_id: None,
             created_at: String::new(),
             updated_at: String::new(),
+            remote_updated: None,
         };
 
         let sent = entry_to_ms_task(&entry).body.expect("a body");

@@ -349,6 +349,10 @@ pub struct TaskEntry {
     pub parent_task_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// The provider's own modification stamp, as at the last sync.
+    ///
+    /// `None` for a task made here, which no provider knows about yet.
+    pub remote_updated: Option<String>,
 }
 
 /// Note folder entry (container for notes)
@@ -926,6 +930,16 @@ impl MessageCache {
         // mailbox already synced does not have to be fetched again to say it.
         self.ensure_column_exists("messages", "safety", "TEXT")?;
         self.ensure_column_exists("messages", "safety_reasons", "TEXT")?;
+        // The provider's own modification stamp for a task, as at the last
+        // sync. Comparing against the stamp we last saw is what lets a sync
+        // tell a task that changed from one that did not, without any question
+        // about whose clock is right.
+        //
+        // The other half of two-way sync, a flag saying this copy changed and
+        // has not been sent, is deliberately not here yet: nothing in the
+        // interface can change a task, only make one, so the column would have
+        // no writer. It arrives with the task commands.
+        self.ensure_column_exists("tasks", "remote_updated", "TEXT")?;
         self.ensure_column_exists("calendar_events", "calendar_id", "TEXT")?;
         self.ensure_column_exists(
             "message_filter_rules",

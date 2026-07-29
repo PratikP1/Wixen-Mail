@@ -106,8 +106,8 @@ impl MessageCache {
                 "INSERT INTO tasks (
                     id, account_id, task_list_id, title, description, due_date,
                     is_completed, completed_at, priority, display_order,
-                    parent_task_id, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                    parent_task_id, created_at, updated_at, remote_updated
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
                 ON CONFLICT(id) DO UPDATE SET
                     task_list_id = excluded.task_list_id,
                     title = excluded.title,
@@ -118,7 +118,8 @@ impl MessageCache {
                     priority = excluded.priority,
                     display_order = excluded.display_order,
                     parent_task_id = excluded.parent_task_id,
-                    updated_at = excluded.updated_at",
+                    updated_at = excluded.updated_at,
+                    remote_updated = excluded.remote_updated",
                 rusqlite::params![
                     t.id,
                     t.account_id,
@@ -133,6 +134,7 @@ impl MessageCache {
                     t.parent_task_id,
                     t.created_at,
                     t.updated_at,
+                    t.remote_updated,
                 ],
             )
             .map_err(|e| Error::Other(format!("Failed to save task: {}", e)))?;
@@ -146,7 +148,7 @@ impl MessageCache {
             .prepare(
                 "SELECT id, account_id, task_list_id, title, description, due_date,
                         is_completed, completed_at, priority, display_order,
-                        parent_task_id, created_at, updated_at
+                        parent_task_id, created_at, updated_at, remote_updated
                  FROM tasks WHERE task_list_id = ?1
                  ORDER BY is_completed, display_order, due_date",
             )
@@ -170,7 +172,7 @@ impl MessageCache {
             .prepare(
                 "SELECT id, account_id, task_list_id, title, description, due_date,
                         is_completed, completed_at, priority, display_order,
-                        parent_task_id, created_at, updated_at
+                        parent_task_id, created_at, updated_at, remote_updated
                  FROM tasks WHERE account_id = ?1
                  ORDER BY is_completed, display_order, due_date",
             )
@@ -229,7 +231,7 @@ impl MessageCache {
             .prepare(
                 "SELECT id, account_id, task_list_id, title, description, due_date,
                         is_completed, completed_at, priority, display_order,
-                        parent_task_id, created_at, updated_at
+                        parent_task_id, created_at, updated_at, remote_updated
                  FROM tasks WHERE account_id = ?1 AND title LIKE ?2 ESCAPE '!'
                  ORDER BY is_completed, due_date",
             )
@@ -262,6 +264,7 @@ impl MessageCache {
             parent_task_id: row.get(10)?,
             created_at: row.get(11)?,
             updated_at: row.get(12)?,
+            remote_updated: row.get(13)?,
         })
     }
 }
@@ -305,6 +308,7 @@ mod tests {
             parent_task_id: None,
             created_at: now.clone(),
             updated_at: now,
+            remote_updated: None,
         };
         cache.save_task(&t).unwrap();
 
@@ -348,6 +352,7 @@ mod tests {
                     parent_task_id: None,
                     created_at: now.clone(),
                     updated_at: now.clone(),
+                    remote_updated: None,
                 })
                 .unwrap();
         }

@@ -1,20 +1,29 @@
 //! Bringing tasks down from Google Tasks and Microsoft To Do.
 //!
-//! # One direction, on purpose
+//! # One direction, for now, and the reason has changed
 //!
-//! This reads. It does not write back, and that is a decision rather than an
-//! unfinished half.
+//! This reads. It does not write back yet, and the reason is no longer that
+//! nobody had decided the rule.
 //!
-//! Two-way sync needs conflict resolution, and conflict resolution needs a
-//! reliable modification time from both ends and a rule for what happens when
-//! both changed. Getting that wrong destroys somebody's data quietly, which is
-//! the one failure this application cannot recover from and cannot apologise
-//! its way out of. Reading is useful on its own: a task list that shows what is
-//! on the phone is most of the value, and it cannot lose anything.
+//! The rule is decided and it is [`resolve`]: the provider wins a tie, because
+//! its copy is what the phone and the web application already agree on. A local
+//! edit lost that way can be made again; a phone edit overwritten by a stale
+//! local copy cannot, because nobody finds out.
+//!
+//! What is missing is anything that could cause a local change. Nothing in the
+//! interface edits a task, completes one, or deletes one: it can only make one.
+//! So a flag saying "this changed here and has not been sent" would be a column
+//! with no writer, and a push loop would be code nothing could ever trigger.
+//! The push half arrives with the task commands, and [`resolve`] gains its
+//! other three answers then.
+//!
+//! Meanwhile the rule already earns its place on the way down. A task the
+//! provider has not touched since the last sync is skipped rather than
+//! rewritten, which is what lets a sync report what actually changed instead of
+//! the size of the list.
 //!
 //! The conversions to send a task back are written and tested in
-//! [`crate::service::tasks_api`], so the half that has to be right is ready for
-//! the day the rule for the other half is decided.
+//! [`crate::service::tasks_api`], so that half is ready and waiting.
 //!
 //! # A deletion is a deletion
 //!
@@ -36,7 +45,14 @@ use crate::service::tasks_api::{
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct TaskSyncResult {
     pub lists: usize,
+    /// Tasks written because they were new or had changed.
+    ///
+    /// Not the number seen. A sync that rewrites every task every time can
+    /// only ever report the size of the list, which tells nobody whether
+    /// anything happened.
     pub stored: usize,
+    /// Tasks the provider had not touched since the last sync.
+    pub unchanged: usize,
     pub deleted: usize,
     /// Said rather than swallowed. A list that could not be read is a gap, and
     /// reporting a clean sync over it is how somebody comes to trust a list
@@ -54,6 +70,9 @@ impl TaskSyncResult {
             self.lists,
             if self.lists == 1 { "" } else { "s" }
         );
+        if self.unchanged > 0 {
+            said.push_str(&format!(", {} unchanged", self.unchanged));
+        }
         if self.deleted > 0 {
             said.push_str(&format!(", {} removed", self.deleted));
         }
@@ -68,6 +87,54 @@ impl TaskSyncResult {
             ));
         }
         said
+    }
+}
+
+/// What to do with one task when either copy may have moved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Resolution {
+    /// Neither side changed since the last sync.
+    Nothing,
+    /// Only this copy changed. Send it up.
+    Push,
+    /// Only the provider's copy changed. Take it.
+    TakeRemote,
+    /// Both changed. The provider wins, and somebody is told.
+    ///
+    /// Separate from [`Self::TakeRemote`] on purpose. The outcome is the same
+    /// write, but one of them silently discards an edit that was made here,
+    /// and an edit disappearing with nothing said is indistinguishable from a
+    /// change that never saved.
+    TakeRemoteOverLocal,
+}
+
+/// Decide what happens to one task, given what each side did.
+///
+/// The rule is that the provider wins a tie, decided deliberately: the
+/// provider's copy is what the phone and the web application already agree on,
+/// so it is the one most likely to be what somebody last looked at. A local
+/// edit lost this way can be made again. A phone edit overwritten by a stale
+/// local copy cannot, because nobody finds out it happened.
+///
+/// `last_seen` is the provider's own modification stamp as it was at the end of
+/// the previous sync. Comparing against that rather than against a clock avoids
+/// every question about whose clock is right, which is the usual way this kind
+/// of code goes wrong.
+pub fn resolve(
+    local_pending: bool,
+    remote_updated: Option<&str>,
+    last_seen: Option<&str>,
+) -> Resolution {
+    // Unequal covers the ordinary case and both odd ones: a task seen for the
+    // first time has no last_seen, and a provider that stopped sending a stamp
+    // is a provider we can no longer tell has changed, so we take its copy
+    // rather than assume it is stale.
+    let remote_changed = remote_updated != last_seen;
+    match (local_pending, remote_changed) {
+        (false, false) => Resolution::Nothing,
+        (true, false) => Resolution::Push,
+        (false, true) => Resolution::TakeRemote,
+        (true, true) => Resolution::TakeRemoteOverLocal,
     }
 }
 
@@ -118,6 +185,7 @@ pub async fn sync_google_tasks(
                 continue;
             }
         };
+        let held = cache.get_tasks_for_list(&entry.id).unwrap_or_default();
         for task in &tasks {
             if task.id.trim().is_empty() {
                 continue;
@@ -131,6 +199,10 @@ pub async fn sync_google_tasks(
                 }
                 continue;
             }
+            if is_unchanged(&held, &stored) {
+                result.unchanged += 1;
+                continue;
+            }
             match cache.save_task(&stored) {
                 Ok(()) => result.stored += 1,
                 Err(e) => result.errors.push(format!("{}: {e}", stored.title)),
@@ -138,6 +210,26 @@ pub async fn sync_google_tasks(
         }
     }
     Ok(result)
+}
+
+/// Whether the provider has left this task alone since the last sync.
+///
+/// Nothing local can be pending yet, because nothing in the interface can
+/// change a task, only make one. When that changes, this call gains a real
+/// first argument and [`resolve`] starts returning its other three answers.
+fn is_unchanged(held: &[TaskEntry], arriving: &TaskEntry) -> bool {
+    // A task we do not hold is never unchanged, whatever the stamps say. Both
+    // being absent compares equal, so without this a provider that omits its
+    // modification time would have every one of its tasks skipped on the first
+    // sync and never stored at all.
+    let Some(existing) = held.iter().find(|task| task.id == arriving.id) else {
+        return false;
+    };
+    resolve(
+        false,
+        arriving.remote_updated.as_deref(),
+        existing.remote_updated.as_deref(),
+    ) == Resolution::Nothing
 }
 
 /// Bring Microsoft's task lists and their tasks into the cache.
@@ -188,6 +280,10 @@ pub async fn sync_microsoft_tasks(
                 continue;
             }
             let stored = ms_task_to_entry(task, account_id, &entry.id);
+            if is_unchanged(&held, &stored) {
+                result.unchanged += 1;
+                continue;
+            }
             match cache.save_task(&stored) {
                 Ok(()) => result.stored += 1,
                 Err(e) => result.errors.push(format!("{}: {e}", stored.title)),
@@ -216,7 +312,128 @@ mod tests {
             parent_task_id: None,
             created_at: String::new(),
             updated_at: String::new(),
+            remote_updated: None,
         }
+    }
+
+    #[test]
+    fn test_a_task_the_provider_has_not_touched_is_not_rewritten() {
+        // What the stamp buys on the way down, before any push exists. A sync
+        // that rewrites every task every time can only report the size of the
+        // list, which tells nobody whether anything happened.
+        let mut held = task("ms:a");
+        held.remote_updated = Some("2026-07-01T10:00:00Z".to_string());
+        let mut arriving = task("ms:a");
+        arriving.remote_updated = Some("2026-07-01T10:00:00Z".to_string());
+
+        assert!(is_unchanged(&[held.clone()], &arriving));
+
+        arriving.remote_updated = Some("2026-07-02T09:00:00Z".to_string());
+        assert!(
+            !is_unchanged(&[held], &arriving),
+            "a real change was skipped"
+        );
+    }
+
+    #[test]
+    fn test_a_task_never_seen_before_is_stored() {
+        // Nothing held, so there is no stamp to match and it has to be written.
+        let arriving = task("ms:new");
+
+        assert!(!is_unchanged(&[], &arriving));
+    }
+
+    #[test]
+    fn test_the_summary_says_how_many_were_left_alone() {
+        let result = TaskSyncResult {
+            lists: 1,
+            stored: 2,
+            unchanged: 15,
+            deleted: 0,
+            errors: Vec::new(),
+        };
+
+        assert!(
+            result.summary().contains("15 unchanged"),
+            "{}",
+            result.summary()
+        );
+    }
+
+    #[test]
+    fn test_a_task_nobody_touched_is_left_alone() {
+        // The overwhelmingly common case, and it has to cost nothing: a sync
+        // that rewrites every task every time is a sync that churns the
+        // database and loses the ability to say what actually changed.
+        assert_eq!(
+            resolve(
+                false,
+                Some("2026-07-01T10:00:00Z"),
+                Some("2026-07-01T10:00:00Z")
+            ),
+            Resolution::Nothing
+        );
+    }
+
+    #[test]
+    fn test_a_change_made_here_and_nowhere_else_goes_up() {
+        assert_eq!(
+            resolve(
+                true,
+                Some("2026-07-01T10:00:00Z"),
+                Some("2026-07-01T10:00:00Z")
+            ),
+            Resolution::Push
+        );
+    }
+
+    #[test]
+    fn test_a_change_made_elsewhere_and_not_here_comes_down() {
+        assert_eq!(
+            resolve(
+                false,
+                Some("2026-07-02T09:00:00Z"),
+                Some("2026-07-01T10:00:00Z")
+            ),
+            Resolution::TakeRemote
+        );
+    }
+
+    #[test]
+    fn test_when_both_changed_the_provider_wins_and_it_is_said_out_loud() {
+        // The decision, and the honest half of it. The provider's copy is what
+        // the phone and the web application agree on, so it wins. But an edit
+        // made here is being discarded, and an edit that disappears with
+        // nothing said is indistinguishable from one that never saved.
+        assert_eq!(
+            resolve(
+                true,
+                Some("2026-07-02T09:00:00Z"),
+                Some("2026-07-01T10:00:00Z")
+            ),
+            Resolution::TakeRemoteOverLocal
+        );
+    }
+
+    #[test]
+    fn test_a_task_seen_for_the_first_time_comes_down() {
+        // No last_seen, so there is nothing to have been stale against.
+        assert_eq!(
+            resolve(false, Some("2026-07-02T09:00:00Z"), None),
+            Resolution::TakeRemote
+        );
+    }
+
+    #[test]
+    fn test_a_provider_that_stops_sending_a_stamp_is_believed_not_assumed_stale() {
+        // If we cannot tell whether the provider changed, taking its copy is
+        // the safe way to be wrong: at worst a local edit is replaced by an
+        // identical value. Assuming it is stale would push over a change we
+        // could not see.
+        assert_eq!(
+            resolve(false, None, Some("2026-07-01T10:00:00Z")),
+            Resolution::TakeRemote
+        );
     }
 
     #[test]
@@ -262,6 +479,7 @@ mod tests {
         let result = TaskSyncResult {
             lists: 2,
             stored: 17,
+            unchanged: 0,
             deleted: 0,
             errors: Vec::new(),
         };
@@ -274,6 +492,7 @@ mod tests {
         let result = TaskSyncResult {
             lists: 1,
             stored: 1,
+            unchanged: 0,
             deleted: 0,
             errors: Vec::new(),
         };
@@ -288,6 +507,7 @@ mod tests {
         let result = TaskSyncResult {
             lists: 1,
             stored: 4,
+            unchanged: 0,
             deleted: 2,
             errors: Vec::new(),
         };
@@ -306,6 +526,7 @@ mod tests {
         let result = TaskSyncResult {
             lists: 2,
             stored: 5,
+            unchanged: 0,
             deleted: 0,
             errors: vec!["Work: refused".to_string()],
         };
@@ -324,6 +545,7 @@ mod tests {
         let result = TaskSyncResult {
             lists: 3,
             stored: 5,
+            unchanged: 0,
             deleted: 0,
             errors: vec![
                 "Work: refused".to_string(),
