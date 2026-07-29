@@ -24,6 +24,14 @@ const ID_UNDERLINE: Id = ID_HIGHEST + 102;
 /// index rather than matching thirteen constants against thirteen variants and
 /// getting one pair wrong.
 const ID_FORMAT_FIRST: Id = ID_HIGHEST + 120;
+/// The last id the formatting run may take.
+///
+/// Nothing else in this file may use one between these two. The run grew by
+/// thirteen entries in a single change and the preview's two ids were sitting
+/// inside it, which was latent only because the preview's buttons raise one
+/// kind of event and the formatting handler listens for another. Nothing
+/// enforced that, so there is a test below instead of a hope.
+const ID_FORMAT_LAST: Id = ID_HIGHEST + 149;
 const ID_INSERT_LINK: Id = ID_HIGHEST + 150;
 const ID_INSERT_TABLE: Id = ID_HIGHEST + 152;
 const ID_SPELL_CHECK: Id = ID_HIGHEST + 153;
@@ -535,6 +543,15 @@ pub fn show_compose_dialog_full(
                 insert_table(&dialog, body_editor, &a11y);
                 return;
             }
+            // Inside the run kept for formatting, or not ours at all. The
+            // upper bound matters as much as the lower one: an id above the
+            // run subtracts to a large number rather than a negative one, so
+            // without this it depends on `Format::ALL` being short enough
+            // that the lookup misses.
+            if !(ID_FORMAT_FIRST..=ID_FORMAT_LAST).contains(&id) {
+                event.skip(true);
+                return;
+            }
             let Ok(index) = usize::try_from(id - ID_FORMAT_FIRST) else {
                 event.skip(true);
                 return;
@@ -782,12 +799,17 @@ pub fn show_compose_dialog_full(
     });
 
     // ── Show dialog modally (loop for preview-then-send) ───────────────
-    loop {
+    //
+    // Broken out of rather than returned from, so there is exactly one way
+    // past this point and the window is taken down on all of them. The body
+    // is a browser control, so a compose window left behind is a browser left
+    // behind, and somebody who writes mail all day opens a lot of them.
+    let outcome = 'compose: loop {
         let result = dialog.show_modal();
 
         // Nothing to read for the ways out that discard the message.
         if result != ID_SEND && result != ID_SAVE_DRAFT {
-            return ComposeResult::Cancelled;
+            break 'compose ComposeResult::Cancelled;
         }
 
         // Could not read it. Going on would send or save an empty message
@@ -807,7 +829,7 @@ pub fn show_compose_dialog_full(
             _ if result == ID_SEND => {
                 if data.to.trim().is_empty() {
                     tracing::warn!("Send attempted with empty To field");
-                    return ComposeResult::Cancelled;
+                    break 'compose ComposeResult::Cancelled;
                 }
                 // Before the preview rather than after it. Somebody who has
                 // already confirmed a message is somebody who has decided, and
@@ -819,18 +841,34 @@ pub fn show_compose_dialog_full(
                 if preview_before_send {
                     // Show preview-before-send dialog
                     match show_send_preview(&dialog, &data, account_names) {
-                        PreviewDecision::ConfirmSend => return ComposeResult::Send(data),
+                        PreviewDecision::ConfirmSend => break 'compose ComposeResult::Send(data),
                         PreviewDecision::GoBack => continue, // re-show compose dialog
                     }
                 } else {
-                    return ComposeResult::Send(data);
+                    break 'compose ComposeResult::Send(data);
                 }
             }
-            // The only other way here: the guard above returns for every
+            // The only other way here: the guard above breaks for every
             // result that is neither of these two.
-            _ => return ComposeResult::SaveDraft(data),
+            _ => break 'compose ComposeResult::SaveDraft(data),
         }
+    };
+
+    // Stopped before the window goes, not after. Both are owned by it, and a
+    // timer that fires into a handler that is no longer there is a crash
+    // rather than a leak. Stopping is enough: each frees itself when its value
+    // drops at the end of this function.
+    if let Some(timer) = &_autosave_timer {
+        timer.stop();
     }
+    spell_later.stop();
+    // wxWidgets does not free a dialog when the Rust value goes; the docs say
+    // to destroy it, and wx_calendar has always done so. Nothing here did, so
+    // every compose window ever opened stayed for the life of the session,
+    // and since the body became a web view that is a browser process tree
+    // each time.
+    dialog.destroy();
+    outcome
 }
 
 /// Run a script in the editor, and put the keyboard back into the editor.
@@ -910,7 +948,7 @@ fn confirm_spelling(parent: &Dialog, data: &ComposeData) -> bool {
     // Send is the default, so Enter sends. Somebody who meant to send and
     // heard the warning should not have to find a button, and the words are in
     // the question, so the decision can be made from hearing it alone.
-    let answer = MessageDialog::builder(
+    let asker = MessageDialog::builder(
         parent,
         // The buttons are Yes and No, which this builder cannot relabel, so
         // the question has to say what each one means. "Send anyway?" answered
@@ -924,8 +962,9 @@ Send it anyway?"
         "Check the spelling",
     )
     .with_style(MessageDialogStyle::YesNo | MessageDialogStyle::IconQuestion)
-    .build()
-    .show_modal();
+    .build();
+    let answer = asker.show_modal();
+    asker.destroy();
 
     answer == ID_YES
 }
@@ -1200,6 +1239,10 @@ fn ask_about_word(
 
     let answer = asker.show_modal();
     let typed = replacement.get_value();
+    // Read first, then destroy: the field belongs to the dialog. This is the
+    // worst of the leaks, because it is one per word rather than one per
+    // window, so a message with thirty misspellings left thirty behind.
+    asker.destroy();
     match answer {
         ID_SPELL_CHANGE => SpellChoice::Change(typed),
         ID_SPELL_CHANGE_ALL => SpellChoice::ChangeAll(typed),
@@ -1284,15 +1327,16 @@ fn insert_table(
 
     asker.set_sizer_and_fit(sizer, true);
     rows.set_focus();
-    if asker.show_modal() != ID_OK {
-        return;
-    }
-
+    let answer = asker.show_modal();
     let (rows, columns, header) = (
         rows.value().max(0) as usize,
         columns.value().max(0) as usize,
         header.get_value(),
     );
+    asker.destroy();
+    if answer != ID_OK {
+        return;
+    }
     match editor_document::insert_table_script(rows, columns, header) {
         Some(script) => {
             run_in_editor(&body_editor, &script);
@@ -1324,10 +1368,13 @@ fn insert_link(
     use crate::presentation::accessibility::announcements::Priority;
 
     let entry = TextEntryDialog::builder(dialog, "Address to link to:", "Insert Link").build();
-    if entry.show_modal() != ID_OK {
+    let answer = entry.show_modal();
+    let typed = entry.get_value();
+    entry.destroy();
+    if answer != ID_OK {
         return;
     }
-    let Some(typed) = entry.get_value() else {
+    let Some(typed) = typed else {
         return;
     };
     if typed.trim().is_empty() {
@@ -1356,8 +1403,9 @@ enum PreviewDecision {
     GoBack,
 }
 
-const ID_CONFIRM_SEND: Id = ID_HIGHEST + 120;
-const ID_GO_BACK: Id = ID_HIGHEST + 121;
+// Clear of the formatting run, which reaches ID_HIGHEST + 149.
+const ID_CONFIRM_SEND: Id = ID_HIGHEST + 180;
+const ID_GO_BACK: Id = ID_HIGHEST + 181;
 
 /// Show a read-only preview of the composed email before sending.
 fn show_send_preview(
@@ -1476,7 +1524,11 @@ fn show_send_preview(
         }
     });
 
-    if dlg.show_modal() == ID_CONFIRM_SEND {
+    let answer = dlg.show_modal();
+    // With the browser control the preview renders into. One per message sent,
+    // and the compose window holds another.
+    dlg.destroy();
+    if answer == ID_CONFIRM_SEND {
         PreviewDecision::ConfirmSend
     } else {
         PreviewDecision::GoBack
@@ -1486,6 +1538,55 @@ fn show_send_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_the_formatting_run_fits_the_range_kept_for_it() {
+        // The run is one id per Format::ALL, and Format::ALL grows. Without
+        // this, adding a fourteenth command silently walks into whatever is
+        // next.
+        let last = ID_FORMAT_FIRST + editor_document::Format::ALL.len() as Id - 1;
+
+        assert!(
+            last <= ID_FORMAT_LAST,
+            "the formatting run reaches {last} and only {ID_FORMAT_LAST} is kept for it"
+        );
+    }
+
+    #[test]
+    fn test_nothing_else_takes_an_id_the_formatting_run_needs() {
+        // ID_CONFIRM_SEND was numerically identical to Bold and ID_GO_BACK to
+        // Italic. It never fired, because the preview's buttons raise one kind
+        // of event and the formatting handler listens for another, and nothing
+        // anywhere enforced that. The run grew by thirteen entries in a single
+        // change with nobody checking what was already in the range.
+        for (name, id) in [
+            ("ID_BOLD", ID_BOLD),
+            ("ID_ITALIC", ID_ITALIC),
+            ("ID_UNDERLINE", ID_UNDERLINE),
+            ("ID_INSERT_LINK", ID_INSERT_LINK),
+            ("ID_INSERT_TABLE", ID_INSERT_TABLE),
+            ("ID_FORMAT_MENU", ID_FORMAT_MENU),
+            ("ID_SPELL_CHECK", ID_SPELL_CHECK),
+            ("ID_SPELL_CHANGE", ID_SPELL_CHANGE),
+            ("ID_SPELL_CHANGE_ALL", ID_SPELL_CHANGE_ALL),
+            ("ID_SPELL_IGNORE", ID_SPELL_IGNORE),
+            ("ID_SPELL_IGNORE_ALL", ID_SPELL_IGNORE_ALL),
+            ("ID_SPELL_ADD", ID_SPELL_ADD),
+            ("ID_SEND", ID_SEND),
+            ("ID_SAVE_DRAFT", ID_SAVE_DRAFT),
+            ("ID_DISCARD", ID_DISCARD),
+            ("ID_ATTACH", ID_ATTACH),
+            ("ID_UNDO", ID_UNDO),
+            ("ID_REDO", ID_REDO),
+            ("ID_CONFIRM_SEND", ID_CONFIRM_SEND),
+            ("ID_GO_BACK", ID_GO_BACK),
+        ] {
+            assert!(
+                !(ID_FORMAT_FIRST..=ID_FORMAT_LAST).contains(&id),
+                "{name} sits inside the range kept for the formatting run"
+            );
+        }
+    }
 
     #[test]
     fn test_reply_subject_prepends_re() {

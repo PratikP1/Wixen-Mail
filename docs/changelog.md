@@ -7,6 +7,8 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Fixed
 
+- **Compose windows are let go of when they close.** Every one stayed for the life of the session, and since the message body became a web view, each one held a browser. The preview before sending held a second, and the spell checker built a new dialog for every word it asked about, so checking a message with thirty misspellings in it left thirty behind. On a machine with modest memory, a working day of writing mail ended with the application unusable, which for this audience means losing your mail client in the middle of a job.
+
 - **Wixen Mail now says when an account needs signing in again.** Sending task changes needs more permission than reading them, so an account you set up before this version keeps syncing downwards and has every change refused. That showed as "1 problem" on the status line, after every sync, forever, with nothing saying what would fix it. It now says "Sign in to this account again to send task changes", which is the only thing that does.
 
 - **Dictation gets the spelling sound, which it never did.** The editor listened for typing and returned on everything else, so if you write by dictating or with Windows Voice Access, the sound at the end of a misspelled word was simply off, and nothing said so. It works now. Words finished by composition, which is how Japanese, Chinese and Korean are written, are picked up too.
