@@ -137,6 +137,27 @@ harmless one.
 Messages with nothing attached have no list at all, so there is nothing extra to
 tab past on ordinary mail.
 
+#### Reading a conversation as headings
+
+The reader is a text control, which has no headings, so `H` does nothing in it.
+`Ctrl+Down` and `Ctrl+Up` move between the messages of a conversation instead,
+and they always have.
+
+When a thread is long enough that one key at a time is the slow way round, the
+conversation dialog has an **As Headings** button. It opens the whole
+conversation as a page in a window of its own, where every message is a real
+heading and `H` moves between them at the level the reply sits at.
+
+That window shows the conversation and nothing else, which is what makes it safe
+to use a browser control here at all. What used to trap people was the preview
+pane: a browser sharing a window with a folder tree and a message list, where
+`F6` has to cycle panes and `Escape` has to return to the list, and the browser
+swallowed both. Here there is nowhere else to go, so closing the window is the
+way out and there is nothing to escape from.
+
+The text reader stays the default and stays where it was. This is a second way
+of reading the same thread, not a replacement.
+
 #### The security warning
 
 When your mail provider's filter marked a message as spam, or when the message

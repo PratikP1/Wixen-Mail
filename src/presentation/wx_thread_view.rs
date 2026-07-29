@@ -15,6 +15,9 @@ use crate::presentation::accessibility::names::set_accessible_name;
 use std::sync::Arc;
 use wxdragon::prelude::*;
 
+/// The dialog's third answer, alongside the stock OK and Cancel.
+const ID_HEADINGS: Id = ID_HIGHEST + 950;
+
 /// One message as the tree shows it.
 #[derive(Debug, Clone)]
 pub struct ThreadNode {
@@ -36,6 +39,13 @@ pub struct ThreadNode {
 pub enum ThreadChoice {
     /// Show the whole conversation as one document.
     WholeConversation,
+    /// Show the whole conversation as a page, with real headings.
+    ///
+    /// A second reading surface rather than a replacement. The text one is
+    /// focusable, arrow-navigable and searchable, and it has no headings, so
+    /// this is the answer when a thread is long enough that moving between
+    /// messages one key at a time is the slow way round.
+    AsHeadings,
     /// Show this message alone.
     Message(i64),
     /// Nothing; go back to the list.
@@ -94,7 +104,8 @@ pub fn show_thread_dialog(
     let hint = StaticText::builder(&dlg)
         .with_label(
             "Enter on the first row opens the whole conversation. Enter on a message opens \
-             that message. Escape goes back to the list.",
+             that message. As Headings opens the whole conversation as a page, where H moves \
+             between messages. Escape goes back to the list.",
         )
         .build();
     sizer.add(&hint, 0, SizerFlag::Expand | SizerFlag::All, 8);
@@ -108,11 +119,16 @@ pub fn show_thread_dialog(
         .with_label("&Open")
         .with_id(ID_OK)
         .build();
+    let headings = Button::builder(&dlg)
+        .with_label("As &Headings")
+        .with_id(ID_HEADINGS)
+        .build();
     let cancel = Button::builder(&dlg)
         .with_label("Cancel")
         .with_id(ID_CANCEL)
         .build();
     buttons.add(&open, 0, SizerFlag::All, 4);
+    buttons.add(&headings, 0, SizerFlag::All, 4);
     buttons.add(&cancel, 0, SizerFlag::All, 4);
     sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
     dlg.set_sizer(sizer, true);
@@ -167,6 +183,7 @@ pub fn show_thread_dialog(
 
     tree.on_item_activated(move |_| dlg.end_modal(ID_OK));
     open.on_click(move |_| dlg.end_modal(ID_OK));
+    headings.on_click(move |_| dlg.end_modal(ID_HEADINGS));
     cancel.on_click(move |_| dlg.end_modal(ID_CANCEL));
 
     let _ = a11y.announce(
@@ -174,10 +191,12 @@ pub fn show_thread_dialog(
         Priority::Normal,
     );
 
-    if dlg.show_modal() == ID_OK {
-        chosen.borrow().clone()
-    } else {
-        ThreadChoice::Cancelled
+    match dlg.show_modal() {
+        ID_OK => chosen.borrow().clone(),
+        // Always the whole thread, whichever row the tree was on. The point of
+        // the page is the shape of the conversation, and one message has none.
+        ID_HEADINGS => ThreadChoice::AsHeadings,
+        _ => ThreadChoice::Cancelled,
     }
 }
 

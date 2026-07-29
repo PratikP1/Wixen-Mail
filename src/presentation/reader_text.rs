@@ -241,6 +241,49 @@ fn warning_for(level: crate::service::safety::Safety, reasons: &[String]) -> Opt
     })
 }
 
+/// Compose a conversation as HTML, so its messages are real headings.
+///
+/// The text control the reader normally uses has no headings for a screen
+/// reader to find, so `H` does nothing in it and moving between messages is
+/// `Ctrl+Down` instead. That works, and it is not the same as being able to
+/// press `H` in a fifty message thread.
+///
+/// This is the same composition with `h1` to `h6` around the lines that are
+/// already landmarks, for a window that can render them. The levels are the
+/// ones [`conversation`] computes, so both surfaces agree about the thread's
+/// shape rather than each having their own idea of it.
+///
+/// **Every body goes through the sanitiser first.** A message body is written
+/// by a stranger, and this is the one path that puts it somewhere that will
+/// execute what it finds. The plain text surface is safe because a text control
+/// renders nothing; this one is only safe because of the line below.
+pub fn conversation_html(subject: &str, parts: &[ConversationPart]) -> String {
+    // `HtmlRenderer::render_thread` already does this and had no callers, so
+    // this is the adapter that gives it one rather than a second copy of the
+    // same composition. Two of them would be two chances to disagree about
+    // what level a reply is at, and the whole point of this surface is that
+    // the levels are right.
+    HtmlRenderer::new().render_thread(
+        subject,
+        &parts
+            .iter()
+            .map(|part| crate::presentation::html_renderer::ThreadPart {
+                sender: part.message.from.trim().to_string(),
+                date: part.message.date.trim().to_string(),
+                subject: part.message.subject.trim().to_string(),
+                body: if part.body.trim().is_empty() {
+                    "This message has no text, or it has not been downloaded \
+                     yet."
+                        .to_string()
+                } else {
+                    part.body.clone()
+                },
+                depth: part.depth,
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
 /// Compose a PDF attachment for the reader.
 ///
 /// The note goes first, before a word of the document, because what it says
@@ -666,6 +709,104 @@ mod tests {
 
         assert!(row.starts_with("Attachment"), "{row}");
         assert!(row.contains("PDF document"), "{row}");
+    }
+
+    fn thread_of(bodies: &[(&str, usize)]) -> Vec<ConversationPart> {
+        bodies
+            .iter()
+            .enumerate()
+            .map(|(index, (body, depth))| {
+                let mut message = message();
+                message.from = format!("Person {index} <p{index}@example.com>");
+                ConversationPart {
+                    message,
+                    body: (*body).to_string(),
+                    depth: *depth,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_a_conversation_becomes_real_headings() {
+        // The reason this surface exists. The text control has no headings, so
+        // H does nothing in it; in a fifty message thread that is the
+        // difference between navigating and reading the whole thing.
+        let html = conversation_html(
+            "Quarterly report",
+            &thread_of(&[("First.", 0), ("Second.", 1), ("Third.", 2)]),
+        );
+
+        assert!(html.contains("<h1>"), "no document heading: {html}");
+        assert!(html.contains("<h2"), "no message heading: {html}");
+        assert!(html.contains("<h3"), "no reply heading: {html}");
+    }
+
+    #[test]
+    fn test_the_heading_levels_agree_with_the_text_surface() {
+        // Two surfaces onto the same conversation. If they disagree about how
+        // deep a reply is, moving between them changes the shape of the thread
+        // under somebody, which is worse than only having one of them.
+        let parts = thread_of(&[("a", 0), ("b", 1), ("c", 2), ("d", 9)]);
+
+        let doc = conversation(" Report ", &parts);
+        let html = conversation_html(" Report ", &parts);
+
+        // The text side's landmarks skip the document title at index 0.
+        for landmark in doc.landmarks.iter().skip(1) {
+            assert!(
+                html.contains(&format!("<h{}", landmark.level)),
+                "the text surface has a level {} heading and the HTML one does \
+                 not:\n{html}",
+                landmark.level
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_body_from_a_stranger_cannot_bring_a_script_with_it() {
+        // The one real risk of this surface. The text control renders nothing,
+        // so it was safe by construction; this one puts a stranger's markup
+        // somewhere that will run what it finds.
+        let html = conversation_html(
+            "Invoice",
+            &thread_of(&[(
+                "<p>Hello</p><script>alert('x')</script><img src=x onerror=alert(1)>",
+                0,
+            )]),
+        );
+
+        assert!(!html.contains("<script"), "script survived: {html}");
+        assert!(!html.contains("onerror"), "handler survived: {html}");
+        assert!(
+            html.contains("Hello"),
+            "the message itself was lost: {html}"
+        );
+    }
+
+    #[test]
+    fn test_a_sender_cannot_forge_a_heading_out_of_their_own_name() {
+        // The name is a string from a message header, so it is a stranger's
+        // input in a position where markup would be read as structure.
+        let mut parts = thread_of(&[("Hello.", 0)]);
+        parts[0].message.from = "<h1>Your bank</h1>".to_string();
+
+        let html = conversation_html("Invoice", &parts);
+
+        assert!(
+            html.contains("&lt;h1&gt;"),
+            "the sender's markup was not escaped: {html}"
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_no_body_says_so_rather_than_rendering_blank() {
+        // A message that has not been downloaded and a message with nothing in
+        // it are different facts, and a heading with nothing under it looks
+        // like the second when it is usually the first.
+        let html = conversation_html("Report", &thread_of(&[("", 0)]));
+
+        assert!(html.contains("not been downloaded"), "{html}");
     }
 
     #[test]

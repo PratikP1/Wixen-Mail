@@ -275,7 +275,20 @@ impl HtmlRenderer {
                 html_escape::encode_text(body)
             )
         };
+        self.wrap_prepared(&content)
+    }
 
+    /// Put the document shell around markup that is already safe.
+    ///
+    /// For content this application assembled itself out of already-sanitised
+    /// pieces, where sanitising a second time would be wrong rather than
+    /// merely wasteful: under the plain-text setting `sanitize_html` escapes
+    /// its input, which would turn a conversation's own headings into visible
+    /// angle brackets and take away the structure the surface exists for.
+    ///
+    /// Everything that comes from a message body has to have been through
+    /// [`Self::sanitize_html`] before it reaches here.
+    pub fn wrap_prepared(&self, content: &str) -> String {
         format!(
             r#"<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><style>
@@ -373,7 +386,11 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
             body.push('\n');
         }
 
-        self.wrap_for_webview(&body)
+        // `wrap_prepared`, not `wrap_for_webview`. Every body above has
+        // already been through the sanitiser, and sanitising the assembled
+        // document again would escape the headings this whole surface exists
+        // to produce whenever the plain-text setting is on.
+        self.wrap_prepared(&body)
     }
 
     /// The only URLs this application will hand to the operating system.

@@ -1782,6 +1782,14 @@ document.addEventListener('keydown', function(e) {
                         wx_thread_view::ThreadChoice::WholeConversation => {
                             open_conversation(&reader, &thread_cache, &subject, &nodes);
                         }
+                        wx_thread_view::ThreadChoice::AsHeadings => {
+                            show_conversation_as_page(
+                                &frame,
+                                &a11y,
+                                &subject,
+                                &conversation_parts(&thread_cache, &nodes),
+                            );
+                        }
                         wx_thread_view::ThreadChoice::Message(id) => {
                             // The lock is taken and released before anything
                             // else runs. Holding it across a widget call
@@ -3294,7 +3302,21 @@ fn open_conversation(
     subject: &str,
     nodes: &[wx_thread_view::ThreadNode],
 ) {
-    let parts: Vec<reader_text::ConversationPart> = nodes
+    reader.open(reader_text::conversation(
+        subject,
+        &conversation_parts(cache, nodes),
+    ));
+}
+
+/// One conversation's messages with their bodies, ready to compose.
+///
+/// Shared by the two reading surfaces, so both are composed from exactly the
+/// same thing and neither can end up showing a message the other does not.
+fn conversation_parts(
+    cache: &Option<Arc<MessageCache>>,
+    nodes: &[wx_thread_view::ThreadNode],
+) -> Vec<reader_text::ConversationPart> {
+    nodes
         .iter()
         .map(|node| {
             let body = cache
@@ -3331,8 +3353,7 @@ fn open_conversation(
                 depth: node.depth,
             }
         })
-        .collect();
-    reader.open(reader_text::conversation(subject, &parts));
+        .collect()
 }
 
 /// The messages of one conversation, parents before their children.
@@ -4834,6 +4855,89 @@ fn spawn_server_change(
             }
         }
     });
+}
+
+/// Show a conversation as a page, so its messages are real headings.
+///
+/// A second reading surface, opened on purpose, never the default. The text
+/// control stays the way a message is read: it is focusable, arrow-navigable,
+/// searchable, and Escape leaves it. This one exists because a text control has
+/// no headings for a screen reader to find, so `H` does nothing in it, and in a
+/// long thread that is the difference between navigating and listening to all
+/// of it.
+///
+/// The objection that kept a WebView out of the preview does not apply to a
+/// window whose only content is the document. What trapped people was a browser
+/// sharing a window with a folder tree and a message list, where `F6` has to
+/// cycle panes and Escape has to return to the list and the browser swallows
+/// both. There is nowhere to escape to here, so there is nothing to escape
+/// from, and closing the window is the way out.
+///
+/// Two things this gets right that the preview pane got wrong: it does not take
+/// focus when it appears, and closing it works before anything else about it
+/// does.
+fn show_conversation_as_page(
+    parent: &Frame,
+    a11y: &Arc<Accessibility>,
+    subject: &str,
+    parts: &[reader_text::ConversationPart],
+) {
+    let frame = Frame::builder()
+        .with_parent(parent)
+        .with_title(&format!("{subject} - headings - Wixen Mail"))
+        .with_size(Size::new(900, 700))
+        .build();
+
+    let page = WebView::builder(&frame)
+        .with_backend(WebViewBackend::Edge)
+        .build();
+    set_accessible_name(&page, "Conversation");
+    page.enable_context_menu(false);
+    page.enable_access_to_dev_tools(false);
+    // The browser does not get this application's keys.
+    page.enable_browser_accelerator_keys(false);
+    // A sender does not choose what this machine opens.
+    page.on_navigating(|event: WebViewEventData| {
+        if let Some(url) = event.get_string()
+            && !url.is_empty()
+            && url != "about:blank"
+            && !url.starts_with("about:")
+            && !url.starts_with("data:")
+        {
+            event.event.event.veto();
+            match HtmlRenderer::safe_external_url(&url) {
+                Some(safe) => {
+                    let _ = open::that(&safe);
+                }
+                None => tracing::warn!("Refused to open unsafe URL from message: {}", url),
+            }
+        }
+    });
+
+    page.set_page(
+        &reader_text::conversation_html(subject, parts),
+        "about:blank",
+    );
+
+    // Closing has to work, and a frame that is destroyed while its WebView is
+    // still hosting an out of process browser takes the application with it.
+    // Hidden and dropped is what the reader window does and it is what works.
+    frame.on_close(move |event| {
+        if let WindowEventData::General(ref base) = event {
+            base.veto();
+        }
+        frame.show(false);
+    });
+
+    frame.show(true);
+    frame.raise();
+    let _ = a11y.announce(
+        &format!(
+            "{subject}, as headings. Press H to move between messages. Close \
+             the window to go back."
+        ),
+        crate::presentation::accessibility::announcements::Priority::Normal,
+    );
 }
 
 /// What Google's threat lists say about the links in one message body.
