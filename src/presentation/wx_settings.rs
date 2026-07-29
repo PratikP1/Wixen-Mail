@@ -49,6 +49,7 @@ struct SettingsWidgets {
     // Advanced
     log_level: Choice,
     download_folder: TextCtrl,
+    check_links_with_google: CheckBox,
     // Feedback channels, one checkbox per channel in Channel::ALL order.
     feedback: Vec<CheckBox>,
 }
@@ -112,7 +113,8 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 
     // ── Tab 7: Advanced
     let advanced_panel = Panel::builder(&notebook).build();
-    let (log_level, download_folder) = build_advanced_tab(&advanced_panel, config);
+    let (log_level, download_folder, check_links_with_google) =
+        build_advanced_tab(&advanced_panel, config);
     notebook.add_page(&advanced_panel, "Advanced", false, None);
 
     root_sizer.add(&notebook, 1, SizerFlag::Expand | SizerFlag::All, 8);
@@ -162,6 +164,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         default_reminder,
         log_level,
         download_folder,
+        check_links_with_google,
         feedback,
     };
 
@@ -589,8 +592,8 @@ fn build_calendar_pim_tab(
     (view_choice, weekends_cb, first_day_choice, rem_field)
 }
 
-/// Advanced: log level, download folder, cache info.
-fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl) {
+/// Advanced: log level, download folder, cache info, link checking.
+fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, CheckBox) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Logging
@@ -667,8 +670,39 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl) {
 
     sizer.add_sizer(&store_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
+    // -- Link checking
+    //
+    // Off unless somebody turns it on, and the label says exactly what is sent
+    // rather than asking anybody to take "privacy-preserving" on trust. The
+    // whole reason this is offerable at all is that the lists come here and
+    // the comparison happens here.
+    let links_sec = section(panel, "Link checking");
+
+    let links_box = CheckBox::builder(panel)
+        .with_label("Check links against Google Safe Browsing")
+        .build();
+    set_accessible_name(&links_box, "Check links against Google Safe Browsing");
+    links_box.set_value(config.check_links_with_google);
+    links_sec.add(&links_box, 0, SizerFlag::All, 4);
+
+    let links_hint = StaticText::builder(panel)
+        .with_label(
+            "Google's lists of known phishing and malware sites are downloaded to 
+             this computer, and links are compared here. Your links are not sent to 
+             Google. Only if a link matches one of the downloaded entries do four 
+             bytes of it go to Google to confirm, and those four bytes stand for 
+             millions of possible addresses. Nothing about the sender, the subject 
+             or the message is ever sent.
+             
+             Needs a Google API key in oauth.toml. Without one this does nothing.",
+        )
+        .build();
+    links_sec.add(&links_hint, 0, SizerFlag::All, 4);
+
+    sizer.add_sizer(&links_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
     panel.set_sizer(sizer, true);
-    (log_choice, dl_field)
+    (log_choice, dl_field, links_box)
 }
 
 /// Feedback channels: how the application tells you something happened.
@@ -829,6 +863,7 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     if !path.is_empty() {
         cfg.download_folder = std::path::PathBuf::from(path);
     }
+    cfg.check_links_with_google = w.check_links_with_google.is_checked();
 
     cfg
 }

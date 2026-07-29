@@ -952,6 +952,10 @@ document.addEventListener('keydown', function(e) {
             // One reader window, reused. Tabs inside it rather than a window
             // per message: a dozen top level windows is a dozen things to find
             // your way back out of, and Ctrl+Tab through tabs is one gesture.
+            // Once at startup, and only when link checking is switched on and
+            // has a key. Everything about it is inert otherwise.
+            spawn_threat_list_refresh(&runtime);
+
             let reader = Rc::new(wx_reader::ReaderWindow::new(&frame, &a11y));
             reader.wire_menu();
             reader.on_save_attachment({
@@ -4832,6 +4836,67 @@ fn spawn_server_change(
     });
 }
 
+/// What Google's threat lists say about the links in one message body.
+///
+/// `None` unless three things are all true: the reader turned the setting on,
+/// an API key exists, and one of the links hashes to a prefix on the copy of
+/// the list held here. Any of them missing is the ordinary case and produces no
+/// request at all.
+///
+/// Not listed is not the same as safe, so a clean result is `None` rather than
+/// a verdict saying nothing is wrong. This application does not tell anybody a
+/// message is fine.
+async fn safe_browsing_verdict(body: &str) -> Option<crate::service::safety::Verdict> {
+    let wanted = crate::data::config::ConfigManager::load_stored()
+        .ok()
+        .is_some_and(|config| config.app_config().check_links_with_google);
+    if !wanted {
+        return None;
+    }
+    let key = crate::service::safebrowsing::api_key()?;
+    let cache_dir = AppPaths::resolve().ok()?.cache_dir();
+    let links = crate::service::safebrowsing::links_in(body);
+    if links.is_empty() {
+        return None;
+    }
+    crate::service::safebrowsing::check_links(&key, &cache_dir, &links).await
+}
+
+/// Bring the threat lists up to date, if they are being used at all.
+///
+/// Started once when the application does. The request carries which lists are
+/// wanted and what this copy already has, and nothing else: it would be
+/// byte-identical on a machine that had never received a message.
+fn spawn_threat_list_refresh(rt: &Arc<Runtime>) {
+    let wanted = crate::data::config::ConfigManager::load_stored()
+        .ok()
+        .is_some_and(|config| config.app_config().check_links_with_google);
+    if !wanted {
+        return;
+    }
+    let Some(key) = crate::service::safebrowsing::api_key() else {
+        // Switched on with no key is a state worth a line in the log, because
+        // from the outside it looks identical to switched on and working.
+        tracing::info!(
+            "Link checking is switched on but there is no Safe Browsing API \
+             key, so no lists will be fetched"
+        );
+        return;
+    };
+    let Ok(paths) = AppPaths::resolve() else {
+        return;
+    };
+    rt.spawn(async move {
+        if let Err(e) = crate::service::safebrowsing::refresh_lists(&key, &paths.cache_dir()).await
+        {
+            // Logged rather than announced. A list that could not be refreshed
+            // is a gap in a check nobody asked for right now, not something to
+            // interrupt somebody's reading over.
+            tracing::warn!("Threat lists could not be refreshed: {}", e);
+        }
+    });
+}
+
 /// Fetch an attachment and open it as a tab of its own.
 ///
 /// Only PDFs so far, and the reader window refuses anything else before it gets
@@ -5116,10 +5181,23 @@ fn spawn_body_fetch(
                 parsed.body_html.as_deref(),
             );
             if let Ok(report) = report {
-                let ours = crate::service::safety::from_analysis(
+                let mut ours = crate::service::safety::from_analysis(
                     report.phishing_risk.into(),
                     &report.phishing_indicators,
                 );
+                // Google's lists, if the reader asked for them and a key
+                // exists. A fourth source merged like the others, worst
+                // winning. Nothing is sent unless a link's hash collides with
+                // the copy of the list held on this machine, which for
+                // ordinary correspondence is never.
+                let body_for_links = format!(
+                    "{}\n{}",
+                    parsed.body_plain.as_deref().unwrap_or_default(),
+                    parsed.body_html.as_deref().unwrap_or_default()
+                );
+                if let Some(google) = handle.block_on(safe_browsing_verdict(&body_for_links)) {
+                    ours = ours.and(google);
+                }
                 if ours.level != crate::service::safety::Safety::Ordinary {
                     let merged = cache
                         .message_safety(message_row_id)

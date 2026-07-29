@@ -25,3 +25,18 @@ client_secret = ""
 [outlook]
 client_id = ""
 client_secret = ""
+
+# ── Google Safe Browsing (optional) ──────────────────────────────────────────
+# Only needed if you switch on "Check links against Google Safe Browsing" in
+# Settings, Advanced. It is an ordinary API key rather than OAuth, so it does
+# not involve Google's verification process.
+#
+# Get one at: https://console.cloud.google.com/apis/credentials
+# Enable the "Safe Browsing API" for the project first.
+# Env var: WIXEN_SAFE_BROWSING_KEY
+#
+# What this key is used for: downloading Google's public lists of known
+# phishing and malware sites to this computer. Links are compared here. Your
+# links are never sent. See docs/privacy.md.
+[safe_browsing]
+api_key = ""

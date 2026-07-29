@@ -18,6 +18,14 @@ pub struct AppConfig {
     pub download_folder: PathBuf,
     /// Check for updates on startup
     pub check_updates: bool,
+    /// Whether to check links against Google Safe Browsing.
+    ///
+    /// Off unless somebody turns it on, and inert without an API key. What it
+    /// sends is in the setting's own text and in docs/privacy.md: the lists
+    /// come down to this machine and links are compared here, so nothing goes
+    /// to Google for ordinary mail.
+    #[serde(default)]
+    pub check_links_with_google: bool,
     /// Theme name
     pub theme: String,
     /// Font size
@@ -128,6 +136,7 @@ impl Default for AppConfig {
             version: env!("CARGO_PKG_VERSION").to_string(),
             download_folder: dirs::download_dir().unwrap_or_else(|| PathBuf::from(".")),
             check_updates: true,
+            check_links_with_google: false,
             theme: "default".to_string(),
             font_size: 12,
             date_style: default_date_style(),

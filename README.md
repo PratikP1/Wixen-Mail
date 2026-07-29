@@ -71,6 +71,7 @@ cargo build
 - [Provider Setup](docs/PROVIDER_SETUP.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Accessibility Guide](docs/accessibility.md)
+- [Privacy](docs/privacy.md)
 
 ### Technical
 
