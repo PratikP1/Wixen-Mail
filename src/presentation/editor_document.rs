@@ -446,31 +446,32 @@ img {{ max-width: 100%; height: auto; }}
     selection.addRange(after);
   }}
 
+  // ── Recognising, kept apart from applying ──────────────────────────────
+  //
+  // Everything in this block is a string question with a string answer: no
+  // document, no selection, no command. That is what makes it testable, and
+  // it is where every rule bug found so far has been. `window.wixenRules`
+  // below is how the tests reach them; nothing in the page uses that name.
+
   // A marker only counts as a marker when it is the whole line so far.
   // Otherwise a sentence ending in a hyphen becomes a bullet at the next
   // space, in the middle of writing, which is the behaviour people hate.
-  function blockMarkdown(at) {{
-    if (at.node.previousSibling) {{ return; }}
-    var line = at.before.slice(0, at.before.length - 1).replace(/^\s+/, '');
-    var rule = null;
+  function blockRule(line) {{
+    var trimmed = line.replace(/^\s+/, '');
     for (var n = 0; n < mdBlocks.length; n++) {{
-      if (mdBlocks[n].marker === line) {{ rule = mdBlocks[n]; break; }}
+      if (mdBlocks[n].marker === trimmed) {{ return mdBlocks[n]; }}
     }}
-    if (!rule && mdNumbered.test(line)) {{ rule = mdBlocks.numbered; }}
-    if (!rule) {{ return; }}
-    selectBack(at.node, 0, at.offset);
-    document.execCommand('delete');
-    document.execCommand(rule.command, false, rule.value);
-    post({{ kind: 'format', index: rule.index }});
+    if (mdNumbered.test(trimmed)) {{ return mdBlocks.numbered; }}
+    return null;
   }}
 
-  function inlineMarkdown(typed, at) {{
+  function inlineRule(typed, before) {{
     for (var n = 0; n < mdInline.length; n++) {{
       var style = mdInline[n];
       var mark = style.delimiter;
       if (typed !== mark.charAt(mark.length - 1)) {{ continue; }}
-      if (at.before.slice(-mark.length) !== mark) {{ continue; }}
-      var inner = at.before.slice(0, at.before.length - mark.length);
+      if (before.slice(-mark.length) !== mark) {{ continue; }}
+      var inner = before.slice(0, before.length - mark.length);
       var open = inner.lastIndexOf(mark);
       if (open < 0) {{ continue; }}
       // "**word*" is not an italic wrapping an asterisk. Without this the
@@ -479,30 +480,80 @@ img {{ max-width: 100%; height: auto; }}
       if (open > 0 && inner.charAt(open - 1) === mark.charAt(0)) {{ continue; }}
       var content = inner.slice(open + mark.length);
       if (!content.length || /^\s|\s$/.test(content)) {{ continue; }}
-      selectBack(at.node, open, at.offset);
-      document.execCommand('insertHTML', false,
-        '<' + style.tag + ' data-md="1">' + escapeText(content) + '</' + style.tag + '>');
-      caretAfterInserted();
-      post({{ kind: 'style', index: style.index }});
-      return;
+      return {{ style: style, open: open, content: content }};
     }}
+    return null;
+  }}
+
+  function linkParts(before) {{
+    var open = before.lastIndexOf('[');
+    if (open < 0) {{ return null; }}
+    var typed = before.slice(open);
+    var middle = typed.indexOf('](');
+    if (middle < 1) {{ return null; }}
+    var text = typed.slice(1, middle);
+    var url = typed.slice(middle + 2, typed.length - 1);
+    if (!text.length || !url.length) {{ return null; }}
+    // An address can contain brackets: Wikipedia puts them in article titles.
+    // This runs on every close bracket typed, so it sees the address one
+    // character at a time, and the bracket that ends the link is the one that
+    // balances. An unmatched open bracket means there is more address coming.
+    //
+    // Taking it anyway produced a truncated address, which still passes every
+    // check and becomes a link to somewhere else with nothing said.
+    var depth = 0;
+    for (var c = 0; c < url.length; c++) {{
+      if (url.charAt(c) === '(') {{ depth++; }}
+      else if (url.charAt(c) === ')') {{ depth--; }}
+    }}
+    if (depth !== 0) {{ return null; }}
+    return {{ open: open, text: text, url: url }};
+  }}
+
+  function wordEnded(before) {{
+    var match = /[\p{{L}}\p{{M}}][\p{{L}}\p{{M}}'’\-]*$/u.exec(before);
+    if (!match) {{ return null; }}
+    var word = match[0].replace(/['’\-]+$/u, '');
+    // One letter is "a" or "I", and a sound at the end of those would be a
+    // sound at the end of half the sentences somebody writes.
+    return word.length > 1 ? word : null;
+  }}
+
+  window.wixenRules = {{ block: blockRule, inline: inlineRule,
+                        link: linkParts, word: wordEnded }};
+
+  // ── Applying ───────────────────────────────────────────────────────────
+
+  function blockMarkdown(at) {{
+    if (at.node.previousSibling) {{ return; }}
+    var rule = blockRule(at.before.slice(0, at.before.length - 1));
+    if (!rule) {{ return; }}
+    selectBack(at.node, 0, at.offset);
+    document.execCommand('delete');
+    document.execCommand(rule.command, false, rule.value);
+    post({{ kind: 'format', index: rule.index }});
+  }}
+
+  function inlineMarkdown(typed, at) {{
+    var hit = inlineRule(typed, at.before);
+    if (!hit) {{ return; }}
+    selectBack(at.node, hit.open, at.offset);
+    document.execCommand('insertHTML', false,
+      '<' + hit.style.tag + ' data-md="1">' + escapeText(hit.content)
+      + '</' + hit.style.tag + '>');
+    caretAfterInserted();
+    post({{ kind: 'style', index: hit.style.index }});
   }}
 
   // The words are marked and the address is sent to be checked. Whether it
   // becomes a link is not the page's decision: it goes to another person.
   function linkMarkdown(at) {{
-    var open = at.before.lastIndexOf('[');
-    if (open < 0) {{ return; }}
-    var typed = at.before.slice(open);
-    var middle = typed.indexOf('](');
-    if (middle < 1) {{ return; }}
-    var text = typed.slice(1, middle);
-    var url = typed.slice(middle + 2, typed.length - 1);
-    if (!text.length || !url.length) {{ return; }}
-    selectBack(at.node, open, at.offset);
+    var parts = linkParts(at.before);
+    if (!parts) {{ return; }}
+    selectBack(at.node, parts.open, at.offset);
     document.execCommand('insertHTML', false,
-      '<span id="{link_id}">' + escapeText(text) + '</span>');
-    post({{ kind: 'link', url: url }});
+      '<span id="{link_id}">' + escapeText(parts.text) + '</span>');
+    post({{ kind: 'link', url: parts.url }});
   }}
 
   // The word that has just been finished, if one has been.
@@ -512,13 +563,8 @@ img {{ max-width: 100%; height: auto; }}
   // engine's own marking and our checker agreeing matters: on Windows they
   // are the same ISpellChecker.
   function wordFinished(at) {{
-    var before = at.before.slice(0, at.before.length - 1);
-    var match = /[\p{{L}}\p{{M}}][\p{{L}}\p{{M}}'’\-]*$/u.exec(before);
-    if (!match) {{ return; }}
-    var word = match[0].replace(/['’\-]+$/u, '');
-    // One letter is "a" or "I", and a sound at the end of those would be a
-    // sound at the end of half the sentences somebody writes.
-    if (word.length > 1) {{ post({{ kind: 'word', text: word }}); }}
+    var word = wordEnded(at.before.slice(0, at.before.length - 1));
+    if (word) {{ post({{ kind: 'word', text: word }}); }}
   }}
 
   body.addEventListener('input', function (event) {{

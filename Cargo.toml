@@ -99,6 +99,7 @@ windows = { version = "0.62.2", features = [
 winresource = "0.1"
 
 [dev-dependencies]
+boa_engine = "0.20"
 tokio-test = "0.4"
 tempfile = "3.14"
 

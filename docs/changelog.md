@@ -7,6 +7,8 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Fixed
 
+- **A typed link whose address contains a bracket is no longer cut in half.** Markdown links are recognised when you type the closing bracket, so `[Mercury](https://en.wikipedia.org/wiki/Mercury_(planet))` was turned into a link at the bracket in the middle of the address. The shortened address is still a valid one, so nothing complained: you got a link to somewhere else and were told it worked. Wixen Mail now waits until the brackets balance.
+
 - **Change All no longer goes back over words you chose to keep.** It rewrote every occurrence in the message, including ones you had already passed with Ignore, and said nothing about it. Ignore means leave this one, so Change All now applies from where you are forward, which is what Word does and for the same reason.
 
 - **Spell checking knows what a word is.** It used to look for runs of letters, which got three things wrong. "3rd" was read as the word "rd", so the check announced a fragment that is not in your message and accepting a correction spliced it into the middle of a word that was already right. A sentence with no spaces in it, which is how Japanese, Chinese and Thai are written, was read as a single enormous word: F7 selected a whole paragraph, called it a misspelling, and Change would have replaced the lot. And "the end. The next" was reported as a repeated word, where the fix offered is to delete one of them, so taking it would have removed a word that was right.

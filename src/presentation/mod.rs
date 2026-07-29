@@ -6,6 +6,8 @@ pub mod accessibility;
 pub mod contact_convert;
 pub mod date_display;
 pub mod editor_document;
+#[cfg(test)]
+pub mod editor_page_harness;
 pub mod html_renderer;
 pub mod managers;
 pub mod markdown_input;
