@@ -299,7 +299,16 @@ impl WxMailApp {
         })
     }
 
-    pub fn run(self) -> Result<()> {
+    /// Start the application, optionally opening one window for the scan.
+    ///
+    /// `scan_target` comes from `--scan-window`. It is `None` for every
+    /// ordinary start, and the flag is parsed before this is called so a name
+    /// nobody recognises stops the application rather than starting it
+    /// normally and letting a scan report a pass for a window it never saw.
+    pub fn run(
+        self,
+        scan_target: Option<crate::presentation::scan_target::ScanTarget>,
+    ) -> Result<()> {
         let state = self.state.clone();
         let ui_rx = self.ui_rx.clone();
         let ui_tx = self.ui_tx.clone();
@@ -2447,6 +2456,12 @@ document.addEventListener('keydown', function(e) {
             });
 
             // ── Timer: poll async updates ───────────────────────────────
+            //
+            // Cloned before the timer's closure takes them, because opening a
+            // window for the accessibility scan happens after this and needs
+            // the same two.
+            let scan_tx = ui_tx.clone();
+            let scan_rt = runtime.clone();
             let timer = Timer::new(&frame);
             timer.on_tick({
                 let state = state.clone();
@@ -2517,6 +2532,17 @@ document.addEventListener('keydown', function(e) {
             tracing::info!("UI setup complete, showing main frame");
             frame.show(true);
             tracing::info!("Main frame shown, entering event loop");
+
+            // The accessibility scan asks for one window by name and walks the
+            // whole process. Without this it walks a process that owns exactly
+            // one window, which is how every dialog in the application came to
+            // have never been scanned by anything.
+            //
+            // After show, because a dialog parented to a frame that is not on
+            // screen yet has nowhere to be modal to.
+            if let Some(target) = scan_target {
+                open_for_scanning(target, &frame, &state, &scan_tx, &scan_rt, &a11y);
+            }
         });
 
         // wxdragon::main blocks until the window is closed. If it returns
@@ -3886,6 +3912,87 @@ fn queue_for_sending(
         .queue_outbox_message(&queued)
         .map_err(|e| format!("Could not queue the message: {}", e))?;
     Ok(recipient.to_string())
+}
+
+/// Open one window so the accessibility scan has something to look at.
+///
+/// Every one of these is modal, which means this does not return until the
+/// window closes. That is exactly what is wanted: the scan walks the process
+/// while the dialog is up, and the workflow kills the process when it is done.
+/// The event loop keeps running inside the modal loop, so UI Automation sees
+/// the dialog and everything under it.
+///
+/// The windows open on whatever state a fresh profile has, which for the scan
+/// is right. What is being measured is whether every control has a name, a
+/// role and a keyboard route, and none of that depends on there being real mail
+/// behind it.
+fn open_for_scanning(
+    target: crate::presentation::scan_target::ScanTarget,
+    frame: &Frame,
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::presentation::scan_target::ScanTarget;
+
+    tracing::info!("Opening {} for the accessibility scan", target.as_name());
+    match target {
+        ScanTarget::Settings => handle_settings(frame, tx, rt, a11y),
+        ScanTarget::Accounts => handle_account_mgr(frame, state),
+        ScanTarget::Compose => {
+            open_compose(frame, state, tx, rt, &None, ComposeMode::New);
+        }
+        ScanTarget::Reader => {
+            // Not a dialog: the reader is a frame of its own, so it does not
+            // block, and it is opened on a made-up message because a fresh
+            // profile has no mail in it. The controls are the point, not the
+            // content.
+            let reader = Rc::new(wx_reader::ReaderWindow::new(frame, a11y));
+            reader.wire_menu();
+            reader.open(reader_text::single_message(
+                &MessageItem {
+                    uid: 1,
+                    message_id: 1,
+                    subject: "Scan target".to_string(),
+                    from: "Somebody <somebody@example.com>".to_string(),
+                    date: "2026-01-01T00:00:00+00:00".to_string(),
+                    read: true,
+                    starred: false,
+                    answered: false,
+                    draft: false,
+                    has_attachments: true,
+                    attachments: vec![AttachmentItem {
+                        filename: "report.pdf".to_string(),
+                        mime_type: "application/pdf".to_string(),
+                        size: 1024,
+                    }],
+                    thread_depth: 0,
+                    is_thread_parent: true,
+                    thread_id: None,
+                    snippet: String::new(),
+                    size_bytes: Some(1024),
+                    to: "me@example.com".to_string(),
+                    cc: String::new(),
+                    reply_to: String::new(),
+                    // Deliberately not Ordinary, so the warning bar exists and
+                    // gets scanned. It only appears when there is something to
+                    // say, so an ordinary message would leave it out.
+                    safety: crate::service::safety::Safety::Suspicious,
+                    safety_reasons: vec!["This message is a scan fixture".to_string()],
+                },
+                "<h1>A heading</h1><p>Some text, and <a href=\"https://example.com/\">a link</a>.</p>",
+            ));
+            // Leaked on purpose: the window has to outlive this function or it
+            // closes before the scan reaches it, and the process is about to be
+            // killed anyway.
+            std::mem::forget(reader);
+        }
+        ScanTarget::Search => {
+            let _ = show_search_dialog(frame);
+        }
+        ScanTarget::Filters => managers::manage_filters(state, &None, frame, tx, rt),
+    }
 }
 
 /// Handle Account Manager dialog result.

@@ -12,6 +12,7 @@ pub mod message_rows;
 pub mod pim_rows;
 pub mod read_aloud;
 pub mod reader_text;
+pub mod scan_target;
 pub mod theme;
 pub mod ui_types;
 pub mod wx_account_manager;

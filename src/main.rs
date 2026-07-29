@@ -3,6 +3,7 @@
 use wixen_mail::common::logging::{LoggerConfig, init_logging};
 use wixen_mail::common::paths::{AppPaths, LegacyLocations, MigrationReport};
 use wixen_mail::presentation::WxMailApp;
+use wixen_mail::presentation::scan_target;
 
 /// Erase everything this installation stored, then exit without starting.
 ///
@@ -31,9 +32,25 @@ fn main() {
     tracing::info!("Starting Wixen Mail v{}", env!("CARGO_PKG_VERSION"));
     report_migration(migration.as_ref());
 
+    // Before the application is built, because an unknown name here has to
+    // stop rather than start normally: a scan that walks the main window and
+    // reports a clean pass for a dialog it never opened is worse than no scan.
+    let scan_target = match scan_target::from_args(std::env::args().skip(1)) {
+        Ok(target) => target,
+        Err(e) => {
+            // The log and the crash file, not a dialog. This flag is only ever
+            // passed by the accessibility workflow, which runs with nobody
+            // watching, and a modal error box there does not report a failure,
+            // it hangs the job until its timeout and reports that instead.
+            tracing::error!("{}", e);
+            log_crash(&e.to_string());
+            std::process::exit(2);
+        }
+    };
+
     match WxMailApp::new() {
         Ok(app) => {
-            if let Err(e) = app.run() {
+            if let Err(e) = app.run(scan_target) {
                 tracing::error!("UI error: {}", e);
                 log_crash(&format!("UI run error: {}", e));
                 show_error_dialog(&format!("Wixen Mail failed to run:\n{}", e));
