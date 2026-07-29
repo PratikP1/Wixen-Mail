@@ -432,6 +432,99 @@ mod tests {
         MessageCache::new(dir, None).unwrap()
     }
 
+    /// A task list to hang the two-connection tests on.
+    fn shared_list() -> TaskListEntry {
+        TaskListEntry {
+            id: "google:list".to_string(),
+            account_id: "acc".to_string(),
+            name: "My Tasks".to_string(),
+            color: String::new(),
+            display_order: 0,
+            created_at: String::new(),
+        }
+    }
+
+    fn shared_task(id: &str) -> TaskEntry {
+        TaskEntry {
+            id: id.to_string(),
+            account_id: "acc".to_string(),
+            task_list_id: Some("google:list".to_string()),
+            title: "Book the dentist".to_string(),
+            description: None,
+            due_date: None,
+            is_completed: false,
+            completed_at: None,
+            priority: "normal".to_string(),
+            display_order: 0,
+            parent_task_id: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            remote_updated: None,
+            pending: false,
+        }
+    }
+
+    #[test]
+    fn test_a_second_writer_waits_its_turn_instead_of_being_refused() {
+        // The shape the application is in whenever a sync runs: the interface
+        // holds one connection and the sync opens its own on a worker thread.
+        // Every other test here uses one connection, so nothing covered it.
+        //
+        // This passes today without the pragma above, because rusqlite already
+        // sets a five second timeout on every connection. It is here so that
+        // the behaviour this relies on is asserted rather than assumed: a
+        // second writer refused instead of made to wait is a task ticked off
+        // during a sync coming back as an error, and a sync losing the write
+        // that records what it just sent, which creates the task at the
+        // provider a second time on the next run.
+        //
+        // Two connections writing one after another never contend, so the
+        // lock has to be held while the other one tries.
+        let dir = std::env::temp_dir().join(format!("wixen_busy_{}", uuid::Uuid::new_v4()));
+        let waiter = MessageCache::new(dir.clone(), None).expect("the waiting connection");
+        waiter.save_task_list(&shared_list()).expect("a list");
+
+        let (locked, is_locked) = std::sync::mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            let held = MessageCache::new(dir, None).expect("the holding connection");
+            held.conn
+                .execute_batch("BEGIN IMMEDIATE")
+                .expect("to take the write lock");
+            locked.send(()).expect("to say the lock is taken");
+            // Well under the five second timeout, so the margin is wide
+            // enough that this does not turn into a test that fails on a
+            // loaded machine.
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            held.conn.execute_batch("COMMIT").expect("to let go");
+        });
+
+        is_locked
+            .recv()
+            .expect("the lock to be taken before writing");
+        waiter
+            .save_task(&shared_task("google:t1"))
+            .expect("the write to wait its turn rather than be refused");
+
+        holder.join().expect("the holding thread to finish");
+    }
+
+    #[test]
+    fn test_every_connection_is_told_to_wait() {
+        // The deterministic half, and the one with a job to do. The timeout
+        // comes from rusqlite rather than from this application, so this is
+        // what notices if that default ever moves. Without it the failure is
+        // a duplicate task on somebody's phone, a long way from the cause.
+        let dir = std::env::temp_dir().join(format!("wixen_pragma_{}", uuid::Uuid::new_v4()));
+        let cache = MessageCache::new(dir, None).expect("a cache");
+
+        let waits: i64 = cache
+            .conn
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .expect("the pragma to be readable");
+
+        assert!(waits >= 1000, "a second writer is refused after {waits}ms");
+    }
+
     #[test]
     fn test_task_list_crud() {
         let cache = test_cache();

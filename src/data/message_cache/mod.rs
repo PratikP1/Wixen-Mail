@@ -454,9 +454,31 @@ impl MessageCache {
             // messages behind, and deleting a message left its attachments and
             // body. Enforcement applies to new writes only, so an existing
             // database with orphans opens fine and simply stops adding more.
+            // busy_timeout is written out because this depends on it, not
+            // because it was missing. rusqlite sets five seconds on every
+            // connection it opens, so the value here is the one already in
+            // force and changes nothing today.
+            //
+            // It is stated because the requirement is real and the guarantee
+            // is somebody else's default. Two connections to this file are
+            // open whenever a sync runs: the interface holds one and the sync
+            // opens its own on a worker thread, because a cache cannot cross
+            // threads. Under WAL a reader never blocks a writer, but two
+            // writers still take turns, and a second writer refused rather
+            // than made to wait is a wrong answer and not a slow path. Ticking
+            // a task off during a sync would come back as an error and the box
+            // would look broken; worse the other way, the sync records what it
+            // sent AFTER the provider accepted it, so losing that write leaves
+            // the task marked as still waiting and the next sync creates it at
+            // the provider a second time.
+            //
+            // The test beside the task queries this back, so if the default
+            // ever moves, that fails here rather than a duplicate task turning
+            // up on somebody's phone.
             "PRAGMA foreign_keys=ON;
              PRAGMA journal_mode=WAL;
              PRAGMA synchronous=NORMAL;
+             PRAGMA busy_timeout=5000;
              PRAGMA cache_size=-8000;",
         )
         .map_err(|e| Error::Other(format!("Failed to set pragmas: {}", e)))?;
