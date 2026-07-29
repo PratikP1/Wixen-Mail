@@ -1,8 +1,10 @@
 //! wxdragon Composition Dialog
 //!
 //! Provides a modal dialog for composing, replying to, and forwarding emails.
-//! Uses RichTextCtrl for the message body with formatting toolbar support.
+//! The message body is a `WebView` holding a contenteditable page, built by
+//! [`crate::presentation::editor_document`].
 
+use crate::common::types::MessageBody;
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::editor_document;
 use crate::presentation::html_renderer::HtmlRenderer;
@@ -76,17 +78,17 @@ pub enum ComposeMode {
     Reply {
         to: String,
         subject: String,
-        quoted_body: String,
+        quoted_body: MessageBody,
     },
     /// Reply to all recipients
     ReplyAll {
         to: String,
         cc: String,
         subject: String,
-        quoted_body: String,
+        quoted_body: MessageBody,
     },
     /// Forward a message
-    Forward { subject: String, body: String },
+    Forward { subject: String, body: MessageBody },
     /// Edit an existing draft
     Draft(CompositionData),
 }
@@ -110,13 +112,28 @@ fn format_forward_subject(subject: &str) -> String {
 }
 
 /// Format a quoted body for reply.
-fn format_reply_body(quoted_body: &str) -> String {
-    format!("\n\n--- Original Message ---\n{}", quoted_body)
+fn format_reply_body(quoted_body: &MessageBody) -> MessageBody {
+    quoted_under(quoted_body, "--- Original Message ---")
 }
 
 /// Format a forwarded body.
-fn format_forward_body(body: &str) -> String {
-    format!("\n\n---------- Forwarded message ----------\n{}", body)
+fn format_forward_body(body: &MessageBody) -> MessageBody {
+    quoted_under(body, "---------- Forwarded message ----------")
+}
+
+/// Put an original under a line saying what it is, leaving room to type above.
+///
+/// The separator has to be made of whatever it is being joined to. A newline
+/// in front of markup renders as nothing, and text with a marker glued on is
+/// still text, so the one thing that must not happen is the join deciding the
+/// body is now the other kind.
+fn quoted_under(body: &MessageBody, marker: &str) -> MessageBody {
+    match body {
+        MessageBody::Plain(text) => MessageBody::Plain(format!("\n\n{marker}\n{text}")),
+        MessageBody::Html(html) | MessageBody::Multipart { html, .. } => {
+            MessageBody::Html(format!("<p><br></p><p>{marker}</p>{html}"))
+        }
+    }
 }
 
 /// Title for the compose dialog based on mode.
@@ -366,14 +383,14 @@ pub fn show_compose_dialog_full(
         let mark_spelling = crate::data::config::ConfigManager::load_stored()
             .map(|config| config.app_config().check_spelling_as_you_type)
             .unwrap_or(true);
-        move |html: &str| {
+        move |body: &MessageBody| {
             body_editor.set_page(
-                &editor_document::editor_document(html, &language, mark_spelling),
+                &editor_document::editor_document(body, &language, mark_spelling),
                 "",
             );
         }
     };
-    set_body("");
+    set_body(&MessageBody::Plain(String::new()));
 
     main_sizer.add(&body_editor, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
@@ -446,7 +463,9 @@ pub fn show_compose_dialog_full(
             cc_field.set_value(&data.cc);
             bcc_field.set_value(&data.bcc);
             subject_field.set_value(&data.subject);
-            set_body(&data.body);
+            // A draft was written here, so it is this editor's own markup
+            // coming back. Escaping it would show somebody their tags.
+            set_body(&MessageBody::Html(data.body.clone()));
         }
     }
 
@@ -1277,7 +1296,8 @@ fn show_send_preview(
     body_preview.enable_context_menu(false);
     body_preview.enable_access_to_dev_tools(false);
     let renderer = HtmlRenderer::new();
-    let html = renderer.wrap_for_webview(&data.body);
+    // The editor's own markup coming back for a last look before it goes.
+    let html = renderer.wrap_body(&MessageBody::Html(data.body.clone()));
     body_preview.set_page(&html, "about:blank");
 
     // Block navigation in preview — open links in default browser
@@ -1362,17 +1382,47 @@ mod tests {
 
     #[test]
     fn test_reply_body_adds_quote_header() {
-        let body = format_reply_body("Original text");
-        assert!(body.contains("--- Original Message ---"));
-        assert!(body.contains("Original text"));
-        assert!(body.starts_with("\n\n"));
+        let body = format_reply_body(&MessageBody::Plain("Original text".into()));
+        let MessageBody::Plain(text) = &body else {
+            panic!("plain in, plain out, or the editor escapes the wrong half: {body:?}");
+        };
+        assert!(text.contains("--- Original Message ---"));
+        assert!(text.contains("Original text"));
+        assert!(text.starts_with("\n\n"));
     }
 
     #[test]
     fn test_forward_body_adds_forward_header() {
-        let body = format_forward_body("Forwarded text");
-        assert!(body.contains("---------- Forwarded message ----------"));
-        assert!(body.contains("Forwarded text"));
+        let body = format_forward_body(&MessageBody::Plain("Forwarded text".into()));
+        let MessageBody::Plain(text) = &body else {
+            panic!("plain in, plain out: {body:?}");
+        };
+        assert!(text.contains("---------- Forwarded message ----------"));
+        assert!(text.contains("Forwarded text"));
+    }
+
+    #[test]
+    fn test_quoting_an_html_original_keeps_it_html() {
+        // The kind has to survive the join. Deciding a body is text because a
+        // marker was glued to the front of it is how the editor came to run a
+        // stranger's markup through the wrong branch.
+        let body = format_reply_body(&MessageBody::Html("<p>Original</p>".into()));
+        let MessageBody::Html(html) = &body else {
+            panic!("html in, html out: {body:?}");
+        };
+        assert!(html.contains("<p>--- Original Message ---</p>"), "{html}");
+        assert!(html.contains("<p>Original</p>"), "{html}");
+    }
+
+    #[test]
+    fn test_quoting_a_multipart_original_takes_the_markup() {
+        // Both halves arrived. The editor is a live DOM, so the markup is the
+        // one that keeps the sender's headings and link text.
+        let body = format_forward_body(&MessageBody::Multipart {
+            plain: "Original".into(),
+            html: "<h2>Original</h2>".into(),
+        });
+        assert!(matches!(body, MessageBody::Html(ref h) if h.contains("<h2>Original</h2>")));
     }
 
     #[test]
@@ -1382,7 +1432,7 @@ mod tests {
             compose_title(&ComposeMode::Reply {
                 to: String::new(),
                 subject: String::new(),
-                quoted_body: String::new(),
+                quoted_body: MessageBody::Plain(String::new()),
             }),
             "Reply"
         );
@@ -1391,14 +1441,14 @@ mod tests {
                 to: String::new(),
                 cc: String::new(),
                 subject: String::new(),
-                quoted_body: String::new(),
+                quoted_body: MessageBody::Plain(String::new()),
             }),
             "Reply All"
         );
         assert_eq!(
             compose_title(&ComposeMode::Forward {
                 subject: String::new(),
-                body: String::new(),
+                body: MessageBody::Plain(String::new()),
             }),
             "Forward"
         );

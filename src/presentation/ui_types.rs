@@ -226,7 +226,7 @@ pub enum UIUpdate {
     /// The tree shows names, but reading a folder needs its id, and looking
     /// one up by name would break the moment two accounts both have an INBOX.
     FolderIdsLoaded(Vec<(String, i64)>),
-    MessageBodyLoaded(String),
+    MessageBodyLoaded(crate::common::types::MessageBody),
     /// An attachment was fetched and read, and is ready to open as a tab.
     ///
     /// Boxed because the whole document travels in it and every other variant

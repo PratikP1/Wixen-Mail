@@ -144,11 +144,25 @@ pub struct AccountSettings {
 }
 
 /// Message body types
-#[derive(Debug, Clone)]
+///
+/// Which MIME part a body came from is not recoverable from the string. "if a
+/// < b and c > d" is prose that every markup test calls markup, and running a
+/// sanitiser over it deletes the middle of the sentence. So the answer travels
+/// with the value from the one place that knows it, and everything downstream
+/// that has to escape, sanitise or wrap the body reads it here rather than
+/// guessing again.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MessageBody {
     Plain(String),
     Html(String),
     Multipart { plain: String, html: String },
+}
+
+impl Default for MessageBody {
+    /// No body is empty text, not empty markup: nothing to sanitise.
+    fn default() -> Self {
+        Self::Plain(String::new())
+    }
 }
 
 impl MessageBody {

@@ -7,6 +7,7 @@ use crate::application::mail_controller::{MailController, SendEmailRequest};
 use crate::application::reply::ReplyMode;
 use crate::common::Result;
 use crate::common::paths::AppPaths;
+use crate::common::types::MessageBody;
 use crate::data::account::Account;
 use crate::data::message_cache::MessageCache;
 use crate::presentation::accessibility::Accessibility;
@@ -160,7 +161,7 @@ pub struct WxUIState {
     /// a server would eventually refuse to open any more.
     pub mail_watch: Option<crate::service::protocols::imap::ImapIdleHandle>,
     pub selected_message_index: Option<usize>,
-    pub message_preview: String,
+    pub message_preview: MessageBody,
     pub connection_status: ConnectionStatus,
     pub status_message: String,
     pub error_message: Option<String>,
@@ -198,7 +199,7 @@ impl Default for WxUIState {
             folder_ids: std::collections::HashMap::new(),
             mail_watch: None,
             selected_message_index: None,
-            message_preview: String::new(),
+            message_preview: MessageBody::default(),
             connection_status: ConnectionStatus::Disconnected,
             status_message: "Ready".into(),
             error_message: None,
@@ -861,7 +862,8 @@ document.addEventListener('keydown', function(e) {
 
                 // Load initial blank page
                 let renderer = HtmlRenderer::new();
-                let blank = renderer.wrap_for_webview("Select a message to view.");
+                let blank = renderer
+                    .wrap_body(&MessageBody::Plain("Select a message to view.".to_string()));
                 preview.set_page(&blank, "about:blank");
             }
 
@@ -1702,7 +1704,16 @@ document.addEventListener('keydown', function(e) {
                         body_cache
                             .as_ref()
                             .and_then(|c| c.get_message_body(id).ok().flatten())
-                            .and_then(|b| b.body_html.or(b.body_plain))
+                            .and_then(|b| match (b.body_html, b.body_plain) {
+                                // The markup half when there is one: it
+                                // carries the sender's headings and link
+                                // text. Which half it is travels with it,
+                                // because the two need opposite handling and
+                                // nothing downstream can tell from the string.
+                                (Some(html), _) => Some(MessageBody::Html(html)),
+                                (None, Some(plain)) => Some(MessageBody::Plain(plain)),
+                                (None, None) => None,
+                            })
                             .map(|body| (id, body))
                     });
                     match body {
@@ -1721,7 +1732,7 @@ document.addEventListener('keydown', function(e) {
                             // the exception. Say what is happening and go and
                             // get it.
                             let _ = ui_tx.try_send(UIUpdate::MessageBodyLoaded(
-                                "Downloading this message...".to_string(),
+                                MessageBody::Plain("Downloading this message...".to_string()),
                             ));
                             if let Some((id, uid)) = selected {
                                 spawn_body_fetch(&state, &ui_tx, &runtime, id, uid);
@@ -3835,7 +3846,7 @@ fn start_reply(
 }
 
 /// Extract selected message info for reply/forward.
-fn msg_info(state: &Arc<StdMutex<WxUIState>>) -> (String, String, String) {
+fn msg_info(state: &Arc<StdMutex<WxUIState>>) -> (String, String, MessageBody) {
     state
         .lock()
         .map(|s| {
@@ -4315,7 +4326,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 s.message_preview = body.clone();
             }
             let renderer = HtmlRenderer::new();
-            let html = renderer.wrap_for_webview(body);
+            let html = renderer.wrap_body(body);
             preview.set_page(&html, "about:blank");
         }
         UIUpdate::ConnectionStatusChanged(status) => {
@@ -5602,10 +5613,11 @@ fn spawn_body_fetch(
         if !still_selected {
             return;
         }
-        let body = parsed
-            .body_html
-            .or(parsed.body_plain)
-            .unwrap_or_else(|| "This message has no readable body.".to_string());
+        let body = match (parsed.body_html, parsed.body_plain) {
+            (Some(html), _) => MessageBody::Html(html),
+            (None, Some(plain)) => MessageBody::Plain(plain),
+            (None, None) => MessageBody::Plain("This message has no readable body.".to_string()),
+        };
         handle.block_on(async {
             let _ = tx.send(UIUpdate::MessageBodyLoaded(body)).await;
         });

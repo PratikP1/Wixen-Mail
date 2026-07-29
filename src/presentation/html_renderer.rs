@@ -2,6 +2,7 @@
 //!
 //! Renders HTML email content with security (XSS protection) and accessibility features.
 
+use crate::common::types::MessageBody;
 use ammonia::clean;
 use std::sync::OnceLock;
 
@@ -172,19 +173,26 @@ impl HtmlRenderer {
         links
     }
 
-    /// Wrap sanitized HTML in a full document for WebView display.
+    /// Wrap a message body in a full document for WebView display.
     ///
     /// Applies readable typography, dark-mode support, image containment,
-    /// and blockquote styling. Plain-text bodies are wrapped in `<pre>`.
-    pub fn wrap_for_webview(&self, body: &str) -> String {
-        let is_html = body.contains('<') && body.contains('>');
-        let content = if is_html {
-            self.sanitize_html(body)
-        } else {
-            format!(
+    /// and blockquote styling. Text is escaped and wrapped in `<pre>` so its
+    /// line breaks survive; markup is sanitised.
+    ///
+    /// The kind is taken rather than worked out. This used to test the string
+    /// for angle brackets, which reads "if a < b and c > d" as markup and hands
+    /// it to the sanitiser, and the sanitiser deletes anything tag-shaped: a
+    /// bare address in a plain-text message disappeared out of the middle of
+    /// the sentence with nothing said.
+    pub fn wrap_body(&self, body: &MessageBody) -> String {
+        let content = match body {
+            MessageBody::Html(html) | MessageBody::Multipart { html, .. } => {
+                self.sanitize_html(html)
+            }
+            MessageBody::Plain(text) => format!(
                 "<pre style=\"white-space:pre-wrap;font-family:inherit\">{}</pre>",
-                html_escape::encode_text(body)
-            )
+                html_escape::encode_text(text)
+            ),
         };
         self.wrap_prepared(&content)
     }
@@ -297,7 +305,7 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
             body.push('\n');
         }
 
-        // `wrap_prepared`, not `wrap_for_webview`. Every body above has
+        // `wrap_prepared`, not `wrap_body`. Every body above has
         // already been through the sanitiser, and sanitising the assembled
         // document again would escape the headings this whole surface exists
         // to produce whenever the plain-text setting is on.
@@ -367,7 +375,7 @@ mod tests {
         // having rendered. It is the first focusable thing on the page, so Tab
         // reaches it before anything the sender wrote.
         let renderer = HtmlRenderer::new();
-        let html = renderer.wrap_for_webview("Hello");
+        let html = renderer.wrap_body(&MessageBody::Plain("Hello".into()));
         let button = html.find("<button").expect("no way out control");
         let content = html.find("<main").expect("no main");
         assert!(button < content, "the way out is not reachable first");
@@ -379,7 +387,11 @@ mod tests {
         // If it were wired up by the user script, both routes would fail
         // together, which is not two routes.
         let renderer = HtmlRenderer::new();
-        assert!(renderer.wrap_for_webview("Hello").contains("onclick="));
+        assert!(
+            renderer
+                .wrap_body(&MessageBody::Plain("Hello".into()))
+                .contains("onclick=")
+        );
     }
 
     #[test]
@@ -388,7 +400,7 @@ mod tests {
         // A bare run of text in a body with no landmark gives nothing to jump
         // to and no way to tell the message from the chrome around it.
         let renderer = HtmlRenderer::new();
-        let html = renderer.wrap_for_webview("Hello");
+        let html = renderer.wrap_body(&MessageBody::Plain("Hello".into()));
         assert!(html.contains("<main"), "no main landmark: {}", html);
         assert!(html.contains("</main>"));
     }
@@ -399,7 +411,11 @@ mod tests {
         // whatever voice it was last using, which turns English mail read by a
         // German voice into noise (WCAG 3.1.1).
         let renderer = HtmlRenderer::new();
-        assert!(renderer.wrap_for_webview("Hello").contains("<html lang="));
+        assert!(
+            renderer
+                .wrap_body(&MessageBody::Plain("Hello".into()))
+                .contains("<html lang=")
+        );
     }
 
     #[test]
@@ -408,7 +424,7 @@ mod tests {
         // normally move focus out. Someone who cannot see the window has no
         // way to discover the way back unless the document says it.
         let renderer = HtmlRenderer::new();
-        let html = renderer.wrap_for_webview("Hello");
+        let html = renderer.wrap_body(&MessageBody::Plain("Hello".into()));
         assert!(html.contains("Escape"), "no way out is stated: {}", html);
     }
 
@@ -550,29 +566,29 @@ mod tests {
     }
 
     #[test]
-    fn test_wrap_for_webview_html() {
+    fn test_wrap_body_keeps_markup() {
         let renderer = HtmlRenderer::new();
         let html = "<p>Hello <strong>World</strong></p>";
-        let wrapped = renderer.wrap_for_webview(html);
+        let wrapped = renderer.wrap_body(&MessageBody::Html(html.into()));
         assert!(wrapped.contains("<!DOCTYPE html>"));
         assert!(wrapped.contains("Segoe UI"));
         assert!(wrapped.contains("<p>Hello <strong>World</strong></p>"));
     }
 
     #[test]
-    fn test_wrap_for_webview_plain_text() {
+    fn test_wrap_body_keeps_text_as_text() {
         let renderer = HtmlRenderer::new();
         let text = "Just plain text, no HTML.";
-        let wrapped = renderer.wrap_for_webview(text);
+        let wrapped = renderer.wrap_body(&MessageBody::Plain(text.into()));
         assert!(wrapped.contains("<pre"));
         assert!(wrapped.contains("Just plain text, no HTML."));
     }
 
     #[test]
-    fn test_wrap_for_webview_strips_scripts() {
+    fn test_wrap_body_strips_scripts() {
         let renderer = HtmlRenderer::new();
         let html = "<p>Safe</p><script>alert('xss')</script>";
-        let wrapped = renderer.wrap_for_webview(html);
+        let wrapped = renderer.wrap_body(&MessageBody::Html(html.into()));
         assert!(wrapped.contains("Safe"));
         assert!(!wrapped.contains("<script"));
     }
@@ -645,7 +661,10 @@ mod tests {
     fn test_hostile_bodies_never_reach_the_webview_as_markup() {
         let renderer = HtmlRenderer::new();
         for html in HOSTILE {
-            assert_no_live_markup(&renderer.wrap_for_webview(html), html);
+            assert_no_live_markup(
+                &renderer.wrap_body(&MessageBody::Html(html.to_string())),
+                html,
+            );
         }
     }
 
@@ -656,7 +675,10 @@ mod tests {
         // text and unsafe the moment it is placed in an HTML document.
         let renderer = HtmlRenderer::plain_text_only();
         for html in HOSTILE {
-            assert_no_live_markup(&renderer.wrap_for_webview(html), html);
+            assert_no_live_markup(
+                &renderer.wrap_body(&MessageBody::Html(html.to_string())),
+                html,
+            );
         }
     }
 
@@ -783,7 +805,7 @@ mod tests {
     fn test_fuzz_webview_body_stays_inert() {
         for seed in 0..4000u64 {
             let body = fuzz_body(seed);
-            let rendered = HtmlRenderer::new().wrap_for_webview(&body);
+            let rendered = HtmlRenderer::new().wrap_body(&MessageBody::Html(body.clone()));
             assert_no_live_markup(&rendered, &format!("seed {}", seed));
         }
     }
@@ -792,7 +814,8 @@ mod tests {
     fn test_fuzz_plain_text_mode_stays_inert() {
         for seed in 0..4000u64 {
             let body = fuzz_body(seed);
-            let rendered = HtmlRenderer::plain_text_only().wrap_for_webview(&body);
+            let rendered =
+                HtmlRenderer::plain_text_only().wrap_body(&MessageBody::Html(body.clone()));
             assert_no_live_markup(&rendered, &format!("seed {}", seed));
         }
     }
@@ -807,7 +830,8 @@ mod tests {
             let _ = renderer.html_to_plain_text(&body);
             let _ = renderer.extract_image_alt_texts(&body);
             let _ = renderer.extract_link_texts(&body);
-            let _ = renderer.wrap_for_webview(&body);
+            let _ = renderer.wrap_body(&MessageBody::Html(body.clone()));
+            let _ = renderer.wrap_body(&MessageBody::Plain(body.clone()));
         }
     }
 

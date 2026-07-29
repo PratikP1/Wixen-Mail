@@ -7,6 +7,10 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Fixed
 
+- **Replying to or forwarding a plain-text message no longer eats parts of it.** A message with no HTML part was being cleaned as though it were markup, and cleaning deletes anything shaped like a tag. A bare address or a bare URL in angle brackets is shaped like a tag, so "Please reply to \<ada@example.com\>." became "Please reply to ." with nothing said about it. Everything after an unclosed `<style>` or `<script>` went the same way. The mangled text was what got sent, not just what was shown.
+  **Line breaks survived no better**, and that half needed no angle bracket to bite: every plain-text reply and forward arrived as one unbroken paragraph, in both halves of the message. If you are reading your own draft back with a screen reader, that is the harder one to catch, because it is read as continuous prose with nothing to say the breaks are gone.
+  The cause was a guess. Whether a body is markup or text cannot be recovered from the string, because "if a < b and c > d" is prose that any test for angle brackets calls markup. The answer now travels with the body from the part of the message it came from, so nothing downstream has to guess again. The same guess has been taken out of the reading pane, where it could have done the same thing.
+
 - **A message written with formatting would have arrived full of visible markup.** Between the editor changing and the multipart message being built, the whole message went into the plain text field, tags and all. Nothing shipped in that state.
 
 - **The conversation reader claimed you could navigate it by heading.** You cannot: it is a plain text control, which has no headings for a screen reader to find. `Ctrl+Down` and `Ctrl+Up` do move between messages and always did. The documentation now says what is true, and As Headings, below, is where real headings live.

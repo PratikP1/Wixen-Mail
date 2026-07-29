@@ -40,6 +40,7 @@
 //! Everything else is the editor's, which is what somebody typing a message
 //! wants.
 
+use crate::common::types::MessageBody;
 use crate::presentation::html_renderer::HtmlRenderer;
 
 /// The name the page posts messages to.
@@ -52,22 +53,53 @@ pub const CHANNEL: &str = "wixenEditor";
 /// The element the message is typed into.
 const BODY_ID: &str = "wixen-body";
 
+/// Put text into the page as text rather than as markup.
+///
+/// Two things have to survive. The angle brackets, because a bare address in a
+/// message with no HTML part is not a tag, and the sanitiser deletes anything
+/// tag-shaped: "reply to <ada@example.com>." came back as "reply to .".
+///
+/// And the line breaks. A `div` collapses them, and `innerText` reads what is
+/// rendered rather than what is in the tree, so a quoted original arrived as
+/// one unbroken line in both halves of the message that went out. They become
+/// `<br>` rather than a `white-space` rule because this is sent, not just
+/// shown, and the sanitiser on the way out keeps a `<br>` and drops a `style`.
+///
+/// Runs of spaces are not kept. Preserving them needs the CSS that does not
+/// survive the trip, and plain-text mail almost never depends on them.
+fn escaped_plain_text(text: &str) -> String {
+    html_escape::encode_text(text)
+        .replace("\r\n", "\n")
+        .replace('\n', "<br>")
+}
+
 /// Build the editor page for a message body.
 ///
 /// `body` is whatever the composer starts with: empty for a new message, a
 /// quoted original for a reply or forward, a saved draft. It is treated as
 /// untrusted in every case, because in two of those three it is.
 ///
+/// It arrives typed because the two halves need opposite treatment and no
+/// amount of looking at the string tells them apart. "if a < b and c > d" is
+/// prose that every markup test calls markup, and running the sanitiser over
+/// it deletes the middle of the sentence. The MIME part the body came from is
+/// the only thing that knows, so the answer travels with the value.
+///
 /// `language` is the spelling language as a BCP 47 tag, which the engine reads
 /// from `lang` to choose its dictionary. Getting this wrong does not fail
 /// loudly, it just marks the wrong words, so it comes from the same setting the
 /// send-time check uses.
-pub fn editor_document(body: &str, language: &str, mark_spelling: bool) -> String {
+pub fn editor_document(body: &MessageBody, language: &str, mark_spelling: bool) -> String {
     let renderer = HtmlRenderer::new();
-    // Sanitised whether or not it looks like markup. "Looks like markup" is a
-    // judgement about a stranger's input, and the cost of getting it wrong here
-    // is script execution in an editor the reader is about to type into.
-    let safe_body = renderer.sanitize_html(body);
+    // Markup is sanitised because the page is a live DOM in a browser engine
+    // and a reply quotes a stranger. Text is escaped, which is the same
+    // protection by the other route, and keeps what the sanitiser would eat.
+    let safe_body = match body {
+        MessageBody::Html(html) | MessageBody::Multipart { html, .. } => {
+            renderer.sanitize_html(html)
+        }
+        MessageBody::Plain(text) => escaped_plain_text(text),
+    };
     let language = safe_language(language);
     let spellcheck = if mark_spelling { "true" } else { "false" };
     // The sound at the end of a wrong word is the same setting as the marking,
@@ -1078,6 +1110,11 @@ fn safe_language(tag: &str) -> String {
 mod tests {
     use super::*;
 
+    /// A new message: nothing to quote and nothing to decide about.
+    fn blank() -> MessageBody {
+        MessageBody::Plain(String::new())
+    }
+
     /// The opening `<html ...>` tag, which is where an injected attribute
     /// would have to land.
     fn first_tag(page: &str) -> &str {
@@ -1092,7 +1129,7 @@ mod tests {
         // The whole reason the composer is a web view. Without this the engine
         // marks nothing and no screen reader announces anything, and the
         // control swap bought nothing at all.
-        let page = editor_document("", "en-GB", true);
+        let page = editor_document(&blank(), "en-GB", true);
 
         assert!(page.contains(r#"spellcheck="true""#), "{page}");
     }
@@ -1101,7 +1138,7 @@ mod tests {
     fn test_the_language_reaches_the_engine() {
         // The engine picks its dictionary from lang. Getting this wrong does
         // not fail loudly, it marks the wrong words, which is worse.
-        let page = editor_document("", "fr-FR", true);
+        let page = editor_document(&blank(), "fr-FR", true);
 
         assert!(page.contains(r#"<html lang="fr-FR""#), "{page}");
     }
@@ -1110,7 +1147,7 @@ mod tests {
     fn test_a_language_from_a_file_cannot_close_the_attribute() {
         // It comes from a settings file, which somebody can edit. A quote in
         // it would end the attribute and start writing markup.
-        let page = editor_document("", r#"en" onload="alert(1)"#, true);
+        let page = editor_document(&blank(), r#"en" onload="alert(1)"#, true);
 
         // The letters survive, harmlessly, as part of the value: the tag reads
         // lang="enonloadalert1". What must not survive is anything that could
@@ -1129,7 +1166,7 @@ mod tests {
 
     #[test]
     fn test_an_empty_language_still_produces_a_valid_document() {
-        let page = editor_document("", "", true);
+        let page = editor_document(&blank(), "", true);
 
         assert!(page.contains(r#"<html lang="en""#), "{page}");
     }
@@ -1140,7 +1177,9 @@ mod tests {
         // puts it in a live DOM in a real browser engine. The reader got away
         // with less care because a text control renders nothing; this cannot.
         let page = editor_document(
-            "<p>Original</p><script>alert('x')</script><img src=x onerror=alert(1)>",
+            &MessageBody::Html(
+                "<p>Original</p><script>alert('x')</script><img src=x onerror=alert(1)>".into(),
+            ),
             "en",
             true,
         );
@@ -1151,11 +1190,56 @@ mod tests {
     }
 
     #[test]
+    fn test_a_plain_text_original_keeps_the_words_inside_angle_brackets() {
+        // The sanitiser deletes anything shaped like a tag, and in a message
+        // with no HTML part a bare address is shaped like a tag. So replying
+        // to one sent the middle of the sentence away with nothing said. The
+        // answer cannot be guessed from the string, because "if a < b and c >
+        // d" is prose that every guess calls markup; it has to be carried.
+        let page = editor_document(
+            &MessageBody::Plain("Please reply to <ada@example.com>.".into()),
+            "en",
+            false,
+        );
+
+        assert!(page.contains("&lt;ada@example.com&gt;"), "{page}");
+    }
+
+    #[test]
+    fn test_a_plain_text_original_keeps_its_line_breaks() {
+        // The half of this that needs no angle bracket to bite. A div collapses
+        // newlines, and `innerText` reads what is rendered rather than what is
+        // in the tree, so every plain-text reply and forward went out as one
+        // unbroken line in both halves of the message.
+        //
+        // For somebody reading it back with a screen reader this is the part
+        // least likely to be noticed before Send, because it is read as
+        // continuous prose with nothing to say the breaks are gone.
+        let page = editor_document(
+            &MessageBody::Plain("Hi Bob,\n\nRegards\nAda".into()),
+            "en",
+            false,
+        );
+
+        assert!(page.contains("Hi Bob,<br><br>Regards<br>Ada"), "{page}");
+    }
+
+    #[test]
+    fn test_a_carriage_return_does_not_survive_as_a_stray_character() {
+        // Mail is full of CRLF, and a \r left behind after the \n became a
+        // <br> is a character the recipient's client may or may not swallow.
+        let page = editor_document(&MessageBody::Plain("one\r\ntwo".into()), "en", false);
+
+        assert!(page.contains("one<br>two"), "{page}");
+        assert!(!page.contains('\r'), "stray carriage return: {page}");
+    }
+
+    #[test]
     fn test_the_editor_has_a_name_and_says_it_takes_more_than_one_line() {
         // A contenteditable is a div until it is told otherwise. Without these
         // it reports as a group with no name, which is what a custom control
         // always does until somebody remembers.
-        let page = editor_document("", "en", true);
+        let page = editor_document(&blank(), "en", true);
 
         assert!(page.contains(r#"role="textbox""#), "{page}");
         assert!(page.contains(r#"aria-multiline="true""#), "{page}");
@@ -1167,7 +1251,7 @@ mod tests {
         // A web view swallows keys once it has focus, which is what trapped
         // people in the preview pane. The page is ours, so the ones that have
         // to leave are bound in it.
-        let page = editor_document("", "en", true);
+        let page = editor_document(&blank(), "en", true);
 
         assert!(page.contains("'Escape'"), "{page}");
         assert!(page.contains("event.ctrlKey"), "{page}");
@@ -1303,7 +1387,7 @@ mod tests {
         // A popup menu does not register accelerators the way a menu bar does,
         // and the body is a web view, which swallows keys once it has focus.
         // So the page is the only place these can live.
-        let page = editor_document("", "en-US", true);
+        let page = editor_document(&blank(), "en-US", true);
         for format in Format::ALL {
             let stroke = format.keystroke();
             assert!(
@@ -1351,7 +1435,7 @@ mod tests {
         // message without leaving the sentence. It is how a lot of people who
         // cannot see a toolbar already write, so it is the primary path rather
         // than a shortcut for the menu.
-        let page = editor_document("", "en-US", true);
+        let page = editor_document(&blank(), "en-US", true);
         for rule in &crate::presentation::markdown_input::BLOCK_RULES {
             assert!(
                 page.contains(&format!("{:?}", rule.marker)),
@@ -1495,8 +1579,8 @@ mod tests {
     fn test_turning_the_marking_off_turns_it_off_in_the_page() {
         // The defect this exists to stop is the one two spell-check checkboxes
         // already had here: ticked, saved, and never read back by anything.
-        let on = editor_document("", "en-US", true);
-        let off = editor_document("", "en-US", false);
+        let on = editor_document(&blank(), "en-US", true);
+        let off = editor_document(&blank(), "en-US", false);
         assert!(on.contains(r#"spellcheck="true""#), "{on}");
         assert!(off.contains(r#"spellcheck="false""#));
     }
@@ -1505,9 +1589,9 @@ mod tests {
     fn test_the_sound_at_the_end_of_a_word_goes_with_the_marking() {
         // One setting, both halves. Two would let somebody end up with the
         // sound on and the marking off, which is a noise with no explanation.
-        let off = editor_document("", "en-US", false);
+        let off = editor_document(&blank(), "en-US", false);
         assert!(!off.contains("wordFinished(at);"), "{off}");
-        let on = editor_document("", "en-US", true);
+        let on = editor_document(&blank(), "en-US", true);
         assert!(on.contains("wordFinished(at);"));
         // An apostrophe is inside a word rather than after it. Without this
         // every contraction sounds wrong halfway through being typed: "don" is
@@ -1550,7 +1634,7 @@ mod tests {
 
     #[test]
     fn test_the_page_can_be_asked_for_its_words_and_told_which_to_select() {
-        let page = editor_document("", "en-US", true);
+        let page = editor_document(&blank(), "en-US", true);
         for entry in ["wixenWords", "wixenSelectWord", "wixenReplaceWord"] {
             assert!(page.contains(entry), "the page has no {entry}");
             assert!(words_script().contains("wixenWords") || entry != "wixenWords");
