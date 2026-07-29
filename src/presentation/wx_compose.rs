@@ -588,7 +588,18 @@ fn confirm_spelling(parent: &Dialog, body: &str) -> bool {
     if body.trim().is_empty() {
         return true;
     }
-    let language = crate::data::config::ConfigManager::load_stored()
+    let stored = crate::data::config::ConfigManager::load_stored();
+    // Asked for, or not asked at all. Somebody who has turned this off has
+    // decided, and a question they dismiss on every message is worse than no
+    // question: it teaches them to dismiss the one that mattered.
+    let wanted = stored
+        .as_ref()
+        .map(|config| config.app_config().check_spelling_before_send)
+        .unwrap_or(true);
+    if !wanted {
+        return true;
+    }
+    let language = stored
         .map(|config| config.app_config().language.clone())
         .unwrap_or_else(|_| "en".to_string());
 

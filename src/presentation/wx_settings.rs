@@ -8,7 +8,7 @@ use crate::application::autosave::AutosaveInterval;
 use crate::data::config::AppConfig;
 use crate::presentation::accessibility::feedback::{Channel, FeedbackSettings};
 use crate::presentation::accessibility::names::set_accessible_name;
-use crate::service::spellcheck::supported_languages;
+use crate::service::spellcheck::available_languages;
 use wxdragon::prelude::*;
 
 // ── Result type ──────────────────────────────────────────────────────────────
@@ -41,6 +41,7 @@ struct SettingsWidgets {
     sort_order: Choice,
     // Language
     language: Choice,
+    check_spelling_before_send: CheckBox,
     // Calendar & PIM
     cal_default_view: Choice,
     cal_show_weekends: CheckBox,
@@ -97,7 +98,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 
     // ── Tab 4: Language & Spelling
     let lang_panel = Panel::builder(&notebook).build();
-    let language = build_language_tab(&lang_panel, config);
+    let (language, check_spelling_before_send) = build_language_tab(&lang_panel, config);
     notebook.add_page(&lang_panel, "Language", false, None);
 
     // ── Tab 5: Calendar & PIM
@@ -158,6 +159,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         draft_autosave,
         sort_order,
         language,
+        check_spelling_before_send,
         cal_default_view,
         cal_show_weekends,
         cal_first_day,
@@ -428,32 +430,48 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> Choice {
     sort_choice
 }
 
-/// Language & Spelling: language, spell-check toggle.
-fn build_language_tab(panel: &Panel, config: &AppConfig) -> Choice {
+/// Language & Spelling: which language to check, and whether to check on send.
+fn build_language_tab(panel: &Panel, config: &AppConfig) -> (Choice, CheckBox) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Language
+    //
+    // "Interface language" was the wrong label. Nothing here is translated, and
+    // this setting has only ever decided which dictionary the spell checker
+    // uses. The list was wrong too: it offered the same six languages whatever
+    // the machine had, so picking one it could not check set a value that
+    // changed nothing, and the only way to find that out was to write in that
+    // language and have every word of it called a mistake.
     let lang_sec = section(panel, "Language");
 
     let lang_row = BoxSizer::builder(Orientation::Horizontal).build();
     let lang_label = StaticText::builder(panel)
-        .with_label("Interface language:")
+        .with_label("Check spelling in:")
         .build();
 
-    let languages = supported_languages();
+    let languages = available_languages();
     let lang_names: Vec<String> = languages
         .iter()
-        .map(|l| format!("{} ({})", l.name, l.native_name))
+        .map(|language| {
+            if language.available {
+                language.name.clone()
+            } else {
+                // Shown and marked rather than hidden. A language with no
+                // dictionary is still worth offering, because installing one
+                // is something somebody can go and do.
+                format!("{} (no dictionary installed)", language.name)
+            }
+        })
         .collect();
     let lang_idx = languages
         .iter()
-        .position(|l| l.code == config.language)
+        .position(|language| language.tag == config.language)
         .unwrap_or(0) as u32;
     let lang_choice = Choice::builder(panel)
         .with_choices(lang_names)
         .with_selection(Some(lang_idx))
         .build();
-    set_accessible_name(&lang_choice, "Interface language");
+    set_accessible_name(&lang_choice, "Check spelling in");
     lang_row.add(
         &lang_label,
         0,
@@ -474,11 +492,20 @@ fn build_language_tab(panel: &Panel, config: &AppConfig) -> Choice {
     // which is worth more than a switch for something that does not happen.
     let spell_sec = section(panel, "Spell Check");
 
+    let check_before_send = CheckBox::builder(panel)
+        .with_label("&Check spelling before sending a message")
+        .build();
+    set_accessible_name(
+        &check_before_send,
+        "Check spelling before sending a message",
+    );
+    check_before_send.set_value(config.check_spelling_before_send);
+    spell_sec.add(&check_before_send, 0, SizerFlag::All, 4);
+
     let speller = crate::service::spellcheck::for_language(&config.language);
     let checker_note = StaticText::builder(panel)
         .with_label(&format!(
-            "Spelling is checked by {}.\n\nMessages are checked when you send \
-             one. If anything looks misspelled, you are asked before it goes.",
+            "Spelling is checked by {}.",
             speller.source().describe()
         ))
         .build();
@@ -487,7 +514,7 @@ fn build_language_tab(panel: &Panel, config: &AppConfig) -> Choice {
     sizer.add_sizer(&spell_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    lang_choice
+    (lang_choice, check_before_send)
 }
 
 /// Calendar & PIM settings: default view, weekends, first day, reminder time.
@@ -819,12 +846,14 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     }
     .to_string();
 
-    // Language
-    let languages = supported_languages();
+    // Language. Rebuilt rather than remembered, because it is what the picker
+    // was filled from and the two have to stay the same list.
+    let languages = available_languages();
     let idx = sel(&w.language) as usize;
     if idx < languages.len() {
-        cfg.language = languages[idx].code.clone();
+        cfg.language = languages[idx].tag.clone();
     }
+    cfg.check_spelling_before_send = w.check_spelling_before_send.is_checked();
 
     // Calendar & PIM
     cfg.calendar_default_view = match sel(&w.cal_default_view) {

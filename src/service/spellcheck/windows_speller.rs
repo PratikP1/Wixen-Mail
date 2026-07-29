@@ -160,6 +160,34 @@ impl WindowsSpeller {
     }
 }
 
+/// What Windows calls a language, in the reader's own words.
+///
+/// `LOCALE_SNATIVEDISPLAYNAME`, so French reads as "français (France)" rather
+/// than as "French (France)". Somebody choosing the language they write in
+/// recognises its own name faster than its English one, and for a lot of people
+/// the English one is not a name they use at all.
+///
+/// Falls back to the tag, which is ugly and still choosable, rather than to
+/// nothing.
+pub fn display_name(tag: &str) -> String {
+    let wide = Wide::new(tag);
+    let mut buffer = [0u16; 128];
+    // Safe: the buffer's length is passed with it, and the return value says
+    // how much was written before any of it is read.
+    let written = unsafe {
+        windows::Win32::Globalization::GetLocaleInfoEx(
+            wide.as_pcwstr(),
+            windows::Win32::Globalization::LOCALE_SNATIVEDISPLAYNAME,
+            Some(&mut buffer),
+        )
+    };
+    if written <= 1 {
+        return tag.to_string();
+    }
+    // The count includes the terminator.
+    String::from_utf16_lossy(&buffer[..written as usize - 1])
+}
+
 impl Speller for WindowsSpeller {
     fn check(&self, text: &str) -> Vec<SpellError> {
         // Windows counts in UTF-16 code units and the rest of this application

@@ -37,9 +37,21 @@ pub struct AppConfig {
     /// Show preview dialog before sending emails
     #[serde(default = "default_true")]
     pub preview_before_send: bool,
-    /// Spell-check language code (e.g. "en", "es", "fr", "de")
+    /// The language messages are spell-checked in.
+    ///
+    /// A BCP 47 tag such as `en-GB` where Windows is doing the checking, and a
+    /// bare code such as `en` where the built-in list is. Nothing else reads
+    /// this: the interface itself is not translated, and calling it the
+    /// interface language, as the settings dialog once did, was a claim.
     #[serde(default = "default_language")]
     pub language: String,
+    /// Whether to check the spelling of a message before sending it.
+    ///
+    /// On by default. Somebody who does not want it can say so, and the
+    /// question is then never asked, which is different from asking and being
+    /// dismissed every time.
+    #[serde(default = "default_true")]
+    pub check_spelling_before_send: bool,
     /// Default sort order for message list
     #[serde(default = "default_sort_order")]
     pub default_sort_order: String,
@@ -150,6 +162,7 @@ impl Default for AppConfig {
             log_level: "info".to_string(),
             preview_before_send: true,
             language: "en".to_string(),
+            check_spelling_before_send: true,
             default_sort_order: "date_newest".to_string(),
             calendar_default_view: "agenda".to_string(),
             calendar_show_weekends: true,

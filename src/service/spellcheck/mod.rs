@@ -187,6 +187,58 @@ pub trait Speller {
     fn source(&self) -> Source;
 }
 
+/// One language the spelling setting can offer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LanguageChoice {
+    /// What to store: a BCP 47 tag from Windows, or a bare code otherwise.
+    pub tag: String,
+    /// What to show, in that language's own words where Windows knows them.
+    pub name: String,
+    /// Whether this machine can really check it.
+    ///
+    /// The whole reason this function exists. The old picker listed six
+    /// languages whatever the machine had, so choosing French set a value that
+    /// changed nothing, and the only way to find out was to write French and
+    /// have every word of it called a mistake.
+    pub available: bool,
+}
+
+/// The languages this machine can actually check, and the ones it cannot.
+///
+/// Windows' real list first, in its own order. When Windows has none, the
+/// built-in list is offered instead with everything but English marked
+/// unavailable, because the fallback checker only ships an English word list
+/// however many alphabets it knows.
+pub fn available_languages() -> Vec<LanguageChoice> {
+    #[cfg(windows)]
+    {
+        let tags = windows_speller::WindowsSpeller::supported_languages();
+        if !tags.is_empty() {
+            return tags
+                .into_iter()
+                .map(|tag| LanguageChoice {
+                    name: windows_speller::display_name(&tag),
+                    tag,
+                    available: true,
+                })
+                .collect();
+        }
+    }
+
+    supported_languages()
+        .into_iter()
+        .map(|language| LanguageChoice {
+            // English is the only one the built-in list holds. The others are
+            // offered because a Hunspell dictionary for them may be installed,
+            // and said to be unavailable when one is not, rather than quietly
+            // failing every word.
+            available: language.code == "en",
+            tag: language.code,
+            name: language.native_name,
+        })
+        .collect()
+}
+
 /// What to say before a message goes out with misspellings in it.
 ///
 /// `None` when there is nothing worth stopping for, and then sending is not
@@ -238,6 +290,20 @@ pub fn for_language(tag: &str) -> Box<dyn Speller> {
     #[cfg(windows)]
     {
         if let Some(windows) = windows_speller::WindowsSpeller::for_language(tag) {
+            return Box::new(windows);
+        }
+        // A bare language where Windows wants a region. Everybody who set this
+        // before the picker offered real tags has "en" stored, and Windows
+        // lists "en-GB", "en-US" and a dozen more; taking the first it offers
+        // for that language is what stops those people silently dropping to the
+        // built-in word list on upgrade. Windows lists them in its own
+        // preference order, so the first is the one this machine leans towards.
+        if let Some(regional) = windows_speller::WindowsSpeller::supported_languages()
+            .into_iter()
+            .find(|candidate| short_code(candidate) == short_code(tag))
+            && let Some(windows) = windows_speller::WindowsSpeller::for_language(&regional)
+        {
+            tracing::info!("Spell checking {} as {}", tag, regional);
             return Box::new(windows);
         }
         tracing::info!(
