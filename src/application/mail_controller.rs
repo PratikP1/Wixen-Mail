@@ -34,6 +34,12 @@ pub struct SendEmailRequest {
     pub auth: MailAuth,
     pub use_tls: bool,
     pub to: Vec<String>,
+    /// Which account this is going out from.
+    ///
+    /// Carried so the send can ask what that account is allowed to do. Without
+    /// it the check would have to happen further out, where it is easy to add
+    /// a second send path that skips it.
+    pub account_id: String,
     /// The other recipients.
     ///
     /// These were collected by the composer, shown in the preview, counted in
@@ -78,6 +84,7 @@ impl SendEmailRequest {
         }
 
         Some(Self {
+            account_id: account.id.clone(),
             server: account.smtp_server.clone(),
             port,
             username: account.username.clone(),
@@ -150,6 +157,7 @@ impl MailController {
         username: String,
         auth: MailAuth,
         use_tls: bool,
+        account_id: &str,
     ) -> Result<()> {
         let config = ImapConfig {
             server,
@@ -159,7 +167,12 @@ impl MailController {
         };
 
         let client = ImapClient::new(config)?;
-        let session = client.connect(&auth).await?;
+        let mut session = client.connect(&auth).await?;
+        // Reading a mailbox is always allowed; flagging and deleting are not,
+        // unless this account says so and the setting and command line agree.
+        if crate::application::allowed::allowed_for(account_id).mail {
+            session.allow_changes();
+        }
 
         let mut imap_session = self.imap_session.lock().await;
         *imap_session = Some(session);
@@ -228,7 +241,13 @@ impl MailController {
             username: req.username.clone(),
         };
 
-        let client = SmtpClient::new(config)?;
+        // Sending is the one act here that cannot be taken back, so the
+        // client is only built able to do it when the account allows it.
+        let client = if crate::application::allowed::allowed_for(&req.account_id).mail {
+            SmtpClient::allowed_to_send(config)?
+        } else {
+            SmtpClient::new(config)?
+        };
 
         let email = Email {
             from: req.username.clone(),
@@ -448,6 +467,7 @@ mod tests {
                 "test@example.com".to_string(),
                 MailAuth::Password("password".to_string()),
                 false,
+                "a1",
             )
             .await
             .expect_err("nothing listens on port 1")
@@ -481,6 +501,7 @@ mod tests {
     async fn test_send_email_uses_smtp() {
         let controller = MailController::new();
         let req = SendEmailRequest {
+            account_id: "a1".to_string(),
             server: "smtp.example.com".to_string(),
             port: 587,
             username: "test@example.com".to_string(),

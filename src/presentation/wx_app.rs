@@ -5078,6 +5078,7 @@ fn spawn_server_change(
             account.username.clone(),
             auth,
             account.imap_use_tls,
+            &account.id,
         )) {
             refuse(e.to_string());
             return;
@@ -5437,6 +5438,7 @@ fn fetch_attachment_bytes(
         account.username.clone(),
         auth,
         account.imap_use_tls,
+        &account.id,
     ))?;
     let raw = handle.block_on(controller.fetch_message_body(&folder, attachment.uid));
     let _ = handle.block_on(controller.disconnect_imap());
@@ -5506,6 +5508,7 @@ fn spawn_body_fetch(
             account.username.clone(),
             auth,
             account.imap_use_tls,
+            &account.id,
         )) {
             tracing::warn!("Could not connect to fetch a message body: {}", e);
             return;
@@ -5723,6 +5726,7 @@ fn spawn_mail_sync(
             account.username.clone(),
             auth,
             account.imap_use_tls,
+            &account.id,
         )) {
             fail(e.to_string());
             return;
@@ -5874,7 +5878,7 @@ fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
         let mut total_errors = Vec::new();
 
         // Try Google contacts sync
-        let google_client = crate::service::google_api::GoogleApiClient::new();
+        let google_client = crate::service::google_api::GoogleApiClient::for_account(aid);
         if let Some(gmail_creds) = crate::service::oauth_credentials::credentials_for("gmail") {
             let auth = crate::service::oauth::AuthManager::new(
                 aid,
@@ -5904,7 +5908,7 @@ fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
         }
 
         // Try Microsoft contacts sync
-        let ms_client = crate::service::microsoft_graph::MsGraphClient::new();
+        let ms_client = crate::service::microsoft_graph::MsGraphClient::for_account(aid);
         if let Some(outlook_creds) = crate::service::oauth_credentials::credentials_for("outlook") {
             let auth = crate::service::oauth::AuthManager::new(
                 aid,
@@ -6073,7 +6077,7 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
         let mut total_errors = Vec::new();
 
         // Try Google calendar sync
-        let google_client = crate::service::google_api::GoogleApiClient::new();
+        let google_client = crate::service::google_api::GoogleApiClient::for_account(aid);
         if let Some(gmail_creds) = crate::service::oauth_credentials::credentials_for("gmail") {
             let auth = crate::service::oauth::AuthManager::new(
                 aid,
@@ -6103,7 +6107,7 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
         }
 
         // Try Microsoft calendar sync
-        let ms_client = crate::service::microsoft_graph::MsGraphClient::new();
+        let ms_client = crate::service::microsoft_graph::MsGraphClient::for_account(aid);
         if let Some(outlook_creds) = crate::service::oauth_credentials::credentials_for("outlook") {
             let auth = crate::service::oauth::AuthManager::new(
                 aid,
@@ -6131,7 +6135,7 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
 
         // CalDAV calendar sync
         let calendars = cache.get_calendars_for_account(aid).unwrap_or_default();
-        let caldav_client = crate::service::caldav::CalDavClient::new();
+        let caldav_client = crate::service::caldav::CalDavClient::for_account(aid);
         for cal in calendars
             .iter()
             .filter(|c| c.source_provider.as_deref() == Some("caldav"))

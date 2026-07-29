@@ -97,6 +97,11 @@ Options:
 
 Neither --read-only nor --allow can permit anything the settings forbid. They
 only ever take permissions away, so leaving one in a shortcut is safe.
+
+Everything that writes is experimental. Sending mail, deleting mail, and
+syncing changes to tasks, contacts and the calendar have never been run against
+a real account, so expect them to have bugs and do not point them at anything
+you cannot afford to lose. Reading is the part that has been used.
 ";
 
 /// Work out what this run was asked to do.
@@ -295,6 +300,10 @@ mod tests {
         // their mail, so it has to answer that rather than list flags.
         assert!(HELP.contains("--read-only"), "{HELP}");
         assert!(HELP.contains("only ever take permissions away"), "{HELP}");
+        // Somebody reading this is deciding whether to point it at their real
+        // mail, so it has to say plainly that writing is unproven.
+        assert!(HELP.contains("experimental"), "{HELP}");
+        assert!(HELP.contains("never been run against"), "{HELP}");
         assert!(HELP.contains("Reading is unaffected"), "{HELP}");
     }
 }

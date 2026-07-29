@@ -87,13 +87,32 @@ impl Allowed {
     }
 
     /// How this reads in a settings screen or a status line.
+    ///
+    /// Says that writing is experimental wherever it is on, because it is:
+    /// none of these paths has run against a real account. A warning that
+    /// only exists in a design note is a warning nobody gets.
     pub fn spoken(self) -> &'static str {
         match (self.mail, self.personal_information) {
-            (true, true) => "Everything, including sending mail",
-            (false, true) => "Tasks, contacts and calendar only. Mail is read only",
-            (true, false) => "Mail only",
-            (false, false) => "Nothing. This account is read only",
+            (true, true) => {
+                "Everything, including sending mail. Experimental: none of this                  has been tried against a real account yet"
+            }
+            (false, true) => {
+                "Tasks, contacts and calendar. Mail is read only. Experimental:                  changes to tasks, contacts and the calendar have never been                  tried against a real account"
+            }
+            (true, false) => {
+                "Mail only, including sending. Experimental: this has never                  been tried against a real account"
+            }
+            (false, false) => "Nothing. This account is read only, which is safe",
         }
+    }
+
+    /// Whether what this allows has ever been tried against a real account.
+    ///
+    /// Nothing that writes has. Kept as a question rather than a comment so
+    /// the interface can ask it and say so, and so it can be answered
+    /// differently once a path has actually been proved.
+    pub const fn is_experimental(self) -> bool {
+        self.anything()
     }
 }
 
@@ -199,6 +218,22 @@ mod tests {
 
         assert_eq!(permission.allowed(), Allowed::EVERYTHING);
         assert!(permission.allowed().mail);
+    }
+
+    #[test]
+    fn test_anything_that_writes_says_it_is_experimental() {
+        // The warning has to reach the person using it, not sit in a note.
+        // None of these paths has run against a real account.
+        for allowed in [Allowed::EVERYTHING, Allowed::FOR_TESTING] {
+            assert!(
+                allowed.spoken().contains("Experimental"),
+                "{}",
+                allowed.spoken()
+            );
+            assert!(allowed.is_experimental());
+        }
+        assert!(!Allowed::NOTHING.spoken().contains("Experimental"));
+        assert!(!Allowed::NOTHING.is_experimental());
     }
 
     #[test]

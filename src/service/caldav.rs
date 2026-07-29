@@ -57,9 +57,24 @@ impl Default for CalDavClient {
 }
 
 impl CalDavClient {
+    /// A client that reads and changes nothing.
     pub fn new() -> Self {
         Self {
             http: crate::service::outward::Outward::default(),
+        }
+    }
+
+    /// A client for one account, allowed whatever that account is allowed.
+    ///
+    /// A calendar is personal information rather than mail, so it follows that
+    /// half of the setting.
+    pub fn for_account(account_id: &str) -> Self {
+        Self {
+            http: if crate::application::allowed::allowed_for(account_id).personal_information {
+                crate::service::outward::Outward::may_change_things(reqwest::Client::new())
+            } else {
+                crate::service::outward::Outward::default()
+            },
         }
     }
 

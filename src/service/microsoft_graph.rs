@@ -196,21 +196,43 @@ impl Default for MsGraphClient {
 }
 
 impl MsGraphClient {
+    /// A client that reads and changes nothing.
     pub fn new() -> Self {
         Self {
-            // Building a client can fail if the TLS backend will not
-            // initialise. A default client still works, just without the
-            // timeout, which beats panicking inside a constructor.
-            http: crate::service::outward::Outward::read_only(
-                reqwest::Client::builder()
-                    .timeout(std::time::Duration::from_secs(30))
-                    .build()
-                    .unwrap_or_else(|e| {
-                        tracing::warn!("Microsoft Graph client kept default timeouts: {}", e);
-                        reqwest::Client::new()
-                    }),
-            ),
+            http: crate::service::outward::Outward::read_only(Self::http()),
         }
+    }
+
+    /// A client for one account, allowed whatever that account is allowed.
+    ///
+    /// Contacts and the calendar are personal information rather than mail, so
+    /// they follow that half of the setting. The command line, the
+    /// application-wide setting and the account are all asked, which is why
+    /// this takes an account id and not a boolean.
+    pub fn for_account(account_id: &str) -> Self {
+        let http = Self::http();
+        Self {
+            http: if crate::application::allowed::allowed_for(account_id).personal_information {
+                crate::service::outward::Outward::may_change_things(http)
+            } else {
+                crate::service::outward::Outward::read_only(http)
+            },
+        }
+    }
+
+    /// The underlying client, with a timeout.
+    ///
+    /// Building one can fail if the TLS backend will not initialise. A default
+    /// client still works, just without the timeout, which beats panicking
+    /// inside a constructor.
+    fn http() -> reqwest::Client {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|e| {
+                tracing::warn!("Microsoft Graph client kept default timeouts: {}", e);
+                reqwest::Client::new()
+            })
     }
 
     // ── Contacts ────────────────────────────────────────────────────────

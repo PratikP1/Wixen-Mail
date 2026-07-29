@@ -254,3 +254,51 @@ mod completeness {
         }
     }
 }
+
+#[cfg(test)]
+mod wiring {
+    /// Every client that can change something, and the constructor that asks
+    /// what the account allows before building it.
+    ///
+    /// A gate nothing calls is a gate nobody goes through. The whole point of
+    /// this was that five of the six were built with the refusing constructor
+    /// and nothing ever chose otherwise, so the application could not send,
+    /// flag, delete or sync anything at all.
+    const WIRED: [(&str, &str); 5] = [
+        ("src/service/tasks_api.rs", "pub fn for_account"),
+        ("src/service/google_api.rs", "pub fn for_account"),
+        ("src/service/microsoft_graph.rs", "pub fn for_account"),
+        ("src/service/caldav.rs", "pub fn for_account"),
+        // These two are sessions rather than clients, so they take the
+        // account at the point of connecting instead.
+        (
+            "src/application/mail_controller.rs",
+            "allowed_for(account_id).mail",
+        ),
+    ];
+
+    #[test]
+    fn test_every_gated_client_has_something_that_can_turn_it_on() {
+        for (path, wanted) in WIRED {
+            let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            assert!(
+                source.contains(wanted),
+                "{path} can refuse but nothing can allow it, so that feature does not work"
+            );
+        }
+    }
+
+    #[test]
+    fn test_sending_asks_the_account_rather_than_always_refusing() {
+        // The specific one that matters most. SmtpClient::new cannot send, so
+        // a send path that only ever calls it is a mail client that cannot
+        // post a message.
+        let source =
+            std::fs::read_to_string("src/application/mail_controller.rs").expect("the controller");
+
+        assert!(
+            source.contains("SmtpClient::allowed_to_send"),
+            "nothing ever builds a client that can send"
+        );
+    }
+}
