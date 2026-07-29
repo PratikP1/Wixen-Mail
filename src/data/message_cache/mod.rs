@@ -226,6 +226,14 @@ pub struct QueuedOutboxMessage {
     pub id: String,
     pub account_id: String,
     pub to_addr: String,
+    /// The other recipients, comma separated, as they were typed.
+    ///
+    /// Kept as one string rather than a list because that is what the composer
+    /// holds and what the address parser at the SMTP boundary takes. Empty
+    /// means nobody, which is the answer for most messages and for every
+    /// message queued before these columns existed.
+    pub cc_addr: String,
+    pub bcc_addr: String,
     pub subject: String,
     /// The plain text alternative, which is what `body` has always been.
     pub body: String,
@@ -1000,6 +1008,13 @@ impl MessageCache {
         // half it always was, so a message queued by an older build still
         // sends, as plain text, which is what it was.
         self.ensure_column_exists("outbox_queue", "body_html", "TEXT")?;
+        // The other recipients. The composer collected them, the preview
+        // displayed them and Reply All announced a count that included them,
+        // and then there was nowhere here to put them, so only the To
+        // addresses were ever sent. Empty rather than null, because "no Cc" is
+        // a real answer and every older queued row has that answer.
+        self.ensure_column_exists("outbox_queue", "cc_addr", "TEXT NOT NULL DEFAULT ''")?;
+        self.ensure_column_exists("outbox_queue", "bcc_addr", "TEXT NOT NULL DEFAULT ''")?;
         self.ensure_column_exists("calendar_events", "calendar_id", "TEXT")?;
         self.ensure_column_exists(
             "message_filter_rules",

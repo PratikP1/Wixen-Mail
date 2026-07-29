@@ -4057,6 +4057,8 @@ fn queue_for_sending(
         id: uuid::Uuid::new_v4().to_string(),
         account_id,
         to_addr: recipient.to_string(),
+        cc_addr: data.cc.clone(),
+        bcc_addr: data.bcc.clone(),
         subject: data.subject.clone(),
         // The plain text half is what everything that does not want HTML will
         // show, and it is the half that goes in `body` because that is what

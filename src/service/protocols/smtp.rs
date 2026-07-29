@@ -111,6 +111,11 @@ impl SmtpClient {
         for cc in &email.cc {
             message_builder = message_builder.cc(self.parse_mailbox(cc, None)?);
         }
+        // Blind means blind, and that rests on a default rather than on
+        // anything written here: lettre builds the envelope from the Bcc
+        // header and then removes the header, so the address reaches the
+        // server and no recipient sees it. `keep_bcc()` turns that off, and
+        // must not be called. Checked against lettre 0.11.22.
         for bcc in &email.bcc {
             message_builder = message_builder.bcc(self.parse_mailbox(bcc, None)?);
         }

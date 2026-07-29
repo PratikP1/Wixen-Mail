@@ -7,6 +7,8 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Fixed
 
+- **Cc and Bcc are actually sent to.** They were collected, shown in the preview and kept in saved drafts, and then dropped on the way to the server: only the To addresses received the message, with no error and no warning. Reply All was the worst of it, announcing "Reply to all, 2 recipients" and then sending to one. Nothing had been sent for real yet, so no message has gone out this way, and Bcc addresses are hidden from other recipients as they should be.
+
 - **Formatting commands put the keyboard back in the message.** They said they did and they did not. The editor is a web page inside the window, and the page can only move its own cursor, not the keyboard: run a command from the Format menu and the keyboard stayed on the Format button. Insert Table was the worst of it, announcing "In the first cell, Tab moves to the next cell" while Tab moved to the next button and nothing you typed reached the table. This is one of the things worth checking with your screen reader, because nothing in the tests can prove where the keyboard went.
 
 - **The spelling check before sending no longer objects to your own formatting.** It was reading the message as markup rather than as words, so a message with a second line in it was checked as "Sam\<div\>See" and "tomorrow\</div", and you were asked "send anyway?" about a message with nothing wrong in it. Any second line, any use of the Format menu, any Markdown you typed and any quoted reply set it off. A confirmation that appears every time is one you learn to dismiss without reading, which costs you the time it mattered, so this was the check quietly defeating itself.

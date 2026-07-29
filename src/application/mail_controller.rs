@@ -12,6 +12,19 @@ use crate::service::protocols::smtp::{Email, SmtpClient, SmtpConfig};
 use std::sync::Arc;
 use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 
+/// The addresses in one typed recipient field.
+///
+/// Split on comma or semicolon, which is what people paste and what every
+/// other client accepts. Empty entries are dropped: a trailing comma is a
+/// typing artefact, not a request to send to nobody.
+fn addresses(field: &str) -> Vec<String> {
+    field
+        .split([',', ';'])
+        .map(|addr| addr.trim().to_string())
+        .filter(|addr| !addr.is_empty())
+        .collect()
+}
+
 /// Parameters for sending an email via SMTP.
 #[derive(Debug)]
 pub struct SendEmailRequest {
@@ -21,6 +34,13 @@ pub struct SendEmailRequest {
     pub auth: MailAuth,
     pub use_tls: bool,
     pub to: Vec<String>,
+    /// The other recipients.
+    ///
+    /// These were collected by the composer, shown in the preview, counted in
+    /// Reply All's "2 recipients" announcement, and then hardcoded empty here,
+    /// so only the To addresses were ever sent and nothing said otherwise.
+    pub cc: Vec<String>,
+    pub bcc: Vec<String>,
     pub subject: String,
     /// The plain text alternative.
     pub body: String,
@@ -52,12 +72,7 @@ impl SendEmailRequest {
             return None;
         }
         let port: u16 = account.smtp_port.trim().parse().ok()?;
-        let recipients: Vec<String> = queued
-            .to_addr
-            .split([',', ';'])
-            .map(|addr| addr.trim().to_string())
-            .filter(|addr| !addr.is_empty())
-            .collect();
+        let recipients = addresses(&queued.to_addr);
         if recipients.is_empty() {
             return None;
         }
@@ -69,6 +84,8 @@ impl SendEmailRequest {
             auth,
             use_tls: account.smtp_use_tls,
             to: recipients,
+            cc: addresses(&queued.cc_addr),
+            bcc: addresses(&queued.bcc_addr),
             subject: queued.subject.clone(),
             body: queued.body.clone(),
             body_html: queued.body_html.clone(),
@@ -217,8 +234,8 @@ impl MailController {
             from: req.username.clone(),
             from_name: None,
             to: req.to.clone(),
-            cc: vec![],
-            bcc: vec![],
+            cc: req.cc.clone(),
+            bcc: req.bcc.clone(),
             subject: req.subject.clone(),
             body_text: req.body.clone(),
             body_html: req.body_html.clone(),
@@ -470,6 +487,8 @@ mod tests {
             auth: MailAuth::Password("password".to_string()),
             use_tls: true,
             to: vec!["to@example.com".to_string()],
+            cc: Vec::new(),
+            bcc: Vec::new(),
             subject: "Hello".to_string(),
             body: "Body".to_string(),
             body_html: None,
@@ -511,10 +530,53 @@ mod send_request_tests {
     }
 
     fn queued(to: &str) -> QueuedOutboxMessage {
+        queued_with(to, "", "")
+    }
+
+    #[test]
+    fn test_the_other_recipients_reach_the_request() {
+        // This is where they were dropped: cc and bcc were hardcoded empty on
+        // the way to the transport. Everything above the queue kept them, so
+        // the loss was invisible. The composer showed the address, the preview
+        // showed it, the saved draft kept it, Reply All counted it in "2
+        // recipients", and it was never going to be sent to.
+        let req = SendEmailRequest::from_queued(
+            &queued_with(
+                "alice@example.com",
+                "bob@example.com, dan@example.com",
+                "carol@example.com",
+            ),
+            &account(),
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+
+        assert_eq!(req.cc, ["bob@example.com", "dan@example.com"]);
+        assert_eq!(req.bcc, ["carol@example.com"]);
+    }
+
+    #[test]
+    fn test_no_other_recipients_is_nobody_rather_than_one_empty_address() {
+        // An empty field must not become a recipient with no address, which
+        // is what a naive split produces and what the server refuses.
+        let req = SendEmailRequest::from_queued(
+            &queued("alice@example.com"),
+            &account(),
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+
+        assert!(req.cc.is_empty(), "{:?}", req.cc);
+        assert!(req.bcc.is_empty(), "{:?}", req.bcc);
+    }
+
+    fn queued_with(to: &str, cc: &str, bcc: &str) -> QueuedOutboxMessage {
         QueuedOutboxMessage {
             id: "q1".into(),
             account_id: "a1".into(),
             to_addr: to.into(),
+            cc_addr: cc.into(),
+            bcc_addr: bcc.into(),
             subject: "Quarterly report".into(),
             body: "Attached.".into(),
             attempt_count: 0,

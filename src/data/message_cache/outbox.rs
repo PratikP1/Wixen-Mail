@@ -8,12 +8,12 @@ impl MessageCache {
     /// Queue message for later sending when offline
     pub fn queue_outbox_message(&self, item: &QueuedOutboxMessage) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO outbox_queue (id, account_id, to_addr, subject, body, body_html, attempt_count, last_error, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO outbox_queue (id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attempt_count, last_error, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
-                &item.id, &item.account_id, &item.to_addr, &item.subject,
-                &item.body, &item.body_html, &item.attempt_count, &item.last_error,
-                &item.created_at,
+                &item.id, &item.account_id, &item.to_addr, &item.cc_addr, &item.bcc_addr,
+                &item.subject, &item.body, &item.body_html, &item.attempt_count,
+                &item.last_error, &item.created_at,
             ],
         ).map_err(|e| Error::Other(format!("Failed to queue outbox message: {}", e)))?;
         Ok(())
@@ -22,7 +22,7 @@ impl MessageCache {
     /// Load queued outbox messages for an account
     pub fn load_outbox_messages(&self, account_id: &str) -> Result<Vec<QueuedOutboxMessage>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, to_addr, subject, body, body_html, attempt_count, last_error, created_at
+            "SELECT id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attempt_count, last_error, created_at
              FROM outbox_queue
              WHERE account_id = ?1
              ORDER BY created_at ASC"
@@ -34,12 +34,14 @@ impl MessageCache {
                     id: row.get(0)?,
                     account_id: row.get(1)?,
                     to_addr: row.get(2)?,
-                    subject: row.get(3)?,
-                    body: row.get(4)?,
-                    body_html: row.get(5)?,
-                    attempt_count: row.get(6)?,
-                    last_error: row.get(7)?,
-                    created_at: row.get(8)?,
+                    cc_addr: row.get(3)?,
+                    bcc_addr: row.get(4)?,
+                    subject: row.get(5)?,
+                    body: row.get(6)?,
+                    body_html: row.get(7)?,
+                    attempt_count: row.get(8)?,
+                    last_error: row.get(9)?,
+                    created_at: row.get(10)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query outbox messages: {}", e)))?
@@ -89,6 +91,8 @@ mod tests {
             id: "outbox-1".to_string(),
             account_id: "acc-1".to_string(),
             to_addr: "user@example.com".to_string(),
+            cc_addr: String::new(),
+            bcc_addr: String::new(),
             subject: "Queued".to_string(),
             body: "Queued body".to_string(),
             attempt_count: 0,
@@ -112,5 +116,42 @@ mod tests {
         cache.delete_outbox_message("outbox-1").unwrap();
         let empty = cache.load_outbox_messages("acc-1").unwrap();
         assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_the_queue_keeps_cc_and_bcc() {
+        // The queue is where they were lost. The composer collects them, the
+        // preview shows them, Reply All fills Cc in and announces "2
+        // recipients", the draft keeps them, and then the queue had nowhere to
+        // put them and only the To addresses were sent. Nothing said so, and
+        // there is no copy in Sent to notice it in afterwards.
+        let temp_dir = env::temp_dir().join(format!(
+            "wixen_mail_test_outbox_cc_{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let cache = MessageCache::new(temp_dir, None).unwrap();
+
+        cache
+            .queue_outbox_message(&QueuedOutboxMessage {
+                id: "outbox-cc".to_string(),
+                account_id: "acc-1".to_string(),
+                to_addr: "alice@example.com".to_string(),
+                cc_addr: "bob@example.com".to_string(),
+                bcc_addr: "carol@example.com".to_string(),
+                subject: "Reply to all".to_string(),
+                body: "Body".to_string(),
+                attempt_count: 0,
+                last_error: None,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                body_html: None,
+            })
+            .unwrap();
+
+        let loaded = cache.load_outbox_messages("acc-1").unwrap();
+        assert_eq!(loaded[0].cc_addr, "bob@example.com");
+        assert_eq!(loaded[0].bcc_addr, "carol@example.com");
     }
 }

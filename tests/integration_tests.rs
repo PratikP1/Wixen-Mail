@@ -544,6 +544,8 @@ fn test_message_cache_outbox_queue() {
         id: "q-1".to_string(),
         account_id: "acct-1".to_string(),
         to_addr: "recipient@example.com".to_string(),
+        cc_addr: "copied@example.com".to_string(),
+        bcc_addr: "blind@example.com".to_string(),
         subject: "Queued message".to_string(),
         body: "Sent while offline".to_string(),
         attempt_count: 0,
@@ -555,6 +557,8 @@ fn test_message_cache_outbox_queue() {
 
     let queued = cache.load_outbox_messages("acct-1").unwrap();
     assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].cc_addr, "copied@example.com");
+    assert_eq!(queued[0].bcc_addr, "blind@example.com");
     assert_eq!(queued[0].subject, "Queued message");
 
     // Record failure
