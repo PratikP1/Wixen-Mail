@@ -27,7 +27,7 @@
 //! that is no longer in the response is removed with it.
 
 use crate::common::Result;
-use crate::data::message_cache::MessageCache;
+use crate::data::message_cache::{MessageCache, TaskEntry};
 use crate::service::tasks_api::{
     TasksClient, google_list_to_entry, google_task_to_entry, ms_list_to_entry, ms_task_to_entry,
 };
@@ -69,6 +69,25 @@ impl TaskSyncResult {
         }
         said
     }
+}
+
+/// Which held tasks the provider no longer has.
+///
+/// Only ones the provider gave us in the first place, which is what the id
+/// prefix says. Anything else in the list was made here, and a sync deleting
+/// what it did not create is a sync that eats somebody's work.
+///
+/// Today nothing can get into that position: a task made here is filed with no
+/// list at all, so it is never in a synced list's contents. That is luck rather
+/// than design, and it stops being true the moment somebody can choose which
+/// list a new task goes in, which is an obvious next feature. The check costs
+/// one comparison and closes it permanently.
+fn gone_from(held: &[TaskEntry], arrived: &[String], prefix: &str) -> Vec<String> {
+    held.iter()
+        .filter(|task| task.id.starts_with(prefix))
+        .filter(|task| !arrived.contains(&task.id))
+        .map(|task| task.id.clone())
+        .collect()
 }
 
 /// Bring Google's task lists and their tasks into the cache.
@@ -158,8 +177,8 @@ pub async fn sync_microsoft_tasks(
             .iter()
             .map(|task| ms_task_to_entry(task, account_id, &entry.id).id)
             .collect();
-        for gone in held.iter().filter(|task| !arrived.contains(&task.id)) {
-            if cache.delete_task(&gone.id).is_ok() {
+        for gone in gone_from(&held, &arrived, "ms:") {
+            if cache.delete_task(&gone).is_ok() {
                 result.deleted += 1;
             }
         }
@@ -181,6 +200,62 @@ pub async fn sync_microsoft_tasks(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn task(id: &str) -> TaskEntry {
+        TaskEntry {
+            id: id.to_string(),
+            account_id: "acc-1".to_string(),
+            task_list_id: Some("ms:list".to_string()),
+            title: "A".to_string(),
+            description: None,
+            due_date: None,
+            is_completed: false,
+            completed_at: None,
+            priority: "normal".to_string(),
+            display_order: 0,
+            parent_task_id: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_a_task_the_provider_no_longer_has_is_removed() {
+        // The reason the reconciliation exists. Graph does not tombstone, so a
+        // task ticked off and deleted on a phone only goes when the list is
+        // read whole and it is not in it.
+        let held = [task("ms:a"), task("ms:b")];
+
+        let gone = gone_from(&held, &["ms:a".to_string()], "ms:");
+
+        assert_eq!(gone, vec!["ms:b".to_string()]);
+    }
+
+    #[test]
+    fn test_a_sync_never_deletes_a_task_it_did_not_bring() {
+        // A task made here has no provider prefix, so it was never in the
+        // response and never will be. Removing what did not come from the
+        // provider is a sync eating somebody's own work, and it would look
+        // exactly like the task never saving.
+        let held = [task("ms:a"), task("task-1700000000"), task("google:c")];
+
+        let gone = gone_from(&held, &[], "ms:");
+
+        assert_eq!(
+            gone,
+            vec!["ms:a".to_string()],
+            "the sync reached past its own tasks"
+        );
+    }
+
+    #[test]
+    fn test_nothing_is_removed_when_everything_came_back() {
+        let held = [task("ms:a"), task("ms:b")];
+
+        let gone = gone_from(&held, &["ms:a".to_string(), "ms:b".to_string()], "ms:");
+
+        assert!(gone.is_empty());
+    }
 
     #[test]
     fn test_the_summary_says_what_happened_in_words() {

@@ -17,6 +17,9 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Removed
 
+- **Two HTML rendering paths nothing used**, one of them for egui, a user interface framework this application does not depend on and has not since the move to wxWidgets. The other was called `render_for_accessibility`, which is the only accessible thing about it: nothing called it either, and the real reading path is the one behind the reader window. Both were invisible until visibility was narrowed, because Rust never reports a public item as unused.
+
+
 - **A table of access and refresh tokens that nothing ever read.** The tokens actually in use are in the Windows credential store. This was a second copy, encrypted at rest and then abandoned: no code path would ever have rotated it, expired it or deleted it, and it travelled with the database whenever somebody copied their profile. It is dropped from existing databases on the next start, which is the one case where a schema change is allowed to take something away.
 - **A dialog for pasting OAuth codes and client secrets by hand**, which nothing opened. A comment said it was kept for advanced manual token management, and it had been kept for nobody. Sign-in happens in the browser.
 - **Two modules for storing files that nothing stored files with.** They will come back as one thing, wired, when attachments can be downloaded.
@@ -27,6 +30,8 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 ### Added
 
 - **A conversation can be read as real headings.** The conversation dialog has an As Headings button, which opens the whole thread as a page in its own window, where every message is a heading at the level its reply sits at and `H` moves between them. The text reader stays the default: it is focusable, arrow-navigable and searchable, and it has no headings, which is the one thing it cannot do. The window shows the conversation and nothing else, so there is nowhere for a browser control to trap anybody: closing it is the way out.
+- **A page saying what syncs from which kind of account**, in [docs/PROVIDER_SETUP.md](PROVIDER_SETUP.md). One account does everything it can and there is no second account to set up, but what "everything" means depends on the provider, and that was not written down anywhere.
+
 - **Tasks come down from Google Tasks and Microsoft To Do.** Tools then Sync Tasks. Your lists and the tasks in them appear in the Tasks module, with due dates, completion and, on Microsoft, priority. A task you make on a Gmail or Outlook account is now filed under that account rather than on this computer, so it sits in the same list the sync fills.
   **It reads and does not write back**, deliberately. Sending changes up needs a rule for what happens when both ends changed, and getting that rule wrong destroys somebody's work quietly, which is the one failure this cannot apologise its way out of. Reading is most of the value and it cannot lose anything. Google's deletions are honoured, so a task ticked off on your phone does not reappear here.
   **Notes and reminders stay on this computer.** Google Keep's API is only available to Workspace accounts, so a consumer Gmail account cannot use it. OneNote could carry notes and has not been written, because a OneNote page is an HTML document inside a section inside a notebook rather than a title and a body, and that mapping is a decision rather than an afternoon. A standalone reminder is not a thing either provider has: Outlook makes a reminder a property of an event or a task, and Google folded Reminders into Tasks in 2023.

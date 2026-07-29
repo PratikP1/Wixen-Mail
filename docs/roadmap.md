@@ -84,7 +84,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [x] Compose window with To/CC/BCC/Subject/Body
 - [x] HTML and plain text modes with toggle
 - [x] Compose toolbar (Send, Undo, Redo, Bold, Italic, Underline, Attach)
-- [x] Spell checking (built-in 12K-word dictionary, edit-distance suggestions)
+- [ ] Spell checking. The checker is written, with a built-in dictionary and Hunspell support through `spellbook`, and **nothing calls it**: it is not wired into the composer, so no message is ever checked. This was ticked off and should not have been.
 - [x] Draft auto-save functionality
 - [x] Email signatures (multiple per account)
 - [x] Preview-before-send confirmation dialog

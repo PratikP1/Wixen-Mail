@@ -10,6 +10,80 @@ Quick setup instructions for popular email providers with Wixen Mail.
 - [iCloud Mail](#icloud-mail)
 - [ProtonMail (via Bridge)](#protonmail-via-bridge)
 - [Other Providers](#other-providers)
+- [What syncs from which account](#what-syncs-from-which-account)
+
+---
+
+## What syncs from which account
+
+One account does everything it can. There is no second account to set up for
+contacts, for the calendar or for tasks: they all use the sign-in you already
+gave for the mail.
+
+What you get depends on what kind of account it is.
+
+| | Gmail | Outlook, Office 365 | Any other IMAP or POP account |
+|---|---|---|---|
+| Mail | Yes | Yes | Yes |
+| Contacts | Yes, both ways | Yes, both ways | No |
+| Calendar | Yes, both ways | Yes, both ways | No |
+| Tasks | Yes, read only | Yes, read only | No |
+| Notes | No | No | No |
+| Reminders | No | No | No |
+
+**"Any other IMAP or POP account"** means a mail server and nothing else, which
+is what Yahoo, iCloud, ProtonMail Bridge and a self-hosted server are to Wixen
+Mail. They carry mail. Contacts, calendars and tasks made while one of those is
+your default account are kept on this computer instead, which is the honest
+version of the same thing: filing them under an account that will never carry
+them anywhere would look like syncing until you opened a second device.
+
+You can also add a calendar on its own, without an account, through CalDAV or an
+iCalendar subscription. That is in the Calendar module rather than the account
+dialog.
+
+### Tasks are read only
+
+Your task lists and their tasks come down from Google Tasks and from Microsoft
+To Do, with their due dates, whether they are done, and on Microsoft their
+priority. Ticking one off on your phone removes it here on the next sync.
+
+**Nothing goes back up.** A task you make in Wixen Mail stays in Wixen Mail. It
+appears in the list and it will not appear on your phone.
+
+The reason is that sending changes back needs a rule for what happens when the
+same task changed in both places, and a wrong rule quietly destroys work. Reading
+is most of what a task list is for and it cannot lose anything, so that is what
+exists today. Two-way is a decision waiting to be made rather than a thing half
+built.
+
+Sync with Tools, then Sync Tasks. It does not run on its own yet.
+
+### Notes and reminders stay on this computer
+
+Not an oversight, and not the same reason for each.
+
+**Notes.** Google Keep has an API and it is only available to Workspace
+accounts, so a personal Gmail account cannot use it at all. Microsoft could carry
+notes through OneNote, and that is not built: a OneNote page is a formatted
+document inside a section inside a notebook, and a note here is a title and some
+text, so somebody has to decide what happens to the difference before any of it
+is written.
+
+**Reminders.** Neither provider has a reminder that exists on its own. Outlook
+and Exchange make a reminder a property of an appointment or a task, and Google
+folded its Reminders into Tasks in 2023. There is nothing on the other side to
+sync one to, so this one is not going to change.
+
+### If you signed in before tasks existed
+
+Tasks need permission that older sign-ins did not ask for, so an account you set
+up before this version will sync mail, contacts and the calendar as usual and
+find no task lists.
+
+Fix it by signing in again: open the account, switch the browser sign-in off and
+back on, and approve the list of permissions when the browser shows it. Tasks
+appear on the next sync.
 
 ---
 
