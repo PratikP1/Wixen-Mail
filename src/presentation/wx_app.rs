@@ -110,6 +110,7 @@ menu_ids!(
     ID_CALENDAR,
     ID_SYNC_CONTACTS,
     ID_SYNC_CALENDAR,
+    ID_SYNC_TASKS,
     ID_CTX_SELECT_ALL,
     ID_CTX_COPY_LINK,
     ID_CTX_SAVE_LINK,
@@ -2402,6 +2403,10 @@ document.addEventListener('keydown', function(e) {
                             send_status(&ui_tx, &runtime, "Calendar sync requested...");
                             spawn_calendar_sync(&state, &ui_tx, &runtime);
                         }
+                        _ if id == ID_SYNC_TASKS => {
+                            send_status(&ui_tx, &runtime, "Syncing tasks...");
+                            spawn_tasks_sync(&state, &ui_tx, &runtime);
+                        }
                         _ if id == ID_SETTINGS => handle_settings(&frame, &ui_tx, &runtime, &a11y),
                         _ if id == ID_OFFLINE_MODE => {
                             let new_mode = {
@@ -2790,6 +2795,11 @@ document.addEventListener('keydown', function(e) {
                 ID_SYNC_CALENDAR,
                 "Sync Calen&dar",
                 "Sync calendar with cloud providers",
+            )
+            .append_item(
+                ID_SYNC_TASKS,
+                "Sync Ta&sks",
+                "Bring tasks down from Google Tasks and Microsoft To Do",
             )
             .append_separator()
             .append_item(
@@ -5779,6 +5789,103 @@ fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
                 })
                 .await;
         });
+    });
+}
+
+/// Bring tasks down from Google Tasks and Microsoft To Do.
+///
+/// Both are tried, because an account can be signed in to either or both, and
+/// an account that is signed in to neither costs nothing here: no credentials
+/// means the branch is skipped.
+///
+/// One direction only. Reading is most of the value and cannot lose anything;
+/// writing back needs a conflict rule, and getting that wrong destroys somebody
+/// else's data quietly. See the note on `application::tasks_sync`.
+fn spawn_tasks_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
+    use crate::application::tasks_sync::{TaskSyncResult, sync_google_tasks, sync_microsoft_tasks};
+
+    let tx = tx.clone();
+    let account_id = state.lock().ok().and_then(|s| s.active_account_id.clone());
+    let handle = rt.handle().clone();
+
+    rt.spawn_blocking(move || {
+        let aid = account_id.as_deref().unwrap_or("default");
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(
+                "Tasks could not be synced: there is nowhere to keep them".into(),
+            ));
+            return;
+        };
+        let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
+            Ok(cache) => cache,
+            Err(e) => {
+                let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                    "Tasks could not be synced: {e}"
+                )));
+                return;
+            }
+        };
+
+        let client = crate::service::tasks_api::TasksClient::new();
+        let mut total = TaskSyncResult::default();
+
+        if let Some(creds) = crate::service::oauth_credentials::credentials_for("gmail") {
+            let auth = crate::service::oauth::AuthManager::new(
+                aid,
+                "gmail",
+                &creds.client_id,
+                creds.client_secret.as_deref(),
+            );
+            match handle.block_on(auth.get_valid_token()) {
+                Ok(token) => {
+                    match handle.block_on(sync_google_tasks(&cache, &client, &token, aid)) {
+                        Ok(result) => {
+                            total.lists += result.lists;
+                            total.stored += result.stored;
+                            total.deleted += result.deleted;
+                            total.errors.extend(result.errors);
+                        }
+                        Err(e) => total.errors.push(format!("Google Tasks: {e}")),
+                    }
+                }
+                Err(e) => total.errors.push(format!("Google sign-in: {e}")),
+            }
+        }
+
+        if let Some(creds) = crate::service::oauth_credentials::credentials_for("outlook") {
+            let auth = crate::service::oauth::AuthManager::new(
+                aid,
+                "outlook",
+                &creds.client_id,
+                creds.client_secret.as_deref(),
+            );
+            match handle.block_on(auth.get_valid_graph_token()) {
+                Ok(token) => {
+                    match handle.block_on(sync_microsoft_tasks(&cache, &client, &token, aid)) {
+                        Ok(result) => {
+                            total.lists += result.lists;
+                            total.stored += result.stored;
+                            total.deleted += result.deleted;
+                            total.errors.extend(result.errors);
+                        }
+                        Err(e) => total.errors.push(format!("Microsoft To Do: {e}")),
+                    }
+                }
+                Err(e) => total.errors.push(format!("Microsoft sign-in: {e}")),
+            }
+        }
+
+        // The messages go to the log and the count goes on screen, because the
+        // status line has one line and a failure per list would fill it.
+        for problem in &total.errors {
+            tracing::warn!("Task sync: {}", problem);
+        }
+        let _ = tx.try_send(UIUpdate::StatusUpdated(format!(
+            "Tasks synced: {}",
+            total.summary()
+        )));
+        // The panel is showing what was there before this ran.
+        let _ = tx.try_send(UIUpdate::ModuleChanged(PimModule::Tasks));
     });
 }
 

@@ -22,6 +22,7 @@ pub mod reminders;
 pub mod reply;
 pub mod search;
 pub mod tasks;
+pub mod tasks_sync;
 pub mod threading;
 
 pub use accounts::AccountManager;

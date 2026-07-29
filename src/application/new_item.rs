@@ -12,24 +12,25 @@
 //! to belong to an account. It goes to the local account instead, which is the
 //! honest version of the same thing.
 //!
-//! Tasks, notes and reminders are local for everybody today. That is a fact
-//! about this application and not about the providers, which is worth writing
-//! down because the obvious reading is wrong:
+//! Tasks now sync too, on both providers, through `application::tasks_sync`.
+//! Notes and reminders stay local, and for reasons worth writing down because
+//! the obvious reading of each is wrong:
 //!
-//! - **Tasks do sync.** Google has the Tasks API and Microsoft has To Do
-//!   through Graph. Both are ordinary, documented, and available to consumer
-//!   accounts. We have written neither.
-//! - **Notes sync on Microsoft**, through OneNote in Graph. Google Keep has an
-//!   API but it is Workspace only, so a consumer Gmail account cannot use it.
+//! - **Notes could sync on Microsoft** through OneNote in Graph, and it is not
+//!   written. A OneNote page is an HTML document inside a section inside a
+//!   notebook rather than a title and a body, so the mapping is a decision
+//!   somebody has to make rather than an afternoon's work. Google Keep has an
+//!   API and it is Workspace only, so a consumer Gmail account cannot use it at
+//!   all and Google notes stay here whatever happens.
 //! - **Reminders are not a thing to sync on either.** In Outlook and Exchange a
 //!   reminder is a property of an event or a task rather than an item of its
-//!   own, and Google folded its Reminders into Tasks. So a standalone reminder
-//!   is ours to keep however good the sync gets.
+//!   own, and Google folded its Reminders into Tasks in 2023. So a standalone
+//!   reminder is ours to keep however good the sync gets.
 //!
 //! What decides the rule below is what we actually sync, not what could be
-//! synced. Putting a task in a Gmail account today would promise something
-//! that never happens, and the promise only breaks on a second device, which
-//! is the worst place to find out.
+//! synced. Putting a note in a Gmail account today would promise something that
+//! never happens, and the promise only breaks on a second device, which is the
+//! worst place to find out.
 
 use crate::data::account::Account;
 
@@ -178,6 +179,12 @@ impl Destination {
 const CONTACT_PROVIDERS: [&str; 2] = ["gmail", "outlook"];
 /// Providers whose calendars we can sync.
 const CALENDAR_PROVIDERS: [&str; 2] = ["gmail", "outlook"];
+/// Providers whose tasks we can sync.
+///
+/// Google Tasks and Microsoft To Do. Both are read into the local lists by
+/// `application::tasks_sync`, one direction only, which is why a task made here
+/// still lives here: it appears in the account's list and is not sent up.
+const TASK_PROVIDERS: [&str; 2] = ["gmail", "outlook"];
 
 /// Whether this account's provider syncs this kind of item.
 ///
@@ -189,11 +196,19 @@ pub fn supports(account: &Account, kind: ItemKind) -> bool {
         ItemKind::Mail => true,
         ItemKind::Contact => provider.is_some_and(|p| CONTACT_PROVIDERS.contains(&p.as_str())),
         ItemKind::Event => provider.is_some_and(|p| CALENDAR_PROVIDERS.contains(&p.as_str())),
-        // False because *we* sync none of them, not because the providers
-        // cannot. Google Tasks and Microsoft To Do both exist; see the module
-        // note. This flips to true per provider the day the sync is written,
-        // and not a moment before.
-        ItemKind::Reminder | ItemKind::Task | ItemKind::Note => false,
+        ItemKind::Task => provider.is_some_and(|p| TASK_PROVIDERS.contains(&p.as_str())),
+        // Notes are false for a reason per provider rather than one reason.
+        // Google Keep's API is Workspace-only, so a consumer Gmail account
+        // cannot use it at all. OneNote could carry them, and has not been
+        // written: a OneNote page is an HTML document in a section in a
+        // notebook rather than a title and a body, so the mapping is a
+        // decision rather than an afternoon.
+        //
+        // Reminders stay false everywhere and always will. In Outlook and
+        // Exchange a reminder is a property of an event or a task rather than
+        // an item, and Google folded Reminders into Tasks in 2023, so there is
+        // nothing on either side to sync a standalone reminder to.
+        ItemKind::Reminder | ItemKind::Note => false,
     }
 }
 
@@ -291,21 +306,42 @@ mod tests {
         let plain = account("a1", "me@myhost.example");
 
         assert!(supports(&plain, ItemKind::Mail));
-        for kind in [ItemKind::Contact, ItemKind::Event] {
+        for kind in [ItemKind::Contact, ItemKind::Event, ItemKind::Task] {
             assert!(!supports(&plain, kind), "{kind:?} should not be offered");
         }
     }
 
     #[test]
-    fn test_we_do_not_claim_to_sync_tasks_notes_or_reminders_yet() {
-        // Not because the providers cannot: Google Tasks and Microsoft To Do
-        // both exist, and OneNote covers notes on Microsoft. This asserts what
-        // *we* do, and it is meant to be changed by whoever writes the sync,
-        // in the same commit that writes it.
-        let gmail = account("a1", "me@gmail.com");
+    fn test_tasks_sync_on_both_providers_that_have_them() {
+        // Google Tasks and Microsoft To Do, read into the local lists by
+        // application::tasks_sync. This was false until that existed, which is
+        // the rule: the flag and the sync behind it move together.
+        for address in ["me@gmail.com", "me@outlook.com"] {
+            assert!(
+                supports(&account("a1", address), ItemKind::Task),
+                "{address} should sync tasks"
+            );
+        }
+    }
 
-        for kind in [ItemKind::Task, ItemKind::Note, ItemKind::Reminder] {
-            assert!(!supports(&gmail, kind), "{kind:?} claimed to sync");
+    #[test]
+    fn test_notes_and_reminders_still_stay_on_this_computer() {
+        // Notes for a reason per provider: Google Keep's API is Workspace-only
+        // so a consumer account cannot use it, and OneNote could work but the
+        // mapping from a page in a section in a notebook to a title and a body
+        // is a decision nobody has made.
+        //
+        // Reminders because there is nothing on either side to sync one to. In
+        // Outlook and Exchange a reminder is a property of an event or a task,
+        // and Google folded Reminders into Tasks in 2023.
+        for address in ["me@gmail.com", "me@outlook.com"] {
+            let account = account("a1", address);
+            for kind in [ItemKind::Note, ItemKind::Reminder] {
+                assert!(
+                    !supports(&account, kind),
+                    "{address}: {kind:?} claimed to sync"
+                );
+            }
         }
     }
 
@@ -345,16 +381,33 @@ mod tests {
     }
 
     #[test]
-    fn test_a_task_is_local_even_on_a_gmail_default() {
+    fn test_a_note_or_reminder_is_local_even_on_a_gmail_default() {
+        // A task is no longer in this list, which is the point of the sync
+        // that was written for it. These two still are, and for reasons that
+        // are not going to change: Google Keep's API is Workspace-only, and a
+        // standalone reminder is not a thing either provider has.
         let accounts = vec![account("a1", "me@gmail.com")];
 
-        for kind in [ItemKind::Task, ItemKind::Note, ItemKind::Reminder] {
+        for kind in [ItemKind::Note, ItemKind::Reminder] {
             assert_eq!(
                 destination(kind, &accounts, Some("a1")),
                 Some(Destination::Local),
                 "{kind:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_a_task_now_goes_to_the_account_that_can_hold_it() {
+        // The other half of flipping the flag. A task made on a Gmail default
+        // is filed under that account, so it sits in the same list the sync
+        // fills rather than in a second list on this computer.
+        let accounts = vec![account("a1", "me@gmail.com")];
+
+        assert_eq!(
+            destination(ItemKind::Task, &accounts, Some("a1")),
+            Some(Destination::Account("a1".to_string()))
+        );
     }
 
     #[test]
