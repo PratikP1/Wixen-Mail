@@ -484,7 +484,7 @@ pub fn show_compose_dialog_full(
     let apply_format = {
         let a11y = a11y.clone();
         move |format: editor_document::Format| {
-            body_editor.run_script(&editor_document::format_script(format));
+            run_in_editor(&body_editor, &editor_document::format_script(format));
             let _ = a11y.announce(
                 format.spoken(),
                 crate::presentation::accessibility::announcements::Priority::Normal,
@@ -649,7 +649,7 @@ pub fn show_compose_dialog_full(
                 // message somebody sends believing it has one.
                 Some(editor_document::EditorMessage::Link(url)) => {
                     let (script, spoken) = editor_document::resolve_markdown_link(&url);
-                    body_editor.run_script(&script);
+                    run_in_editor(&body_editor, &script);
                     let _ = a11y.announce(
                         &spoken,
                         crate::presentation::accessibility::announcements::Priority::Normal,
@@ -782,6 +782,26 @@ pub fn show_compose_dialog_full(
             _ => return ComposeResult::Cancelled,
         }
     }
+}
+
+/// Run a script in the editor, and put the keyboard back into the editor.
+///
+/// Both halves, always, which is why this exists rather than two calls at each
+/// site. The `focus()` inside the generated scripts moves the DOM active
+/// element and nothing else. When the command came from a toolbar button or a
+/// menu the Win32 focus is on that button, and only `wxWindow::SetFocus`,
+/// which reaches the WebView control, brings it back.
+///
+/// Splitting the two is how Insert Table came to announce "In the first cell.
+/// Tab moves to the next cell" while Tab moved to the Spelling button and
+/// nothing typed reached the table.
+///
+/// Not verified in the running application. Nothing in Rust can assert where
+/// Win32 focus is, so the tests here check the script and not the focus, and
+/// only a screen reader pass settles it.
+fn run_in_editor(body_editor: &WebView, script: &str) {
+    body_editor.run_script(script);
+    body_editor.set_focus();
 }
 
 /// Whether there is anything worth stopping the send for, and what to say.
@@ -984,6 +1004,11 @@ fn check_spelling(
         }
     }
 
+    // Back into the message. The walk ends on a dialog closing, which returns
+    // focus to whatever opened it, and that is the Spelling button when F7
+    // came from the toolbar. Somebody who has just finished checking a message
+    // is somebody about to carry on writing it.
+    body_editor.set_focus();
     let _ = a11y.announce(&session::finished(corrected), Priority::High);
 }
 
@@ -1188,7 +1213,7 @@ fn insert_table(
     );
     match editor_document::insert_table_script(rows, columns, header) {
         Some(script) => {
-            body_editor.run_script(&script);
+            run_in_editor(&body_editor, &script);
             let _ = a11y.announce(
                 &editor_document::table_spoken(rows, columns, header),
                 Priority::Normal,
@@ -1228,7 +1253,7 @@ fn insert_link(
     }
     match editor_document::link_script(&typed) {
         Some(script) => {
-            body_editor.run_script(&script);
+            run_in_editor(&body_editor, &script);
             let _ = a11y.announce("Link added", Priority::Normal);
         }
         // Refused out loud, naming what was refused. A link that silently does

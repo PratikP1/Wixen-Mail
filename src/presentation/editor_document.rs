@@ -1672,10 +1672,24 @@ mod tests {
     }
 
     #[test]
-    fn test_formatting_puts_the_caret_back_where_it_was_typing() {
-        // A toolbar button takes focus. Without this, applying bold from the
-        // toolbar leaves somebody on the button rather than in the message,
-        // and the next thing they type goes nowhere.
-        assert!(format_script(Format::Bold).contains("focus()"));
+    fn test_every_formatting_script_puts_the_caret_back_in_the_body() {
+        // Half of what has to happen, and worth being exact about which half.
+        //
+        // This asserts the script moves the DOM active element. It cannot
+        // assert that the keyboard came back, because when the command was run
+        // from a toolbar button the Win32 focus is on the button and no amount
+        // of JavaScript inside the page moves it. That is the caller's job and
+        // is done by `wx_compose::run_in_editor`; the earlier version of this
+        // test read as though it covered both, and it never did.
+        //
+        // Every command rather than Bold alone: one of thirteen forgetting is
+        // exactly the shape this would take.
+        for format in Format::ALL {
+            let script = format_script(format);
+            assert!(
+                script.contains("focus()"),
+                "{format:?} leaves the caret wherever the command put it: {script}"
+            );
+        }
     }
 }
