@@ -5,6 +5,7 @@
 pub mod accessibility;
 pub mod contact_convert;
 pub mod date_display;
+pub mod editor_document;
 pub mod html_renderer;
 pub mod managers;
 pub mod message_columns;

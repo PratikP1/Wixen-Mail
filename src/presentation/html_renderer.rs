@@ -96,7 +96,10 @@ impl HtmlRenderer {
     /// entities, so a body containing `&lt;script&gt;` comes back out as live
     /// markup. Correct as plain text, and an injection the moment it is placed
     /// in the WebView, so it is escaped here.
-    fn sanitize_html(&self, html: &str) -> String {
+    /// Public again, and for a real reason: the message editor is a live DOM
+    /// in a browser engine, and a reply quotes a stranger. #39 narrowed this
+    /// when nothing outside the file used it; something does now.
+    pub fn sanitize_html(&self, html: &str) -> String {
         if self.plain_text_only {
             return html_escape::encode_text(&self.html_to_plain_text(html)).to_string();
         }

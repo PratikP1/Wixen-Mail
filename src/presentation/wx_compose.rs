@@ -4,6 +4,7 @@
 //! Uses RichTextCtrl for the message body with formatting toolbar support.
 
 use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::editor_document;
 use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::ui_types::CompositionData;
 use wxdragon::event::WebViewEvents;
@@ -324,12 +325,40 @@ pub fn show_compose_dialog_full(
         8,
     );
 
-    // -- Rich text body --
-    let body_editor = RichTextCtrl::builder(&dialog)
-        .with_style(RichTextCtrlStyle::MultiLine | RichTextCtrlStyle::WordWrap)
+    // -- The message body, which is a web view --
+    //
+    // Not a wxRichTextCtrl. That control is drawn by wxWidgets on every
+    // platform, so it exposes no per-range accessibility attributes anywhere:
+    // no misspelling can be marked, no heading can report itself, and every
+    // announcement has to be made by hand and be slightly wrong forever. A web
+    // view gets all of it from the engine, starting with native spelling
+    // annotations that each screen reader announces itself.
+    //
+    // The objection that kept a web view out of the preview pane does not
+    // apply. What trapped people there was a browser sharing a window with a
+    // folder tree and a message list, where F6 had to cycle panes and Escape
+    // had to return to the list. Here the keys that must escape are bound
+    // inside the page and posted back out, and everything else belongs to the
+    // editor, which is what somebody writing a message wants.
+    let language = crate::data::config::ConfigManager::load_stored()
+        .map(|config| config.app_config().language.clone())
+        .unwrap_or_else(|_| "en".to_string());
+    let body_editor = WebView::builder(&dialog)
+        .with_backend(WebViewBackend::Default)
         .build();
     set_accessible_name(&body_editor, "Message body");
-    body_editor.set_name("Message body");
+    body_editor.enable_context_menu(true);
+    body_editor.enable_access_to_dev_tools(false);
+    // The browser does not get this application's keys.
+    body_editor.enable_browser_accelerator_keys(false);
+    body_editor.add_script_message_handler(editor_document::CHANNEL);
+    let set_body = {
+        let language = language.clone();
+        move |html: &str| {
+            body_editor.set_page(&editor_document::editor_document(html, &language), "");
+        }
+    };
+    set_body("");
 
     main_sizer.add(&body_editor, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
@@ -379,8 +408,7 @@ pub fn show_compose_dialog_full(
         } => {
             to_field.set_value(to);
             subject_field.set_value(&format_reply_subject(subject));
-            body_editor.set_value(&format_reply_body(quoted_body));
-            body_editor.set_insertion_point(0);
+            set_body(&format_reply_body(quoted_body));
         }
         ComposeMode::ReplyAll {
             to,
@@ -391,13 +419,11 @@ pub fn show_compose_dialog_full(
             to_field.set_value(to);
             cc_field.set_value(cc);
             subject_field.set_value(&format_reply_subject(subject));
-            body_editor.set_value(&format_reply_body(quoted_body));
-            body_editor.set_insertion_point(0);
+            set_body(&format_reply_body(quoted_body));
         }
         ComposeMode::Forward { subject, body } => {
             subject_field.set_value(&format_forward_subject(subject));
-            body_editor.set_value(&format_forward_body(body));
-            body_editor.set_insertion_point(0);
+            set_body(&format_forward_body(body));
             to_field.set_focus();
         }
         ComposeMode::Draft(data) => {
@@ -405,28 +431,38 @@ pub fn show_compose_dialog_full(
             cc_field.set_value(&data.cc);
             bcc_field.set_value(&data.bcc);
             subject_field.set_value(&data.subject);
-            body_editor.set_value(&data.body);
+            set_body(&data.body);
         }
     }
 
     // ── Wire formatting button events ────────────────────────────────────
-    bold_btn.on_click({
-        move |_| {
-            body_editor.apply_bold_to_selection();
-        }
-    });
-
-    italic_btn.on_click({
-        move |_| {
-            body_editor.apply_italic_to_selection();
-        }
-    });
-
-    underline_btn.on_click({
-        move |_| {
-            body_editor.apply_underline_to_selection();
-        }
-    });
+    // Each of these runs the command and puts the caret back where somebody
+    // was typing. A toolbar button takes focus, and without the second half
+    // applying bold leaves you on the button with the next keystroke going
+    // nowhere. Each one is announced, because a formatting change nobody is
+    // told about is one that happened to somebody rather than one they made.
+    for (button, format) in [
+        (&bold_btn, editor_document::Format::Bold),
+        (&italic_btn, editor_document::Format::Italic),
+        (&underline_btn, editor_document::Format::Underline),
+        (&undo_btn, editor_document::Format::Undo),
+        (&redo_btn, editor_document::Format::Redo),
+    ] {
+        button.on_click(move |_| {
+            body_editor.run_script(&editor_document::format_script(format));
+            // Straight to the screen reader rather than through the feedback
+            // system: this window has no Accessibility handle, and threading
+            // one in for five strings would put a parameter on every compose
+            // entry point. Worth revisiting when the formatting set grows past
+            // a handful, because these should obey the channel settings like
+            // every other event does.
+            if let Ok(bridge) =
+                crate::presentation::accessibility::screen_reader::ScreenReaderBridge::new()
+            {
+                let _ = bridge.announce(format.spoken());
+            }
+        });
+    }
 
     // Send button (in toolbar) closes dialog with ID_SEND
     send_toolbar_btn.on_click({
@@ -435,17 +471,23 @@ pub fn show_compose_dialog_full(
         }
     });
 
-    // Ctrl+Enter → Send from body editor
-    body_editor.on_key_down({
+    // Ctrl+Enter, Ctrl+S and Escape come out of the page rather than from a
+    // key handler on the control. A web view consumes keys once it has focus,
+    // so the page binds the three that have to leave and posts them here.
+    body_editor.on_script_message_received({
         move |event| {
-            if let WindowEventData::Keyboard(ref kb) = event
-                && kb.event.control_down()
-                && kb.event.get_key_code() == Some(13)
-            {
-                dialog.end_modal(ID_SEND);
+            let Some(raw) = event.get_string() else {
                 return;
+            };
+            match editor_document::parse_message(&raw) {
+                Some(editor_document::EditorMessage::Send) => dialog.end_modal(ID_SEND),
+                Some(editor_document::EditorMessage::Save) => dialog.end_modal(ID_SAVE_DRAFT),
+                Some(editor_document::EditorMessage::Cancel) => dialog.end_modal(ID_CANCEL),
+                // The page is ours, so an unknown message is a bug rather than
+                // an attack, and doing nothing beats guessing which command
+                // somebody meant when every one of them sends or discards.
+                None => tracing::warn!("Unrecognised editor message: {}", raw),
             }
-            event.skip(true);
         }
     });
 
@@ -460,18 +502,6 @@ pub fn show_compose_dialog_full(
                 return;
             }
             event.skip(true);
-        }
-    });
-
-    // Undo / Redo
-    undo_btn.on_click({
-        move |_| {
-            body_editor.undo();
-        }
-    });
-    redo_btn.on_click({
-        move |_| {
-            body_editor.redo();
         }
     });
 
@@ -512,7 +542,11 @@ pub fn show_compose_dialog_full(
                 cc: cc_field.get_value(),
                 bcc: bcc_field.get_value(),
                 subject: subject_field.get_value(),
-                body: body_editor.get_value(),
+                body: editor_document::body_from_editor(
+                    &body_editor
+                        .run_script(&editor_document::read_body_script())
+                        .unwrap_or_default(),
+                ),
                 html_mode: true,
                 account_index: account_choice.get_selection(),
             };
@@ -540,7 +574,11 @@ pub fn show_compose_dialog_full(
             cc: cc_field.get_value(),
             bcc: bcc_field.get_value(),
             subject: subject_field.get_value(),
-            body: body_editor.get_value(),
+            body: editor_document::body_from_editor(
+                &body_editor
+                    .run_script(&editor_document::read_body_script())
+                    .unwrap_or_default(),
+            ),
             html_mode: true, // RichTextCtrl is always rich text
             account_index: account_choice.get_selection(),
         };
