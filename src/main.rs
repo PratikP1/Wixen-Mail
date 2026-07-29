@@ -38,6 +38,10 @@ fn main() {
 
     let _log_guard = init_logging(LoggerConfig::default()).ok();
     tracing::info!("Starting Wixen Mail v{}", env!("CARGO_PKG_VERSION"));
+    // Before anything can be built that might write. Recorded once here, and
+    // read wherever a client is made, so the command line narrows every one of
+    // them without being threaded through the window layer.
+    wixen_mail::application::allowed::narrow_this_run_to(run.allowed);
     if !run.allowed.anything() {
         tracing::info!("Started read only: nothing will be changed at any server");
     }

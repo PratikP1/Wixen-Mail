@@ -416,8 +416,25 @@ pub struct TasksClient {
 }
 
 impl TasksClient {
+    /// A client that reads and does not change anything.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A client for one account, allowed whatever that account is allowed.
+    ///
+    /// The command line, the application-wide setting and the account are all
+    /// asked, so a caller cannot forget one of the three: there is one
+    /// function and it takes an account id.
+    pub fn for_account(account_id: &str) -> Self {
+        let allowed = crate::application::allowed::allowed_for(account_id);
+        Self {
+            http: if allowed.personal_information {
+                crate::service::outward::Outward::may_change_things(reqwest::Client::new())
+            } else {
+                crate::service::outward::Outward::default()
+            },
+        }
     }
 
     async fn get<T: serde::de::DeserializeOwned>(&self, url: &str, token: &str) -> Result<T> {

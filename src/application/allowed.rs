@@ -226,3 +226,73 @@ mod tests {
         assert_eq!(a.and(b), Allowed::NOTHING);
     }
 }
+
+/// What the command line narrowed this run to.
+///
+/// Written once, before anything opens, and read from wherever a client is
+/// built. A global is worth justifying: this one is set exactly once at
+/// startup, is never changed afterwards, and can only ever take permissions
+/// away. Threading it instead would mean carrying it through seven
+/// constructions in the window layer, several inside spawned tasks, which is
+/// seven chances to drop it, and dropping it fails towards writing.
+static FROM_COMMAND_LINE: std::sync::OnceLock<Allowed> = std::sync::OnceLock::new();
+
+/// Record what the command line allowed. Call once, before anything opens.
+///
+/// A second call is ignored rather than being an error: the first answer is
+/// the one from the arguments, and nothing later should be able to widen it.
+pub fn narrow_this_run_to(allowed: Allowed) {
+    let _ = FROM_COMMAND_LINE.set(allowed);
+}
+
+/// What this account may actually change, with all three asked.
+///
+/// The one function every client should call before it is built. Returns the
+/// narrowest of the command line, the application-wide setting and the
+/// account's own, so no caller has to remember there are three.
+///
+/// A settings file that cannot be read counts as allowing nothing. That is the
+/// safe direction: somebody whose config is corrupt should find that nothing
+/// syncs, not that everything is permitted.
+pub fn allowed_for(account_id: &str) -> Allowed {
+    let stored = crate::data::config::ConfigManager::load_stored()
+        .map(|config| config.app_config().allowed_for(account_id))
+        .unwrap_or(Allowed::NOTHING);
+
+    FROM_COMMAND_LINE
+        .get()
+        .copied()
+        .unwrap_or(Allowed::EVERYTHING)
+        .and(stored)
+}
+
+#[cfg(test)]
+mod resolving {
+    use super::*;
+
+    #[test]
+    fn test_before_anything_is_recorded_the_command_line_narrows_nothing() {
+        // The window can be opened by a test or a tool that never parsed
+        // arguments, and that must not silently mean "allow everything" nor
+        // "allow nothing": it means the command line has no opinion, and the
+        // settings decide. Read directly rather than through `allowed_for`,
+        // which also reads a config file this test has no business touching.
+        assert_eq!(
+            FROM_COMMAND_LINE
+                .get()
+                .copied()
+                .unwrap_or(Allowed::EVERYTHING),
+            Allowed::EVERYTHING
+        );
+    }
+
+    #[test]
+    fn test_recording_it_twice_keeps_the_first_answer() {
+        // Set once at startup. Anything later trying to widen it is ignored,
+        // which is the property that makes a global defensible here.
+        narrow_this_run_to(Allowed::NOTHING);
+        narrow_this_run_to(Allowed::EVERYTHING);
+
+        assert_eq!(FROM_COMMAND_LINE.get().copied(), Some(Allowed::NOTHING));
+    }
+}

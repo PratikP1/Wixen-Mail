@@ -5981,7 +5981,9 @@ fn spawn_tasks_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt:
             }
         };
 
-        let client = crate::service::tasks_api::TasksClient::new();
+        // Allowed whatever this account is allowed, which the command line,
+        // the settings and the account itself all get a say in.
+        let client = crate::service::tasks_api::TasksClient::for_account(aid);
         let mut total = TaskSyncResult::default();
 
         if let Some(creds) = crate::service::oauth_credentials::credentials_for("gmail") {
