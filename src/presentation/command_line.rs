@@ -1,0 +1,300 @@
+//! What Wixen Mail was asked to do before its window opened.
+//!
+//! This used to be two scans over `env::args()` looking for a string, one for
+//! erasing data and one for the accessibility check. There was no `--help`, no
+//! `--version`, and nowhere for anything else to go, so a third flag would
+//! have been a third scan.
+//!
+//! Parsed here instead, into one value, with room for the commands a fuller
+//! version wants. Kept hand-written rather than reaching for a parser crate:
+//! what is here is small, the two existing flags have particular behaviour
+//! that has to survive, and every branch is tested. That trade is worth
+//! revisiting when subcommands take arguments of their own.
+//!
+//! # Printing anything is not free on Windows
+//!
+//! The binary sets `windows_subsystem = "windows"`, so it has no console and
+//! `println!` goes nowhere when it is started from a terminal. Anything meant
+//! to be read has to attach to the parent console first. That is done in
+//! `main`, because it is a side effect and this stays pure.
+
+use crate::application::allowed::Allowed;
+
+/// Erase everything this installation stored, then exit.
+///
+/// The uninstaller runs this. It can delete the program's own folder but
+/// cannot reach the credential store, and does not know where the data folder
+/// is when `WIXEN_MAIL_DATA` has moved it.
+pub const ERASE_FLAG: &str = "--erase-all-data";
+
+/// What to do with this run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Command {
+    /// Open the window.
+    Run(Run),
+    /// Erase the stored data and exit.
+    EraseAllData,
+    /// Say what the flags are, and exit.
+    Help,
+    /// Say which version this is, and exit.
+    Version,
+    /// The arguments did not make sense. Say why, and exit without starting.
+    Refused(String),
+}
+
+/// How to open the window.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Run {
+    /// What the command line allows to be changed at a provider.
+    ///
+    /// Only ever narrows what is stored. There is no flag that turns writing
+    /// on, deliberately: the flag that switches off a safety catch is the one
+    /// somebody puts in a shortcut and forgets about.
+    pub allowed: Allowed,
+    /// Which window the accessibility check should walk, if this is that run.
+    pub scan_target: Option<String>,
+}
+
+impl Run {
+    /// Nothing narrowed: whatever is stored decides.
+    fn unrestricted() -> Self {
+        Self {
+            allowed: Allowed::EVERYTHING,
+            scan_target: None,
+        }
+    }
+}
+
+/// What `--help` prints.
+///
+/// Written out rather than generated, because it is read by somebody deciding
+/// whether it is safe to point this at their mail, and that deserves sentences
+/// rather than a table of flags.
+pub const HELP: &str = "\
+Wixen Mail, an accessible mail and personal information client.
+
+    wixen-mail [options]
+
+Options:
+  --read-only            Change nothing at any server this run. Sending,
+                         deleting and every sync that writes are refused,
+                         whatever the settings say. Reading is unaffected.
+
+  --allow <what>         Narrow what may be changed this run, to one of:
+                           nothing      the same as --read-only
+                           tasks        tasks, contacts and calendar; no mail
+                           everything   no narrowing; the settings decide
+
+  --erase-all-data       Delete everything this installation stored, including
+                         the saved passwords, then exit. The uninstaller uses
+                         this. It does not ask twice.
+
+  --scan-target <name>   Walk one window with the accessibility check and
+                         exit. Used by the automated scan.
+
+  --help                 This.
+  --version              Which version this is.
+
+Neither --read-only nor --allow can permit anything the settings forbid. They
+only ever take permissions away, so leaving one in a shortcut is safe.
+";
+
+/// Work out what this run was asked to do.
+///
+/// Takes the arguments after the program name.
+pub fn parse<I, S>(args: I) -> Command
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let args: Vec<String> = args.into_iter().map(|a| a.as_ref().to_string()).collect();
+
+    // Before anything else, and on its own. Erasing everything is not a thing
+    // to combine with other flags: a run that both erased the data and opened
+    // a window would be a window onto nothing.
+    if args.iter().any(|arg| arg == ERASE_FLAG) {
+        return Command::EraseAllData;
+    }
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        return Command::Help;
+    }
+    if args.iter().any(|arg| arg == "--version" || arg == "-V") {
+        return Command::Version;
+    }
+
+    let mut run = Run::unrestricted();
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--read-only" => run.allowed = Allowed::NOTHING,
+            "--allow" => {
+                let Some(what) = rest.next() else {
+                    return Command::Refused(
+                        "--allow needs to say what: nothing, tasks or everything".to_string(),
+                    );
+                };
+                match allowance(what) {
+                    Some(allowed) => run.allowed = run.allowed.and(allowed),
+                    None => {
+                        return Command::Refused(format!(
+                            "--allow does not understand {what:?}. \
+                             It takes nothing, tasks or everything"
+                        ));
+                    }
+                }
+            }
+            "--scan-target" => {
+                let Some(name) = rest.next() else {
+                    return Command::Refused(
+                        "--scan-target needs the name of a window to walk".to_string(),
+                    );
+                };
+                run.scan_target = Some(name.clone());
+            }
+            unknown => {
+                // Refused rather than ignored. An unknown flag is a typed flag,
+                // and starting normally having quietly dropped `--read-only`
+                // because it was spelled `--readonly` is the failure this
+                // whole area exists to prevent.
+                return Command::Refused(format!(
+                    "Wixen Mail does not understand {unknown:?}. Try --help"
+                ));
+            }
+        }
+    }
+    Command::Run(run)
+}
+
+/// What one `--allow` word means.
+fn allowance(what: &str) -> Option<Allowed> {
+    match what {
+        "nothing" | "none" => Some(Allowed::NOTHING),
+        "tasks" | "pim" => Some(Allowed::FOR_TESTING),
+        "everything" | "all" => Some(Allowed::EVERYTHING),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run(args: &[&str]) -> Run {
+        match parse(args) {
+            Command::Run(run) => run,
+            other => panic!("expected a run, got {other:?}"),
+        }
+    }
+
+    fn refusal(args: &[&str]) -> String {
+        match parse(args) {
+            Command::Refused(why) => why,
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_no_arguments_opens_the_window_and_narrows_nothing() {
+        let started = run(&[]);
+
+        assert_eq!(started.allowed, Allowed::EVERYTHING, "the settings decide");
+        assert_eq!(started.scan_target, None);
+    }
+
+    #[test]
+    fn test_read_only_stops_everything() {
+        assert_eq!(run(&["--read-only"]).allowed, Allowed::NOTHING);
+    }
+
+    #[test]
+    fn test_allow_takes_a_word_and_narrows_to_it() {
+        assert_eq!(run(&["--allow", "nothing"]).allowed, Allowed::NOTHING);
+        assert_eq!(run(&["--allow", "tasks"]).allowed, Allowed::FOR_TESTING);
+        assert_eq!(run(&["--allow", "everything"]).allowed, Allowed::EVERYTHING);
+    }
+
+    #[test]
+    fn test_two_narrowings_both_apply() {
+        // They combine rather than the last one winning, because each is a
+        // restriction and dropping one would widen what a person asked for.
+        let started = run(&["--allow", "everything", "--read-only"]);
+
+        assert_eq!(started.allowed, Allowed::NOTHING);
+    }
+
+    #[test]
+    fn test_the_command_line_cannot_widen_anything() {
+        // The rule that makes leaving a flag in a shortcut safe. Even
+        // "everything" is only the absence of narrowing here; whether anything
+        // actually goes out is decided against the settings later.
+        let started = run(&["--allow", "everything"]);
+
+        assert_eq!(started.allowed, Allowed::EVERYTHING);
+    }
+
+    #[test]
+    fn test_a_missing_value_is_refused_rather_than_guessed() {
+        assert!(refusal(&["--allow"]).contains("nothing, tasks or everything"));
+        assert!(refusal(&["--scan-target"]).contains("name of a window"));
+    }
+
+    #[test]
+    fn test_a_word_allow_does_not_know_is_refused() {
+        let why = refusal(&["--allow", "sending"]);
+
+        assert!(why.contains("sending"), "{why}");
+        assert!(why.contains("nothing, tasks or everything"), "{why}");
+    }
+
+    #[test]
+    fn test_a_flag_that_is_nearly_right_is_refused_rather_than_ignored() {
+        // The one that matters most here. Starting normally having silently
+        // dropped a misspelled --readonly is exactly the accident this whole
+        // area exists to prevent.
+        let why = refusal(&["--readonly"]);
+
+        assert!(why.contains("--readonly"), "{why}");
+        assert!(why.contains("--help"), "{why}");
+    }
+
+    #[test]
+    fn test_erasing_wins_over_everything_and_takes_no_arguments() {
+        // It runs before logging is set up, because the log file lives in the
+        // folder being deleted, so it cannot be one branch among several.
+        assert_eq!(parse([ERASE_FLAG]), Command::EraseAllData);
+        assert_eq!(
+            parse([ERASE_FLAG, "--read-only"]),
+            Command::EraseAllData,
+            "a run that erased the data and opened a window is a window onto nothing"
+        );
+    }
+
+    #[test]
+    fn test_help_and_version_say_so_and_stop() {
+        for asked in [vec!["--help"], vec!["-h"]] {
+            assert_eq!(parse(asked), Command::Help);
+        }
+        for asked in [vec!["--version"], vec!["-V"]] {
+            assert_eq!(parse(asked), Command::Version);
+        }
+    }
+
+    #[test]
+    fn test_the_scan_target_still_works_the_way_it_did() {
+        // Carried across unchanged: the accessibility workflow passes it and
+        // nothing about that run should have altered.
+        assert_eq!(
+            run(&["--scan-target", "compose"]).scan_target,
+            Some("compose".to_string())
+        );
+    }
+
+    #[test]
+    fn test_the_help_says_what_the_flags_do_to_somebody_deciding() {
+        // It is read by a person working out whether this is safe to point at
+        // their mail, so it has to answer that rather than list flags.
+        assert!(HELP.contains("--read-only"), "{HELP}");
+        assert!(HELP.contains("only ever take permissions away"), "{HELP}");
+        assert!(HELP.contains("Reading is unaffected"), "{HELP}");
+    }
+}

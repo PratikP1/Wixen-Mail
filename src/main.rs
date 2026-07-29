@@ -3,41 +3,57 @@
 use wixen_mail::common::logging::{LoggerConfig, init_logging};
 use wixen_mail::common::paths::{AppPaths, LegacyLocations, MigrationReport};
 use wixen_mail::presentation::WxMailApp;
+use wixen_mail::presentation::command_line::{self, Command};
 use wixen_mail::presentation::scan_target;
-
-/// Erase everything this installation stored, then exit without starting.
-///
-/// The uninstaller runs this first. It can delete the program's own folder, but
-/// it cannot reach the credential store, and it does not know where the data
-/// folder is when `WIXEN_MAIL_DATA` has moved it.
-const ERASE_FLAG: &str = "--erase-all-data";
 
 fn main() {
     // Install a panic hook FIRST so crashes are always captured to a file,
     // even when running as a GUI app with no console.
     install_panic_hook();
 
-    if std::env::args().skip(1).any(|arg| arg == ERASE_FLAG) {
-        // Deliberately before logging is set up. The log file would be opened
-        // inside the folder being removed, and an open file is exactly what
-        // stops Windows removing it.
-        erase_all_data();
-        return;
-    }
+    let asked = command_line::parse(std::env::args().skip(1));
+
+    let run = match asked {
+        Command::EraseAllData => {
+            // Deliberately before logging is set up. The log file would be
+            // opened inside the folder being removed, and an open file is
+            // exactly what stops Windows removing it.
+            erase_all_data();
+            return;
+        }
+        Command::Help => return say(command_line::HELP),
+        Command::Version => return say(&format!("Wixen Mail {}\n", env!("CARGO_PKG_VERSION"))),
+        Command::Refused(why) => {
+            // Nothing opens. A window that appeared having quietly ignored a
+            // misspelled --read-only is the accident this exists to prevent,
+            // and the exit code lets a script tell it from a clean start.
+            say(&format!("{why}\n"));
+            std::process::exit(2);
+        }
+        Command::Run(run) => run,
+    };
 
     // Before anything opens a file, including the log the next line writes.
     let migration = prepare_data_folder();
 
     let _log_guard = init_logging(LoggerConfig::default()).ok();
     tracing::info!("Starting Wixen Mail v{}", env!("CARGO_PKG_VERSION"));
+    if !run.allowed.anything() {
+        tracing::info!("Started read only: nothing will be changed at any server");
+    }
     report_migration(migration.as_ref());
 
     // Before the application is built, because an unknown name here has to
     // stop rather than start normally: a scan that walks the main window and
     // reports a clean pass for a dialog it never opened is worse than no scan.
-    let scan_target = match scan_target::from_args(std::env::args().skip(1)) {
-        Ok(target) => target,
-        Err(e) => {
+    let scan_target = match run
+        .scan_target
+        .as_deref()
+        .map(|name| scan_target::from_args(["--scan-target", name]))
+    {
+        None => None,
+        Some(Ok(target)) => target,
+        Some(Err(e)) => {
             // The log and the crash file, not a dialog. This flag is only ever
             // passed by the accessibility workflow, which runs with nobody
             // watching, and a modal error box there does not report a failure,
@@ -237,4 +253,34 @@ fn show_error_dialog(message: &str) {
     {
         eprintln!("{}", message);
     }
+}
+
+/// Put something in front of somebody who started this from a terminal.
+///
+/// `windows_subsystem = "windows"` means there is no console, so `println!`
+/// goes nowhere: a person typing `wixen-mail --help` gets their prompt back
+/// and nothing else. Attaching to the console that launched us fixes that,
+/// and does nothing when there was not one, which is the ordinary case of
+/// double-clicking the icon.
+///
+/// Falls back to a dialog when there is no console at all, so `--help` from a
+/// shortcut still says something rather than appearing to do nothing.
+fn say(words: &str) {
+    #[cfg(windows)]
+    let attached = unsafe {
+        // ATTACH_PARENT_PROCESS. Fails harmlessly when there is no console to
+        // attach to, which is what happens on a double click.
+        windows::Win32::System::Console::AttachConsole(u32::MAX).is_ok()
+    };
+    #[cfg(not(windows))]
+    let attached = true;
+
+    if attached {
+        use std::io::Write;
+        let mut out = std::io::stdout();
+        let _ = out.write_all(words.as_bytes());
+        let _ = out.flush();
+        return;
+    }
+    show_error_dialog(words);
 }
