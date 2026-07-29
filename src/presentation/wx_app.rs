@@ -111,6 +111,8 @@ menu_ids!(
     ID_SYNC_CONTACTS,
     ID_SYNC_CALENDAR,
     ID_SYNC_TASKS,
+    ID_PIM_TOGGLE_DONE,
+    ID_PIM_TOGGLE_PIN,
     ID_CTX_SELECT_ALL,
     ID_CTX_COPY_LINK,
     ID_CTX_SAVE_LINK,
@@ -1156,6 +1158,26 @@ document.addEventListener('keydown', function(e) {
                         }
                     };
                     frame.set_title(&title);
+
+                    // A command that does nothing where you are is worse than
+                    // one that is not there: it is a stop in the menu that
+                    // teaches nothing and costs a moment every time it is
+                    // passed. Greyed out, a screen reader says "unavailable"
+                    // and the question is answered before it is asked.
+                    {
+                        use crate::application::pim_command::PimCommand;
+                        let kind = managers::kind_for(module);
+                        sync_menu_enable(
+                            &frame,
+                            ID_PIM_TOGGLE_DONE,
+                            PimCommand::ToggleComplete.applies_to(kind),
+                        );
+                        sync_menu_enable(
+                            &frame,
+                            ID_PIM_TOGGLE_PIN,
+                            PimCommand::TogglePin.applies_to(kind),
+                        );
+                    }
                     // Through the update rather than written here, so the
                     // handler that owns this status field stays its only
                     // writer. It had no producer at all before.
@@ -1853,6 +1875,15 @@ document.addEventListener('keydown', function(e) {
                 let do_switch = do_switch_module.clone();
                 let a11y = a11y.clone();
                 let message_cache = message_cache.clone();
+                // The selection lives in the control, not in the state, so the
+                // commands that act on it need the lists themselves. These are
+                // handles rather than owned widgets, so copying them costs
+                // nothing and keeps the closure from borrowing the panel refs.
+                let contact_list = pim_refs.contact_list;
+                let cal_event_list = pim_refs.cal_event_list;
+                let reminder_list = pim_refs.reminder_list;
+                let task_list = pim_refs.task_list;
+                let note_list = pim_refs.note_list;
                 move |event| {
                     let id = event.get_id();
                     match id {
@@ -2276,6 +2307,82 @@ document.addEventListener('keydown', function(e) {
                             let (_to, subj, body) = msg_info(&state);
                             open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, ComposeMode::Forward { subject: subj, body });
                         }
+                        // Delete acts on whatever is in front of you. In Mail
+                        // that is a message, with server semantics behind it;
+                        // in the other five it is the row the panel is on.
+                        // One key, the same rule Ctrl+N follows, rather than
+                        // six keys or a key that only works in one place.
+                        _ if id == ID_DELETE
+                            && lock_state(&state).active_module != PimModule::Mail =>
+                        {
+                            let module = lock_state(&state).active_module;
+                            let kind = managers::kind_for(module);
+                            let row = match module {
+                                PimModule::Contacts => selected_row(&contact_list),
+                                PimModule::Calendar => selected_row(&cal_event_list),
+                                PimModule::Reminders => selected_row(&reminder_list),
+                                PimModule::Tasks => selected_row(&task_list),
+                                PimModule::Notes => selected_row(&note_list),
+                                PimModule::Mail => None,
+                            };
+                            managers::pim_command(
+                                crate::application::pim_command::PimAction {
+                                    command: crate::application::pim_command::PimCommand::Delete,
+                                    kind,
+                                    row,
+                                },
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                            );
+                        }
+                        _ if id == ID_PIM_TOGGLE_DONE || id == ID_PIM_TOGGLE_PIN => {
+                            use crate::application::pim_command::PimCommand;
+                            let module = lock_state(&state).active_module;
+                            let kind = managers::kind_for(module);
+                            let command = if id == ID_PIM_TOGGLE_DONE {
+                                PimCommand::ToggleComplete
+                            } else {
+                                PimCommand::TogglePin
+                            };
+                            if !command.applies_to(kind) {
+                                // Said rather than ignored. A key that does
+                                // nothing is indistinguishable from one that is
+                                // broken, and naming where it does work is the
+                                // useful half of the answer.
+                                send_status(
+                                    &ui_tx,
+                                    &runtime,
+                                    match command {
+                                        PimCommand::ToggleComplete => {
+                                            "Marking done works in Tasks and Reminders"
+                                        }
+                                        _ => "Pinning works in Notes",
+                                    },
+                                );
+                            } else {
+                                let row = match module {
+                                    PimModule::Reminders => selected_row(&reminder_list),
+                                    PimModule::Tasks => selected_row(&task_list),
+                                    PimModule::Notes => selected_row(&note_list),
+                                    _ => None,
+                                };
+                                managers::pim_command(
+                                    crate::application::pim_command::PimAction {
+                                        command,
+                                        kind,
+                                        row,
+                                    },
+                                    &state,
+                                    &message_cache,
+                                    &frame,
+                                    &ui_tx,
+                                    &runtime,
+                                );
+                            }
+                        }
                         _ if id == ID_DELETE => {
                             // The row is not removed here. Deleting is
                             // destructive and cannot be put back by sending an
@@ -2633,8 +2740,29 @@ document.addEventListener('keydown', function(e) {
         file.prepend_separator();
         file.prepend_submenu(new_sub, "&New", "Create a new item");
 
+        // Delete is deliberately not here. It is already the Message menu's
+        // key, and one Delete that acts on whatever you are looking at follows
+        // the same rule Ctrl+N does: the key means "the thing in front of me".
+        // A second menu item with the same accelerator would be two commands
+        // racing for one key.
+        //
+        // Both are greyed out where they mean nothing: marking done in
+        // Contacts, pinning in Tasks. A screen reader says "unavailable" on a
+        // disabled item, so somebody walking the menu is answered before they
+        // press anything, which is the whole reason a menu sits beside a key.
         let edit = Menu::builder()
             .append_item(ID_SEARCH, "&Search\tCtrl+F", "Search messages")
+            .append_separator()
+            .append_item(
+                ID_PIM_TOGGLE_DONE,
+                "Mark &Done or Not Done\tCtrl+Shift+K",
+                "Mark the selected task or reminder done, or not done",
+            )
+            .append_item(
+                ID_PIM_TOGGLE_PIN,
+                "&Pin or Unpin\tCtrl+Shift+P",
+                "Pin the selected note to the top of the list, or unpin it",
+            )
             .build();
 
         // Sort submenu
@@ -3264,6 +3392,13 @@ pub(crate) fn load_module_data(
 /// A check item announces "checked" or "unchecked" from its own state, so an
 /// item whose state is never updated tells the user the opposite of the truth
 /// half the time. Toggling behaviour without calling this is a silent lie.
+/// Grey a menu item out, or bring it back.
+fn sync_menu_enable(frame: &Frame, id: Id, enabled: bool) {
+    if let Some(menu_bar) = frame.get_menu_bar() {
+        menu_bar.enable_item(id, enabled);
+    }
+}
+
 fn sync_menu_check(frame: &Frame, id: Id, checked: bool) {
     if let Some(menu_bar) = frame.get_menu_bar() {
         menu_bar.check_item(id, checked);
@@ -3288,6 +3423,16 @@ fn persist_mute_preference(muted: bool) {
     if let Err(e) = mgr.save() {
         tracing::warn!("Mute preference not saved: {}", e);
     }
+}
+
+/// The row a list control is sitting on, if any.
+///
+/// `wxListCtrl` reports selection by asking for the next selected item after
+/// minus one, which is a sentence nobody should have to read six times. `-1`
+/// means nothing is selected.
+fn selected_row(list: &ListCtrl) -> Option<usize> {
+    let found = list.get_next_item(-1, ListNextItemFlag::All, ListItemState::Selected);
+    (found >= 0).then_some(found as usize)
 }
 
 /// Open one message in the reader window.

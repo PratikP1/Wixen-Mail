@@ -636,6 +636,135 @@ pub fn new_pim_item(
     }
 }
 
+/// Act on the item a PIM panel is sitting on: delete it, or toggle it.
+///
+/// The other half of [`new_pim_item`]. Every one of the cache methods behind
+/// this has existed since the panels were built and none of them had a caller,
+/// so six modules could each make something and none could remove one.
+///
+/// `row` is the selected index in that panel's list, which is where the
+/// selection lives: the control knows, and the state does not.
+pub fn pim_command(
+    action: crate::application::pim_command::PimAction,
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    use crate::application::new_item::ItemKind;
+    use crate::application::pim_command::{PimCommand, confirm_delete, deleted, toggled};
+
+    let crate::application::pim_command::PimAction { command, kind, row } = action;
+
+    let Some(cache) = cache.clone() else {
+        return send_status(tx, rt, "No storage is open");
+    };
+    let Some(row) = row else {
+        // Said rather than done silently. A command that does nothing is
+        // indistinguishable from a key that is broken, and the answer here is
+        // useful: choose something first.
+        return send_status(tx, rt, &format!("Choose a {} first", kind.label()));
+    };
+    let Some((id, name, was_set)) = selected_item(state, kind, row) else {
+        return send_status(tx, rt, "That row is no longer there");
+    };
+    // The cache toggles report nothing back, so the new state is the opposite
+    // of what the panel is showing, and the panel was filled from the cache.
+    let now = !was_set;
+
+    if command == PimCommand::Delete {
+        // Confirmed, always. Nothing here can be undone, and a Delete key is
+        // one row away from every other key somebody might have meant.
+        let asked = MessageDialog::builder(frame, &confirm_delete(kind, &name), "Delete")
+            .with_style(MessageDialogStyle::YesNo | MessageDialogStyle::IconQuestion)
+            .build()
+            .show_modal();
+        if asked != ID_YES {
+            return;
+        }
+    }
+
+    let outcome = match command {
+        PimCommand::Delete => match kind {
+            ItemKind::Contact => cache.delete_contact(&id),
+            ItemKind::Event => cache.delete_calendar_event(&id),
+            ItemKind::Reminder => cache.delete_reminder(&id),
+            ItemKind::Task => cache.delete_task(&id),
+            ItemKind::Note => cache.delete_note(&id),
+            ItemKind::Mail => return,
+        }
+        .map(|()| deleted(kind, &name)),
+        PimCommand::ToggleComplete => match kind {
+            ItemKind::Task => cache.toggle_task_complete(&id),
+            ItemKind::Reminder => cache.toggle_reminder_complete(&id),
+            _ => return,
+        }
+        .map(|()| toggled(command, &name, now)),
+        PimCommand::TogglePin => match kind {
+            ItemKind::Note => cache.toggle_note_pin(&id),
+            _ => return,
+        }
+        .map(|()| toggled(command, &name, now)),
+    };
+
+    match outcome {
+        Ok(said) => {
+            send_status(tx, rt, &said);
+            let account_id = lock_state(state).active_account_id.clone();
+            crate::presentation::wx_app::load_module_data(
+                module_for(kind),
+                &Some(cache),
+                account_id,
+                tx,
+            );
+        }
+        Err(e) => {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("That did not work: {e}")));
+        }
+    }
+}
+
+/// The id and the readable name of the row a panel is sitting on.
+///
+/// By position in the same list the panel was filled from, because that is what
+/// the control's selection index means. A lookup by name would break the moment
+/// two tasks were called the same thing, which is a Tuesday.
+/// Returns the id, the readable name, and whether its toggle is currently on,
+/// which is what the announcement afterwards needs to name the new state.
+fn selected_item(
+    state: &Arc<StdMutex<WxUIState>>,
+    kind: crate::application::new_item::ItemKind,
+    row: usize,
+) -> Option<(String, String, bool)> {
+    use crate::application::new_item::ItemKind;
+
+    let s = lock_state(state);
+    match kind {
+        ItemKind::Contact => s
+            .contacts
+            .get(row)
+            .map(|c| (c.id.clone(), c.name.clone(), false)),
+        ItemKind::Event => s
+            .events
+            .get(row)
+            .map(|e| (e.id.clone(), e.summary.clone(), false)),
+        ItemKind::Reminder => s
+            .reminders
+            .get(row)
+            .map(|r| (r.id.clone(), r.title.clone(), r.is_completed)),
+        ItemKind::Task => s
+            .tasks
+            .get(row)
+            .map(|t| (t.id.clone(), t.title.clone(), t.is_completed)),
+        ItemKind::Note => s
+            .notes
+            .get(row)
+            .map(|n| (n.id.clone(), n.title.clone(), n.pinned)),
+        ItemKind::Mail => None,
+    }
+}
+
 /// Create a calendar, task list, note folder or contact group.
 ///
 /// These four had no create path at all. Until now the controls opened the
@@ -773,6 +902,25 @@ fn store_new_container(
 }
 
 /// Which panel shows this kind of item.
+/// Which kind of item a panel holds. The inverse of [`module_for`].
+///
+/// So one Delete key and one toggle can act on whatever panel is in front of
+/// somebody, rather than there being six of each.
+pub const fn kind_for(
+    module: crate::presentation::ui_types::PimModule,
+) -> crate::application::new_item::ItemKind {
+    use crate::application::new_item::ItemKind;
+    use crate::presentation::ui_types::PimModule;
+    match module {
+        PimModule::Mail => ItemKind::Mail,
+        PimModule::Contacts => ItemKind::Contact,
+        PimModule::Calendar => ItemKind::Event,
+        PimModule::Reminders => ItemKind::Reminder,
+        PimModule::Tasks => ItemKind::Task,
+        PimModule::Notes => ItemKind::Note,
+    }
+}
+
 fn module_for(
     kind: crate::application::new_item::ItemKind,
 ) -> crate::presentation::ui_types::PimModule {

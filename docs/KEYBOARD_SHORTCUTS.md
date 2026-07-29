@@ -59,6 +59,31 @@ and locks out anyone who types slowly.
 `Ctrl+M` mutes this reading without silencing status and error
 announcements.
 
+### Working on the Item You Are On
+
+Every module could make things and none of them could remove one. These work in
+Contacts, Calendar, Reminders, Tasks and Notes, on the row the list is sitting
+on.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Delete | `Delete` | Asks first, naming what it will delete. In Mail this deletes the message instead |
+| Mark done or not done | `Ctrl+Shift+K` | Tasks and Reminders. Says which way it went |
+| Pin or unpin | `Ctrl+Shift+P` | Notes. Pinned notes sort to the top |
+
+`Delete` is one key that acts on whatever is in front of you, the same way
+`Ctrl+N` makes whatever the area you are in is for. In Mail it is the message
+delete, with the server behind it. Everywhere else it is the row you are on.
+
+**Deleting always asks, and the question names the row.** "Delete \"File the tax
+return\"? This cannot be undone." Somebody who arrowed onto the wrong row finds
+out from the question, which only works because the question says which row.
+
+The two toggles say which way they went: "Buy milk, done" or "Buy milk, not
+done". A toggle you cannot see is a toggle you have to be told about. They are
+greyed out in modules where they mean nothing, so your screen reader says
+"unavailable" rather than leaving you to press a key that does nothing.
+
 ### The Reader Window
 
 `Enter` on a message opens it in the reader. `Enter` on a message that belongs
