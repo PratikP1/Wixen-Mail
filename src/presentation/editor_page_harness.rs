@@ -311,6 +311,55 @@ mod tests {
         }
     }
 
+    // ── Moving through a table ─────────────────────────────────────────────
+
+    #[test]
+    fn test_tab_moves_to_the_next_cell_and_back_to_the_previous() {
+        let mut page = page_rules();
+
+        assert!(ask(&mut page, "window.wixenRules.table(0, 9, 3, false)").contains(r#""cell":1"#));
+        assert!(ask(&mut page, "window.wixenRules.table(4, 9, 3, true)").contains(r#""cell":3"#));
+    }
+
+    #[test]
+    fn test_shift_tab_out_of_the_first_cell_leaves_the_table() {
+        // The way out backwards, and the reason a table is not a keyboard
+        // trap. WCAG 2.1.2, and in a message body it is somebody unable to
+        // reach the Send button.
+        let mut page = page_rules();
+
+        assert_eq!(
+            ask(&mut page, "window.wixenRules.table(0, 9, 3, true)"),
+            "null"
+        );
+    }
+
+    #[test]
+    fn test_tab_off_the_last_cell_adds_a_row() {
+        // What every editor does, and what the announcement promises.
+        let mut page = page_rules();
+
+        assert!(
+            ask(&mut page, "window.wixenRules.table(8, 9, 3, false)").contains(r#""addRow":true"#)
+        );
+    }
+
+    #[test]
+    fn test_a_table_at_the_row_limit_lets_tab_out_forwards() {
+        // Two things at once. The insert dialog refuses a table over fifty
+        // rows, and Tab used to grow one past that without limit, so holding
+        // the key down built a table the application would not have made. And
+        // forward Tab took the key unconditionally, so there was no way out of
+        // a table going forwards at all, only backwards a cell at a time.
+        let mut page = page_rules();
+
+        assert_eq!(
+            ask(&mut page, "window.wixenRules.table(149, 150, 50, false)"),
+            "null",
+            "Tab kept adding rows past the limit, and never let go of the key"
+        );
+    }
+
     // ── The end of a word ──────────────────────────────────────────────────
 
     #[test]

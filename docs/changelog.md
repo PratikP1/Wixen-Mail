@@ -7,6 +7,8 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Fixed
 
+- **Tab can leave a table going forwards, and a table cannot be grown without end.** Tab off the last cell adds a row, which is what every editor does, but it did so with no limit and it took the key every time. So holding Tab down built a table larger than the New Table dialog will make, and the only way out of a table was Shift+Tab back through every cell to the first one. Tab now stops taking the key once the table reaches the fifty-row limit, which gives a way out forwards and a bound at the same time.
+
 - **A typed link whose address contains a bracket is no longer cut in half.** Markdown links are recognised when you type the closing bracket, so `[Mercury](https://en.wikipedia.org/wiki/Mercury_(planet))` was turned into a link at the bracket in the middle of the address. The shortened address is still a valid one, so nothing complained: you got a link to somewhere else and were told it worked. Wixen Mail now waits until the brackets balance.
 
 - **Change All no longer goes back over words you chose to keep.** It rewrote every occurrence in the message, including ones you had already passed with Ignore, and said nothing about it. Ignore means leave this one, so Change All now applies from where you are forward, which is what Word does and for the same reason.

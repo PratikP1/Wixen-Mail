@@ -118,6 +118,8 @@ pub fn editor_document(body: &MessageBody, language: &str, mark_spelling: bool) 
     let format_keys = format_key_table();
     let link_id = LINK_PLACEHOLDER_ID;
     let block_markers = markdown_block_table();
+    // One definition of the limit, shared by the insert dialog and by Tab.
+    let max_rows = MAX_TABLE_ROWS;
     let inline_markers = markdown_inline_table();
 
     format!(
@@ -326,10 +328,26 @@ img {{ max-width: 100%; height: auto; }}
   // which is what people expect from every other editor and is why it is worth
   // the special case.
   //
-  // Nobody is trapped: Shift+Tab out of the first cell is not taken, so it
-  // leaves the editor the way it always did. That is the one rule this cannot
-  // get wrong, because a keyboard trap in a message body is a person unable to
-  // reach the Send button.
+  // Nobody is trapped, and there are two ways out rather than one. Shift+Tab
+  // from the first cell leaves, and so does Tab from the last cell of a table
+  // that has reached the row limit. That is the rule this cannot get wrong,
+  // because a keyboard trap in a message body is a person unable to reach the
+  // Send button.
+  //
+  // What Tab does is a question about three numbers, so it is separate from
+  // the doing and is tested. It used to take every forward Tab and add a row,
+  // without a limit and with no way out forwards at all.
+  function tableStep(at, total, rows, backwards) {{
+    if (backwards) {{ return at === 0 ? null : {{ cell: at - 1 }}; }}
+    if (at + 1 < total) {{ return {{ cell: at + 1 }}; }}
+    // Adding a row off the end is what every editor does. Not without end,
+    // though: past the same limit the insert path refuses, Tab stops taking
+    // the key, so holding it down cannot grow a table forever and there is a
+    // way out going forwards.
+    if (rows >= {max_rows}) {{ return null; }}
+    return {{ addRow: true }};
+  }}
+
   function cellAround(node) {{
     while (node && node !== body) {{
       if (node.nodeType === 1 &&
@@ -384,18 +402,16 @@ img {{ max-width: 100%; height: auto; }}
       if (found.cells[n] === cell) {{ at = n; break; }}
     }}
     if (at < 0) {{ return false; }}
-    if (backwards) {{
-      // Out of the first cell is out of the editor, on purpose.
-      if (at === 0) {{ return false; }}
-      caretInto(found.cells[at - 1]);
+    var step = tableStep(at, found.cells.length, found.table.rows.length, backwards);
+    // Nothing to do here means the key belongs to the dialog, which is how
+    // somebody leaves the table without a mouse.
+    if (!step) {{ return false; }}
+    if (step.addRow) {{
+      caretInto(addRow(found.table));
+      post({{ kind: 'row' }});
       return true;
     }}
-    if (at + 1 < found.cells.length) {{
-      caretInto(found.cells[at + 1]);
-      return true;
-    }}
-    caretInto(addRow(found.table));
-    post({{ kind: 'row' }});
+    caretInto(found.cells[step.cell]);
     return true;
   }}
 
@@ -520,7 +536,7 @@ img {{ max-width: 100%; height: auto; }}
   }}
 
   window.wixenRules = {{ block: blockRule, inline: inlineRule,
-                        link: linkParts, word: wordEnded }};
+                        link: linkParts, word: wordEnded, table: tableStep }};
 
   // ── Applying ───────────────────────────────────────────────────────────
 
