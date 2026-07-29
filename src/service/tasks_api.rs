@@ -412,7 +412,7 @@ pub fn strip_prefix(id: &str, prefix: &str) -> String {
 /// A client for both services. Stateless: the token is passed per call.
 #[derive(Debug, Clone, Default)]
 pub struct TasksClient {
-    http: reqwest::Client,
+    http: crate::service::outward::Outward,
 }
 
 impl TasksClient {
@@ -423,7 +423,7 @@ impl TasksClient {
     async fn get<T: serde::de::DeserializeOwned>(&self, url: &str, token: &str) -> Result<T> {
         let response = self
             .http
-            .get(url)
+            .reading(url)
             .bearer_auth(token)
             .send()
             .await
@@ -530,7 +530,7 @@ impl TasksClient {
     {
         let response = self
             .http
-            .request(method, url)
+            .changing(method, url, "change a task")?
             .bearer_auth(token)
             .json(body)
             .send()
@@ -566,7 +566,7 @@ impl TasksClient {
     async fn delete(&self, url: &str, token: &str) -> Result<()> {
         let response = self
             .http
-            .delete(url)
+            .changing(reqwest::Method::DELETE, url, "delete a task")?
             .bearer_auth(token)
             .send()
             .await

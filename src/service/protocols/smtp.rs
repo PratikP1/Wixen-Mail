@@ -79,16 +79,47 @@ impl Email {
 /// SMTP client for async operations
 pub struct SmtpClient {
     config: SmtpConfig,
+    /// Whether this client may actually send.
+    ///
+    /// Sending is the one act here that cannot be taken back. A message that
+    /// goes to the wrong people, or goes twice, or goes half-written, is out,
+    /// and no amount of fixing the code afterwards recalls it. So a client
+    /// does not send unless somebody said it may.
+    may_send: bool,
 }
 
 impl SmtpClient {
-    /// Create a new SMTP client
+    /// A client that can talk to the server and will not send.
     pub fn new(config: SmtpConfig) -> Result<Self> {
-        Ok(Self { config })
+        Ok(Self {
+            config,
+            may_send: false,
+        })
+    }
+
+    /// A client that may send.
+    ///
+    /// Named rather than a flag on `new`, so that every place which sends real
+    /// mail is a place somebody wrote this word.
+    pub fn allowed_to_send(config: SmtpConfig) -> Result<Self> {
+        Ok(Self {
+            config,
+            may_send: true,
+        })
+    }
+
+    /// Whether this client may send.
+    pub const fn may_send(&self) -> bool {
+        self.may_send
     }
 
     /// Send an email.
     pub async fn send_email(&self, email: Email, auth: &MailAuth) -> Result<()> {
+        if !self.may_send {
+            return Err(Error::Security(crate::service::outward::refusal(
+                "send a message",
+            )));
+        }
         tracing::info!(
             "Sending email from {} to {:?}",
             crate::common::logging::mask_email(&email.from),
@@ -296,5 +327,56 @@ mod tests {
         email.cc.push("cc@example.com".to_string());
         assert_eq!(email.to.len(), 2);
         assert_eq!(email.cc.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::*;
+
+    fn config() -> SmtpConfig {
+        SmtpConfig {
+            server: "smtp.example.invalid".to_string(),
+            port: 587,
+            use_tls: true,
+            username: "me@example.com".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_client_refuses_to_send_unless_it_was_allowed_to() {
+        // Sending is the one act here that cannot be taken back, and the
+        // whole path has never run for real. The refusal happens before any
+        // connection is attempted, so pointing this at a real account cannot
+        // put a half-written message in front of anybody.
+        let client = SmtpClient::new(config()).expect("a client");
+        let sent = client
+            .send_email(
+                Email::simple(
+                    "me@example.com".to_string(),
+                    "them@example.com".to_string(),
+                    "Hello".to_string(),
+                    "Body".to_string(),
+                ),
+                &MailAuth::Password("hunter2".to_string()),
+            )
+            .await;
+
+        let Err(said) = sent else {
+            panic!("it sent");
+        };
+        let said = said.to_string();
+        assert!(said.contains("send a message"), "{said}");
+        assert!(said.contains("Allow Changes"), "{said}");
+    }
+
+    #[test]
+    fn test_a_client_that_was_allowed_says_so() {
+        assert!(!SmtpClient::new(config()).expect("a client").may_send());
+        assert!(
+            SmtpClient::allowed_to_send(config())
+                .expect("a client")
+                .may_send()
+        );
     }
 }

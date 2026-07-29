@@ -47,7 +47,7 @@ pub const KEYRING_PASSWORD: &str = "password";
 
 /// CalDAV HTTP client.
 pub struct CalDavClient {
-    http: reqwest::Client,
+    http: crate::service::outward::Outward,
 }
 
 impl Default for CalDavClient {
@@ -59,7 +59,7 @@ impl Default for CalDavClient {
 impl CalDavClient {
     pub fn new() -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: crate::service::outward::Outward::default(),
         }
     }
 
@@ -82,7 +82,7 @@ impl CalDavClient {
 
         let response = self
             .http
-            .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), base_url)
+            .reading_with(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), base_url)
             .header("Depth", "1")
             .header("Content-Type", "application/xml; charset=utf-8")
             .basic_auth(username, Some(password))
@@ -144,7 +144,7 @@ impl CalDavClient {
 
         let response = self
             .http
-            .request(
+            .reading_with(
                 reqwest::Method::from_bytes(b"REPORT").unwrap(),
                 calendar_url,
             )
@@ -184,7 +184,11 @@ impl CalDavClient {
 
         let response = self
             .http
-            .put(&event_url)
+            .changing(
+                reqwest::Method::PUT,
+                &event_url,
+                "add an event to the calendar",
+            )?
             .header("Content-Type", "text/calendar; charset=utf-8")
             .basic_auth(username, Some(password))
             .body(event.ical_data.clone())
@@ -222,7 +226,7 @@ impl CalDavClient {
     ) -> Result<CalDavEvent> {
         let mut req = self
             .http
-            .put(event_url)
+            .changing(reqwest::Method::PUT, event_url, "change an event")?
             .header("Content-Type", "text/calendar; charset=utf-8")
             .basic_auth(username, Some(password));
 
@@ -265,7 +269,7 @@ impl CalDavClient {
     ) -> Result<()> {
         let mut req = self
             .http
-            .delete(event_url)
+            .changing(reqwest::Method::DELETE, event_url, "delete an event")?
             .basic_auth(username, Some(password));
 
         if let Some(tag) = etag {

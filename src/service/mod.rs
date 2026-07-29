@@ -12,6 +12,7 @@ pub mod microsoft_graph;
 pub mod mime;
 pub mod oauth;
 pub mod oauth_credentials;
+pub mod outward;
 pub mod pdf;
 pub mod protocols;
 pub mod safebrowsing;

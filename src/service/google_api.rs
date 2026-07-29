@@ -262,7 +262,7 @@ const CALENDAR_API_BASE: &str = "https://www.googleapis.com/calendar/v3";
 const PERSON_FIELDS: &str = "names,emailAddresses,phoneNumbers,organizations,addresses,birthdays,photos,nicknames,urls,biographies,metadata";
 
 pub struct GoogleApiClient {
-    http: reqwest::Client,
+    http: crate::service::outward::Outward,
 }
 
 impl Default for GoogleApiClient {
@@ -277,13 +277,15 @@ impl GoogleApiClient {
             // Building a client can fail if the TLS backend will not
             // initialise. A default client still works, just without the
             // timeout, which beats panicking inside a constructor.
-            http: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .unwrap_or_else(|e| {
-                    tracing::warn!("Google client kept default timeouts: {}", e);
-                    reqwest::Client::new()
-                }),
+            http: crate::service::outward::Outward::read_only(
+                reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(30))
+                    .build()
+                    .unwrap_or_else(|e| {
+                        tracing::warn!("Google client kept default timeouts: {}", e);
+                        reqwest::Client::new()
+                    }),
+            ),
         }
     }
 
@@ -441,7 +443,7 @@ impl GoogleApiClient {
     async fn api_get<T: serde::de::DeserializeOwned>(&self, url: &str, token: &str) -> Result<T> {
         let resp = self
             .http
-            .get(url)
+            .reading(url)
             .bearer_auth(token)
             .send()
             .await
@@ -457,7 +459,7 @@ impl GoogleApiClient {
     ) -> Result<T> {
         let resp = self
             .http
-            .post(url)
+            .changing(reqwest::Method::POST, url, "add something to this account")?
             .bearer_auth(token)
             .json(body)
             .send()
@@ -474,7 +476,11 @@ impl GoogleApiClient {
     ) -> Result<T> {
         let resp = self
             .http
-            .patch(url)
+            .changing(
+                reqwest::Method::PATCH,
+                url,
+                "change something in this account",
+            )?
             .bearer_auth(token)
             .json(body)
             .send()
@@ -491,7 +497,11 @@ impl GoogleApiClient {
     ) -> Result<T> {
         let resp = self
             .http
-            .put(url)
+            .changing(
+                reqwest::Method::PUT,
+                url,
+                "replace something in this account",
+            )?
             .bearer_auth(token)
             .json(body)
             .send()
@@ -503,7 +513,11 @@ impl GoogleApiClient {
     async fn api_delete(&self, url: &str, token: &str) -> Result<()> {
         let resp = self
             .http
-            .delete(url)
+            .changing(
+                reqwest::Method::DELETE,
+                url,
+                "delete something from this account",
+            )?
             .bearer_auth(token)
             .send()
             .await

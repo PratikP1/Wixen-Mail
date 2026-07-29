@@ -356,6 +356,10 @@ impl ImapClient {
         Ok(ImapSession {
             session,
             selected: None,
+            // Reading only until somebody says otherwise. A session opened
+            // without anybody thinking about it should be the one that cannot
+            // remove somebody's mail.
+            may_change: false,
         })
     }
 
@@ -406,6 +410,13 @@ impl ImapClient {
 pub struct ImapSession {
     session: async_imap::Session<ImapStream>,
     selected: Option<String>,
+    /// Whether this session may change anything on the server.
+    ///
+    /// Reading a mailbox into the local cache cannot hurt anybody. Setting a
+    /// flag or removing a message can, and neither has ever run against a real
+    /// account. So a session may not, unless somebody said otherwise, and
+    /// every command that writes asks first.
+    may_change: bool,
 }
 
 impl ImapSession {
@@ -585,8 +596,34 @@ impl ImapSession {
             })
     }
 
+    /// Whether this session may change anything on the server.
+    pub const fn may_change(&self) -> bool {
+        self.may_change
+    }
+
+    /// Allow this session to change things on the server.
+    ///
+    /// Separate from opening it, and named, so turning it on is a line
+    /// somebody wrote rather than an argument that defaulted.
+    pub fn allow_changes(&mut self) {
+        self.may_change = true;
+    }
+
+    /// Refuse a command that would change the mailbox, if changes are off.
+    ///
+    /// `doing` is the act in words somebody would want to hear: what reaches
+    /// them is a refusal, and "permission denied" sends them looking for a
+    /// broken account.
+    fn may_i(&self, doing: &str) -> Result<()> {
+        if self.may_change {
+            return Ok(());
+        }
+        Err(Error::Security(crate::service::outward::refusal(doing)))
+    }
+
     /// Add or remove a flag on a message.
     pub async fn set_flag(&mut self, uid: u32, flag: &str, on: bool) -> Result<()> {
+        self.may_i("change a message")?;
         self.require_selected()?;
         let operation = if on { "+FLAGS" } else { "-FLAGS" };
         let stream = with_timeout(
@@ -621,6 +658,7 @@ impl ImapSession {
     /// is flagged and left, and the caller says so rather than reporting a
     /// deletion that did not happen.
     pub async fn delete_message(&mut self, uid: u32) -> Result<bool> {
+        self.may_i("delete a message")?;
         self.set_flag(uid, "\\Deleted", true).await?;
 
         if !self.supports("UIDPLUS").await? {
