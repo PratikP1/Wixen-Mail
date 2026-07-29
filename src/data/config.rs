@@ -52,6 +52,23 @@ pub struct AppConfig {
     /// dismissed every time.
     #[serde(default = "default_true")]
     pub check_spelling_before_send: bool,
+    /// What Wixen Mail may change at a server, for every account.
+    ///
+    /// Defaults to tasks, contacts and calendar but not mail. A config file
+    /// written before this existed gets that too, which is the point: an
+    /// upgrade should take permissions away rather than carry on sending from
+    /// code that has never been proved.
+    #[serde(default = "default_allowed")]
+    pub allowed_changes: crate::application::allowed::Allowed,
+    /// What one account may change, when it differs from the setting above.
+    ///
+    /// Kept here, keyed by account id, rather than as a field on `Account`.
+    /// `Account` is built in eleven places, so a field on it is eleven chances
+    /// to write the permissive answer by accident; a map that answers with the
+    /// application-wide setting for an id it has never seen cannot be got
+    /// wrong that way.
+    #[serde(default)]
+    pub allowed_per_account: HashMap<String, crate::application::allowed::Allowed>,
     /// Whether misspellings are marked in the editor as you write.
     ///
     /// One setting, two things, deliberately. It turns on the engine's own
@@ -123,6 +140,15 @@ pub struct AppConfig {
     pub default_reminder_minutes: u32,
 }
 
+/// What a new or upgraded installation may change.
+///
+/// Tasks, contacts and the calendar, but not mail. Somebody can point this at
+/// their real account and use it all day, and the worst that happens is a task
+/// in the wrong place. Sending is the deliberate step afterwards.
+fn default_allowed() -> crate::application::allowed::Allowed {
+    crate::application::allowed::Allowed::FOR_TESTING
+}
+
 fn default_true() -> bool {
     true
 }
@@ -172,6 +198,8 @@ impl Default for AppConfig {
             preview_before_send: true,
             language: "en".to_string(),
             check_spelling_before_send: true,
+            allowed_changes: default_allowed(),
+            allowed_per_account: HashMap::new(),
             check_spelling_as_you_type: true,
             default_sort_order: "date_newest".to_string(),
             calendar_default_view: "agenda".to_string(),
@@ -183,6 +211,21 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
+    /// What this account may change, before the command line narrows it.
+    ///
+    /// The account's own answer when it has one, and the application-wide
+    /// setting otherwise, with the application-wide setting applied either
+    /// way. So a per-account entry can only ever be narrower, never wider:
+    /// somebody who turns everything off globally has turned it off, whatever
+    /// any account says.
+    pub fn allowed_for(&self, account_id: &str) -> crate::application::allowed::Allowed {
+        self.allowed_per_account
+            .get(account_id)
+            .copied()
+            .unwrap_or(self.allowed_changes)
+            .and(self.allowed_changes)
+    }
+
     /// Validate configuration values
     pub fn validate(&self) -> Result<()> {
         if self.font_size < 8 || self.font_size > 72 {
@@ -616,5 +659,75 @@ mod tests {
             deserialized.calendar_default_view,
             config.calendar_default_view
         );
+    }
+}
+
+#[cfg(test)]
+mod permission_tests {
+    use super::*;
+    use crate::application::allowed::Allowed;
+
+    fn config() -> AppConfig {
+        AppConfig::default()
+    }
+
+    #[test]
+    fn test_a_new_installation_can_change_tasks_and_not_mail() {
+        // What an alpha tester gets without touching anything.
+        assert_eq!(config().allowed_for("any-account"), Allowed::FOR_TESTING);
+    }
+
+    #[test]
+    fn test_an_account_nobody_has_set_follows_the_application_wide_setting() {
+        let mut settings = config();
+        settings.allowed_changes = Allowed::EVERYTHING;
+
+        assert_eq!(settings.allowed_for("never-seen"), Allowed::EVERYTHING);
+    }
+
+    #[test]
+    fn test_an_account_can_be_narrower_than_the_setting() {
+        // The case the whole thing is for: everything allowed generally, and
+        // one real account marked read-only while it is being tested against.
+        let mut settings = config();
+        settings.allowed_changes = Allowed::EVERYTHING;
+        settings
+            .allowed_per_account
+            .insert("my-real-mail".to_string(), Allowed::NOTHING);
+
+        assert_eq!(settings.allowed_for("my-real-mail"), Allowed::NOTHING);
+        assert_eq!(settings.allowed_for("a-throwaway"), Allowed::EVERYTHING);
+    }
+
+    #[test]
+    fn test_an_account_cannot_be_wider_than_the_setting() {
+        // Turning everything off has to mean off. An account entry left over
+        // from before must not quietly put it back.
+        let mut settings = config();
+        settings.allowed_changes = Allowed::NOTHING;
+        settings
+            .allowed_per_account
+            .insert("eager".to_string(), Allowed::EVERYTHING);
+
+        assert_eq!(settings.allowed_for("eager"), Allowed::NOTHING);
+    }
+
+    #[test]
+    fn test_a_config_written_before_this_existed_reads_as_the_safe_answer() {
+        // An upgrade takes permissions away rather than granting them, and a
+        // file with no such field at all still parses.
+        // Built by taking the two new fields back out of a current one, rather
+        // than hand-writing the older shape. A literal would have to list
+        // every unrelated field and would break the next time one is added,
+        // which is not what this test is about.
+        let mut older = serde_json::to_value(AppConfig::default()).expect("a config to serialise");
+        let fields = older.as_object_mut().expect("an object");
+        fields.remove("allowed_changes");
+        fields.remove("allowed_per_account");
+
+        let parsed: AppConfig = serde_json::from_value(older).expect("an older config still opens");
+
+        assert_eq!(parsed.allowed_changes, Allowed::FOR_TESTING);
+        assert!(parsed.allowed_per_account.is_empty());
     }
 }
