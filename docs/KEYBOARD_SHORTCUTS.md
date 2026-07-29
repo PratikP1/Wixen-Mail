@@ -437,6 +437,43 @@ Two limitations, stated rather than hidden:
 - These keys work while the caret is in the message body. In the To, Cc, Bcc and
   Subject fields there is nothing to format, so they do nothing there.
 
+**Markdown, typed straight into the message.** Type the marker and keep
+writing. Each one says what it made, and `Ctrl+Z` puts the characters back if
+you meant them literally.
+
+| Type this | And you get |
+|-----------|-------------|
+| `# ` at the start of a line | Heading 1 |
+| `## ` at the start of a line | Heading 2 |
+| `### ` at the start of a line | Heading 3 |
+| `- ` or `* ` at the start of a line | A bulleted list |
+| `1. `, or any number and a dot | A numbered list |
+| `> ` at the start of a line | A quote |
+| `**words**` or `__words__` | **Bold** |
+| `*words*` or `_words_` | *Italic* |
+| `` `words` `` | Code |
+| `[the words](https://example.com)` | A link on those words |
+
+A marker only counts when it is the whole line so far, so a sentence ending in a
+hyphen stays a sentence. An address the application will not carry, such as a
+`javascript:` one, leaves the words alone and says so rather than making a link
+that goes somewhere different.
+
+**Tables.** Format, then Insert Table, asks for rows and columns and whether the
+first row is column headers. Leave the headers on unless you have a reason not
+to: they are what lets the person receiving the message hear "Total, column 3"
+instead of a wall of numbers.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Next cell | `Tab` | Move to the next cell, reading across then down |
+| Previous cell | `Shift+Tab` | Move to the previous cell |
+| New row | `Tab` in the last cell | Adds a row and says so |
+| Leave the table | `Shift+Tab` in the first cell | Moves out of the message, the way `Tab` normally does |
+
+Outside a table, `Tab` still moves to the next control. It only means "next
+cell" while the caret is inside one.
+
 **Button accelerators (Alt+key):**
 
 | Button | Shortcut |

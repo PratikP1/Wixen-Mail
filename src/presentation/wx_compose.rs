@@ -23,6 +23,7 @@ const ID_UNDERLINE: Id = ID_HIGHEST + 102;
 /// getting one pair wrong.
 const ID_FORMAT_FIRST: Id = ID_HIGHEST + 120;
 const ID_INSERT_LINK: Id = ID_HIGHEST + 150;
+const ID_INSERT_TABLE: Id = ID_HIGHEST + 152;
 const ID_FORMAT_MENU: Id = ID_HIGHEST + 151;
 const ID_SEND: Id = ID_HIGHEST + 110;
 const ID_SAVE_DRAFT: Id = ID_HIGHEST + 111;
@@ -484,6 +485,10 @@ pub fn show_compose_dialog_full(
                 insert_link(&dialog, body_editor, &a11y);
                 return;
             }
+            if id == ID_INSERT_TABLE {
+                insert_table(&dialog, body_editor, &a11y);
+                return;
+            }
             let Ok(index) = usize::try_from(id - ID_FORMAT_FIRST) else {
                 event.skip(true);
                 return;
@@ -512,6 +517,11 @@ pub fn show_compose_dialog_full(
                 ID_INSERT_LINK,
                 "Insert &Link...",
                 "Turn the selected text into a link",
+            )
+            .append_item(
+                ID_INSERT_TABLE,
+                "Insert &Table...",
+                "Add a table with proper column headers",
             )
             .build();
         dialog.popup_menu(&mut menu, None);
@@ -543,6 +553,33 @@ pub fn show_compose_dialog_full(
                 Some(editor_document::EditorMessage::Formatted(format)) => {
                     let _ = a11y.announce(
                         format.spoken(),
+                        crate::presentation::accessibility::announcements::Priority::Normal,
+                    );
+                }
+                // Tab in the last cell made another row. Said out loud
+                // because the alternative is discovering it by finding
+                // yourself in a cell that was not there a moment ago.
+                Some(editor_document::EditorMessage::TableRowAdded) => {
+                    let _ = a11y.announce(
+                        "Row added",
+                        crate::presentation::accessibility::announcements::Priority::Normal,
+                    );
+                }
+                Some(editor_document::EditorMessage::Styled(style)) => {
+                    let _ = a11y.announce(
+                        style.spoken,
+                        crate::presentation::accessibility::announcements::Priority::Normal,
+                    );
+                }
+                // The page marked the words and is waiting to hear whether the
+                // address is one this will carry. Either answer says what it
+                // did: a link that quietly failed to become a link is a
+                // message somebody sends believing it has one.
+                Some(editor_document::EditorMessage::Link(url)) => {
+                    let (script, spoken) = editor_document::resolve_markdown_link(&url);
+                    body_editor.run_script(&script);
+                    let _ = a11y.announce(
+                        &spoken,
                         crate::presentation::accessibility::announcements::Priority::Normal,
                     );
                 }
@@ -738,6 +775,112 @@ Send it anyway?"
 /// same guard the reader puts on a link a stranger sent, and it applies here
 /// for a reason worth stating: this message goes to somebody else, so a
 /// `javascript:` URL typed into a composer is a link posted to another person.
+/// Ask for a table's shape and put one in the message.
+///
+/// Rows, columns, and whether the first row is headers. That last one is the
+/// question worth asking: a header row is what makes the table navigable for
+/// whoever receives the message, and defaulting it on is the accessible
+/// default rather than a preference.
+fn insert_table(
+    dialog: &Dialog,
+    body_editor: WebView,
+    a11y: &std::sync::Arc<crate::presentation::accessibility::Accessibility>,
+) {
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let asker = Dialog::builder(dialog, "Insert Table")
+        .with_style(DialogStyle::DefaultDialogStyle)
+        .build();
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+    let fields = FlexGridSizer::builder(0, 2)
+        .with_vgap(6)
+        .with_hgap(8)
+        .build();
+
+    let rows_label = StaticText::builder(&asker).with_label("&Rows:").build();
+    let rows = SpinCtrl::builder(&asker)
+        .with_range(1, editor_document::MAX_TABLE_ROWS as i32)
+        .with_initial_value(3)
+        .build();
+    set_accessible_name(&rows, "Rows");
+    fields.add(
+        &rows_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&rows, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    let columns_label = StaticText::builder(&asker).with_label("&Columns:").build();
+    let columns = SpinCtrl::builder(&asker)
+        .with_range(1, editor_document::MAX_TABLE_COLUMNS as i32)
+        .with_initial_value(3)
+        .build();
+    set_accessible_name(&columns, "Columns");
+    fields.add(
+        &columns_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&columns, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    sizer.add_sizer(&fields, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    let header = CheckBox::builder(&asker)
+        .with_label("First row is column &headers")
+        .build();
+    header.set_value(true);
+    set_accessible_name(&header, "First row is column headers");
+    sizer.add(&header, 0, SizerFlag::All, 8);
+
+    let buttons = BoxSizer::builder(Orientation::Horizontal).build();
+    let ok = Button::builder(&asker)
+        .with_id(ID_OK)
+        .with_label("&Insert")
+        .build();
+    let cancel = Button::builder(&asker)
+        .with_id(ID_CANCEL)
+        .with_label("Cancel")
+        .build();
+    buttons.add(&ok, 0, SizerFlag::All, 4);
+    buttons.add(&cancel, 0, SizerFlag::All, 4);
+    sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
+
+    asker.set_sizer_and_fit(sizer, true);
+    rows.set_focus();
+    if asker.show_modal() != ID_OK {
+        return;
+    }
+
+    let (rows, columns, header) = (
+        rows.value().max(0) as usize,
+        columns.value().max(0) as usize,
+        header.get_value(),
+    );
+    match editor_document::insert_table_script(rows, columns, header) {
+        Some(script) => {
+            body_editor.run_script(&script);
+            let _ = a11y.announce(
+                &editor_document::table_spoken(rows, columns, header),
+                Priority::Normal,
+            );
+        }
+        // Refused out loud rather than silently doing nothing, which reads as
+        // the command being broken.
+        None => {
+            let _ = a11y.announce(
+                &format!(
+                    "A table can be up to {} rows by {} columns.                      More than that cannot be read a cell at a time.",
+                    editor_document::MAX_TABLE_ROWS,
+                    editor_document::MAX_TABLE_COLUMNS
+                ),
+                Priority::High,
+            );
+        }
+    }
+}
+
 fn insert_link(
     dialog: &Dialog,
     body_editor: WebView,

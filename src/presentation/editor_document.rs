@@ -70,6 +70,9 @@ pub fn editor_document(body: &str, language: &str) -> String {
     let safe_body = renderer.sanitize_html(body);
     let language = safe_language(language);
     let format_keys = format_key_table();
+    let link_id = LINK_PLACEHOLDER_ID;
+    let block_markers = markdown_block_table();
+    let inline_markers = markdown_inline_table();
 
     format!(
         r#"<!DOCTYPE html>
@@ -131,6 +134,10 @@ img {{ max-width: 100%; height: auto; }}
       post({{ kind: 'save' }});
       return;
     }}
+    if (event.key === 'Tab' && !event.ctrlKey && !event.altKey) {{
+      if (tableTab(event.shiftKey)) {{ event.preventDefault(); }}
+      return;
+    }}
     // A key that types a character keeps typing it. On some layouts AltGr,
     // which arrives as Ctrl and Alt together, produces a real character on the
     // digit row, and taking it would cost somebody a character they need to
@@ -151,6 +158,200 @@ img {{ max-width: 100%; height: auto; }}
       return;
     }}
   }});
+  // ── Moving through a table ─────────────────────────────────────────────
+  //
+  // Tab means "next cell" inside a table and "next control" everywhere else,
+  // which is what people expect from every other editor and is why it is worth
+  // the special case.
+  //
+  // Nobody is trapped: Shift+Tab out of the first cell is not taken, so it
+  // leaves the editor the way it always did. That is the one rule this cannot
+  // get wrong, because a keyboard trap in a message body is a person unable to
+  // reach the Send button.
+  function cellAround(node) {{
+    while (node && node !== body) {{
+      if (node.nodeType === 1 &&
+          (node.tagName === 'TD' || node.tagName === 'TH')) {{
+        return node;
+      }}
+      node = node.parentNode;
+    }}
+    return null;
+  }}
+
+  function allCells(cell) {{
+    var table = cell;
+    while (table && table.tagName !== 'TABLE') {{ table = table.parentNode; }}
+    if (!table) {{ return null; }}
+    return {{ table: table, cells: table.querySelectorAll('th, td') }};
+  }}
+
+  function caretInto(cell) {{
+    var range = document.createRange();
+    range.selectNodeContents(cell);
+    range.collapse(true);
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }}
+
+  // A row shaped like the last one, so a table stays rectangular however many
+  // rows get added by tabbing off the end of it.
+  function addRow(table) {{
+    var rows = table.rows;
+    var last = rows[rows.length - 1];
+    var row = document.createElement('tr');
+    for (var n = 0; n < last.cells.length; n++) {{
+      var cell = document.createElement('td');
+      cell.appendChild(document.createElement('br'));
+      row.appendChild(cell);
+    }}
+    last.parentNode.appendChild(row);
+    return row.cells[0];
+  }}
+
+  function tableTab(backwards) {{
+    var selection = window.getSelection();
+    if (!selection || !selection.focusNode) {{ return false; }}
+    var cell = cellAround(selection.focusNode);
+    if (!cell) {{ return false; }}
+    var found = allCells(cell);
+    if (!found) {{ return false; }}
+    var at = -1;
+    for (var n = 0; n < found.cells.length; n++) {{
+      if (found.cells[n] === cell) {{ at = n; break; }}
+    }}
+    if (at < 0) {{ return false; }}
+    if (backwards) {{
+      // Out of the first cell is out of the editor, on purpose.
+      if (at === 0) {{ return false; }}
+      caretInto(found.cells[at - 1]);
+      return true;
+    }}
+    if (at + 1 < found.cells.length) {{
+      caretInto(found.cells[at + 1]);
+      return true;
+    }}
+    caretInto(addRow(found.table));
+    post({{ kind: 'row' }});
+    return true;
+  }}
+
+  // ── Markdown, as it is typed ───────────────────────────────────────────
+  //
+  // What each marker means is decided in Rust and generated into these two
+  // tables, so what the editor recognises and what the documentation promises
+  // are one definition.
+  var mdBlocks = {block_markers};
+  var mdInline = {inline_markers};
+  var mdNumbered = /^[0-9]+\.$/;
+
+  function escapeText(text) {{
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }}
+
+  // Where the caret is, but only when it is somewhere this can reason about:
+  // in a text node, with the offset inside it.
+  function caretText() {{
+    var selection = window.getSelection();
+    if (!selection || !selection.isCollapsed) {{ return null; }}
+    var node = selection.focusNode;
+    if (!node || node.nodeType !== 3) {{ return null; }}
+    return {{ node: node, offset: selection.focusOffset,
+             before: node.data.slice(0, selection.focusOffset) }};
+  }}
+
+  function selectBack(node, from, to) {{
+    var range = document.createRange();
+    range.setStart(node, from);
+    range.setEnd(node, to);
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }}
+
+  // Put the caret after what was just inserted rather than inside it, so the
+  // next word is not swallowed by the formatting that was meant to end.
+  function caretAfterInserted() {{
+    var placed = body.querySelector('[data-md]');
+    if (!placed) {{ return; }}
+    placed.removeAttribute('data-md');
+    var after = document.createRange();
+    after.setStartAfter(placed);
+    after.collapse(true);
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(after);
+  }}
+
+  // A marker only counts as a marker when it is the whole line so far.
+  // Otherwise a sentence ending in a hyphen becomes a bullet at the next
+  // space, in the middle of writing, which is the behaviour people hate.
+  function blockMarkdown(at) {{
+    if (at.node.previousSibling) {{ return; }}
+    var line = at.before.slice(0, at.before.length - 1).replace(/^\s+/, '');
+    var rule = null;
+    for (var n = 0; n < mdBlocks.length; n++) {{
+      if (mdBlocks[n].marker === line) {{ rule = mdBlocks[n]; break; }}
+    }}
+    if (!rule && mdNumbered.test(line)) {{ rule = mdBlocks.numbered; }}
+    if (!rule) {{ return; }}
+    selectBack(at.node, 0, at.offset);
+    document.execCommand('delete');
+    document.execCommand(rule.command, false, rule.value);
+    post({{ kind: 'format', index: rule.index }});
+  }}
+
+  function inlineMarkdown(typed, at) {{
+    for (var n = 0; n < mdInline.length; n++) {{
+      var style = mdInline[n];
+      var mark = style.delimiter;
+      if (typed !== mark.charAt(mark.length - 1)) {{ continue; }}
+      if (at.before.slice(-mark.length) !== mark) {{ continue; }}
+      var inner = at.before.slice(0, at.before.length - mark.length);
+      var open = inner.lastIndexOf(mark);
+      if (open < 0) {{ continue; }}
+      // "**word*" is not an italic wrapping an asterisk. Without this the
+      // single-character rule fires one keystroke before the double one, and
+      // bold is unreachable by typing.
+      if (open > 0 && inner.charAt(open - 1) === mark.charAt(0)) {{ continue; }}
+      var content = inner.slice(open + mark.length);
+      if (!content.length || /^\s|\s$/.test(content)) {{ continue; }}
+      selectBack(at.node, open, at.offset);
+      document.execCommand('insertHTML', false,
+        '<' + style.tag + ' data-md="1">' + escapeText(content) + '</' + style.tag + '>');
+      caretAfterInserted();
+      post({{ kind: 'style', index: style.index }});
+      return;
+    }}
+  }}
+
+  // The words are marked and the address is sent to be checked. Whether it
+  // becomes a link is not the page's decision: it goes to another person.
+  function linkMarkdown(at) {{
+    var open = at.before.lastIndexOf('[');
+    if (open < 0) {{ return; }}
+    var typed = at.before.slice(open);
+    var middle = typed.indexOf('](');
+    if (middle < 1) {{ return; }}
+    var text = typed.slice(1, middle);
+    var url = typed.slice(middle + 2, typed.length - 1);
+    if (!text.length || !url.length) {{ return; }}
+    selectBack(at.node, open, at.offset);
+    document.execCommand('insertHTML', false,
+      '<span id="{link_id}">' + escapeText(text) + '</span>');
+    post({{ kind: 'link', url: url }});
+  }}
+
+  body.addEventListener('input', function (event) {{
+    if (event.inputType !== 'insertText' || !event.data) {{ return; }}
+    var at = caretText();
+    if (!at) {{ return; }}
+    if (event.data === ' ') {{ blockMarkdown(at); return; }}
+    if (event.data === ')') {{ linkMarkdown(at); return; }}
+    inlineMarkdown(event.data, at);
+  }});
+
   // Focus lands in the message, at the start of it. A reply that opens with
   // the caret after the quoted original means typing below somebody else's
   // words, which is not where a reply goes.
@@ -164,6 +365,181 @@ img {{ max-width: 100%; height: auto; }}
 }})();
 </script>
 </body></html>"#
+    )
+}
+
+/// The Markdown line markers, as the object the page walks.
+///
+/// The numbered-list rule hangs off the same object under `numbered`, because
+/// it is not one string to compare against: Markdown takes any number, and
+/// somebody resuming a list types the one they are up to.
+fn markdown_block_table() -> String {
+    use crate::presentation::markdown_input::BLOCK_RULES;
+    let entries: Vec<String> = BLOCK_RULES
+        .iter()
+        .map(|rule| {
+            format!(
+                "{{marker:{:?},{}}}",
+                rule.marker,
+                command_fields(rule.format)
+            )
+        })
+        .collect();
+    format!(
+        "Object.assign([{}], {{numbered:{{{}}}}})",
+        entries.join(","),
+        command_fields(Format::NumberedList)
+    )
+}
+
+/// The Markdown inline markers, as the array the page walks.
+fn markdown_inline_table() -> String {
+    use crate::presentation::markdown_input::INLINE_STYLES;
+    let entries: Vec<String> = INLINE_STYLES
+        .iter()
+        .enumerate()
+        .map(|(index, style)| {
+            format!(
+                "{{delimiter:{:?},tag:{:?},index:{index}}}",
+                style.delimiter, style.tag
+            )
+        })
+        .collect();
+    format!("[{}]", entries.join(","))
+}
+
+/// The command, its argument and its place in [`Format::ALL`], as JavaScript.
+///
+/// The place is what comes back in the message, and is how the announcement
+/// finds its words again without the page carrying any of them.
+fn command_fields(format: Format) -> String {
+    let (command, argument) = format.as_command();
+    let value = match argument {
+        Some(argument) => format!("{argument:?}"),
+        None => "null".to_string(),
+    };
+    let index = Format::ALL
+        .iter()
+        .position(|candidate| *candidate == format)
+        .unwrap_or_default();
+    format!("command:{command:?},value:{value},index:{index}")
+}
+
+/// The widest table this will build.
+///
+/// Not arbitrary. A table is read one cell at a time by the people this is for,
+/// and past about this width you cannot hold the column you are in while you
+/// move across the row. A message is not a spreadsheet, and refusing a
+/// twenty-column table out loud is kinder than building one nobody can read.
+pub const MAX_TABLE_COLUMNS: usize = 10;
+
+/// The tallest table this will build. Rows can be added by tabbing afterwards.
+pub const MAX_TABLE_ROWS: usize = 50;
+
+/// The cell the caret is put in once a table has been inserted.
+pub const TABLE_FIRST_CELL_ID: &str = "wixen-first-cell";
+
+/// The markup for a table.
+///
+/// `<th scope="col">` rather than a bold first row is the entire accessibility
+/// argument for this feature. It is what lets the person receiving the message
+/// hear "Total, column 3" as they move across it, instead of a wall of numbers
+/// they have to keep a mental map of. A table laid out with spaces, which is
+/// what people do without this, gives them nothing at all.
+///
+/// `<br>` in each empty cell because a cell with nothing in it cannot be
+/// clicked into or reached by the caret in any engine.
+fn table_markup(rows: usize, columns: usize, header: bool) -> String {
+    let mut markup = String::from("<table>");
+    let mut first_cell = true;
+    let mut cell = |tag: &str, extra: &str, markup: &mut String| {
+        let id = if first_cell {
+            first_cell = false;
+            format!(" id=\"{TABLE_FIRST_CELL_ID}\"")
+        } else {
+            String::new()
+        };
+        markup.push_str(&format!("<{tag}{extra}{id}><br></{tag}>"));
+    };
+
+    if header {
+        markup.push_str("<thead><tr>");
+        for _ in 0..columns {
+            cell("th", " scope=\"col\"", &mut markup);
+        }
+        markup.push_str("</tr></thead>");
+    }
+    markup.push_str("<tbody>");
+    for _ in 0..rows {
+        markup.push_str("<tr>");
+        for _ in 0..columns {
+            cell("td", "", &mut markup);
+        }
+        markup.push_str("</tr>");
+    }
+    markup.push_str("</tbody></table><p><br></p>");
+    markup
+}
+
+/// The script that puts a table in the message and the caret in its first cell.
+///
+/// `rows` is the body rows, so a table asked for with a header row has that
+/// many rows underneath it. `None` when the size is not one this will build,
+/// and then the caller says so rather than inserting something else.
+pub fn insert_table_script(rows: usize, columns: usize, header: bool) -> Option<String> {
+    if rows == 0 || columns == 0 || rows > MAX_TABLE_ROWS || columns > MAX_TABLE_COLUMNS {
+        return None;
+    }
+    let markup = table_markup(rows, columns, header);
+    Some(format!(
+        "(function () {{            document.execCommand('insertHTML', false, {markup:?});            var first = document.getElementById({TABLE_FIRST_CELL_ID:?});            if (first) {{              first.removeAttribute('id');              var range = document.createRange();              range.setStart(first, 0);              range.collapse(true);              var selection = window.getSelection();              selection.removeAllRanges();              selection.addRange(range);            }}            document.getElementById({BODY_ID:?}).focus(); }})();"
+    ))
+}
+
+/// What is said when a table is inserted.
+///
+/// It says how to move through it because this is the one moment somebody needs
+/// to know, and because Tab meaning "next cell" here and "next control"
+/// everywhere else is exactly the kind of thing that has to be told rather than
+/// discovered.
+pub fn table_spoken(rows: usize, columns: usize, header: bool) -> String {
+    let header = if header { ", with a header row" } else { "" };
+    format!(
+        "Table added, {rows} rows by {columns} columns{header}.          In the first cell. Tab moves to the next cell,          and Tab in the last cell adds a row."
+    )
+}
+
+/// The element the page wraps a typed Markdown link in while it is checked.
+///
+/// The page puts the words in this and asks; the answer either turns it into a
+/// link or unwraps it. Marking the range rather than relying on where the caret
+/// is means the answer lands in the right place however long it takes and
+/// wherever somebody has moved to since.
+pub const LINK_PLACEHOLDER_ID: &str = "wixen-md-link";
+
+/// What to do with a Markdown link somebody typed, and what to say about it.
+///
+/// A refused address leaves the words in place and says so. Quietly turning it
+/// into plain text would mean somebody sends a message believing there is a
+/// link in it, which is the failure guardrail 9 is about: the gap has to stay
+/// visible rather than be absorbed.
+pub fn resolve_markdown_link(url: &str) -> (String, String) {
+    let Some(safe) = HtmlRenderer::safe_external_url(url) else {
+        return (
+            unwrap_link_script(),
+            format!("{url} is not an address this can link to. The words are left as they are."),
+        );
+    };
+    let script = format!(
+        "(function () {{            var mark = document.getElementById({LINK_PLACEHOLDER_ID:?});            if (!mark) {{ return; }}            var anchor = document.createElement('a');            anchor.setAttribute('href', {safe:?});            while (mark.firstChild) {{ anchor.appendChild(mark.firstChild); }}            mark.parentNode.replaceChild(anchor, mark);            var after = document.createRange();            after.setStartAfter(anchor);            after.collapse(true);            var selection = window.getSelection();            selection.removeAllRanges();            selection.addRange(after);            document.getElementById({BODY_ID:?}).focus(); }})();"
+    );
+    (script, format!("Link to {safe}"))
+}
+
+/// Put the words back as they were, with no link on them.
+fn unwrap_link_script() -> String {
+    format!(
+        "(function () {{            var mark = document.getElementById({LINK_PLACEHOLDER_ID:?});            if (!mark) {{ return; }}            var parent = mark.parentNode;            while (mark.firstChild) {{ parent.insertBefore(mark.firstChild, mark); }}            parent.removeChild(mark);            document.getElementById({BODY_ID:?}).focus(); }})();"
     )
 }
 
@@ -454,7 +830,7 @@ impl Format {
 }
 
 /// What the page asked the application to do.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditorMessage {
     Send,
     Save,
@@ -465,6 +841,18 @@ pub enum EditorMessage {
     /// typing is latency somebody feels. Reported back so the announcement
     /// still goes through the queue that bounds and coalesces every other one.
     Formatted(Format),
+    /// A Markdown inline marker was closed, and the page has already applied it.
+    Styled(&'static crate::presentation::markdown_input::InlineStyle),
+    /// A Markdown link was typed, and its address needs checking before it
+    /// becomes a link.
+    ///
+    /// The page cannot decide this on its own. The address ends up in a
+    /// document that goes to another person, so the rule that says which
+    /// addresses this application will carry stays on the Rust side, where it
+    /// is the same rule the reader applies to a stranger's mail.
+    Link(String),
+    /// Tab in the last cell of a table made another row.
+    TableRowAdded,
 }
 
 /// Read one message posted by the page.
@@ -485,6 +873,12 @@ pub fn parse_message(raw: &str) -> Option<EditorMessage> {
                 .copied()
                 .map(EditorMessage::Formatted)
         }
+        "style" => {
+            let index = usize::try_from(value.get("index")?.as_u64()?).ok()?;
+            crate::presentation::markdown_input::inline_style(index).map(EditorMessage::Styled)
+        }
+        "link" => Some(EditorMessage::Link(value.get("url")?.as_str()?.to_string())),
+        "row" => Some(EditorMessage::TableRowAdded),
         _ => None,
     }
 }
@@ -530,6 +924,7 @@ fn safe_language(tag: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     /// The opening `<html ...>` tag, which is where an injected attribute
@@ -796,6 +1191,152 @@ mod tests {
     fn test_a_format_index_from_nowhere_is_ignored() {
         assert_eq!(parse_message(r#"{"kind":"format","index":99}"#), None);
         assert_eq!(parse_message(r#"{"kind":"format"}"#), None);
+    }
+
+    #[test]
+    fn test_the_markdown_a_person_types_is_recognised_by_the_page() {
+        // Typing "## " and carrying on is the only way to put a heading in a
+        // message without leaving the sentence. It is how a lot of people who
+        // cannot see a toolbar already write, so it is the primary path rather
+        // than a shortcut for the menu.
+        let page = editor_document("", "en-US");
+        for rule in &crate::presentation::markdown_input::BLOCK_RULES {
+            assert!(
+                page.contains(&format!("{:?}", rule.marker)),
+                "the page does not watch for {:?}",
+                rule.marker
+            );
+        }
+        for style in &crate::presentation::markdown_input::INLINE_STYLES {
+            assert!(
+                page.contains(&format!("{:?}", style.delimiter)),
+                "the page does not watch for {:?}",
+                style.delimiter
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_inline_style_is_reported_so_it_can_be_announced() {
+        let Some(EditorMessage::Styled(style)) = parse_message(r#"{"kind":"style","index":0}"#)
+        else {
+            panic!("a style message should parse");
+        };
+        assert_eq!(style.spoken, "Bold");
+    }
+
+    #[test]
+    fn test_a_style_index_from_nowhere_is_ignored() {
+        assert_eq!(parse_message(r#"{"kind":"style","index":99}"#), None);
+    }
+
+    #[test]
+    fn test_a_typed_link_comes_here_to_be_checked() {
+        // The page cannot decide this. The address goes into a document and
+        // then to another person, so the check that says which addresses this
+        // application will carry lives on one side of the bridge.
+        assert_eq!(
+            parse_message(r#"{"kind":"link","url":"https://example.com"}"#),
+            Some(EditorMessage::Link("https://example.com".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_a_checked_link_replaces_the_text_that_was_typed() {
+        let (script, spoken) = resolve_markdown_link("https://example.com/agenda");
+        assert!(script.contains("https://example.com/agenda"));
+        assert!(script.contains(LINK_PLACEHOLDER_ID));
+        assert!(spoken.contains("Link"), "{spoken}");
+    }
+
+    #[test]
+    fn test_a_link_this_will_not_carry_leaves_the_words_and_says_so() {
+        // Silently making it plain text would be the wrong end of guardrail 9:
+        // somebody would send a message believing it had a link in it.
+        let (script, spoken) = resolve_markdown_link("javascript:alert(1)");
+        assert!(!script.contains("javascript:"), "{script}");
+        assert!(script.contains(LINK_PLACEHOLDER_ID));
+        assert!(
+            spoken.to_lowercase().contains("not"),
+            "the refusal has to say so: {spoken}"
+        );
+    }
+
+    #[test]
+    fn test_a_table_is_built_with_headers_the_recipient_can_navigate() {
+        // The whole point of putting a table in a message rather than laying
+        // columns out with spaces. `scope` is what lets the person receiving it
+        // hear "Total, column 3" instead of a wall of numbers.
+        let markup = table_markup(2, 3, true);
+        assert_eq!(markup.matches("<th scope=\"col\"").count(), 3);
+        assert_eq!(
+            markup.matches("<tr>").count(),
+            3,
+            "a header row and two more"
+        );
+        assert!(insert_table_script(2, 3, true).is_some());
+    }
+
+    #[test]
+    fn test_a_table_without_a_header_row_has_no_header_cells() {
+        let markup = table_markup(2, 2, false);
+        assert!(!markup.contains("<th"), "{markup}");
+        assert_eq!(markup.matches("<td").count(), 4);
+    }
+
+    #[test]
+    fn test_the_header_cells_survive_the_way_out() {
+        // The message is sanitised on the way out, so a header that the
+        // sanitiser strips is a table that arrives unnavigable. This is the
+        // test that says whether the accessibility of it actually ships.
+        let cleaned = HtmlRenderer::new().sanitize_html(&table_markup(2, 2, true));
+        assert!(
+            cleaned.contains("scope=\"col\""),
+            "the sanitiser removed the column headers: {cleaned}"
+        );
+        assert!(cleaned.contains("<th"), "{cleaned}");
+    }
+
+    #[test]
+    fn test_a_table_with_no_rows_or_no_columns_is_not_a_table() {
+        assert_eq!(insert_table_script(0, 3, true), None);
+        assert_eq!(insert_table_script(3, 0, true), None);
+    }
+
+    #[test]
+    fn test_a_table_too_big_to_read_is_refused() {
+        // Not an arbitrary limit: a table wider than this cannot be held in
+        // your head while you move across it, and a message is not a
+        // spreadsheet. Refusing it out loud beats building something unusable.
+        assert_eq!(insert_table_script(1, MAX_TABLE_COLUMNS + 1, true), None);
+        assert_eq!(insert_table_script(MAX_TABLE_ROWS + 1, 1, true), None);
+        assert!(insert_table_script(MAX_TABLE_ROWS, MAX_TABLE_COLUMNS, true).is_some());
+    }
+
+    #[test]
+    fn test_the_caret_lands_in_the_first_cell() {
+        // Otherwise the table is inserted and the caret is somewhere else, and
+        // somebody who cannot see it has to go looking for a thing that was
+        // just created for them to type into.
+        let script = insert_table_script(2, 2, true).expect("2 by 2 is a table");
+        assert!(script.contains(TABLE_FIRST_CELL_ID), "{script}");
+    }
+
+    #[test]
+    fn test_the_table_says_its_shape_and_how_to_move_through_it() {
+        let said = table_spoken(4, 3, true);
+        assert!(said.contains('4') && said.contains('3'), "{said}");
+        assert!(said.to_lowercase().contains("header"), "{said}");
+        assert!(said.contains("Tab"), "{said}");
+        assert!(!table_spoken(2, 2, false).to_lowercase().contains("header"));
+    }
+
+    #[test]
+    fn test_a_row_added_by_tabbing_says_so() {
+        assert_eq!(
+            parse_message(r#"{"kind":"row"}"#),
+            Some(EditorMessage::TableRowAdded)
+        );
     }
 
     #[test]

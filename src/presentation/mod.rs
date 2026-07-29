@@ -8,6 +8,7 @@ pub mod date_display;
 pub mod editor_document;
 pub mod html_renderer;
 pub mod managers;
+pub mod markdown_input;
 pub mod message_columns;
 pub mod message_rows;
 pub mod pim_rows;
