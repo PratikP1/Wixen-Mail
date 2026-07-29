@@ -779,6 +779,23 @@ pub fn replace_word_script(at: Position, end: usize, replacement: &str) -> Strin
     format!("window.wixenReplaceWord({node}, {start}, {end}, {replacement:?})")
 }
 
+/// Both halves of the message, or nothing when the editor did not answer.
+///
+/// `run_script` returns `None` on any failure, and every call site used to
+/// turn that into an empty string, which makes a failed read and an empty
+/// message the same thing. They are not, and the difference cost twice: the
+/// autosave timer wrote the empty result over the draft it exists to protect,
+/// and the send path queued a message with no body and no error.
+///
+/// So the caller is handed nothing and has to decide. Both callers decide the
+/// same way, which is to leave the stored draft alone and say so.
+pub fn message_from_editor(
+    html: Option<String>,
+    plain: Option<String>,
+) -> Option<(String, String)> {
+    Some((body_from_editor(&html?), plain_from_editor(&plain?)))
+}
+
 /// Take the message's text back out of what the page returned.
 ///
 /// Nothing here is trusted to be what was asked for: an answer that is not
@@ -1719,6 +1736,26 @@ mod tests {
         assert_eq!(
             parse_message(r#"{"kind":"word","text":"wrold"}"#),
             Some(EditorMessage::WordFinished("wrold".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_an_editor_that_did_not_answer_is_not_an_empty_message() {
+        // The distinction the old code threw away. An empty answer is a
+        // message with nothing in it; no answer is a script that failed, and
+        // treating the second as the first overwrote the draft with nothing.
+        assert_eq!(message_from_editor(None, Some("\"text\"".into())), None);
+        assert_eq!(message_from_editor(Some("\"<p>x</p>\"".into()), None), None);
+        assert_eq!(message_from_editor(None, None), None);
+    }
+
+    #[test]
+    fn test_an_empty_message_is_still_a_message() {
+        // The other side of it. Somebody who has cleared the body and saved
+        // should get an empty draft, not a refusal.
+        assert_eq!(
+            message_from_editor(Some(r#""""#.into()), Some(r#""""#.into())),
+            Some((String::new(), String::new()))
         );
     }
 

@@ -596,9 +596,19 @@ pub fn show_compose_dialog_full(
     // for the life of the window.
     let typing_speller = std::rc::Rc::new(crate::service::spellcheck::for_language(&language));
 
+    // F7 typed in the page arrives inside the web view's own callback, and the
+    // check it starts opens modal dialogs. Made once here, because a timer has
+    // to outlive the callback that starts it, and started on demand below.
+    let spell_later = std::rc::Rc::new(Timer::new(&dialog));
+    spell_later.on_tick({
+        let a11y = a11y.clone();
+        move |_| check_spelling(&dialog, body_editor, &a11y)
+    });
+
     body_editor.on_script_message_received({
         let a11y = a11y.clone();
         let typing_speller = typing_speller.clone();
+        let spell_later = spell_later.clone();
         move |event| {
             let Some(raw) = event.get_string() else {
                 return;
@@ -622,8 +632,15 @@ pub fn show_compose_dialog_full(
                         crate::presentation::accessibility::announcements::Priority::Normal,
                     );
                 }
+                // Not run from in here. This is the web view's own callback,
+                // and the check opens modal dialogs and runs scripts, so
+                // doing it now is a nested event loop started from inside a
+                // callback the browser control has not finished making. The
+                // one-shot timer puts it back on the ordinary event loop,
+                // which is where the Spelling button's version already runs,
+                // so both routes into the feature behave the same way.
                 Some(editor_document::EditorMessage::CheckSpelling) => {
-                    check_spelling(&dialog, body_editor, &a11y);
+                    spell_later.start(1, true);
                 }
                 // The sound at the end of a word that is wrong. Not spoken:
                 // the engine has already marked the word, and the screen
@@ -709,23 +726,31 @@ pub fn show_compose_dialog_full(
     // One place rather than two. The autosave timer and the send path both
     // need it, and when they each built their own a field added to ComposeData
     // got filled in one and forgotten in the other.
-    let read_compose_data = move || ComposeData {
-        to: to_field.get_value(),
-        cc: cc_field.get_value(),
-        bcc: bcc_field.get_value(),
-        subject: subject_field.get_value(),
-        body: editor_document::body_from_editor(
-            &body_editor
-                .run_script(&editor_document::read_body_script())
-                .unwrap_or_default(),
-        ),
-        body_plain: editor_document::plain_from_editor(
-            &body_editor
-                .run_script(&editor_document::read_plain_script())
-                .unwrap_or_default(),
-        ),
-        html_mode: true,
-        account_index: account_choice.get_selection(),
+    // `None` when the editor did not answer, which is not the same as an empty
+    // message and must not be treated as one: the autosave timer would write
+    // it over the draft, and the send path would queue a message with nothing
+    // in it and no error.
+    //
+    // Both reads are pure, which matters more than it looks. `run_script` uses
+    // a four kilobyte buffer and runs the script a second time when the answer
+    // does not fit, so anything asked for here has to be safe to run twice. A
+    // script that changes the message must either return nothing or return
+    // something small; `wixenReplaceWord` returns a position, which is both.
+    let read_compose_data = move || {
+        let (body, body_plain) = editor_document::message_from_editor(
+            body_editor.run_script(&editor_document::read_body_script()),
+            body_editor.run_script(&editor_document::read_plain_script()),
+        )?;
+        Some(ComposeData {
+            to: to_field.get_value(),
+            cc: cc_field.get_value(),
+            bcc: bcc_field.get_value(),
+            subject: subject_field.get_value(),
+            body,
+            body_plain,
+            html_mode: true,
+            account_index: account_choice.get_selection(),
+        })
     };
 
     // Held for the life of the dialog: dropping the timer stops it, and the
@@ -733,7 +758,14 @@ pub fn show_compose_dialog_full(
     let _autosave_timer = autosave.interval().map(|every| {
         let timer = Timer::new(&dialog);
         timer.on_tick(move |_| {
-            let data = read_compose_data();
+            // Could not read it, so there is nothing to save that is better
+            // than what is already saved. Silent to the user on purpose: this
+            // fires every couple of minutes and the message is untouched, so
+            // there is nothing for them to do. The log is where it belongs.
+            let Some(data) = read_compose_data() else {
+                tracing::warn!("Autosave skipped: the editor did not answer");
+                return;
+            };
             // Nothing typed yet is not worth a row in the drafts list, and
             // it would be one that reads as blank.
             if data.to.trim().is_empty()
@@ -753,7 +785,23 @@ pub fn show_compose_dialog_full(
     loop {
         let result = dialog.show_modal();
 
-        let data = read_compose_data();
+        // Nothing to read for the ways out that discard the message.
+        if result != ID_SEND && result != ID_SAVE_DRAFT {
+            return ComposeResult::Cancelled;
+        }
+
+        // Could not read it. Going on would send or save an empty message
+        // over the one that is still sitting in the window, so instead say so
+        // and put the window back. Nothing is lost: the message is where it
+        // was, and trying again is the whole recovery.
+        let Some(data) = read_compose_data() else {
+            tracing::error!("The editor did not answer, so nothing was sent or saved");
+            let _ = a11y.announce(
+                "The message could not be read. Nothing was sent or saved. Try again.",
+                crate::presentation::accessibility::announcements::Priority::High,
+            );
+            continue;
+        };
 
         match result {
             _ if result == ID_SEND => {
@@ -778,8 +826,9 @@ pub fn show_compose_dialog_full(
                     return ComposeResult::Send(data);
                 }
             }
-            _ if result == ID_SAVE_DRAFT => return ComposeResult::SaveDraft(data),
-            _ => return ComposeResult::Cancelled,
+            // The only other way here: the guard above returns for every
+            // result that is neither of these two.
+            _ => return ComposeResult::SaveDraft(data),
         }
     }
 }
