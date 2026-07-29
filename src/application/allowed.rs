@@ -294,11 +294,25 @@ pub fn allowed_for(account_id: &str) -> Allowed {
         .map(|config| config.app_config().allowed_for(account_id))
         .unwrap_or(Allowed::NOTHING);
 
-    FROM_COMMAND_LINE
-        .get()
-        .copied()
-        .unwrap_or(Allowed::EVERYTHING)
-        .and(stored)
+    narrowed_by(FROM_COMMAND_LINE.get().copied(), stored)
+}
+
+/// What the command line leaves of a stored answer.
+///
+/// Split out so it can be tested without touching the process-wide value.
+/// That value is set once, so a test for the unset case and a test that sets
+/// it cannot both live in the same process: Rust runs them in parallel and
+/// whichever went first decided the answer for the other. Not hypothetical,
+/// it is what happened, and it failed about one run in three.
+///
+/// `None` means the command line had no opinion, which is different from it
+/// having said "nothing": a window opened by a test or a tool that never
+/// parsed arguments is governed by the settings alone.
+const fn narrowed_by(command_line: Option<Allowed>, stored: Allowed) -> Allowed {
+    match command_line {
+        Some(narrowing) => narrowing.and(stored),
+        None => stored,
+    }
 }
 
 #[cfg(test)]
@@ -306,18 +320,29 @@ mod resolving {
     use super::*;
 
     #[test]
-    fn test_before_anything_is_recorded_the_command_line_narrows_nothing() {
-        // The window can be opened by a test or a tool that never parsed
-        // arguments, and that must not silently mean "allow everything" nor
-        // "allow nothing": it means the command line has no opinion, and the
-        // settings decide. Read directly rather than through `allowed_for`,
-        // which also reads a config file this test has no business touching.
+    fn test_no_opinion_from_the_command_line_leaves_the_settings_alone() {
+        // A window can be opened by a test or a tool that never parsed
+        // arguments. That must not silently mean "allow everything" nor
+        // "allow nothing": it means the command line said nothing, and the
+        // settings decide on their own.
+        assert_eq!(narrowed_by(None, Allowed::EVERYTHING), Allowed::EVERYTHING);
         assert_eq!(
-            FROM_COMMAND_LINE
-                .get()
-                .copied()
-                .unwrap_or(Allowed::EVERYTHING),
-            Allowed::EVERYTHING
+            narrowed_by(None, Allowed::FOR_TESTING),
+            Allowed::FOR_TESTING
+        );
+        assert_eq!(narrowed_by(None, Allowed::NOTHING), Allowed::NOTHING);
+    }
+
+    #[test]
+    fn test_the_command_line_can_only_take_permissions_away() {
+        assert_eq!(
+            narrowed_by(Some(Allowed::NOTHING), Allowed::EVERYTHING),
+            Allowed::NOTHING
+        );
+        assert_eq!(
+            narrowed_by(Some(Allowed::EVERYTHING), Allowed::FOR_TESTING),
+            Allowed::FOR_TESTING,
+            "saying everything on the command line must not widen a setting"
         );
     }
 

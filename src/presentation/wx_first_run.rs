@@ -15,7 +15,7 @@
 
 use crate::application::allowed::Allowed;
 use crate::presentation::accessibility::names::set_accessible_name;
-use crate::presentation::first_run::{Choice, INTRODUCTION, READ_MORE, TESTING_PAGE, TITLE};
+use crate::presentation::first_run::{Choice, INTRODUCTION, READ_MORE, TITLE, testing_page};
 use wxdragon::prelude::*;
 
 const ID_CONTINUE: Id = ID_HIGHEST + 300;
@@ -102,8 +102,9 @@ pub fn ask_what_is_allowed(parent: &Frame) -> Allowed {
         // The page ships beside the program. Opening it in whatever reads
         // markdown beats rendering it here: it is long, and somebody may want
         // to keep it open next to the application.
-        if let Err(e) = open::that(TESTING_PAGE) {
-            tracing::warn!("Could not open {TESTING_PAGE}: {e}");
+        let page = testing_page();
+        if let Err(e) = open::that(&page) {
+            tracing::warn!("Could not open {}: {e}", page.display());
         }
     });
     carry_on.on_click(move |_| dialog.end_modal(ID_CONTINUE));

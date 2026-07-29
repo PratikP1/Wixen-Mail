@@ -118,8 +118,26 @@ you can set it per account.";
 /// The button that opens the fuller page.
 pub const READ_MORE: &str = "What to test, and what is known to be broken";
 
-/// Where that page is, relative to the installation.
-pub const TESTING_PAGE: &str = "docs/ALPHA_TESTING.md";
+/// Where that page is, relative to the program.
+const TESTING_PAGE_NAME: &str = "docs/ALPHA_TESTING.md";
+
+/// The testing page, as a path that can actually be opened.
+///
+/// Beside the executable, not beside the working directory. An installed copy
+/// is started from wherever the shortcut points, usually the person's home
+/// folder, so a relative path opens nothing and the button appears broken.
+/// That is not something a test in this repository would notice, because
+/// `cargo test` runs with the repository as the working directory.
+///
+/// Falls back to the plain relative path when the executable cannot be found,
+/// which is the case under `cargo run` and is where the relative one works.
+pub fn testing_page() -> std::path::PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(TESTING_PAGE_NAME)))
+        .filter(|beside| beside.exists())
+        .unwrap_or_else(|| std::path::PathBuf::from(TESTING_PAGE_NAME))
+}
 
 #[cfg(test)]
 mod tests {
@@ -194,12 +212,45 @@ mod tests {
     }
 
     #[test]
-    fn test_the_page_it_points_at_exists() {
+    fn test_the_page_it_points_at_exists_in_the_repository() {
         // A button offering to open a document that is not there is worse
-        // than no button.
+        // than no button. This only proves the file is in the repository; the
+        // test below is the one about the installed copy.
         assert!(
-            std::path::Path::new(TESTING_PAGE).exists(),
-            "{TESTING_PAGE} is missing, so the button opens nothing"
+            std::path::Path::new(TESTING_PAGE_NAME).exists(),
+            "{TESTING_PAGE_NAME} is missing, so the button opens nothing"
+        );
+    }
+
+    #[test]
+    fn test_the_page_is_looked_for_beside_the_program() {
+        // The bug this was written for: a relative path is relative to the
+        // working directory, and an installed copy starts from wherever the
+        // shortcut points. It has to look beside the executable first.
+        //
+        // Under `cargo test` nothing sits beside the test binary, so this
+        // falls back, and what is checked is that the fallback is the
+        // repository path rather than something absolute and wrong.
+        let looked_for = testing_page();
+
+        assert!(
+            looked_for.ends_with("ALPHA_TESTING.md"),
+            "{}",
+            looked_for.display()
+        );
+    }
+
+    #[test]
+    fn test_the_installer_ships_the_page_beside_the_program() {
+        // The other half, and the half a Rust test cannot check by running:
+        // the page has to be in the installer or the button opens nothing on
+        // every machine except this one. The wildcard is what puts it there.
+        let installer = std::fs::read_to_string("installer/Wixen-Mail-Setup.iss")
+            .expect("the installer script");
+
+        assert!(
+            installer.contains(r"docs\*.md"),
+            "the installer no longer ships the docs folder, so the button opens nothing"
         );
     }
 }
