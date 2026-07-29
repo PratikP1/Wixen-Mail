@@ -36,6 +36,14 @@ const GOOGLE_TASKS_BASE: &str = "https://tasks.googleapis.com/tasks/v1";
 /// Where Microsoft keeps them.
 const GRAPH_BASE: &str = "https://graph.microsoft.com/v1.0";
 
+/// What a provider refusing a write on permission grounds is called.
+///
+/// One string, matched on by the sync so it can say this once rather than
+/// counting it as a problem every time. Matching on the text is worth a note:
+/// the alternative is another error variant for one case in one module, and
+/// this is built and read in the same crate a few hundred lines apart.
+pub const NEEDS_SIGN_IN: &str = "Sign in to this account again to send task changes";
+
 /// The most lists or tasks to take in one sync.
 ///
 /// A bound on a hostile or broken response rather than a limit anybody meets.
@@ -531,9 +539,18 @@ impl TasksClient {
         if !response.status().is_success() {
             // The status and nothing else. A body from a failed request can
             // carry the token back, and this goes to a log file.
+            let status = response.status();
+            // Refused because of what this application is allowed to do rather
+            // than because of the change. Reading tasks and changing them are
+            // separate permissions, so an account signed in before this could
+            // change them holds a token that refreshes forever and is refused
+            // every single time. Named as itself, because the person is the
+            // only one who can fix it and "403" does not tell them how.
+            if status.as_u16() == 401 || status.as_u16() == 403 {
+                return Err(Error::Authentication(NEEDS_SIGN_IN.to_string()));
+            }
             return Err(Error::Protocol(format!(
-                "The task service refused the change: {}",
-                response.status()
+                "The task service refused the change: {status}"
             )));
         }
         response.json::<T>().await.map_err(|e| {

@@ -33,7 +33,7 @@
 //! deleted there goes when the list is next read whole: anything under a list
 //! that is no longer in the response is removed with it.
 
-use crate::common::Result;
+use crate::common::{Error, Result};
 use crate::data::message_cache::{MessageCache, TaskEntry};
 use crate::service::tasks_api::{
     TasksClient, entry_to_google_task, entry_to_ms_task, google_list_to_entry,
@@ -65,6 +65,14 @@ pub struct TaskSyncResult {
     /// made has nowhere at the other end to go, and saying so once as a count
     /// is honest without turning into a line of complaint on every sync.
     pub local_only: usize,
+    /// The provider refused a change because of what this application is
+    /// allowed to do, rather than because of the change.
+    ///
+    /// Its own thing rather than one more entry in `errors`, because counting
+    /// it says "1 problem" on every sync forever while the count of errors is
+    /// all the status line shows. The one thing that fixes it is something
+    /// only the person can do, so it has to reach them in words.
+    pub needs_sign_in: bool,
     /// Local changes the provider's version replaced.
     ///
     /// The honest half of letting the server win. Somebody whose edit was
@@ -93,6 +101,7 @@ impl TaskSyncResult {
         self.sent += other.sent;
         self.local_only += other.local_only;
         self.replaced += other.replaced;
+        self.needs_sign_in |= other.needs_sign_in;
         self.errors.extend(other.errors);
     }
 
@@ -126,6 +135,14 @@ impl TaskSyncResult {
                 self.replaced,
                 if self.replaced == 1 { "" } else { "s" }
             ));
+        }
+        if self.needs_sign_in {
+            // Said rather than counted. An account signed in before this
+            // application could change tasks keeps refreshing its token and
+            // keeps being refused, so without this it is "1 problem" every
+            // sync, forever, with nothing saying what to do about it.
+            said.push_str(". ");
+            said.push_str(crate::service::tasks_api::NEEDS_SIGN_IN);
         }
         if !self.errors.is_empty() {
             // The count, not the text. The messages are in the log, and a
@@ -274,6 +291,7 @@ async fn push_tasks(
                 let _ = cache.forget_deleted_task(&gone.id);
                 result.sent += 1;
             }
+            Err(e) if refused_for_permission(&e) => result.needs_sign_in = true,
             Err(e) => result.errors.push(format!("Deleting a task: {e}")),
         }
     }
@@ -297,9 +315,24 @@ async fn push_tasks(
         };
         match push_one(cache, client, token, provider, &list_id, &task).await {
             Ok(()) => result.sent += 1,
-            Err(e) => result.errors.push(format!("{}: {e}", task.title)),
+            Err(e) if refused_for_permission(&e) => result.needs_sign_in = true,
+            // The task's id, not its title. These go to the log file, and a
+            // title is the person's own words in the same way a message body
+            // is: "Tell the clinic about the results" is not a thing to write
+            // down on disk to explain a failure. The id finds the row.
+            Err(e) => result.errors.push(format!("Task {}: {e}", task.id)),
         }
     }
+}
+
+/// Whether the provider refused because of permission rather than the change.
+///
+/// Matched on the message the API layer builds, which is a shortcut worth
+/// naming: the alternative is another variant on `common::Error` for one case
+/// in one module. Both ends are in this crate and there is a test that they
+/// still agree.
+fn refused_for_permission(error: &Error) -> bool {
+    matches!(error, Error::Authentication(said) if said == crate::service::tasks_api::NEEDS_SIGN_IN)
 }
 
 /// Send one task, and record what the provider made of it.
@@ -378,7 +411,7 @@ pub async fn sync_google_tasks(
         }
         let entry = google_list_to_entry(list, account_id, order as i32);
         if let Err(e) = cache.save_task_list(&entry) {
-            result.errors.push(format!("{}: {e}", entry.name));
+            result.errors.push(format!("List {}: {e}", entry.id));
             continue;
         }
         result.lists += 1;
@@ -386,7 +419,7 @@ pub async fn sync_google_tasks(
         let tasks = match client.google_tasks(token, &list.id).await {
             Ok(tasks) => tasks,
             Err(e) => {
-                result.errors.push(format!("{}: {e}", entry.name));
+                result.errors.push(format!("List {}: {e}", entry.id));
                 continue;
             }
         };
@@ -433,7 +466,7 @@ fn take_or_skip(
             }
             match cache.save_task(&stored) {
                 Ok(()) => result.stored += 1,
-                Err(e) => result.errors.push(format!("{}: {e}", stored.title)),
+                Err(e) => result.errors.push(format!("Task {}: {e}", stored.id)),
             }
         }
     }
@@ -481,7 +514,7 @@ pub async fn sync_microsoft_tasks(
         }
         let entry = ms_list_to_entry(list, account_id, order as i32);
         if let Err(e) = cache.save_task_list(&entry) {
-            result.errors.push(format!("{}: {e}", entry.name));
+            result.errors.push(format!("List {}: {e}", entry.id));
             continue;
         }
         result.lists += 1;
@@ -489,7 +522,7 @@ pub async fn sync_microsoft_tasks(
         let tasks = match client.ms_tasks(token, &list.id).await {
             Ok(tasks) => tasks,
             Err(e) => {
-                result.errors.push(format!("{}: {e}", entry.name));
+                result.errors.push(format!("List {}: {e}", entry.id));
                 continue;
             }
         };
@@ -609,12 +642,9 @@ mod tests {
         let result = TaskSyncResult {
             lists: 1,
             stored: 3,
-            unchanged: 0,
-            deleted: 0,
-            sent: 0,
-            local_only: 0,
             replaced: 2,
-            errors: Vec::new(),
+
+            ..Default::default()
         };
         let said = result.summary();
         assert!(said.contains('2'), "{said}");
@@ -663,6 +693,7 @@ mod tests {
             deleted: 4,
             sent: 5,
             local_only: 6,
+            needs_sign_in: false,
             replaced: 7,
             errors: vec!["one".to_string()],
         });
@@ -673,6 +704,7 @@ mod tests {
             deleted: 40,
             sent: 50,
             local_only: 60,
+            needs_sign_in: false,
             replaced: 70,
             errors: vec!["two".to_string()],
         });
@@ -685,6 +717,7 @@ mod tests {
                 deleted: 44,
                 sent: 55,
                 local_only: 66,
+                needs_sign_in: false,
                 replaced: 77,
                 errors: vec!["one".to_string(), "two".to_string()],
             }
@@ -698,6 +731,52 @@ mod tests {
         // reported as a failure, because nothing went wrong.
         assert!(Provider::Google.is_local("2f6b1c9e-0d2a-4b7f-9a1e-5c8d3e7f2a10"));
         assert!(Provider::Microsoft.is_local("2f6b1c9e-0d2a-4b7f-9a1e-5c8d3e7f2a10"));
+    }
+
+    #[test]
+    fn test_a_refusal_on_permission_is_recognised_as_one() {
+        // The two ends of this are a few hundred lines apart and agree by
+        // matching on a string, which is a shortcut worth a test rather than
+        // a comment. If either moves, this fails.
+        assert!(refused_for_permission(&Error::Authentication(
+            crate::service::tasks_api::NEEDS_SIGN_IN.to_string()
+        )));
+        assert!(!refused_for_permission(&Error::Authentication(
+            "The token expired".to_string()
+        )));
+        assert!(!refused_for_permission(&Error::Network(
+            "Could not reach the task service".to_string()
+        )));
+    }
+
+    #[test]
+    fn test_a_refused_change_says_what_to_do_rather_than_counting_itself() {
+        // An account signed in before this application could change tasks
+        // refreshes its token happily and is refused every single push. As one
+        // more error that is "1 problem" on the status line, every sync,
+        // forever, with nothing saying what would fix it. The one thing that
+        // does is something only the person can do.
+        let result = TaskSyncResult {
+            lists: 3,
+            stored: 12,
+            needs_sign_in: true,
+            ..Default::default()
+        };
+        let said = result.summary();
+
+        assert!(said.contains("Sign in to this account again"), "{said}");
+        assert!(!said.contains("problem"), "{said}");
+    }
+
+    #[test]
+    fn test_an_ordinary_sync_says_nothing_about_signing_in() {
+        let result = TaskSyncResult {
+            lists: 1,
+            stored: 4,
+            ..Default::default()
+        };
+
+        assert!(!result.summary().contains("Sign in"));
     }
 
     #[test]
@@ -716,9 +795,7 @@ mod tests {
     fn test_the_summary_counts_what_went_up() {
         let result = TaskSyncResult {
             lists: 1,
-            stored: 0,
             sent: 3,
-            local_only: 0,
             ..Default::default()
         };
         assert!(result.summary().contains("3 of yours sent"));
@@ -730,11 +807,8 @@ mod tests {
             lists: 1,
             stored: 2,
             unchanged: 15,
-            deleted: 0,
-            sent: 0,
-            local_only: 0,
-            replaced: 0,
-            errors: Vec::new(),
+
+            ..Default::default()
         };
 
         assert!(
@@ -863,12 +937,8 @@ mod tests {
         let result = TaskSyncResult {
             lists: 2,
             stored: 17,
-            unchanged: 0,
-            deleted: 0,
-            sent: 0,
-            local_only: 0,
-            replaced: 0,
-            errors: Vec::new(),
+
+            ..Default::default()
         };
 
         assert_eq!(result.summary(), "17 tasks in 2 lists");
@@ -879,12 +949,8 @@ mod tests {
         let result = TaskSyncResult {
             lists: 1,
             stored: 1,
-            unchanged: 0,
-            deleted: 0,
-            sent: 0,
-            local_only: 0,
-            replaced: 0,
-            errors: Vec::new(),
+
+            ..Default::default()
         };
 
         assert_eq!(result.summary(), "1 task in 1 list");
@@ -897,12 +963,9 @@ mod tests {
         let result = TaskSyncResult {
             lists: 1,
             stored: 4,
-            unchanged: 0,
             deleted: 2,
-            sent: 0,
-            local_only: 0,
-            replaced: 0,
-            errors: Vec::new(),
+
+            ..Default::default()
         };
 
         assert!(
@@ -919,12 +982,9 @@ mod tests {
         let result = TaskSyncResult {
             lists: 2,
             stored: 5,
-            unchanged: 0,
-            deleted: 0,
-            sent: 0,
-            local_only: 0,
-            replaced: 0,
             errors: vec!["Work: refused".to_string()],
+
+            ..Default::default()
         };
 
         assert!(
@@ -941,16 +1001,13 @@ mod tests {
         let result = TaskSyncResult {
             lists: 3,
             stored: 5,
-            unchanged: 0,
-            deleted: 0,
-            sent: 0,
-            local_only: 0,
-            replaced: 0,
             errors: vec![
                 "Work: refused".to_string(),
                 "Home: timed out".to_string(),
                 "Shopping: unreadable".to_string(),
             ],
+
+            ..Default::default()
         };
 
         let said = result.summary();

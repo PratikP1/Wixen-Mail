@@ -7,6 +7,8 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Fixed
 
+- **Wixen Mail now says when an account needs signing in again.** Sending task changes needs more permission than reading them, so an account you set up before this version keeps syncing downwards and has every change refused. That showed as "1 problem" on the status line, after every sync, forever, with nothing saying what would fix it. It now says "Sign in to this account again to send task changes", which is the only thing that does.
+
 - **Dictation gets the spelling sound, which it never did.** The editor listened for typing and returned on everything else, so if you write by dictating or with Windows Voice Access, the sound at the end of a misspelled word was simply off, and nothing said so. It works now. Words finished by composition, which is how Japanese, Chinese and Korean are written, are picked up too.
   Pasting still does not set it off, on purpose: the sound is about the word you just finished, and a pasted block is checked by `F7` along with the rest of the message.
 
