@@ -106,7 +106,36 @@ follows a build can be treated as fresh and report success without linting
 anything. That has already put a clippy failure on `main` after a local run
 reported clean. The script touches `src/lib.rs` first to force the work.
 
-Never silence a lint with `#[allow(...)]` to get a commit through. Fix the code, or if the lint is
+Never silence a lint with `#[allow(...)]` to get a commit through.
+
+### Tests that would notice
+
+A green suite says the code does what the tests say. It does not say the tests
+would notice if it stopped, and those are different claims. Red/green is what
+keeps them together, and it started at commit 182 of 344, so most of the tests
+here were written after the code they cover and describe it rather than specify
+it. Three tests written in one session to catch a named bug passed against that
+bug.
+
+```bash
+scripts/mutants.sh src/service      # one directory, slow
+scripts/mutants.sh --since main     # only what changed, minutes
+```
+
+Mutation testing alters the code in small ways and runs the suite. Anything
+nothing catches is either untested behaviour or dead code. A whole-tree run is
+about two days, so it is used scoped, and the pull request check runs it on the
+diff only. Before trusting a new regression test, take the fix out and watch the
+test fail; a test that has never been red proves nothing.
+
+```bash
+cargo llvm-cov --lib --summary-only
+```
+
+Coverage is the cheap wide sweep and answers a weaker question: what never runs
+at all. Low coverage in `service/protocols`, `service/oauth` and the provider
+clients is the network transport that has never been run against a live account,
+which is tracked as work rather than fixable by writing more tests. Fix the code, or if the lint is
 genuinely wrong for this case, add the allow with a comment saying why.
 
 ### Done means it runs

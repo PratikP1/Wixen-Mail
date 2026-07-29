@@ -1,0 +1,72 @@
+name: Tests that would notice
+
+# A passing suite says the code does what the tests say. It does not say the
+# tests would notice if it stopped, and those are different claims.
+#
+# This runs mutation testing on the lines a change touches: it alters them in
+# small ways and runs the suite, and reports anything nothing caught. A mutant
+# that survives means the new code is not pinned by a test, which is the state
+# red/green exists to prevent and which a green suite cannot tell you about.
+#
+# Only the diff, so it finishes in minutes rather than the two days a whole
+# tree takes. The rest of the tree is checked in scoped runs by hand, with
+# scripts/mutants.sh.
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  in-diff:
+    name: Mutants in the change
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      # The whole history, because the diff is against the base branch.
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-mutants-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Install cargo-mutants
+      run: cargo install cargo-mutants --locked
+
+    - name: What this change touched
+      shell: bash
+      run: |
+        git diff origin/${{ github.base_ref }}...HEAD -- 'src/**/*.rs' > changed.diff
+        wc -l changed.diff
+
+    - name: Would anything notice if it were wrong
+      shell: bash
+      run: |
+        if [ ! -s changed.diff ]; then
+          echo "Nothing changed under src/."
+          exit 0
+        fi
+        cargo mutants --in-diff changed.diff -j 2
+
+    - name: Keep the report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: mutants
+        path: mutants.out/

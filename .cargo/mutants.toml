@@ -1,0 +1,37 @@
+# Which code is worth asking "would any test notice if this were wrong".
+#
+# Mutation testing changes the code in small ways and runs the suite. A mutant
+# that survives means no test was watching, so either the behaviour is unpinned
+# or the code is dead. It is the only thing that answers the question a passing
+# suite cannot: a test written after the code it covers describes what the code
+# does, and this project wrote most of its tests that way. Red/green started at
+# commit 182 of 344.
+
+# The wxWidgets layer is left out, and not because it does not matter.
+#
+# It cannot be exercised without a display and a running application, so every
+# mutant in it would survive and say nothing except "this needs a person". Its
+# verification is a screen reader pass, which is tracked as work rather than
+# pretended at here. Including it would bury the signal from the code that can
+# be checked under thousands of expected survivors.
+exclude_globs = [
+    "src/presentation/wx_*.rs",
+    "src/presentation/managers.rs",
+    "src/main.rs",
+    # Vendored, and not ours to specify.
+    "src/vendor/**",
+]
+
+# Anything that only builds a string for a person to read. A mutant there is
+# real but the report is noise next to a mutant in the mail parser: nobody
+# loses a message because a status line reads oddly, and these are read back by
+# the accessibility tests that do exist.
+exclude_re = [
+    "impl Display",
+    "fn fmt\\(",
+]
+
+# The suite runs in about four seconds, so a mutant that takes much longer than
+# the baseline is one that hung rather than one that is slow.
+timeout_multiplier = 5.0
+minimum_test_timeout = 60
