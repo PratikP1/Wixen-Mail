@@ -142,7 +142,7 @@ impl Ignored {
 ///
 /// Not always one: "alot" is corrected to "a lot", and a correction that adds a
 /// word moves every word after it along by one.
-pub fn words_in(replacement: &str) -> usize {
+fn words_in(replacement: &str) -> usize {
     replacement.split_whitespace().count().max(1)
 }
 

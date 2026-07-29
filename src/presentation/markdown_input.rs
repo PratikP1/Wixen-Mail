@@ -14,16 +14,22 @@
 //!
 //! # What is deliberately not here
 //!
-//! No Markdown parser. Nothing here parses a document; it recognises what
+//! No Markdown parser. Nothing parses a document; the page recognises what
 //! somebody has just typed, one marker at a time, at the moment they finish
 //! typing it. A parser would be the wrong shape: it would have to run on every
 //! keystroke over the whole message and decide again what it already decided.
 //!
-//! # Why the rules are in Rust when the editor is a web page
+//! There is also no second copy of the matching. The page is generated from
+//! these tables and does the comparing itself, and a Rust function that decided
+//! the same thing would be a rule with two definitions and one caller. There
+//! was one for a day; it went.
 //!
-//! The same reason the keys are. The page is generated from these tables, so
-//! what the editor recognises and what the documentation promises come from one
-//! definition. The recognising is testable here; only the applying is JavaScript.
+//! # Why the tables are in Rust when the editor is a web page
+//!
+//! The same reason the keys are. What the editor recognises and what the
+//! documentation promises come from one definition, and the ordering that makes
+//! `###` a third-level heading rather than a first-level one with two spare
+//! hashes is asserted here rather than hoped for.
 
 use crate::presentation::editor_document::Format;
 
@@ -65,40 +71,6 @@ pub static BLOCK_RULES: [BlockRule; 6] = [
         format: Format::Quote,
     },
 ];
-
-/// The marker that starts a numbered list, once a digit run and a dot are seen.
-///
-/// Not in [`BLOCK_RULES`] because it is not one string: Markdown accepts any
-/// number, and people who resume a list after a paragraph type the number they
-/// are up to rather than 1.
-const NUMBERED_FORMAT: Format = Format::NumberedList;
-
-/// What a line becomes, given everything typed on it before the caret.
-///
-/// The space that finishes the marker is not included: this is asked at the
-/// moment the space is typed, so it decides whether that space finishes a
-/// marker or is just a space.
-///
-/// Leading whitespace is ignored, because an indented `- ` is still a bullet
-/// and because somebody may be continuing a list the editor already indented.
-pub fn block_rule_for(typed_on_line: &str) -> Option<Format> {
-    let typed = typed_on_line.trim_start();
-    if typed.is_empty() {
-        return None;
-    }
-    if let Some(rule) = BLOCK_RULES.iter().find(|rule| rule.marker == typed) {
-        return Some(rule.format);
-    }
-    is_numbered_marker(typed).then_some(NUMBERED_FORMAT)
-}
-
-/// Whether the text is a list number: digits and then a dot, and nothing else.
-fn is_numbered_marker(typed: &str) -> bool {
-    let Some(digits) = typed.strip_suffix('.') else {
-        return false;
-    };
-    !digits.is_empty() && digits.chars().all(|character| character.is_ascii_digit())
-}
 
 /// A pair of delimiters typed around some words, and what they make of them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,68 +125,42 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_hashes_make_headings() {
-        assert_eq!(block_rule_for("#"), Some(Format::Heading1));
-        assert_eq!(block_rule_for("##"), Some(Format::Heading2));
-        assert_eq!(block_rule_for("###"), Some(Format::Heading3));
-    }
-
-    #[test]
-    fn test_the_longer_marker_wins() {
+    fn test_the_longest_marker_comes_first() {
         // Read shortest-first, "###" is a heading 1 with two spare hashes, and
         // somebody typing a third-level heading silently gets a first-level
         // one. Which is the sort of thing nobody notices until the message has
         // gone.
-        assert_eq!(block_rule_for("###"), Some(Format::Heading3));
-        assert_ne!(block_rule_for("###"), Some(Format::Heading1));
+        let hashes: Vec<&str> = BLOCK_RULES
+            .iter()
+            .map(|rule| rule.marker)
+            .filter(|marker| marker.starts_with('#'))
+            .collect();
+        assert_eq!(hashes, vec!["###", "##", "#"]);
     }
 
     #[test]
-    fn test_dashes_and_stars_make_bullets() {
-        assert_eq!(block_rule_for("-"), Some(Format::BulletList));
-        assert_eq!(block_rule_for("*"), Some(Format::BulletList));
+    fn test_the_markers_people_reach_for_are_all_there() {
+        // Both bullet characters, because half the people who write Markdown
+        // use one and half use the other, and a bullet that only works with a
+        // hyphen is a bullet that does not work.
+        for marker in ["#", "##", "###", "-", "*", ">"] {
+            assert!(
+                BLOCK_RULES.iter().any(|rule| rule.marker == marker),
+                "{marker} is not recognised"
+            );
+        }
     }
 
     #[test]
-    fn test_any_number_starts_a_numbered_list() {
-        // Markdown accepts any number, and somebody resuming a list after a
-        // paragraph types the one they are up to.
-        assert_eq!(block_rule_for("1."), Some(Format::NumberedList));
-        assert_eq!(block_rule_for("7."), Some(Format::NumberedList));
-        assert_eq!(block_rule_for("12."), Some(Format::NumberedList));
-    }
-
-    #[test]
-    fn test_a_dot_on_its_own_is_not_a_list() {
-        assert_eq!(block_rule_for("."), None);
-        assert_eq!(block_rule_for("a."), None);
-        assert_eq!(block_rule_for("1.2."), None);
-    }
-
-    #[test]
-    fn test_an_angle_bracket_quotes() {
-        assert_eq!(block_rule_for(">"), Some(Format::Quote));
-    }
-
-    #[test]
-    fn test_a_marker_has_to_be_the_whole_line_so_far() {
-        // Otherwise a sentence ending in a hyphen turns into a bullet at the
-        // next space, in the middle of writing.
-        assert_eq!(block_rule_for("well -"), None);
-        assert_eq!(block_rule_for("C#"), None);
-        assert_eq!(block_rule_for("2 + 2 ="), None);
-    }
-
-    #[test]
-    fn test_an_indented_marker_still_counts() {
-        assert_eq!(block_rule_for("  -"), Some(Format::BulletList));
-        assert_eq!(block_rule_for("\t#"), Some(Format::Heading1));
-    }
-
-    #[test]
-    fn test_nothing_typed_is_not_a_marker() {
-        assert_eq!(block_rule_for(""), None);
-        assert_eq!(block_rule_for("   "), None);
+    fn test_every_marker_makes_a_different_kind_of_block() {
+        // Except the two bullets, which are the same list by design.
+        assert_eq!(
+            BLOCK_RULES
+                .iter()
+                .filter(|rule| rule.format == Format::BulletList)
+                .count(),
+            2
+        );
     }
 
     #[test]
