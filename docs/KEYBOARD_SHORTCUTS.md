@@ -437,6 +437,33 @@ Two limitations, stated rather than hidden:
 - These keys work while the caret is in the message body. In the To, Cc, Bcc and
   Subject fields there is nothing to format, so they do nothing there.
 
+**Spelling.** `F7`, or the Spelling button on the toolbar, walks the message a
+word at a time. Each word is selected in the message before you are asked about
+it, so your screen reader reads it where it sits rather than quoted out of its
+sentence.
+
+| Action | What it does |
+|--------|--------------|
+| Change | Replaces this word with what is in the Change to field |
+| Change All | Replaces every copy of the word in the message |
+| Ignore | Leaves this one |
+| Ignore All | Leaves every copy of it, for this pass only |
+| Add to Dictionary | Teaches Windows the word, so nothing asks again in any program |
+| Close | Stops here |
+
+Focus starts in the Change to field, filled with the first suggestion, so `Enter`
+on a word you agree about is the whole interaction. Arrowing the suggestions list
+fills the field. You can also type your own correction. A repeated word offers
+Delete instead of Change, because "the the" is two correctly spelled words and
+the fix is to remove one.
+
+Misspelled words are also marked as you write, and your screen reader announces
+them as you move over a marked word. That marking is the browser engine's, not
+this program's, which is why it sounds the way it does in your browser. Turn it
+off under Settings, Language, "Mark misspelled words as I write". The same
+setting controls a short sound at the end of a word that is wrong, which is
+silent until you switch earcons on under Feedback.
+
 **Markdown, typed straight into the message.** Type the marker and keep
 writing. Each one says what it made, and `Ctrl+Z` puts the characters back if
 you meant them literally.

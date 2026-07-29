@@ -62,13 +62,26 @@ const BODY_ID: &str = "wixen-body";
 /// from `lang` to choose its dictionary. Getting this wrong does not fail
 /// loudly, it just marks the wrong words, so it comes from the same setting the
 /// send-time check uses.
-pub fn editor_document(body: &str, language: &str) -> String {
+pub fn editor_document(body: &str, language: &str, mark_spelling: bool) -> String {
     let renderer = HtmlRenderer::new();
     // Sanitised whether or not it looks like markup. "Looks like markup" is a
     // judgement about a stranger's input, and the cost of getting it wrong here
     // is script execution in an editor the reader is about to type into.
     let safe_body = renderer.sanitize_html(body);
     let language = safe_language(language);
+    let spellcheck = if mark_spelling { "true" } else { "false" };
+    // The sound at the end of a wrong word is the same setting as the marking,
+    // so the handler is not there at all when it is off. A handler that runs
+    // and decides to do nothing still runs on every keystroke.
+    let word_watch = if mark_spelling {
+        // Apostrophes and hyphens are inside words rather than after them.
+        // Without them here every contraction sounds wrong halfway through
+        // being typed, because "don" is checked the moment the apostrophe
+        // lands and "don" is not a word.
+        "if (!/[\\p{L}\\p{M}'’\\-]/u.test(event.data)) { wordFinished(at); }"
+    } else {
+        ""
+    };
     let format_keys = format_key_table();
     let link_id = LINK_PLACEHOLDER_ID;
     let block_markers = markdown_block_table();
@@ -101,7 +114,7 @@ img {{ max-width: 100%; height: auto; }}
     #{BODY_ID}:focus-visible {{ outline-color: #569cd6; }}
 }}
 </style></head><body>
-<div id="{BODY_ID}" contenteditable="true" spellcheck="true"
+<div id="{BODY_ID}" contenteditable="true" spellcheck="{spellcheck}"
      role="textbox" aria-multiline="true" aria-label="Message body">{safe_body}</div>
 <script>
 (function () {{
@@ -134,6 +147,13 @@ img {{ max-width: 100%; height: auto; }}
       post({{ kind: 'save' }});
       return;
     }}
+    // F7 is the spelling key in every Windows application that has one, and
+    // this is a web view, so it has to be caught here or it never arrives.
+    if (event.key === 'F7' && !event.ctrlKey && !event.altKey && !event.shiftKey) {{
+      event.preventDefault();
+      post({{ kind: 'spelling' }});
+      return;
+    }}
     if (event.key === 'Tab' && !event.ctrlKey && !event.altKey) {{
       if (tableTab(event.shiftKey)) {{ event.preventDefault(); }}
       return;
@@ -158,6 +178,77 @@ img {{ max-width: 100%; height: auto; }}
       return;
     }}
   }});
+  // ── The words, for the spelling check ──────────────────────────────────
+  //
+  // On `window` rather than in here, because these are called from outside:
+  // the check runs a script and reads the answer back. Everything about where
+  // a word is lives on this side, and the Rust side only ever says "the
+  // seventh one".
+  //
+  // Walked afresh each time rather than remembered. A remembered list is one
+  // that goes stale the moment somebody types, and a stale position replaces
+  // the wrong word.
+  window.wixenWords = function () {{
+    var walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, null);
+    var words = [];
+    var node;
+    while ((node = walker.nextNode())) {{
+      var pattern = /[\p{{L}}\p{{M}}][\p{{L}}\p{{M}}'’\-]*/gu;
+      var match;
+      while ((match = pattern.exec(node.data)) !== null) {{
+        // An apostrophe or hyphen at the end belongs to the sentence rather
+        // than the word: a quoted 'word' would otherwise be checked with its
+        // punctuation attached and called a misspelling.
+        var text = match[0].replace(/['’\-]+$/u, '');
+        if (!text.length) {{ continue; }}
+        words.push({{ node: node, start: match.index,
+                     end: match.index + text.length, text: text }});
+      }}
+    }}
+    return words;
+  }};
+
+  window.wixenSelectWord = function (index) {{
+    var words = window.wixenWords();
+    var word = words[index];
+    if (!word) {{ return false; }}
+    var range = document.createRange();
+    range.setStart(word.node, word.start);
+    range.setEnd(word.node, word.end);
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    body.focus();
+    var holder = word.node.parentElement;
+    if (holder && holder.scrollIntoView) {{ holder.scrollIntoView({{ block: 'nearest' }}); }}
+    return true;
+  }};
+
+  window.wixenReplaceWord = function (index, replacement) {{
+    var words = window.wixenWords();
+    var word = words[index];
+    if (!word) {{ return false; }}
+    var start = word.start;
+    if (!replacement.length) {{
+      // Deleting a repeated word takes the space in front of it, or the
+      // sentence is left with a gap where the word was.
+      while (start > 0 && /\s/.test(word.node.data.charAt(start - 1))) {{ start--; }}
+    }}
+    var range = document.createRange();
+    range.setStart(word.node, start);
+    range.setEnd(word.node, word.end);
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    body.focus();
+    if (replacement.length) {{
+      document.execCommand('insertText', false, replacement);
+    }} else {{
+      document.execCommand('delete');
+    }}
+    return true;
+  }};
+
   // ── Moving through a table ─────────────────────────────────────────────
   //
   // Tab means "next cell" inside a table and "next control" everywhere else,
@@ -343,10 +434,27 @@ img {{ max-width: 100%; height: auto; }}
     post({{ kind: 'link', url: url }});
   }}
 
+  // The word that has just been finished, if one has been.
+  //
+  // Sent as a word rather than checked here, because the dictionary is the
+  // one Windows holds and the words somebody has taught it are in it. An
+  // engine's own marking and our checker agreeing matters: on Windows they
+  // are the same ISpellChecker.
+  function wordFinished(at) {{
+    var before = at.before.slice(0, at.before.length - 1);
+    var match = /[\p{{L}}\p{{M}}][\p{{L}}\p{{M}}'’\-]*$/u.exec(before);
+    if (!match) {{ return; }}
+    var word = match[0].replace(/['’\-]+$/u, '');
+    // One letter is "a" or "I", and a sound at the end of those would be a
+    // sound at the end of half the sentences somebody writes.
+    if (word.length > 1) {{ post({{ kind: 'word', text: word }}); }}
+  }}
+
   body.addEventListener('input', function (event) {{
     if (event.inputType !== 'insertText' || !event.data) {{ return; }}
     var at = caretText();
     if (!at) {{ return; }}
+    {word_watch}
     if (event.data === ' ') {{ blockMarkdown(at); return; }}
     if (event.data === ')') {{ linkMarkdown(at); return; }}
     inlineMarkdown(event.data, at);
@@ -507,6 +615,42 @@ pub fn table_spoken(rows: usize, columns: usize, header: bool) -> String {
     format!(
         "Table added, {rows} rows by {columns} columns{header}.          In the first cell. Tab moves to the next cell,          and Tab in the last cell adds a row."
     )
+}
+
+/// Ask the page for every word in the message, in order.
+///
+/// The page owns where words are, because an offset into a string cannot be
+/// mapped back into a document: what somebody reads has line breaks between
+/// blocks that the tree does not contain. Everything on this side is an index
+/// into the list this returns.
+pub fn words_script() -> String {
+    "JSON.stringify(window.wixenWords().map(function (w) { return w.text; }))".to_string()
+}
+
+/// Select the word at that position, and bring it into view.
+///
+/// Selecting rather than just moving the caret, because a selected word is
+/// announced by the screen reader as the check arrives at it, and because the
+/// next thing the check does is replace it.
+pub fn select_word_script(index: usize) -> String {
+    format!("window.wixenSelectWord({index})")
+}
+
+/// Replace the word at that position.
+///
+/// An empty replacement deletes the word and the space in front of it, which is
+/// what fixing a repeated word means.
+pub fn replace_word_script(index: usize, replacement: &str) -> String {
+    format!("window.wixenReplaceWord({index}, {replacement:?})")
+}
+
+/// Take the word list back out of what the page returned.
+///
+/// Nothing here is trusted to be a word list: an answer that is not one means
+/// no words rather than a panic in the middle of checking somebody's message.
+pub fn words_from_editor(raw: &str) -> Vec<String> {
+    let unwrapped = serde_json::from_str::<String>(raw).unwrap_or_else(|_| raw.to_string());
+    serde_json::from_str::<Vec<String>>(&unwrapped).unwrap_or_default()
 }
 
 /// The element the page wraps a typed Markdown link in while it is checked.
@@ -853,6 +997,10 @@ pub enum EditorMessage {
     Link(String),
     /// Tab in the last cell of a table made another row.
     TableRowAdded,
+    /// F7: walk the spelling of the message.
+    CheckSpelling,
+    /// A word was finished, and wants checking.
+    WordFinished(String),
 }
 
 /// Read one message posted by the page.
@@ -879,6 +1027,10 @@ pub fn parse_message(raw: &str) -> Option<EditorMessage> {
         }
         "link" => Some(EditorMessage::Link(value.get("url")?.as_str()?.to_string())),
         "row" => Some(EditorMessage::TableRowAdded),
+        "spelling" => Some(EditorMessage::CheckSpelling),
+        "word" => Some(EditorMessage::WordFinished(
+            value.get("text")?.as_str()?.to_string(),
+        )),
         _ => None,
     }
 }
@@ -924,7 +1076,6 @@ fn safe_language(tag: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     /// The opening `<html ...>` tag, which is where an injected attribute
@@ -941,7 +1092,7 @@ mod tests {
         // The whole reason the composer is a web view. Without this the engine
         // marks nothing and no screen reader announces anything, and the
         // control swap bought nothing at all.
-        let page = editor_document("", "en-GB");
+        let page = editor_document("", "en-GB", true);
 
         assert!(page.contains(r#"spellcheck="true""#), "{page}");
     }
@@ -950,7 +1101,7 @@ mod tests {
     fn test_the_language_reaches_the_engine() {
         // The engine picks its dictionary from lang. Getting this wrong does
         // not fail loudly, it marks the wrong words, which is worse.
-        let page = editor_document("", "fr-FR");
+        let page = editor_document("", "fr-FR", true);
 
         assert!(page.contains(r#"<html lang="fr-FR""#), "{page}");
     }
@@ -959,7 +1110,7 @@ mod tests {
     fn test_a_language_from_a_file_cannot_close_the_attribute() {
         // It comes from a settings file, which somebody can edit. A quote in
         // it would end the attribute and start writing markup.
-        let page = editor_document("", r#"en" onload="alert(1)"#);
+        let page = editor_document("", r#"en" onload="alert(1)"#, true);
 
         // The letters survive, harmlessly, as part of the value: the tag reads
         // lang="enonloadalert1". What must not survive is anything that could
@@ -978,7 +1129,7 @@ mod tests {
 
     #[test]
     fn test_an_empty_language_still_produces_a_valid_document() {
-        let page = editor_document("", "");
+        let page = editor_document("", "", true);
 
         assert!(page.contains(r#"<html lang="en""#), "{page}");
     }
@@ -991,6 +1142,7 @@ mod tests {
         let page = editor_document(
             "<p>Original</p><script>alert('x')</script><img src=x onerror=alert(1)>",
             "en",
+            true,
         );
 
         assert!(!page.contains("alert('x')"), "script survived: {page}");
@@ -1003,7 +1155,7 @@ mod tests {
         // A contenteditable is a div until it is told otherwise. Without these
         // it reports as a group with no name, which is what a custom control
         // always does until somebody remembers.
-        let page = editor_document("", "en");
+        let page = editor_document("", "en", true);
 
         assert!(page.contains(r#"role="textbox""#), "{page}");
         assert!(page.contains(r#"aria-multiline="true""#), "{page}");
@@ -1015,7 +1167,7 @@ mod tests {
         // A web view swallows keys once it has focus, which is what trapped
         // people in the preview pane. The page is ours, so the ones that have
         // to leave are bound in it.
-        let page = editor_document("", "en");
+        let page = editor_document("", "en", true);
 
         assert!(page.contains("'Escape'"), "{page}");
         assert!(page.contains("event.ctrlKey"), "{page}");
@@ -1151,7 +1303,7 @@ mod tests {
         // A popup menu does not register accelerators the way a menu bar does,
         // and the body is a web view, which swallows keys once it has focus.
         // So the page is the only place these can live.
-        let page = editor_document("", "en-US");
+        let page = editor_document("", "en-US", true);
         for format in Format::ALL {
             let stroke = format.keystroke();
             assert!(
@@ -1199,7 +1351,7 @@ mod tests {
         // message without leaving the sentence. It is how a lot of people who
         // cannot see a toolbar already write, so it is the primary path rather
         // than a shortcut for the menu.
-        let page = editor_document("", "en-US");
+        let page = editor_document("", "en-US", true);
         for rule in &crate::presentation::markdown_input::BLOCK_RULES {
             assert!(
                 page.contains(&format!("{:?}", rule.marker)),
@@ -1337,6 +1489,87 @@ mod tests {
             parse_message(r#"{"kind":"row"}"#),
             Some(EditorMessage::TableRowAdded)
         );
+    }
+
+    #[test]
+    fn test_turning_the_marking_off_turns_it_off_in_the_page() {
+        // The defect this exists to stop is the one two spell-check checkboxes
+        // already had here: ticked, saved, and never read back by anything.
+        let on = editor_document("", "en-US", true);
+        let off = editor_document("", "en-US", false);
+        assert!(on.contains(r#"spellcheck="true""#), "{on}");
+        assert!(off.contains(r#"spellcheck="false""#));
+    }
+
+    #[test]
+    fn test_the_sound_at_the_end_of_a_word_goes_with_the_marking() {
+        // One setting, both halves. Two would let somebody end up with the
+        // sound on and the marking off, which is a noise with no explanation.
+        let off = editor_document("", "en-US", false);
+        assert!(!off.contains("wordFinished(at);"), "{off}");
+        let on = editor_document("", "en-US", true);
+        assert!(on.contains("wordFinished(at);"));
+        // An apostrophe is inside a word rather than after it. Without this
+        // every contraction sounds wrong halfway through being typed: "don" is
+        // checked the moment the apostrophe lands, and "don" is not a word.
+        assert!(on.contains("'’"), "the apostrophe ends a word: {on}");
+    }
+
+    #[test]
+    fn test_a_finished_word_comes_back_to_be_checked() {
+        assert_eq!(
+            parse_message(r#"{"kind":"word","text":"wrold"}"#),
+            Some(EditorMessage::WordFinished("wrold".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_the_words_come_back_as_a_list() {
+        assert_eq!(
+            words_from_editor(r#"["one","two"]"#),
+            vec!["one".to_string(), "two".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_the_words_survive_a_backend_that_wraps_its_answer() {
+        // Some backends hand a script result back as a JSON string containing
+        // the JSON, which is the same trap the body and the plain text hit.
+        assert_eq!(
+            words_from_editor(r#""[\"one\",\"two\"]""#),
+            vec!["one".to_string(), "two".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_an_answer_that_is_not_a_word_list_is_no_words() {
+        // Rather than a panic in the middle of checking somebody's message.
+        assert!(words_from_editor("null").is_empty());
+        assert!(words_from_editor("").is_empty());
+    }
+
+    #[test]
+    fn test_the_page_can_be_asked_for_its_words_and_told_which_to_select() {
+        let page = editor_document("", "en-US", true);
+        for entry in ["wixenWords", "wixenSelectWord", "wixenReplaceWord"] {
+            assert!(page.contains(entry), "the page has no {entry}");
+            assert!(words_script().contains("wixenWords") || entry != "wixenWords");
+        }
+        assert!(select_word_script(3).contains('3'));
+        assert!(replace_word_script(3, "world").contains("world"));
+    }
+
+    #[test]
+    fn test_a_replacement_cannot_smuggle_script_into_the_page() {
+        // It comes from a dictionary rather than a stranger, and it is still
+        // put into a script by string, which is the shape of the mistake that
+        // does not announce itself.
+        let script = replace_word_script(0, "\"); alert(1); //");
+        assert!(
+            script.contains(r#"\""#),
+            "the quote is not escaped: {script}"
+        );
+        assert_eq!(script.matches("wixenReplaceWord").count(), 1, "{script}");
     }
 
     #[test]

@@ -42,6 +42,7 @@ struct SettingsWidgets {
     // Language
     language: Choice,
     check_spelling_before_send: CheckBox,
+    check_spelling_as_you_type: CheckBox,
     // Calendar & PIM
     cal_default_view: Choice,
     cal_show_weekends: CheckBox,
@@ -98,7 +99,8 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 
     // ── Tab 4: Language & Spelling
     let lang_panel = Panel::builder(&notebook).build();
-    let (language, check_spelling_before_send) = build_language_tab(&lang_panel, config);
+    let (language, check_spelling_before_send, check_spelling_as_you_type) =
+        build_language_tab(&lang_panel, config);
     notebook.add_page(&lang_panel, "Language", false, None);
 
     // ── Tab 5: Calendar & PIM
@@ -160,6 +162,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         sort_order,
         language,
         check_spelling_before_send,
+        check_spelling_as_you_type,
         cal_default_view,
         cal_show_weekends,
         cal_first_day,
@@ -431,7 +434,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> Choice {
 }
 
 /// Language & Spelling: which language to check, and whether to check on send.
-fn build_language_tab(panel: &Panel, config: &AppConfig) -> (Choice, CheckBox) {
+fn build_language_tab(panel: &Panel, config: &AppConfig) -> (Choice, CheckBox, CheckBox) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Language
@@ -502,6 +505,25 @@ fn build_language_tab(panel: &Panel, config: &AppConfig) -> (Choice, CheckBox) {
     check_before_send.set_value(config.check_spelling_before_send);
     spell_sec.add(&check_before_send, 0, SizerFlag::All, 4);
 
+    let check_as_you_type = CheckBox::builder(panel)
+        .with_label("&Mark misspelled words as I write")
+        .build();
+    set_accessible_name(&check_as_you_type, "Mark misspelled words as I write");
+    check_as_you_type.set_value(config.check_spelling_as_you_type);
+    spell_sec.add(&check_as_you_type, 0, SizerFlag::All, 4);
+
+    // What the marking is, said plainly, because it is not this application
+    // doing the announcing and somebody comparing it with another program
+    // should know why it sounds like their browser.
+    let marking_note = StaticText::builder(panel)
+        .with_label(
+            "Marked words are announced by your screen reader as you move over them. \
+             There is also a sound at the end of a word that is wrong, which is off \
+             until earcons are switched on under Feedback.",
+        )
+        .build();
+    spell_sec.add(&marking_note, 0, SizerFlag::All, 4);
+
     let speller = crate::service::spellcheck::for_language(&config.language);
     let checker_note = StaticText::builder(panel)
         .with_label(&format!(
@@ -514,7 +536,7 @@ fn build_language_tab(panel: &Panel, config: &AppConfig) -> (Choice, CheckBox) {
     sizer.add_sizer(&spell_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    (lang_choice, check_before_send)
+    (lang_choice, check_before_send, check_as_you_type)
 }
 
 /// Calendar & PIM settings: default view, weekends, first day, reminder time.
@@ -854,6 +876,7 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         cfg.language = languages[idx].tag.clone();
     }
     cfg.check_spelling_before_send = w.check_spelling_before_send.is_checked();
+    cfg.check_spelling_as_you_type = w.check_spelling_as_you_type.is_checked();
 
     // Calendar & PIM
     cfg.calendar_default_view = match sel(&w.cal_default_view) {

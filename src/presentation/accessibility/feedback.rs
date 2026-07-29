@@ -55,11 +55,20 @@ pub enum Event {
     /// each time, and somebody who has heard it once about a message they are
     /// still reading does not need it again.
     UnsafeMessage,
+    /// A word was finished and the dictionary does not have it.
+    ///
+    /// The only event whose written equivalent is not ours. The engine marks
+    /// the word with a real spelling annotation, which every screen reader
+    /// reads as the caret crosses it and which a braille display shows; that
+    /// is the written form, and it is better than anything this could say
+    /// because it names the word in place. What the sound adds is the moment:
+    /// knowing at the end of the word rather than on the way back past it.
+    MisspelledWord,
 }
 
 impl Event {
     /// Every event, so settings and tests can cover the whole set.
-    pub const ALL: [Event; 10] = [
+    pub const ALL: [Event; 11] = [
         Event::ThreadLanded,
         Event::EdgeOfList,
         Event::NewMail,
@@ -70,6 +79,7 @@ impl Event {
         Event::SyncComplete,
         Event::ActionRefused,
         Event::UnsafeMessage,
+        Event::MisspelledWord,
     ];
 
     /// The identifier used when preferences are stored.
@@ -85,6 +95,7 @@ impl Event {
             Event::SyncComplete => "sync_complete",
             Event::ActionRefused => "action_refused",
             Event::UnsafeMessage => "unsafe_message",
+            Event::MisspelledWord => "misspelled_word",
         }
     }
 
@@ -109,6 +120,7 @@ impl Event {
             Event::SyncComplete => "Sync finished",
             Event::ActionRefused => "Not available",
             Event::UnsafeMessage => "Unsafe message",
+            Event::MisspelledWord => "Misspelled word",
         }
     }
 
@@ -125,7 +137,7 @@ impl Event {
             Event::SendFailed | Event::ConnectionLost | Event::UnsafeMessage => Priority::Urgent,
             Event::ActionRefused | Event::ConnectionRestored => Priority::High,
             Event::NewMail | Event::MessageSent | Event::SyncComplete => Priority::Normal,
-            Event::ThreadLanded | Event::EdgeOfList => Priority::Low,
+            Event::ThreadLanded | Event::EdgeOfList | Event::MisspelledWord => Priority::Low,
         }
     }
 
@@ -152,6 +164,11 @@ impl Event {
             // floor here is 200 Hz, because a tone below that is felt more than
             // heard on the speakers most laptops have.
             Event::UnsafeMessage => Tone::new(240, 280),
+            // Shorter than anything else, because it happens while somebody is
+            // typing and a tone they have to wait out is one they turn off. Low
+            // enough not to be mistaken for the two navigation ticks, which are
+            // the only other sounds this brief.
+            Event::MisspelledWord => Tone::new(380, 35),
         }
     }
 }

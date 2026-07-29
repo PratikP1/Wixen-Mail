@@ -22,6 +22,7 @@ pub mod pim_command;
 pub mod reminders;
 pub mod reply;
 pub mod search;
+pub mod spell_session;
 pub mod tasks;
 pub mod tasks_sync;
 pub mod threading;

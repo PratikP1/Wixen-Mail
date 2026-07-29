@@ -24,6 +24,12 @@ const ID_UNDERLINE: Id = ID_HIGHEST + 102;
 const ID_FORMAT_FIRST: Id = ID_HIGHEST + 120;
 const ID_INSERT_LINK: Id = ID_HIGHEST + 150;
 const ID_INSERT_TABLE: Id = ID_HIGHEST + 152;
+const ID_SPELL_CHECK: Id = ID_HIGHEST + 153;
+const ID_SPELL_CHANGE: Id = ID_HIGHEST + 154;
+const ID_SPELL_CHANGE_ALL: Id = ID_HIGHEST + 155;
+const ID_SPELL_IGNORE: Id = ID_HIGHEST + 156;
+const ID_SPELL_IGNORE_ALL: Id = ID_HIGHEST + 157;
+const ID_SPELL_ADD: Id = ID_HIGHEST + 158;
 const ID_FORMAT_MENU: Id = ID_HIGHEST + 151;
 const ID_SEND: Id = ID_HIGHEST + 110;
 const ID_SAVE_DRAFT: Id = ID_HIGHEST + 111;
@@ -289,6 +295,17 @@ pub fn show_compose_dialog_full(
     toolbar_sizer.add(&format_btn, 0, SizerFlag::All, 2);
     toolbar_sizer.add_spacer(12);
 
+    // Spelling. On the toolbar and reachable by Tab as well as on F7, because
+    // a key nobody can discover is a key nobody has, and this is the one
+    // command in the window that nothing else hints at.
+    let spell_btn = Button::builder(&dialog)
+        .with_label("&Spelling")
+        .with_id(ID_SPELL_CHECK)
+        .build();
+    set_accessible_name(&spell_btn, "Check spelling, F7");
+    toolbar_sizer.add(&spell_btn, 0, SizerFlag::All, 2);
+    toolbar_sizer.add_spacer(12);
+
     // Attach
     let attach_btn = Button::builder(&dialog)
         .with_label("Attach F&ile...")
@@ -342,8 +359,18 @@ pub fn show_compose_dialog_full(
     body_editor.add_script_message_handler(editor_document::CHANNEL);
     let set_body = {
         let language = language.clone();
+        // One setting decides both the engine's marking and the sound at the
+        // end of a wrong word. Read once, when the window opens, because the
+        // page is built once and changing it would mean rebuilding the message
+        // underneath somebody.
+        let mark_spelling = crate::data::config::ConfigManager::load_stored()
+            .map(|config| config.app_config().check_spelling_as_you_type)
+            .unwrap_or(true);
         move |html: &str| {
-            body_editor.set_page(&editor_document::editor_document(html, &language), "");
+            body_editor.set_page(
+                &editor_document::editor_document(html, &language, mark_spelling),
+                "",
+            );
         }
     };
     set_body("");
@@ -502,6 +529,11 @@ pub fn show_compose_dialog_full(
         }
     });
 
+    spell_btn.on_click({
+        let a11y = a11y.clone();
+        move |_| check_spelling(&dialog, body_editor, &a11y)
+    });
+
     format_btn.on_click(move |_| {
         let mut menu = Menu::builder();
         for (index, format) in editor_document::Format::ALL.iter().enumerate() {
@@ -540,8 +572,14 @@ pub fn show_compose_dialog_full(
     // formatting keys are bound there too, and arrive already applied: they
     // come back only so the announcement goes through the same queue as every
     // other one rather than straight at the screen reader.
+    // Built once and kept. Making a Windows spell checker is a COM object
+    // creation, and one per word typed would be a cost paid on every keystroke
+    // for the life of the window.
+    let typing_speller = std::rc::Rc::new(crate::service::spellcheck::for_language(&language));
+
     body_editor.on_script_message_received({
         let a11y = a11y.clone();
+        let typing_speller = typing_speller.clone();
         move |event| {
             let Some(raw) = event.get_string() else {
                 return;
@@ -564,6 +602,21 @@ pub fn show_compose_dialog_full(
                         "Row added",
                         crate::presentation::accessibility::announcements::Priority::Normal,
                     );
+                }
+                Some(editor_document::EditorMessage::CheckSpelling) => {
+                    check_spelling(&dialog, body_editor, &a11y);
+                }
+                // The sound at the end of a word that is wrong. Not spoken:
+                // the engine has already marked the word, and the screen
+                // reader says it as the caret crosses it, which is better than
+                // anything said here and would collide with the echo of what
+                // was just typed.
+                Some(editor_document::EditorMessage::WordFinished(word)) => {
+                    if !typing_speller.check(&word).is_empty() {
+                        let _ = a11y.earcon(
+                            crate::presentation::accessibility::feedback::Event::MisspelledWord,
+                        );
+                    }
                 }
                 Some(editor_document::EditorMessage::Styled(style)) => {
                     let _ = a11y.announce(
@@ -775,6 +828,242 @@ Send it anyway?"
 /// same guard the reader puts on a link a stranger sent, and it applies here
 /// for a reason worth stating: this message goes to somebody else, so a
 /// `javascript:` URL typed into a composer is a link posted to another person.
+/// What somebody decided about one word.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SpellChoice {
+    /// Put this in its place.
+    Change(String),
+    /// Put this in the place of every copy of the word.
+    ChangeAll(String),
+    /// Leave this one.
+    Ignore,
+    /// Leave every copy of it for the rest of this pass.
+    IgnoreAll,
+    /// Teach the dictionary, so nothing asks again in any application.
+    Add,
+    /// Stop here.
+    Stop,
+}
+
+/// Walk the message a misspelling at a time.
+///
+/// The engine already marks these and the screen reader already announces them
+/// as the caret crosses one. What no engine exposes is the list, so without
+/// this the only way to find three wrong words in a long message is to read the
+/// whole message. This is the part that has to be ours.
+///
+/// The word is selected in the editor before the question is asked, so the
+/// answer is about something somebody can hear in place rather than a word
+/// quoted out of its sentence.
+fn check_spelling(
+    dialog: &Dialog,
+    body_editor: WebView,
+    a11y: &std::sync::Arc<crate::presentation::accessibility::Accessibility>,
+) {
+    use crate::application::spell_session as session;
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let language = crate::data::config::ConfigManager::load_stored()
+        .map(|config| config.app_config().language.clone())
+        .unwrap_or_else(|_| "en".to_string());
+    let speller = crate::service::spellcheck::for_language(&language);
+
+    let mut ignored = session::Ignored::default();
+    let mut resume_from = 0usize;
+    let mut corrected = 0usize;
+
+    loop {
+        let words = editor_document::words_from_editor(
+            &body_editor
+                .run_script(&editor_document::words_script())
+                .unwrap_or_default(),
+        );
+        let found = session::findings(
+            &words,
+            |word| !speller.check(word).is_empty(),
+            |word| speller.suggest(word, 5),
+        );
+        let Some(finding) = session::next_finding(&found, &ignored, resume_from) else {
+            break;
+        };
+
+        body_editor.run_script(&editor_document::select_word_script(finding.index));
+        let _ = a11y.announce(&finding.spoken(), Priority::High);
+
+        match ask_about_word(dialog, finding) {
+            SpellChoice::Stop => return,
+            SpellChoice::Ignore => resume_from = finding.index + 1,
+            SpellChoice::IgnoreAll => {
+                ignored.add(&finding.word);
+                resume_from = finding.index + 1;
+            }
+            SpellChoice::Add => {
+                match speller.add_to_dictionary(&finding.word) {
+                    Ok(()) => {
+                        let _ = a11y.announce(
+                            &format!("{} added to the dictionary", finding.word),
+                            Priority::Normal,
+                        );
+                    }
+                    // Said rather than swallowed: somebody who thinks a word is
+                    // learned will meet it again and believe the feature is
+                    // broken instead of knowing it never took.
+                    Err(error) => {
+                        tracing::warn!("Could not add {} to the dictionary: {error}", finding.word);
+                        let _ = a11y.announce(
+                            &format!("{} could not be added to the dictionary", finding.word),
+                            Priority::High,
+                        );
+                        ignored.add(&finding.word);
+                    }
+                }
+                resume_from = finding.index + 1;
+            }
+            SpellChoice::Change(replacement) => {
+                body_editor.run_script(&editor_document::replace_word_script(
+                    finding.index,
+                    &replacement,
+                ));
+                corrected += 1;
+                resume_from = session::resume_after(finding.index, 0, &replacement);
+            }
+            SpellChoice::ChangeAll(replacement) => {
+                // Highest index first, so replacing one never moves one that
+                // has not been replaced yet.
+                let places = session::same_word_indexes(&found, &finding.word);
+                let earlier = places
+                    .iter()
+                    .filter(|place| **place < finding.index)
+                    .count();
+                for place in &places {
+                    body_editor
+                        .run_script(&editor_document::replace_word_script(*place, &replacement));
+                }
+                corrected += places.len();
+                resume_from = session::resume_after(finding.index, earlier, &replacement);
+            }
+        }
+    }
+
+    let _ = a11y.announce(&session::finished(corrected), Priority::High);
+}
+
+/// Ask what to do about one word.
+///
+/// The layout is the one people already know from Word: the word, a field
+/// holding what it will become, and the suggestions under it. The field is
+/// editable and comes first, so somebody who knows the answer types it and
+/// presses Enter without ever hearing the list.
+fn ask_about_word(
+    parent: &Dialog,
+    finding: &crate::application::spell_session::Finding,
+) -> SpellChoice {
+    use crate::application::spell_session::Problem;
+
+    let asker = Dialog::builder(parent, "Check Spelling")
+        .with_style(DialogStyle::DefaultDialogStyle)
+        .build();
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    let heading = StaticText::builder(&asker)
+        .with_label(&format!("{}: {}", finding.problem.spoken(), finding.word))
+        .build();
+    sizer.add(&heading, 0, SizerFlag::All, 8);
+
+    // A repeated word is fixed by deleting it, so the field starts empty and
+    // the button says Delete. Offering "change it to itself" would be a
+    // question with no useful answer.
+    let repeated = finding.problem == Problem::Repeated;
+    let label = StaticText::builder(&asker)
+        .with_label(if repeated {
+            "&Replace with (leave empty to delete):"
+        } else {
+            "Change &to:"
+        })
+        .build();
+    let replacement = TextCtrl::builder(&asker)
+        .with_value(if repeated {
+            ""
+        } else {
+            finding.suggestions.first().map_or("", String::as_str)
+        })
+        .build();
+    set_accessible_name(&replacement, "Change to");
+    sizer.add(
+        &label,
+        0,
+        SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
+        8,
+    );
+    sizer.add(&replacement, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    let suggestions_label = StaticText::builder(&asker)
+        .with_label("&Suggestions:")
+        .build();
+    let suggestions = ListBox::builder(&asker).build();
+    for suggestion in &finding.suggestions {
+        suggestions.append(suggestion);
+    }
+    if !finding.suggestions.is_empty() {
+        suggestions.set_selection(0, true);
+    }
+    set_accessible_name(&suggestions, "Suggestions");
+    sizer.add(
+        &suggestions_label,
+        0,
+        SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
+        8,
+    );
+    sizer.add(&suggestions, 1, SizerFlag::Expand | SizerFlag::All, 8);
+
+    // Arrowing the list fills the field, so what will happen is always in one
+    // place rather than depending on which control was touched last.
+    suggestions.on_selection_changed(move |_| {
+        if let Some(picked) = suggestions.get_string_selection() {
+            replacement.set_value(&picked);
+        }
+    });
+
+    let buttons = BoxSizer::builder(Orientation::Horizontal).build();
+    let add_button = |id: Id, text: &str, name: &str| {
+        let button = Button::builder(&asker).with_id(id).with_label(text).build();
+        set_accessible_name(&button, name);
+        button.on_click(move |_| asker.end_modal(id));
+        buttons.add(&button, 0, SizerFlag::All, 4);
+    };
+    add_button(
+        ID_SPELL_CHANGE,
+        if repeated { "&Delete" } else { "&Change" },
+        if repeated { "Delete" } else { "Change" },
+    );
+    if !repeated {
+        add_button(ID_SPELL_CHANGE_ALL, "Change &All", "Change all");
+    }
+    add_button(ID_SPELL_IGNORE, "&Ignore", "Ignore");
+    add_button(ID_SPELL_IGNORE_ALL, "I&gnore All", "Ignore all");
+    if !repeated {
+        add_button(ID_SPELL_ADD, "A&dd to Dictionary", "Add to dictionary");
+    }
+    add_button(ID_CANCEL, "&Close", "Close");
+    sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
+
+    asker.set_sizer_and_fit(sizer, true);
+    // Focus starts in the field rather than on a button: it holds the answer,
+    // and Enter from there is the common case.
+    replacement.set_focus();
+
+    let answer = asker.show_modal();
+    let typed = replacement.get_value();
+    match answer {
+        ID_SPELL_CHANGE => SpellChoice::Change(typed),
+        ID_SPELL_CHANGE_ALL => SpellChoice::ChangeAll(typed),
+        ID_SPELL_IGNORE => SpellChoice::Ignore,
+        ID_SPELL_IGNORE_ALL => SpellChoice::IgnoreAll,
+        ID_SPELL_ADD => SpellChoice::Add,
+        _ => SpellChoice::Stop,
+    }
+}
+
 /// Ask for a table's shape and put one in the message.
 ///
 /// Rows, columns, and whether the first row is headers. That last one is the

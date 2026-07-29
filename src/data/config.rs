@@ -52,6 +52,15 @@ pub struct AppConfig {
     /// dismissed every time.
     #[serde(default = "default_true")]
     pub check_spelling_before_send: bool,
+    /// Whether misspellings are marked in the editor as you write.
+    ///
+    /// One setting, two things, deliberately. It turns on the engine's own
+    /// marking, which is what a screen reader reads as the caret crosses a
+    /// word, and the sound at the end of a word that is wrong. They are the
+    /// same question asked twice, and asking it twice is how people end up
+    /// with one on and the other off and no idea why.
+    #[serde(default = "default_true")]
+    pub check_spelling_as_you_type: bool,
     /// Default sort order for message list
     #[serde(default = "default_sort_order")]
     pub default_sort_order: String,
@@ -163,6 +172,7 @@ impl Default for AppConfig {
             preview_before_send: true,
             language: "en".to_string(),
             check_spelling_before_send: true,
+            check_spelling_as_you_type: true,
             default_sort_order: "date_newest".to_string(),
             calendar_default_view: "agenda".to_string(),
             calendar_show_weekends: true,

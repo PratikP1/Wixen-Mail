@@ -181,6 +181,33 @@ impl Accessibility {
     /// `detail` is appended to the event's own wording when there is something
     /// specific worth saying, such as which message or how many. Pass an empty
     /// string when the event says it all.
+    /// Play an event's tone on its own, where the written form is elsewhere.
+    ///
+    /// Everywhere else, nothing is signalled by sound alone: a tone reaches
+    /// nobody who cannot hear it, and [`Self::signal`] adds a text channel
+    /// rather than let one go out as a noise with no meaning.
+    ///
+    /// This is the one exception and it is narrow. It is for events whose
+    /// written equivalent is already in the document, put there by something
+    /// better placed to say it. So far that is one event: a misspelled word,
+    /// which the browser engine marks with a real spelling annotation that
+    /// every screen reader reads as the caret crosses it. Routing that through
+    /// the announcement queue as well would speak a word over the top of the
+    /// screen reader echoing what was just typed.
+    ///
+    /// Obeys the earcon channel setting like every other sound, so somebody who
+    /// has sounds off never hears it.
+    pub fn earcon(&self, event: feedback::Event) -> Result<()> {
+        let channels = match self.feedback.lock() {
+            Ok(settings) => settings.channels_for(event),
+            Err(_) => return Ok(()),
+        };
+        if channels.contains(&feedback::Channel::Earcon) {
+            self.earcons.play(event.tone());
+        }
+        Ok(())
+    }
+
     pub fn signal(&self, event: feedback::Event, detail: &str) -> Result<()> {
         let channels = match self.feedback.lock() {
             Ok(settings) => settings.channels_for(event),
