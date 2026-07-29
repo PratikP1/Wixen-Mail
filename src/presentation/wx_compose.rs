@@ -765,7 +765,7 @@ pub fn show_compose_dialog_full(
                 // already confirmed a message is somebody who has decided, and
                 // stopping them then reads as the application changing its
                 // mind.
-                if !confirm_spelling(&dialog, &data.body) {
+                if !confirm_spelling(&dialog, &data) {
                     continue;
                 }
                 if preview_before_send {
@@ -784,6 +784,24 @@ pub fn show_compose_dialog_full(
     }
 }
 
+/// Whether there is anything worth stopping the send for, and what to say.
+///
+/// Reads the text half. The editor holds HTML, so the moment there is a second
+/// line the body is "Hello Sam<div>See you tomorrow</div>", and a spell checker
+/// has no idea what a tag is: it reports "Sam<div>See" and "tomorrow</div" and
+/// asks about a message with nothing wrong in it.
+///
+/// Separate from the asking so the decision can be tested, because which half
+/// it reads is the whole question and getting it wrong is invisible from the
+/// outside. It produces a confirmation that looks right and fires every time,
+/// which is the one thing this check must never become.
+fn spelling_question(
+    data: &ComposeData,
+    speller: &dyn crate::service::spellcheck::Speller,
+) -> Option<String> {
+    crate::service::spellcheck::before_sending(&speller.check(&data.body_plain))
+}
+
 /// Check the body, and ask once if anything looks wrong.
 ///
 /// `true` to carry on sending. `false` to go back to the message, which is what
@@ -792,10 +810,12 @@ pub fn show_compose_dialog_full(
 /// Silent when there is nothing to say, which is the common case and has to
 /// stay free: a confirmation on every message is one people learn to dismiss
 /// without reading, and then it is not there the time it mattered.
-fn confirm_spelling(parent: &Dialog, body: &str) -> bool {
+fn confirm_spelling(parent: &Dialog, data: &ComposeData) -> bool {
     use crate::service::spellcheck;
 
-    if body.trim().is_empty() {
+    // The text half again: an empty message is one with no words in it, and
+    // "<p></p>" is not empty as markup.
+    if data.body_plain.trim().is_empty() {
         return true;
     }
     let stored = crate::data::config::ConfigManager::load_stored();
@@ -814,7 +834,7 @@ fn confirm_spelling(parent: &Dialog, body: &str) -> bool {
         .unwrap_or_else(|_| "en".to_string());
 
     let speller = spellcheck::for_language(&language);
-    let Some(said) = spellcheck::before_sending(&speller.check(body)) else {
+    let Some(said) = spelling_question(data, speller.as_ref()) else {
         return true;
     };
 
@@ -1378,6 +1398,57 @@ mod tests {
     #[test]
     fn test_forward_subject_no_double_fwd() {
         assert_eq!(format_forward_subject("Fwd: Hello"), "Fwd: Hello");
+    }
+
+    /// A message with both halves as the editor would hand them over.
+    fn written(body: &str, body_plain: &str) -> ComposeData {
+        ComposeData {
+            to: "sam@example.com".to_string(),
+            cc: String::new(),
+            bcc: String::new(),
+            subject: "Tomorrow".to_string(),
+            body: body.to_string(),
+            body_plain: body_plain.to_string(),
+            html_mode: true,
+            account_index: None,
+        }
+    }
+
+    #[test]
+    fn test_the_send_check_reads_the_text_and_not_the_tags() {
+        // The editor holds HTML, so the moment somebody presses Enter for a
+        // second line the body is "Hello Sam<div>See you tomorrow</div>". A
+        // spell checker has no idea what a tag is: it reports "Sam<div>See"
+        // and "tomorrow</div", and a message with nothing wrong in it asks
+        // "send anyway?".
+        //
+        // Which is the confirmation this feature exists not to become. Its own
+        // doc comment says so: one that appears every time is one people learn
+        // to dismiss without reading, and then it is not there the time it
+        // mattered.
+        let data = written(
+            "Hello Sam<div>See you tomorrow</div>",
+            "Hello Sam\nSee you tomorrow",
+        );
+        let speller = crate::service::spellcheck::SpellChecker::new();
+
+        // Asserted against the markup rather than against the dictionary. What
+        // is in the built-in word list is not the point and changes; a tag
+        // reaching the question is the defect, whatever else it says. ("Sam"
+        // is reported either way: it is a name, which is a separate argument.)
+        let said = spelling_question(&data, &speller).unwrap_or_default();
+        assert!(!said.contains("div"), "a tag was checked as a word: {said}");
+        assert!(!said.contains('<'), "markup reached the question: {said}");
+    }
+
+    #[test]
+    fn test_a_word_actually_spelled_wrong_still_stops_the_send() {
+        // The other half. Reading the right field must not turn the check off.
+        let data = written("<p>Please recieve this</p>", "Please recieve this");
+        let speller = crate::service::spellcheck::SpellChecker::new();
+
+        let said = spelling_question(&data, &speller).expect("a question");
+        assert!(said.contains("recieve"), "{said}");
     }
 
     #[test]
