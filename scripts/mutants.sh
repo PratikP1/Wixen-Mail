@@ -30,9 +30,18 @@ if ! command -v cargo-mutants >/dev/null 2>&1; then
     exit 1
 fi
 
-# Two jobs rather than all cores. Each one builds the whole crate, and this
-# machine also has to stay usable while it runs.
-JOBS="${MUTANTS_JOBS:-2}"
+# One job, because more than one is not reliable here.
+#
+# Each worker copies the tree to its own temp directory to build in, and on
+# Windows they collide: every worker dies with "The file exists (os error 80)".
+# At three it happens immediately after the baseline; at two it happens partway
+# through, which is worse, because the run looks like it is working and then
+# throws away everything it had not written out. cargo-mutants 27.1.0.
+#
+# Serial is roughly a minute per mutant. Raise it with MUTANTS_JOBS if a future
+# version fixes this, and check the run actually finished rather than trusting
+# the exit code: the failure above still exits zero through a pipe.
+JOBS="${MUTANTS_JOBS:-1}"
 OUT="target/mutants"
 
 if [ "${1:-}" = "--since" ]; then
@@ -64,8 +73,18 @@ fi
 
 echo
 echo "== what nothing noticed =="
-if [ -s "$OUT/mutants.out/missed.txt" ]; then
-    cat "$OUT/mutants.out/missed.txt"
-else
-    echo "(nothing, or the run did not finish)"
+MISSED="$OUT/mutants.out/missed.txt"
+CAUGHT="$OUT/mutants.out/caught.txt"
+if [ ! -f "$CAUGHT" ]; then
+    echo "The run produced no results at all. Read $OUT/mutants.out/ for why."
+    exit 1
 fi
+if [ -s "$MISSED" ]; then
+    cat "$MISSED"
+    echo
+    echo "Each line is behaviour no test is watching. Either pin it or delete it."
+else
+    echo "Nothing. Every mutant was caught."
+fi
+echo
+echo "caught $(wc -l < "$CAUGHT"), missed $(wc -l < "$MISSED" 2>/dev/null || echo 0)"
