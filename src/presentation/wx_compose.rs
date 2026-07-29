@@ -928,15 +928,17 @@ fn check_spelling(
     let speller = crate::service::spellcheck::for_language(&language);
 
     let mut ignored = session::Ignored::default();
-    let mut resume_from = 0usize;
+    // Where the last thing that happened left off. `None` is the start.
+    let mut resume_from: Option<crate::application::words::Position> = None;
     let mut corrected = 0usize;
 
     loop {
-        let words = editor_document::words_from_editor(
+        let text = editor_document::text_from_editor(
             &body_editor
-                .run_script(&editor_document::words_script())
+                .run_script(&editor_document::text_script())
                 .unwrap_or_default(),
         );
+        let words = crate::application::words::words_in(&text);
         let found = session::findings(
             &words,
             |word| !speller.check(word).is_empty(),
@@ -945,16 +947,25 @@ fn check_spelling(
         let Some(finding) = session::next_finding(&found, &ignored, resume_from) else {
             break;
         };
+        // Past the word rather than at it, so a word that is left alone is not
+        // offered again on the next turn of the loop.
+        let past = crate::application::words::Position {
+            node: finding.at.node,
+            offset: finding.end,
+        };
 
-        body_editor.run_script(&editor_document::select_word_script(finding.index));
+        body_editor.run_script(&editor_document::select_word_script(
+            finding.at,
+            finding.end,
+        ));
         let _ = a11y.announce(&finding.spoken(), Priority::High);
 
         match ask_about_word(dialog, finding) {
             SpellChoice::Stop => return,
-            SpellChoice::Ignore => resume_from = finding.index + 1,
+            SpellChoice::Ignore => resume_from = Some(past),
             SpellChoice::IgnoreAll => {
                 ignored.add(&finding.word);
-                resume_from = finding.index + 1;
+                resume_from = Some(past);
             }
             SpellChoice::Add => {
                 match speller.add_to_dictionary(&finding.word) {
@@ -976,30 +987,35 @@ fn check_spelling(
                         ignored.add(&finding.word);
                     }
                 }
-                resume_from = finding.index + 1;
+                resume_from = Some(past);
             }
             SpellChoice::Change(replacement) => {
-                body_editor.run_script(&editor_document::replace_word_script(
-                    finding.index,
-                    &replacement,
-                ));
+                let landed = replace_one(&body_editor, finding.at, finding.end, &replacement);
                 corrected += 1;
-                resume_from = session::resume_after(finding.index, 0, &replacement);
+                // Where the page says the caret ended up. If it could not say,
+                // stop rather than guess: carrying on from the wrong place
+                // corrects a word nobody asked about.
+                let Some(landed) = landed else { break };
+                resume_from = Some(landed);
             }
             SpellChoice::ChangeAll(replacement) => {
-                // Highest index first, so replacing one never moves one that
-                // has not been replaced yet.
-                let places = session::same_word_indexes(&found, &finding.word);
-                let earlier = places
-                    .iter()
-                    .filter(|place| **place < finding.index)
-                    .count();
+                // Last in the message first, so replacing one never moves one
+                // that has not been replaced yet, and the place this one is
+                // standing on survives until its turn.
+                let places = session::same_word_places(&found, &finding.word);
+                let ends: std::collections::HashMap<_, _> =
+                    found.iter().map(|f| (f.at, f.end)).collect();
+                let mut landed = None;
                 for place in &places {
-                    body_editor
-                        .run_script(&editor_document::replace_word_script(*place, &replacement));
+                    let Some(end) = ends.get(place) else { continue };
+                    let after = replace_one(&body_editor, *place, *end, &replacement);
+                    if *place == finding.at {
+                        landed = after;
+                    }
                 }
                 corrected += places.len();
-                resume_from = session::resume_after(finding.index, earlier, &replacement);
+                let Some(landed) = landed else { break };
+                resume_from = Some(landed);
             }
         }
     }
@@ -1010,6 +1026,23 @@ fn check_spelling(
     // is somebody about to carry on writing it.
     body_editor.set_focus();
     let _ = a11y.announce(&session::finished(corrected), Priority::High);
+}
+
+/// Replace one word, and say where the page put the caret afterwards.
+///
+/// The page reports it rather than this working it out. What a replacement
+/// does to the positions after it is the page's business, and the version this
+/// replaced added up how many words a replacement was, which was wrong for an
+/// empty one and skipped the following misspelling without saying anything.
+fn replace_one(
+    body_editor: &WebView,
+    at: crate::application::words::Position,
+    end: usize,
+    replacement: &str,
+) -> Option<crate::application::words::Position> {
+    let answer =
+        body_editor.run_script(&editor_document::replace_word_script(at, end, replacement))?;
+    editor_document::position_from_editor(&answer)
 }
 
 /// Ask what to do about one word.

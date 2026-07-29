@@ -26,6 +26,7 @@ pub mod spell_session;
 pub mod tasks;
 pub mod tasks_sync;
 pub mod threading;
+pub mod words;
 
 pub use accounts::AccountManager;
 pub use caldav_sync::{refresh_subscription, sync_caldav_calendar};

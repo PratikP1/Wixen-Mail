@@ -40,6 +40,7 @@
 //! Everything else is the editor's, which is what somebody typing a message
 //! wants.
 
+use crate::application::words::{Position, TextNode};
 use crate::common::types::MessageBody;
 use crate::presentation::html_renderer::HtmlRenderer;
 
@@ -220,65 +221,103 @@ img {{ max-width: 100%; height: auto; }}
   // Walked afresh each time rather than remembered. A remembered list is one
   // that goes stale the moment somebody types, and a stale position replaces
   // the wrong word.
-  window.wixenWords = function () {{
-    var walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, null);
-    var words = [];
-    var node;
-    while ((node = walker.nextNode())) {{
-      var pattern = /[\p{{L}}\p{{M}}][\p{{L}}\p{{M}}'’\-]*/gu;
-      var match;
-      while ((match = pattern.exec(node.data)) !== null) {{
-        // An apostrophe or hyphen at the end belongs to the sentence rather
-        // than the word: a quoted 'word' would otherwise be checked with its
-        // punctuation attached and called a misspelling.
-        var text = match[0].replace(/['’\-]+$/u, '');
-        if (!text.length) {{ continue; }}
-        words.push({{ node: node, start: match.index,
-                     end: match.index + text.length, text: text }});
-      }}
+  // What counts as a block, for saying whether two words are next to each
+  // other. Two words either side of a paragraph break look adjacent in a flat
+  // list and are not, and the fix offered for a repeated word is to delete it.
+  var BLOCKS = /^(ADDRESS|ARTICLE|ASIDE|BLOCKQUOTE|BODY|DD|DIV|DL|DT|FIGCAPTION|FIGURE|FOOTER|FORM|H1|H2|H3|H4|H5|H6|HEADER|LI|MAIN|NAV|OL|P|PRE|SECTION|TABLE|TD|TH|TR|UL)$/;
+
+  function blockOf(node) {{
+    var holder = node.parentElement;
+    while (holder && holder !== body && !BLOCKS.test(holder.tagName)) {{
+      holder = holder.parentElement;
     }}
-    return words;
+    return holder || body;
+  }}
+
+  function textNodes() {{
+    var walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, null);
+    var found = [];
+    var node;
+    while ((node = walker.nextNode())) {{ found.push(node); }}
+    return found;
+  }}
+
+  // Read afresh every time rather than remembered. A remembered list goes
+  // stale the moment somebody types, and a stale position replaces the wrong
+  // word.
+  window.wixenText = function () {{
+    var nodes = textNodes();
+    var blocks = [];
+    var out = [];
+    for (var n = 0; n < nodes.length; n++) {{
+      var holder = blockOf(nodes[n]);
+      var at = blocks.indexOf(holder);
+      if (at < 0) {{ at = blocks.length; blocks.push(holder); }}
+      out.push({{ text: nodes[n].data, block: at }});
+    }}
+    return JSON.stringify(out);
   }};
 
-  window.wixenSelectWord = function (index) {{
-    var words = window.wixenWords();
-    var word = words[index];
-    if (!word) {{ return false; }}
+  function rangeOver(index, start, end) {{
+    var nodes = textNodes();
+    var node = nodes[index];
+    if (!node) {{ return null; }}
     var range = document.createRange();
-    range.setStart(word.node, word.start);
-    range.setEnd(word.node, word.end);
+    range.setStart(node, Math.min(start, node.data.length));
+    range.setEnd(node, Math.min(end, node.data.length));
+    return range;
+  }}
+
+  function selectRange(range) {{
     var selection = window.getSelection();
     selection.removeAllRanges();
     selection.addRange(range);
     body.focus();
-    var holder = word.node.parentElement;
+  }}
+
+  window.wixenSelectWord = function (index, start, end) {{
+    var range = rangeOver(index, start, end);
+    if (!range) {{ return false; }}
+    selectRange(range);
+    var holder = range.startContainer.parentElement;
     if (holder && holder.scrollIntoView) {{ holder.scrollIntoView({{ block: 'nearest' }}); }}
     return true;
   }};
 
-  window.wixenReplaceWord = function (index, replacement) {{
-    var words = window.wixenWords();
-    var word = words[index];
-    if (!word) {{ return false; }}
-    var start = word.start;
+  // Replace a word, and say where that left the caret.
+  //
+  // Reported rather than worked out, and that is the point. What a replacement
+  // does to everything after it is the page's business, so the check carries on
+  // from a place the page named rather than from a sum over how many words the
+  // replacement turned out to be.
+  window.wixenReplaceWord = function (index, start, end, replacement) {{
+    var nodes = textNodes();
+    var node = nodes[index];
+    if (!node) {{ return JSON.stringify(null); }}
+    var from = start;
     if (!replacement.length) {{
       // Deleting a repeated word takes the space in front of it, or the
       // sentence is left with a gap where the word was.
-      while (start > 0 && /\s/.test(word.node.data.charAt(start - 1))) {{ start--; }}
+      while (from > 0 && /\s/.test(node.data.charAt(from - 1))) {{ from--; }}
     }}
-    var range = document.createRange();
-    range.setStart(word.node, start);
-    range.setEnd(word.node, word.end);
-    var selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-    body.focus();
+    var range = rangeOver(index, from, end);
+    if (!range) {{ return JSON.stringify(null); }}
+    selectRange(range);
     if (replacement.length) {{
       document.execCommand('insertText', false, replacement);
     }} else {{
       document.execCommand('delete');
     }}
-    return true;
+    var selection = window.getSelection();
+    if (!selection.rangeCount) {{ return JSON.stringify(null); }}
+    var after = selection.getRangeAt(0);
+    var now = textNodes();
+    for (var n = 0; n < now.length; n++) {{
+      if (now[n] === after.endContainer) {{
+        return JSON.stringify({{ node: n, offset: after.endOffset }});
+      }}
+    }}
+    return JSON.stringify(null);
   }};
 
   // ── Moving through a table ─────────────────────────────────────────────
@@ -655,8 +694,8 @@ pub fn table_spoken(rows: usize, columns: usize, header: bool) -> String {
 /// mapped back into a document: what somebody reads has line breaks between
 /// blocks that the tree does not contain. Everything on this side is an index
 /// into the list this returns.
-pub fn words_script() -> String {
-    "JSON.stringify(window.wixenWords().map(function (w) { return w.text; }))".to_string()
+pub fn text_script() -> String {
+    "window.wixenText()".to_string()
 }
 
 /// Select the word at that position, and bring it into view.
@@ -664,25 +703,39 @@ pub fn words_script() -> String {
 /// Selecting rather than just moving the caret, because a selected word is
 /// announced by the screen reader as the check arrives at it, and because the
 /// next thing the check does is replace it.
-pub fn select_word_script(index: usize) -> String {
-    format!("window.wixenSelectWord({index})")
+pub fn select_word_script(at: Position, end: usize) -> String {
+    let (node, start) = (at.node, at.offset);
+    format!("window.wixenSelectWord({node}, {start}, {end})")
 }
 
 /// Replace the word at that position.
 ///
 /// An empty replacement deletes the word and the space in front of it, which is
 /// what fixing a repeated word means.
-pub fn replace_word_script(index: usize, replacement: &str) -> String {
-    format!("window.wixenReplaceWord({index}, {replacement:?})")
+pub fn replace_word_script(at: Position, end: usize, replacement: &str) -> String {
+    let (node, start) = (at.node, at.offset);
+    format!("window.wixenReplaceWord({node}, {start}, {end}, {replacement:?})")
 }
 
-/// Take the word list back out of what the page returned.
+/// Take the message's text back out of what the page returned.
 ///
-/// Nothing here is trusted to be a word list: an answer that is not one means
-/// no words rather than a panic in the middle of checking somebody's message.
-pub fn words_from_editor(raw: &str) -> Vec<String> {
+/// Nothing here is trusted to be what was asked for: an answer that is not
+/// means no text rather than a panic in the middle of checking a message.
+pub fn text_from_editor(raw: &str) -> Vec<TextNode> {
     let unwrapped = serde_json::from_str::<String>(raw).unwrap_or_else(|_| raw.to_string());
-    serde_json::from_str::<Vec<String>>(&unwrapped).unwrap_or_default()
+    serde_json::from_str::<Vec<TextNode>>(&unwrapped).unwrap_or_default()
+}
+
+/// Where a replacement left the caret, as the page reported it.
+///
+/// `None` when the page could not say, which is a reason to stop the pass
+/// rather than to guess: carrying on from the wrong place corrects the wrong
+/// word, and that is worse than a check that ends early and says so.
+pub fn position_from_editor(raw: &str) -> Option<Position> {
+    let unwrapped = serde_json::from_str::<String>(raw).unwrap_or_else(|_| raw.to_string());
+    serde_json::from_str::<Option<Position>>(&unwrapped)
+        .ok()
+        .flatten()
 }
 
 /// The element the page wraps a typed Markdown link in while it is checked.
@@ -1608,39 +1661,91 @@ mod tests {
     }
 
     #[test]
-    fn test_the_words_come_back_as_a_list() {
+    fn test_the_text_comes_back_with_its_blocks() {
         assert_eq!(
-            words_from_editor(r#"["one","two"]"#),
-            vec!["one".to_string(), "two".to_string()]
+            text_from_editor(r#"[{"text":"one","block":0},{"text":"two","block":1}]"#),
+            vec![
+                TextNode {
+                    text: "one".to_string(),
+                    block: 0
+                },
+                TextNode {
+                    text: "two".to_string(),
+                    block: 1
+                },
+            ]
         );
     }
 
     #[test]
-    fn test_the_words_survive_a_backend_that_wraps_its_answer() {
+    fn test_the_text_survives_a_backend_that_wraps_its_answer() {
         // Some backends hand a script result back as a JSON string containing
         // the JSON, which is the same trap the body and the plain text hit.
         assert_eq!(
-            words_from_editor(r#""[\"one\",\"two\"]""#),
-            vec!["one".to_string(), "two".to_string()]
+            text_from_editor(r#""[{\"text\":\"one\",\"block\":0}]""#),
+            vec![TextNode {
+                text: "one".to_string(),
+                block: 0
+            }]
         );
     }
 
     #[test]
-    fn test_an_answer_that_is_not_a_word_list_is_no_words() {
+    fn test_an_answer_that_is_not_the_text_is_no_text() {
         // Rather than a panic in the middle of checking somebody's message.
-        assert!(words_from_editor("null").is_empty());
-        assert!(words_from_editor("").is_empty());
+        assert!(text_from_editor("null").is_empty());
+        assert!(text_from_editor("").is_empty());
     }
 
     #[test]
-    fn test_the_page_can_be_asked_for_its_words_and_told_which_to_select() {
+    fn test_where_a_replacement_left_the_caret_comes_back() {
+        assert_eq!(
+            position_from_editor(r#"{"node":2,"offset":7}"#),
+            Some(Position { node: 2, offset: 7 })
+        );
+    }
+
+    #[test]
+    fn test_a_page_that_cannot_say_where_the_caret_went_says_nothing() {
+        // Which stops the pass rather than letting it carry on from a guess.
+        // Carrying on from the wrong place corrects a word nobody was asked
+        // about, and that is worse than a check that ends early and says so.
+        assert_eq!(position_from_editor("null"), None);
+        assert_eq!(position_from_editor(""), None);
+        assert_eq!(position_from_editor(r#"{"node":1}"#), None);
+        assert_eq!(position_from_editor("true"), None);
+    }
+
+    #[test]
+    fn test_the_page_can_be_asked_for_its_text_and_told_what_to_select() {
         let page = editor_document(&blank(), "en-US", true);
-        for entry in ["wixenWords", "wixenSelectWord", "wixenReplaceWord"] {
+        for entry in ["wixenText", "wixenSelectWord", "wixenReplaceWord"] {
             assert!(page.contains(entry), "the page has no {entry}");
-            assert!(words_script().contains("wixenWords") || entry != "wixenWords");
         }
-        assert!(select_word_script(3).contains('3'));
-        assert!(replace_word_script(3, "world").contains("world"));
+        assert!(text_script().contains("wixenText"));
+
+        let at = Position { node: 1, offset: 4 };
+        let select = select_word_script(at, 9);
+        assert!(select.contains("1, 4, 9"), "{select}");
+        let replace = replace_word_script(at, 9, "world");
+        assert!(replace.contains("1, 4, 9"), "{replace}");
+        assert!(replace.contains("world"), "{replace}");
+    }
+
+    #[test]
+    fn test_the_page_no_longer_decides_where_the_words_are() {
+        // The rule was a run of letter and mark characters, which made "3rd"
+        // the word "rd" and a Japanese paragraph one word. Enumerating lives
+        // in `application::words` now, where it can be executed.
+        //
+        // The keystroke check keeps a character class, and should: it asks
+        // "did that character end a word" on every key press, which is one
+        // comparison and cannot wait for a round trip. It decides when to
+        // sound a tone, never where a word is or what gets replaced.
+        let page = editor_document(&blank(), "en-US", true);
+
+        assert!(!page.contains("wixenWords"), "the enumerator is back");
+        assert!(page.contains("wixenText"), "nothing sends the text out");
     }
 
     #[test]
@@ -1648,7 +1753,7 @@ mod tests {
         // It comes from a dictionary rather than a stranger, and it is still
         // put into a script by string, which is the shape of the mistake that
         // does not announce itself.
-        let script = replace_word_script(0, "\"); alert(1); //");
+        let script = replace_word_script(Position { node: 0, offset: 0 }, 5, "\"); alert(1); //");
         assert!(
             script.contains(r#"\""#),
             "the quote is not escaped: {script}"

@@ -54,6 +54,10 @@ rand = "0.10"
 
 # Spell checking (Hunspell-compatible, pure Rust)
 spellbook = "0.4"
+# Word boundaries, UAX #29. What counts as a word is not "a run of letters":
+# "3rd" is one word, "don't" is one word, and a Japanese sentence has words in
+# it and no spaces.
+unicode-segmentation = "1.12"
 
 # Open URLs in default browser
 open = "5"
