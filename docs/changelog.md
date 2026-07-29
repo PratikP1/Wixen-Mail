@@ -5,6 +5,17 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ## [Unreleased]
 
+### Added
+
+- **Wixen Mail asks, the first time you start it, what it is allowed to change.** Everything that writes is experimental: sending mail, deleting mail, and sending your changes to tasks, contacts and the calendar back to your provider. None of that has been run against a real account, so expect bugs. Reading your mail is the part that has been used.
+  You get three choices, starting on the middle one: read only, tasks and contacts but not mail, or everything. Each says what it costs rather than which is recommended. There is a button to open [what to test and what is known to be broken](ALPHA_TESTING.md).
+  Change it later under Settings, Allowed Changes. You can also set it per account, which is the useful shape while testing: leave your real mail read only and allow everything on an account you do not mind breaking.
+  If you were already using Wixen Mail before this version, you will be asked once too. Writing had been switched on all along without anybody saying it was unproven.
+
+- **`--read-only` and `--allow`, for one run.** `wixen-mail --read-only` changes nothing at any server that run, whatever the settings say. `wixen-mail --allow tasks` permits tasks, contacts and calendar but not mail. Neither can permit anything the settings forbid, so leaving one in a shortcut is safe.
+
+- **`--help` and `--version` actually print something.** They could not before: Wixen Mail is a windowed program with no console, so anything printed went nowhere. It now attaches to the terminal you started it from. A flag it does not recognise stops the program and says so, rather than starting up having quietly ignored what you typed.
+
 ### Fixed
 
 - **Compose windows are let go of when they close.** Every one stayed for the life of the session, and since the message body became a web view, each one held a browser. The preview before sending held a second, and the spell checker built a new dialog for every word it asked about, so checking a message with thirty misspellings in it left thirty behind. On a machine with modest memory, a working day of writing mail ended with the application unusable, which for this audience means losing your mail client in the middle of a job.

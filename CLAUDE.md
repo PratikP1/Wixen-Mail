@@ -196,6 +196,29 @@ workflows, `cognitive-accessibility` for language and flow, `contrast-master` fo
   why over what.
 - User-visible changes get a `docs/changelog.md` entry under `[Unreleased]` in the same commit.
 
+### Finish what you start, and say plainly what works
+
+Do not stop partway through a job to describe what has been done so far. Do not
+pause after each item in a task list to summarise. Stop early only for a real
+blocker: a decision that is genuinely Pratik's and changes what gets built, or
+something broken upstream. "This is a coherent stopping point" is not a blocker.
+
+Shipping a partly wired feature and describing the gap in the report is the same
+mistake in disguise. If a change leaves five of six paths not working, the job is
+not done. An alpha build exists to be used, so anything in it that does not work
+makes the alpha pointless.
+
+Write back in plain language. No jargon, no framing that makes partly-finished
+work sound finished. Lead with whether it works, not with what was built.
+
+**If you expect bug reports from something, that belongs in the product.** Mark
+it experimental where the person using it will see it, say why, and say what
+could go wrong. A warning that only exists in a chat message is a warning nobody
+gets. `application::allowed` and `presentation::first_run` are how this is done
+here: everything that writes says it is experimental in the settings screen, in
+the first-run screen and at the end of `--help`, because none of it has run
+against a real account.
+
 ### Working style
 
 Apply the skill that fits the task without being asked. `tdd` and `elegant-code` on every coding
