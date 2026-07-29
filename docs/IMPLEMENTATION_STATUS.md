@@ -90,3 +90,31 @@ same as the experience being good, and only an NVDA run can tell the difference.
 
 The provider sync clients have not been run against live Google, Microsoft, or
 CalDAV accounts.
+
+## Which tests would fail if the code were wrong
+
+Red/green started at commit 182 of 344, so most of the tests here were written
+after the code they cover. A test written that way describes what the code
+does rather than specifying what it should do, and cannot fail for the bug it
+was written alongside. Mutation testing measures the difference: it alters the
+code and reruns the suite, and reports anything nothing caught.
+
+Run it with `scripts/mutants.sh <dir>`. A whole-tree run is about two days, so
+it is used scoped.
+
+| Module | Caught | Missed | What that means |
+|---|---|---|---|
+| `service/mime.rs` | 33 | 0 | Every message that arrives is parsed here, and the tests hold all of it |
+| `common/error.rs` | 15 | 0 | The secret redaction is fully pinned |
+| `data/message_cache/tasks.rs` | 16 | 1 | The survivor was dead code, not a weak test |
+
+The one survivor was `delete_task_list`, which no code calls. That is the other
+thing a survivor can mean, and the more useful one: Rust never reports a public
+item in a lib crate as unused, so three dead container deletions had survived
+two dead-code passes.
+
+Line coverage is 60.4% (`cargo llvm-cov --lib --summary-only`). The least
+covered modules are `service/protocols/imap.rs` at 28%, `service/google_api.rs`
+at 35% and `service/microsoft_graph.rs` at 37%. That is the same fact as never
+having been run against a live account rather than a separate problem, and no
+amount of test writing substitutes for it.
