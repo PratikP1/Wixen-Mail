@@ -9,6 +9,7 @@ Quick setup instructions for popular email providers with Wixen Mail.
 - [Yahoo Mail](#yahoo-mail)
 - [iCloud Mail](#icloud-mail)
 - [ProtonMail (via Bridge)](#protonmail-via-bridge)
+- [What differs between providers](#what-differs-between-providers)
 - [Other Providers](#other-providers)
 - [What syncs from which account](#what-syncs-from-which-account)
 
@@ -229,6 +230,47 @@ verification is on, which is why the direct link is easier.
    password will not work here.
 7. Click **Connect**
 
+### How Gmail differs, and what Wixen Mail does about it
+
+Gmail does not have folders. It has labels, and a message can carry several at
+once. Over IMAP each label looks like a folder, so one message with three
+labels arrives as three copies with three different numbers. Wixen Mail reads
+Gmail's own identifier for a message, so it can tell those apart from three
+different messages, and search shows the message once rather than once per
+label.
+
+**All Mail is not downloaded unless you ask for it.** It holds a copy of every
+message in the account, so downloading it alongside your Inbox means fetching
+everything twice. Turn it on under File, then Folders to Keep Up to Date, if
+you want it.
+
+**Deleting moves the message to Bin.** Gmail's own setting for what a deleted
+message should do is in Gmail's web settings, under Forwarding and POP/IMAP,
+and Wixen Mail cannot see it or change it. Moving to Bin behaves the same
+whatever that setting says.
+
+**Two things can only be changed in Gmail's web settings**, because Google
+provides no other way:
+
+| What | Where |
+|------|-------|
+| Whether a label appears to mail apps at all | Gmail settings, Labels, the "Show in IMAP" tick beside each label |
+| What happens to a message a mail app deletes | Gmail settings, Forwarding and POP/IMAP |
+
+A label with "Show in IMAP" turned off never reaches Wixen Mail, so it will not
+be in the folder list at all. That is Google's choice and there is nothing this
+end can do about it.
+
+**Sent mail is saved by Google, not by Wixen Mail.** Every other provider needs
+the mail app to file the copy, and Wixen Mail does. On Gmail it does not, because
+a second copy would be a duplicate of the one Google already saved.
+
+**Conversations are worked out from the message headers**, not from Gmail's own
+conversation grouping, so a conversation here may be split differently from the
+same conversation in Gmail's web interface. Gmail does publish its grouping over
+IMAP; the library Wixen Mail is built on reads it and provides no way to get at
+it.
+
 ### Troubleshooting Gmail
 
 **"Authentication failed" error:**
@@ -244,8 +286,15 @@ verification is on, which is why the direct link is easier.
 - Wait a few minutes after generating app password
 
 **"Too many simultaneous connections":**
+- Google allows fifteen at once per account. Wixen Mail uses two: one for
+  working and one that waits for new mail to arrive.
 - Close other email clients accessing Gmail
 - Wait a few minutes before trying again
+
+**A folder says there is more to fetch and never gets it:**
+- Gmail's settings have a limit on how many messages a folder shows to mail
+  apps, and it is on by default. Gmail settings, Forwarding and POP/IMAP,
+  Folder Size Limits.
 
 **More Help:**
 - Official documentation: https://support.google.com/mail/answer/7126229
@@ -506,6 +555,36 @@ verification is on, which is why the direct link is easier.
 
 **More Help:**
 - Official documentation: https://proton.me/support/protonmail-bridge-install
+
+---
+
+## What differs between providers
+
+Mail servers agree on the basics and differ everywhere else. Wixen Mail asks
+each one what it can do when it signs in, and adjusts. You do not have to
+configure any of this. It is here so that when a provider behaves differently
+you know it is the provider and not a fault.
+
+| What | Where it holds | Where it does not |
+|------|----------------|-------------------|
+| Sent mail is filed by the provider | Gmail | Everywhere else, so Wixen Mail files the copy |
+| Moving a message is one instruction | Most current servers | Older ones copy, then remove, and say so if the second step cannot run |
+| One message can be deleted on its own | Servers with UIDPLUS | Older ones can only clear out everything marked deleted at once, which is other people's mail too, so Wixen Mail does not |
+| Changes made on another device arrive cheaply | Fastmail, current Dovecot | Gmail and Microsoft 365, where the flags of the messages you hold are read back instead |
+| Folders you subscribe to are remembered | Most servers | A few keep no list, and then every folder is downloaded |
+
+### Choosing which folders are downloaded
+
+File, then Folders to Keep Up to Date. A ticked list, one row per folder,
+saying how many messages are in each. Space ticks the row you are on.
+
+This is worth opening on two kinds of account. Gmail, where All Mail holds a
+copy of every message and is off by default. And shared or university servers,
+which list every mailbox the account can see, sometimes hundreds of them.
+
+Your choice is also sent to the server as a subscription, so a folder you turn
+off here reads as unwanted in your phone's mail app. If the server will not
+accept that, Wixen Mail says so, and your choice still holds here.
 
 ---
 
