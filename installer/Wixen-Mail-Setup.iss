@@ -148,10 +148,12 @@ end;
 
 { An uninstaller left behind by an uninstall that did not finish, or ''.
 
-  Checked as well as the registry, because the failure that started this had
-  already taken the registry entry away: the files, the shortcut and
-  unins000.exe were all still there with nothing recorded to say so. Looking
-  only where Windows says a program is would have missed it. }
+  A second way of finding the same thing, for the case the first one misses. An
+  uninstall that stops partway can stop anywhere: the incident this was written
+  for left both the files and the registry entry, so the check above would have
+  caught it, but an uninstall that got one step further would have taken the
+  entry and left the folder and the shortcut. Then Windows knows about nothing
+  and a shortcut still starts it, which is the worst of the two. }
 function StrandedUninstaller(): String;
 var
   Candidate: String;
