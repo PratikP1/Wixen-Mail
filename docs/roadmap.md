@@ -35,6 +35,15 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [x] Folder synchronization
 - [x] Message fetching and caching
 - [x] Search functionality (SQLite FTS)
+- [x] Read the server's capabilities once at sign-in and behave accordingly
+- [x] SPECIAL-USE for folder roles, with the folder's name as the fallback
+- [x] UIDPLUS, MOVE, CONDSTORE, ID, and Gmail's X-GM-EXT-1 where offered
+- [x] STATUS for folder counts, LSUB and SUBSCRIBE for which folders sync
+- [x] APPEND for the Sent copy, COPY and MOVE between folders
+- [ ] QRESYNC, so a folder can resume rather than re-list its UIDs
+- [ ] CREATE, RENAME and DELETE, so folders can be managed here
+- [ ] Gmail's X-GM-THRID for conversations, and X-GM-RAW for server-side search.
+      Both are blocked on the IMAP library rather than on this code
 
 ### SMTP Implementation
 - [x] Implement SMTP client for sending emails (lettre)
