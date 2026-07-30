@@ -759,17 +759,6 @@ impl ImapSession {
         self.search_uids("ALL").await
     }
 
-    /// How many messages in the selected mailbox are unread.
-    ///
-    /// Asked for rather than taken from SELECT, whose UNSEEN is the sequence
-    /// number of the first unseen message and not a count. Reading it as a
-    /// count would put a plausible wrong number beside every folder name, and
-    /// a wrong count is worse than none: it is the number somebody decides
-    /// whether to open the folder on.
-    pub async fn unread_count(&mut self) -> Result<usize> {
-        Ok(self.search_uids("UNSEEN").await?.len())
-    }
-
     /// Fetch the header fields the message list shows.
     ///
     /// Asked for in batches, so a mailbox of a hundred thousand messages costs

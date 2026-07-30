@@ -6752,6 +6752,13 @@ fn spawn_mail_sync(
                     ) {
                         report.push_str(", Ctrl+Shift+G for older");
                     }
+                    if result.flags_updated > 0 {
+                        // What changed on another device. Worth saying because
+                        // rows quietly turning read is otherwise unexplained,
+                        // and because a mailbox somebody also reads on a phone
+                        // that never reports any is one where this is broken.
+                        report.push_str(&format!(", {} changed elsewhere", result.flags_updated));
+                    }
                     if result.forgotten > 0 {
                         report.push_str(&format!(", {} removed elsewhere", result.forgotten));
                     }

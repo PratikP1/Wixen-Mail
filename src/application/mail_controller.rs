@@ -6,7 +6,7 @@ use crate::common::{Error, Result};
 use crate::service::protocols::MailAuth;
 use crate::service::protocols::imap::{
     Deletion, FolderCounts, ImapClient, ImapConfig, ImapFolder, ImapMessage, ImapSession,
-    MailboxStatus, Moved, abilities::Abilities,
+    MailboxStatus, Moved,
 };
 use crate::service::protocols::pop3::{Pop3Client, Pop3Config, Pop3Session};
 use crate::service::protocols::smtp::{Email, SmtpClient, SmtpConfig};
@@ -270,16 +270,6 @@ impl MailController {
         Ok(sent)
     }
 
-    /// How many messages in a folder are unread.
-    pub async fn unread_count(&self, folder: &str) -> Result<usize> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        if session.selected_folder() != Some(folder) {
-            session.select_folder(folder).await?;
-        }
-        session.unread_count().await
-    }
-
     /// Flag or unflag a message.
     ///
     /// The wanted state is passed in rather than toggled here. Toggling needs
@@ -374,12 +364,6 @@ impl MailController {
             session.select_folder(folder).await?;
         }
         session.fetch_flags(held, changed_since).await
-    }
-
-    /// What the connected server can do.
-    pub async fn abilities(&self) -> Result<Abilities> {
-        let guard = self.require_imap().await?;
-        Ok(guard.abilities())
     }
 
     /// Check if connected
@@ -500,9 +484,14 @@ mod tests {
             controller.list_uids("INBOX").await.err(),
             controller.fetch_headers("INBOX", &[1]).await.err(),
             controller.fetch_message_body("INBOX", 1).await.err(),
-            controller.unread_count("INBOX").await.err(),
+            controller.folder_counts("INBOX").await.err(),
             controller.set_starred("INBOX", 1, true).await.err(),
             controller.delete_message("INBOX", 1, None).await.err(),
+            controller.move_message("INBOX", 1, "Archive").await.err(),
+            controller.copy_message("INBOX", 1, "Archive").await.err(),
+            controller.append_message("Sent", None, b"raw").await.err(),
+            controller.set_subscribed("Work", true).await.err(),
+            controller.fetch_flags("INBOX", &[1], None).await.err(),
         ];
         for refusal in refusals {
             let message = refusal
