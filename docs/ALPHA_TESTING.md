@@ -104,6 +104,10 @@ Written down so you do not spend time reporting things already on the list.
   gives no way to read it.
 - **A folder cannot be created, renamed or deleted**, and a whole folder cannot
   be marked read or emptied.
+- **A POP account has never been run against a real POP server.** Everything
+  about it is new in this version: the client, the local folders, the sync, and
+  the policy that removes mail from the server. Mail is left on the server
+  unless you turn that off, which is the setting to be careful with.
 - **Notes do not sync anywhere.** They stay on this computer.
 - **The cached mail on this computer is not encrypted.** Anybody who can read
   your user folder can read your mail. Passwords and tokens are not in there,

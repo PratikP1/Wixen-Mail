@@ -52,7 +52,13 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [x] Outbox queue infrastructure for offline sending
 
 ### POP3 Support
-- [x] Implement POP3 protocol client (full command surface)
+- [x] Implement POP3 protocol client. What was here before was a simulation: it
+      opened no socket, ignored the password, and answered every command from
+      three messages it made up. This one speaks RFC 1939 over TCP
+- [x] TLS on 995, STLS on 110
+- [x] Sync keyed on UIDL, so mail is not downloaded twice or skipped
+- [x] Leave mail on the server, and remove it after a chosen number of days
+- [x] Local folders, since POP3 has none of its own
 - [x] Message downloading and deletion management
 
 ## Phase 3: User Interface (Complete)

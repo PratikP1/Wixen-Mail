@@ -5381,9 +5381,18 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
                     // The copy is filed after the send, and a failure to file
                     // it is not a failure to send: the message has gone, and
                     // reporting it as failed would have somebody send it again.
-                    if let Some(folder) = sent_copy_goes_to.as_deref()
-                        && let Err(e) = file_sent_copy(&account, folder, raw).await
-                    {
+                    // A local folder is written here and now, without an
+                    // await: the cache holds a SQLite connection that cannot
+                    // cross one, and a folder on this computer has nothing to
+                    // wait for anyway.
+                    let filed = match sent_copy_goes_to.as_deref() {
+                        None => Ok(()),
+                        Some(folder) if crate::application::local_folders::is_local(folder) => {
+                            file_sent_copy_locally(&cache, &account, folder, raw)
+                        }
+                        Some(folder) => file_sent_copy(&account, folder, raw).await,
+                    };
+                    if let Err(e) = filed {
                         tracing::warn!("The message was sent, but no copy reached Sent: {e}");
                         let _ = tx
                             .send(UIUpdate::StatusUpdated(format!(
@@ -5991,24 +6000,183 @@ fn spawn_receipt(
     });
 }
 
+/// Check a POP account for mail.
+///
+/// Everything lands in that account's local Inbox, because POP3 has no folders
+/// to land anywhere else. The folders themselves are made on the way in, so an
+/// account that has never been checked still has somewhere for a draft or a
+/// sent message to go.
+fn check_pop_mail(
+    account: &crate::data::account::Account,
+    handle: &tokio::runtime::Handle,
+    tx: &Sender<UIUpdate>,
+) {
+    use crate::application::pop_sync;
+
+    let say = |update: UIUpdate| {
+        handle.block_on(async {
+            let _ = tx.send(update).await;
+        });
+    };
+    let fail = |reason: String| {
+        handle.block_on(async {
+            let _ = tx.send(UIUpdate::ErrorOccurred(reason)).await;
+            let _ = tx
+                .send(UIUpdate::ConnectionStatusChanged(
+                    ConnectionStatus::Disconnected,
+                ))
+                .await;
+        });
+    };
+
+    if account.pop_server.trim().is_empty() {
+        return fail(format!("{} has no POP server set", account.name));
+    }
+    let Ok(port) = account.pop_port.trim().parse::<u16>() else {
+        return fail(format!(
+            "{} has a POP port that is not a number: {}",
+            account.name, account.pop_port
+        ));
+    };
+    let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+        return fail("No cache directory available".to_string());
+    };
+    let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
+        Ok(cache) => cache,
+        Err(e) => return fail(format!("Cache error: {}", e)),
+    };
+
+    let inbox = match ensure_local_folders(&cache, account) {
+        Ok(folders) => folders,
+        Err(e) => return fail(format!("Could not set up the folders: {e}")),
+    };
+
+    say(UIUpdate::ConnectionStatusChanged(
+        ConnectionStatus::Connecting,
+    ));
+    say(UIUpdate::StatusUpdated(format!(
+        "Connecting to {}...",
+        account.pop_server
+    )));
+
+    // POP3 has no OAuth in practice, so this is the stored password. An account
+    // set to browser sign-in and then switched to POP would have none, which is
+    // a configuration problem worth naming.
+    let password = match handle.block_on(crate::application::mail_auth::for_account(account)) {
+        Ok(crate::service::protocols::MailAuth::Password(password)) => password,
+        Ok(crate::service::protocols::MailAuth::OAuth2(_)) => {
+            return fail(format!(
+                "{} is set to sign in through the browser, which POP servers do not accept.                  Give it a password instead.",
+                account.name
+            ));
+        }
+        Err(e) => return fail(e.to_string()),
+    };
+
+    let controller = MailController::new();
+    if let Err(e) = handle.block_on(controller.connect_pop3(
+        account.pop_server.clone(),
+        port,
+        account.username.clone(),
+        password,
+        account.pop_use_tls,
+    )) {
+        return fail(e.to_string());
+    }
+
+    let housekeeping = pop_sync::Housekeeping {
+        leave_on_server: account.pop_leave_on_server,
+        remove_after_days: account.pop_remove_after_days,
+    };
+    match handle.block_on(pop_sync::sync(
+        &controller,
+        &cache,
+        inbox,
+        housekeeping,
+        false,
+    )) {
+        Ok(result) => {
+            say(UIUpdate::ConnectionStatusChanged(
+                ConnectionStatus::Connected,
+            ));
+            let mut report = format!("{} new, {} on the server", result.fetched, result.on_server);
+            if result.removed_from_server > 0 {
+                // Said out loud, because it is mail leaving a server for good
+                // and the only warning anybody gets that the policy is running.
+                report.push_str(&format!(
+                    ", {} removed from the server",
+                    result.removed_from_server
+                ));
+            }
+            say(UIUpdate::StatusUpdated(report));
+            // The tree and the list are redrawn from the cache, the same way
+            // the IMAP path finishes, so new mail appears without another key.
+            if let Ok(updates) = folder_tree_updates(&cache, &account.id) {
+                for update in updates {
+                    say(update);
+                }
+            }
+        }
+        Err(e) => fail(e.to_string()),
+    }
+}
+
+/// Make sure this account's local folders exist, and give back its inbox.
+///
+/// Called on the way in rather than when the account is created, so an account
+/// made before these existed gets them, and so a database somebody deleted
+/// comes back rather than failing quietly.
+///
+/// Returns the folder identifier POP mail goes into. For an IMAP account there
+/// is no local inbox, and the identifier returned is the outbox, which is the
+/// only local folder it has.
+fn ensure_local_folders(
+    cache: &crate::data::message_cache::MessageCache,
+    account: &crate::data::account::Account,
+) -> crate::common::Result<i64> {
+    use crate::application::local_folders;
+    use crate::common::types::FolderType;
+
+    let mut inbox = None;
+    let mut fallback = None;
+    for folder in local_folders::for_account(account.protocol()) {
+        let id = cache.save_folder(&crate::data::message_cache::CachedFolder {
+            id: 0,
+            account_id: account.id.clone(),
+            name: folder.name.to_string(),
+            path: folder.path(),
+            folder_type: folder.kind.as_str().to_string(),
+            unread_count: 0,
+            total_count: 0,
+        })?;
+        // Never opened over the network, whatever else decides what syncs.
+        cache.set_folder_server_facts(id, false, true)?;
+        if folder.kind == FolderType::Inbox {
+            inbox = Some(id);
+        }
+        fallback = Some(id);
+    }
+    inbox
+        .or(fallback)
+        .ok_or_else(|| crate::common::Error::Other("This account has no folders".into()))
+}
+
 /// Where a copy of a sent message should go, if anywhere.
 ///
-/// `None` when the provider files its own copy, or when the account has no
-/// Sent folder to put one in. Both are ordinary: Gmail is the first, and a
-/// brand new account that has never synced is the second.
+/// Every account files one. On IMAP it goes to the server's Sent folder, so it
+/// is there on every device. On POP there is no server folder to put it in, so
+/// it goes to that account's local Sent, which is the only copy there will ever
+/// be and is exactly why POP accounts need local folders at all.
+///
+/// `None` means the account has no Sent folder yet, which is a brand new IMAP
+/// account that has never synced.
 fn sent_copy_destination(
     cache: &crate::data::message_cache::MessageCache,
     account: &crate::data::account::Account,
 ) -> Option<String> {
-    // Every account with somewhere to put it, Gmail included. Gmail files its
-    // own copy as well, and it was tempting to skip it on that basis, but the
-    // rule "the account's Sent folder has the mail you sent" is one somebody
-    // can rely on, and "except on this provider, where Google does it" is one
-    // they have to know. Gmail matches on Message-ID, so the copy that arrives
-    // is the one already there rather than a second.
-    //
-    // `None` here means the account has no Sent folder to append to, which is
-    // a brand new account that has never synced.
+    if let Some(local) = crate::application::local_folders::local_sent(account.protocol()) {
+        return Some(local);
+    }
     cache
         .get_folders_for_account(&account.id)
         .ok()?
@@ -6060,6 +6228,67 @@ async fn file_sent_copy(
         .map_err(|e| e.to_string());
     let _ = controller.disconnect_imap().await;
     filed
+}
+
+/// Put a sent message into a folder on this computer.
+///
+/// Marked read, the same as the server copy, because a message somebody wrote
+/// is not unread mail waiting to be dealt with. Stored with its body, since
+/// there is nowhere to fetch it from later.
+fn file_sent_copy_locally(
+    cache: &crate::data::message_cache::MessageCache,
+    account: &crate::data::account::Account,
+    folder: &str,
+    raw: &[u8],
+) -> std::result::Result<(), String> {
+    let parsed = crate::service::mime::parse(raw).map_err(|e| e.to_string())?;
+    let row = cache
+        .get_folder(&account.id, folder)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "there is no Sent folder for this account".to_string())?;
+    let uid = cache.next_local_uid(row.id).map_err(|e| e.to_string())?;
+
+    let addresses = |list: &[crate::common::types::EmailAddress]| {
+        list.iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let message_row = cache
+        .upsert_message(&crate::data::message_cache::IncomingMessage {
+            folder_id: row.id,
+            uid,
+            message_id: parsed.message_id.clone().unwrap_or_default(),
+            subject: parsed.subject.clone(),
+            from_addr: addresses(&parsed.from),
+            to_addr: addresses(&parsed.to),
+            cc: Some(addresses(&parsed.cc)).filter(|cc| !cc.is_empty()),
+            reply_to: None,
+            date: parsed.date.clone().unwrap_or_default(),
+            internal_date: None,
+            size_bytes: Some(raw.len() as i64),
+            refs_header: None,
+            read: true,
+            starred: false,
+            answered: false,
+            draft: false,
+            deleted: false,
+            has_attachments: !parsed.attachments.is_empty(),
+            safety: crate::service::safety::Verdict::ordinary(),
+            gmail_message_id: None,
+            labels: None,
+            receipt_to: None,
+            pop_uidl: None,
+        })
+        .map_err(|e| e.to_string())?;
+    cache
+        .save_message_body(
+            message_row,
+            parsed.body_plain.as_deref(),
+            parsed.body_html.as_deref(),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Watch the inbox for arrivals on a connection of its own.
@@ -6917,6 +7146,15 @@ fn spawn_mail_sync(
             fail("Add an account before checking for mail".to_string());
             return;
         };
+
+        // POP and IMAP are different enough that they are different paths
+        // rather than one with branches through it. POP has no folders, no
+        // flags and nothing to select, so almost none of what follows applies.
+        if account.protocol() == crate::common::types::Protocol::Pop3 {
+            check_pop_mail(&account, &handle, &tx);
+            return;
+        }
+
         if account.imap_server.trim().is_empty() {
             fail(format!("{} has no IMAP server set", account.name));
             return;

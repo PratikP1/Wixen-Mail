@@ -8,6 +8,31 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **POP accounts work.** They could not be created at all before: the account
+  had IMAP and SMTP settings and nothing else, and the POP3 client behind them
+  was a simulation that opened no connection, ignored the password it was given,
+  and answered every command from three messages it had made up called "POP3
+  Test Message 1" through 3. The roadmap ticked it as done.
+  There is now a real client, and an account can say it reads mail with POP.
+  Choose it when you add or edit an account, and give it a POP server, port and
+  TLS answer of its own.
+  **Mail is left on the server unless you say otherwise.** POP3 has one delete
+  and it is permanent, so a client that clears the server as it downloads leaves
+  you with one copy on one computer. If you do turn it off, you also say how
+  many days to keep mail for, and nothing is ever removed that this computer did
+  not download.
+
+- **A POP account gets Inbox, Drafts, Outbox, Sent, Junk and Trash on this
+  computer.** POP3 has no folders at all, so without these an account is a list
+  of incoming mail with nowhere to put anything: no record of what you sent, no
+  drafts, and a delete that can only be permanent. They are ordinary folders, so
+  the tree lists them, search reads them, and move and copy offer them.
+
+- **Every account has an Outbox you can open.** Mail waiting to go was a queue
+  with a count beside it and no way to see, read or remove what was in it. It is
+  a folder now, on IMAP accounts too, because a message that has not been sent
+  is on no server by definition.
+
 - **Deleting a message puts it in the Trash.** It used to mark the message deleted and clear it out where it stood. That means something different on every provider, and on Gmail it means whichever of three things a setting in Gmail's own web interface says, which Wixen Mail cannot see and never asked about. So a delete now moves the message to Trash, which behaves the same everywhere and can be undone by going and getting it.
   `Delete` is still one key and still asks nothing. It is a key you press twenty times going through a morning's mail, and a question in front of it is twenty questions; the message being recoverable from the Trash is what makes not asking safe.
   `Shift+Delete` removes the message from the server outright, with no copy anywhere. That does not ask either, on the same reasoning as everywhere else in Windows.
