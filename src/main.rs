@@ -183,10 +183,15 @@ fn finish_erasing(mut left_behind: Vec<String>) -> i32 {
         )),
     }
 
+    // Written either way. A note only on failure makes silence ambiguous
+    // between "it worked" and "it never ran", and an uninstall that left the
+    // whole data folder behind wrote nothing at all, so there was no way to
+    // tell which had happened.
+    report_what_was_left(&left_behind);
+
     if left_behind.is_empty() {
         return 0;
     }
-    report_what_was_left(&left_behind);
     // Something was left. The uninstaller does not read this today, which is
     // recorded against the uninstall test rather than guessed at here, but a
     // command that could not do what it was asked should not report success to
@@ -200,11 +205,7 @@ fn finish_erasing(mut left_behind: Vec<String>) -> i32 {
 /// are gone when they are not.
 fn report_what_was_left(problems: &[String]) {
     let path = std::env::temp_dir().join("wixen-mail-uninstall.log");
-    let body = format!(
-        "Wixen Mail v{} could not remove everything:\n{}\n",
-        env!("CARGO_PKG_VERSION"),
-        problems.join("\n")
-    );
+    let body = wixen_mail::application::forget::note(env!("CARGO_PKG_VERSION"), problems);
     let _ = std::fs::write(path, body);
 }
 

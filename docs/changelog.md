@@ -19,6 +19,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   and settings**, which both copies share. It does not do this by running the
   other uninstaller, which would have erased them.
 
+- **Uninstalling now says what it did, not only what it could not do.** The
+  note it leaves in your temporary folder was written only when something was
+  left behind, so finding no note meant either that everything went or that the
+  step never ran, and there was no way to tell which. An uninstall that left the
+  whole data folder in place wrote nothing at all.
+
+  **Known limitation:** an uninstall has been seen to leave the data folder
+  (mail cache, settings and logs) in `%LOCALAPPDATA%\wixen-mail`. Nothing was
+  holding the files and no error was reported. Until that is understood, check
+  that folder after uninstalling and delete it yourself if it is still there.
+  Passwords and tokens live in the Windows credential store, not in that folder.
+
 - **Removing the other copy also takes it out of Apps and Features.** It did
   not, so Windows kept offering to uninstall a program that was no longer on
   the disk. Setup is elevated while installing for everybody, and Windows then

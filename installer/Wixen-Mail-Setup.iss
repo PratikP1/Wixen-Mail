@@ -116,17 +116,17 @@ Filename: "{app}\wixen-mail.exe"; Description: "Start {#AppName}"; Flags: nowait
 // So setup looks in the scope it is not installing into, and offers to remove
 // what it finds there first.
 //
-// Which of the two checks below does the work depends on how setup was
-// started, and the first draft of this had it backwards. Installing for
-// everybody means setup is elevated, and the two halves of "the current user"
-// then disagree: Inno keeps the shell folders pointing at whoever started
-// setup, while HKEY_CURRENT_USER follows the elevated token. So the registry
-// check finds nothing on exactly the path that matters most, and the
-// filesystem check is what actually fires.
+// There are two checks below because they find different things and because,
+// on the one occasion this has run for real, only one of them worked. Setup
+// log #005 shows the prompt appearing with the right folder, so something
+// found it; the registry key was still there afterwards, so the registry half
+// did not do its part. Which of the two found it is not recorded, and rather
+// than pick the flattering explanation, both are kept.
 //
-// Still worth having both. The registry check is the one that works when
-// installing for one person, and it is the only one that can find a copy
-// somebody installed somewhere other than the default folder.
+// They are worth keeping anyway. The registry check is the only one that can
+// find a copy installed somewhere other than the default folder, and the
+// filesystem check is the only one that can find a copy Windows has already
+// forgotten.
 
 const
   UninstallEntry =
@@ -189,16 +189,21 @@ end;
 // Take the stale entry out of Apps and Features, and say whether that worked.
 //
 // Not RegDeleteKeyIncludingSubkeys when installing for everybody, which is the
-// obvious way and quietly does nothing. Setup is elevated by then, and the two
-// halves of "the current user" stop agreeing: Inno keeps {localappdata} and the
-// rest of the shell folders pointing at whoever started setup, while
-// HKEY_CURRENT_USER follows the token it is now running under. So the folder is
-// found and removed, the registry key is looked for in a different account's
-// hive, and the delete reports nothing because there was nothing there.
+// obvious way and quietly did nothing. The first version of this removed the
+// folder and the Start Menu entry and left Apps and Features still offering to
+// uninstall a program that no longer existed, on a machine where the key was
+// plainly there and the same account could delete it by hand.
 //
-// Observed, not guessed. The first version of this removed the folder and the
-// Start Menu entry and left Apps and Features still offering to uninstall a
-// program that no longer existed.
+// Why it failed is not established. The theory at the time was that an elevated
+// setup sees a different HKEY_CURRENT_USER, but that does not fit: the folder
+// was found through {localappdata} and removed, so setup had the right profile,
+// and elevating an account that is already an administrator keeps its hive.
+// Writing the guess down as the cause would be worse than saying this much.
+//
+// reg.exe as the original user is not a workaround for a known fault so much as
+// a way of not depending on the answer: whatever setup is running as, it reaches
+// the hive of the person who started it, and its exit code says whether it
+// worked.
 //
 // reg.exe run as the original user reaches the right hive whatever setup is
 // running as.

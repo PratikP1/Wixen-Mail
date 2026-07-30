@@ -104,6 +104,29 @@ pub fn forget(entries: &[CredentialEntry]) -> ForgetOutcome {
 /// they are kept, and does nothing if it cannot be opened: an installation with
 /// no database never signed in to anything except possibly the master key,
 /// which is erased either way.
+/// What the uninstall leaves behind as a record of what it did.
+///
+/// Written every time, including when everything went, which is the change from
+/// the version that only wrote it on failure. Silence then meant two different
+/// things, success and never having run at all, and after an uninstall that
+/// left the entire data folder in place there was no way to tell them apart.
+/// The one question this file exists to answer was the one it could not.
+///
+/// It says the version because a note from an old build explaining a failure in
+/// a new one has sent an investigation the wrong way once already.
+pub fn note(version: &str, left_behind: &[String]) -> String {
+    if left_behind.is_empty() {
+        return format!(
+            "Wixen Mail v{version} removed everything it stored: the data \
+             folder, and every password and token in the credential store.\n"
+        );
+    }
+    format!(
+        "Wixen Mail v{version} could not remove everything:\n{}\n",
+        left_behind.join("\n")
+    )
+}
+
 pub fn run() -> ForgetOutcome {
     let (accounts, calendar_ids) = stored_identities();
     forget(&entries_for(&accounts, &calendar_ids))
@@ -214,6 +237,25 @@ mod tests {
             service: "wixen-mail-caldav-cal-7".to_string(),
             user: "password".to_string(),
         }));
+    }
+
+    #[test]
+    fn test_the_note_is_written_even_when_everything_went() {
+        // Silence used to mean two different things: it worked, or it never
+        // ran. After an uninstall that left the whole data folder behind there
+        // was no way to tell which, and that is the one question this answers.
+        let said = note("0.7.7", &[]);
+
+        assert!(said.contains("0.7.7"), "{said}");
+        assert!(!said.contains("could not"), "{said}");
+    }
+
+    #[test]
+    fn test_the_note_lists_what_survived() {
+        let said = note("0.7.7", &["Could not remove C:\\somewhere".to_string()]);
+
+        assert!(said.contains("could not remove everything"), "{said}");
+        assert!(said.contains("C:\\somewhere"), "{said}");
     }
 
     #[test]
