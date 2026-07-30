@@ -30,7 +30,7 @@ use crate::presentation::pim_rows;
 use crate::presentation::read_aloud::{self, ReadAloud};
 use crate::presentation::reader_text;
 use crate::presentation::theme;
-use crate::presentation::wx_reader;
+use crate::presentation::wx_reader::{self, GoneBack};
 use async_channel::{Receiver, Sender};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -1910,41 +1910,23 @@ document.addEventListener('keydown', function(e) {
                         open_single_message(&reader, &thread_cache, &message);
                         return;
                     }
-                    match wx_thread_view::show_thread_dialog(&frame, &subject, &nodes, &a11y) {
-                        wx_thread_view::ThreadChoice::WholeConversation => {
-                            open_conversation(&reader, &thread_cache, &subject, &nodes);
-                        }
-                        wx_thread_view::ThreadChoice::AsHeadings => {
-                            show_conversation_as_page(
-                                &frame,
-                                &a11y,
-                                &subject,
-                                &conversation_parts(&thread_cache, &nodes),
-                            );
-                        }
-                        wx_thread_view::ThreadChoice::Message(id) => {
-                            // The lock is taken and released before anything
-                            // else runs. Holding it across a widget call
-                            // deadlocked the UI thread once, and a screen
-                            // reader asking a frozen thread for a name never
-                            // gets an answer.
-                            let chosen = {
-                                let s = lock_state(&state);
-                                s.messages.iter().find(|m| m.message_id == id).cloned()
-                            };
-                            match chosen {
-                                Some(message) => {
-                                    open_single_message(&reader, &thread_cache, &message)
-                                }
-                                None => msg_list.set_focus(),
-                            }
-                        }
-                        wx_thread_view::ThreadChoice::Cancelled => {
-                            // Focus back where it came from. Without this a
-                            // dismissed dialog leaves a keyboard user nowhere.
-                            msg_list.set_focus();
-                        }
-                    }
+                    // Opening a conversation, and coming back out of it,
+                    // is a loop rather than a one-way trip. Escape out of a
+                    // message opened from a conversation belongs back in the
+                    // conversation; going up two levels at once puts somebody
+                    // in the mailbox having lost their place, and for anybody
+                    // navigating by ear their place is the only thing telling
+                    // them where they are.
+                    open_conversation_again(
+                        &frame,
+                        &reader,
+                        &thread_cache,
+                        &a11y,
+                        &msg_list,
+                        subject.clone(),
+                        nodes,
+                        state.clone(),
+                    );
                 }
             });
 
@@ -6831,6 +6813,95 @@ fn spawn_server_change(
     });
 }
 
+/// Show a conversation, and come back to it when the reading window closes.
+///
+/// Calls itself. Opening a conversation is not a one-way trip: somebody reads a
+/// message, comes back, reads another. Before this, closing the reader put them
+/// in the mailbox two levels up, having lost their place in the conversation
+/// entirely, which for anybody navigating by ear is the only thing telling them
+/// where they are.
+///
+/// The recursion is bounded by the person: each turn needs a keypress, and
+/// Escape ends it. Each opened window sets what to do when it closes, and that
+/// is taken out of the cell before it runs, so closing twice cannot open two.
+#[allow(clippy::too_many_arguments)]
+fn open_conversation_again(
+    frame: &Frame,
+    reader: &Rc<wx_reader::ReaderWindow>,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
+    msg_list: &ListCtrl,
+    subject: String,
+    nodes: Vec<wx_thread_view::ThreadNode>,
+    state: Arc<StdMutex<WxUIState>>,
+) {
+    let choice = wx_thread_view::show_thread_dialog(frame, &subject, &nodes, a11y);
+
+    // What to do when the window this opens is closed: come back here.
+    let again = {
+        let frame = *frame;
+        let reader = reader.clone();
+        let cache = cache.clone();
+        let a11y = a11y.clone();
+        let msg_list = *msg_list;
+        let subject = subject.clone();
+        let nodes = nodes.clone();
+        let state = state.clone();
+        Rc::new(move || {
+            open_conversation_again(
+                &frame,
+                &reader,
+                &cache,
+                &a11y,
+                &msg_list,
+                subject.clone(),
+                nodes.clone(),
+                state.clone(),
+            );
+        }) as Rc<dyn Fn()>
+    };
+
+    match choice {
+        wx_thread_view::ThreadChoice::AsHeadings => {
+            show_conversation_as_page(
+                frame,
+                a11y,
+                &subject,
+                &conversation_parts(cache, &nodes),
+                Some(again),
+            );
+        }
+        wx_thread_view::ThreadChoice::WholeConversation => {
+            reader.on_closed(Some(again));
+            open_conversation(reader, cache, &subject, &nodes);
+        }
+        wx_thread_view::ThreadChoice::Message(id) => {
+            // The lock is taken and released before anything else runs.
+            // Holding it across a widget call deadlocked the UI thread once,
+            // and a screen reader asking a frozen thread for a name never gets
+            // an answer.
+            let chosen = {
+                let s = lock_state(&state);
+                s.messages.iter().find(|m| m.message_id == id).cloned()
+            };
+            match chosen {
+                Some(message) => {
+                    reader.on_closed(Some(again));
+                    open_single_message(reader, cache, &message);
+                }
+                None => msg_list.set_focus(),
+            }
+        }
+        wx_thread_view::ThreadChoice::Cancelled => {
+            // Out of the conversation and back to the mailbox, which is the
+            // one place Escape from here should go. Without this a dismissed
+            // dialog leaves a keyboard user nowhere.
+            reader.on_closed(None);
+            msg_list.set_focus();
+        }
+    }
+}
+
 /// Show a conversation as a page, so its messages are real headings.
 ///
 /// A second reading surface, opened on purpose, never the default. The text
@@ -6855,6 +6926,7 @@ fn show_conversation_as_page(
     a11y: &Arc<Accessibility>,
     subject: &str,
     parts: &[reader_text::ConversationPart],
+    closed: Option<Rc<dyn Fn()>>,
 ) {
     let frame = Frame::builder()
         .with_parent(parent)
@@ -6896,11 +6968,35 @@ fn show_conversation_as_page(
     // Closing has to work, and a frame that is destroyed while its WebView is
     // still hosting an out of process browser takes the application with it.
     // Hidden and dropped is what the reader window does and it is what works.
-    frame.on_close(move |event| {
-        if let WindowEventData::General(ref base) = event {
-            base.veto();
+    // Where closing goes back to, and a timer to get there. Calling it from
+    // inside the close handler would open a modal dialog while the window it
+    // came from is still finishing its own event, which is a message loop
+    // reentering itself.
+    let closed: GoneBack = Rc::new(RefCell::new(closed));
+    let go_back = Rc::new(wxdragon::timer::Timer::new(&frame));
+    go_back.on_tick({
+        let closed = closed.clone();
+        move |_| {
+            // Taken out before it runs, so closing twice cannot open two.
+            let back_to = closed.borrow_mut().take();
+            if let Some(back_to) = back_to {
+                back_to();
+            }
         }
-        frame.show(false);
+    });
+
+    frame.on_close({
+        let closed = closed.clone();
+        let go_back = go_back.clone();
+        move |event| {
+            if let WindowEventData::General(ref base) = event {
+                base.veto();
+            }
+            frame.show(false);
+            if closed.borrow().is_some() {
+                go_back.start(1, true);
+            }
+        }
     });
 
     frame.show(true);
@@ -6908,7 +7004,7 @@ fn show_conversation_as_page(
     let _ = a11y.announce(
         &format!(
             "{subject}, as headings. Press H to move between messages. Close \
-             the window to go back."
+             the window to go back to the conversation."
         ),
         crate::presentation::accessibility::announcements::Priority::Normal,
     );

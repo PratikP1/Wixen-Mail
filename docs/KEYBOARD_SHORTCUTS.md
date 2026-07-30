@@ -87,8 +87,17 @@ greyed out in modules where they mean nothing, so your screen reader says
 ### The Reader Window
 
 `Enter` on a message opens it in the reader. `Enter` on a message that belongs
-to a conversation opens the conversation tree first; both choices from there
-open into the same reader window.
+to a conversation opens the conversation tree first.
+
+From the conversation tree, `Enter` on the top row opens the whole conversation
+as a page, where every message is a real heading, `H` moves between them, and
+links are links your screen reader can list. `Enter` on a single message opens
+that one in the reader.
+
+**Closing any of those goes back to the conversation, not to the mailbox.**
+Escape from the conversation is what takes you back to the message list, so
+reading three messages from one thread is three trips out and back rather than
+three trips out and three trips back down.
 
 The reader is a read-only text control, not a browser, so everything you expect
 from a text control works: arrow keys move by character, word and line, `Home`
@@ -168,10 +177,14 @@ The reader is a text control, which has no headings, so `H` does nothing in it.
 `Ctrl+Down` and `Ctrl+Up` move between the messages of a conversation instead,
 and they always have.
 
-When a thread is long enough that one key at a time is the slow way round, the
-conversation dialog has an **As Headings** button. It opens the whole
-conversation as a page in a window of its own, where every message is a real
-heading and `H` moves between them at the level the reply sits at.
+Opening a whole conversation gives you the page instead. Every message is a
+real heading, `H` moves between them at the level the reply sits at, and links
+keep their text. A conversation is a shape, and a text box has no way to express
+one: no headings to move between, no way to tell where one message ends except
+by reading all of it.
+
+The conversation dialog has an **As Plain Text** button for the text version,
+which has no headings and can be searched with `Ctrl+F`.
 
 That window shows the conversation and nothing else, which is what makes it safe
 to use a browser control here at all. What used to trap people was the preview
@@ -180,8 +193,8 @@ pane: a browser sharing a window with a folder tree and a message list, where
 swallowed both. Here there is nowhere else to go, so closing the window is the
 way out and there is nothing to escape from.
 
-The text reader stays the default and stays where it was. This is a second way
-of reading the same thread, not a replacement.
+The text reader is still what a single message opens into, and is still a
+button away for a whole conversation.
 
 #### The security warning
 

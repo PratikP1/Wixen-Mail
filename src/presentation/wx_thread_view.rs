@@ -16,7 +16,7 @@ use std::sync::Arc;
 use wxdragon::prelude::*;
 
 /// The dialog's third answer, alongside the stock OK and Cancel.
-const ID_HEADINGS: Id = ID_HIGHEST + 950;
+const ID_PLAIN_TEXT: Id = ID_HIGHEST + 950;
 
 /// One message as the tree shows it.
 #[derive(Debug, Clone)]
@@ -37,14 +37,18 @@ pub struct ThreadNode {
 /// What the user chose.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ThreadChoice {
-    /// Show the whole conversation as one document.
-    WholeConversation,
-    /// Show the whole conversation as a page, with real headings.
+    /// Show the whole conversation as one plain document.
     ///
-    /// A second reading surface rather than a replacement. The text one is
-    /// focusable, arrow-navigable and searchable, and it has no headings, so
-    /// this is the answer when a thread is long enough that moving between
-    /// messages one key at a time is the slow way round.
+    /// The text control: focusable, arrow-navigable, searchable, and with no
+    /// structure in it at all. Worth having, and not what a conversation should
+    /// open into, which is why it is no longer what Enter does.
+    WholeConversation,
+    /// Show the whole conversation as a page, with real headings and links.
+    ///
+    /// What opening a conversation does. A conversation is a shape, and the
+    /// text control has no way to express one: no headings for `H` to move
+    /// between, no links a screen reader can list, no way to tell where one
+    /// message ends and the next begins except by reading it all.
     AsHeadings,
     /// Show this message alone.
     Message(i64),
@@ -119,16 +123,16 @@ pub fn show_thread_dialog(
         .with_label("&Open")
         .with_id(ID_OK)
         .build();
-    let headings = Button::builder(&dlg)
-        .with_label("As &Headings")
-        .with_id(ID_HEADINGS)
+    let plain = Button::builder(&dlg)
+        .with_label("As Plain &Text")
+        .with_id(ID_PLAIN_TEXT)
         .build();
     let cancel = Button::builder(&dlg)
         .with_label("Cancel")
         .with_id(ID_CANCEL)
         .build();
     buttons.add(&open, 0, SizerFlag::All, 4);
-    buttons.add(&headings, 0, SizerFlag::All, 4);
+    buttons.add(&plain, 0, SizerFlag::All, 4);
     buttons.add(&cancel, 0, SizerFlag::All, 4);
     sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
     dlg.set_sizer(sizer, true);
@@ -160,7 +164,7 @@ pub fn show_thread_dialog(
     tree.select_item(&root);
     tree.set_focus();
 
-    let chosen = std::rc::Rc::new(std::cell::RefCell::new(ThreadChoice::WholeConversation));
+    let chosen = std::rc::Rc::new(std::cell::RefCell::new(ThreadChoice::AsHeadings));
 
     // Selection drives the choice, so pressing Enter, clicking Open, and
     // double-clicking a row all act on the same thing: the row you are on.
@@ -176,14 +180,16 @@ pub fn show_thread_dialog(
                 .and_then(|data| data.downcast_ref::<i64>().copied())
             {
                 Some(id) => ThreadChoice::Message(id),
-                None => ThreadChoice::WholeConversation,
+                // No data means the root, which is the whole conversation, and
+                // a conversation opens as a page.
+                None => ThreadChoice::AsHeadings,
             };
         }
     });
 
     tree.on_item_activated(move |_| dlg.end_modal(ID_OK));
     open.on_click(move |_| dlg.end_modal(ID_OK));
-    headings.on_click(move |_| dlg.end_modal(ID_HEADINGS));
+    plain.on_click(move |_| dlg.end_modal(ID_PLAIN_TEXT));
     cancel.on_click(move |_| dlg.end_modal(ID_CANCEL));
 
     let _ = a11y.announce(
@@ -193,9 +199,10 @@ pub fn show_thread_dialog(
 
     match dlg.show_modal() {
         ID_OK => chosen.borrow().clone(),
-        // Always the whole thread, whichever row the tree was on. The point of
-        // the page is the shape of the conversation, and one message has none.
-        ID_HEADINGS => ThreadChoice::AsHeadings,
+        // Always the whole thread, whichever row the tree was on. The plain
+        // reading is of the conversation, and one message already has its own
+        // way in through Enter.
+        ID_PLAIN_TEXT => ThreadChoice::WholeConversation,
         _ => ThreadChoice::Cancelled,
     }
 }

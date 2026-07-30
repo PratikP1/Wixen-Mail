@@ -49,6 +49,14 @@ type SaveHandler = Box<dyn Fn(&ReaderAttachment)>;
 type ReadHandler = Box<dyn Fn(&ReaderAttachment)>;
 
 /// A reader window, kept alive for as long as it is open.
+/// Where closing a reading window goes back to, if anywhere.
+///
+/// `None` means the window it was opened over, which is the mailbox. Set when
+/// the window was opened from somewhere a person should return to, such as a
+/// conversation, and taken out of the cell before it runs so closing twice
+/// cannot open two.
+pub type GoneBack = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+
 pub struct ReaderWindow {
     frame: Frame,
     notebook: Notebook,
@@ -62,6 +70,25 @@ pub struct ReaderWindow {
     attachment_lists: Rc<RefCell<Vec<Option<ListBox>>>>,
     save_attachment: Rc<RefCell<Option<SaveHandler>>>,
     read_attachment: Rc<RefCell<Option<ReadHandler>>>,
+    /// What to do when this window is closed, if anything.
+    ///
+    /// Set when the reader was opened from somewhere a person should come back
+    /// to. Escape out of a message opened from a conversation belongs back in
+    /// the conversation, not in the mailbox two levels up: going up two at once
+    /// loses their place, and for somebody navigating by ear their place is the
+    /// only thing telling them where they are.
+    ///
+    /// Cleared whenever the reader is opened from somewhere else, or closing a
+    /// message would keep reopening the conversation it once came from.
+    closed: GoneBack,
+    /// Runs the callback above, once, after the close has finished.
+    ///
+    /// A one-shot timer rather than a direct call. What the callback opens is a
+    /// modal dialog, and showing one from inside the close handler of the
+    /// window it came from means starting a message loop inside the one that is
+    /// still finishing. The timer fires on the same thread a moment later, with
+    /// the close over and done with.
+    go_back: Rc<Timer<Frame>>,
     a11y: Arc<Accessibility>,
 }
 
@@ -269,6 +296,19 @@ impl ReaderWindow {
             }
         });
 
+        let closed: GoneBack = Rc::new(RefCell::new(None));
+        let go_back = Rc::new(Timer::new(&frame));
+        go_back.on_tick({
+            let closed = closed.clone();
+            move |_| {
+                // Taken out before it runs, so closing twice cannot open two.
+                let back_to = closed.borrow_mut().take();
+                if let Some(back_to) = back_to {
+                    back_to();
+                }
+            }
+        });
+
         Self {
             frame,
             notebook,
@@ -277,6 +317,8 @@ impl ReaderWindow {
             attachment_lists: Rc::new(RefCell::new(Vec::new())),
             save_attachment: Rc::new(RefCell::new(None)),
             read_attachment: Rc::new(RefCell::new(None)),
+            closed,
+            go_back,
             a11y: a11y.clone(),
         }
     }
@@ -498,6 +540,8 @@ impl ReaderWindow {
 
     /// Give one tab's text control its keys.
     fn wire_tab(&self, text: &TextCtrl, index: usize) {
+        let closed = self.closed.clone();
+        let go_back = self.go_back.clone();
         let documents = self.documents.clone();
         let a11y = self.a11y.clone();
         let frame = self.frame;
@@ -512,6 +556,10 @@ impl ReaderWindow {
             // control is a real window, so the key actually arrives.
             if key == 27 {
                 frame.show(false);
+                // Whatever this was opened from gets its turn back.
+                if closed.borrow().is_some() {
+                    go_back.start(1, true);
+                }
                 return;
             }
             if !event.control_down() {
@@ -643,12 +691,26 @@ impl ReaderWindow {
         // Closing the window hides it rather than destroying it, so the same
         // window is reused. Destroying it would invalidate every handle held
         // here and take the application down with the next message opened.
-        frame.on_close(move |event| {
-            if let WindowEventData::General(ref base) = event {
-                base.veto();
+        frame.on_close({
+            let closed = self.closed.clone();
+            let go_back = self.go_back.clone();
+            move |event| {
+                if let WindowEventData::General(ref base) = event {
+                    base.veto();
+                }
+                frame.show(false);
+                if closed.borrow().is_some() {
+                    go_back.start(1, true);
+                }
             }
-            frame.show(false);
         });
+    }
+
+    /// Say where closing this window should go back to.
+    ///
+    /// `None` means the window it was opened over, which is the mailbox.
+    pub fn on_closed(&self, back_to: Option<Rc<dyn Fn()>>) {
+        *self.closed.borrow_mut() = back_to;
     }
 
     /// Bring an already open window back to the front.

@@ -6,6 +6,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Fixed
+
+- **Opening a conversation gives you the page with headings, not a text box.**
+  It was the other way round: the text reader was what `Enter` did, and the page
+  with real headings and links was behind a button. A conversation is a shape,
+  and a text box has no way to express one, so the reading surface that could
+  show it was the one you had to know to ask for.
+  The text version is still there, on an **As Plain Text** button, and is still
+  what a single message opens into.
+
+- **Closing a message from a conversation goes back to the conversation.** It
+  went back to the mailbox, two levels up, so reading three messages from one
+  thread meant finding the thread again three times. If you are working by ear,
+  where you are is the only thing telling you where you are, and that threw it
+  away every time. Escape from the conversation is what takes you back to the
+  message list now.
+
 ### Added
 
 - **POP accounts work.** They could not be created at all before: the account
