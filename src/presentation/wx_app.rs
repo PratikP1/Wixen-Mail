@@ -6349,7 +6349,7 @@ fn show_about_dialog(parent: &Frame) {
         .build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
-    let version_text = format!("Version {}", env!("CARGO_PKG_VERSION"));
+    let version_text = format!("Version {}", crate::common::version::current());
     for (text, top) in [
         ("Wixen Mail".to_string(), 20),
         (version_text, 4),

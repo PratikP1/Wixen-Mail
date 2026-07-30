@@ -13,6 +13,14 @@
 const PRODUCT: &str = "Wixen Mail";
 
 fn main() {
+    // Which commit this build came from, when it was built by
+    // scripts/build-installer.sh. Empty for an ordinary `cargo build`, so a
+    // development build does not relink every time the working tree changes.
+    // See src/common/version.rs for why it is worth carrying at all.
+    let build = std::env::var("WIXEN_BUILD").unwrap_or_default();
+    println!("cargo:rustc-env=WIXEN_BUILD={build}");
+    println!("cargo:rerun-if-env-changed=WIXEN_BUILD");
+
     // Embed the Windows application manifest that declares Common Controls v6.
     // This silences the wxWidgets manifest warning and enables modern UI controls.
     #[cfg(target_os = "windows")]

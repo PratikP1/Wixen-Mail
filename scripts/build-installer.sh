@@ -15,19 +15,52 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
-# The Windows file version field holds four numbers and nothing else, so
-# "alpha.15" has to be encoded rather than carried. Dropping it, which is the
-# obvious thing to do, gives every prerelease of 0.1.0 the same file version of
-# 0.1.0.0: Windows then cannot tell two builds apart, and neither can anybody
-# reading the properties of an executable somebody sent them.
+# Which commit this build came from.
 #
-# The stage goes in front of the number so the order is the real one, with the
-# finished release above every prerelease of itself:
+# The version moves when the software changes, not when a build is handed to
+# somebody, so several builds share a version. Without this they would share a
+# file name too, and a bug report against 0.5.0 could not be matched to the
+# code it came from.
 #
-#     0.1.0-alpha.15  ->  0.1.0.1015
-#     0.1.0-beta.2    ->  0.1.0.2002
-#     0.1.0-rc.1      ->  0.1.0.3001
-#     0.1.0           ->  0.1.0.4000
+# Nothing is added at a tag: that build is the release, and the release is the
+# version. Everywhere else the commit goes on after a "+", which is build
+# metadata, so version ordering ignores it and two builds of one version stay
+# equal while remaining tellable apart.
+if git describe --exact-match --tags HEAD >/dev/null 2>&1; then
+  BUILD=""
+else
+  commit=$(git rev-parse --short=8 HEAD 2>/dev/null || echo unknown)
+  # A build made from edits nobody has committed cannot be matched to
+  # anything, and saying so is better than naming a commit it is not.
+  if ! git diff --quiet HEAD 2>/dev/null; then
+    commit="$commit.dirty"
+  fi
+  BUILD="g$commit"
+fi
+
+if [ -n "$BUILD" ]; then
+  FULL_VERSION="$VERSION+$BUILD"
+else
+  FULL_VERSION="$VERSION"
+fi
+# Read by build.rs, so the running program and its log say which build they
+# are, not only the file it was installed from.
+export WIXEN_BUILD="$BUILD"
+
+# The Windows file version field holds four numbers and nothing else, so a
+# prerelease has to be encoded rather than carried. Ordinary development
+# versions are plain and land on 4000, which is above every prerelease of
+# themselves, and that is the order Windows should see.
+#
+#     0.5.0           ->  0.5.0.4000
+#     0.6.0-alpha.1   ->  0.6.0.1001
+#     0.6.0-beta.2    ->  0.6.0.2002
+#     0.6.0-rc.1      ->  0.6.0.3001
+#     0.6.0           ->  0.6.0.4000
+#
+# The build identifier is not in here. It is metadata rather than a version,
+# there is no field for it, and squeezing a commit into a number would only
+# produce a number nobody can read back.
 IFS='.' read -r major minor patch _ <<<"${VERSION%%-*}"
 case "$VERSION" in
   *-alpha.*) stage=1 ;;
@@ -80,11 +113,11 @@ fi
 echo "== release build =="
 cargo build --release
 
-echo "== setup executable, version $VERSION, file version $VERSION_INFO =="
+echo "== setup executable, version $FULL_VERSION, file version $VERSION_INFO =="
 mkdir -p dist
 # The doubled slash is not a typo. Git Bash rewrites a leading /D into a
 # Windows path; // stops it.
-"$ISCC" //DAppVersion="$VERSION" //DVersionInfo="$VERSION_INFO" installer/Wixen-Mail-Setup.iss
+"$ISCC" //DAppVersion="$FULL_VERSION" //DVersionInfo="$VERSION_INFO" installer/Wixen-Mail-Setup.iss
 
 echo
-echo "Built dist/Wixen-Mail-Setup-$VERSION.exe"
+echo "Built dist/Wixen-Mail-Setup-$FULL_VERSION.exe"

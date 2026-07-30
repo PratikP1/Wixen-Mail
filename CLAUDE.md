@@ -265,21 +265,39 @@ the gap stays visible.
 
 ### Versioning and releases
 
-Bump the version in `Cargo.toml` as substantive changes land, in the same commit as the change. Do
-not let the version sit still through a stretch of real work and then jump at release time. A bug
-fix or a docs pass does not need a bump; a new feature, a schema change, or a behaviour change does.
+**Development happens on plain `0.x.y`.** Minor for feature work, patch for fixes. No suffix. `0.x`
+already means unstable in SemVer, so a version does not need `-alpha` on top of it to say the same
+thing twice, and it should not claim a testing programme that is not running.
+
+**A prerelease suffix stages a release that is about to go to people.** When builds start going to
+testers, cut `0.6.0-alpha.1`, then `-alpha.2`, then `0.6.0` when that round closes. That is what
+prerelease identifiers are for. Twenty-five `0.1.0-alpha.N` versions were cut before this rule
+existed, none of them tagged or published, because the version was being used as a build counter.
+
+**"Alpha" as a state of the product belongs in the product, not in the number.** Nobody reads a
+version number and learns that sending mail has never touched a real server. The first-run screen,
+the Allowed Changes settings, the end of `--help` and `docs/ALPHA_TESTING.md` say it in sentences.
+
+**Bump when the software changes, not when a build changes hands.** Several builds share a version,
+so `scripts/build-installer.sh` appends the commit it built from: `0.5.0+g64c73dd`, in the file name,
+in Apps and Features, in `--version` and in the first line of the log. After a `+` because that is
+build metadata, which version ordering ignores. Nothing is appended at a tag, since that build is
+the release. See `src/common/version.rs`.
+
+A bug fix or a docs pass does not need a bump. A new feature, a schema change, or a behaviour change
+does, in the same commit as the change rather than in a jump at release time.
 
 `docs/changelog.md` is the record. Every user-visible change gets an entry under `[Unreleased]` in
 the commit that makes it, and honest "Known limitations" notes belong there too. A feature list that
 implies something works when it does not is worse than no entry.
 
 Releases are cut deliberately. The Release workflow runs only on manual dispatch, never on push, and
-you pick the level (`alpha`, `beta`, `rc`, or `release`) when you dispatch it. It then bumps from
-whatever version it finds, commits that bump back to `main`, and tags. Since it computes the next
-version from the current one, check what is in `Cargo.toml` before dispatching so the level you pick
-lands where you expect.
+you pick the level (`patch`, `minor`, `alpha`, `beta`, `rc`, or `release`) when you dispatch it. It
+bumps from whatever version it finds, commits that bump back to `main`, and tags. Since it computes
+the next version from the current one, check what is in `Cargo.toml` before dispatching so the level
+you pick lands where you expect.
 
-`alpha`, `beta`, and `rc` publish as GitHub prereleases. Only `release` publishes as a full release,
-and it should only be used when the version genuinely is feature-complete and tested.
+`alpha`, `beta`, and `rc` publish as GitHub prereleases. `patch`, `minor` and `release` publish as
+full releases, so use them when the version genuinely is what it says.
 
 <!-- END GUARDRAILS -->

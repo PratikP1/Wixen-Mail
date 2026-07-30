@@ -3,6 +3,7 @@
 use wixen_mail::application::running::Claim;
 use wixen_mail::common::logging::{LoggerConfig, init_logging};
 use wixen_mail::common::paths::{AppPaths, LegacyLocations, MigrationReport};
+use wixen_mail::common::version;
 use wixen_mail::presentation::WxMailApp;
 use wixen_mail::presentation::command_line::{self, Command};
 use wixen_mail::presentation::scan_target;
@@ -25,7 +26,7 @@ fn main() {
             std::process::exit(erase_all_data());
         }
         Command::Help => return say(command_line::HELP),
-        Command::Version => return say(&format!("Wixen Mail {}\n", env!("CARGO_PKG_VERSION"))),
+        Command::Version => return say(&format!("Wixen Mail {}\n", version::current())),
         Command::Refused(why) => {
             // Nothing opens. A window that appeared having quietly ignored a
             // misspelled --read-only is the accident this exists to prevent,
@@ -59,7 +60,9 @@ fn main() {
     let migration = prepare_data_folder();
 
     let _log_guard = init_logging(LoggerConfig::default()).ok();
-    tracing::info!("Starting Wixen Mail v{}", env!("CARGO_PKG_VERSION"));
+    // The build identifier is part of this on purpose: a bug report arrives
+    // with a log, and several builds can share a version now.
+    tracing::info!("Starting Wixen Mail v{}", version::current());
     if let Some(why) = unmarked {
         // Not silently absorbed: without the mark, an uninstall started now
         // would not know this window is open.

@@ -1,9 +1,15 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
-Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active development, `0.1.0-beta.N` when feature-complete, `0.1.0-rc.N` for release candidates, `0.1.0` for first public release.
+
+Versioning follows [SemVer](https://semver.org/). Development happens on plain `0.x.y`, because `0.x` already means unstable and a version should not also claim a testing programme that is not running. A suffix like `0.6.0-alpha.1` stages a release that is about to go to testers. A build handed to somebody between releases carries the commit it came from, as `0.5.0+g64c73dd`; everything after the `+` is build metadata and is ignored when comparing versions.
 
 ## [Unreleased]
+
+### Changed
+
+- **Version numbers stopped pretending to be an alpha programme.** This is 0.5.0. It was `0.1.0-alpha.25`, and the twenty-five before it were never tagged and never published: the counter was moving because each build was handed over as a file whose name carries the version, not because twenty-five releases happened. `0.x` already means unstable, so the suffix was saying it a second time and claiming a testing round that has not started. What is unproven is said in sentences, on the first-run screen, in Settings, at the end of `--help` and in the testing page, which is where somebody will actually read it. `-alpha.N` is now kept for staging a release that is about to go to testers.
+  Builds between releases carry the commit they came from, as `0.5.0+g64c73dd`, in the file name, in Apps and Features, in `--version` and in the first line of the log. So a bug report can be matched to the code it came from even when several builds share a version.
 
 ### Added
 

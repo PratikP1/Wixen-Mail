@@ -7,13 +7,21 @@ on:
   workflow_dispatch:
     inputs:
       release_level:
-        description: "How to bump the version. Use 'release' to drop the prerelease suffix and cut a final version."
+        description: "How to bump. patch or minor for ordinary versions; alpha, beta or rc to stage the next one; release to drop a prerelease suffix."
         required: true
         type: choice
         options:
+          # Ordinary development, which is where most releases land. 0.x
+          # already means unstable, so a version needs no suffix to say so.
+          - patch
+          - minor
+          # Staging a release that is about to go to people. Each of these
+          # bumps from the current version and starts or advances a
+          # prerelease series: 0.5.0 then alpha gives 0.5.1-alpha.1.
           - alpha
           - beta
           - rc
+          # Drop the suffix and cut the thing the prereleases were for.
           - release
 
 env:
