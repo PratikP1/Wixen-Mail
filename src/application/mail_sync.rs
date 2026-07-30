@@ -102,6 +102,21 @@ fn uids_to_forget(on_server: &[u32], stored: &[u32]) -> Vec<u32> {
     gone
 }
 
+/// Which held messages still need their flags read back.
+///
+/// Everything the cache holds, less the ones whose headers this sync just
+/// fetched, whose flags came with them, and less the ones it just forgot,
+/// which are not on the server to be asked about.
+fn still_to_check(stored: &[u32], fetched: &[u32], forgotten: &[u32]) -> Vec<u32> {
+    let skip: std::collections::HashSet<u32> =
+        fetched.iter().chain(forgotten.iter()).copied().collect();
+    stored
+        .iter()
+        .copied()
+        .filter(|uid| !skip.contains(uid))
+        .collect()
+}
+
 /// Turn a fetched message into the row the cache stores.
 fn to_incoming(message: &ImapMessage, folder_id: i64, in_junk_folder: bool) -> IncomingMessage {
     IncomingMessage {
@@ -265,11 +280,13 @@ pub async fn sync_folder(
     // header fetch above only asks about messages this cache does not have, so
     // without this a message read on a phone stays unread here for as long as
     // the account exists.
-    let already_held: Vec<u32> = stored
-        .iter()
-        .copied()
-        .filter(|uid| !wanted.contains(uid))
-        .collect();
+    //
+    // The ones just fetched are left out, since their flags arrived with them,
+    // and so are the ones just forgotten, which are not on the server to ask
+    // about. Through sets rather than by scanning two lists: a folder of forty
+    // thousand against a page of five hundred is twenty million comparisons
+    // done for nothing.
+    let already_held: Vec<u32> = still_to_check(&stored, &wanted, &forgotten);
     let since = if renumbered {
         None
     } else {
@@ -729,6 +746,30 @@ mod tests {
             .collect();
 
         assert_eq!(names, vec!["INBOX", "Work"]);
+    }
+
+    #[test]
+    fn test_a_message_just_fetched_is_not_asked_about_again() {
+        // Its flags arrived with its headers a moment ago.
+        assert_eq!(still_to_check(&[1, 2, 3], &[2, 3], &[]), vec![1]);
+    }
+
+    #[test]
+    fn test_a_message_just_forgotten_is_not_asked_about() {
+        // It is not on the server, so asking is a longer command for nothing.
+        assert_eq!(still_to_check(&[1, 2, 3], &[], &[3]), vec![1, 2]);
+    }
+
+    #[test]
+    fn test_everything_held_and_untouched_is_asked_about() {
+        // The whole point: these are the messages whose read state can have
+        // changed on somebody's phone since the last sync.
+        assert_eq!(still_to_check(&[1, 2, 3], &[], &[]), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_a_first_sync_has_nothing_to_ask_about() {
+        assert!(still_to_check(&[], &[1, 2], &[]).is_empty());
     }
 
     fn cached(path: &str, folder_type: FolderType) -> CachedFolder {
