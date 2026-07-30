@@ -16,9 +16,13 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 - **`--read-only` and `--allow`, for one run.** `wixen-mail --read-only` changes nothing at any server that run, whatever the settings say. `wixen-mail --allow tasks` permits tasks, contacts and calendar but not mail. Neither can permit anything the settings forbid, so leaving one in a shortcut is safe.
 
-- **`--help` and `--version` actually print something.** They could not before: Wixen Mail is a windowed program with no console, so anything printed went nowhere. It now attaches to the terminal you started it from. A flag it does not recognise stops the program and says so, rather than starting up having quietly ignored what you typed.
+- **`--help` and `--version` actually print something.** They could not before: Wixen Mail is a windowed program with no console, so anything printed went nowhere. They now write to wherever the program was started from, which covers typing at a prompt and sending the output to a file with `>`. A flag it does not recognise stops the program and says so, rather than starting up having quietly ignored what you typed.
 
 ### Fixed
+
+- **A refusal goes to the error stream, where errors belong.** `wixen-mail --allow evrything > log.txt` put the complaint in the file and left the screen empty, so a typo in a shortcut looked like the program starting and then vanishing. The reason now stays on screen, and a successful run's output has nothing but its answer in it.
+
+- **Five links between the documents went nowhere.** The worst was in the alpha testing page, which the first-run screen has a button to open: the section telling you where your mail is kept pointed at a file that has never existed. The accessibility page had three links to guides that were never written, and the user guide's contents listed a section that is not in it. All five now go somewhere real, and a test fails the build if a link between our own documents breaks again.
 
 - **Compose windows are let go of when they close.** Every one stayed for the life of the session, and since the message body became a web view, each one held a browser. The preview before sending held a second, and the spell checker built a new dialog for every word it asked about, so checking a message with thirty misspellings in it left thirty behind. On a machine with modest memory, a working day of writing mail ended with the application unusable, which for this audience means losing your mail client in the middle of a job.
 

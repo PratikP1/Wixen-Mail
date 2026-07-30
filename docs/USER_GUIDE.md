@@ -3,7 +3,7 @@
 ## Table of Contents
 1. [Getting Started](#getting-started)
 2. [Account Setup](#account-setup)
-3. [Email Provider Configuration](#email-provider-configuration)
+3. [Email provider setup guides](PROVIDER_SETUP.md)
 4. [Reading and Managing Email](#reading-and-managing-email)
 5. [Composing Email](#composing-email)
 6. [Search Functionality](#search-functionality)

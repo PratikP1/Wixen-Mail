@@ -27,7 +27,7 @@ fn main() {
             // Nothing opens. A window that appeared having quietly ignored a
             // misspelled --read-only is the accident this exists to prevent,
             // and the exit code lets a script tell it from a clean start.
-            say(&format!("{why}\n"));
+            complain(&format!("{why}\n"));
             std::process::exit(2);
         }
         Command::Run(run) => run,
@@ -224,13 +224,28 @@ fn log_crash(message: &str) {
         .and_then(|mut f| std::io::Write::write_all(&mut f, timestamped.as_bytes()));
 }
 
-/// Show an error dialog using the Windows MessageBox API (works without wxWidgets).
-fn show_error_dialog(message: &str) {
+/// Whether what is being said is an answer or a complaint.
+///
+/// It decides two things: which stream the words go to, and, when there is no
+/// stream and a dialog is all that is left, what the dialog calls itself. A
+/// box headed "Wixen Mail Error" containing the help text is a lie about the
+/// help text.
+#[derive(Clone, Copy)]
+enum Tone {
+    Answer,
+    Complaint,
+}
+
+/// Show a message using the Windows MessageBox API (works without wxWidgets).
+fn show_dialog(message: &str, tone: Tone) {
     #[cfg(target_os = "windows")]
     {
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
         use std::ptr;
+
+        const MB_ICONERROR: u32 = 0x10;
+        const MB_ICONINFORMATION: u32 = 0x40;
 
         #[link(name = "user32")]
         unsafe extern "system" {
@@ -245,46 +260,121 @@ fn show_error_dialog(message: &str) {
                 .collect()
         }
 
+        let (heading, icon) = match tone {
+            Tone::Answer => ("Wixen Mail", MB_ICONINFORMATION),
+            Tone::Complaint => ("Wixen Mail Error", MB_ICONERROR),
+        };
+
         let text = to_wide(message);
-        let caption = to_wide("Wixen Mail Error");
+        let caption = to_wide(heading);
         unsafe {
-            MessageBoxW(ptr::null_mut(), text.as_ptr(), caption.as_ptr(), 0x10);
-            // MB_ICONERROR
+            MessageBoxW(ptr::null_mut(), text.as_ptr(), caption.as_ptr(), icon);
         }
     }
 
     #[cfg(not(target_os = "windows"))]
     {
+        let _ = tone;
         eprintln!("{}", message);
     }
 }
 
-/// Put something in front of somebody who started this from a terminal.
-///
-/// `windows_subsystem = "windows"` means there is no console, so `println!`
-/// goes nowhere: a person typing `wixen-mail --help` gets their prompt back
-/// and nothing else. Attaching to the console that launched us fixes that,
-/// and does nothing when there was not one, which is the ordinary case of
-/// double-clicking the icon.
-///
-/// Falls back to a dialog when there is no console at all, so `--help` from a
-/// shortcut still says something rather than appearing to do nothing.
-fn say(words: &str) {
-    #[cfg(windows)]
-    let attached = unsafe {
-        // ATTACH_PARENT_PROCESS. Fails harmlessly when there is no console to
-        // attach to, which is what happens on a double click.
-        windows::Win32::System::Console::AttachConsole(u32::MAX).is_ok()
-    };
-    #[cfg(not(windows))]
-    let attached = true;
+/// Something went wrong: say so and keep it off the output stream.
+fn show_error_dialog(message: &str) {
+    show_dialog(message, Tone::Complaint);
+}
 
-    if attached {
-        use std::io::Write;
-        let mut out = std::io::stdout();
-        let _ = out.write_all(words.as_bytes());
-        let _ = out.flush();
+/// Answer somebody who started this from a terminal.
+fn say(words: &str) {
+    put(words, Tone::Answer);
+}
+
+/// Tell somebody who started this from a terminal that it will not run.
+///
+/// Separate from [`say`] because it goes to the error stream. Redirecting the
+/// output of a run that refused to start should leave the reason on the screen
+/// rather than hiding it in the file, and anything reading a successful run's
+/// output should not have to sift complaints out of it.
+fn complain(words: &str) {
+    put(words, Tone::Complaint);
+}
+
+/// Get words in front of a person, wherever there is to put them.
+///
+/// `windows_subsystem = "windows"` means the program starts with no console,
+/// so `println!` can go nowhere at all and it has to look. In order:
+///
+/// 1. **The stream it was given.** Redirected to a file or a pipe, or
+///    inherited from the shell that launched it. This is the one that does the
+///    work, for both `wixen-mail --help` typed at a prompt and `--version`
+///    read by a script, because a shell hands its console down as the
+///    program's own handles. It has to be tried first: a build server has no
+///    console but does have a pipe, and reaching past it for the dialog in
+///    step 3 would hang the job rather than fail it. Covered by
+///    `tests/command_line_output.rs`.
+/// 2. **The console it was launched from.** For a launcher that starts us with
+///    empty handles but leaves a console above us to attach to. Attaching does
+///    not fill the empty handles, so the console is opened by name instead.
+///    This is a fallback and has not been seen to fire; it is here because the
+///    alternative when it is needed is silence.
+/// 3. **A dialog.** Nothing else is left, which means a double click or a
+///    shortcut, and appearing to do nothing is the worst answer.
+fn put(words: &str, tone: Tone) {
+    if wrote_to_stream(words, tone) {
         return;
     }
-    show_error_dialog(words);
+
+    #[cfg(windows)]
+    {
+        // ATTACH_PARENT_PROCESS. Fails when there is no console to attach to,
+        // which is what a double click looks like.
+        let attached = unsafe { windows::Win32::System::Console::AttachConsole(u32::MAX).is_ok() };
+        if attached && wrote_to_console(words) {
+            return;
+        }
+    }
+
+    show_dialog(words, tone);
+}
+
+/// Write to stdout or stderr, saying whether the words landed.
+///
+/// They do not land when the handle is empty, which is the state a program
+/// with no console and no redirection starts in.
+fn wrote_to_stream(words: &str, tone: Tone) -> bool {
+    use std::io::Write;
+
+    let written = match tone {
+        Tone::Answer => {
+            let mut out = std::io::stdout().lock();
+            out.write_all(words.as_bytes()).and_then(|()| out.flush())
+        }
+        Tone::Complaint => {
+            let mut out = std::io::stderr().lock();
+            out.write_all(words.as_bytes()).and_then(|()| out.flush())
+        }
+    };
+    written.is_ok()
+}
+
+/// Write straight to the attached console, saying whether the words landed.
+///
+/// `CONOUT$` is the console's screen buffer under the name Windows gives it.
+/// Attaching to a console does not fill in the program's own empty handles, so
+/// this is the only way to reach it. Both streams share the one buffer, which
+/// is why the tone does not choose between two of them here.
+#[cfg(windows)]
+fn wrote_to_console(words: &str) -> bool {
+    use std::io::Write;
+
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("CONOUT$")
+        .and_then(|mut console| {
+            console
+                .write_all(words.as_bytes())
+                .and_then(|()| console.flush())
+        })
+        .is_ok()
 }

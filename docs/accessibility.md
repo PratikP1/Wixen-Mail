@@ -286,9 +286,9 @@ Adjust the level of detail provided by screen readers:
 ## Resources
 
 ### Documentation
-- [Keyboard Shortcuts Quick Reference](docs/keyboard-shortcuts.md)
-- [Screen Reader User Guide](docs/screen-reader-guide.md)
-- [Accessibility FAQ](docs/accessibility-faq.md)
+- [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md)
+- [Screen reader support, in the user guide](USER_GUIDE.md#screen-reader-support)
+- [When a screen reader is not announcing something](TROUBLESHOOTING.md#screen-reader-not-announcing)
 
 ### External Resources
 - [NVDA Screen Reader](https://www.nvaccess.org/)
