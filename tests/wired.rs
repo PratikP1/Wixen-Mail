@@ -138,24 +138,15 @@ fn test_every_handled_command_has_something_that_raises_it() {
 
 /// Handlers that are known to be unreachable, and are waiting on a decision.
 ///
-/// Found by this test the day it was written, all of the same shape as `F6`:
-/// a handler, an id, no way to raise it. Each needs somebody to decide whether
-/// Wixen Mail wants the command, and that is a product question rather than a
-/// mechanical fix, so they are listed rather than quietly wired or quietly
-/// deleted. Task #71.
-const KNOWN_DEAD: [&str; 11] = [
-    "ID_CALENDAR",
-    "ID_CONTACT_MGR",
-    "ID_FILTER_MGR",
-    "ID_GET_OLDER",
-    "ID_NEXT_UNREAD",
-    "ID_OPEN_DRAFT",
-    "ID_PREV_UNREAD",
-    "ID_REFRESH_FOLDER",
-    "ID_SIG_MGR",
-    "ID_TAG_MGR",
-    "ID_TOGGLE_STAR",
-];
+/// Empty, and it should stay that way. Eleven were listed here on the day this
+/// test was written, all the same shape as the F6 bug: a handler, an id, no
+/// way to raise it. Ten of them are now menu items and the eleventh was a
+/// second route to a dialog that already had a button.
+///
+/// If something has to go in here, put the reason next to it and a task
+/// number. A name on this list with no explanation is how the list stops
+/// meaning anything.
+const KNOWN_DEAD: [&str; 0] = [];
 
 /// Whether this is one of wxWidgets' own ids rather than one of ours.
 ///
@@ -184,6 +175,62 @@ fn test_the_check_found_the_commands_at_all() {
 
     assert!(handled > 30, "only {handled} handlers found");
     assert!(raised > 20, "only {raised} menu items found");
+}
+
+#[test]
+fn test_no_two_menu_items_claim_the_same_shortcut() {
+    // wxWidgets builds the accelerator table from the menu labels, and when
+    // two items claim one key only the first gets it. The other looks bound,
+    // reads as bound to a screen reader announcing the menu, and does
+    // nothing, which is the same silent failure as a shortcut nothing raises.
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    let mut claims: Vec<(String, String)> = Vec::new();
+    for label in app.split('"').skip(1).step_by(2) {
+        // A menu label is "Text\tShortcut". The tab is written as an escape
+        // in the source, so it is two characters here rather than one.
+        let Some((text, key)) = label.split_once("\\t") else {
+            continue;
+        };
+        // Menu labels only. Anything else with a tab escape in it is a format
+        // string or a fixture.
+        if key.is_empty() || key.contains(' ') || text.len() > 40 {
+            continue;
+        }
+        // The New submenu writes its keys with a placeholder, filled in from
+        // ItemKind at build time. Those are added below from the same source
+        // the menu reads, rather than skipped: one of them is why this test
+        // exists.
+        if key.contains('{') {
+            continue;
+        }
+        claims.push((key.to_string(), text.to_string()));
+    }
+
+    // The computed half. New Reminder is Ctrl+Shift+D, and Open Draft was
+    // written as Ctrl+Shift+D too, which this caught before it shipped.
+    for kind in wixen_mail::application::new_item::ItemKind::ALL {
+        claims.push((kind.shortcut().to_string(), format!("New {kind:?}")));
+    }
+
+    assert!(
+        claims.len() > 20,
+        "only {} shortcuts found, so this is not reading the menus",
+        claims.len()
+    );
+
+    let mut collisions = Vec::new();
+    for (at, (key, text)) in claims.iter().enumerate() {
+        for (other_key, other_text) in claims.iter().skip(at + 1) {
+            if key == other_key {
+                collisions.push(format!(
+                    "{key} is claimed by both {text:?} and {other_text:?}"
+                ));
+            }
+        }
+    }
+
+    assert!(collisions.is_empty(), "{}", collisions.join("\n  "));
 }
 
 #[test]

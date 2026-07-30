@@ -108,7 +108,6 @@ menu_ids!(
     ID_NEW_CONTACT,
     ID_NEW_ACCOUNT,
     ID_SETTINGS,
-    ID_CALENDAR,
     ID_SYNC_CONTACTS,
     ID_SYNC_CALENDAR,
     ID_SYNC_TASKS,
@@ -2590,9 +2589,6 @@ document.addEventListener('keydown', function(e) {
                         _ if id == ID_SIG_MGR => {
                             managers::manage_signatures(&state, &message_cache, &frame, &ui_tx, &runtime)
                         }
-                        _ if id == ID_CALENDAR => {
-                            managers::manage_calendar(&state, &message_cache, &frame, &ui_tx, &runtime)
-                        }
                         _ if id == ID_SYNC_CONTACTS => {
                             send_status(&ui_tx, &runtime, "Contacts sync requested...");
                             spawn_contacts_sync(&state, &ui_tx, &runtime);
@@ -2835,6 +2831,30 @@ document.addEventListener('keydown', function(e) {
             .append_item(ID_SAVE_AS, "Save &As...", "Save to a file")
             .append_separator()
             .append_item(ID_CHECK_MAIL, "Check &Mail\tF9", "Check for new messages")
+            // Shift with the same key, because it is the same action reaching
+            // further back.
+            .append_item(
+                ID_GET_OLDER,
+                "Get &Older Messages\tShift+F9",
+                "Fetch the next page of older messages in this folder",
+            )
+            .append_item(
+                ID_REFRESH_FOLDER,
+                "&Refresh Folder\tF5",
+                "Read this folder again from the server",
+            )
+            .append_separator()
+            // Drafts were saved and then unreachable, which is worse than not
+            // saving them because it looks like it worked. That was fixed by
+            // writing this dialog, and then the dialog was unreachable too.
+            .append_item(
+                ID_OPEN_DRAFT,
+                // Not Ctrl+Shift+D, which is New Reminder. The collision test
+                // in tests/wired.rs caught that before it shipped, which is
+                // the entire argument for the collision test.
+                "Open &Draft...\tCtrl+Shift+O",
+                "Reopen a message you saved to finish later",
+            )
             .append_separator()
             .append_item(ID_QUIT, "&Quit\tCtrl+Q", "Exit Wixen Mail")
             .build();
@@ -3026,7 +3046,26 @@ document.addEventListener('keydown', function(e) {
             .append_item(ID_REPLY_ALL, "Reply &All\tCtrl+Shift+R", "Reply to all")
             .append_item(ID_FORWARD, "&Forward\tCtrl+L", "Forward message")
             .append_separator()
+            // How somebody works through a mailbox by ear: the next thing
+            // they have not read, without wading through the ones they have.
+            // Both handlers were written and neither could be reached.
+            .append_item(
+                ID_NEXT_UNREAD,
+                "Next &Unread\tCtrl+U",
+                "Go to the next message you have not read",
+            )
+            .append_item(
+                ID_PREV_UNREAD,
+                "Previous U&nread\tCtrl+Shift+U",
+                "Go to the previous message you have not read",
+            )
+            .append_separator()
             .append_item(ID_MARK_READ, "Mark as &Read", "Mark as read")
+            .append_item(
+                ID_TOGGLE_STAR,
+                "&Star or Unstar\tCtrl+Shift+S",
+                "Star the selected message, or take the star off",
+            )
             .append_item(ID_DELETE, "&Delete\tDel", "Delete message")
             .build();
 
@@ -3052,6 +3091,29 @@ document.addEventListener('keydown', function(e) {
                 "Sync Ta&sks",
                 "Bring tasks down from Google Tasks and Microsoft To Do",
             )
+            .append_separator()
+            // Four dialogs that were finished and then had no door: no menu
+            // item, no button, no shortcut. The contact manager overlaps the
+            // Contacts module, which is the fuller way in. It is listed here
+            // rather than deleted because which of the two Wixen Mail should
+            // keep is a decision about the product, and deleting a working
+            // dialog to avoid making that decision is the wrong direction.
+            .append_item(
+                ID_CONTACT_MGR,
+                "&Contact Manager...",
+                "See and edit the contacts stored for this account",
+            )
+            .append_item(
+                ID_FILTER_MGR,
+                "Message &Filters...",
+                "Rules that sort, mark or move messages as they arrive",
+            )
+            .append_item(
+                ID_SIG_MGR,
+                "Si&gnatures...",
+                "Text added to the end of messages you send",
+            )
+            .append_item(ID_TAG_MGR, "Ta&gs...", "Labels you can put on messages")
             .append_separator()
             .append_item(
                 ID_FLUSH_OUTBOX,

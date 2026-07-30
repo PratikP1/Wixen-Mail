@@ -24,6 +24,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 - **`--help` and `--version` actually print something.** They could not before: Wixen Mail is a windowed program with no console, so anything printed went nowhere. They now write to wherever the program was started from, which covers typing at a prompt and sending the output to a file with `>`. A flag it does not recognise stops the program and says so, rather than starting up having quietly ignored what you typed.
 
+### Added
+
+- **Ten commands that were built and unreachable now have menu items.** Next unread (`Ctrl+U`) and previous unread (`Ctrl+Shift+U`), star or unstar (`Ctrl+Shift+S`), refresh folder (`F5`), get older messages (`Shift+F9`), and open a saved draft (`Ctrl+Shift+O`), all in the Message and File menus. The contact manager, message filters, signatures and tags are in Tools.
+  Each was finished code with no way to reach it: no menu item, no button, no shortcut. The drafts one is the sharpest, because its own comment says drafts were being saved and then lost, and the dialog written to fix that was itself unreachable.
+  A test now fails the build if two menu items claim the same shortcut. It caught one immediately: opening a draft had been given `Ctrl+Shift+D`, which is already New Reminder, so one of the two would have silently done nothing.
+
 ### Fixed
 
 - **`F6` works.** It moves focus between the sidebar and the list, and says which one it arrived at. It had never worked: a handler was written for it, an id was allocated, a test guarded that id against collisions, three comments described it as working, the shortcut was in the documentation, and the page inside the message preview posted a message back to the host when somebody pressed it. No menu item and no accelerator ever raised the event, so the key did nothing, silently, which looks exactly like a shortcut that works and lands somewhere quiet.

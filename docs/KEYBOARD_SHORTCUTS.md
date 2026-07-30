@@ -270,6 +270,12 @@ can navigate. Making them real headings is being worked on.
 |--------|----------|-------------|
 | Next pane | `F6` | Move focus to the next pane and say which one |
 | Previous pane | `Shift+F6` | Move focus to the previous pane and say which one |
+| Next unread | `Ctrl+U` | Go to the next message you have not read |
+| Previous unread | `Ctrl+Shift+U` | Go to the previous message you have not read |
+| Star or unstar | `Ctrl+Shift+S` | Star the selected message, or take the star off |
+| Refresh folder | `F5` | Read this folder again from the server |
+| Get older messages | `Shift+F9` | Fetch the next page of older messages |
+| Open a draft | `Ctrl+Shift+O` | Reopen a message saved to finish later |
 | Navigate Forward | `Tab` | Move to next element in current pane |
 | Navigate Backward | `Shift+Tab` | Move to previous element in current pane |
 | Navigate List | `↑` `↓` | Move up/down in lists |
