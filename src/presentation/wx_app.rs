@@ -21,7 +21,9 @@ use crate::presentation::wx_compose::{self, ComposeMode, ComposeResult};
 use crate::presentation::wx_settings;
 use crate::presentation::wx_thread_view;
 
-use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::accessibility::names::{
+    set_accessible_name, set_accessible_name_and_description,
+};
 use crate::presentation::date_display;
 use crate::presentation::managers;
 use crate::presentation::message_columns::{self, ColumnLayout, MessageColumn};
@@ -1902,12 +1904,12 @@ document.addEventListener('keydown', function(e) {
                     let Some(thread_id) = thread_id else {
                         // Not in a conversation, so there is nothing to choose
                         // between: it opens straight into the reader.
-                        open_single_message(&reader, &thread_cache, &message);
+                        open_single_message(&frame, &reader, &a11y, &thread_cache, &message, None);
                         return;
                     };
                     let nodes = conversation_nodes(&state, &thread_id);
                     if nodes.len() < 2 {
-                        open_single_message(&reader, &thread_cache, &message);
+                        open_single_message(&frame, &reader, &a11y, &thread_cache, &message, None);
                         return;
                     }
                     // Opening a conversation, and coming back out of it,
@@ -3975,6 +3977,53 @@ fn selected_row(list: &ListCtrl) -> Option<usize> {
 /// the document says the body has not been downloaded, which is a different
 /// fact from an empty message and a much more useful one than a blank window.
 fn open_single_message(
+    frame: &Frame,
+    reader: &Rc<wx_reader::ReaderWindow>,
+    a11y: &Arc<Accessibility>,
+    cache: &Option<Arc<MessageCache>>,
+    message: &MessageItem,
+    closed: Option<Rc<dyn Fn()>>,
+) {
+    use crate::application::reading_style::Style;
+
+    // Formatted unless somebody said otherwise. A message opened as plain text
+    // has had its headings, links and tables taken out of it, and the person
+    // most affected by that is the one who cannot see the layout those things
+    // would otherwise stand in for.
+    let style = crate::data::config::ConfigManager::load_stored()
+        .map(|mgr| Style::from_stored(&mgr.app_config().read_messages_as))
+        .unwrap_or_default();
+
+    if style == Style::Formatted {
+        let body = cache
+            .as_ref()
+            .and_then(|c| c.get_message_body(message.message_id).ok().flatten())
+            .and_then(|b| b.body_html.or(b.body_plain))
+            .unwrap_or_default();
+        let mut message = message.clone();
+        message.attachments = attachments_of(cache, message.message_id);
+        show_conversation_as_page(
+            frame,
+            reader,
+            a11y,
+            &message.subject.clone(),
+            &[reader_text::ConversationPart {
+                message,
+                body,
+                depth: 0,
+            }],
+            closed,
+        );
+        return;
+    }
+    reader.on_closed(closed);
+    open_in_the_text_reader(reader, cache, message);
+}
+
+/// Open one message in the text control, whatever the setting says.
+///
+/// Used by the plain reading and by anything that wants the caret regardless.
+fn open_in_the_text_reader(
     reader: &Rc<wx_reader::ReaderWindow>,
     cache: &Option<Arc<MessageCache>>,
     message: &MessageItem,
@@ -6865,6 +6914,7 @@ fn open_conversation_again(
         wx_thread_view::ThreadChoice::AsHeadings => {
             show_conversation_as_page(
                 frame,
+                reader,
                 a11y,
                 &subject,
                 &conversation_parts(cache, &nodes),
@@ -6886,8 +6936,7 @@ fn open_conversation_again(
             };
             match chosen {
                 Some(message) => {
-                    reader.on_closed(Some(again));
-                    open_single_message(reader, cache, &message);
+                    open_single_message(frame, reader, a11y, cache, &message, Some(again));
                 }
                 None => msg_list.set_focus(),
             }
@@ -6923,6 +6972,7 @@ fn open_conversation_again(
 /// does.
 fn show_conversation_as_page(
     parent: &Frame,
+    reader: &Rc<wx_reader::ReaderWindow>,
     a11y: &Arc<Accessibility>,
     subject: &str,
     parts: &[reader_text::ConversationPart],
@@ -6938,6 +6988,10 @@ fn show_conversation_as_page(
         .with_backend(WebViewBackend::Edge)
         .build();
     set_accessible_name(&page, "Conversation");
+    // A sizer, because the window is no longer only the page: anything hanging
+    // off these messages gets a list below it.
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+    sizer.add(&page, 1, SizerFlag::Expand | SizerFlag::All, 0);
     page.enable_context_menu(false);
     page.enable_access_to_dev_tools(false);
     // The browser does not get this application's keys.
@@ -6999,12 +7053,76 @@ fn show_conversation_as_page(
         }
     });
 
+    // Anything hanging off these messages, in a list of its own. Without it,
+    // reading formatted would quietly cost somebody their attachments: the page
+    // renders bodies and nothing else, so the only sign there had been a file
+    // would be its absence.
+    let hanging_off = reader_text::attachments_in(parts);
+    if !hanging_off.is_empty() {
+        let list = ListBox::builder(&frame).build();
+        for attachment in &hanging_off {
+            list.append(&attachment.label());
+        }
+        set_accessible_name_and_description(
+            &list,
+            "Attachments",
+            "Enter reads one here where that is possible, Ctrl+S saves it, F8 \
+             goes back to the message.",
+        );
+        sizer.add(&list, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+        list.bind_internal(EventType::KEY_DOWN, {
+            let reader = reader.clone();
+            let hanging_off = hanging_off.clone();
+            move |event| {
+                event.skip(true);
+                let Some(key) = event.get_key_code() else {
+                    return;
+                };
+                // F8 goes back to the message, as it does in the reader.
+                if key == 347 {
+                    page.set_focus();
+                    return;
+                }
+                let Some(chosen) = list
+                    .get_selection()
+                    .and_then(|at| hanging_off.get(at as usize))
+                else {
+                    return;
+                };
+                // The same keys as the reader's own attachment list, running
+                // the same two actions, so neither surface can come to mean
+                // something different by them.
+                match (key, event.control_down()) {
+                    (13, _) | (79, true) => reader.read_attachment_now(chosen),
+                    (83, true) => reader.save_attachment_now(chosen),
+                    _ => {}
+                }
+            }
+        });
+
+        // F8 from the message reaches the list. Without it the list is only
+        // reachable by tabbing past a page that may be very long.
+        page.bind_internal(EventType::KEY_DOWN, move |event| {
+            event.skip(true);
+            if event.get_key_code() == Some(347) {
+                list.set_focus();
+            }
+        });
+    }
+
+    frame.set_sizer(sizer, true);
     frame.show(true);
     frame.raise();
     let _ = a11y.announce(
         &format!(
-            "{subject}, as headings. Press H to move between messages. Close \
-             the window to go back to the conversation."
+            "{subject}, as headings. Press H to move between messages.{} Close \
+             the window to go back to the conversation.",
+            match hanging_off.len() {
+                0 => String::new(),
+                1 => " 1 attachment, F8 for it.".to_string(),
+                many => format!(" {many} attachments, F8 for them."),
+            }
         ),
         crate::presentation::accessibility::announcements::Priority::Normal,
     );

@@ -86,8 +86,17 @@ greyed out in modules where they mean nothing, so your screen reader says
 
 ### The Reader Window
 
-`Enter` on a message opens it in the reader. `Enter` on a message that belongs
-to a conversation opens the conversation tree first.
+`Enter` on a message opens it, formatted: the sender's headings are headings so
+`H` moves between them, their links are links your screen reader can list, and a
+table is a table. `Enter` on a message that belongs to a conversation opens the
+conversation tree first.
+
+**To read in plain text instead**, set Settings, Reading, "Open messages" to
+plain text. That gives you the text control described below, with a caret you
+can move through the message with. It is a real trade: a caret against the
+structure the sender wrote, and neither answer is right for everybody.
+
+Either way, `F8` reaches the attachments and `Ctrl+S` saves the one you are on.
 
 From the conversation tree, `Enter` on the top row opens the whole conversation
 as a page, where every message is a real heading, `H` moves between them, and

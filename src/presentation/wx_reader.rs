@@ -706,6 +706,25 @@ impl ReaderWindow {
         });
     }
 
+    /// Do the save the application set up, for a window that is not this one.
+    ///
+    /// The page has its own attachment list and needs the same two actions.
+    /// Going through here rather than being handed its own copies means there
+    /// is one place that knows how to save an attachment, so the two surfaces
+    /// cannot come to disagree about what saving does.
+    pub fn save_attachment_now(&self, attachment: &ReaderAttachment) {
+        if let Some(handler) = self.save_attachment.borrow().as_ref() {
+            handler(attachment);
+        }
+    }
+
+    /// Do the read the application set up, for a window that is not this one.
+    pub fn read_attachment_now(&self, attachment: &ReaderAttachment) {
+        if let Some(handler) = self.read_attachment.borrow().as_ref() {
+            handler(attachment);
+        }
+    }
+
     /// Say where closing this window should go back to.
     ///
     /// `None` means the window it was opened over, which is the mailbox.

@@ -8,6 +8,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Messages open formatted, keeping the sender's headings, links and tables.**
+  Every message opened into a text box, which has none of those: no headings to
+  press `H` for, no links your screen reader can list, a table flattened into
+  lines. The structure was in the message and thrown away on the way to you, and
+  the person most affected by that is the one who cannot see the layout it would
+  otherwise stand in for.
+  Plain text is one setting away, under Settings, Reading, "Open messages". It
+  is worth having: it gives you a caret, so arrow keys move by character, word
+  and line, text can be selected and copied, and your screen reader reports
+  where you are continuously. Neither is right for everybody, so the setting
+  says what each costs rather than which is recommended.
+  **Attachments come with it.** The formatted window has its own attachment
+  list, with the same keys as before: `F8` to reach it, `Enter` to read one
+  here, `Ctrl+S` to save it. Without that, reading formatted would have quietly
+  cost you your attachments, since the page shows message bodies and nothing
+  else.
+
 - **Opening a conversation gives you the page with headings, not a text box.**
   It was the other way round: the text reader was what `Enter` did, and the page
   with real headings and links was behind a button. A conversation is a shape,

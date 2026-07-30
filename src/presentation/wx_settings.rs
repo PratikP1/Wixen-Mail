@@ -5,6 +5,7 @@
 //! and persisted through `AppConfig` / `ConfigManager`.
 
 use crate::application::autosave::AutosaveInterval;
+use crate::application::reading_style::Style as ReadingStyle;
 use crate::application::receipts::Policy;
 use crate::data::config::AppConfig;
 use crate::presentation::accessibility::feedback::{Channel, FeedbackSettings};
@@ -43,6 +44,7 @@ struct SettingsWidgets {
     // Reading
     sort_order: Choice,
     read_receipts: Choice,
+    read_messages_as: Choice,
     // Language
     language: Choice,
     check_spelling_before_send: CheckBox,
@@ -100,7 +102,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 
     // ── Tab 3: Reading
     let reading_panel = Panel::builder(&notebook).build();
-    let (sort_order, read_receipts) = build_reading_tab(&reading_panel, config);
+    let (sort_order, read_receipts, read_messages_as) = build_reading_tab(&reading_panel, config);
     notebook.add_page(&reading_panel, "Reading", false, None);
 
     // ── Tab 4: Language & Spelling
@@ -167,6 +169,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         draft_autosave,
         sort_order,
         read_receipts,
+        read_messages_as,
         language,
         check_spelling_before_send,
         check_spelling_as_you_type,
@@ -346,7 +349,7 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, SpinCtrl) 
 }
 
 /// Reading settings: sort order, mark-as-read, threading.
-fn build_reading_tab(panel: &Panel, config: &AppConfig) -> (Choice, Choice) {
+fn build_reading_tab(panel: &Panel, config: &AppConfig) -> (Choice, Choice, Choice) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Message List
@@ -429,6 +432,42 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> (Choice, Choice) {
     markread_row.add(&markread_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     read_sec.add_sizer(&markread_row, 0, SizerFlag::Expand, 0);
 
+    // How a message opens. First in this section, because it is the biggest
+    // difference between two ways of reading the same mail.
+    let style_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let style_label = StaticText::builder(panel)
+        .with_label("Open messages:")
+        .build();
+    let style_choice = Choice::builder(panel)
+        .with_choices(
+            ReadingStyle::ALL
+                .iter()
+                .map(|style| style.spoken().to_string())
+                .collect(),
+        )
+        .with_selection(Some(0))
+        .build();
+    set_accessible_name_and_description(
+        &style_choice,
+        "Open messages",
+        "Formatted keeps the sender's headings, links and tables. Plain text          gives you a caret to move through the message with, and flattens them.",
+    );
+    let chosen_style = ReadingStyle::from_stored(&config.read_messages_as);
+    style_choice.set_selection(
+        ReadingStyle::ALL
+            .iter()
+            .position(|style| *style == chosen_style)
+            .unwrap_or(0) as u32,
+    );
+    style_row.add(
+        &style_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    style_row.add(&style_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+    read_sec.add_sizer(&style_row, 0, SizerFlag::Expand, 0);
+
     // Read receipts. On the Reading tab because it is a thing that happens
     // when you open a message, which is where somebody would look for it.
     let receipt_row = BoxSizer::builder(Orientation::Horizontal).build();
@@ -478,7 +517,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> (Choice, Choice) {
     sizer.add_sizer(&read_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    (sort_choice, receipt_choice)
+    (sort_choice, receipt_choice, style_choice)
 }
 
 /// Language & Spelling: which language to check, and whether to check on send.
@@ -972,6 +1011,13 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     // Read receipts. Read by position out of `Policy::ALL`, which is the same
     // order the choices were built from, so the two cannot drift apart the way
     // a second list of words would.
+    cfg.read_messages_as = ReadingStyle::ALL
+        .get(sel(&w.read_messages_as) as usize)
+        .copied()
+        .unwrap_or_default()
+        .as_str()
+        .to_string();
+
     cfg.read_receipts = Policy::ALL
         .get(sel(&w.read_receipts) as usize)
         .copied()

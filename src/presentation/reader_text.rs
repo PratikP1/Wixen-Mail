@@ -241,6 +241,20 @@ fn warning_for(level: crate::service::safety::Safety, reasons: &[String]) -> Opt
     })
 }
 
+/// Every attachment hanging off the messages of a conversation, in order.
+///
+/// The page renders the bodies and nothing else, so without this a message with
+/// an attachment would open showing no sign that it had one. That is the whole
+/// risk of making the page the way messages open: the reader had a list of them
+/// and this surface has to as well, or reading formatted quietly costs somebody
+/// their attachments.
+pub fn attachments_in(parts: &[ConversationPart]) -> Vec<ReaderAttachment> {
+    parts
+        .iter()
+        .flat_map(|part| attachments_of(&part.message))
+        .collect()
+}
+
 /// Compose a conversation as HTML, so its messages are real headings.
 ///
 /// The text control the reader normally uses has no headings for a screen

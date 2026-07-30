@@ -88,6 +88,13 @@ pub struct AppConfig {
     /// decides what each word means, and anything it does not know is "never".
     #[serde(default)]
     pub read_receipts: String,
+    /// Which surface a message opens into, formatted or plain text.
+    ///
+    /// Stored as a word for the same reason as the others: a settings file
+    /// written by a later version reads back as the default rather than
+    /// failing to parse, and the default here keeps what the sender wrote.
+    #[serde(default)]
+    pub read_messages_as: String,
     /// Whether the person has been shown what this alpha can and cannot do.
     ///
     /// False on a fresh installation and on an upgrade from before this
@@ -228,6 +235,9 @@ impl Default for AppConfig {
             allowed_per_account: HashMap::new(),
             last_filed_into: HashMap::new(),
             read_receipts: crate::application::receipts::Policy::Never
+                .as_str()
+                .to_string(),
+            read_messages_as: crate::application::reading_style::Style::Formatted
                 .as_str()
                 .to_string(),
             told_about_the_alpha: false,
