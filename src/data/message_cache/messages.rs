@@ -527,6 +527,12 @@ impl MessageCache {
     ///
     /// Bounded, because a search that returns two hundred thousand rows is a
     /// search nobody can use and a list that takes a visible moment to fill.
+    ///
+    /// One row per message, not per copy. On Gmail a label is a mailbox, so a
+    /// message with three labels is three rows with three UIDs, and a search
+    /// reads every folder. Grouping on Gmail's own identifier for the message
+    /// collapses those back to one. Everywhere else that identifier is null and
+    /// the grouping falls through to the row's own id, which groups nothing.
     pub fn search_messages(
         &self,
         account_id: &str,
@@ -540,7 +546,13 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT m.id, m.uid, m.message_id, m.refs_header, m.subject, m.from_addr,
+                // `MIN(m.id)` is not decoration. SQLite documents that when
+                // min or max is used in an aggregate query, every bare column
+                // comes from that same input row, so the whole row is one
+                // copy's rather than a mixture of two. Without it the choice
+                // is unspecified and could pair one copy's id with another's
+                // folder, which opens the wrong message.
+                "SELECT MIN(m.id), m.uid, m.message_id, m.refs_header, m.subject, m.from_addr,
                         m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
                         m.read, m.starred, m.answered, m.draft,
                         (m.has_attachments = 1
@@ -554,6 +566,7 @@ impl MessageCache {
                         LOWER(m.from_addr) LIKE ?2 ESCAPE '!' OR
                         LOWER(COALESCE(m.snippet, '')) LIKE ?2 ESCAPE '!'
                    )
+                 GROUP BY COALESCE(m.gmail_msgid, m.id)
                  ORDER BY m.date DESC, m.uid DESC
                  LIMIT ?3",
             )
@@ -792,6 +805,75 @@ mod tests {
             gmail_message_id: None,
             labels: None,
         }
+    }
+
+    #[test]
+    fn test_one_gmail_message_under_two_labels_is_found_once() {
+        // On Gmail a label is a mailbox, so a message with two labels is two
+        // rows with two UIDs. A folder listing shows one folder and never sees
+        // both; a search reads every folder, so it found the same message
+        // twice, and the two rows read identically when spoken.
+        let cache = fresh("search_labels");
+        let inbox = folder(&cache, "INBOX");
+        let work = folder(&cache, "Work");
+
+        let mut in_inbox = incoming(inbox, 11, "Quarterly figures");
+        in_inbox.gmail_message_id = Some(17_000_000_000_000_001);
+        let mut in_work = incoming(work, 42, "Quarterly figures");
+        in_work.gmail_message_id = Some(17_000_000_000_000_001);
+        cache.upsert_message(&in_inbox).unwrap();
+        cache.upsert_message(&in_work).unwrap();
+
+        let found = cache.search_messages("acc", "quarterly", 50).unwrap();
+
+        assert_eq!(found.len(), 1, "the same message twice: {found:#?}");
+    }
+
+    #[test]
+    fn test_two_different_messages_are_both_found() {
+        // The other half. Grouping on a column that is null for everybody
+        // except Gmail would collapse every result into one row on every
+        // other provider, which is a search that finds nothing.
+        let cache = fresh("search_distinct");
+        let inbox = folder(&cache, "INBOX");
+        cache
+            .upsert_message(&incoming(inbox, 1, "Quarterly figures"))
+            .unwrap();
+        cache
+            .upsert_message(&incoming(inbox, 2, "Quarterly figures again"))
+            .unwrap();
+
+        let found = cache.search_messages("acc", "quarterly", 50).unwrap();
+
+        assert_eq!(found.len(), 2, "{found:#?}");
+    }
+
+    fn fresh(name: &str) -> super::super::MessageCache {
+        super::super::MessageCache::new(
+            std::env::temp_dir().join(format!(
+                "wixen_{name}_{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            )),
+            None,
+        )
+        .unwrap()
+    }
+
+    fn folder(cache: &super::super::MessageCache, path: &str) -> i64 {
+        cache
+            .save_folder(&super::super::CachedFolder {
+                id: 0,
+                account_id: "acc".to_string(),
+                name: path.to_string(),
+                path: path.to_string(),
+                folder_type: "Custom".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .unwrap()
     }
 
     #[test]

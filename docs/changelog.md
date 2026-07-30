@@ -30,7 +30,7 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 - **A folder was downloaded again from scratch on every check for mail.** Saving the folder list replaced each folder's row rather than updating it, which gave the folder a new identity, threw away what it knew about the server's numbering, and took every message cached in it along with the old row. So each check for mail started over. It shows up as slowness rather than as an error, which is why it lasted.
 
-- **Gmail's folders were treated as ordinary folders.** They are labels, and one message with three labels is the same message three times, under three different numbers. Wixen Mail now reads Gmail's own identifier for a message, so two rows for one message are recognisable as one message rather than counted twice.
+- **Gmail's folders were treated as ordinary folders.** They are labels, and one message with three labels is the same message three times, under three different numbers. Wixen Mail now reads Gmail's own identifier for a message, so two rows for one message are recognisable as one. Search shows it once rather than repeating it for every label it carries, which is where the repetition was visible: a folder listing only ever shows one folder, and search reads them all.
 
 - **Counting a folder no longer opens it.** Working out how many messages are in a folder took two instructions and changed which folder was open as a side effect of asking about a different one. It is one instruction now.
 
