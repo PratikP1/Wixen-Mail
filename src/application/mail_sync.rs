@@ -292,8 +292,10 @@ pub async fn sync_folder(
     // Counts for the folder tree. The server's, not the cache's: only part of
     // a large folder is stored, so counting rows here would tell somebody
     // their inbox holds five hundred messages when it holds forty thousand.
+    // Both numbers from the same STATUS, so the tree never reads "3 unread of
+    // 2", which is what a pair taken from two commands a moment apart can say.
     let unread = counts.unread as usize;
-    cache.set_folder_counts(folder_id, unread, status.exists as usize)?;
+    cache.set_folder_counts(folder_id, unread, counts.total as usize)?;
 
     Ok(FolderSync {
         folder: folder.name.clone(),

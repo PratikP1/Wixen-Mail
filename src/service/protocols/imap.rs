@@ -230,10 +230,13 @@ impl Deletion {
 }
 
 /// What a mailbox looked like when it was selected.
+///
+/// No message count. SELECT reports one, and so does STATUS, and the two are
+/// taken a moment apart: a pair read from both can say "3 unread of 2". The
+/// count comes from [`FolderCounts`], which gets both numbers from the one
+/// command.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MailboxStatus {
-    /// How many messages the mailbox holds.
-    pub exists: u32,
     /// Changes when the server has renumbered every UID in the mailbox.
     ///
     /// When it differs from the stored value, cached UIDs mean nothing and the
@@ -727,7 +730,6 @@ impl ImapSession {
 
         self.selected = Some(path.to_string());
         Ok(MailboxStatus {
-            exists: mailbox.exists,
             uid_validity: mailbox.uid_validity,
             highest_modseq: mailbox.highest_modseq,
         })
