@@ -118,26 +118,11 @@ you can set it per account.";
 /// The button that opens the fuller page.
 pub const READ_MORE: &str = "What to test, and what is known to be broken";
 
-/// Where that page is, relative to the program.
-const TESTING_PAGE_NAME: &str = "docs/ALPHA_TESTING.md";
-
-/// The testing page, as a path that can actually be opened.
+/// Which of the shipped documents that button opens.
 ///
-/// Beside the executable, not beside the working directory. An installed copy
-/// is started from wherever the shortcut points, usually the person's home
-/// folder, so a relative path opens nothing and the button appears broken.
-/// That is not something a test in this repository would notice, because
-/// `cargo test` runs with the repository as the working directory.
-///
-/// Falls back to the plain relative path when the executable cannot be found,
-/// which is the case under `cargo run` and is where the relative one works.
-pub fn testing_page() -> std::path::PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join(TESTING_PAGE_NAME)))
-        .filter(|beside| beside.exists())
-        .unwrap_or_else(|| std::path::PathBuf::from(TESTING_PAGE_NAME))
-}
+/// Finding it and turning it into something readable is
+/// [`crate::presentation::help_page`]'s job.
+pub const TESTING_PAGE: &str = "ALPHA_TESTING.md";
 
 #[cfg(test)]
 mod tests {
@@ -216,9 +201,12 @@ mod tests {
         // A button offering to open a document that is not there is worse
         // than no button. This only proves the file is in the repository; the
         // test below is the one about the installed copy.
+        let in_repository = std::path::Path::new("docs").join(TESTING_PAGE);
+
         assert!(
-            std::path::Path::new(TESTING_PAGE_NAME).exists(),
-            "{TESTING_PAGE_NAME} is missing, so the button opens nothing"
+            in_repository.exists(),
+            "{} is missing, so the button opens nothing",
+            in_repository.display()
         );
     }
 
@@ -231,7 +219,7 @@ mod tests {
         // Under `cargo test` nothing sits beside the test binary, so this
         // falls back, and what is checked is that the fallback is the
         // repository path rather than something absolute and wrong.
-        let looked_for = testing_page();
+        let looked_for = crate::presentation::help_page::shipped(TESTING_PAGE);
 
         assert!(
             looked_for.ends_with("ALPHA_TESTING.md"),

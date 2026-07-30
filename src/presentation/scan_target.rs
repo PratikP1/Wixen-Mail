@@ -22,7 +22,16 @@
 use crate::common::{Error, Result};
 
 /// The flag that asks for a window to be opened for scanning.
-pub const FLAG: &str = "--scan-window";
+///
+/// One spelling, in one place, read by the command line parser, quoted in
+/// `--help`, and used by `.github/workflows/accessibility.yml`. There were two
+/// for a while, `--scan-window` here and `--scan-target` in the parser, and
+/// the result was the failure this module was written to prevent: the parser
+/// accepted `--scan-target settings`, handed the name to a reader that was
+/// looking for the other spelling, got back "no window asked for", and started
+/// normally. Every dialog scan since had been a second scan of the main window
+/// reported as a pass. A test below pins the flag to the workflow.
+pub const FLAG: &str = "--scan-target";
 
 /// A window the scan can be pointed at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,18 +42,23 @@ pub enum ScanTarget {
     Reader,
     Search,
     Filters,
+    /// The screen asking what Wixen Mail may change, which everybody meets
+    /// once and which no scan could reach before: it opens by itself on a
+    /// fresh profile and never again after the answer is stored.
+    FirstRun,
 }
 
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 6] = [
+    pub const ALL: [ScanTarget; 7] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
         ScanTarget::Reader,
         ScanTarget::Search,
         ScanTarget::Filters,
+        ScanTarget::FirstRun,
     ];
 
     /// The name used on the command line.
@@ -56,50 +70,29 @@ impl ScanTarget {
             Self::Reader => "reader",
             Self::Search => "search",
             Self::Filters => "filters",
+            Self::FirstRun => "first-run",
         }
     }
 
     /// Match a name from the command line.
-    fn from_name(name: &str) -> Option<Self> {
+    fn matching(name: &str) -> Option<Self> {
         let wanted = name.trim().to_ascii_lowercase();
         Self::ALL.into_iter().find(|t| t.as_name() == wanted)
     }
 }
 
-/// Which window, if any, the arguments ask to be opened for scanning.
+/// Which window a name asks for.
 ///
-/// `Ok(None)` is the ordinary case: no flag, so the application starts
-/// normally. An unrecognised name is an error rather than `None`, because
-/// silently starting normally would let the scan report a clean pass for a
-/// window it never opened.
-pub fn from_args<I, S>(args: I) -> Result<Option<ScanTarget>>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    for arg in args {
-        let arg = arg.as_ref();
-        let Some(value) = arg.strip_prefix(FLAG) else {
-            continue;
-        };
-        // `--scan-window=settings`, and nothing else. A bare `--scan-window`
-        // with the name as the next argument would be a second way to write
-        // the same thing, and two ways to write it is two things to get wrong.
-        let Some(name) = value.strip_prefix('=') else {
-            return Err(Error::Other(format!(
-                "{FLAG} needs a name, as {FLAG}=settings. Known names: {}",
-                known_names()
-            )));
-        };
-        return match ScanTarget::from_name(name) {
-            Some(target) => Ok(Some(target)),
-            None => Err(Error::Other(format!(
-                "{FLAG}={name} is not a window this knows about. Known names: {}",
-                known_names()
-            ))),
-        };
-    }
-    Ok(None)
+/// An unrecognised name is an error rather than "no window", because silently
+/// starting normally lets the scan report a clean pass for a window it never
+/// opened.
+pub fn named(name: &str) -> Result<ScanTarget> {
+    ScanTarget::matching(name).ok_or_else(|| {
+        Error::Other(format!(
+            "{FLAG}={name} is not a window this knows about. Known names: {}",
+            known_names()
+        ))
+    })
 }
 
 /// The names, for an error message that says what would have worked.
@@ -116,22 +109,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_no_flag_means_start_normally() {
-        assert_eq!(from_args::<[&str; 0], &str>([]).expect("no args"), None);
-        assert_eq!(
-            from_args(["wixen-mail.exe", "--something-else"]).expect("other args"),
-            None
-        );
-    }
-
-    #[test]
     fn test_every_target_can_be_named_on_the_command_line() {
         for target in ScanTarget::ALL {
-            let arg = format!("{FLAG}={}", target.as_name());
-
             assert_eq!(
-                from_args([arg.as_str()]).expect("a known name"),
-                Some(target),
+                named(target.as_name()).expect("a known name"),
+                target,
                 "{target:?} could not be asked for"
             );
         }
@@ -142,7 +124,7 @@ mod tests {
         // The whole point. Starting normally on a typo would have the scan
         // walk the main window, find what it always finds, and report a clean
         // pass for a dialog it never opened.
-        let error = from_args([format!("{FLAG}=setings")]).expect_err("a typo");
+        let error = named("setings").expect_err("a typo");
 
         assert!(error.to_string().contains("setings"), "{error}");
         // And it says what would have worked.
@@ -150,18 +132,46 @@ mod tests {
     }
 
     #[test]
-    fn test_the_flag_without_a_name_says_how_to_write_it() {
-        let error = from_args([FLAG]).expect_err("no name");
-
-        assert!(error.to_string().contains("=settings"), "{error}");
+    fn test_a_name_is_matched_whatever_case_it_is_written_in() {
+        assert_eq!(named("Settings").expect("mixed case"), ScanTarget::Settings);
     }
 
     #[test]
-    fn test_a_name_is_matched_whatever_case_it_is_written_in() {
-        assert_eq!(
-            from_args([format!("{FLAG}=Settings")]).expect("mixed case"),
-            Some(ScanTarget::Settings)
+    fn test_the_command_line_and_the_workflow_use_the_same_flag() {
+        // The bug this was written for was silent and total: the parser knew
+        // --scan-target, this module was reading --scan-window, so every
+        // dialog scan quietly became a second scan of the main window and the
+        // workflow reported a pass. Nothing failed, which is why it survived.
+        let workflow = std::fs::read_to_string(".github/workflows/accessibility.yml")
+            .expect("the accessibility workflow");
+
+        assert!(
+            workflow.contains(FLAG),
+            "the workflow does not pass {FLAG}, so it is asking for a window by some other name"
         );
+        assert!(
+            !workflow.contains("--scan-window"),
+            "the workflow still uses the old spelling, which the parser refuses"
+        );
+
+        let help = crate::presentation::command_line::HELP;
+        assert!(help.contains(FLAG), "--help does not document {FLAG}");
+    }
+
+    #[test]
+    fn test_the_workflow_asks_for_every_target() {
+        // Adding a window to the list and forgetting the workflow means it is
+        // never scanned, and nothing says so.
+        let workflow = std::fs::read_to_string(".github/workflows/accessibility.yml")
+            .expect("the accessibility workflow");
+
+        for target in ScanTarget::ALL {
+            assert!(
+                workflow.contains(&format!("'{}'", target.as_name())),
+                "{} is not in the workflow's target list, so it is never scanned",
+                target.as_name()
+            );
+        }
     }
 
     #[test]

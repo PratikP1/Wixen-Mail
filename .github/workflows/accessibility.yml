@@ -87,7 +87,7 @@ jobs:
         # it refuses one it does not know rather than starting normally, so a
         # typo here fails loudly instead of scanning the main window twice and
         # calling it a pass.
-        $targets = @('main', 'settings', 'accounts', 'compose', 'reader', 'search', 'filters')
+        $targets = @('main', 'settings', 'accounts', 'compose', 'reader', 'search', 'filters', 'first-run')
 
         # Point the app at a throwaway profile so the scan never touches real
         # user data and always starts from the same first-run state.
@@ -109,7 +109,7 @@ jobs:
           $outDir = Join-Path (Get-Location) "a11y-results/$target"
           New-Item -ItemType Directory -Force $outDir | Out-Null
 
-          $arguments = if ($target -eq 'main') { @() } else { @("--scan-window=$target") }
+          $arguments = if ($target -eq 'main') { @() } else { @("--scan-target", $target) }
           $app = Start-Process -FilePath 'target/release/wixen-mail.exe' `
             -ArgumentList $arguments -PassThru
           try {

@@ -77,13 +77,9 @@ fn main() {
     // Before the application is built, because an unknown name here has to
     // stop rather than start normally: a scan that walks the main window and
     // reports a clean pass for a dialog it never opened is worse than no scan.
-    let scan_target = match run
-        .scan_target
-        .as_deref()
-        .map(|name| scan_target::from_args(["--scan-target", name]))
-    {
+    let scan_target = match run.scan_target.as_deref().map(scan_target::named) {
         None => None,
-        Some(Ok(target)) => target,
+        Some(Ok(target)) => Some(target),
         Some(Err(e)) => {
             // The log and the crash file, not a dialog. This flag is only ever
             // passed by the accessibility workflow, which runs with nobody

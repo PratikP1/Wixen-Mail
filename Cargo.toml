@@ -1,6 +1,6 @@
 [package]
 name = "wixen-mail"
-version = "0.1.0-alpha.23"
+version = "0.1.0-alpha.24"
 edition = "2024"
 # Stated rather than left implicit, so an older toolchain says which version it
 # wants instead of failing partway through with a parse error. The edition needs
@@ -85,6 +85,7 @@ tokio-native-tls = "0.3"
 native-tls = "0.2"
 pdfpurr = { version = "0.4.0", default-features = false }
 sha2 = "0.11.0"
+pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
 # Only for the platform spell checker, which is COM. Everything else this
 # project needs from Windows is a flat call behind a small `#[link]` block, and
 # stays that way. Windows-only so a future port does not pay for it.

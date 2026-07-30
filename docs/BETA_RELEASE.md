@@ -42,7 +42,8 @@ Release notes are generated automatically by GitHub between tags and attached to
 ## Changelog and installer source
 
 - Changelog: [`CHANGELOG.md`](changelog.md)
-- Windows setup script: [`installer/Wixen-Mail-Setup.iss`](../installer/Wixen-Mail-Setup.iss)
+- Windows setup script: `installer/Wixen-Mail-Setup.iss` in the repository. Not linked,
+  because these pages ship beside the program and the source does not.
 
 ## In-app update links
 

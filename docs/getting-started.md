@@ -25,7 +25,7 @@ cargo build --quiet
 
 ## Where to Go Next
 
-- Product overview and current status: [../README.md](../README.md)
+- What is worth testing, and what is known to be broken: [ALPHA_TESTING.md](ALPHA_TESTING.md)
 - User documentation: [USER_GUIDE.md](USER_GUIDE.md)
 - Provider setup: [PROVIDER_SETUP.md](PROVIDER_SETUP.md)
 - Keyboard accessibility shortcuts: [KEYBOARD_SHORTCUTS.md](KEYBOARD_SHORTCUTS.md)

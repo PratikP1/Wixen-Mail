@@ -14,8 +14,11 @@
 //! and a cautious one.
 
 use crate::application::allowed::Allowed;
-use crate::presentation::accessibility::names::set_accessible_name;
-use crate::presentation::first_run::{Choice, INTRODUCTION, READ_MORE, TITLE, testing_page};
+use crate::presentation::accessibility::names::{
+    set_accessible_name, set_accessible_name_and_description,
+};
+use crate::presentation::first_run::{Choice, INTRODUCTION, READ_MORE, TESTING_PAGE, TITLE};
+use crate::presentation::help_page;
 use wxdragon::prelude::*;
 
 const ID_CONTINUE: Id = ID_HIGHEST + 300;
@@ -44,10 +47,18 @@ pub fn ask_what_is_allowed(parent: &Frame) -> Allowed {
     set_accessible_name(&introduction, INTRODUCTION);
     sizer.add(&introduction, 0, SizerFlag::Expand | SizerFlag::All, 10);
 
-    // One radio button per choice, each followed by what it costs. The
-    // explanation is a separate label rather than part of the button, because
-    // a radio button whose name is four sentences long is read out in full
-    // every time somebody arrows past it.
+    // One radio button per choice, each followed by what it costs.
+    //
+    // The explanation is both the button's accessible description and a label
+    // on screen. The description is what a screen reader reads on focus, so it
+    // is heard by the person deciding; the label is what a sighted person
+    // reads. It is not part of the accessible name, because a name is repeated
+    // in every announcement about the control and a four-sentence one is read
+    // in full each time somebody arrows past.
+    //
+    // The visible label is marked as belonging to the button rather than
+    // named in its own right, so it is not read twice: once as the button's
+    // description and again as the text underneath it.
     let group = StaticBoxSizerBuilder::new_with_label(
         Orientation::Vertical,
         &dialog,
@@ -68,7 +79,7 @@ pub fn ask_what_is_allowed(parent: &Frame) -> Allowed {
                 RadioButtonStyle::Default
             })
             .build();
-        set_accessible_name(&button, choice.label());
+        set_accessible_name_and_description(&button, choice.label(), choice.explanation());
         button.set_value(*choice == Choice::DEFAULT);
         group.add(&button, 0, SizerFlag::All, 6);
 
@@ -99,12 +110,16 @@ pub fn ask_what_is_allowed(parent: &Frame) -> Allowed {
     dialog.set_sizer(sizer, true);
 
     read_more.on_click(move |_| {
-        // The page ships beside the program. Opening it in whatever reads
-        // markdown beats rendering it here: it is long, and somebody may want
-        // to keep it open next to the application.
-        let page = testing_page();
-        if let Err(e) = open::that(&page) {
-            tracing::warn!("Could not open {}: {e}", page.display());
+        // Converted to HTML and opened in a browser, rather than handed over
+        // as Markdown. Windows gives a `.md` file to a text editor or to
+        // nothing at all, and Markdown source read aloud is hash signs and
+        // square brackets, with the headings that make a long page navigable
+        // reduced to punctuation.
+        //
+        // A browser rather than a window of our own: it already has heading
+        // navigation, find and zoom, and every screen reader knows it well.
+        if let Err(e) = help_page::open(TESTING_PAGE) {
+            tracing::warn!("Could not open the testing page: {e}");
         }
     });
     carry_on.on_click(move |_| dialog.end_modal(ID_CONTINUE));

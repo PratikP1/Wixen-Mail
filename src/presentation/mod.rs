@@ -10,6 +10,7 @@ pub mod editor_document;
 #[cfg(test)]
 pub mod editor_page_harness;
 pub mod first_run;
+pub mod help_page;
 pub mod html_renderer;
 pub mod managers;
 pub mod markdown_input;

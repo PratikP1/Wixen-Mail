@@ -20,10 +20,12 @@ use wxdragon::accessible::{AccStatus, Accessible, AccessibleImpl};
 use wxdragon::ffi;
 use wxdragon::prelude::WxWidget;
 
-/// Supplies one fixed name for a control, leaving every other accessibility
-/// property to the platform's default handling.
+/// Supplies one fixed name, and optionally a description, for a control,
+/// leaving every other accessibility property to the platform's default
+/// handling.
 struct FixedName {
     name: String,
+    description: Option<String>,
 }
 
 impl AccessibleImpl for FixedName {
@@ -52,10 +54,27 @@ impl AccessibleImpl for FixedName {
     /// here" on the control's behalf.
     ///
     /// Every other method left at its default returns `NOT_IMPLEMENTED`, which
-    /// is what makes wxWidgets use its own implementation. Only the name is
-    /// meant to be replaced here.
+    /// is what makes wxWidgets use its own implementation. Only the name and
+    /// the description are meant to be replaced here.
     fn get_child_count(&self) -> (AccStatus, i32) {
         (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, 0)
+    }
+
+    /// The sentence a screen reader reads after the name, on focus.
+    ///
+    /// This is the property that carries "what does choosing this cost me".
+    /// Putting that in the name instead makes it part of every announcement,
+    /// including the one when arrowing past, which is how a four-sentence
+    /// radio button label happens. A description is spoken once, when the
+    /// control takes focus.
+    ///
+    /// Same rule as the name about child zero: a row or a tab asking for its
+    /// own description must not be handed the control's.
+    fn get_description(&self, child_id: i32) -> (AccStatus, Option<String>) {
+        match (&self.description, child_id) {
+            (Some(description), 0) => (ffi::wxd_AccStatus_WXD_ACC_OK, Some(description.clone())),
+            _ => (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, None),
+        }
     }
 }
 
@@ -68,6 +87,32 @@ pub fn set_accessible_name(window: &dyn WxWidget, name: &str) {
         window,
         FixedName {
             name: name.to_string(),
+            description: None,
+        },
+    ));
+}
+
+/// Give `window` a name and the sentence that explains it.
+///
+/// For a control whose label is not enough on its own: a choice with a
+/// consequence, a field with a rule about what it accepts. Screen readers read
+/// the description after the name when the control takes focus, so what is on
+/// screen next to the control is heard by somebody who cannot see it.
+///
+/// Without this, an explanation sitting beside a control is a label floating in
+/// the window that a screen reader user reaches only by leaving the control and
+/// reading around, if they think to. The first-run screen shipped that way:
+/// three radio buttons that read correctly and three explanations of what each
+/// one costs that were never spoken.
+///
+/// One call, not two. Attaching an accessible object replaces the last one, so
+/// setting a name and then a description would leave only the description.
+pub fn set_accessible_name_and_description(window: &dyn WxWidget, name: &str, description: &str) {
+    window.set_accessible(Accessible::new(
+        window,
+        FixedName {
+            name: name.to_string(),
+            description: Some(description.to_string()),
         },
     ));
 }
@@ -95,6 +140,7 @@ mod tests {
     fn test_the_name_is_the_only_thing_replaced() {
         let named = FixedName {
             name: "Messages".to_string(),
+            description: None,
         };
         let (status, name) = named.get_name(0);
         assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_OK);
@@ -108,10 +154,64 @@ mod tests {
         // every one of them identically.
         let named = FixedName {
             name: "Settings categories".to_string(),
+            description: None,
         };
         let (status, name) = named.get_name(1);
         assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED);
         assert!(name.is_none());
+    }
+
+    #[test]
+    fn test_a_description_is_offered_for_the_control_itself() {
+        // The bug this was written for: the first-run screen's three choices
+        // each had a sentence beside them saying what it costs, and a screen
+        // reader never read any of them. The label was named, the explanation
+        // was a separate piece of text nobody was pointed at, and somebody
+        // choosing what Wixen Mail may change heard only "read my mail,
+        // change nothing" with no idea what the other two did.
+        let described = FixedName {
+            name: "Read my mail, change nothing".to_string(),
+            description: Some("Nothing you do here reaches your provider.".to_string()),
+        };
+
+        let (status, description) = described.get_description(0);
+
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_OK);
+        assert_eq!(
+            description.as_deref(),
+            Some("Nothing you do here reaches your provider.")
+        );
+    }
+
+    #[test]
+    fn test_a_control_with_no_description_leaves_the_question_to_the_platform() {
+        // NOT_IMPLEMENTED rather than an empty string. Answering with nothing
+        // is a claim that there is no description, which stops wxWidgets
+        // supplying whatever the control would have said for itself.
+        let named = FixedName {
+            name: "Messages".to_string(),
+            description: None,
+        };
+
+        let (status, description) = named.get_description(0);
+
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED);
+        assert!(description.is_none());
+    }
+
+    #[test]
+    fn test_children_describe_themselves() {
+        // Same trap as the name. Handing every row of a list the control's
+        // description would have each one read it out.
+        let described = FixedName {
+            name: "Messages".to_string(),
+            description: Some("Your inbox".to_string()),
+        };
+
+        let (status, description) = described.get_description(1);
+
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED);
+        assert!(description.is_none());
     }
 
     #[test]
@@ -122,6 +222,7 @@ mod tests {
         // list would have lost every row.
         let named = FixedName {
             name: "Messages".to_string(),
+            description: None,
         };
         let (status, count) = named.get_child_count();
         assert_eq!(

@@ -20,6 +20,12 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Fixed
 
+- **The first-run screen reads out what each choice costs.** The three choices had a sentence beside each one saying what it means, and a screen reader never read any of them: the label was announced, the explanation was separate text nobody was pointed at. So somebody choosing what Wixen Mail may change heard "read my mail, change nothing" and had no way to know what the other two did without leaving the control and reading around the window. The explanation is now the button's description, which is read on focus.
+
+- **The guides open as web pages instead of Markdown source.** The button on the first-run screen handed a `.md` file to Windows, which passes it to a text editor or to nothing at all. Read aloud, Markdown source is hash signs and square brackets, and the headings that make a long page navigable are punctuation. The documents are turned into HTML and opened in your browser, which has heading navigation, find and zoom already. Links between them work.
+
+- **The accessibility scan had been scanning the same window over and over.** It takes a window name so each dialog gets looked at. The command line accepted `--scan-target settings` and then asked a reader that was looking for a different spelling, got back "no window was asked for", and started normally. Every dialog scan since was a second scan of the main window, reported as a pass. One spelling now, with a test tying the command line, `--help` and the workflow together. The first-run screen has been added to the list, so it is scanned too.
+
 - **Uninstalling while Wixen Mail is open no longer takes your mail with it.** Uninstall deletes the data folder and clears your saved passwords. Doing that under an open copy removed the files it did not have open, left the ones it did, and let the copy still running write its settings back over the gap, leaving something that was neither installed nor removed. Setup and Uninstall now both stop and ask you to close it first. `--erase-all-data` typed by hand refuses for the same reason and says so, with its own exit code so a script can tell "close it and try again" apart from a real failure.
   Closing one of two open windows does not clear the mark, so the second one still protects itself.
 

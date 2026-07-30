@@ -4160,6 +4160,12 @@ fn open_for_scanning(
     match target {
         ScanTarget::Settings => handle_settings(frame, tx, rt, a11y),
         ScanTarget::Accounts => handle_account_mgr(frame, state),
+        ScanTarget::FirstRun => {
+            // The answer is thrown away. On a fresh profile this screen shows
+            // itself once and never again, so the only way to look at it more
+            // than once, by hand or from the scan, is to ask for it.
+            let _ = crate::presentation::wx_first_run::ask_what_is_allowed(frame);
+        }
         ScanTarget::Compose => {
             open_compose(frame, state, tx, rt, &None, a11y, ComposeMode::New);
         }
