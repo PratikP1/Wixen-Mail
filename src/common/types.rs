@@ -41,6 +41,12 @@ pub enum FolderType {
     Inbox,
     Sent,
     Drafts,
+    /// Mail written and not yet gone.
+    ///
+    /// Always on this computer, whatever the account is: a message that has not
+    /// been sent is on no server by definition. It was a queue with a count and
+    /// no way to see what was in it before this existed.
+    Outbox,
     Trash,
     Spam,
     Archive,
@@ -57,6 +63,7 @@ impl FolderType {
             FolderType::Inbox => "Inbox",
             FolderType::Sent => "Sent",
             FolderType::Drafts => "Drafts",
+            FolderType::Outbox => "Outbox",
             FolderType::Trash => "Trash",
             FolderType::Spam => "Spam",
             FolderType::Archive => "Archive",
@@ -75,6 +82,7 @@ impl FolderType {
             "inbox" => FolderType::Inbox,
             "sent" => FolderType::Sent,
             "drafts" => FolderType::Drafts,
+            "outbox" => FolderType::Outbox,
             "trash" => FolderType::Trash,
             "spam" | "junk" => FolderType::Spam,
             "archive" => FolderType::Archive,
@@ -91,11 +99,14 @@ impl FolderType {
         match self {
             FolderType::Inbox => 0,
             FolderType::Drafts => 1,
-            FolderType::Sent => 2,
-            FolderType::Archive => 3,
-            FolderType::Spam => 4,
-            FolderType::Trash => 5,
-            FolderType::Custom => 6,
+            // Above Sent, because mail waiting to go is something to act on
+            // and mail already gone is something to look up.
+            FolderType::Outbox => 2,
+            FolderType::Sent => 3,
+            FolderType::Archive => 4,
+            FolderType::Spam => 5,
+            FolderType::Trash => 6,
+            FolderType::Custom => 7,
         }
     }
 }

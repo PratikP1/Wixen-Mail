@@ -17,6 +17,7 @@ pub mod filters;
 pub mod forget;
 pub mod from_message;
 pub mod item_fields;
+pub mod local_folders;
 pub mod mail_auth;
 pub mod mail_controller;
 pub mod mail_sync;

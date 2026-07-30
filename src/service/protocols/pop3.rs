@@ -1,15 +1,43 @@
-//! POP3 protocol client
+//! POP3 client.
 //!
-//! **Not implemented.** Like the IMAP module, every call here returns
-//! fabricated data and performs no network I/O. The user interface must not be
-//! wired to it: invented mail shown as real mail is worse than an empty window.
+//! Speaks RFC 1939 to a real server. What this replaced did not: it opened no
+//! socket, ignored the password it was handed, and manufactured three messages
+//! called "POP3 Test Message 1" through 3. It had the full command surface, and
+//! every command answered out of a `HashMap`. The roadmap ticked it as done.
 //!
-//! Handles POP3 protocol for receiving email.
+//! # What POP3 is, and what that costs
+//!
+//! One mailbox, no folders, no flags, no server-side state beyond "still here"
+//! or "deleted". Everything a person expects from a mail client, sent mail and
+//! drafts and a trash they can recover from, has to be kept on this computer,
+//! which is what [`crate::application::local_folders`] is for.
+//!
+//! The one piece of state worth having is UIDL, the identifier a server gives
+//! each message. Message numbers are per session and shift as messages are
+//! deleted, so they mean nothing between connections. The identifier is stable,
+//! and it is the only way to tell mail already downloaded from mail that is
+//! new. A server without UIDL cannot be synced without either downloading
+//! everything every time or deleting as it goes, and this says so rather than
+//! guessing.
 
-use crate::common::Result;
-use std::collections::{HashMap, HashSet};
+pub mod wire;
 
-/// POP3 client configuration
+use crate::common::{Error, Result, error::redact_provider_message};
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
+use tokio::net::TcpStream;
+
+/// How long to wait for the connection and the handshake.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long to wait for a server to answer one command.
+///
+/// Generous, because RETR of a large message on a slow link is one command.
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// POP3 client configuration.
 #[derive(Debug, Clone)]
 pub struct Pop3Config {
     pub server: String,
@@ -18,198 +46,382 @@ pub struct Pop3Config {
     pub username: String,
 }
 
-/// POP3 message metadata from LIST/UIDL style commands
+/// How the connection is protected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pop3Security {
+    /// TLS from the first byte, the usual arrangement on port 995.
+    Tls,
+    /// Plain to start with, upgraded by STLS, as on port 110.
+    StartTls,
+    /// No encryption at all.
+    Plaintext,
+}
+
+impl Pop3Security {
+    /// Work out how to protect a connection from what the account says.
+    ///
+    /// The same shape as the IMAP decision and for the same reason: the account
+    /// carries one "use TLS" answer, which is the right question to ask
+    /// somebody and not enough to pick a method. 110 is the plaintext port, so
+    /// encryption there means STLS; anywhere else it means TLS from the start.
+    pub fn choose(port: u16, use_tls: bool) -> Self {
+        match (use_tls, port) {
+            (false, _) => Pop3Security::Plaintext,
+            (true, 110) => Pop3Security::StartTls,
+            (true, _) => Pop3Security::Tls,
+        }
+    }
+}
+
+/// One message on the server, as a listing knows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pop3MessageInfo {
+    /// The number this session refers to it by. Meaningless in the next one.
     pub id: u32,
     pub size: usize,
+    /// The identifier that survives between sessions, when the server has UIDL.
     pub uidl: String,
 }
 
-/// POP3 full message payload
-#[derive(Debug, Clone)]
-pub struct Pop3Message {
-    pub id: u32,
-    pub info: Pop3MessageInfo,
-    pub raw: String,
+/// The stream a session runs over.
+///
+/// One type for both cases so a session has a single concrete type whether or
+/// not the connection is encrypted, and so STLS can hand the plain socket over
+/// partway through.
+#[derive(Debug)]
+enum Pop3Stream {
+    Tls(Box<tokio_native_tls::TlsStream<TcpStream>>),
+    Plain(TcpStream),
 }
 
-/// POP3 client
+impl Pop3Stream {
+    fn into_plain(self) -> Option<TcpStream> {
+        match self {
+            Pop3Stream::Plain(stream) => Some(stream),
+            Pop3Stream::Tls(_) => None,
+        }
+    }
+}
+
+impl AsyncRead for Pop3Stream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            Pop3Stream::Tls(stream) => Pin::new(stream.as_mut()).poll_read(cx, buf),
+            Pop3Stream::Plain(stream) => Pin::new(stream).poll_read(cx, buf),
+        }
+    }
+}
+
+impl AsyncWrite for Pop3Stream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        match self.get_mut() {
+            Pop3Stream::Tls(stream) => Pin::new(stream.as_mut()).poll_write(cx, buf),
+            Pop3Stream::Plain(stream) => Pin::new(stream).poll_write(cx, buf),
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            Pop3Stream::Tls(stream) => Pin::new(stream.as_mut()).poll_flush(cx),
+            Pop3Stream::Plain(stream) => Pin::new(stream).poll_flush(cx),
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            Pop3Stream::Tls(stream) => Pin::new(stream.as_mut()).poll_shutdown(cx),
+            Pop3Stream::Plain(stream) => Pin::new(stream).poll_shutdown(cx),
+        }
+    }
+}
+
+/// A POP3 client, holding the settings for one account.
 pub struct Pop3Client {
     config: Pop3Config,
 }
 
 impl Pop3Client {
-    /// Create a new POP3 client
     pub fn new(config: Pop3Config) -> Result<Self> {
+        if config.server.trim().is_empty() {
+            return Err(Error::Config("No POP server was given".into()));
+        }
         Ok(Self { config })
     }
 
-    /// Connect and authenticate (placeholder full command set)
-    pub async fn connect(&self, _password: &str) -> Result<Pop3Session> {
+    /// Connect, protect the connection, and sign in.
+    pub async fn connect(&self, password: &str) -> Result<Pop3Session> {
+        let security = Pop3Security::choose(self.config.port, self.config.use_tls);
         tracing::info!(
-            "POP3 connection to {}:{} as {} (placeholder)",
+            "Connecting to {}:{} ({:?})",
             self.config.server,
             self.config.port,
-            crate::common::logging::mask_email(&self.config.username)
+            security
         );
-        Ok(Pop3Session::new(self.config.clone()))
+
+        let tcp = with_timeout(
+            CONNECT_TIMEOUT,
+            TcpStream::connect((self.config.server.as_str(), self.config.port)),
+            "connecting",
+        )
+        .await?
+        .map_err(|e| Error::Network(format!("Could not reach the mail server: {e}")))?;
+
+        let stream = match security {
+            Pop3Security::Tls => Pop3Stream::Tls(Box::new(self.encrypt(tcp).await?)),
+            Pop3Security::Plaintext | Pop3Security::StartTls => Pop3Stream::Plain(tcp),
+        };
+
+        let mut session = Pop3Session {
+            stream: BufReader::new(stream),
+        };
+        // Every POP3 connection opens with a greeting, and it has to be read
+        // before anything is sent or the first command answers the greeting.
+        session.read_status().await?;
+
+        if security == Pop3Security::StartTls {
+            session = self.upgrade(session).await?;
+        }
+
+        session.command("USER", &[&self.config.username]).await?;
+        // The password is the one thing here that must never reach a log, so it
+        // is passed straight through and the error is the server's own words
+        // with anything credential-shaped taken out.
+        session
+            .command("PASS", &[password])
+            .await
+            .map_err(|e| Error::Authentication(redact_provider_message(&e.to_string())))?;
+
+        tracing::info!("Signed in to {}", self.config.server);
+        Ok(session)
+    }
+
+    async fn encrypt(&self, tcp: TcpStream) -> Result<tokio_native_tls::TlsStream<TcpStream>> {
+        let connector = native_tls::TlsConnector::new()
+            .map_err(|e| Error::Security(format!("Could not start TLS: {e}")))?;
+        let connector = tokio_native_tls::TlsConnector::from(connector);
+        with_timeout(
+            CONNECT_TIMEOUT,
+            connector.connect(&self.config.server, tcp),
+            "the TLS handshake",
+        )
+        .await?
+        .map_err(|e| {
+            Error::Security(format!(
+                "Could not secure the connection to {}: {e}",
+                self.config.server
+            ))
+        })
+    }
+
+    /// Upgrade a plain connection with STLS.
+    async fn upgrade(&self, mut session: Pop3Session) -> Result<Pop3Session> {
+        session
+            .command("STLS", &[])
+            .await
+            .map_err(|e| Error::Security(format!("The mail server refused to start TLS: {e}")))?;
+
+        let plain = session
+            .stream
+            .into_inner()
+            .into_plain()
+            .ok_or_else(|| Error::Security("The connection was already encrypted".into()))?;
+        let encrypted = self.encrypt(plain).await?;
+        // No greeting follows STLS.
+        Ok(Pop3Session {
+            stream: BufReader::new(Pop3Stream::Tls(Box::new(encrypted))),
+        })
     }
 }
 
-/// Active POP3 session
+/// A signed-in POP3 session.
 pub struct Pop3Session {
-    #[allow(dead_code)]
-    config: Pop3Config,
-    connected: bool,
-    deleted: HashSet<u32>,
-    store: HashMap<u32, Pop3Message>,
+    stream: BufReader<Pop3Stream>,
 }
 
 impl Pop3Session {
-    pub fn new(config: Pop3Config) -> Self {
-        let mut store = HashMap::new();
-        for id in 1..=3u32 {
-            let raw = format!(
-                "From: sender{}@example.com\r\nTo: {}\r\nSubject: POP3 Test Message {}\r\n\r\nMessage {} body.",
-                id, config.username, id, id
-            );
-            let info = Pop3MessageInfo {
-                id,
-                size: raw.len(),
-                uidl: format!("UIDL-{}", id),
-            };
-            store.insert(id, Pop3Message { id, info, raw });
-        }
-        Self {
-            config,
-            connected: true,
-            deleted: HashSet::new(),
-            store,
-        }
+    /// How many messages the mailbox holds, and how many bytes in total.
+    pub async fn stat(&mut self) -> Result<(usize, usize)> {
+        let said = self.command("STAT", &[]).await?;
+        let mut parts = said.split_whitespace();
+        let count = parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+        let bytes = parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+        Ok((count, bytes))
     }
 
-    fn ensure_connected(&self) -> Result<()> {
-        if self.connected {
-            Ok(())
-        } else {
-            Err(crate::common::Error::Protocol(
-                "POP3 session is not connected".to_string(),
-            ))
-        }
-    }
-
-    /// STAT: returns number of undeleted messages and total octets.
-    pub async fn stat(&self) -> Result<(usize, usize)> {
-        self.ensure_connected()?;
-        let mut count = 0usize;
-        let mut size = 0usize;
-        for msg in self.store.values() {
-            if !self.deleted.contains(&msg.id) {
-                count += 1;
-                size += msg.info.size;
-            }
-        }
-        Ok((count, size))
-    }
-
-    /// LIST: metadata for undeleted messages.
-    pub async fn list(&self) -> Result<Vec<Pop3MessageInfo>> {
-        self.ensure_connected()?;
-        let mut result: Vec<_> = self
-            .store
-            .values()
-            .filter(|m| !self.deleted.contains(&m.id))
-            .map(|m| m.info.clone())
-            .collect();
-        result.sort_by_key(|m| m.id);
-        Ok(result)
-    }
-
-    /// UIDL map for undeleted messages.
-    pub async fn uidl(&self) -> Result<Vec<(u32, String)>> {
-        let result = self
-            .list()
+    /// Every message, with its size and its identifier.
+    ///
+    /// Two commands, because POP3 has no one command that gives both. A server
+    /// without UIDL is refused here rather than further in: without stable
+    /// identifiers, a sync can only download everything every time or delete as
+    /// it goes, and neither is something to do to somebody's mail without
+    /// saying so.
+    pub async fn listing(&mut self) -> Result<Vec<Pop3MessageInfo>> {
+        self.command("LIST", &[]).await?;
+        let sizes: Vec<(u32, usize)> = self
+            .read_data()
             .await?
+            .iter()
+            .filter_map(|line| wire::list_line(line))
+            .collect();
+
+        self.command("UIDL", &[]).await.map_err(|_| {
+            Error::Protocol(
+                "This mail server does not support UIDL, so there is no way to tell mail \
+                 already downloaded from mail that is new. Wixen Mail will not use it."
+                    .into(),
+            )
+        })?;
+        let identifiers: std::collections::HashMap<u32, String> = self
+            .read_data()
+            .await?
+            .iter()
+            .filter_map(|line| wire::uidl_line(line))
+            .collect();
+
+        Ok(sizes
             .into_iter()
-            .map(|m| (m.id, m.uidl))
-            .collect::<Vec<_>>();
-        Ok(result)
+            .filter_map(|(id, size)| {
+                identifiers.get(&id).map(|uidl| Pop3MessageInfo {
+                    id,
+                    size,
+                    uidl: uidl.clone(),
+                })
+            })
+            .collect())
     }
 
-    /// RETR: full raw message.
-    pub async fn retr(&self, id: u32) -> Result<Pop3Message> {
-        self.ensure_connected()?;
-        if self.deleted.contains(&id) {
-            return Err(crate::common::Error::Protocol(format!(
-                "Message {} marked for deletion",
-                id
-            )));
+    /// One whole message, as it arrived.
+    pub async fn retrieve(&mut self, id: u32) -> Result<Vec<u8>> {
+        self.command("RETR", &[&id.to_string()]).await?;
+        let lines = self.read_data().await?;
+        let mut out = String::new();
+        for line in &lines {
+            out.push_str(wire::unstuff(line));
+            out.push_str("\r\n");
         }
-        self.store
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| crate::common::Error::Protocol(format!("Message {} not found", id)))
+        Ok(out.into_bytes())
     }
 
-    /// TOP: returns header and up to N body lines.
-    pub async fn top(&self, id: u32, body_lines: usize) -> Result<String> {
-        let message = self.retr(id).await?;
-        let mut split = message.raw.splitn(2, "\r\n\r\n");
-        let header = split.next().unwrap_or_default();
-        let body = split.next().unwrap_or_default();
-        let selected = body
-            .split("\r\n")
-            .take(body_lines)
-            .collect::<Vec<_>>()
-            .join("\r\n");
-        Ok(format!("{}\r\n\r\n{}", header, selected))
-    }
-
-    /// DELE: marks message as deleted.
-    pub async fn dele(&mut self, id: u32) -> Result<()> {
-        self.ensure_connected()?;
-        if !self.store.contains_key(&id) {
-            return Err(crate::common::Error::Protocol(format!(
-                "Message {} not found",
-                id
-            )));
-        }
-        self.deleted.insert(id);
+    /// Mark a message for deletion. It goes when the session ends politely.
+    ///
+    /// POP3 has no other kind of delete: DELE flags, and QUIT commits. A
+    /// connection dropped instead of quitting leaves everything in place, which
+    /// is the safe direction.
+    pub async fn delete(&mut self, id: u32) -> Result<()> {
+        self.command("DELE", &[&id.to_string()]).await?;
         Ok(())
     }
 
-    /// RSET: clears deletion marks.
-    pub async fn rset(&mut self) -> Result<()> {
-        self.ensure_connected()?;
-        self.deleted.clear();
+    /// Undo every deletion marked in this session.
+    pub async fn reset(&mut self) -> Result<()> {
+        self.command("RSET", &[]).await?;
         Ok(())
     }
 
-    /// NOOP
-    pub async fn noop(&self) -> Result<()> {
-        self.ensure_connected()?;
-        Ok(())
-    }
-
-    /// QUIT: commits deletions and closes session.
+    /// End the session, committing any deletions.
     pub async fn quit(mut self) -> Result<()> {
-        self.ensure_connected()?;
-        for id in &self.deleted {
-            self.store.remove(id);
-        }
-        self.connected = false;
+        self.command("QUIT", &[]).await?;
         Ok(())
     }
 
-    /// Convenience: retrieve all undeleted full messages.
-    pub async fn retrieve_messages(&self) -> Result<Vec<Pop3Message>> {
-        let mut result = Vec::new();
-        for info in self.list().await? {
-            result.push(self.retr(info.id).await?);
+    /// Send a command and read its status line.
+    ///
+    /// Arguments are joined with spaces, which is all POP3 has. Nothing here
+    /// quotes or escapes because nothing in POP3 does: a password with a space
+    /// in it is sent as it is, which is what every server expects.
+    async fn command(&mut self, verb: &str, args: &[&str]) -> Result<String> {
+        let mut line = verb.to_string();
+        for arg in args {
+            line.push(' ');
+            line.push_str(arg);
         }
-        Ok(result)
+        line.push_str("\r\n");
+
+        with_timeout(
+            COMMAND_TIMEOUT,
+            self.stream.get_mut().write_all(line.as_bytes()),
+            "sending a command",
+        )
+        .await?
+        .map_err(|e| Error::Network(format!("Could not send to the mail server: {e}")))?;
+        with_timeout(
+            COMMAND_TIMEOUT,
+            self.stream.get_mut().flush(),
+            "sending a command",
+        )
+        .await?
+        .map_err(|e| Error::Network(format!("Could not send to the mail server: {e}")))?;
+
+        self.read_status().await
     }
+
+    /// Read one status line.
+    async fn read_status(&mut self) -> Result<String> {
+        let mut line = String::new();
+        let read = with_timeout(
+            COMMAND_TIMEOUT,
+            self.stream.read_line(&mut line),
+            "waiting for an answer",
+        )
+        .await?
+        .map_err(|e| Error::Network(format!("Could not read from the mail server: {e}")))?;
+
+        if read == 0 {
+            return Err(Error::Protocol(
+                "The mail server closed the connection".into(),
+            ));
+        }
+        wire::status(&line)
+    }
+
+    /// Read a multi-line answer, up to but not including its terminator.
+    ///
+    /// Lines come back with their endings removed. Dot-stuffing is left alone
+    /// here and undone by whoever knows whether they are looking at a body: a
+    /// listing has no stuffed dots and running it through the same step would
+    /// be a step that can only do harm.
+    async fn read_data(&mut self) -> Result<Vec<String>> {
+        let mut lines = Vec::new();
+        loop {
+            let mut line = String::new();
+            let read = with_timeout(
+                COMMAND_TIMEOUT,
+                self.stream.read_line(&mut line),
+                "reading an answer",
+            )
+            .await?
+            .map_err(|e| Error::Network(format!("Could not read from the mail server: {e}")))?;
+
+            if read == 0 {
+                return Err(Error::Protocol(
+                    "The mail server closed the connection partway through an answer".into(),
+                ));
+            }
+            if wire::is_end_of_data(&line) {
+                return Ok(lines);
+            }
+            lines.push(line.trim_end_matches(['\r', '\n']).to_string());
+        }
+    }
+}
+
+/// Bound an operation, and say which one gave up.
+async fn with_timeout<F: std::future::Future>(
+    limit: Duration,
+    operation: F,
+    doing: &'static str,
+) -> Result<F::Output> {
+    tokio::time::timeout(limit, operation)
+        .await
+        .map_err(|_| Error::Network(format!("The mail server stopped responding while {doing}")))
 }
 
 #[cfg(test)]
@@ -217,53 +429,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_pop3_client_creation() {
-        let config = Pop3Config {
-            server: "pop3.example.com".to_string(),
+    fn test_a_server_with_no_name_is_refused_before_a_socket_is_opened() {
+        let nowhere = Pop3Client::new(Pop3Config {
+            server: "   ".to_string(),
             port: 995,
             use_tls: true,
-            username: "test@example.com".to_string(),
-        };
-        let client = Pop3Client::new(config);
-        assert!(client.is_ok());
+            username: "me@example.com".to_string(),
+        });
+
+        assert!(nowhere.is_err());
     }
 
-    #[tokio::test]
-    async fn test_pop3_stat_list_retr() {
-        let config = Pop3Config {
-            server: "pop3.example.com".to_string(),
-            port: 995,
-            use_tls: true,
-            username: "test@example.com".to_string(),
-        };
-        let client = Pop3Client::new(config).unwrap();
-        let session = client.connect("password").await.unwrap();
-        let (count, bytes) = session.stat().await.unwrap();
-        assert_eq!(count, 3);
-        assert!(bytes > 0);
-        let list = session.list().await.unwrap();
-        assert_eq!(list.len(), 3);
-        let msg = session.retr(list[0].id).await.unwrap();
-        assert!(msg.raw.contains("Subject: POP3 Test Message"));
-    }
-
-    #[tokio::test]
-    async fn test_pop3_dele_rset_uidl_top() {
-        let config = Pop3Config {
-            server: "pop3.example.com".to_string(),
-            port: 995,
-            use_tls: true,
-            username: "test@example.com".to_string(),
-        };
-        let client = Pop3Client::new(config).unwrap();
-        let mut session = client.connect("password").await.unwrap();
-        let uidl = session.uidl().await.unwrap();
-        assert_eq!(uidl.len(), 3);
-        let top = session.top(1, 1).await.unwrap();
-        assert!(top.contains("Subject: POP3 Test Message 1"));
-        session.dele(1).await.unwrap();
-        assert_eq!(session.list().await.unwrap().len(), 2);
-        session.rset().await.unwrap();
-        assert_eq!(session.list().await.unwrap().len(), 3);
+    #[test]
+    fn test_the_encryption_method_follows_the_port() {
+        // 110 is the plaintext port, so encryption there means STLS. Treating
+        // it as TLS from the first byte fails the handshake against every
+        // server, and the failure reads as the server being unreachable.
+        assert_eq!(Pop3Security::choose(995, true), Pop3Security::Tls);
+        assert_eq!(Pop3Security::choose(110, true), Pop3Security::StartTls);
+        assert_eq!(Pop3Security::choose(110, false), Pop3Security::Plaintext);
+        assert_eq!(Pop3Security::choose(995, false), Pop3Security::Plaintext);
     }
 }

@@ -395,12 +395,17 @@ impl MailController {
         Ok(())
     }
 
-    /// Fetch message list from POP3 mailbox.
+    /// Every message on the server, with its size and stable identifier.
+    ///
+    /// Two commands rather than one, and it refuses a server without UIDL:
+    /// without stable identifiers there is no way to tell mail already
+    /// downloaded from mail that is new.
     pub async fn list_pop3_messages(&self) -> Result<Vec<Pop3MessagePreview>> {
-        let guard = self.require_pop3().await?;
-        let session = &*guard;
-        let list = session.list().await?;
-        Ok(list
+        let mut guard = self.require_pop3().await?;
+        let session = &mut *guard;
+        Ok(session
+            .listing()
+            .await?
             .into_iter()
             .map(|m| Pop3MessagePreview {
                 id: m.id,
@@ -410,18 +415,35 @@ impl MailController {
             .collect())
     }
 
-    /// Fetch full POP3 message body by message id.
-    pub async fn fetch_pop3_message_body(&self, id: u32) -> Result<String> {
-        let guard = self.require_pop3().await?;
-        let session = &*guard;
-        Ok(session.retr(id).await?.raw)
+    /// Fetch one whole message, as it arrived.
+    ///
+    /// Raw bytes, for `service::mime` to decode, the same as over IMAP. Handing
+    /// back a `String` would mean guessing a character set before reading the
+    /// headers that name it.
+    pub async fn fetch_pop3_message_body(&self, id: u32) -> Result<Vec<u8>> {
+        let mut guard = self.require_pop3().await?;
+        let session = &mut *guard;
+        session.retrieve(id).await
     }
 
-    /// Mark POP3 message for deletion.
+    /// Mark a message for deletion. It goes when the session ends politely.
     pub async fn delete_pop3_message(&self, id: u32) -> Result<()> {
         let mut guard = self.require_pop3().await?;
         let session = &mut *guard;
-        session.dele(id).await
+        session.delete(id).await
+    }
+
+    /// End the POP3 session, committing any deletions.
+    ///
+    /// POP3 has no other kind of delete: DELE marks and QUIT commits. Dropping
+    /// the connection instead leaves everything in place, which is the safe
+    /// direction and also means this has to be called on purpose.
+    pub async fn finish_pop3(&self) -> Result<()> {
+        let session = self.pop3_session.lock().await.take();
+        match session {
+            Some(session) => session.quit().await,
+            None => Ok(()),
+        }
     }
 
     /// Check if POP3 session is connected.
@@ -537,26 +559,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mail_controller_connect_pop3_and_fetch() {
+    async fn test_pop3_commands_refuse_without_a_connection() {
+        // What the old test could not check, because the POP3 client it tested
+        // opened no socket: it answered every command out of a HashMap of three
+        // messages it had made up, so "connect and fetch" passed against a
+        // server that was never contacted.
         let controller = MailController::new();
-        controller
-            .connect_pop3(
-                "pop3.example.com".to_string(),
-                995,
-                "test@example.com".to_string(),
-                "password".to_string(),
-                true,
-            )
-            .await
-            .unwrap();
-        assert!(controller.is_pop3_connected().await);
-        let msgs = controller.list_pop3_messages().await.unwrap();
-        assert!(!msgs.is_empty());
-        let body = controller
-            .fetch_pop3_message_body(msgs[0].id)
-            .await
-            .unwrap();
-        assert!(body.contains("Subject: POP3 Test Message"));
+        assert!(!controller.is_pop3_connected().await);
+
+        let refusals = [
+            controller.list_pop3_messages().await.err(),
+            controller.fetch_pop3_message_body(1).await.err(),
+            controller.delete_pop3_message(1).await.err(),
+        ];
+        for refusal in refusals {
+            let message = refusal.expect("should refuse without a connection");
+            assert!(
+                message.to_string().contains("POP3"),
+                "the refusal should say which protocol: {message}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_finishing_a_pop3_session_nobody_opened_is_not_an_error() {
+        // Called on every tidy-up path, including ones that failed before a
+        // connection was made.
+        assert!(MailController::new().finish_pop3().await.is_ok());
     }
 
     #[tokio::test]
