@@ -77,14 +77,14 @@ impl Choice {
         match self {
             Choice::ReadOnly => {
                 "Nothing you do here reaches your provider. Safe to point at \
-                 your real mail. You will not be able to send, delete, or sync \
-                 changes to your tasks."
+                 your real mail. You will not be able to send, move, delete, or \
+                 sync changes to your tasks."
             }
             Choice::TasksAndContacts => {
-                "Sending and deleting mail stay off. Changes to tasks, contacts \
-                 and the calendar go up to your provider. This has never been \
-                 run against a real account, so a task may end up in the wrong \
-                 place, but nothing here can lose an email."
+                "Sending, moving and deleting mail stay off. Changes to tasks, \
+                 contacts and the calendar go up to your provider. This has \
+                 never been run against a real account, so a task may end up in \
+                 the wrong place, but nothing here can lose an email."
             }
             Choice::Everything => {
                 "Everything works, including sending. None of it has been run \
@@ -108,9 +108,10 @@ pub const TITLE: &str = "Before you start";
 pub const INTRODUCTION: &str = "\
 Wixen Mail is an alpha. Reading your mail is the part that has been used.
 
-Everything that writes is experimental: sending, deleting, and sending your \
-changes to tasks, contacts and the calendar back to your provider. None of \
-that has been run against a real account yet, so expect it to have bugs.
+Everything that writes is experimental: sending, moving, deleting, filing a \
+copy in Sent, and sending your changes to tasks, contacts and the calendar \
+back to your provider. None of that has been run against a real account yet, \
+so expect it to have bugs.
 
 Choose what Wixen Mail may change. You can change this later in Settings, and \
 you can set it per account.";

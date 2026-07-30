@@ -64,15 +64,32 @@ In rough order of how useful it is to know.
    message was sent when it was not, a count that does not match what you can
    see, a setting that does not take effect.
 5. **Keyboard traps.** Anywhere Tab or Shift+Tab cannot get you out of.
+6. **Whether the folder list matches what your provider shows you.** New in
+   this version, and the part most likely to differ between providers. On Gmail
+   in particular: whether your labels are all there, whether anything appears
+   twice, and whether the count beside a folder matches the web interface.
+7. **Deleting, moving and copying a message.** All three are new and all three
+   change what is on the server. Say what you heard and what you then found on
+   another device, because the two disagreeing is the failure worth catching.
+8. **Whether a copy of what you send turns up in Sent.** Nothing was saving one
+   before this version. On Gmail, Google saves it, so what to watch for there is
+   the opposite: a message appearing in Sent twice.
 
 ## What is already known to be missing or unproven
 
 Written down so you do not spend time reporting things already on the list.
 
 - **Nothing that writes has run against a real account.** Sending, deleting,
-  and the three syncs that push changes.
+  moving, copying, filing a copy in Sent, changing which folders you are
+  subscribed to, and the three syncs that push changes.
 - **A task cannot be moved between lists.** It goes into your provider's
-  default list when you make it.
+  default list when you make it. Moving and copying work for mail only so far.
+- **Conversations on Gmail are worked out from the message headers**, so a
+  conversation here may be split differently from the same one in Gmail's web
+  interface. Gmail publishes its own grouping and the library this is built on
+  gives no way to read it.
+- **A folder cannot be created, renamed or deleted**, and a whole folder cannot
+  be marked read or emptied.
 - **Notes do not sync anywhere.** They stay on this computer.
 - **The cached mail on this computer is not encrypted.** Anybody who can read
   your user folder can read your mail. Passwords and tokens are not in there,
