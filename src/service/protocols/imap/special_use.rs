@@ -135,6 +135,19 @@ mod tests {
     }
 
     #[test]
+    fn test_a_declared_inbox_is_the_inbox_whatever_it_is_called() {
+        // Mutation testing found this arm untested: every other test named the
+        // mailbox "INBOX", so the fallback on the name answered and the
+        // attribute was never consulted. A server that declares `\Inbox` on a
+        // mailbox called something else would have got an ordinary folder, and
+        // the account would have had no inbox at all.
+        assert_eq!(
+            classify(&attrs(&["\\Inbox"]), "Posteingang", Some("/")),
+            FolderType::Inbox
+        );
+    }
+
+    #[test]
     fn test_gmails_all_mail_counts_as_the_archive() {
         // Gmail flags it `\All`. It is where a message goes when it leaves the
         // inbox without being deleted, which is what an archive is.

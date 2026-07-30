@@ -749,6 +749,69 @@ mod tests {
     }
 
     #[test]
+    fn test_a_message_with_no_cc_has_no_cc_rather_than_an_empty_one() {
+        // Mutation testing found this: nothing noticed when the emptiness test
+        // was inverted, so the column could have been filled with "" for every
+        // message with no Cc and read as a recipient nobody can see.
+        let plain = message(1);
+
+        let row = to_incoming(&plain, 1, false);
+
+        assert_eq!(row.cc, None, "no Cc");
+        assert_eq!(row.reply_to, None, "no Reply-To");
+        assert_eq!(row.labels, None, "no labels off Gmail");
+    }
+
+    #[test]
+    fn test_the_cc_and_reply_to_that_are_there_are_kept() {
+        // The other half. A test for the empty case alone passes against a
+        // function that drops the field always.
+        let mut copied = message(1);
+        copied.cc = vec![EmailAddress::new("bob@example.com".to_string(), None)];
+        copied.reply_to = vec![EmailAddress::new("list@example.com".to_string(), None)];
+        copied.labels = vec!["Work".to_string(), "Urgent".to_string()];
+
+        let row = to_incoming(&copied, 1, false);
+
+        assert_eq!(row.cc.as_deref(), Some("bob@example.com"));
+        assert_eq!(row.reply_to.as_deref(), Some("list@example.com"));
+        assert_eq!(row.labels.as_deref(), Some("Work Urgent"));
+    }
+
+    #[test]
+    fn test_a_server_that_keeps_no_subscriptions_is_told_apart_from_one_that_does() {
+        // The answer decides whether an unsubscribed folder syncs. Reading a
+        // server with no subscription list as "nothing is wanted" would sync
+        // no folders at all and look like an account with no mail in it.
+        let keeps = StoredFacts::from([
+            ("INBOX".to_string(), (false, true)),
+            ("Old".to_string(), (false, false)),
+        ]);
+        let keeps_none = StoredFacts::from([
+            ("INBOX".to_string(), (false, false)),
+            ("Old".to_string(), (false, false)),
+        ]);
+
+        assert!(keeps_subscriptions_stored(&keeps));
+        assert!(!keeps_subscriptions_stored(&keeps_none));
+        assert!(!keeps_subscriptions_stored(&StoredFacts::new()));
+    }
+
+    #[test]
+    fn test_nothing_subscribed_anywhere_still_syncs_every_folder() {
+        // What the answer above is for. Both folders read as unsubscribed, so
+        // subscription cannot be what somebody meant by it.
+        let keeps_none = StoredFacts::from([("Work".to_string(), (false, false))]);
+
+        assert!(cached_folder_syncs(
+            &cached("Work", FolderType::Custom),
+            &FolderChoices::new(),
+            &keeps_none,
+            keeps_subscriptions_stored(&keeps_none)
+        ));
+    }
+
+    #[test]
     fn test_a_message_just_fetched_is_not_asked_about_again() {
         // Its flags arrived with its headers a moment ago.
         assert_eq!(still_to_check(&[1, 2, 3], &[2, 3], &[]), vec![1]);
