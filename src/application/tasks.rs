@@ -1,4 +1,4 @@
-//! Task manager — business logic for tasks and task lists.
+//! Task manager: business logic for tasks and task lists.
 //!
 //! Provides an in-memory task store with filtering by list, due date,
 //! completion status, and priority. Supports subtask hierarchies via

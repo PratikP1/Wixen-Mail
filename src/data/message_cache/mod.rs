@@ -261,7 +261,7 @@ pub struct ContactGroup {
     pub member_ids: Vec<String>,
 }
 
-/// Calendar container — represents a whole calendar (local, service, CalDAV, subscription)
+/// Calendar container: represents a whole calendar (local, service, CalDAV, subscription)
 #[derive(Debug, Clone)]
 pub struct CalendarContainer {
     pub id: String,
@@ -290,7 +290,7 @@ pub struct CalendarEventEntry {
     pub id: String,
     pub account_id: String,
     pub provider_event_id: Option<String>,
-    /// References calendars.id — which calendar container this event belongs to
+    /// References calendars.id: which calendar container this event belongs to
     pub calendar_id: Option<String>,
     pub summary: String,
     pub description: Option<String>,

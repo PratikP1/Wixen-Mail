@@ -569,7 +569,7 @@ Comprehensive solutions for common issues with Wixen Mail.
 3. **Recent logs:** Check most recent log file. Crashes are in `crash.log`.
 
 Everything else Wixen Mail keeps is alongside it, under `%LOCALAPPDATA%\wixen-mail`. See
-[installing.md](installing.md) for what is in there.
+[Installing and uninstalling](installing.md) says what is in there.
 
 ### Report Issues
 

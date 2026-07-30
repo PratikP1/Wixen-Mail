@@ -1,7 +1,7 @@
 //! ICS URL subscription client for read-only calendar feeds.
 //!
 //! Fetches and parses .ics URLs (holidays, sports, shared schedules).
-//! Subscription calendars are read-only — no create/update/delete.
+//! Subscription calendars are read-only: no create/update/delete.
 //! They refresh by re-fetching the full .ics feed on sync.
 
 use crate::common::{Error, Result};

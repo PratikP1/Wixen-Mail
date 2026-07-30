@@ -20,7 +20,7 @@ pub enum SettingsResult {
     /// Boxed because the configuration dwarfs the other variant, and this
     /// grew past the point where every Cancelled paid for it.
     Updated(Box<AppConfig>),
-    /// User cancelled — no changes.
+    /// User cancelled: no changes.
     Cancelled,
 }
 

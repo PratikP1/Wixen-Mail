@@ -110,7 +110,7 @@ pub fn init_logging(config: LoggerConfig) -> Result<WorkerGuard, Box<dyn std::er
         std::fs::create_dir_all(&config.log_dir)?;
     }
 
-    // Set up file appender with rotation — files named: wixen-mail.YYYY-MM-DD.log
+    // Set up file appender with rotation, files named wixen-mail.YYYY-MM-DD.log
     let file_appender = tracing_appender::rolling::RollingFileAppender::builder()
         .rotation(tracing_appender::rolling::Rotation::DAILY)
         .filename_prefix(&config.log_file_prefix)

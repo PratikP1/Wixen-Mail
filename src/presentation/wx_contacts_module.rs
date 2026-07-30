@@ -1,4 +1,4 @@
-//! Contacts module panel — full contacts view with sidebar and detail pane.
+//! Contacts module panel: full contacts view with sidebar and detail pane.
 //!
 //! This panel lives inside the main window content area (not a dialog).
 

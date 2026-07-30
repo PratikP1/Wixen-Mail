@@ -1,4 +1,4 @@
-//! Reminder manager — business logic for reminders.
+//! Reminder manager: business logic for reminders.
 //!
 //! Provides an in-memory reminder store with filtering by due date,
 //! completion status, and priority.

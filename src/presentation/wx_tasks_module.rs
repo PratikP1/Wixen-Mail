@@ -1,4 +1,4 @@
-//! Tasks module panel — view and manage tasks and task lists.
+//! Tasks module panel: view and manage tasks and task lists.
 
 use crate::presentation::accessibility::names::set_accessible_name;
 use wxdragon::prelude::*;

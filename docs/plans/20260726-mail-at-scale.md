@@ -8,7 +8,7 @@ covers sorting, reordering, and hiding columns without a mouse.
 
 ## Why this shape
 
-The four questions in [principles.md](../principles.md) decide most of it. The
+The four questions in [what this project is for](../principles.md) decide most of it. The
 one that bites hardest here is the fourth, what this allows to be done poorly. A
 mail client at this scale has three failure modes that all look like success:
 

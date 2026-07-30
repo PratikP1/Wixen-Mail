@@ -470,7 +470,7 @@ impl WxMailApp {
             }
             let left_sizer = BoxSizer::builder(Orientation::Vertical).build();
 
-            // Module navigation buttons (2x3 grid) — wrapped in a panel for show/hide
+            // Module navigation buttons (2x3 grid), wrapped in a panel for show/hide
             let btn_panel = Panel::builder(&left_panel).build();
             let btn_panel_sizer = BoxSizer::builder(Orientation::Vertical).build();
             let btn_grid = FlexGridSizer::builder(3, 2)
@@ -501,7 +501,7 @@ impl WxMailApp {
             btn_panel.show(false); // hidden by default
             left_sizer.add(&btn_panel, 0, SizerFlag::Expand | SizerFlag::All, 4);
 
-            // Context sidebars — one per module, only active one visible
+            // Context sidebars: one per module, only active one visible
             // Mail sidebar: folder tree
             let mail_sidebar = Panel::builder(&left_panel).build();
             let mail_sb_sizer = BoxSizer::builder(Orientation::Vertical).build();
@@ -673,7 +673,7 @@ impl WxMailApp {
 
             tracing::info!("Message list created, setting up WebView");
 
-            // WebView for message preview — renders HTML emails with Edge WebView2
+            // WebView for message preview: renders HTML emails with Edge WebView2
             let webview_available = WebView::is_backend_available(WebViewBackend::Edge);
             tracing::info!("WebView2 Edge backend available: {}", webview_available);
             let preview = WebView::builder(&inner)
@@ -704,7 +704,7 @@ impl WxMailApp {
                 // which are this application's keys, not its content's.
                 preview.enable_browser_accelerator_keys(false);
 
-                // Block all navigation — open links in default browser instead
+                // Block all navigation: open links in default browser instead
                 preview.on_navigating(|event: WebViewEventData| {
                     if let Some(url) = event.get_string() {
                         // An empty URL is the control loading its own document,
@@ -782,7 +782,7 @@ document.addEventListener('keydown', function(e) {
                     );
                 }
 
-                // Handle context menu messages from JS — store link href in state,
+                // Handle context menu messages from JS: store link href in state,
                 // show popup menu, let events bubble to frame.on_menu handler.
                 preview.on_script_message_received({
                     let state = state.clone();
@@ -1100,7 +1100,7 @@ document.addEventListener('keydown', function(e) {
             contents.sort_by_key(|(module, _)| module.index());
             let content_panels: Vec<Panel> = contents.into_iter().map(|(_, panel)| panel).collect();
 
-            // Module switch function — updates panels, title bar, status, screen reader
+            // Module switch function: updates panels, title bar, status, screen reader
             let do_switch_module = {
                 let sidebar_panels = sidebar_panels.clone();
                 let content_panels = content_panels.clone();
@@ -2921,7 +2921,7 @@ document.addEventListener('keydown', function(e) {
         view.check_item(ID_VIEW_MODULE_BUTTONS, false);
         view.append_submenu(sort_menu, "&Sort Messages", "Change message sort order");
 
-        // ── "Go" menu — module navigation ──────────────────────────
+        // ── "Go" menu: module navigation ──────────────────────────
         let go_menu = Menu::builder()
             .append_item(
                 ID_MODULE_MAIL,

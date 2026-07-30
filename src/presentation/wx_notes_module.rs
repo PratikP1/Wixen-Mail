@@ -1,4 +1,4 @@
-//! Notes module panel — view and manage notes with folder organization.
+//! Notes module panel: view and manage notes with folder organization.
 
 use crate::presentation::accessibility::names::set_accessible_name;
 use wxdragon::prelude::*;

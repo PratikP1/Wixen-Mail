@@ -1,4 +1,4 @@
-//! Microsoft Graph API client — Contacts and Calendar.
+//! Microsoft Graph API client: Contacts and Calendar.
 //!
 //! Pure HTTP client using `reqwest` with Bearer auth. No UI, no DB.
 //! All methods take an OAuth access token (Graph-scoped) and return
@@ -46,7 +46,7 @@ pub struct MsGraphContact {
     pub personal_notes: Option<String>,
     /// Last modified datetime (RFC 3339).
     pub last_modified_date_time: Option<String>,
-    /// Change key — serves as an etag for concurrency.
+    /// Change key: serves as an etag for concurrency.
     #[serde(rename = "@odata.etag")]
     pub odata_etag: Option<String>,
     /// Set to true when the contact was deleted (delta queries).

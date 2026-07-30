@@ -1,4 +1,4 @@
-//! OAuth client credentials — loaded from environment or local config file.
+//! OAuth client credentials: loaded from environment or local config file.
 //!
 //! Credentials are resolved in priority order:
 //!   1. Environment variables (`WIXEN_GMAIL_CLIENT_ID`, etc.)
@@ -60,7 +60,7 @@ pub fn credentials_for(provider: &str) -> Option<ClientCredentials> {
 }
 
 fn resolve_gmail() -> Option<ClientCredentials> {
-    // 1. Environment variables — Google always requires client_secret
+    // 1. Environment variables: Google always requires client_secret
     if let (Ok(id), Ok(secret)) = (
         std::env::var("WIXEN_GMAIL_CLIENT_ID"),
         std::env::var("WIXEN_GMAIL_CLIENT_SECRET"),
@@ -94,7 +94,7 @@ fn resolve_gmail() -> Option<ClientCredentials> {
 }
 
 fn resolve_outlook() -> Option<ClientCredentials> {
-    // 1. Environment variables — client_secret optional for public clients
+    // 1. Environment variables: client_secret optional for public clients
     if let Ok(id) = std::env::var("WIXEN_OUTLOOK_CLIENT_ID")
         && !id.is_empty()
     {

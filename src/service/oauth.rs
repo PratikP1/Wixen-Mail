@@ -6,10 +6,10 @@
 //!
 //! ## Architecture
 //!
-//! - **`OAuthProvider`** — provider metadata (endpoints, scopes).
-//! - **`OAuthTokenSet`** — access/refresh tokens with expiry.
-//! - **`AuthManager`** — per-account token lifecycle: authorize, refresh, retrieve.
-//! - **`OAuthService`** — static helpers and provider registry (backward compat).
+//! - **`OAuthProvider`**: provider metadata (endpoints, scopes).
+//! - **`OAuthTokenSet`**: access/refresh tokens with expiry.
+//! - **`AuthManager`**: per-account token lifecycle, so authorize, refresh and retrieve.
+//! - **`OAuthService`**: static helpers and provider registry (backward compat).
 
 use crate::common::{Error, Result};
 use oauth2::{
@@ -56,7 +56,7 @@ struct TokenErrorResponse {
     error_description: Option<String>,
 }
 
-// ── Provider Registry (OAuthService — backward compatible) ──────────────────
+// ── Provider Registry (OAuthService, backward compatible) ──────────────────
 
 pub struct OAuthService;
 
@@ -268,7 +268,7 @@ impl OAuthService {
     /// token covers all consented scopes, but you must request the specific
     /// scopes you need at refresh time to get a token for that resource.
     ///
-    /// For Google, this is unnecessary — one access token works for all scopes.
+    /// For Google, this is unnecessary: one access token works for all scopes.
     /// Pass an empty slice to use the default (all originally consented scopes).
     pub async fn refresh_with_scopes(
         provider: &str,
@@ -350,8 +350,8 @@ fn local_redirect_uri() -> String {
 /// The server shows a friendly HTML page telling the user they can close the tab,
 /// then shuts itself down.
 ///
-/// `expected_state` — if provided, the `state` query param must match.
-/// `timeout_secs` — how long to wait before giving up (default 120).
+/// `expected_state`: if provided, the `state` query param must match.
+/// `timeout_secs`: how long to wait before giving up (default 120).
 fn wait_for_redirect_code(expected_state: Option<&str>, timeout_secs: u64) -> Result<String> {
     let addr = format!("0.0.0.0:{}", REDIRECT_PORT);
     let server = tiny_http::Server::http(&addr).map_err(|e| {
@@ -435,7 +435,7 @@ fn wait_for_redirect_code(expected_state: Option<&str>, timeout_secs: u64) -> Re
             ));
         }
 
-        // Success — respond with a friendly page and return the code
+        // Success: respond with a friendly page and return the code
         let html = concat!(
             "<html><body style='font-family:sans-serif;text-align:center;padding:40px'>",
             "<h2>Authorization Successful</h2>",
@@ -454,7 +454,7 @@ fn wait_for_redirect_code(expected_state: Option<&str>, timeout_secs: u64) -> Re
     }
 }
 
-// ── AuthManager — Per-Account Token Lifecycle ───────────────────────────────
+// ── AuthManager: Per-Account Token Lifecycle ───────────────────────────────
 
 /// Per-account OAuth token manager.
 ///
@@ -523,7 +523,7 @@ impl AuthManager {
             )));
         }
 
-        // Step 3: Wait for redirect (blocking — run in spawn_blocking from async context)
+        // Step 3: Wait for redirect (blocking, run in spawn_blocking from async context)
         let csrf_state = csrf_token.secret().clone();
         let code =
             tokio::task::spawn_blocking(move || wait_for_redirect_code(Some(&csrf_state), 120))
@@ -623,7 +623,7 @@ impl AuthManager {
         )
         .await?;
 
-        // Do NOT overwrite the stored keychain token — that one is for IMAP/SMTP.
+        // Do NOT overwrite the stored keychain token: that one is for IMAP/SMTP.
         // The Graph token is short-lived and used immediately.
         Ok(new_tokens.access_token)
     }

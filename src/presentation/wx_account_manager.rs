@@ -3,7 +3,7 @@
 //! Modal dialog for managing email accounts: add, edit, delete,
 //! set active, and test connection.
 //!
-//! OAuth is fully automatic for Gmail and Microsoft accounts — when the
+//! OAuth is fully automatic for Gmail and Microsoft accounts: when the
 //! user adds such an account (press OK), the browser opens immediately
 //! for authorization with no extra steps or checkboxes.
 
@@ -196,7 +196,7 @@ pub fn show_account_manager_dialog(
                         active_id = Some(a.id.clone());
                     }
 
-                    // OAuth is automatic — if this is a Gmail/Microsoft account,
+                    // OAuth is automatic: if this is a Gmail/Microsoft account,
                     // the browser launches right now.
                     if a.use_oauth {
                         match run_oauth_flow(&mut a) {
@@ -416,7 +416,7 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
     let name_f = tf("Account &Name:", "");
     let email_f = tf("&Email Address:", "");
 
-    // Auth hint — shown below email, tells user what will happen
+    // Auth hint: shown below email, tells user what will happen
     let auth_hint = {
         let l = StaticText::builder(&dlg).with_label("").build();
         let h = StaticText::builder(&dlg).with_label("").build();
@@ -630,7 +630,7 @@ enum OAuthFlowResult {
     Failed(String),
 }
 
-/// Run the OAuth2 flow automatically — detect provider, load built-in
+/// Run the OAuth2 flow automatically: detect provider, load built-in
 /// credentials, open browser, capture redirect, exchange tokens.
 fn run_oauth_flow(account: &mut Account) -> OAuthFlowResult {
     let provider = match OAuthService::detect_provider(&account.email) {

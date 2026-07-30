@@ -38,7 +38,7 @@ pub struct Account {
     pub use_oauth: bool,
 
     /// OAuth2 tokens (obtained during the authorization flow).
-    /// Client ID/Secret are NOT stored per-account — they come from
+    /// Client ID/Secret are NOT stored per-account: they come from
     /// the app-level credentials module (`oauth_credentials`).
     #[serde(default)]
     pub oauth_access_token: String,

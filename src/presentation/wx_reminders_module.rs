@@ -1,4 +1,4 @@
-//! Reminders module panel — view and manage reminders.
+//! Reminders module panel: view and manage reminders.
 
 use crate::presentation::accessibility::names::set_accessible_name;
 use wxdragon::prelude::*;

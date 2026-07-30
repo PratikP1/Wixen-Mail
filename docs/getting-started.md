@@ -25,9 +25,9 @@ cargo build --quiet
 
 ## Where to Go Next
 
-- What is worth testing, and what is known to be broken: [ALPHA_TESTING.md](ALPHA_TESTING.md)
-- User documentation: [USER_GUIDE.md](USER_GUIDE.md)
-- Provider setup: [PROVIDER_SETUP.md](PROVIDER_SETUP.md)
-- Keyboard accessibility shortcuts: [KEYBOARD_SHORTCUTS.md](KEYBOARD_SHORTCUTS.md)
-- Troubleshooting: [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
-- Canonical implementation status/tasks: [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)
+- [What is worth testing, and what is known to be broken](ALPHA_TESTING.md)
+- [Using Wixen Mail](USER_GUIDE.md)
+- [Setting up your provider](PROVIDER_SETUP.md)
+- [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md)
+- [When something goes wrong](TROUBLESHOOTING.md)
+- [What is built and what is not](IMPLEMENTATION_STATUS.md)

@@ -93,14 +93,14 @@ These items are not blockers for v1.0 release but are tracked for future develop
 
 The following root-level files were consolidated into this document:
 
-- `PHASE8_ARCHITECTURE.md` — Contact management architecture
-- `PHASE8_DETAILED_SPECIFICATIONS.md` — Contact management specifications
-- `PHASE9_REQUIREMENTS.md` — OAuth 2.0 authentication
-- `PHASE10_REQUIREMENTS.md` — Offline mode and queued send
-- `PHASE11_REQUIREMENTS.md` — Polish and beta validation
-- `HTML_ATTACHMENT_PIPELINE_REQUIREMENTS.md` — HTML rendering and attachments
-- `IMAP_IDLE_PUSH_REQUIREMENTS.md` — IMAP IDLE push notifications
-- `MISSING_FUNCTIONALITY_REQUIREMENTS.md` — Infrastructure gap analysis
-- `PGP_SMIME_PHISHING_REQUIREMENTS.md` — Security feature detection
-- `POP3_FULL_IMPLEMENTATION_REQUIREMENTS.md` — POP3 protocol implementation
-- `ACCESSIBILITY_AUTOMATION_UIA_REQUIREMENTS.md` — Accessibility automation framework
+- `PHASE8_ARCHITECTURE.md`: Contact management architecture
+- `PHASE8_DETAILED_SPECIFICATIONS.md`: Contact management specifications
+- `PHASE9_REQUIREMENTS.md`: OAuth 2.0 authentication
+- `PHASE10_REQUIREMENTS.md`: Offline mode and queued send
+- `PHASE11_REQUIREMENTS.md`: Polish and beta validation
+- `HTML_ATTACHMENT_PIPELINE_REQUIREMENTS.md`: HTML rendering and attachments
+- `IMAP_IDLE_PUSH_REQUIREMENTS.md`: IMAP IDLE push notifications
+- `MISSING_FUNCTIONALITY_REQUIREMENTS.md`: Infrastructure gap analysis
+- `PGP_SMIME_PHISHING_REQUIREMENTS.md`: Security feature detection
+- `POP3_FULL_IMPLEMENTATION_REQUIREMENTS.md`: POP3 protocol implementation
+- `ACCESSIBILITY_AUTOMATION_UIA_REQUIREMENTS.md`: Accessibility automation framework

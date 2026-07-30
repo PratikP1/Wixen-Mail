@@ -24,7 +24,7 @@ what is finished.
 
 Download `Wixen-Mail-Setup-<version>.exe` from the
 [releases page](https://github.com/PratikP1/Wixen-Mail/releases) and run it. Installing for
-yourself needs no administrator rights. See [installing.md](docs/installing.md) for the
+yourself needs no administrator rights. See [installing and uninstalling](docs/installing.md) for the
 silent install switches, where your data is kept, and what uninstalling removes.
 
 ## Building from source
@@ -99,12 +99,12 @@ would be worse than showing none.
 
 What does work: sending, local storage for contacts, calendars, tasks, notes and
 reminders with their panels, and the accessibility layer. See
-[docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md), which is written
+[what is built and what is not](docs/IMPLEMENTATION_STATUS.md), which is written
 to be believed rather than to sell the project.
 
 ## Contributing
 
-See [CONTRIBUTING.md](docs/contributing.md).
+See [how to contribute](docs/contributing.md).
 
 ## Acknowledgements
 

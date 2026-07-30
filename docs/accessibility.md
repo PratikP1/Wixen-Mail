@@ -298,10 +298,15 @@ Adjust the level of detail provided by screen readers:
 
 ## Contact
 
-For accessibility-related questions or feedback:
-- GitHub Issues: Use the `accessibility` label
-- Email: accessibility@wixen-mail.org (when available)
-- Community Forum: GitHub Discussions
+For questions or feedback about accessibility:
+
+- [Open an issue](https://github.com/PratikP1/Wixen-Mail/issues) and add the
+  `accessibility` label.
+- [Start a discussion](https://github.com/PratikP1/Wixen-Mail/discussions) if it
+  is a question rather than a fault.
+
+There is no email address yet. One will be listed here when there is one to
+list, rather than a placeholder that bounces.
 
 ## Commitment to Continuous Improvement
 

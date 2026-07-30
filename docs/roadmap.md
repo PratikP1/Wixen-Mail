@@ -215,4 +215,4 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - Support for major screen readers (NVDA, JAWS, Narrator)
 
 ## Contributing
-We welcome contributions! Please see [CONTRIBUTING.md](contributing.md) for guidelines.
+We welcome contributions! Please see [how to contribute](contributing.md).

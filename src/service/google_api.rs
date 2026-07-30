@@ -1,4 +1,4 @@
-//! Google API client — People API v1 (contacts) and Calendar API v3.
+//! Google API client: People API v1 (contacts) and Calendar API v3.
 //!
 //! Pure HTTP client using `reqwest` with Bearer auth. No UI, no DB.
 //! All methods take an OAuth access token and return deserialized results.

@@ -1,4 +1,4 @@
-//! Presentation layer — UI and accessibility components
+//! Presentation layer: UI and accessibility components
 //!
 //! Native wxdragon (wxWidgets) UI with built-in accessibility support.
 

@@ -95,5 +95,5 @@ settings, and the logs. Paste that into File Explorer's address bar to open it.
 Passwords and tokens are not in there, they are in the Windows credential store.
 
 `--erase-all-data` removes all of it, including the saved passwords. The
-uninstaller runs it for you. [installing.md](installing.md) has the detail,
+uninstaller runs it for you. [Installing and uninstalling](installing.md) has the detail,
 including what to copy if you want to keep your mail before uninstalling.

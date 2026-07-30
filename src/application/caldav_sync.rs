@@ -58,7 +58,7 @@ pub async fn sync_caldav_calendar(
         .filter_map(|e| e.provider_event_id.as_deref().map(|uid| (uid, e)))
         .collect();
 
-    // Process remote events — upsert into local
+    // Process remote events: upsert into local
     let mut seen_uids = std::collections::HashSet::new();
     for remote in &remote_events {
         seen_uids.insert(remote.uid.as_str());

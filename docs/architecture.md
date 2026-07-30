@@ -230,7 +230,7 @@ to name the same entries as the code that wrote them.
 **The cached mail is not encrypted**, and the documentation says so rather than
 implying otherwise. Windows keeps other users out of the folder; anything
 running as that user can read it, and so can anyone who takes the drive out of
-an unencrypted machine. See [installing.md](installing.md).
+an unencrypted machine. See [Installing and uninstalling](installing.md).
 
 #### Configuration Manager
 - **Settings Categories**:

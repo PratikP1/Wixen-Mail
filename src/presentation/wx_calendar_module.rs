@@ -1,4 +1,4 @@
-//! Calendar module panel — full calendar view with sidebar and event list.
+//! Calendar module panel: full calendar view with sidebar and event list.
 //!
 //! This panel lives inside the main window content area (not a dialog).
 //! It provides a calendar container tree in the sidebar and an event list

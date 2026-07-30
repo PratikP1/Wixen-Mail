@@ -101,7 +101,7 @@ pub enum ComposeMode {
     Draft(CompositionData),
 }
 
-/// Format a reply subject line — prepends "Re: " unless already present.
+/// Format a reply subject line: prepends "Re: " unless already present.
 fn format_reply_subject(subject: &str) -> String {
     if subject.starts_with("Re: ") {
         subject.to_string()
@@ -110,7 +110,7 @@ fn format_reply_subject(subject: &str) -> String {
     }
 }
 
-/// Format a forward subject line — prepends "Fwd: " unless already present.
+/// Format a forward subject line: prepends "Fwd: " unless already present.
 fn format_forward_subject(subject: &str) -> String {
     if subject.starts_with("Fwd: ") {
         subject.to_string()
@@ -260,7 +260,7 @@ pub fn show_compose_dialog_full(
     // -- Compose toolbar --
     let toolbar_sizer = BoxSizer::builder(Orientation::Horizontal).build();
 
-    // Prominent Send button (Outlook-style — first in toolbar)
+    // Prominent Send button (Outlook-style, first in toolbar)
     let send_toolbar_btn = Button::builder(&dialog)
         .with_label("Se&nd")
         .with_id(ID_SEND)
@@ -287,7 +287,7 @@ pub fn show_compose_dialog_full(
     toolbar_sizer.add(&redo_btn, 0, SizerFlag::All, 2);
     toolbar_sizer.add_spacer(12);
 
-    // Formatting: Bold, Italic, Underline — accessible labels for screen readers
+    // Formatting: Bold, Italic and Underline, with accessible labels for screen readers
     let bold_btn = Button::builder(&dialog)
         .with_label("B")
         .with_id(ID_BOLD)
@@ -339,7 +339,7 @@ pub fn show_compose_dialog_full(
     attach_btn.set_name("Attach file");
     toolbar_sizer.add(&attach_btn, 0, SizerFlag::All, 2);
 
-    // Remove all toolbar buttons from tab order — accessible via keyboard shortcuts
+    // Remove all toolbar buttons from tab order: accessible via keyboard shortcuts
     send_toolbar_btn.set_can_focus(false);
     undo_btn.set_can_focus(false);
     redo_btn.set_can_focus(false);
@@ -1462,7 +1462,7 @@ fn show_send_preview(
         8,
     );
 
-    // Body preview (WebView — renders HTML formatting)
+    // Body preview (WebView, renders HTML formatting)
     let body_preview = WebView::builder(&dlg)
         .with_backend(WebViewBackend::Edge)
         .build();
@@ -1475,7 +1475,7 @@ fn show_send_preview(
     let html = renderer.wrap_body(&MessageBody::Html(data.body.clone()));
     body_preview.set_page(&html, "about:blank");
 
-    // Block navigation in preview — open links in default browser
+    // Block navigation in preview: open links in default browser
     body_preview.on_navigating(|event: WebViewEventData| {
         if let Some(url) = event.get_string()
             && !url.is_empty()

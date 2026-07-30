@@ -313,7 +313,7 @@ impl CalDavClient {
 fn parse_propfind_calendars(xml: &str, base_url: &str) -> Result<Vec<CalDavCalendar>> {
     let mut calendars = Vec::new();
 
-    // Simple XML extraction — find <d:response> blocks with calendar resourcetype
+    // Simple XML extraction: find <d:response> blocks with calendar resourcetype
     for response_block in xml.split("<d:response>").skip(1) {
         let href = extract_xml_value(response_block, "d:href").unwrap_or_default();
         if href.is_empty() {
@@ -336,7 +336,7 @@ fn parse_propfind_calendars(xml: &str, base_url: &str) -> Result<Vec<CalDavCalen
         let url = if href.starts_with("http") {
             href
         } else {
-            // Relative path — resolve against base URL
+            // Relative path: resolve against base URL
             let base = url::Url::parse(base_url)
                 .map_err(|e| Error::Other(format!("Invalid base URL: {}", e)))?;
             base.join(&href)

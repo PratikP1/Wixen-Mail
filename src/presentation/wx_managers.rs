@@ -196,7 +196,7 @@ fn make_shell(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Contact Manager — Comprehensive Google Contacts-style fields
+// Contact Manager: Comprehensive Google Contacts-style fields
 // ══════════════════════════════════════════════════════════════════════════════
 
 /// Phone number with type label
@@ -513,7 +513,7 @@ pub(crate) fn get_address_field_labels(country: &str) -> (&'static str, &'static
     }
 }
 
-// ── Contact Manager — Custom Loop with Live Search ──────────────────────────
+// ── Contact Manager: Custom Loop with Live Search ──────────────────────────
 
 pub fn show_contact_manager_dialog(
     parent: &Frame,
@@ -525,7 +525,7 @@ pub fn show_contact_manager_dialog(
         .build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
-    // ── Search row — first in tab order for accessibility ────────────
+    // ── Search row: first in tab order for accessibility ────────────
     let search_row = BoxSizer::builder(Orientation::Horizontal).build();
     let search_lbl = StaticText::builder(&dialog).with_label("&Search:").build();
     let search_f = TextCtrl::builder(&dialog).build();
@@ -597,7 +597,7 @@ pub fn show_contact_manager_dialog(
     // Initial population
     populate_contacts_filtered(&list, &working.borrow(), "", &mut index_map.borrow_mut());
 
-    // ── Live search — update results as user types ──────────────────
+    // ── Live search: update results as user types ──────────────────
     search_f.on_text_changed({
         let w = working.clone();
         let m = index_map.clone();
@@ -753,7 +753,7 @@ fn populate_contacts_filtered(
     }
 }
 
-// ── Contact Edit — Tabbed Dialog ─────────────────────────────────────────────
+// ── Contact Edit: Tabbed Dialog ─────────────────────────────────────────────
 
 /// Button IDs for multi-value sub-lists (offset from ID_HIGHEST to avoid clashes)
 const ID_ADD_EMAIL: Id = ID_HIGHEST + 400;
@@ -1140,7 +1140,7 @@ fn show_contact_edit(
             r if r == ID_OK => {
                 let contact_name = name_f.get_value();
                 if contact_name.trim().is_empty() {
-                    // Name is required — re-show dialog
+                    // Name is required: re-show dialog
                     continue;
                 }
                 return Some(ContactEntry {
@@ -1220,7 +1220,7 @@ fn show_email_sub_dialog(parent: &Dialog, _existing: Option<&EmailItem>) -> Opti
         .build();
     fields.add_growable_col(1, 1);
 
-    // Accelerators: T(Type), A(Address) — first letters, no conflicts
+    // Accelerators are first letters, no conflicts: T(Type), A(Address)
     let type_lbl = StaticText::builder(&dlg).with_label("&Type:").build();
     let type_choices: Vec<String> = EMAIL_LABELS.iter().map(|s| s.to_string()).collect();
     let type_choice = Choice::builder(&dlg).with_choices(type_choices).build();
@@ -1290,7 +1290,7 @@ fn show_phone_sub_dialog(parent: &Dialog, _existing: Option<&PhoneItem>) -> Opti
         .build();
     fields.add_growable_col(1, 1);
 
-    // Accelerators: T(Type), N(Number) — first letters, no conflicts
+    // Accelerators are first letters, no conflicts: T(Type), N(Number)
     let type_lbl = StaticText::builder(&dlg).with_label("&Type:").build();
     let type_choices: Vec<String> = PHONE_LABELS.iter().map(|s| s.to_string()).collect();
     let type_choice = Choice::builder(&dlg).with_choices(type_choices).build();
@@ -1363,7 +1363,7 @@ fn show_address_sub_dialog(
         .build();
     fields.add_growable_col(1, 1);
 
-    // ── Country dropdown FIRST — drives field labels ─────────────────
+    // ── Country dropdown FIRST: drives field labels ─────────────────
     // Accelerators: C(Country), T(Type), S(Street), I(City),
     //   region and code labels set dynamically by get_address_field_labels()
     let country_lbl = StaticText::builder(&dlg).with_label("&Country:").build();
@@ -1399,7 +1399,7 @@ fn show_address_sub_dialog(
     let street_f = add_field(&dlg, &fields, "&Street:");
     let city_f = add_field(&dlg, &fields, "C&ity:");
 
-    // Region and code labels are dynamic — set based on selected country
+    // Region and code labels are dynamic: set based on selected country
     let (initial_region_label, initial_code_label) = get_address_field_labels(default_country);
 
     let region_lbl = StaticText::builder(&dlg)
@@ -1430,7 +1430,7 @@ fn show_address_sub_dialog(
 
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
-    // ── Country change handler — update region/code labels ───────────
+    // ── Country change handler: update region/code labels ───────────
     country_choice.on_selection_changed({
         let rl = region_lbl;
         let cl = code_lbl;
@@ -1506,7 +1506,7 @@ fn show_custom_field_sub_dialog(
         .build();
     fields.add_growable_col(1, 1);
 
-    // Accelerators: L(Label), V(Value) — first letters, no conflicts
+    // Accelerators are first letters, no conflicts: L(Label), V(Value)
     let label_f = add_field(&dlg, &fields, "&Label:");
     let value_f = add_field(&dlg, &fields, "&Value:");
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 8);
@@ -1640,7 +1640,7 @@ fn show_filter_edit(parent: &Dialog, existing: Option<&FilterRule>) -> Option<Fi
     fields.add_growable_col(1, 1);
 
     // Accelerators: N(Name), F(Field), T(Type), P(Pattern), C(Case),
-    //   A(Action), V(Value), E(Enabled) — all first letters
+    //   A(Action), V(Value), E(Enabled), all first letters
     let name_f = add_field(&dlg, &fields, "Rule &Name:");
 
     let field_label = StaticText::builder(&dlg)
@@ -1866,7 +1866,7 @@ fn show_tag_edit(parent: &Dialog, existing: Option<&TagEntry>) -> Option<TagEntr
         .build();
     fields.add_growable_col(1, 1);
 
-    // Accelerators: N(Name), C(Color) — first letters, no conflicts
+    // Accelerators are first letters, no conflicts: N(Name), C(Color)
     let name_f = add_field(&dlg, &fields, "Tag &Name:");
 
     let color_label = StaticText::builder(&dlg).with_label("&Color:").build();
@@ -2027,7 +2027,7 @@ fn show_sig_edit(parent: &Dialog, existing: Option<&SignatureEntry>) -> Option<S
         .build();
     fields.add_growable_col(1, 1);
 
-    // Accelerators: N(Name), D(Default), S(Signature/plain), H(HTML) — first letters
+    // Accelerators are all first letters: N(Name), D(Default), S(Signature/plain), H(HTML)
     let name_f = add_field(&dlg, &fields, "&Name:");
 
     let def_label = StaticText::builder(&dlg).with_label("").build();

@@ -1,4 +1,4 @@
-//! Note manager — business logic for notes and note folders.
+//! Note manager: business logic for notes and note folders.
 //!
 //! Provides an in-memory note store with filtering by folder, pin status,
 //! and search. Notes are plain-text or markdown.

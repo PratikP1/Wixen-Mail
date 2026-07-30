@@ -188,7 +188,7 @@ Wixen-Mail/
 2. **Extensions**: Plugin system
 3. **Cross-platform**: Linux and macOS support
 
-See [ROADMAP.md](ROADMAP.md) for detailed task list.
+See [what is planned next](roadmap.md) for the task list.
 
 ## Getting Help
 
