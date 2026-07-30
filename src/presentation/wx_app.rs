@@ -3619,7 +3619,7 @@ fn folder_tree_updates(
     cache: &MessageCache,
     account_id: &str,
 ) -> crate::common::Result<Vec<UIUpdate>> {
-    let folders = cache.get_folders_for_account(account_id)?;
+    let folders = folders_in_the_tree(cache, account_id)?;
     // The tree label carries the unread count, because a folder name alone
     // does not answer the question somebody is asking when they arrow onto it.
     //
@@ -3631,6 +3631,33 @@ fn folder_tree_updates(
         UIUpdate::FolderIdsLoaded(folders.iter().map(|f| (folder_label(f), f.id)).collect()),
         UIUpdate::FoldersLoaded(folders.iter().map(folder_label).collect()),
     ])
+}
+
+/// The folders the tree shows: the ones that are kept up to date.
+///
+/// Not every mailbox the server has. A shared or university server lists every
+/// one the account can see, often hundreds, and a folder that is never
+/// downloaded is a row somebody arrows onto, opens, and finds empty, which
+/// reads as a broken folder rather than as one they turned off.
+///
+/// The same rule the sync uses, so the tree and the sync can never disagree
+/// about which folders exist. Turning one back on is File, then Folders to Keep
+/// Up to Date, which reads the whole stored list rather than this.
+fn folders_in_the_tree(
+    cache: &MessageCache,
+    account_id: &str,
+) -> crate::common::Result<Vec<crate::data::message_cache::CachedFolder>> {
+    use crate::application::mail_sync::{cached_folder_syncs, keeps_subscriptions_stored};
+
+    let all = cache.get_folders_for_account(account_id)?;
+    let chosen = cache.folder_choices(account_id).unwrap_or_default();
+    let facts = cache.folder_server_facts(account_id).unwrap_or_default();
+    let keeps = keeps_subscriptions_stored(&facts);
+
+    Ok(all
+        .into_iter()
+        .filter(|folder| cached_folder_syncs(folder, &chosen, &facts, keeps))
+        .collect())
 }
 
 /// How a folder reads in the tree.
@@ -5587,30 +5614,21 @@ fn choose_folders(
     let chosen = cache.folder_choices(&account_id).unwrap_or_default();
 
     let facts = cache.folder_server_facts(&account_id).unwrap_or_default();
-    let keeps_subscriptions = facts.values().any(|(_, subscribed)| *subscribed);
+    let keeps = crate::application::mail_sync::keeps_subscriptions_stored(&facts);
 
     // What the sync would do as things stand, so somebody who does not care can
-    // close the window and lose nothing. The same rule the sync uses, from the
-    // same facts, rather than a second version of it that can drift out of step
-    // and tick a folder the sync then skips.
+    // close the window and lose nothing. The rule the sync and the tree both
+    // use, rather than a third version of it that can drift out of step and
+    // tick a folder the sync then skips.
     let rows: Vec<FolderRow> = stored
         .iter()
         .map(|folder| {
             let (holds_all_mail, subscribed) =
                 facts.get(&folder.path).copied().unwrap_or((false, true));
-            let by_default = crate::application::mail_sync::sync_by_default(
-                crate::application::mail_sync::FolderFacts {
-                    kind: crate::common::types::FolderType::from_stored(&folder.folder_type),
-                    // Anything in the cache was listed as somewhere messages
-                    // could be stored, so it is selectable.
-                    selectable: true,
-                    holds_all_mail,
-                    subscribed,
-                },
-                keeps_subscriptions,
-            );
             FolderRow {
-                syncing: chosen.get(&folder.path).copied().unwrap_or(by_default),
+                syncing: crate::application::mail_sync::cached_folder_syncs(
+                    folder, &chosen, &facts, keeps,
+                ),
                 path: folder.path.clone(),
                 name: folder.name.clone(),
                 subscribed,

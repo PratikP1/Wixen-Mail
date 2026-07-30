@@ -399,6 +399,48 @@ pub fn sync_by_default(facts: FolderFacts, server_keeps_subscriptions: bool) -> 
         && (facts.subscribed || !server_keeps_subscriptions)
 }
 
+/// What the cache knows about each folder, beyond its name and role.
+///
+/// Keyed by the server's own path: whether it holds a copy of every message,
+/// and whether the account is subscribed to it. Written by a sync from what the
+/// server said, because nothing local can work either out.
+pub type StoredFacts = std::collections::HashMap<String, (bool, bool)>;
+
+/// Whether a folder the cache holds should be kept up to date.
+///
+/// The same rule as [`folders_to_sync`], from the same facts, for the two
+/// places that have cache rows rather than a live folder list: the tree that
+/// shows the folders, and the window that asks about them. Written once so the
+/// three can never disagree about which folders exist, which would show a
+/// folder in the tree that the sync then never fills.
+pub fn cached_folder_syncs(
+    folder: &CachedFolder,
+    chosen: &FolderChoices,
+    facts: &StoredFacts,
+    keeps_subscriptions: bool,
+) -> bool {
+    if let Some(wanted) = chosen.get(&folder.path) {
+        return *wanted;
+    }
+    let (holds_all_mail, subscribed) = facts.get(&folder.path).copied().unwrap_or((false, true));
+    sync_by_default(
+        FolderFacts {
+            kind: FolderType::from_stored(&folder.folder_type),
+            // Anything in the cache was listed as somewhere messages could be
+            // stored against, so it is selectable.
+            selectable: true,
+            holds_all_mail,
+            subscribed,
+        },
+        keeps_subscriptions,
+    )
+}
+
+/// Whether the server keeps a subscription list at all, from stored facts.
+pub fn keeps_subscriptions_stored(facts: &StoredFacts) -> bool {
+    facts.values().any(|(_, subscribed)| *subscribed)
+}
+
 /// Whether the server keeps a subscription list at all.
 ///
 /// Read from the folders it listed rather than from a capability, because there
@@ -687,6 +729,84 @@ mod tests {
             .collect();
 
         assert_eq!(names, vec!["INBOX", "Work"]);
+    }
+
+    fn cached(path: &str, folder_type: FolderType) -> CachedFolder {
+        CachedFolder {
+            id: 0,
+            account_id: "acc".to_string(),
+            name: path.to_string(),
+            path: path.to_string(),
+            folder_type: folder_type.as_str().to_string(),
+            unread_count: 0,
+            total_count: 0,
+        }
+    }
+
+    #[test]
+    fn test_the_tree_and_the_sync_agree_about_a_stored_folder() {
+        // Three places read this: the sync, the tree that lists the folders,
+        // and the window that asks about them. A folder shown in the tree that
+        // the sync never fills is a folder somebody opens and finds empty.
+        let facts = StoredFacts::from([
+            ("INBOX".to_string(), (false, true)),
+            ("[Gmail]/All Mail".to_string(), (true, true)),
+            ("Old backups".to_string(), (false, false)),
+        ]);
+        let nothing_chosen = FolderChoices::new();
+
+        assert!(cached_folder_syncs(
+            &cached("INBOX", FolderType::Inbox),
+            &nothing_chosen,
+            &facts,
+            true
+        ));
+        assert!(
+            !cached_folder_syncs(
+                &cached("[Gmail]/All Mail", FolderType::Archive),
+                &nothing_chosen,
+                &facts,
+                true
+            ),
+            "the folder holding everything"
+        );
+        assert!(
+            !cached_folder_syncs(
+                &cached("Old backups", FolderType::Custom),
+                &nothing_chosen,
+                &facts,
+                true
+            ),
+            "not subscribed"
+        );
+    }
+
+    #[test]
+    fn test_a_stored_folder_somebody_answered_for_obeys_them() {
+        let facts = StoredFacts::from([("[Gmail]/All Mail".to_string(), (true, true))]);
+        let asked_for = FolderChoices::from([("[Gmail]/All Mail".to_string(), true)]);
+
+        assert!(cached_folder_syncs(
+            &cached("[Gmail]/All Mail", FolderType::Archive),
+            &asked_for,
+            &facts,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_a_folder_the_cache_knows_nothing_about_is_treated_as_ordinary() {
+        // What every folder looks like in a database written before the facts
+        // were stored. Reading it as unsubscribed would empty the folder tree
+        // the moment this shipped.
+        let empty = StoredFacts::new();
+
+        assert!(cached_folder_syncs(
+            &cached("Work", FolderType::Custom),
+            &FolderChoices::new(),
+            &empty,
+            keeps_subscriptions_stored(&empty)
+        ));
     }
 
     #[test]
