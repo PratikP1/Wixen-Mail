@@ -985,6 +985,40 @@ impl ImapSession {
         Ok(Moved::Moved)
     }
 
+    /// Remove every message in the open mailbox with this `Message-ID`.
+    ///
+    /// Used to replace a filed draft with a newer one. Searched rather than
+    /// remembered, because the reply to an APPEND only says where the message
+    /// landed on servers with UIDPLUS, and this has to work on the ones without.
+    ///
+    /// The identifier is quoted, so a value containing a space or a bracket
+    /// cannot end the search key early and turn the criteria into something
+    /// else. Nothing found is not an error: a draft saved for the first time
+    /// has no previous copy.
+    pub async fn remove_by_message_id(&mut self, message_id: &str) -> Result<usize> {
+        self.may_i("replace a saved draft")?;
+        let quoted = quote_for_search(message_id);
+        let found = self
+            .search_uids(&format!("HEADER MESSAGE-ID {quoted}"))
+            .await?;
+
+        for uid in &found {
+            self.set_flag(*uid, "\\Deleted", true).await?;
+            if self.abilities.uid_expunge {
+                self.expunge_one(*uid).await?;
+            }
+        }
+        if !found.is_empty() && !self.abilities.uid_expunge {
+            // Flagged and left. Without UIDPLUS the only expunge available
+            // removes everything in the mailbox flagged for deletion, which
+            // would be other people's mail as well as the old draft.
+            tracing::warn!(
+                "The mail server has no UIDPLUS, so the previous draft was marked for removal and left in place"
+            );
+        }
+        Ok(found.len())
+    }
+
     /// Add a message to a mailbox, as it would have arrived.
     ///
     /// Used for the copy of a sent message. `flags` is an IMAP flag list such
@@ -1350,6 +1384,20 @@ fn message_from_fetch(fetch: &Fetch) -> Option<ImapMessage> {
     })
 }
 
+/// One value, as an IMAP quoted string.
+///
+/// A search key holding a space, a bracket or a quotation mark would otherwise
+/// end early and the rest would be read as more of the criteria. That is a
+/// command doing something nobody asked for, built out of a header somebody
+/// else wrote, which is the shape of every injection there has ever been.
+///
+/// RFC 3501 escapes exactly two characters inside a quoted string, the
+/// backslash and the quotation mark, and there is no third case.
+fn quote_for_search(value: &str) -> String {
+    let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{escaped}\"")
+}
+
 /// What one FETCH asks for when listing a folder.
 ///
 /// Built rather than written out, because the Gmail fields must not be asked
@@ -1473,6 +1521,40 @@ mod tests {
         assert_eq!(ImapSecurity::choose(993, false), ImapSecurity::Plaintext);
         // An unusual port with encryption asked for is TLS, not plaintext.
         assert_eq!(ImapSecurity::choose(1993, true), ImapSecurity::Tls);
+    }
+
+    #[test]
+    fn test_a_search_value_cannot_escape_its_quotes() {
+        // A header value with a quotation mark in it would otherwise end the
+        // search key early and the rest would be read as more criteria: a
+        // command doing something nobody asked for, built out of text somebody
+        // else wrote.
+        let nasty = quote_for_search("<a\" DELETED \"b>");
+
+        assert!(nasty.starts_with('"') && nasty.ends_with('"'), "{nasty}");
+        // Every inner quotation mark is escaped, so none of them closes it.
+        let inside = &nasty[1..nasty.len() - 1];
+        for (at, _) in inside.match_indices('"') {
+            assert!(
+                at > 0 && inside.as_bytes()[at - 1] == b'\\',
+                "unescaped quote at {at} in {nasty}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_backslash_is_escaped_before_the_quotes_are() {
+        // The other order turns one backslash into an escape for the quote
+        // that follows it, and the value ends early after all.
+        assert_eq!(quote_for_search("a\\b"), "\"a\\\\b\"");
+    }
+
+    #[test]
+    fn test_an_ordinary_identifier_is_simply_quoted() {
+        assert_eq!(
+            quote_for_search("<draft-1@wixen-mail.invalid>"),
+            "\"<draft-1@wixen-mail.invalid>\""
+        );
     }
 
     #[test]

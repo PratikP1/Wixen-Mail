@@ -165,6 +165,22 @@ impl MessageCache {
         Ok(())
     }
 
+    /// What kind of folder this is, by its identifier.
+    ///
+    /// Asked before a folder is listed, because the Outbox is not read from the
+    /// messages table and nothing else can tell from the id alone.
+    pub fn folder_kind(&self, folder_id: i64) -> Result<Option<crate::common::types::FolderType>> {
+        self.conn
+            .query_row(
+                "SELECT folder_type FROM folders WHERE id = ?1",
+                params![folder_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read the folder: {}", e)))
+            .map(|found| found.map(|kind| crate::common::types::FolderType::from_stored(&kind)))
+    }
+
     /// Get folder by account and path
     pub fn get_folder(&self, account_id: &str, path: &str) -> Result<Option<CachedFolder>> {
         let mut stmt = self

@@ -330,6 +330,24 @@ impl MailController {
         session.copy_message(uid, into).await
     }
 
+    /// Remove any message in a folder carrying this identifier.
+    ///
+    /// How a re-saved draft replaces the copy already filed. There is no
+    /// dependable way to be told where an appended message landed on every
+    /// server, so it is found again by the header it was written with, which is
+    /// the same every time for the same draft.
+    ///
+    /// Nothing found is success, not failure: the first save of a draft has no
+    /// previous copy, and neither does one filed before this existed.
+    pub async fn remove_by_message_id(&self, folder: &str, message_id: &str) -> Result<usize> {
+        let mut guard = self.require_imap().await?;
+        let session = &mut *guard;
+        if session.selected_folder() != Some(folder) {
+            session.select_folder(folder).await?;
+        }
+        session.remove_by_message_id(message_id).await
+    }
+
     /// Save a copy of a message into a folder, as the Sent copy is saved.
     pub async fn append_message(&self, into: &str, flags: Option<&str>, raw: &[u8]) -> Result<()> {
         let mut guard = self.require_imap().await?;

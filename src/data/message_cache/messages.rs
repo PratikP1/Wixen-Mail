@@ -140,6 +140,26 @@ impl MessageCache {
         Ok(found)
     }
 
+    /// The number a message with this identifier already has in a folder.
+    ///
+    /// How a re-saved draft replaces its row rather than adding another. With
+    /// automatic saving on, the alternative is one new message a minute for as
+    /// long as somebody writes.
+    pub fn message_uid_by_message_id(
+        &self,
+        folder_id: i64,
+        message_id: &str,
+    ) -> Result<Option<u32>> {
+        self.conn
+            .query_row(
+                "SELECT uid FROM messages WHERE folder_id = ?1 AND message_id = ?2",
+                params![folder_id, message_id],
+                |row| row.get::<_, u32>(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to look up the message: {}", e)))
+    }
+
     /// The next unused message number in a folder that has no server numbering.
     ///
     /// A local folder and a POP mailbox both need one: the table keys messages

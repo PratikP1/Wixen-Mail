@@ -4,6 +4,30 @@ use super::{MessageCache, QueuedOutboxMessage};
 use crate::common::{Error, Result};
 use rusqlite::params;
 
+/// What a queued message's row says it is doing.
+///
+/// The state goes in the subject because that is the column somebody reads
+/// and the only one wide enough to carry a sentence. A message that has
+/// failed four times looks exactly like one that has not been tried, and
+/// the difference is the whole reason to open this folder.
+///
+/// Free of the error's own text on the first failure, and carrying it after
+/// that: one failure is usually the network and says nothing useful, while
+/// a repeated one is a reason somebody has to act on.
+fn waiting_label(subject: &str, attempts: i64, last_error: Option<&str>) -> String {
+    let subject = if subject.trim().is_empty() {
+        "No subject"
+    } else {
+        subject
+    };
+    match (attempts, last_error) {
+        (0, _) => format!("{subject}, waiting to send"),
+        (1, _) => format!("{subject}, tried once"),
+        (tried, Some(why)) => format!("{subject}, tried {tried} times: {why}"),
+        (tried, None) => format!("{subject}, tried {tried} times"),
+    }
+}
+
 impl MessageCache {
     /// Queue message for later sending when offline
     pub fn queue_outbox_message(&self, item: &QueuedOutboxMessage) -> Result<()> {
@@ -48,6 +72,85 @@ impl MessageCache {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect outbox messages: {}", e)))?;
         Ok(rows)
+    }
+
+    /// The queue, as rows the message list can show.
+    ///
+    /// Read from the queue itself rather than copied into the messages table.
+    /// A copy is a second place for the same fact, and the two drift: mail
+    /// would sit in the Outbox folder after it had gone, or leave the folder
+    /// while still queued, and there would be nothing to say which was right.
+    ///
+    /// `rowid` is the identifier, which SQLite gives every row here. It is only
+    /// meaningful inside this folder, and the one command that acts on it,
+    /// cancelling, looks it up the same way.
+    ///
+    /// The attempt count and the last error go in the subject line, because
+    /// that is the column somebody reads and "tried 4 times" is the thing they
+    /// need to know about a message that has not gone.
+    pub fn outbox_rows(&self, account_id: &str) -> Result<Vec<super::MessageListRow>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rowid, to_addr, subject, body, created_at, attempt_count, last_error
+                 FROM outbox_queue
+                 WHERE account_id = ?1
+                 ORDER BY created_at ASC",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare outbox query: {}", e)))?;
+
+        let rows = stmt
+            .query_map(params![account_id], |row| {
+                let subject: String = row.get(2)?;
+                let attempts: i64 = row.get(5)?;
+                let last_error: Option<String> = row.get(6)?;
+                let snippet: String = row.get(3)?;
+                Ok(super::MessageListRow {
+                    id: row.get(0)?,
+                    uid: 0,
+                    message_id: String::new(),
+                    refs_header: None,
+                    subject: waiting_label(&subject, attempts, last_error.as_deref()),
+                    // Where it is going, which is what identifies a message
+                    // nobody has received yet. The From column would be your
+                    // own address on every row.
+                    from_addr: row.get(1)?,
+                    to_addr: row.get(1)?,
+                    cc: None,
+                    reply_to: None,
+                    date: row.get(4)?,
+                    snippet: Some(snippet.chars().take(200).collect()),
+                    size_bytes: None,
+                    // Nothing here has been anywhere, so none of the flags a
+                    // server would set mean anything. Read, so a queue does not
+                    // report itself as unread mail to deal with.
+                    read: true,
+                    starred: false,
+                    answered: false,
+                    draft: false,
+                    has_attachments: false,
+                    safety: crate::service::safety::Safety::Ordinary,
+                    safety_reasons: Vec::new(),
+                    receipt_to: None,
+                })
+            })
+            .map_err(|e| Error::Other(format!("Failed to query the outbox: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect the outbox: {}", e)))?;
+        Ok(rows)
+    }
+
+    /// Take a message out of the queue by the identifier the list shows.
+    ///
+    /// Cancelling a send, which is the one thing worth being able to do to a
+    /// message that has not gone yet and could not be done at all before: the
+    /// queue was a number on the status bar.
+    pub fn cancel_queued(&self, rowid: i64) -> Result<bool> {
+        let removed = self
+            .conn
+            .execute("DELETE FROM outbox_queue WHERE rowid = ?1", params![rowid])
+            .map_err(|e| Error::Other(format!("Failed to cancel the message: {}", e)))?;
+        Ok(removed > 0)
     }
 
     /// Delete queued outbox message

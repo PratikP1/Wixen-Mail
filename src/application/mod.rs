@@ -13,6 +13,7 @@ pub mod contacts;
 pub mod contacts_sync;
 pub mod context_menu;
 pub mod destinations;
+pub mod draft_message;
 pub mod filters;
 pub mod forget;
 pub mod from_message;

@@ -2755,6 +2755,12 @@ document.addEventListener('keydown', function(e) {
                                     .map(|msg| (msg.message_id, msg.uid, msg.subject.clone()))
                             };
                             if let Some((cache_id, uid, subject)) = selected {
+                                // In the outbox, delete means cancel the send.
+                                // There is no server copy to remove: the
+                                // message has not been anywhere.
+                                if cancel_if_queued(&state, &message_cache, &ui_tx, &runtime, cache_id) {
+                                    return;
+                                }
                                 send_status(&ui_tx, &runtime, &format!("Deleting {}...", subject));
                                 spawn_server_change(
                                     &state,
@@ -4203,6 +4209,27 @@ fn load_folder_messages(
     else {
         return;
     };
+    // The outbox is not read from the messages table. It is the send queue
+    // itself, shown as rows, because a copy of the queue in another table is a
+    // second place for the same fact: mail would sit in the folder after it had
+    // gone, or leave it while still queued, and nothing would say which was
+    // right.
+    if cache.folder_kind(folder_id).ok().flatten() == Some(crate::common::types::FolderType::Outbox)
+    {
+        match cache.outbox_rows(&account_id) {
+            Ok(rows) => {
+                let items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
+                let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
+            }
+            Err(e) => {
+                let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                    "Could not read the outbox: {e}"
+                )));
+            }
+        }
+        return;
+    }
+
     // The stored column layout carries the sort, so a folder opens in the
     // order somebody arranged rather than always by date. Read here rather
     // than passed in, because this runs on a background thread and the layout
@@ -4464,7 +4491,7 @@ fn open_compose(
         let rt = rt.clone();
         let draft_id = draft_id.clone();
         move |data: &wx_compose::ComposeData| {
-            match save_as_draft(&state, &cache, data, draft_id.borrow().clone()) {
+            match save_as_draft(&state, &cache, &rt, data, draft_id.borrow().clone()) {
                 Ok((id, _)) => {
                     *draft_id.borrow_mut() = Some(id);
                     // Said, not silent. Somebody who relies on this needs to
@@ -4508,7 +4535,7 @@ fn open_compose(
             }
         }
         ComposeResult::SaveDraft(data) => {
-            match save_as_draft(state, cache, &data, draft_id.borrow().clone()) {
+            match save_as_draft(state, cache, rt, &data, draft_id.borrow().clone()) {
                 Ok((id, subject)) => {
                     *draft_id.borrow_mut() = Some(id);
                     send_status(tx, rt, &format!("Draft saved: {}", subject))
@@ -4542,6 +4569,7 @@ fn open_compose(
 fn save_as_draft(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
+    rt: &Arc<Runtime>,
     data: &wx_compose::ComposeData,
     existing: Option<String>,
 ) -> std::result::Result<(String, String), String> {
@@ -4580,7 +4608,167 @@ fn save_as_draft(
     cache
         .save_draft(&draft)
         .map_err(|e| format!("Draft could not be saved: {}", e))?;
+
+    // And into the folder drafts belong in, so it is somewhere a person would
+    // look rather than only in a table reachable by one menu command. On IMAP
+    // that is the server's Drafts folder, so it is on every device; on POP
+    // there is no server folder and it goes to the local one.
+    file_draft_copy(state, cache, rt, &draft);
     Ok((id, subject))
+}
+
+/// Put a draft in the folder this account keeps drafts in.
+///
+/// Best effort, and deliberately quiet. The draft is already saved by the time
+/// this runs, so a server that will not take a copy costs the copy and not the
+/// work. Saying so on every automatic save would be a sentence every minute
+/// somebody spends writing.
+fn file_draft_copy(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Arc<MessageCache>,
+    rt: &Arc<Runtime>,
+    draft: &crate::data::message_cache::CachedDraft,
+) {
+    use crate::application::{draft_message, local_folders};
+
+    let account = {
+        let s = lock_state(state);
+        s.accounts
+            .iter()
+            .find(|a| a.id == draft.account_id)
+            .cloned()
+    };
+    let Some(account) = account else { return };
+    let raw = draft_message::bytes_for(draft, &account.email);
+
+    // A local Drafts folder is written here and now. There is no server, and
+    // the cache holds a connection that cannot cross an await.
+    if let Some(folder) = local_folders::for_account(account.protocol())
+        .iter()
+        .find(|folder| folder.kind == crate::common::types::FolderType::Drafts)
+    {
+        if let Err(e) = replace_local_draft(cache, &account, &folder.path(), draft, &raw) {
+            tracing::warn!("The draft was saved but not filed: {e}");
+        }
+        return;
+    }
+
+    // Otherwise it is an IMAP account, and the copy goes to the server.
+    let Some(folder) = cache
+        .get_folders_for_account(&account.id)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|folder| {
+            crate::common::types::FolderType::from_stored(&folder.folder_type)
+                == crate::common::types::FolderType::Drafts
+        })
+        .map(|folder| folder.path)
+    else {
+        // No Drafts folder yet, which is an account that has never synced.
+        return;
+    };
+    spawn_draft_append(rt, account, folder, draft.id.clone(), raw);
+}
+
+/// Replace this draft's row in a folder on this computer.
+///
+/// Keyed on the draft's own identifier through the message id, so saving again
+/// updates the row rather than leaving a trail. With automatic saving on, the
+/// alternative is one new message a minute for as long as somebody writes.
+fn replace_local_draft(
+    cache: &Arc<MessageCache>,
+    account: &crate::data::account::Account,
+    folder: &str,
+    draft: &crate::data::message_cache::CachedDraft,
+    raw: &[u8],
+) -> crate::common::Result<()> {
+    use crate::application::draft_message;
+
+    let row = cache
+        .get_folder(&account.id, folder)?
+        .ok_or_else(|| crate::common::Error::Other("there is no Drafts folder".into()))?;
+    let message_id = draft_message::message_id_for(&draft.id);
+    let uid = match cache.message_uid_by_message_id(row.id, &message_id)? {
+        Some(uid) => uid,
+        None => cache.next_local_uid(row.id)?,
+    };
+
+    let stored = cache.upsert_message(&crate::data::message_cache::IncomingMessage {
+        folder_id: row.id,
+        uid,
+        message_id,
+        subject: draft.subject.clone(),
+        from_addr: account.email.clone(),
+        to_addr: draft.to_addr.clone(),
+        cc: draft.cc.clone(),
+        reply_to: None,
+        date: draft.updated_at.clone(),
+        internal_date: None,
+        size_bytes: Some(raw.len() as i64),
+        refs_header: None,
+        // Your own unfinished message is not unread mail to deal with.
+        read: true,
+        starred: false,
+        answered: false,
+        draft: true,
+        deleted: false,
+        has_attachments: false,
+        safety: crate::service::safety::Verdict::ordinary(),
+        gmail_message_id: None,
+        labels: None,
+        receipt_to: None,
+        pop_uidl: None,
+    })?;
+    cache.save_message_body(stored, Some(&draft.body), None)?;
+    Ok(())
+}
+
+/// Put a draft in the server's Drafts folder, replacing the copy already there.
+fn spawn_draft_append(
+    rt: &Arc<Runtime>,
+    account: crate::data::account::Account,
+    folder: String,
+    draft_id: String,
+    raw: Vec<u8>,
+) {
+    let handle = rt.handle().clone();
+
+    rt.spawn_blocking(move || {
+        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
+            return;
+        };
+        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
+            return;
+        };
+        let controller = MailController::new();
+        if handle
+            .block_on(controller.connect_imap(
+                account.imap_server.clone(),
+                port,
+                account.username.clone(),
+                auth,
+                account.imap_use_tls,
+                &account.id,
+            ))
+            .is_err()
+        {
+            return;
+        }
+
+        // The old copy goes first. Appending before removing would leave two
+        // drafts on the server if the removal then failed, and no way to tell
+        // which was the newer.
+        let message_id = crate::application::draft_message::message_id_for(&draft_id);
+        if let Err(e) = handle.block_on(controller.remove_by_message_id(&folder, &message_id)) {
+            tracing::warn!("The previous copy of the draft was not removed: {e}");
+        }
+        if let Err(e) =
+            handle.block_on(controller.append_message(&folder, Some(r"(\Draft \Seen)"), &raw))
+        {
+            tracing::warn!("The draft was saved but not filed on the server: {e}");
+        }
+        let _ = handle.block_on(controller.disconnect_imap());
+    });
 }
 
 fn queue_for_sending(
@@ -5802,6 +5990,52 @@ fn spawn_subscription_writes(
             )));
         }
     });
+}
+
+/// Take a message out of the send queue, if that is what is being deleted.
+///
+/// Returns whether it handled it. In the outbox the selected row is a queued
+/// message rather than one on a server, so the ordinary delete would ask a
+/// server about a message it has never seen.
+///
+/// The one thing worth being able to do to mail that has not gone, and it could
+/// not be done at all before: the queue was a number on the status bar.
+fn cancel_if_queued(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    row_id: i64,
+) -> bool {
+    let Some(cache) = cache.as_ref() else {
+        return false;
+    };
+    let open_folder = lock_state(state)
+        .selected_folder
+        .as_ref()
+        .and_then(|name| lock_state(state).folder_ids.get(name).copied());
+    let Some(folder_id) = open_folder else {
+        return false;
+    };
+    if cache.folder_kind(folder_id).ok().flatten() != Some(crate::common::types::FolderType::Outbox)
+    {
+        return false;
+    }
+
+    match cache.cancel_queued(row_id) {
+        Ok(true) => {
+            send_status(tx, rt, "Taken out of the outbox. It will not be sent.");
+            load_folder_messages(
+                &Some(cache.clone()),
+                Some(folder_id),
+                lock_state(state).active_account_id.clone(),
+                tx,
+            );
+        }
+        Ok(false) => send_status(tx, rt, "That message is no longer in the outbox"),
+        Err(e) => send_status(tx, rt, &format!("Could not cancel it: {e}")),
+    }
+    true
 }
 
 /// Say whether the open message asked to be acknowledged, and act on it.

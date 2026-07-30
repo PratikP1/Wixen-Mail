@@ -32,6 +32,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   with a count beside it and no way to see, read or remove what was in it. It is
   a folder now, on IMAP accounts too, because a message that has not been sent
   is on no server by definition.
+  Each row says what the message is doing: waiting to send, tried once, or tried
+  four times and why. `Delete` on a row in the Outbox cancels the send, which is
+  the one thing worth being able to do to a message that has not gone and could
+  not be done at all before.
+  The folder shows the queue itself rather than a copy of it, so it cannot show
+  mail that has already gone or lose mail that has not.
+
+- **Drafts go into your Drafts folder.** A draft was kept in a table of its own
+  and nowhere else, so the Drafts folder in the tree never contained anything you
+  had written, and a draft started here existed here and nowhere your other
+  devices would look. Saving one now files it where that account keeps drafts: on
+  the server for IMAP, in the local folder for POP.
+  Saving again replaces the filed copy rather than adding another, so writing for
+  ten minutes with automatic saving on leaves one draft rather than ten.
 
 - **Deleting a message puts it in the Trash.** It used to mark the message deleted and clear it out where it stood. That means something different on every provider, and on Gmail it means whichever of three things a setting in Gmail's own web interface says, which Wixen Mail cannot see and never asked about. So a delete now moves the message to Trash, which behaves the same everywhere and can be undone by going and getting it.
   `Delete` is still one key and still asks nothing. It is a key you press twenty times going through a morning's mail, and a question in front of it is twenty questions; the message being recoverable from the Trash is what makes not asking safe.
