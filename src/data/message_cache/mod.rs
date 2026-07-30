@@ -1026,6 +1026,10 @@ impl MessageCache {
         // The labels Gmail has on the message, space separated, which say
         // where else the same message appears.
         self.ensure_column_exists("messages", "labels", "TEXT")?;
+        // Where the sender asked a read receipt to go, if they asked. Stored
+        // so the reader can say so without fetching the message again, and so
+        // the answer does not depend on a body that may have been evicted.
+        self.ensure_column_exists("messages", "receipt_to", "TEXT")?;
         // Answered and Draft, from the server's flags. The columns for these
         // were withdrawn because nothing could fill them; a sync fills them.
         self.ensure_column_exists("messages", "answered", "BOOLEAN DEFAULT 0")?;

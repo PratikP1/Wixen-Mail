@@ -5,9 +5,12 @@
 //! and persisted through `AppConfig` / `ConfigManager`.
 
 use crate::application::autosave::AutosaveInterval;
+use crate::application::receipts::Policy;
 use crate::data::config::AppConfig;
 use crate::presentation::accessibility::feedback::{Channel, FeedbackSettings};
-use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::accessibility::names::{
+    set_accessible_name, set_accessible_name_and_description,
+};
 use crate::service::spellcheck::available_languages;
 use wxdragon::prelude::*;
 
@@ -39,6 +42,7 @@ struct SettingsWidgets {
     draft_autosave: SpinCtrl,
     // Reading
     sort_order: Choice,
+    read_receipts: Choice,
     // Language
     language: Choice,
     check_spelling_before_send: CheckBox,
@@ -96,7 +100,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 
     // ── Tab 3: Reading
     let reading_panel = Panel::builder(&notebook).build();
-    let sort_order = build_reading_tab(&reading_panel, config);
+    let (sort_order, read_receipts) = build_reading_tab(&reading_panel, config);
     notebook.add_page(&reading_panel, "Reading", false, None);
 
     // ── Tab 4: Language & Spelling
@@ -162,6 +166,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         preview_before_send,
         draft_autosave,
         sort_order,
+        read_receipts,
         language,
         check_spelling_before_send,
         check_spelling_as_you_type,
@@ -341,7 +346,7 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, SpinCtrl) 
 }
 
 /// Reading settings: sort order, mark-as-read, threading.
-fn build_reading_tab(panel: &Panel, config: &AppConfig) -> Choice {
+fn build_reading_tab(panel: &Panel, config: &AppConfig) -> (Choice, Choice) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Message List
@@ -424,6 +429,45 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> Choice {
     markread_row.add(&markread_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     read_sec.add_sizer(&markread_row, 0, SizerFlag::Expand, 0);
 
+    // Read receipts. On the Reading tab because it is a thing that happens
+    // when you open a message, which is where somebody would look for it.
+    let receipt_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let receipt_label = StaticText::builder(panel)
+        .with_label("Tell senders when you read their mail:")
+        .build();
+    let receipt_choice = Choice::builder(panel)
+        .with_choices(
+            Policy::ALL
+                .iter()
+                .map(|policy| policy.spoken().to_string())
+                .collect(),
+        )
+        .with_selection(Some(0))
+        .build();
+    // The whole sentence is the accessible name, because each choice says what
+    // it costs and a name of "Read receipts" would hide that from the person
+    // most likely to care about being tracked.
+    set_accessible_name_and_description(
+        &receipt_choice,
+        "Tell senders when you read their mail",
+        "A read receipt tells the sender your address is live and roughly when          you were at your desk. Nothing is sent unless you choose it here.",
+    );
+    let chosen = Policy::from_stored(&config.read_receipts);
+    receipt_choice.set_selection(
+        Policy::ALL
+            .iter()
+            .position(|policy| *policy == chosen)
+            .unwrap_or(0) as u32,
+    );
+    receipt_row.add(
+        &receipt_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    receipt_row.add(&receipt_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+    read_sec.add_sizer(&receipt_row, 0, SizerFlag::Expand, 0);
+
     let external_cb = CheckBox::builder(panel)
         .with_label("Load remote &images in messages")
         .build();
@@ -434,7 +478,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> Choice {
     sizer.add_sizer(&read_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    sort_choice
+    (sort_choice, receipt_choice)
 }
 
 /// Language & Spelling: which language to check, and whether to check on send.
@@ -924,6 +968,16 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         _ => "date_newest",
     }
     .to_string();
+
+    // Read receipts. Read by position out of `Policy::ALL`, which is the same
+    // order the choices were built from, so the two cannot drift apart the way
+    // a second list of words would.
+    cfg.read_receipts = Policy::ALL
+        .get(sel(&w.read_receipts) as usize)
+        .copied()
+        .unwrap_or_default()
+        .as_str()
+        .to_string();
 
     // Language. Rebuilt rather than remembered, because it is what the picker
     // was filled from and the two have to stay the same list.

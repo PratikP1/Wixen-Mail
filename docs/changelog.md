@@ -18,7 +18,7 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   On servers that have the MOVE command it is one instruction, which is the only way a move is safe. Where it is missing, the copy is made first and the original is removed after, so a failure part way leaves the message in two places rather than none, and it says so.
 
 - **Sent mail gets saved in your Sent folder.** Nothing was saving it. Sending and receiving are two separate services that know nothing about each other, so a message handed to the sending server left no trace anywhere you could look at it. Gmail files its own copy, so Gmail accounts happened to look right; every other account had no record of anything you had sent.
-  Not on Gmail, where a second copy would be a duplicate of the one Google already saved. The copy is marked read, so sending something does not raise your unread count. Blind copy recipients are not in the saved copy, which is the same rule that keeps blind copies blind on the way out.
+  Every account gets one, Gmail included, so the rule is the same wherever you are: what you sent is in that account's Sent folder. Gmail matches on the message's own identifier, so the copy that arrives is the one already there rather than a second one. The copy is marked read, so sending something does not raise your unread count. Blind copy recipients are not in the saved copy, which is the same rule that keeps blind copies blind on the way out.
 
 - **You choose which folders are downloaded.** File, then Folders to Keep Up to Date, or the menu key on the folder tree. A ticked list, one row per folder, saying how many messages are in each. Space ticks the row you are on. The folder tree shows the folders that are kept up to date, so a folder you turn off leaves the tree rather than sitting there empty.
   **If you are upgrading, this may change what you see.** Folders you are not subscribed to on the server stop being downloaded and leave the tree, which on most accounts is nothing and on a shared or university server can be a lot. Nothing is deleted: tick a folder in that window and it comes back at the next check for mail.
@@ -29,6 +29,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   On servers with CONDSTORE, which includes Fastmail and current Dovecot, this is one instruction asking what has changed. Everywhere else, including Gmail and Microsoft 365, the flags of the messages you hold are read back in batches.
 
 - **Wixen Mail says who it is when a server asks.** Courtesy nearly everywhere and a requirement on a few: NetEase servers refuse a client that will not identify itself, with an error about an unsafe login that sends you off to check a password that was fine.
+
+- **Read receipts, and a default of telling nobody anything.** A sender can ask to be told when you open their message. Wixen Mail now notices when one has, says so when you open it, and sends nothing.
+  What a receipt gives away is the point. It confirms your address is live, that a person is behind it, and roughly when you were at your desk. To somebody sending in bulk that is a working address worth selling. So the default is never, and it stays never until you change it in Settings, under Reading.
+  Three choices: never, ask each time, or send whenever one is asked for. Each says what it costs rather than which is recommended.
+  Two requests are refused whatever you choose. Anything in your junk folder, because a receipt to a spammer is the one reply that makes your address more valuable. And any request asking for the receipt to go to a different address from the one the message came from, which is the shape used to turn the feature into a beacon. Those become a question instead, because a mailing list can do it honestly.
+  You are told what was asked even when nothing is sent, including on the default. That a stranger wanted to know when you read something is a fact about the message, and a client that quietly swallows it tells you nothing about who is doing it.
+  Send Read Receipt, on the Message menu, sends one for the open message when it asked and you decided to.
 
 ### Fixed
 

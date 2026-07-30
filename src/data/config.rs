@@ -80,6 +80,14 @@ pub struct AppConfig {
     /// one account's to the other is offering somewhere the message cannot go.
     #[serde(default)]
     pub last_filed_into: HashMap<String, String>,
+    /// Whether to tell a sender when you have read their message.
+    ///
+    /// Stored as a word rather than as the enum, so a settings file written by
+    /// a later version, or edited by hand, reads back as the private answer
+    /// instead of failing to parse. `crate::application::receipts::Policy`
+    /// decides what each word means, and anything it does not know is "never".
+    #[serde(default)]
+    pub read_receipts: String,
     /// Whether the person has been shown what this alpha can and cannot do.
     ///
     /// False on a fresh installation and on an upgrade from before this
@@ -219,6 +227,9 @@ impl Default for AppConfig {
             allowed_changes: default_allowed(),
             allowed_per_account: HashMap::new(),
             last_filed_into: HashMap::new(),
+            read_receipts: crate::application::receipts::Policy::Never
+                .as_str()
+                .to_string(),
             told_about_the_alpha: false,
             check_spelling_as_you_type: true,
             default_sort_order: "date_newest".to_string(),

@@ -52,7 +52,7 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 /// a phishing attempt and having no idea.
 const HEADER_FIELDS: &str = "SUBJECT FROM TO CC REPLY-TO DATE MESSAGE-ID IN-REPLY-TO REFERENCES \
      AUTHENTICATION-RESULTS X-SPAM-FLAG X-SPAM-STATUS X-FOREFRONT-ANTISPAM-REPORT \
-     X-MICROSOFT-ANTISPAM";
+     X-MICROSOFT-ANTISPAM DISPOSITION-NOTIFICATION-TO RETURN-RECEIPT-TO";
 
 /// What Gmail knows about a message that nobody else does.
 ///
@@ -290,6 +290,12 @@ pub struct ImapMessage {
     /// Kept because they say where else the same message appears, which is
     /// what makes a second copy recognisable as a second copy.
     pub labels: Vec<String>,
+    /// Where the sender asked a read receipt to go, if they asked.
+    ///
+    /// Read during the header fetch so the message list can say a message
+    /// wants one without opening it. Whether anything is sent is
+    /// [`crate::application::receipts`]'s decision, and the default is nothing.
+    pub receipt_to: Option<String>,
 }
 
 impl ImapMessage {
@@ -1336,6 +1342,7 @@ fn message_from_fetch(fetch: &Fetch) -> Option<ImapMessage> {
             .is_some_and(structure::has_attachments),
         safety: crate::service::safety::from_headers(&String::from_utf8_lossy(headers)),
         gmail_message_id: fetch.gmail_msg_id().copied(),
+        receipt_to: parsed.receipt_to,
         labels: fetch
             .gmail_labels()
             .map(|labels| labels.iter().map(|label| label.to_string()).collect())

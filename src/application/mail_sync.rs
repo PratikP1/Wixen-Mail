@@ -158,6 +158,7 @@ fn to_incoming(message: &ImapMessage, folder_id: i64, in_junk_folder: bool) -> I
         // quoted there and is not quoted here, so this is for showing and for
         // telling two rows apart, not for handing back to the server.
         labels: Some(message.labels.join(" ")).filter(|labels| !labels.is_empty()),
+        receipt_to: message.receipt_to.clone(),
     }
 }
 

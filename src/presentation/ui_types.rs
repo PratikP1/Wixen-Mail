@@ -145,6 +145,12 @@ pub struct MessageItem {
     pub safety: crate::service::safety::Safety,
     /// Why, in the sentences the warning bar shows.
     pub safety_reasons: Vec<String>,
+    /// Where the sender asked a read receipt to go, if they asked.
+    ///
+    /// Carried on the row so opening a message can say a receipt was asked for
+    /// without fetching anything, and so the answer does not depend on a body
+    /// the cache may have evicted.
+    pub receipt_to: Option<String>,
 }
 
 impl MessageItem {
@@ -194,6 +200,7 @@ impl MessageItem {
             reply_to: row.reply_to.clone().unwrap_or_default(),
             safety: row.safety,
             safety_reasons: row.safety_reasons.clone(),
+            receipt_to: row.receipt_to.clone(),
         }
     }
 }
@@ -1224,6 +1231,7 @@ mod tests {
             reply_to: reply_to.to_string(),
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
+            receipt_to: None,
         }
     }
 

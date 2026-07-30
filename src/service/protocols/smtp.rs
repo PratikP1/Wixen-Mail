@@ -6,6 +6,7 @@ use crate::common::{Error, Result};
 use crate::service::protocols::MailAuth;
 use lettre::{
     AsyncSmtpTransport, AsyncTransport, Tokio1Executor,
+    address::Envelope,
     message::{Mailbox, Message, MultiPart, SinglePart, header::ContentType},
     transport::smtp::authentication::{Credentials, Mechanism},
 };
@@ -186,48 +187,7 @@ impl SmtpClient {
                 .map_err(|e| Error::Protocol(format!("Failed to build message: {}", e)))?
         };
 
-        // Create transport.
-        //
-        // A token is not a password: sent as PLAIN it is rejected, and the
-        // failure reads as a wrong password, which sends somebody off to reset
-        // one that no longer exists. So the mechanism is pinned to match the
-        // credential rather than left to negotiation.
-        let (creds, mechanisms) = match auth {
-            MailAuth::Password(password) => (
-                Credentials::new(self.config.username.clone(), password.clone()),
-                vec![Mechanism::Plain, Mechanism::Login],
-            ),
-            MailAuth::OAuth2(token) => (
-                Credentials::new(self.config.username.clone(), token.clone()),
-                vec![Mechanism::Xoauth2],
-            ),
-        };
-
-        let transport = match SmtpSecurity::choose(self.config.port, self.config.use_tls) {
-            SmtpSecurity::Tls => AsyncSmtpTransport::<Tokio1Executor>::relay(&self.config.server)
-                .map_err(|e| Error::Protocol(format!("Failed to create SMTP transport: {}", e)))?
-                .port(self.config.port)
-                .credentials(creds)
-                .authentication(mechanisms)
-                .build(),
-            SmtpSecurity::StartTls => {
-                AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&self.config.server)
-                    .map_err(|e| {
-                        Error::Protocol(format!("Failed to create SMTP transport: {}", e))
-                    })?
-                    .port(self.config.port)
-                    .credentials(creds)
-                    .authentication(mechanisms)
-                    .build()
-            }
-            SmtpSecurity::Plaintext => {
-                AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&self.config.server)
-                    .port(self.config.port)
-                    .credentials(creds)
-                    .authentication(mechanisms)
-                    .build()
-            }
-        };
+        let transport = self.transport(auth)?;
 
         // Taken before the send, because sending consumes the message.
         let sent = message.formatted();
@@ -239,6 +199,91 @@ impl SmtpClient {
 
         tracing::info!("Email sent successfully");
         Ok(sent)
+    }
+
+    /// Open a transport to the account's SMTP server.
+    ///
+    /// A token is not a password: sent as PLAIN it is rejected, and the failure
+    /// reads as a wrong password, which sends somebody off to reset one that no
+    /// longer exists. So the mechanism is pinned to match the credential rather
+    /// than left to negotiation.
+    fn transport(&self, auth: &MailAuth) -> Result<AsyncSmtpTransport<Tokio1Executor>> {
+        let (creds, mechanisms) = match auth {
+            MailAuth::Password(password) => (
+                Credentials::new(self.config.username.clone(), password.clone()),
+                vec![Mechanism::Plain, Mechanism::Login],
+            ),
+            MailAuth::OAuth2(token) => (
+                Credentials::new(self.config.username.clone(), token.clone()),
+                vec![Mechanism::Xoauth2],
+            ),
+        };
+
+        Ok(
+            match SmtpSecurity::choose(self.config.port, self.config.use_tls) {
+                SmtpSecurity::Tls => {
+                    AsyncSmtpTransport::<Tokio1Executor>::relay(&self.config.server)
+                        .map_err(|e| {
+                            Error::Protocol(format!("Failed to create SMTP transport: {}", e))
+                        })?
+                        .port(self.config.port)
+                        .credentials(creds)
+                        .authentication(mechanisms)
+                        .build()
+                }
+                SmtpSecurity::StartTls => {
+                    AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&self.config.server)
+                        .map_err(|e| {
+                            Error::Protocol(format!("Failed to create SMTP transport: {}", e))
+                        })?
+                        .port(self.config.port)
+                        .credentials(creds)
+                        .authentication(mechanisms)
+                        .build()
+                }
+                SmtpSecurity::Plaintext => {
+                    AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&self.config.server)
+                        .port(self.config.port)
+                        .credentials(creds)
+                        .authentication(mechanisms)
+                        .build()
+                }
+            },
+        )
+    }
+
+    /// Send a message that is already built, as its own bytes.
+    ///
+    /// For a read receipt, whose shape is fixed by RFC 8098 and built in
+    /// `application::receipts` where it can be read in a test. Going through
+    /// the ordinary builder would mean describing a `multipart/report` to it
+    /// and trusting the result, rather than sending exactly what was written.
+    ///
+    /// Behind the same gate as everything else that sends: a receipt is mail
+    /// leaving this machine with somebody's address on it.
+    pub async fn send_raw(&self, from: &str, to: &str, raw: &[u8], auth: &MailAuth) -> Result<()> {
+        if !self.may_send {
+            return Err(Error::Security(crate::service::outward::refusal(
+                "send a read receipt",
+            )));
+        }
+        let envelope = Envelope::new(
+            Some(
+                from.parse()
+                    .map_err(|e| Error::Protocol(format!("Invalid sender address: {e}")))?,
+            ),
+            vec![
+                to.parse()
+                    .map_err(|e| Error::Protocol(format!("Invalid recipient address: {e}")))?,
+            ],
+        )
+        .map_err(|e| Error::Protocol(format!("Could not address the receipt: {e}")))?;
+
+        self.transport(auth)?
+            .send_raw(&envelope, raw)
+            .await
+            .map_err(|e| Error::Protocol(format!("Failed to send the receipt: {e}")))?;
+        Ok(())
     }
 
     /// Parse email address into Mailbox

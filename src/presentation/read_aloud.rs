@@ -343,6 +343,7 @@ mod tests {
             reply_to: String::new(),
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
+            receipt_to: None,
         }
     }
 

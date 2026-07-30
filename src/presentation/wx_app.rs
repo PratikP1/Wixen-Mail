@@ -152,6 +152,7 @@ menu_ids!(
     ID_MOVE_TO_FOLDER,
     ID_COPY_TO_FOLDER,
     ID_DELETE_OUTRIGHT,
+    ID_SEND_RECEIPT,
     ID_CHOOSE_FOLDERS,
 );
 
@@ -168,6 +169,12 @@ pub struct WxUIState {
     pub folders: Vec<String>,
     pub messages: Vec<MessageItem>,
     pub selected_folder: Option<String>,
+    /// The message a read receipt has been offered for, if any.
+    ///
+    /// Set when opening a message that asked for one and the setting says to
+    /// ask. Send Read Receipt refuses unless the open message is this one, so
+    /// the command cannot acknowledge a message nobody was offered.
+    pub receipt_offered: Option<i64>,
     /// Folder name to database id, so selecting a folder can read it.
     pub folder_ids: std::collections::HashMap<String, i64>,
     /// The connection watching the inbox for arrivals, when one is running.
@@ -212,6 +219,7 @@ impl Default for WxUIState {
             folders: Vec::new(),
             messages: Vec::new(),
             selected_folder: None,
+            receipt_offered: None,
             folder_ids: std::collections::HashMap::new(),
             mail_watch: None,
             selected_message_index: None,
@@ -1814,6 +1822,12 @@ document.addEventListener('keydown', function(e) {
                             }
                         }
                     }
+                    // Whether this sender wanted to be told it had been
+                    // opened, and what is being done about that. Said on
+                    // opening rather than left in a column, because it is a
+                    // fact about the message somebody would want before they
+                    // decide what to do with it.
+                    receipt_for_the_open_message(&state, &ui_tx, &runtime);
                 }
             });
 
@@ -2241,6 +2255,9 @@ document.addEventListener('keydown', function(e) {
                                     &runtime,
                                 );
                             }
+                        }
+                        _ if id == ID_SEND_RECEIPT => {
+                            send_receipt_for_the_open_message(&state, &ui_tx, &runtime);
                         }
                         _ if id == ID_MOVE_TO_FOLDER || id == ID_COPY_TO_FOLDER => {
                             move_or_copy_message(
@@ -3332,7 +3349,17 @@ document.addEventListener('keydown', function(e) {
                 "&Star or Unstar\tCtrl+Shift+S",
                 "Star the selected message, or take the star off",
             )
-            .append_item(ID_DELETE, "&Delete\tDel", "Delete message")
+            .append_item(ID_DELETE, "&Delete\tDel", "Move this message to the Trash")
+            .append_item(
+                ID_DELETE_OUTRIGHT,
+                "Delete &Permanently\tShift+Del",
+                "Remove this message from the server without putting it in the Trash",
+            )
+            .append_item(
+                ID_SEND_RECEIPT,
+                "Send Read Rece&ipt",
+                "Tell this sender you have read their message",
+            )
             .build();
 
         let tools = Menu::builder()
@@ -3479,6 +3506,7 @@ fn sample_mailbox(count: usize) -> Vec<MessageItem> {
             reply_to: String::new(),
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
+            receipt_to: None,
         })
         .collect()
 }
@@ -4047,6 +4075,7 @@ fn conversation_parts(
                     reply_to: String::new(),
                     safety: crate::service::safety::Safety::Ordinary,
                     safety_reasons: Vec::new(),
+                    receipt_to: None,
                 },
                 body,
                 depth: node.depth,
@@ -4667,6 +4696,7 @@ fn open_for_scanning(
                     // say, so an ordinary message would leave it out.
                     safety: crate::service::safety::Safety::Suspicious,
                     safety_reasons: vec!["This message is a scan fixture".to_string()],
+                    receipt_to: None,
                 },
                 "<h1>A heading</h1><p>Some text, and <a href=\"https://example.com/\">a link</a>.</p>",
             ));
@@ -5765,6 +5795,202 @@ fn spawn_subscription_writes(
     });
 }
 
+/// Say whether the open message asked to be acknowledged, and act on it.
+///
+/// Three outcomes, and every one of them says something. Nothing asked, so
+/// nothing is said. Something asked and the setting is never, so the person is
+/// told what was asked and told that nothing was sent. Something asked and the
+/// setting allows it, so a receipt goes and the person is told it went.
+///
+/// The middle one matters most. Somebody whose setting is never still deserves
+/// to know a sender wanted to track them, and a client that silently swallows
+/// the request tells them nothing about who is doing it.
+fn receipt_for_the_open_message(
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    use crate::application::receipts::{Answer, Policy, Request, answer, noticed};
+
+    let open = {
+        let s = lock_state(state);
+        s.selected_message_index
+            .and_then(|at| s.messages.get(at))
+            .map(|message| {
+                (
+                    message.receipt_to.clone(),
+                    message.from.clone(),
+                    message.subject.clone(),
+                    message.message_id,
+                    message.safety == crate::service::safety::Safety::Spam,
+                )
+            })
+    };
+    let Some((Some(notify), from, subject, row_id, in_junk)) = open else {
+        return;
+    };
+    let request = Request { notify };
+
+    let policy = crate::data::config::ConfigManager::load_stored()
+        .map(|mgr| Policy::from_stored(&mgr.app_config().read_receipts))
+        .unwrap_or_default();
+
+    // Said whatever the setting is. That a sender wanted to know is a fact
+    // about the message, and the setting decides what is sent, not what the
+    // person is allowed to hear.
+    let mut said = noticed(&request, &from);
+
+    match answer(policy, Some(&request), &from, in_junk) {
+        Answer::Ignore => {
+            said.push_str(" Nothing has been sent.");
+            send_status(tx, rt, &said);
+        }
+        Answer::Ask { why, .. } => {
+            said.push_str(&format!(
+                " Nothing has been sent yet, because {why}. \
+                 Message menu, Send Read Receipt, if you want to."
+            ));
+            send_status(tx, rt, &said);
+            lock_state(state).receipt_offered = Some(row_id);
+        }
+        Answer::Send { notify } => {
+            said.push_str(" Sending one, because your settings say to.");
+            send_status(tx, rt, &said);
+            spawn_receipt(state, tx, rt, notify, subject, row_id);
+        }
+    }
+}
+
+/// Send a receipt for the open message, if one was offered for it.
+///
+/// Refuses when the open message is not the one that was offered. Without that
+/// check the command would acknowledge whatever happens to be selected, which
+/// on a list somebody is arrowing through is a message they never chose.
+fn send_receipt_for_the_open_message(
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    let open = {
+        let s = lock_state(state);
+        let offered = s.receipt_offered;
+        s.selected_message_index
+            .and_then(|at| s.messages.get(at))
+            .filter(|message| offered == Some(message.message_id))
+            .and_then(|message| {
+                message
+                    .receipt_to
+                    .clone()
+                    .map(|notify| (notify, message.subject.clone(), message.message_id))
+            })
+    };
+    let Some((notify, subject, row_id)) = open else {
+        return send_status(
+            tx,
+            rt,
+            "This message did not ask for a read receipt, so there is none to send",
+        );
+    };
+    send_status(tx, rt, &format!("Sending a read receipt to {notify}..."));
+    spawn_receipt(state, tx, rt, notify, subject, row_id);
+}
+
+/// Send a read receipt for one message.
+///
+/// A receipt is mail leaving this machine with somebody's address on it, so it
+/// goes through the same gate as everything else that sends: an account that
+/// may not send mail may not acknowledge it either.
+fn spawn_receipt(
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    notify: String,
+    subject: String,
+    message_row_id: i64,
+) {
+    use crate::application::receipts::{About, message};
+
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    let account = {
+        let s = lock_state(state);
+        s.active_account_id
+            .as_ref()
+            .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned())
+    };
+    let original_id = {
+        let s = lock_state(state);
+        s.messages
+            .iter()
+            .find(|m| m.message_id == message_row_id)
+            .map(|m| m.subject.clone())
+            .map(|_| ())
+    };
+    let _ = original_id;
+
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        let Some(account) = account else { return };
+        let Ok(port) = account.smtp_port.trim().parse::<u16>() else {
+            return say(UIUpdate::ErrorOccurred(format!(
+                "No read receipt was sent: {} has no usable SMTP port",
+                account.name
+            )));
+        };
+        let auth = match handle.block_on(crate::application::mail_auth::for_account(&account)) {
+            Ok(auth) => auth,
+            Err(e) => {
+                return say(UIUpdate::ErrorOccurred(format!(
+                    "No read receipt was sent: {e}"
+                )));
+            }
+        };
+
+        let config = crate::service::protocols::smtp::SmtpConfig {
+            server: account.smtp_server.clone(),
+            port,
+            use_tls: account.smtp_use_tls,
+            username: account.username.clone(),
+        };
+        // The same gate as sending anything else.
+        let client = if crate::application::allowed::allowed_for(&account.id).mail {
+            crate::service::protocols::smtp::SmtpClient::allowed_to_send(config)
+        } else {
+            crate::service::protocols::smtp::SmtpClient::new(config)
+        };
+        let Ok(client) = client else {
+            return say(UIUpdate::ErrorOccurred(
+                "No read receipt was sent: the mail settings are unusable".to_string(),
+            ));
+        };
+
+        let raw = message(&About {
+            notify: notify.clone(),
+            reader: account.email.clone(),
+            subject,
+            // The original's Message-ID is not carried on the list row, so the
+            // receipt is not filed against it. It still names the subject and
+            // reaches the right person; filing it needs the header on the row,
+            // which is task #84.
+            message_id: None,
+            read_at: chrono::Utc::now().to_rfc2822(),
+        });
+
+        match handle.block_on(client.send_raw(&account.email, &notify, &raw, &auth)) {
+            Ok(()) => say(UIUpdate::StatusUpdated(format!(
+                "Read receipt sent to {notify}"
+            ))),
+            Err(e) => say(UIUpdate::ErrorOccurred(format!(
+                "No read receipt was sent: {e}"
+            ))),
+        }
+    });
+}
+
 /// Where a copy of a sent message should go, if anywhere.
 ///
 /// `None` when the provider files its own copy, or when the account has no
@@ -5774,9 +6000,15 @@ fn sent_copy_destination(
     cache: &crate::data::message_cache::MessageCache,
     account: &crate::data::account::Account,
 ) -> Option<String> {
-    if crate::data::email_providers::files_sent_copy_itself(&account.smtp_server) {
-        return None;
-    }
+    // Every account with somewhere to put it, Gmail included. Gmail files its
+    // own copy as well, and it was tempting to skip it on that basis, but the
+    // rule "the account's Sent folder has the mail you sent" is one somebody
+    // can rely on, and "except on this provider, where Google does it" is one
+    // they have to know. Gmail matches on Message-ID, so the copy that arrives
+    // is the one already there rather than a second.
+    //
+    // `None` here means the account has no Sent folder to append to, which is
+    // a brand new account that has never synced.
     cache
         .get_folders_for_account(&account.id)
         .ok()?
@@ -7719,6 +7951,7 @@ mod tests {
             reply_to: String::new(),
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
+            receipt_to: None,
         }
     }
 
@@ -7795,6 +8028,7 @@ mod tests {
             reply_to: String::new(),
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
+            receipt_to: None,
         };
         let messages = vec![read(true), read(false), read(true), read(false)];
 
@@ -7841,6 +8075,7 @@ mod tests {
             reply_to: String::new(),
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
+            receipt_to: None,
         };
         m.read = false;
         let messages = vec![m];

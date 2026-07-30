@@ -25,7 +25,7 @@ amounts.
 
 | | What it covers | Default |
 |---|---|---|
-| Mail | Sending, deleting, moving, copying, marking read on the server, filing a copy in Sent, changing subscriptions | **Off** |
+| Mail | Sending, deleting, moving, copying, marking read on the server, filing a copy in Sent, sending read receipts, changing subscriptions | **Off** |
 | Tasks, contacts and calendar | Sending your changes back to your provider | On |
 
 A message that has been sent cannot be recalled, and a message deleted from a
@@ -79,16 +79,21 @@ In rough order of how useful it is to know.
    change what is on the server. Say what you heard and what you then found on
    another device, because the two disagreeing is the failure worth catching.
 9. **Whether a copy of what you send turns up in Sent.** Nothing was saving one
-   before this version. On Gmail, Google saves it, so what to watch for there is
-   the opposite: a message appearing in Sent twice.
+   before this version. Every account now files its own, Gmail included. On
+   Gmail, Google also files one, and it should be the same copy rather than a
+   second: if you see a message in Sent twice there, say so.
+10. **Read receipts, if a sender asks for one.** Wixen Mail tells you a message
+   asked and, by default, sends nothing. Worth reporting: whether you were told,
+   whether anything was sent when it should not have been, and whether the
+   setting under Reading does what it says.
 
 ## What is already known to be missing or unproven
 
 Written down so you do not spend time reporting things already on the list.
 
 - **Nothing that writes has run against a real account.** Sending, deleting,
-  moving, copying, filing a copy in Sent, changing which folders you are
-  subscribed to, and the three syncs that push changes.
+  moving, copying, filing a copy in Sent, sending a read receipt, changing
+  which folders you are subscribed to, and the three syncs that push changes.
 - **A task cannot be moved between lists.** It goes into your provider's
   default list when you make it. Moving and copying work for mail only so far.
 - **Conversations on Gmail are worked out from the message headers**, so a

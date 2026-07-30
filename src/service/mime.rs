@@ -12,7 +12,7 @@
 
 use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
-use mail_parser::{Address, HeaderValue, MessageParser, MimeHeaders, PartType};
+use mail_parser::{Address, HeaderValue, Message, MessageParser, MimeHeaders, PartType};
 
 /// A message, decoded far enough to display.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -34,6 +34,12 @@ pub struct ParsedMessage {
     pub body_plain: Option<String>,
     pub body_html: Option<String>,
     pub attachments: Vec<AttachmentInfo>,
+    /// Where the sender asked a read receipt to be sent, if they asked.
+    ///
+    /// `Disposition-Notification-To` (RFC 8098), falling back to the older
+    /// `Return-Receipt-To`. Whether anything is sent is
+    /// [`crate::application::receipts`]'s decision, and the default is nothing.
+    pub receipt_to: Option<String>,
 }
 
 /// One attachment, described without being downloaded twice.
@@ -100,7 +106,43 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage> {
             _ => None,
         }),
         attachments,
+        receipt_to: receipt_request(&message),
     })
+}
+
+/// Where the sender asked a read receipt to go, if anywhere.
+///
+/// Two headers say it. `Disposition-Notification-To` is the standard one;
+/// `Return-Receipt-To` predates it and is still sent by older systems, so it is
+/// read when the first is absent. Neither obliges anybody to answer.
+fn receipt_request(message: &Message<'_>) -> Option<String> {
+    for name in ["Disposition-Notification-To", "Return-Receipt-To"] {
+        if let Some(value) = message.header(name) {
+            let asked = header_text(value);
+            if !asked.trim().is_empty() {
+                return Some(asked.trim().to_string());
+            }
+        }
+    }
+    None
+}
+
+/// One header value as text, whichever shape the parser gave it.
+///
+/// An address header comes back parsed rather than as a string, so the address
+/// is rebuilt from its parts. A malformed one arrives as raw text and is taken
+/// as it is: an odd receipt request is still a fact about the message.
+fn header_text(value: &HeaderValue<'_>) -> String {
+    match value {
+        HeaderValue::Text(text) => text.to_string(),
+        HeaderValue::TextList(list) => list.join(", "),
+        HeaderValue::Address(address) => address
+            .iter()
+            .filter_map(|one| one.address.as_ref().map(|a| a.to_string()))
+            .collect::<Vec<_>>()
+            .join(", "),
+        _ => String::new(),
+    }
 }
 
 /// The parts a reader would call attachments, in the order they are shown.
@@ -252,6 +294,68 @@ mod tests {
             "\r\n",
             "The engine weaves algebraic patterns.\r\n",
         )
+    }
+
+    #[test]
+    fn test_an_ordinary_message_asks_for_no_receipt() {
+        // Most mail does not, so the absence has to read as absence rather
+        // than as an empty request that would put a notice on every message.
+        assert_eq!(parse(plain_message().as_bytes()).unwrap().receipt_to, None);
+    }
+
+    #[test]
+    fn test_a_read_receipt_request_is_noticed() {
+        let asking = concat!(
+            "From: Ada Lovelace <ada@example.com>\r\n",
+            "To: charles@example.com\r\n",
+            "Subject: Please confirm\r\n",
+            "Disposition-Notification-To: ada@example.com\r\n",
+            "\r\n",
+            "Did this arrive?\r\n",
+        );
+
+        let parsed = parse(asking.as_bytes()).expect("should parse");
+
+        assert_eq!(parsed.receipt_to.as_deref(), Some("ada@example.com"));
+    }
+
+    #[test]
+    fn test_the_older_receipt_header_is_read_too() {
+        // `Return-Receipt-To` predates the standard one and is still sent by
+        // older systems. Ignoring it would let those requests through unseen.
+        let asking = concat!(
+            "From: ada@example.com\r\n",
+            "To: charles@example.com\r\n",
+            "Subject: Please confirm\r\n",
+            "Return-Receipt-To: ada@example.com\r\n",
+            "\r\n",
+            "Did this arrive?\r\n",
+        );
+
+        let parsed = parse(asking.as_bytes()).expect("should parse");
+
+        assert_eq!(parsed.receipt_to.as_deref(), Some("ada@example.com"));
+    }
+
+    #[test]
+    fn test_a_receipt_pointed_somewhere_else_is_read_as_it_stands() {
+        // Not corrected to the sender. Where it points is the fact that
+        // decides whether it is answered, so it has to survive the parse.
+        let beacon = concat!(
+            "From: Ada <ada@example.com>\r\n",
+            "To: charles@example.com\r\n",
+            "Subject: Invoice\r\n",
+            "Disposition-Notification-To: tracker@elsewhere.example\r\n",
+            "\r\n",
+            "See attached.\r\n",
+        );
+
+        let parsed = parse(beacon.as_bytes()).expect("should parse");
+
+        assert_eq!(
+            parsed.receipt_to.as_deref(),
+            Some("tracker@elsewhere.example")
+        );
     }
 
     #[test]
