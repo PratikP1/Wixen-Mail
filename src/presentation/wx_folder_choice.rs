@@ -15,9 +15,25 @@
 //!
 //! The folder tree in the main window is one flat level, so a tree here would
 //! be a tree with no branches. A checked list is a single control where Space
-//! ticks the row under the cursor, arrows move, and the state of each row is
-//! announced as part of the row, which is the plainest arrangement a screen
-//! reader has for exactly this question.
+//! ticks the row under the cursor and arrows move, which is the plainest
+//! arrangement there is for exactly this question.
+//!
+//! # Unverified: whether the tick is announced
+//!
+//! On Windows wxWidgets draws the check boxes itself rather than using a
+//! control that has them, so whether the ticked state reaches the accessibility
+//! tree is the platform's answer and not ours, and it has not been checked with
+//! a screen reader. If it turns out not to be announced, this control is the
+//! wrong one and there is no better one in this binding: `wxListCtrl`'s check
+//! boxes, which do carry state through the platform, are not wrapped.
+//!
+//! Saying so here rather than assuming it works. Sixteen controls in this
+//! application were once "named" by a call that compiled, passed the tests and
+//! never reached a screen reader. It is on the list in the testing page.
+//!
+//! The row's own text carries everything except the tick: the folder's name,
+//! how much is in it, and the warning about the one folder that doubles what
+//! gets downloaded. Those are read whatever happens to the check box.
 
 use crate::presentation::accessibility::names::{
     set_accessible_name, set_accessible_name_and_description,

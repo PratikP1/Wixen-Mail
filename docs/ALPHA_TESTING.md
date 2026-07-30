@@ -10,9 +10,10 @@ This page says which parts, so you can decide what to point it at.
 folders, fetching messages, reading them, searching, threading.
 
 **Everything that writes is experimental.** Sending a message, deleting one,
-marking one read on the server, and sending changes to your tasks, contacts or
-calendar back to Google or Microsoft. None of that has run against a real
-account. Expect bugs.
+moving or copying one to another folder, marking one read on the server, filing
+a copy of what you send in Sent, changing which folders you are subscribed to,
+and sending changes to your tasks, contacts or calendar back to Google or
+Microsoft. None of that has run against a real account. Expect bugs.
 
 Wixen Mail starts with sending switched off for exactly that reason. You can
 turn it on, and the next section says how, but read this first.
@@ -24,7 +25,7 @@ amounts.
 
 | | What it covers | Default |
 |---|---|---|
-| Mail | Sending, deleting, marking read on the server | **Off** |
+| Mail | Sending, deleting, moving, copying, marking read on the server, filing a copy in Sent, changing subscriptions | **Off** |
 | Tasks, contacts and calendar | Sending your changes back to your provider | On |
 
 A message that has been sent cannot be recalled, and a message deleted from a
@@ -64,14 +65,20 @@ In rough order of how useful it is to know.
    message was sent when it was not, a count that does not match what you can
    see, a setting that does not take effect.
 5. **Keyboard traps.** Anywhere Tab or Shift+Tab cannot get you out of.
-6. **Whether the folder list matches what your provider shows you.** New in
+6. **Whether the ticks are announced in Folders to Keep Up to Date.** This one
+   is a known doubt rather than a guess. Windows draws those check boxes itself
+   instead of using a control that has them, so whether a screen reader says
+   "ticked" and "unticked" is the platform's answer and has not been checked. If
+   it says only the folder name, say so: the control is then the wrong one and
+   there is no better one available, so it needs a different design.
+7. **Whether the folder list matches what your provider shows you.** New in
    this version, and the part most likely to differ between providers. On Gmail
    in particular: whether your labels are all there, whether anything appears
    twice, and whether the count beside a folder matches the web interface.
-7. **Deleting, moving and copying a message.** All three are new and all three
+8. **Deleting, moving and copying a message.** All three are new and all three
    change what is on the server. Say what you heard and what you then found on
    another device, because the two disagreeing is the failure worth catching.
-8. **Whether a copy of what you send turns up in Sent.** Nothing was saving one
+9. **Whether a copy of what you send turns up in Sent.** Nothing was saving one
    before this version. On Gmail, Google saves it, so what to watch for there is
    the opposite: a message appearing in Sent twice.
 
