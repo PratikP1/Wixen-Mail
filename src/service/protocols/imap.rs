@@ -1469,6 +1469,69 @@ mod tests {
     }
 
     #[test]
+    fn test_the_gmail_fields_are_asked_for_only_of_gmail() {
+        // A server refuses a whole FETCH containing an attribute it does not
+        // know, so one extra word here is not a missing field on a message. It
+        // is an empty folder on every server except one.
+        let ordinary = header_query(false);
+
+        assert!(!ordinary.contains("X-GM"), "{ordinary}");
+        assert!(ordinary.contains("BODYSTRUCTURE"), "{ordinary}");
+    }
+
+    #[test]
+    fn test_gmails_own_fields_are_asked_for_on_gmail() {
+        let gmail = header_query(true);
+
+        assert!(gmail.contains("X-GM-MSGID"), "{gmail}");
+        assert!(gmail.contains("X-GM-LABELS"), "{gmail}");
+    }
+
+    #[test]
+    fn test_the_thread_id_is_not_asked_for() {
+        // Deliberate. `async-imap` parses X-GM-THRID and offers no way to read
+        // it back, so asking would cost bandwidth on every message in every
+        // folder and give nothing. If this starts failing, the library grew
+        // the accessor and threading on Gmail can improve.
+        assert!(!header_query(true).contains("X-GM-THRID"));
+    }
+
+    #[test]
+    fn test_the_query_asks_for_everything_the_list_shows() {
+        // A guard on the whole string rather than on one field. Dropping any
+        // of these silently empties a column for every message.
+        let query = header_query(false);
+
+        for wanted in [
+            "UID",
+            "FLAGS",
+            "RFC822.SIZE",
+            "INTERNALDATE",
+            "BODYSTRUCTURE",
+            "SUBJECT",
+            "FROM",
+            "MESSAGE-ID",
+            "REFERENCES",
+        ] {
+            assert!(query.contains(wanted), "{wanted} is missing from {query}");
+        }
+        // Peeked, so opening a folder listing does not mark anything read.
+        assert!(query.contains("BODY.PEEK"), "{query}");
+    }
+
+    #[test]
+    fn test_we_introduce_ourselves_by_the_name_on_the_box() {
+        // Not the crate's name. A support desk reading its own logs should see
+        // what the person calling them has installed.
+        let pairs = identification("0.6.0");
+
+        assert_eq!(pairs[0].0, "name");
+        assert_eq!(pairs[0].1.as_deref(), Some("Wixen Mail"));
+        assert_eq!(pairs[1].0, "version");
+        assert_eq!(pairs[1].1.as_deref(), Some("0.6.0"));
+    }
+
+    #[test]
     fn test_flags_are_spelled_the_way_imap_spells_them() {
         assert_eq!(flag_name(&Flag::Seen), "\\Seen");
         assert_eq!(flag_name(&Flag::Flagged), "\\Flagged");
