@@ -8,6 +8,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Setup finds a copy of Wixen Mail installed in the other place, and offers
+  to remove it.** Installing for one person and installing for everybody are
+  two separate installations that Windows does not tell about each other: they
+  go in different folders and each puts a shortcut with the same name in a
+  different Start Menu, which Windows then merges. Whichever came back first is
+  what started, so an old version could keep launching while a current one sat
+  installed and unused. It removes the other copy's program folder, its Start
+  Menu entry and its Apps and Features listing, and **keeps your mail, accounts
+  and settings**, which both copies share. It does not do this by running the
+  other uninstaller, which would have erased them.
+
+- **An uninstall no longer stops when the program is already gone.** Uninstall
+  asks Wixen Mail to clear its own data folder and credentials first, because
+  an uninstaller cannot reach the Windows credential store. If the executable
+  had already been removed, that step failed and took the rest of the uninstall
+  with it, leaving the folder, the shortcut and the uninstaller in place:
+  neither installed nor removed, and still the first thing the Start Menu
+  offered.
+
 - **`F6` says what it moved to, including when there is nothing there.** It
   announced the pane's name and stopped, which is enough when the pane has
   something in it, because your screen reader reads the row focus lands on next.
