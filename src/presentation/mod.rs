@@ -30,6 +30,7 @@ pub mod wx_calendar_module;
 pub mod wx_columns;
 pub mod wx_compose;
 pub mod wx_contacts_module;
+pub mod wx_context_menu;
 pub mod wx_first_run;
 pub mod wx_item_form;
 pub mod wx_managers;

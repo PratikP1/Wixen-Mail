@@ -32,6 +32,32 @@ impl PimModule {
         PimModule::Notes,
     ];
 
+    /// What this module's list holds.
+    ///
+    /// The other direction from `managers::module_for`. Both exist because a
+    /// command raised from a context menu knows which module is open and has
+    /// to work out what it is acting on, and a command that makes something
+    /// knows what it is making and has to work out which panel to refresh.
+    pub const fn item_kind(self) -> crate::application::new_item::ItemKind {
+        use crate::application::new_item::ItemKind;
+        match self {
+            PimModule::Mail => ItemKind::Mail,
+            PimModule::Contacts => ItemKind::Contact,
+            PimModule::Calendar => ItemKind::Event,
+            PimModule::Reminders => ItemKind::Reminder,
+            PimModule::Tasks => ItemKind::Task,
+            PimModule::Notes => ItemKind::Note,
+        }
+    }
+
+    /// What this module's sidebar holds, if it holds containers of our own.
+    ///
+    /// `None` for mail, whose folders belong to the server, and for reminders,
+    /// which are kept per account and not in anything smaller.
+    pub const fn container_kind(self) -> Option<crate::application::new_item::ContainerKind> {
+        crate::application::new_item::ContainerKind::holding(self.item_kind())
+    }
+
     /// Human-readable label with accelerator hint.
     pub fn label(&self) -> &'static str {
         match self {

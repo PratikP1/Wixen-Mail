@@ -11,6 +11,7 @@ pub mod collection_sync;
 pub mod composition;
 pub mod contacts;
 pub mod contacts_sync;
+pub mod context_menu;
 pub mod filters;
 pub mod forget;
 pub mod item_fields;

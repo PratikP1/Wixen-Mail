@@ -65,7 +65,7 @@ macro_rules! menu_ids {
         menu_ids!(@assign 0; $($name,)*);
     };
     (@assign $offset:expr; $head:ident, $($tail:ident,)*) => {
-        const $head: Id = ID_HIGHEST + $offset;
+        pub(crate) const $head: Id = ID_HIGHEST + $offset;
         menu_ids!(@assign $offset + 1; $($tail,)*);
     };
     (@assign $offset:expr;) => {};
@@ -132,6 +132,15 @@ menu_ids!(
     ID_REFRESH_FOLDER,
     ID_CYCLE_PANES,
     ID_PREVIOUS_PANE,
+    // Raised by the context menus. Each works out which module is open and
+    // acts on that, so one id serves every panel rather than one per panel.
+    ID_CONTEXT_NEW_ITEM,
+    ID_CONTEXT_DELETE_ITEM,
+    ID_CONTEXT_TOGGLE_COMPLETE,
+    ID_CONTEXT_TOGGLE_PIN,
+    ID_CONTEXT_NEW_CONTAINER,
+    ID_CONTEXT_DELETE_CONTAINER,
+    ID_CONTEXT_SYNC_NOW,
     ID_NEW_EVENT,
     ID_NEW_REMINDER,
     ID_NEW_TASK,
@@ -1924,6 +1933,36 @@ document.addEventListener('keydown', function(e) {
             // item is opened. The same two keys answer that in all six
             // modules: Space cycles short then full, Shift+Space goes
             // straight to full.
+            // ── The menu key, on every list and every tree ──────
+            //
+            // The Applications key, and Shift+F10 for keyboards without one.
+            // Bound as keys rather than through the context menu event: that
+            // is the obvious way and it does not work here, because wxdragon
+            // offers that event on frames and panels only and wxWidgets does
+            // not hand it up from a native list or tree. A handler on the
+            // frame was written first and never once fired.
+            {
+                use crate::application::context_menu::Focus;
+                use crate::application::new_item::{ContainerKind, ItemKind};
+
+                wire_context_menu(&msg_list, Focus::Messages);
+                wire_context_menu(&folder_tree, Focus::MailFolders);
+
+                wire_context_menu(&pim_refs.contact_list, Focus::Items(ItemKind::Contact));
+                wire_context_menu(&pim_refs.cal_event_list, Focus::Items(ItemKind::Event));
+                wire_context_menu(&pim_refs.reminder_list, Focus::Items(ItemKind::Reminder));
+                wire_context_menu(&pim_refs.task_list, Focus::Items(ItemKind::Task));
+                wire_context_menu(&pim_refs.note_list, Focus::Items(ItemKind::Note));
+
+                wire_context_menu(
+                    &contacts_sb.tree,
+                    Focus::Containers(ContainerKind::ContactGroup),
+                );
+                wire_context_menu(&cal_sb.tree, Focus::Containers(ContainerKind::Calendar));
+                wire_context_menu(&tasks_sb.tree, Focus::Containers(ContainerKind::TaskList));
+                wire_context_menu(&notes_sb.tree, Focus::Containers(ContainerKind::NoteFolder));
+            }
+
             wire_read_aloud(&msg_list, &a11y, &space_cycle, "mail", {
                 let state = state.clone();
                 move |index| {
@@ -2109,6 +2148,125 @@ document.addEventListener('keydown', function(e) {
                                 );
                             } else {
                                 let _ = a11y.signal(FeedbackEvent::ActionRefused, "no folder selected");
+                            }
+                        }
+                        // ── Raised by the context menus ───────────────────
+                        //
+                        // Each acts on whichever module is open, so one
+                        // command serves every panel. The alternative is
+                        // seven ids per action and seven handlers that differ
+                        // only in which list they read.
+                        _ if id == ID_CONTEXT_NEW_ITEM
+                            || id == ID_CONTEXT_DELETE_ITEM
+                            || id == ID_CONTEXT_TOGGLE_COMPLETE
+                            || id == ID_CONTEXT_TOGGLE_PIN =>
+                        {
+                            use crate::application::pim_command::{PimAction, PimCommand};
+                            let module = lock_state(&state).active_module;
+                            let kind = module.item_kind();
+
+                            if id == ID_CONTEXT_NEW_ITEM {
+                                managers::new_pim_item(
+                                    kind,
+                                    &state,
+                                    &message_cache,
+                                    &frame,
+                                    &ui_tx,
+                                    &runtime,
+                                );
+                            } else {
+                                let command = if id == ID_CONTEXT_DELETE_ITEM {
+                                    PimCommand::Delete
+                                } else if id == ID_CONTEXT_TOGGLE_COMPLETE {
+                                    PimCommand::ToggleComplete
+                                } else {
+                                    PimCommand::TogglePin
+                                };
+                                let row = match module {
+                                    PimModule::Contacts => selected_row(&contact_list),
+                                    PimModule::Calendar => selected_row(&cal_event_list),
+                                    PimModule::Reminders => selected_row(&reminder_list),
+                                    PimModule::Tasks => selected_row(&task_list),
+                                    PimModule::Notes => selected_row(&note_list),
+                                    PimModule::Mail => None,
+                                };
+                                managers::pim_command(
+                                    PimAction { command, kind, row },
+                                    &state,
+                                    &message_cache,
+                                    &frame,
+                                    &ui_tx,
+                                    &runtime,
+                                );
+                            }
+                        }
+                        _ if id == ID_CONTEXT_NEW_CONTAINER
+                            || id == ID_CONTEXT_DELETE_CONTAINER =>
+                        {
+                            let module = lock_state(&state).active_module;
+                            let Some(container) = module.container_kind() else {
+                                // Mail folders are the server's, not ours to
+                                // make or remove from here.
+                                send_status(
+                                    &ui_tx,
+                                    &runtime,
+                                    "Mail folders are made on the server, not here",
+                                );
+                                return;
+                            };
+                            if id == ID_CONTEXT_NEW_CONTAINER {
+                                managers::new_container(
+                                    container,
+                                    &state,
+                                    &message_cache,
+                                    &frame,
+                                    &ui_tx,
+                                    &runtime,
+                                );
+                            } else {
+                                managers::delete_container(
+                                    container,
+                                    &state,
+                                    &message_cache,
+                                    &frame,
+                                    &ui_tx,
+                                    &runtime,
+                                );
+                            }
+                        }
+                        _ if id == ID_CONTEXT_SYNC_NOW => {
+                            // The same three syncs the Tools menu offers,
+                            // chosen by which module is open rather than by
+                            // reading a menu.
+                            //
+                            // Read into a binding first. A guard in the
+                            // scrutinee lives for the whole match, and the
+                            // arms below spawn work and send status, which is
+                            // the shape that deadlocked the UI thread and
+                            // froze the screen reader with it.
+                            let module = lock_state(&state).active_module;
+                            match module {
+                                PimModule::Contacts => {
+                                    send_status(&ui_tx, &runtime, "Contacts sync requested...");
+                                    spawn_contacts_sync(&state, &ui_tx, &runtime);
+                                }
+                                PimModule::Calendar => {
+                                    send_status(&ui_tx, &runtime, "Calendar sync requested...");
+                                    spawn_calendar_sync(&state, &ui_tx, &runtime);
+                                }
+                                PimModule::Tasks => {
+                                    send_status(&ui_tx, &runtime, "Tasks sync requested...");
+                                    spawn_tasks_sync(&state, &ui_tx, &runtime);
+                                }
+                                // Notes go nowhere and mail has its own Check
+                                // Mail, so neither is offered this.
+                                PimModule::Notes | PimModule::Mail | PimModule::Reminders => {
+                                    send_status(
+                                        &ui_tx,
+                                        &runtime,
+                                        "This module does not sync anywhere yet",
+                                    );
+                                }
                             }
                         }
                         _ if id == ID_CYCLE_PANES || id == ID_PREVIOUS_PANE => {
@@ -3256,6 +3414,46 @@ fn apply_columns(list: &ListCtrl, layout: &ColumnLayout) {
 /// Bound through the generic keyboard event rather than the list control's own,
 /// because the list event carries a key code and no modifier state, and telling
 /// Space from Shift+Space is the whole point.
+/// Give one control the menu key.
+///
+/// The Applications key, and `Shift+F10` for keyboards without one. Bound as
+/// keys rather than through the context menu event, which is the obvious way
+/// and does not work: wxdragon offers that event on frames and panels only,
+/// and wxWidgets does not hand it up from a native list or tree, so a handler
+/// on the frame is never called. That was tried first, and the way it was
+/// found out was pressing the key against the running application and finding
+/// nothing in the log.
+///
+/// One helper rather than eleven copies, for the same reason as
+/// [`wire_read_aloud`]: the key has to behave the same wherever you are.
+///
+/// `skip` is called in every path so the control keeps its own use of every
+/// other key.
+fn wire_context_menu<W>(control: &W, focus: crate::application::context_menu::Focus)
+where
+    W: WxWidget + WxEvtHandler + Copy + 'static,
+{
+    /// `WXK_WINDOWS_MENU`, the key between the right Windows key and Ctrl.
+    ///
+    /// Not 93. That is the Windows virtual key code; wxWidgets renumbers the
+    /// non-character keys, and reading the platform's number here gave a
+    /// handler that was never called by anything.
+    const APPLICATIONS: i32 = 395;
+    /// `WXK_F10`, which with Shift means the same thing.
+    const F10: i32 = 349;
+
+    let owner = *control;
+    control.bind_internal(EventType::KEY_DOWN, move |event| {
+        event.skip(true);
+        let key = event.get_key_code().unwrap_or(0);
+        let asked = key == APPLICATIONS || (key == F10 && event.shift_down());
+        if !asked {
+            return;
+        }
+        crate::presentation::wx_context_menu::show(&owner, focus);
+    });
+}
+
 fn wire_read_aloud<F>(
     list: &ListCtrl,
     a11y: &Arc<Accessibility>,

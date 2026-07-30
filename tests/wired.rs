@@ -95,6 +95,13 @@ fn test_every_handled_command_has_something_that_raises_it() {
         ] {
             raised.extend(names_after(&text, marker));
         }
+
+        // The context menus raise their ids through a mapping rather than by
+        // naming one at the point the menu is built, so the ids appear only
+        // as the right hand side of that match.
+        if path.ends_with("wx_context_menu.rs") {
+            raised.extend(names_after(&text, "=> "));
+        }
     }
 
     let mut dead: Vec<String> = handled
@@ -231,6 +238,99 @@ fn test_no_two_menu_items_claim_the_same_shortcut() {
     }
 
     assert!(collisions.is_empty(), "{}", collisions.join("\n  "));
+}
+
+#[test]
+fn test_every_context_menu_line_has_a_handler() {
+    // The other direction from the sweep above. That one finds handlers with
+    // nothing to raise them; this finds a menu line that raises something
+    // nothing handles, which is a line somebody chooses and nothing happens.
+    //
+    // The context menus are the place this matters most: they are read out
+    // one line at a time by somebody who cannot see the panel, so a line that
+    // does nothing costs a moment every time it is passed and teaches nothing
+    // when it is chosen.
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let mapping =
+        fs::read_to_string("src/presentation/wx_context_menu.rs").expect("the context menus");
+
+    // Every id the mapping hands out.
+    let mut raised: Vec<String> = names_after(&mapping, "=> ");
+    raised.sort();
+    raised.dedup();
+
+    assert!(
+        raised.len() >= 10,
+        "only {} ids mapped, so this is not reading the mapping",
+        raised.len()
+    );
+
+    let handled = names_after(&app, "id == ");
+    let orphans: Vec<&String> = raised.iter().filter(|id| !handled.contains(id)).collect();
+
+    assert!(
+        orphans.is_empty(),
+        "context menu lines that raise a command nothing handles: {orphans:?}"
+    );
+}
+
+#[test]
+fn test_the_menu_key_is_bound_with_the_numbers_wxwidgets_uses() {
+    // Both bugs this had, written down as the test that would have found
+    // them.
+    //
+    // The first was binding the context menu event, which is the obvious way
+    // and never fires: wxdragon offers it on frames and panels only, and
+    // wxWidgets does not hand it up from a native list or tree.
+    //
+    // The second was using Windows' own number for the Applications key, 93.
+    // wxWidgets renumbers every non-character key, so the handler was correct
+    // and unreachable. It is WXK_WINDOWS_MENU, 395, and WXK_F10 is 349.
+    // Both were found by pressing the key against the running application and
+    // watching nothing happen.
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let wiring = app
+        .split("fn wire_context_menu")
+        .nth(1)
+        .expect("the helper that gives a control the menu key");
+    let helper: String = wiring.chars().take(1600).collect();
+
+    assert!(
+        helper.contains("395"),
+        "the Applications key is not WXK_WINDOWS_MENU, so the menu key does nothing"
+    );
+    assert!(
+        helper.contains("349"),
+        "Shift+F10 is not bound, and some keyboards have no Applications key"
+    );
+    assert!(
+        helper.contains("shift_down"),
+        "F10 is bound without checking Shift, so plain F10 opens the menu"
+    );
+    assert!(
+        helper.contains("KEY_DOWN"),
+        "bound to something other than a key press"
+    );
+}
+
+#[test]
+fn test_the_menu_key_is_given_to_every_list_and_tree() {
+    // Eleven controls hold focus in the main window, and a menu key that
+    // works on some of them is worse than one that works on none: it teaches
+    // that the key works, and then it does not.
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    // The definition is written `wire_context_menu<W>(`, so it is not one of
+    // these. Every match is a control being given the key.
+    let bound = app.matches("wire_context_menu(").count();
+
+    // The message list, the mail folder tree, five module lists, and four
+    // module sidebars. The reminders sidebar is not among them: it holds
+    // buckets rather than containers somebody made, and there is nothing to
+    // do to one, so it has no menu rather than an empty one.
+    assert_eq!(
+        bound, 11,
+        "eleven controls should have the menu key, {bound} do"
+    );
 }
 
 #[test]

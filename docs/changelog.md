@@ -13,6 +13,10 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The menu key works on every list and every sidebar.** The Applications key, or `Shift+F10`, on a message, a contact, an event, a reminder, a task, a note, a mail folder, a calendar, a task list, a note folder or a contact group. It offers what can be done with the thing you are on, which for somebody who cannot see a toolbar is the way to find that out without leaving the thing to go hunting through the menu bar.
+  Only commands that work are on it. Rename, move to another list, mark a whole folder read and empty a folder are the obvious absences, and none of them is implemented, so none of them is offered. A menu line that does nothing is worse than one that is not there: it is a stop you land on, hear, and learn nothing from.
+  The reminders sidebar has no menu, because it holds buckets rather than things you made, and there is nothing to do to one.
+
 - **Making an event, task, reminder or note asks for what it actually is.** All four used to be a title in a box, and everything else was invented: an event an hour from now in no calendar, a task with no due date and no priority, a reminder with no time so it never went off, a note with an empty body in no folder. Every one of those columns was already in the database and nothing put anything in them.
   An event now asks for the calendar, all day, start and end date and time, location, repeat, an alert, busy or free, status and a description. A task asks for the list, due date, priority and notes. A reminder asks for the date, time, priority, repeat and notes. A note asks for the folder, whether to pin it, and the body.
   The field lists are not invented: they are what RFC 5545 and RFC 6350 define and what Google and Microsoft put on their own create forms. Where the two providers differ it says so, so priority on a task is marked as something Microsoft carries and Google does not.
