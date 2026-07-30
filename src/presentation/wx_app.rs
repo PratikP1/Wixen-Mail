@@ -141,6 +141,9 @@ menu_ids!(
     ID_CONTEXT_NEW_CONTAINER,
     ID_CONTEXT_DELETE_CONTAINER,
     ID_CONTEXT_SYNC_NOW,
+    ID_CONTEXT_COPY_TO_TASK,
+    ID_CONTEXT_COPY_TO_EVENT,
+    ID_CONTEXT_COPY_TO_NOTE,
     ID_NEW_EVENT,
     ID_NEW_REMINDER,
     ID_NEW_TASK,
@@ -2233,6 +2236,66 @@ document.addEventListener('keydown', function(e) {
                                     &runtime,
                                 );
                             }
+                        }
+                        _ if id == ID_CONTEXT_COPY_TO_TASK
+                            || id == ID_CONTEXT_COPY_TO_EVENT
+                            || id == ID_CONTEXT_COPY_TO_NOTE =>
+                        {
+                            use crate::application::new_item::ItemKind;
+                            let kind = if id == ID_CONTEXT_COPY_TO_TASK {
+                                ItemKind::Task
+                            } else if id == ID_CONTEXT_COPY_TO_EVENT {
+                                ItemKind::Event
+                            } else {
+                                ItemKind::Note
+                            };
+
+                            let chosen = {
+                                let s = lock_state(&state);
+                                s.selected_message_index
+                                    .and_then(|at| s.messages.get(at))
+                                    .cloned()
+                            };
+                            let Some(message) = chosen else {
+                                send_status(&ui_tx, &runtime, "Choose a message first");
+                                return;
+                            };
+
+                            // The body is read here rather than carried on the
+                            // list row: a folder listing that loaded every
+                            // body would be a query per row, so the row holds
+                            // only a snippet.
+                            //
+                            // Plain first, and the HTML flattened when that is
+                            // all there is. A task description full of markup
+                            // is worse than no description.
+                            let body = message_cache
+                                .as_ref()
+                                .and_then(|c| {
+                                    c.get_message_body(message.message_id).ok().flatten()
+                                })
+                                .map(|stored| match (stored.body_plain, stored.body_html) {
+                                    (Some(plain), _) if !plain.trim().is_empty() => plain,
+                                    (_, Some(html)) => {
+                                        HtmlRenderer::plain_text_only().html_to_plain_text(&html)
+                                    }
+                                    _ => String::new(),
+                                })
+                                .unwrap_or_default();
+
+                            managers::copy_message_into(
+                                kind,
+                                &crate::application::from_message::Source {
+                                    subject: message.subject.clone(),
+                                    from: message.from.clone(),
+                                    date: message.date.clone(),
+                                    body,
+                                },
+                                &state,
+                                &message_cache,
+                                &ui_tx,
+                                &runtime,
+                            );
                         }
                         _ if id == ID_CONTEXT_SYNC_NOW => {
                             // The same three syncs the Tools menu offers,

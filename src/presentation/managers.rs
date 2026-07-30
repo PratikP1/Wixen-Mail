@@ -1102,6 +1102,63 @@ fn store_new_item(
     }
 }
 
+/// Make a task, an event or a note out of a message.
+///
+/// The subject becomes the title and the message becomes the body, so what
+/// arrived as mail becomes something that can be acted on without retyping it.
+/// What carries over is decided by [`crate::application::from_message`], which
+/// is where the rules are tested.
+///
+/// It goes into the account's first container of that kind, the same one a new
+/// item made from the menu goes into, so a message copied to tasks and a task
+/// made by hand end up in the same place.
+pub fn copy_message_into(
+    kind: crate::application::new_item::ItemKind,
+    source: &crate::application::from_message::Source,
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    use crate::application::from_message::{body_from, title_from};
+    use crate::application::item_fields::{FieldName, Filled};
+
+    let Some(cache) = cache.clone() else {
+        return send_status(tx, rt, "No storage is open, so nothing can be saved");
+    };
+    let Some(account_id) = lock_state(state).active_account_id.clone() else {
+        return send_status(tx, rt, "Add an account first");
+    };
+
+    let title = title_from(source);
+    let mut filled = Filled::default();
+    filled.put(FieldName::Title, title.clone());
+    filled.put(FieldName::Notes, body_from(source));
+
+    // Where it goes. The first container of that kind, which is the one the
+    // provider returns first and so the one it calls the default.
+    let holder = crate::application::new_item::ContainerKind::holding(kind)
+        .and_then(|container| {
+            containers_in(&cache, container, &account_id)
+                .into_iter()
+                .next()
+        })
+        .map(|(id, _, _)| id);
+
+    match store_new_item(&cache, kind, &account_id, &filled, holder.as_deref()) {
+        Ok(()) => {
+            send_status(tx, rt, &format!("Copied to {}: {}", kind.label(), title));
+            crate::presentation::wx_app::load_module_data(
+                module_for(kind),
+                &Some(cache),
+                Some(account_id),
+                tx,
+            );
+        }
+        Err(e) => send_status(tx, rt, &format!("Could not copy it: {e}")),
+    }
+}
+
 // ── Reopening a draft ───────────────────────────────────────────────────────
 
 /// Show the saved drafts and open the chosen one.
@@ -1193,6 +1250,80 @@ mod tests {
         let mut filled = crate::application::item_fields::Filled::default();
         filled.put(crate::application::item_fields::FieldName::Title, title);
         filled
+    }
+
+    #[test]
+    fn test_a_message_copied_to_tasks_keeps_its_subject_and_its_text() {
+        // The whole point of the command. Read back out of the database
+        // rather than out of the conversion, because the conversion being
+        // right and the storage dropping it is the failure that matters.
+        use crate::application::from_message::{Source, body_from, title_from};
+        use crate::application::item_fields::{FieldName, Filled};
+
+        let cache = test_cache();
+        let source = Source {
+            subject: "Quarterly figures".to_string(),
+            from: "hana@example.com".to_string(),
+            date: "2026-07-30".to_string(),
+            body: "Can you send them by Friday?".to_string(),
+        };
+        let mut filled = Filled::default();
+        filled.put(FieldName::Title, title_from(&source));
+        filled.put(FieldName::Notes, body_from(&source));
+
+        store_new_item(
+            &cache,
+            crate::application::new_item::ItemKind::Task,
+            "account-1",
+            &filled,
+            None,
+        )
+        .expect("the task to be stored");
+
+        let waiting = cache.pending_tasks("account-1").expect("the task back");
+        let task = waiting.first().expect("the task");
+        assert_eq!(task.title, "Quarterly figures");
+        let description = task.description.as_deref().unwrap_or_default();
+        assert!(description.contains("hana@example.com"), "{description}");
+        assert!(
+            description.contains("Can you send them by Friday?"),
+            "{description}"
+        );
+    }
+
+    #[test]
+    fn test_a_message_copied_to_notes_keeps_its_text_in_the_body() {
+        // Notes keep the message in `body`, not in a description column, so
+        // this is a different path from tasks and worth its own test.
+        use crate::application::from_message::{Source, body_from, title_from};
+        use crate::application::item_fields::{FieldName, Filled};
+
+        let cache = test_cache();
+        let source = Source {
+            subject: "Wiring colours".to_string(),
+            from: "sparks@example.com".to_string(),
+            date: "2026-07-30".to_string(),
+            body: "Brown is live".to_string(),
+        };
+        let mut filled = Filled::default();
+        filled.put(FieldName::Title, title_from(&source));
+        filled.put(FieldName::Notes, body_from(&source));
+
+        store_new_item(
+            &cache,
+            crate::application::new_item::ItemKind::Note,
+            "account-1",
+            &filled,
+            None,
+        )
+        .expect("the note to be stored");
+
+        let stored = cache
+            .get_all_notes_for_account("account-1")
+            .expect("the note back");
+        let note = stored.first().expect("the note");
+        assert_eq!(note.title, "Wiring colours");
+        assert!(note.body.contains("Brown is live"), "{}", note.body);
     }
 
     #[test]

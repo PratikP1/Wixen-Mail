@@ -13,6 +13,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A message can be copied to your tasks, your calendar or your notes.** On the message list, the menu key offers "Copy to a task", "Copy to the calendar" and "Copy to a note". The subject becomes the title and the message becomes the body: who sent it, when, and what it said, so the task still makes sense in a month when the mail has been archived.
+  The whole message is kept rather than a link back to it, because a message can be deleted, moved by a filter or renumbered by the server, and then a link means nothing. A message with no subject gets a title saying so rather than an empty row, which in a list read aloud announces nothing at all.
+
 - **The menu key works on every list and every sidebar.** The Applications key, or `Shift+F10`, on a message, a contact, an event, a reminder, a task, a note, a mail folder, a calendar, a task list, a note folder or a contact group. It offers what can be done with the thing you are on, which for somebody who cannot see a toolbar is the way to find that out without leaving the thing to go hunting through the menu bar.
   Only commands that work are on it. Rename, move to another list, mark a whole folder read and empty a folder are the obvious absences, and none of them is implemented, so none of them is offered. A menu line that does nothing is worse than one that is not there: it is a stop you land on, hear, and learn nothing from.
   The reminders sidebar has no menu, because it holds buckets rather than things you made, and there is nothing to do to one.

@@ -88,6 +88,12 @@ pub enum Action {
     DeleteContainer,
     /// Fetch this module from the provider now.
     SyncNow,
+    /// Make a task from this message, keeping its subject and its text.
+    CopyToTask,
+    /// Make a calendar event from it.
+    CopyToEvent,
+    /// Make a note from it.
+    CopyToNote,
 }
 
 /// One line on a context menu.
@@ -129,6 +135,11 @@ static MESSAGES: &[Entry] = &[
     entry("&Mark as read", Action::MarkRead),
     entry("&Star or unstar", Action::ToggleStar),
     entry("&Delete", Action::DeleteMessage),
+    // The thing you have to do arrived as an email, and retyping its subject
+    // into a task list is the clerical work software exists to remove.
+    entry("Copy to a &task", Action::CopyToTask),
+    entry("Copy to the &calendar", Action::CopyToEvent),
+    entry("Copy to a &note", Action::CopyToNote),
 ];
 
 static MAIL_FOLDERS: &[Entry] = &[
@@ -285,6 +296,21 @@ mod tests {
 
             assert!(offered.contains(&Action::NewContainer), "{kind:?}");
             assert!(offered.contains(&Action::DeleteContainer), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn test_a_message_can_be_copied_into_the_other_modules() {
+        // The subject becomes the title and the message becomes the body, so
+        // what arrived as mail becomes something you can act on without
+        // retyping it.
+        let offered: Vec<Action> = entries_for(Focus::Messages)
+            .iter()
+            .map(|e| e.action)
+            .collect();
+
+        for wanted in [Action::CopyToTask, Action::CopyToEvent, Action::CopyToNote] {
+            assert!(offered.contains(&wanted), "a message cannot be {wanted:?}");
         }
     }
 

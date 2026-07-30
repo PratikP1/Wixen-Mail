@@ -31,6 +31,7 @@ use wxdragon::prelude::*;
 /// keep working.
 pub const fn command_for(action: Action) -> Id {
     use crate::presentation::wx_app::{
+        ID_CONTEXT_COPY_TO_EVENT, ID_CONTEXT_COPY_TO_NOTE, ID_CONTEXT_COPY_TO_TASK,
         ID_CONTEXT_DELETE_CONTAINER, ID_CONTEXT_DELETE_ITEM, ID_CONTEXT_NEW_CONTAINER,
         ID_CONTEXT_NEW_ITEM, ID_CONTEXT_SYNC_NOW, ID_CONTEXT_TOGGLE_COMPLETE,
         ID_CONTEXT_TOGGLE_PIN, ID_DELETE, ID_FORWARD, ID_GET_OLDER, ID_MARK_READ,
@@ -56,6 +57,9 @@ pub const fn command_for(action: Action) -> Id {
         Action::NewContainer => ID_CONTEXT_NEW_CONTAINER,
         Action::DeleteContainer => ID_CONTEXT_DELETE_CONTAINER,
         Action::SyncNow => ID_CONTEXT_SYNC_NOW,
+        Action::CopyToTask => ID_CONTEXT_COPY_TO_TASK,
+        Action::CopyToEvent => ID_CONTEXT_COPY_TO_EVENT,
+        Action::CopyToNote => ID_CONTEXT_COPY_TO_NOTE,
     }
 }
 

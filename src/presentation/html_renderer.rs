@@ -110,8 +110,10 @@ impl HtmlRenderer {
 
     /// Convert HTML to accessible plain text
     ///
-    /// This is useful for screen readers and text-only displays.
-    fn html_to_plain_text(&self, html: &str) -> String {
+    /// This is useful for screen readers and text-only displays, and for
+    /// copying a message into a task or a note, where a description full of
+    /// markup is worse than no description.
+    pub fn html_to_plain_text(&self, html: &str) -> String {
         // Basic HTML to text conversion
         let mut text = html.to_string();
 
