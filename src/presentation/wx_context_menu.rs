@@ -35,8 +35,8 @@ pub const fn command_for(action: Action) -> Id {
         ID_CONTEXT_COPY_TO_TASK, ID_CONTEXT_DELETE_CONTAINER, ID_CONTEXT_DELETE_ITEM,
         ID_CONTEXT_NEW_CONTAINER, ID_CONTEXT_NEW_ITEM, ID_CONTEXT_SYNC_NOW,
         ID_CONTEXT_TOGGLE_COMPLETE, ID_CONTEXT_TOGGLE_PIN, ID_COPY_TO_FOLDER, ID_DELETE,
-        ID_FORWARD, ID_GET_OLDER, ID_MARK_READ, ID_MOVE_TO_FOLDER, ID_REFRESH_FOLDER, ID_REPLY,
-        ID_REPLY_ALL, ID_TOGGLE_STAR,
+        ID_DELETE_OUTRIGHT, ID_FORWARD, ID_GET_OLDER, ID_MARK_READ, ID_MOVE_TO_FOLDER,
+        ID_REFRESH_FOLDER, ID_REPLY, ID_REPLY_ALL, ID_TOGGLE_STAR,
     };
     match action {
         // These are the menu bar's own ids, so the same thing done two ways
@@ -47,6 +47,7 @@ pub const fn command_for(action: Action) -> Id {
         Action::MarkRead => ID_MARK_READ,
         Action::ToggleStar => ID_TOGGLE_STAR,
         Action::DeleteMessage => ID_DELETE,
+        Action::DeleteMessageOutright => ID_DELETE_OUTRIGHT,
         Action::RefreshFolder => ID_REFRESH_FOLDER,
         Action::GetOlder => ID_GET_OLDER,
         Action::MoveToFolder => ID_MOVE_TO_FOLDER,

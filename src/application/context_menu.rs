@@ -72,6 +72,8 @@ pub enum Action {
     MarkRead,
     ToggleStar,
     DeleteMessage,
+    /// Remove it from the server without putting it in the trash.
+    DeleteMessageOutright,
     RefreshFolder,
     GetOlder,
     /// Make another one of whatever this list holds.
@@ -141,6 +143,7 @@ static MESSAGES: &[Entry] = &[
     entry("&Mark as read", Action::MarkRead),
     entry("&Star or unstar", Action::ToggleStar),
     entry("&Delete", Action::DeleteMessage),
+    entry("Delete &permanently", Action::DeleteMessageOutright),
     entry("Mo&ve to folder", Action::MoveToFolder),
     entry("Cop&y to folder", Action::CopyToFolder),
     // The thing you have to do arrived as an email, and retyping its subject

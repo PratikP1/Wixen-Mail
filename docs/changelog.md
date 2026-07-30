@@ -9,9 +9,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 ### Added
 
 - **Deleting a message puts it in the Trash.** It used to mark the message deleted and clear it out where it stood. That means something different on every provider, and on Gmail it means whichever of three things a setting in Gmail's own web interface says, which Wixen Mail cannot see and never asked about. So a delete now moves the message to Trash, which behaves the same everywhere and can be undone by going and getting it.
-  What you hear is what happened. "Moved to Trash" when it moved, "Deleted" when there was nowhere to move it to and it really is gone, and a longer sentence on the servers that can do neither cleanly, saying the message is in both places. Deleting from the Trash still deletes.
+  `Delete` is still one key and still asks nothing. It is a key you press twenty times going through a morning's mail, and a question in front of it is twenty questions; the message being recoverable from the Trash is what makes not asking safe.
+  `Shift+Delete` removes the message from the server outright, with no copy anywhere. That does not ask either, on the same reasoning as everywhere else in Windows.
+  What you hear is what happened. "Moved to Trash" when it moved, "Deleted" when it is really gone, and a longer sentence on the servers that can do neither cleanly, saying the message is in both places. Deleting from the Trash still deletes.
 
 - **Move a message to another folder, or copy it there.** `Ctrl+Shift+V` moves, `Ctrl+Shift+Y` copies, and both are on the message menu key. A window opens with your folders in a tree: arrows move, Right opens the account, Enter chooses. The folder the message is already in is not offered, because choosing it would be a command that appears to do nothing.
+  The window opens on the folder you filed into last, per account, so filing a run of messages into the same place is the shortcut and Enter rather than a walk through the tree each time. It is remembered between sessions.
   On servers that have the MOVE command it is one instruction, which is the only way a move is safe. Where it is missing, the copy is made first and the original is removed after, so a failure part way leaves the message in two places rather than none, and it says so.
 
 - **Sent mail gets saved in your Sent folder.** Nothing was saving it. Sending and receiving are two separate services that know nothing about each other, so a message handed to the sending server left no trace anywhere you could look at it. Gmail files its own copy, so Gmail accounts happened to look right; every other account had no record of anything you had sent.

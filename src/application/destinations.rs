@@ -22,21 +22,38 @@
 use crate::application::new_item::ContainerKind;
 use crate::common::types::FolderType;
 
+/// Which delete somebody asked for.
+///
+/// Two words rather than a `bool`, because both calls read the same at the call
+/// site and only one of them can be taken back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Deleting {
+    /// The ordinary one, on `Delete`. Recoverable from the trash.
+    ToTrash,
+    /// `Shift+Delete`. Gone from the server, with no copy anywhere.
+    Outright,
+}
+
 /// Where a deleted message should go, if anywhere.
 ///
-/// Deleting mail means moving it to the trash. It is what every other client
-/// does, it is recoverable, and it is the only behaviour that means the same
-/// thing on every server: flagging a message and expunging it in place removes
-/// a label on Gmail, and which of three things that turns into depends on a
-/// setting only reachable in Gmail's own web interface.
+/// The ordinary delete moves to the trash. It is what every other client does,
+/// it is recoverable, and it is the only behaviour that means the same thing on
+/// every server: flagging a message and expunging it in place removes a label
+/// on Gmail, and which of three things that turns into depends on a setting
+/// only reachable in Gmail's own web interface.
 ///
-/// `None` means there is nowhere to move it to and the delete is a real one:
-/// either the message is already in the trash, in which case somebody deleting
-/// it again means it, or the account has no trash folder at all.
+/// `None` means there is nowhere to move it to and the delete is a real one.
+/// Three ways to get there: somebody asked for it outright, the message is
+/// already in the trash so deleting it again means it, or the account has no
+/// trash folder.
 pub fn trash_for<'a>(
     folders: impl IntoIterator<Item = (&'a str, FolderType)>,
     deleting_from: &str,
+    asked: Deleting,
 ) -> Option<&'a str> {
+    if asked == Deleting::Outright {
+        return None;
+    }
     let trash = folders
         .into_iter()
         .find(|(_, kind)| *kind == FolderType::Trash)
@@ -108,6 +125,32 @@ pub fn offer(branches: Vec<Branch>, already_in: Option<&str>) -> Vec<Branch> {
 /// said in a sentence rather than shown as an empty window.
 pub fn anywhere(branches: &[Branch]) -> bool {
     branches.iter().any(|branch| !branch.places.is_empty())
+}
+
+/// Which destination the window should open on.
+///
+/// Filing mail is repetitive: twenty messages go into the same folder one after
+/// another, and walking the tree to it twenty times is nineteen more journeys
+/// than anybody wants. So the window opens on wherever the last one went, and
+/// filing the next is the shortcut and Enter.
+///
+/// The last one is only used if it is still on offer. It will not be when the
+/// message is already in it, which is the ordinary case of moving something
+/// back out of the folder it was just put in, and a window that opened on a row
+/// which is not there would open on nothing.
+pub fn open_on<'a>(branches: &'a [Branch], last_used: Option<&str>) -> Option<&'a Destination> {
+    if let Some(last) = last_used
+        && let Some(again) = branches
+            .iter()
+            .flat_map(|branch| branch.places.iter())
+            .find(|place| place.id == last)
+    {
+        return Some(again);
+    }
+    branches
+        .iter()
+        .flat_map(|branch| branch.places.iter())
+        .next()
 }
 
 /// What to say when there is nowhere to put it.
@@ -187,6 +230,45 @@ mod tests {
     }
 
     #[test]
+    fn test_the_window_opens_on_where_the_last_one_went() {
+        // Filing is repetitive. Twenty messages into the same folder should
+        // not be twenty walks through the tree.
+        let tree = one_account(vec![
+            place("inbox", "Inbox"),
+            place("archive", "Archive"),
+            place("work", "Work"),
+        ]);
+
+        let opens = open_on(&tree, Some("work")).expect("a destination");
+
+        assert_eq!(opens.id, "work");
+    }
+
+    #[test]
+    fn test_a_last_destination_that_is_not_offered_is_not_used() {
+        // Which is the ordinary case of moving something back out of the
+        // folder it was just filed into: that folder is where the message is,
+        // so it is not on offer, and opening on it would open on nothing.
+        let tree = one_account(vec![place("inbox", "Inbox"), place("archive", "Archive")]);
+
+        let opens = open_on(&tree, Some("work")).expect("a destination");
+
+        assert_eq!(opens.id, "inbox", "falls back to the first");
+    }
+
+    #[test]
+    fn test_the_first_time_opens_on_the_first_place() {
+        let tree = one_account(vec![place("inbox", "Inbox"), place("archive", "Archive")]);
+
+        assert_eq!(open_on(&tree, None).expect("a destination").id, "inbox");
+    }
+
+    #[test]
+    fn test_nothing_to_open_on_when_there_is_nowhere() {
+        assert!(open_on(&[], Some("work")).is_none());
+    }
+
+    #[test]
     fn test_nowhere_to_go_is_known_before_a_window_opens() {
         let nothing = offer(one_account(vec![place("inbox", "Inbox")]), Some("inbox"));
 
@@ -215,7 +297,18 @@ mod tests {
 
     #[test]
     fn test_a_deleted_message_goes_to_the_trash() {
-        assert_eq!(trash_for(mailboxes(), "INBOX"), Some("[Gmail]/Trash"));
+        assert_eq!(
+            trash_for(mailboxes(), "INBOX", Deleting::ToTrash),
+            Some("[Gmail]/Trash")
+        );
+    }
+
+    #[test]
+    fn test_asking_to_delete_it_outright_does_not_go_to_the_trash() {
+        // Shift+Delete. Somebody who means it should not have to go to the
+        // trash and delete it a second time, which is what the ordinary
+        // delete alone leaves them doing.
+        assert_eq!(trash_for(mailboxes(), "INBOX", Deleting::Outright), None);
     }
 
     #[test]
@@ -223,7 +316,10 @@ mod tests {
         // Somebody emptying the trash means it. Moving a message from the
         // trash to the trash is a command that does nothing, and they cannot
         // tell that from one that failed.
-        assert_eq!(trash_for(mailboxes(), "[Gmail]/Trash"), None);
+        assert_eq!(
+            trash_for(mailboxes(), "[Gmail]/Trash", Deleting::ToTrash),
+            None
+        );
     }
 
     #[test]
@@ -232,7 +328,7 @@ mod tests {
         // delete available is the one that removes it.
         let no_trash = [("INBOX", FolderType::Inbox), ("Work", FolderType::Custom)];
 
-        assert_eq!(trash_for(no_trash, "INBOX"), None);
+        assert_eq!(trash_for(no_trash, "INBOX", Deleting::ToTrash), None);
     }
 
     #[test]

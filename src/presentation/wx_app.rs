@@ -3,6 +3,7 @@
 //! Main application window using wxdragon (wxWidgets bindings).
 //! Native Windows UI with first-class accessibility support.
 
+use crate::application::destinations::Deleting;
 use crate::application::mail_controller::{MailController, SendEmailRequest};
 use crate::application::reply::ReplyMode;
 use crate::common::Result;
@@ -150,6 +151,7 @@ menu_ids!(
     ID_NEW_NOTE,
     ID_MOVE_TO_FOLDER,
     ID_COPY_TO_FOLDER,
+    ID_DELETE_OUTRIGHT,
     ID_CHOOSE_FOLDERS,
 );
 
@@ -2710,14 +2712,25 @@ document.addEventListener('keydown', function(e) {
                                 );
                             }
                         }
-                        _ if id == ID_DELETE => {
-                            // The row is not removed here. Deleting is
-                            // destructive and cannot be put back by sending an
-                            // update, so the server is asked first and the row
-                            // leaves the list once the server has agreed.
-                            // Announcing "deleted" and then finding the message
-                            // still there on another device is the kind of wrong
-                            // nobody discovers until it matters.
+                        _ if id == ID_DELETE || id == ID_DELETE_OUTRIGHT => {
+                            // Neither asks first. Delete is a key somebody
+                            // presses twenty times going through a morning's
+                            // mail, and a question in front of it is twenty
+                            // questions. The ordinary one is recoverable from
+                            // the trash, which is what makes not asking safe.
+                            //
+                            // The row is not removed here. Deleting cannot be
+                            // put back by sending an update, so the server is
+                            // asked first and the row leaves the list once the
+                            // server has agreed. Announcing "deleted" and then
+                            // finding the message still there on another device
+                            // is the kind of wrong nobody discovers until it
+                            // matters.
+                            let asked = if id == ID_DELETE_OUTRIGHT {
+                                Deleting::Outright
+                            } else {
+                                Deleting::ToTrash
+                            };
                             let selected = {
                                 let s = lock_state(&state);
                                 s.selected_message_index
@@ -2733,7 +2746,7 @@ document.addEventListener('keydown', function(e) {
                                     cache_id,
                                     uid,
                                     subject,
-                                    ServerChange::Deleted,
+                                    ServerChange::Deleted(asked),
                                 );
                             } else {
                                 send_status(&ui_tx, &runtime, "No message selected to delete");
@@ -5461,11 +5474,34 @@ fn move_or_copy_message(
             crate::presentation::wx_destination::nowhere(Moving::Message),
         );
     }
-    let Some(into) =
-        crate::presentation::wx_destination::ask(frame, Moving::Message, copying, &branches)
-    else {
+    // Where the last one went, so the window opens on it and filing the next
+    // message into the same folder is the shortcut and Enter.
+    let mut settings = crate::data::config::ConfigManager::load_stored().ok();
+    let last_used = settings
+        .as_ref()
+        .and_then(|mgr| mgr.app_config().last_filed_into.get(&account_id).cloned());
+
+    let Some(into) = crate::presentation::wx_destination::ask(
+        frame,
+        Moving::Message,
+        copying,
+        &branches,
+        last_used.as_deref(),
+    ) else {
         return;
     };
+
+    // Remembered as soon as it is chosen, not once the server agrees. Somebody
+    // filing a run of messages should not have the window forget where they
+    // are going because one of them failed on the way.
+    if let Some(mgr) = settings.as_mut() {
+        mgr.app_config_mut()
+            .last_filed_into
+            .insert(account_id.clone(), into.clone());
+        if let Err(e) = mgr.save() {
+            tracing::warn!("Could not remember where that was filed: {e}");
+        }
+    }
     let Some(from) = from else {
         return send_status(tx, rt, "The message is not in a folder we know about");
     };
@@ -5909,7 +5945,7 @@ fn spawn_mail_watch(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt:
 enum ServerChange {
     Read(bool),
     Flagged(bool),
-    Deleted,
+    Deleted(Deleting),
 }
 
 impl ServerChange {
@@ -5920,7 +5956,7 @@ impl ServerChange {
             ServerChange::Read(false) => format!("Marked unread: {subject}"),
             ServerChange::Flagged(true) => format!("Flagged: {subject}"),
             ServerChange::Flagged(false) => format!("Unflagged: {subject}"),
-            ServerChange::Deleted => format!("Deleted: {subject}"),
+            ServerChange::Deleted(_) => format!("Deleted: {subject}"),
         }
     }
 }
@@ -5976,7 +6012,7 @@ fn spawn_server_change(
                 ServerChange::Flagged(applied) => {
                     say(UIUpdate::MessageStarredToggled(message_row_id, !applied));
                 }
-                ServerChange::Deleted => {}
+                ServerChange::Deleted(_) => {}
             }
             say(UIUpdate::ErrorOccurred(format!(
                 "The change did not reach the server, so it has been undone here: {reason}"
@@ -6032,19 +6068,27 @@ fn spawn_server_change(
         }
 
         // Where deleted mail goes for this account. Read from the folders we
-        // already hold rather than asked for, and `None` when the message is
-        // already in the trash, which is when somebody deleting it means it.
-        let trash = cache
+        // already hold rather than asked for, and `None` when there is nowhere
+        // to move it to: somebody asked for it outright, the message is already
+        // in the trash, or the account has no trash folder.
+        let folders = cache
             .get_folders_for_account(&account.id)
             .unwrap_or_default();
+        let asked = match change {
+            ServerChange::Deleted(asked) => asked,
+            // Flagging and marking read do not move anything, so where the
+            // trash is does not arise.
+            _ => Deleting::ToTrash,
+        };
         let trash = crate::application::destinations::trash_for(
-            trash.iter().map(|folder| {
+            folders.iter().map(|folder| {
                 (
                     folder.path.as_str(),
                     crate::common::types::FolderType::from_stored(&folder.folder_type),
                 )
             }),
             &folder_path,
+            asked,
         )
         .map(str::to_string);
 
@@ -6055,7 +6099,7 @@ fn spawn_server_change(
             ServerChange::Flagged(flagged) => handle
                 .block_on(controller.set_starred(&folder_path, uid, flagged))
                 .map(|()| None),
-            ServerChange::Deleted => handle
+            ServerChange::Deleted(_) => handle
                 .block_on(controller.delete_message(&folder_path, uid, trash.as_deref()))
                 .map(Some),
         };
@@ -6080,7 +6124,7 @@ fn spawn_server_change(
                 say(UIUpdate::StatusUpdated(change.done(&subject)));
             }
             Err(e) => {
-                if change == ServerChange::Deleted {
+                if matches!(change, ServerChange::Deleted(_)) {
                     say(UIUpdate::ErrorOccurred(format!(
                         "{subject} was not deleted: {e}"
                     )));

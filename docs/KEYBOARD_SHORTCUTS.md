@@ -276,7 +276,8 @@ can navigate. Making them real headings is being worked on.
 | Refresh folder | `F5` | Read this folder again from the server |
 | Get older messages | `Shift+F9` | Fetch the next page of older messages |
 | Open a draft | `Ctrl+Shift+O` | Reopen a message saved to finish later |
-| Move to folder | `Ctrl+Shift+V` | Put this message in another folder |
+| Delete permanently | `Shift+Del` | Remove from the server without putting it in the Trash. Not asked about first |
+| Move to folder | `Ctrl+Shift+V` | Put this message in another folder. Opens on the last folder you filed into |
 | Copy to folder | `Ctrl+Shift+Y` | Put a copy of this message in another folder |
 | Menu for this thing | `Applications` or `Shift+F10` | What can be done with the message, task, folder or list you are on |
 | Navigate Forward | `Tab` | Move to next element in current pane |

@@ -43,10 +43,22 @@ pub fn heading(moving: Moving, copying: bool) -> String {
 /// `None` when somebody cancelled or there was nowhere to offer. The caller
 /// checks for nowhere first, with [`nothing_to_offer`], so that case is a
 /// sentence rather than an empty window.
-pub fn ask(parent: &Frame, moving: Moving, copying: bool, branches: &[Branch]) -> Option<String> {
+///
+/// `last_used` is where the previous one went. The window opens on it if it is
+/// still on offer, so filing several messages into the same folder is the
+/// shortcut and Enter rather than a walk through the tree each time.
+pub fn ask(
+    parent: &Frame,
+    moving: Moving,
+    copying: bool,
+    branches: &[Branch],
+    last_used: Option<&str>,
+) -> Option<String> {
     if branches.is_empty() {
         return None;
     }
+    let open_on = crate::application::destinations::open_on(branches, last_used)
+        .map(|place| place.id.clone());
 
     let title = heading(moving, copying);
     let dialog = Dialog::builder(parent, &title)
@@ -68,9 +80,9 @@ pub fn ask(parent: &Frame, moving: Moving, copying: bool, branches: &[Branch]) -
     // Every tree needs a root. The accounts hang off it, and the style hides
     // it, so nobody has to arrow past a row that means nothing.
     let root = tree.add_root("Accounts", None, None);
-    // The first real destination, so focus can start somewhere that is an
-    // answer rather than on an account name that is not one.
-    let mut first: Option<TreeItemId> = None;
+    // Where focus starts: somewhere that is an answer, rather than on an
+    // account name that is not one.
+    let mut start_on: Option<TreeItemId> = None;
 
     if let Some(root) = root.as_ref() {
         for branch in branches {
@@ -84,8 +96,8 @@ pub fn ask(parent: &Frame, moving: Moving, copying: bool, branches: &[Branch]) -
                 // the wrong folder, with everything reporting success.
                 let row =
                     tree.append_item_with_data(&account, &place.name, place.id.clone(), None, None);
-                if first.is_none() {
-                    first = row;
+                if open_on.as_deref() == Some(place.id.as_str()) {
+                    start_on = row;
                 }
             }
             tree.expand(&account);
@@ -110,12 +122,13 @@ pub fn ask(parent: &Frame, moving: Moving, copying: bool, branches: &[Branch]) -
 
     dialog.set_sizer(sizer, true);
 
-    // Focus lands on the first real destination rather than on the tree's
-    // notion of nothing selected, so the first thing announced is somewhere the
-    // message could go.
-    if let Some(first) = first.as_ref() {
-        tree.select_item(first);
-        tree.ensure_visible(first);
+    // Focus lands on a real destination rather than on the tree's notion of
+    // nothing selected, so the first thing announced is somewhere the message
+    // could go, and on the last folder used so that filing the next one is a
+    // single Enter.
+    if let Some(start_on) = start_on.as_ref() {
+        tree.select_item(start_on);
+        tree.ensure_visible(start_on);
     }
     tree.set_focus();
 

@@ -69,6 +69,17 @@ pub struct AppConfig {
     /// wrong that way.
     #[serde(default)]
     pub allowed_per_account: HashMap<String, crate::application::allowed::Allowed>,
+    /// The folder each account's last move or copy went to, by account id.
+    ///
+    /// Filing mail is repetitive: several messages go into the same folder one
+    /// after another. Holding the last one lets the destination window open on
+    /// it, so filing the next is the shortcut and Enter rather than another
+    /// walk through the folder tree.
+    ///
+    /// Per account, because two accounts have different folders and offering
+    /// one account's to the other is offering somewhere the message cannot go.
+    #[serde(default)]
+    pub last_filed_into: HashMap<String, String>,
     /// Whether the person has been shown what this alpha can and cannot do.
     ///
     /// False on a fresh installation and on an upgrade from before this
@@ -207,6 +218,7 @@ impl Default for AppConfig {
             check_spelling_before_send: true,
             allowed_changes: default_allowed(),
             allowed_per_account: HashMap::new(),
+            last_filed_into: HashMap::new(),
             told_about_the_alpha: false,
             check_spelling_as_you_type: true,
             default_sort_order: "date_newest".to_string(),
