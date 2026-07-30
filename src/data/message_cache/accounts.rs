@@ -18,36 +18,48 @@ impl MessageCache {
 
         let now = Utc::now().to_rfc3339();
 
-        self.conn.execute(
-            "INSERT OR REPLACE INTO accounts
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO accounts
              (id, name, email, imap_server, imap_port, imap_use_tls,
               smtp_server, smtp_port, smtp_use_tls, username, password,
               enabled, check_interval_minutes, provider, last_sync, color,
-              created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
-            params![
-                &account.id,
-                &account.name,
-                &account.email,
-                &account.imap_server,
-                &account.imap_port,
-                &account.imap_use_tls,
-                &account.smtp_server,
-                &account.smtp_port,
-                &account.smtp_use_tls,
-                &account.username,
-                "",
-                &account.enabled,
-                &account.check_interval_minutes,
-                &account.provider,
-                &account.last_sync.as_ref().map(|t| {
-                    chrono::DateTime::<Utc>::from(*t).to_rfc3339()
-                }),
-                &account.color,
-                &now,
-                &now
-            ],
-        ).map_err(|e| Error::Other(format!("Failed to save account: {}", e)))?;
+              created_at, updated_at,
+              protocol, pop_server, pop_port, pop_use_tls,
+              pop_leave_on_server, pop_remove_after_days)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+                     ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
+                params![
+                    &account.id,
+                    &account.name,
+                    &account.email,
+                    &account.imap_server,
+                    &account.imap_port,
+                    &account.imap_use_tls,
+                    &account.smtp_server,
+                    &account.smtp_port,
+                    &account.smtp_use_tls,
+                    &account.username,
+                    "",
+                    &account.enabled,
+                    &account.check_interval_minutes,
+                    &account.provider,
+                    &account
+                        .last_sync
+                        .as_ref()
+                        .map(|t| { chrono::DateTime::<Utc>::from(*t).to_rfc3339() }),
+                    &account.color,
+                    &now,
+                    &now,
+                    &account.protocol,
+                    &account.pop_server,
+                    &account.pop_port,
+                    &account.pop_use_tls,
+                    &account.pop_leave_on_server,
+                    &account.pop_remove_after_days
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to save account: {}", e)))?;
 
         Ok(())
     }
@@ -59,7 +71,9 @@ impl MessageCache {
             .prepare(
                 "SELECT id, name, email, imap_server, imap_port, imap_use_tls,
                     smtp_server, smtp_port, smtp_use_tls, username, password,
-                    enabled, check_interval_minutes, provider, last_sync, color
+                    enabled, check_interval_minutes, provider, last_sync, color,
+                    protocol, pop_server, pop_port, pop_use_tls,
+                    pop_leave_on_server, pop_remove_after_days
              FROM accounts
              ORDER BY created_at",
             )
@@ -97,6 +111,12 @@ impl MessageCache {
                         oauth_access_token: String::new(),
                         oauth_refresh_token: String::new(),
                         oauth_token_expires_at: None,
+                        protocol: row.get(16)?,
+                        pop_server: row.get(17)?,
+                        pop_port: row.get(18)?,
+                        pop_use_tls: row.get(19)?,
+                        pop_leave_on_server: row.get(20)?,
+                        pop_remove_after_days: row.get(21)?,
                     },
                 ))
             })
@@ -231,6 +251,12 @@ mod tests {
             oauth_access_token: String::new(),
             oauth_refresh_token: String::new(),
             oauth_token_expires_at: None,
+            protocol: crate::common::types::Protocol::Imap.as_str().to_string(),
+            pop_server: String::new(),
+            pop_port: "995".to_string(),
+            pop_use_tls: true,
+            pop_leave_on_server: true,
+            pop_remove_after_days: 0,
         };
 
         cache.save_account(&account).unwrap();
@@ -261,6 +287,12 @@ mod tests {
             oauth_access_token: String::new(),
             oauth_refresh_token: String::new(),
             oauth_token_expires_at: None,
+            protocol: crate::common::types::Protocol::Imap.as_str().to_string(),
+            pop_server: String::new(),
+            pop_port: "995".to_string(),
+            pop_use_tls: true,
+            pop_leave_on_server: true,
+            pop_remove_after_days: 0,
         };
 
         cache.save_account(&account2).unwrap();

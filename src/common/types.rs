@@ -35,6 +35,46 @@ pub enum Protocol {
     Pop3,
 }
 
+impl Default for Protocol {
+    /// IMAP, which is what every account written before this was stored is.
+    fn default() -> Self {
+        Protocol::Imap
+    }
+}
+
+impl Protocol {
+    /// How it stores itself, and reads back.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Protocol::Imap => "imap",
+            Protocol::Pop3 => "pop3",
+        }
+    }
+
+    /// Read a stored value back.
+    ///
+    /// Anything unrecognised is IMAP. An account file written by a later
+    /// version, or edited by hand, should keep reading mail rather than
+    /// quietly become an account that reads none.
+    pub fn from_stored(stored: &str) -> Self {
+        match stored.trim().to_ascii_lowercase().as_str() {
+            "pop3" | "pop" => Protocol::Pop3,
+            _ => Protocol::Imap,
+        }
+    }
+
+    /// What it is called where somebody reads it.
+    pub const fn spoken(self) -> &'static str {
+        match self {
+            Protocol::Imap => "IMAP, which keeps your mail on the server",
+            Protocol::Pop3 => "POP3, which downloads your mail to this computer",
+        }
+    }
+
+    /// Both, so a chooser and its tests cover the set.
+    pub const ALL: [Protocol; 2] = [Protocol::Imap, Protocol::Pop3];
+}
+
 /// Folder types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FolderType {

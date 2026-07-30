@@ -61,6 +61,49 @@ pub struct Account {
     /// Account color for visual distinction (hex code)
     #[serde(default = "default_account_color")]
     pub color: String,
+
+    /// Which protocol this account reads mail with.
+    ///
+    /// Stored as a word rather than the enum, so an account file written by a
+    /// later version reads back as IMAP instead of failing to parse. Every
+    /// account written before this existed is IMAP, which is what the default
+    /// says, and is correct: nothing could configure a POP account until now.
+    #[serde(default)]
+    pub protocol: String,
+
+    /// The POP server, for an account that reads mail with POP3.
+    ///
+    /// Separate fields rather than reusing the IMAP ones. An account can be
+    /// switched between the two while somebody is setting it up, and sharing
+    /// one set of fields means switching quietly rewrites the other server's
+    /// address into a box labelled for this one.
+    #[serde(default)]
+    pub pop_server: String,
+    #[serde(default)]
+    pub pop_port: String,
+    #[serde(default = "default_true")]
+    pub pop_use_tls: bool,
+
+    /// Whether to leave downloaded mail on the POP server.
+    ///
+    /// On by default, and the safe answer: POP3's delete is the only delete it
+    /// has, and a client that removes mail as it downloads leaves somebody with
+    /// one copy on one computer. Turning it off is a decision about where their
+    /// only copy lives.
+    #[serde(default = "default_true")]
+    pub pop_leave_on_server: bool,
+
+    /// Remove mail from the POP server this many days after downloading it.
+    ///
+    /// Nought means never, which is the default. A mailbox that is never
+    /// cleared eventually fills, and the alternative to this is somebody
+    /// finding out when mail stops arriving.
+    #[serde(default)]
+    pub pop_remove_after_days: u32,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_account_color() -> String {
@@ -163,7 +206,22 @@ impl Account {
             provider: None,
             last_sync: None,
             color: default_account_color(),
+            protocol: crate::common::types::Protocol::Imap.as_str().to_string(),
+            pop_server: String::new(),
+            pop_port: "995".to_string(),
+            pop_use_tls: true,
+            pop_leave_on_server: true,
+            pop_remove_after_days: 0,
         }
+    }
+
+    /// Which protocol this account reads mail with.
+    ///
+    /// Anything unrecognised is IMAP, which is what every account written
+    /// before the setting existed is, and the answer that leaves an account
+    /// working rather than silently reading no mail.
+    pub fn protocol(&self) -> crate::common::types::Protocol {
+        crate::common::types::Protocol::from_stored(&self.protocol)
     }
 
     /// Create account from provider preset
@@ -267,6 +325,12 @@ impl Account {
             provider,
             last_sync: None,
             color: "#4A90E2".to_string(),
+            protocol: crate::common::types::Protocol::Imap.as_str().to_string(),
+            pop_server: String::new(),
+            pop_port: "995".to_string(),
+            pop_use_tls: true,
+            pop_leave_on_server: true,
+            pop_remove_after_days: 0,
         }
     }
 }

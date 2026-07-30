@@ -1030,6 +1030,26 @@ impl MessageCache {
         // so the reader can say so without fetching the message again, and so
         // the answer does not depend on a body that may have been evicted.
         self.ensure_column_exists("messages", "receipt_to", "TEXT")?;
+        // How an account reads its mail, and where from when that is POP.
+        // Every account stored before these existed is IMAP, which is what the
+        // defaults say and is correct: nothing could configure a POP account.
+        self.ensure_column_exists("accounts", "protocol", "TEXT NOT NULL DEFAULT 'imap'")?;
+        self.ensure_column_exists("accounts", "pop_server", "TEXT NOT NULL DEFAULT ''")?;
+        self.ensure_column_exists("accounts", "pop_port", "TEXT NOT NULL DEFAULT '995'")?;
+        self.ensure_column_exists("accounts", "pop_use_tls", "INTEGER NOT NULL DEFAULT 1")?;
+        // Leaving mail on the server is the safe default: POP3's delete is the
+        // only one it has, and a client that removes as it downloads leaves
+        // somebody with one copy on one computer.
+        self.ensure_column_exists(
+            "accounts",
+            "pop_leave_on_server",
+            "INTEGER NOT NULL DEFAULT 1",
+        )?;
+        self.ensure_column_exists(
+            "accounts",
+            "pop_remove_after_days",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         // Answered and Draft, from the server's flags. The columns for these
         // were withdrawn because nothing could fill them; a sync fills them.
         self.ensure_column_exists("messages", "answered", "BOOLEAN DEFAULT 0")?;

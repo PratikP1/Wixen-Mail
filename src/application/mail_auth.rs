@@ -114,6 +114,12 @@ mod tests {
             provider: None,
             color: String::new(),
             last_sync: None,
+            protocol: crate::common::types::Protocol::Imap.as_str().to_string(),
+            pop_server: String::new(),
+            pop_port: "995".to_string(),
+            pop_use_tls: true,
+            pop_leave_on_server: true,
+            pop_remove_after_days: 0,
         }
     }
 

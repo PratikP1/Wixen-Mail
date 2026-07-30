@@ -7,6 +7,7 @@
 //! user adds such an account (press OK), the browser opens immediately
 //! for authorization with no extra steps or checkboxes.
 
+use crate::common::types::Protocol;
 use crate::data::account::{Account, app_password_url, oauth_is_default, offers_app_passwords};
 use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
 
@@ -413,6 +414,30 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
         c
     };
 
+    let choice = |label: &str, options: &[&str]| -> Choice {
+        let l = StaticText::builder(&dlg).with_label(label).build();
+        let c = Choice::builder(&dlg)
+            .with_choices(options.iter().map(|o| o.to_string()).collect())
+            .with_selection(Some(0))
+            .build();
+        set_accessible_name(&c, &name_from_label(label));
+        fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+        fields.add(&c, 1, SizerFlag::Expand | SizerFlag::All, 4);
+        c
+    };
+    let spin = |label: &str, default: i32| -> SpinCtrl {
+        let l = StaticText::builder(&dlg).with_label(label).build();
+        let c = SpinCtrl::builder(&dlg)
+            .with_min_value(0)
+            .with_max_value(3650)
+            .with_initial_value(default)
+            .build();
+        set_accessible_name(&c, &name_from_label(label));
+        fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+        fields.add(&c, 1, SizerFlag::Expand | SizerFlag::All, 4);
+        c
+    };
+
     let name_f = tf("Account &Name:", "");
     let email_f = tf("&Email Address:", "");
 
@@ -425,10 +450,29 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
         h
     };
 
+    // Which protocol reads the mail. Whichever is not chosen has its own
+    // fields below and is simply left blank, rather than the two sharing one
+    // set of boxes: switching would then rewrite one server's address into a
+    // box labelled for the other, quietly.
+    let protocol_choice = choice(
+        "How to &read your mail:",
+        &Protocol::ALL.map(Protocol::spoken),
+    );
+
     section("── IMAP Settings ──");
     let imap_f = tf("&IMAP Server:", "");
     let imap_port_f = tf("IMAP &Port:", "993");
     let imap_tls = cb("Use &TLS", true);
+
+    section("── POP Settings ──");
+    let pop_f = tf("PO&P Server:", "");
+    let pop_port_f = tf("POP P&ort:", "995");
+    let pop_tls = cb("Use TL&S for POP", true);
+    // On by default and deliberately. POP3 has one delete and it is permanent,
+    // so a client that clears the server as it downloads leaves somebody with
+    // one copy, on one computer, with no way back.
+    let pop_leave = cb("&Leave mail on the server after downloading it", true);
+    let pop_days = spin("Then remove it after this many &days (0 for never):", 0);
 
     section("── SMTP Settings ──");
     let smtp_f = tf("&SMTP Server:", "");
@@ -493,6 +537,17 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
         imap_f.set_value(&a.imap_server);
         imap_port_f.set_value(&a.imap_port);
         imap_tls.set_value(a.imap_use_tls);
+        pop_f.set_value(&a.pop_server);
+        pop_port_f.set_value(&a.pop_port);
+        pop_tls.set_value(a.pop_use_tls);
+        pop_leave.set_value(a.pop_leave_on_server);
+        pop_days.set_value(a.pop_remove_after_days as i32);
+        protocol_choice.set_selection(
+            Protocol::ALL
+                .iter()
+                .position(|protocol| *protocol == a.protocol())
+                .unwrap_or(0) as u32,
+        );
         smtp_f.set_value(&a.smtp_server);
         smtp_port_f.set_value(&a.smtp_port);
         smtp_tls.set_value(a.smtp_use_tls);
@@ -612,6 +667,17 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
             oauth_token_expires_at: existing.and_then(|a| a.oauth_token_expires_at.clone()),
             enabled: enabled.get_value(),
             check_interval_minutes: interval,
+            protocol: Protocol::ALL
+                .get(protocol_choice.get_selection().unwrap_or(0) as usize)
+                .copied()
+                .unwrap_or_default()
+                .as_str()
+                .to_string(),
+            pop_server: pop_f.get_value(),
+            pop_port: pop_port_f.get_value(),
+            pop_use_tls: pop_tls.get_value(),
+            pop_leave_on_server: pop_leave.get_value(),
+            pop_remove_after_days: pop_days.value().max(0) as u32,
             color: existing
                 .map(|a| a.color.clone())
                 .unwrap_or_else(|| "#4A90E2".into()),
