@@ -125,6 +125,21 @@ impl ContainerKind {
         ContainerKind::ContactGroup,
     ];
 
+    /// Which kind of container holds one of these, if any does.
+    ///
+    /// `None` for mail, which lives in IMAP folders rather than in one of
+    /// these, and for a reminder, which belongs to an account and nothing
+    /// smaller.
+    pub const fn holding(kind: ItemKind) -> Option<Self> {
+        match kind {
+            ItemKind::Event => Some(ContainerKind::Calendar),
+            ItemKind::Task => Some(ContainerKind::TaskList),
+            ItemKind::Note => Some(ContainerKind::NoteFolder),
+            ItemKind::Contact => Some(ContainerKind::ContactGroup),
+            ItemKind::Mail | ItemKind::Reminder => None,
+        }
+    }
+
     /// What it is called in a menu, after "New".
     pub fn label(self) -> &'static str {
         match self {

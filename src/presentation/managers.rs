@@ -596,18 +596,43 @@ pub fn new_pim_item(
         return send_status(tx, rt, "Add an account before composing a message");
     };
 
-    let Some(title) = crate::presentation::wx_app::prompt_for_new_item(frame, kind.label()) else {
+    let account_id = destination.account_id().to_string();
+
+    // Which calendar, list or folder it could go in. Offered rather than
+    // chosen silently: a task with no list can never leave this computer and
+    // a note with no folder is filed nowhere, and both used to happen without
+    // anybody being asked.
+    let holders: Vec<crate::presentation::wx_item_form::Container> =
+        match crate::application::new_item::ContainerKind::holding(kind) {
+            Some(container_kind) => containers_in(&cache, container_kind, &account_id)
+                .into_iter()
+                .map(|(id, name, _)| crate::presentation::wx_item_form::Container { id, name })
+                .collect(),
+            None => Vec::new(),
+        };
+
+    let Some((filled, container_id)) =
+        crate::presentation::wx_item_form::ask_for(frame, kind, &holders)
+    else {
         return;
     };
-    let title = title.trim().to_string();
-    if title.is_empty() {
-        // An empty title makes a row nothing can identify in a list read
-        // aloud, so it is refused rather than stored as a blank line.
-        return send_status(tx, rt, &format!("{} needs a title", kind.label()));
-    }
 
-    let account_id = destination.account_id().to_string();
-    match store_new_item(&cache, kind, &account_id, &title) {
+    // An empty title makes a row nothing can identify in a list read aloud,
+    // so it is refused rather than stored as a blank line. Named, so nobody
+    // has to hunt through a form they cannot see for the one that is empty.
+    let missing = filled.missing(kind);
+    if !missing.is_empty() {
+        return send_status(
+            tx,
+            rt,
+            &crate::presentation::wx_item_form::complaint_about(&missing),
+        );
+    }
+    let title = filled
+        .text(crate::application::item_fields::FieldName::Title)
+        .to_string();
+
+    match store_new_item(&cache, kind, &account_id, &filled, container_id.as_deref()) {
         Ok(()) => {
             send_status(
                 tx,
@@ -946,44 +971,70 @@ fn store_new_item(
     cache: &MessageCache,
     kind: crate::application::new_item::ItemKind,
     account_id: &str,
-    title: &str,
+    filled: &crate::application::item_fields::Filled,
+    container_id: Option<&str>,
 ) -> crate::common::Result<()> {
+    use crate::application::item_fields::FieldName;
     use crate::application::new_item::ItemKind;
     use crate::data::message_cache::{CalendarEventEntry, NoteEntry, ReminderEntry, TaskEntry};
-    use chrono::{Duration, Utc};
+    use chrono::Utc;
 
     let now = Utc::now();
     let stamp = now.to_rfc3339();
+    let title = filled.text(FieldName::Title).to_string();
+
+    // A date and a time as one value, or the date alone when the event runs
+    // all day and the time controls were ignored.
+    let when = |date: FieldName, time: FieldName, all_day: bool| {
+        let date = filled.text(date);
+        let time = filled.text(time);
+        if all_day || time.is_empty() {
+            date.to_string()
+        } else {
+            format!("{date} {time}")
+        }
+    };
+    // The repeat choice as an RFC 5545 rule, which is what both providers
+    // take. "Does not repeat" is no rule at all rather than a rule saying so.
+    let repeat = |field: FieldName| match filled.text(field) {
+        "Daily" => Some("FREQ=DAILY".to_string()),
+        "Weekly" => Some("FREQ=WEEKLY".to_string()),
+        "Monthly" => Some("FREQ=MONTHLY".to_string()),
+        "Yearly" => Some("FREQ=YEARLY".to_string()),
+        _ => None,
+    };
 
     match kind {
         ItemKind::Event => {
-            // An hour from now, which is the guess least likely to be wrong in
-            // a way that matters: it is visible in today's agenda, so it gets
-            // corrected rather than lost.
+            let all_day = filled.ticked(FieldName::AllDay);
+            let alert = filled.whole(FieldName::AlertMinutes, 0);
             cache.save_calendar_event(&CalendarEventEntry {
                 id: new_id("event"),
                 account_id: account_id.to_string(),
                 provider_event_id: None,
-                calendar_id: None,
-                summary: title.to_string(),
-                description: None,
-                location: None,
-                start_datetime: stamp.clone(),
-                end_datetime: (now + Duration::hours(1)).to_rfc3339(),
-                start_date: None,
-                end_date: None,
-                is_all_day: false,
+                calendar_id: container_id.map(str::to_string),
+                summary: title.clone(),
+                description: filled.filled_in(FieldName::Notes),
+                location: filled.filled_in(FieldName::Location),
+                start_datetime: when(FieldName::StartDate, FieldName::StartTime, all_day),
+                end_datetime: when(FieldName::EndDate, FieldName::EndTime, all_day),
+                // Filled for an all-day event and left alone otherwise, which
+                // is what tells everything downstream which pair to read
+                // without guessing from the shape of a string.
+                start_date: all_day.then(|| filled.text(FieldName::StartDate).to_string()),
+                end_date: all_day.then(|| filled.text(FieldName::EndDate).to_string()),
+                is_all_day: all_day,
                 time_zone: None,
-                status: "confirmed".to_string(),
-                recurrence_rule: None,
+                status: filled.text(FieldName::Status).to_lowercase(),
+                recurrence_rule: repeat(FieldName::Repeat),
                 source_provider: Some("local".to_string()),
                 etag: None,
                 web_link: None,
-                show_as: "busy".to_string(),
+                show_as: filled.text(FieldName::ShowAs).to_lowercase(),
                 last_modified_remote: None,
                 last_synced_at: None,
                 attendees_json: None,
-                reminders_json: None,
+                reminders_json: (alert > 0).then(|| format!("[{{\"minutes\":{alert}}}]")),
                 created_at: stamp.clone(),
                 updated_at: stamp,
             })
@@ -991,14 +1042,15 @@ fn store_new_item(
         ItemKind::Reminder => cache.save_reminder(&ReminderEntry {
             id: new_id("reminder"),
             account_id: account_id.to_string(),
-            title: title.to_string(),
-            description: None,
-            // No due time until somebody sets one. A reminder that silently
-            // arrived with one would go off at a moment nobody chose.
-            due_datetime: None,
+            title: title.clone(),
+            description: filled.filled_in(FieldName::Notes),
+            // Asked for now. It used to be left empty always, so every
+            // reminder was one that never went off.
+            due_datetime: Some(when(FieldName::DueDate, FieldName::DueTime, false))
+                .filter(|w| !w.trim().is_empty()),
             is_completed: false,
-            priority: "normal".to_string(),
-            repeat_rule: None,
+            priority: filled.text(FieldName::Priority).to_lowercase(),
+            repeat_rule: repeat(FieldName::Repeat),
             related_event_id: None,
             created_at: stamp.clone(),
             updated_at: stamp,
@@ -1012,13 +1064,19 @@ fn store_new_item(
         ItemKind::Task => cache.save_task(&TaskEntry {
             id: new_id("task"),
             account_id: account_id.to_string(),
-            task_list_id: Some(cache.ensure_default_task_list(account_id)?.id),
-            title: title.to_string(),
-            description: None,
-            due_date: None,
+            // Whichever list was chosen. The default is still there for an
+            // account that has none yet, because a task with no list can
+            // never leave this computer.
+            task_list_id: Some(match container_id {
+                Some(chosen) => chosen.to_string(),
+                None => cache.ensure_default_task_list(account_id)?.id,
+            }),
+            title: title.clone(),
+            description: filled.filled_in(FieldName::Notes),
+            due_date: filled.filled_in(FieldName::DueDate),
             is_completed: false,
             completed_at: None,
-            priority: "normal".to_string(),
+            priority: filled.text(FieldName::Priority).to_lowercase(),
             display_order: 0,
             parent_task_id: None,
             created_at: stamp.clone(),
@@ -1030,11 +1088,11 @@ fn store_new_item(
         ItemKind::Note => cache.save_note(&NoteEntry {
             id: new_id("note"),
             account_id: account_id.to_string(),
-            folder_id: None,
-            title: title.to_string(),
-            body: String::new(),
+            folder_id: container_id.map(str::to_string),
+            title: title.clone(),
+            body: filled.text(FieldName::Notes).to_string(),
             format: "plain".to_string(),
-            pinned: false,
+            pinned: filled.ticked(FieldName::Pinned),
             created_at: stamp.clone(),
             updated_at: stamp,
         }),
@@ -1129,6 +1187,171 @@ mod tests {
         MessageCache::new(dir, None).expect("a cache to test against")
     }
 
+    /// A form with only the title filled in, which is what the old prompt
+    /// gave and what the storage still has to cope with.
+    fn just_a_title(title: &str) -> crate::application::item_fields::Filled {
+        let mut filled = crate::application::item_fields::Filled::default();
+        filled.put(crate::application::item_fields::FieldName::Title, title);
+        filled
+    }
+
+    #[test]
+    fn test_an_event_keeps_everything_the_form_asked_for() {
+        // The bug this closes: the form asked for a title and the storage
+        // invented the rest. An event was always an hour from now, in no
+        // calendar, with no location, busy, confirmed, and no alert, whatever
+        // anybody wanted.
+        use crate::application::item_fields::{FieldName, Filled};
+        let cache = test_cache();
+        let mut filled = Filled::default();
+        filled.put(FieldName::Title, "Quarterly review");
+        filled.put(FieldName::StartDate, "2026-09-01");
+        filled.put(FieldName::StartTime, "14:30");
+        filled.put(FieldName::EndDate, "2026-09-01");
+        filled.put(FieldName::EndTime, "15:30");
+        filled.put(FieldName::Location, "Room 2");
+        filled.put(FieldName::Notes, "Bring the figures");
+        filled.put(FieldName::ShowAs, "Free");
+        filled.put(FieldName::Status, "Tentative");
+        filled.put(FieldName::Repeat, "Weekly");
+        filled.put(FieldName::AlertMinutes, "30");
+
+        store_new_item(
+            &cache,
+            crate::application::new_item::ItemKind::Event,
+            "account-1",
+            &filled,
+            Some("calendar-7"),
+        )
+        .expect("the event to be stored");
+
+        let stored = cache
+            .get_all_events_for_account("account-1")
+            .expect("the event back");
+        let event = stored.first().expect("exactly the event just made");
+        assert_eq!(event.summary, "Quarterly review");
+        assert_eq!(event.calendar_id.as_deref(), Some("calendar-7"));
+        assert_eq!(event.start_datetime, "2026-09-01 14:30");
+        assert_eq!(event.end_datetime, "2026-09-01 15:30");
+        assert_eq!(event.location.as_deref(), Some("Room 2"));
+        assert_eq!(event.description.as_deref(), Some("Bring the figures"));
+        assert_eq!(event.show_as, "free");
+        assert_eq!(event.status, "tentative");
+        assert_eq!(event.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+        assert!(
+            event
+                .reminders_json
+                .as_deref()
+                .is_some_and(|r| r.contains("30")),
+            "the alert was dropped: {:?}",
+            event.reminders_json
+        );
+    }
+
+    #[test]
+    fn test_an_all_day_event_keeps_the_dates_and_drops_the_times() {
+        // Which pair to read is told by start_date being filled rather than
+        // guessed from the shape of the datetime string.
+        use crate::application::item_fields::{FieldName, Filled};
+        let cache = test_cache();
+        let mut filled = Filled::default();
+        filled.put(FieldName::Title, "Leave");
+        filled.put(FieldName::AllDay, "true");
+        filled.put(FieldName::StartDate, "2026-09-01");
+        filled.put(FieldName::StartTime, "14:30");
+        filled.put(FieldName::EndDate, "2026-09-03");
+
+        store_new_item(
+            &cache,
+            crate::application::new_item::ItemKind::Event,
+            "account-1",
+            &filled,
+            None,
+        )
+        .expect("the event to be stored");
+
+        let stored = cache
+            .get_all_events_for_account("account-1")
+            .expect("the event back");
+        let event = stored.first().expect("the event");
+        assert!(event.is_all_day);
+        assert_eq!(event.start_date.as_deref(), Some("2026-09-01"));
+        assert_eq!(
+            event.start_datetime, "2026-09-01",
+            "an all day event kept a time"
+        );
+    }
+
+    #[test]
+    fn test_a_reminder_can_be_given_a_time_to_go_off() {
+        // Every reminder used to be stored with no due time at all, so every
+        // reminder was one that never went off.
+        use crate::application::item_fields::{FieldName, Filled};
+        let cache = test_cache();
+        let mut filled = Filled::default();
+        filled.put(FieldName::Title, "Take the bins out");
+        filled.put(FieldName::DueDate, "2026-09-01");
+        filled.put(FieldName::DueTime, "07:00");
+        filled.put(FieldName::Priority, "High");
+
+        store_new_item(
+            &cache,
+            crate::application::new_item::ItemKind::Reminder,
+            "account-1",
+            &filled,
+            None,
+        )
+        .expect("the reminder to be stored");
+
+        let stored = cache
+            .get_reminders_for_account("account-1")
+            .expect("the reminder back");
+        let reminder = stored.first().expect("the reminder");
+        assert_eq!(reminder.due_datetime.as_deref(), Some("2026-09-01 07:00"));
+        assert_eq!(reminder.priority, "high");
+    }
+
+    #[test]
+    fn test_a_note_keeps_its_body_and_its_folder() {
+        // A note used to be a title with an empty body in no folder, which is
+        // most of a note missing.
+        use crate::application::item_fields::{FieldName, Filled};
+        let cache = test_cache();
+        // The folder has to exist: notes are keyed to one by a foreign key,
+        // which is the database refusing to file a note nowhere.
+        cache
+            .save_note_folder(&crate::data::message_cache::NoteFolderEntry {
+                id: "folder-3".to_string(),
+                account_id: "account-1".to_string(),
+                name: "House".to_string(),
+                display_order: 0,
+                created_at: String::new(),
+            })
+            .expect("a folder to file into");
+
+        let mut filled = Filled::default();
+        filled.put(FieldName::Title, "Wiring colours");
+        filled.put(FieldName::Notes, "Brown is live");
+        filled.put(FieldName::Pinned, "true");
+
+        store_new_item(
+            &cache,
+            crate::application::new_item::ItemKind::Note,
+            "account-1",
+            &filled,
+            Some("folder-3"),
+        )
+        .expect("the note to be stored");
+
+        let stored = cache
+            .get_all_notes_for_account("account-1")
+            .expect("the note back");
+        let note = stored.first().expect("the note");
+        assert_eq!(note.body, "Brown is live");
+        assert_eq!(note.folder_id.as_deref(), Some("folder-3"));
+        assert!(note.pinned);
+    }
+
     #[test]
     fn test_a_task_made_here_is_filed_in_a_list() {
         // Without a list it can never be sent. `push_tasks` skips any pending
@@ -1144,7 +1367,8 @@ mod tests {
             &cache,
             crate::application::new_item::ItemKind::Task,
             "account-1",
-            "Book the dentist",
+            &just_a_title("Book the dentist"),
+            None,
         )
         .expect("the task to be stored");
 
@@ -1182,7 +1406,8 @@ mod tests {
             &cache,
             crate::application::new_item::ItemKind::Task,
             "account-1",
-            "Book the dentist",
+            &just_a_title("Book the dentist"),
+            None,
         )
         .expect("the task to be stored");
 

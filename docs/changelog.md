@@ -13,6 +13,11 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Making an event, task, reminder or note asks for what it actually is.** All four used to be a title in a box, and everything else was invented: an event an hour from now in no calendar, a task with no due date and no priority, a reminder with no time so it never went off, a note with an empty body in no folder. Every one of those columns was already in the database and nothing put anything in them.
+  An event now asks for the calendar, all day, start and end date and time, location, repeat, an alert, busy or free, status and a description. A task asks for the list, due date, priority and notes. A reminder asks for the date, time, priority, repeat and notes. A note asks for the folder, whether to pin it, and the body.
+  The field lists are not invented: they are what RFC 5545 and RFC 6350 define and what Google and Microsoft put on their own create forms. Where the two providers differ it says so, so priority on a task is marked as something Microsoft carries and Google does not.
+  One form builds all four from a description of the fields, so the tab order, the labels and the way a missing field is reported are the same in each. A missing field is named rather than counted, because "some required fields are empty" makes somebody hunt through a form they cannot see.
+
 - **A task list, note folder or contact group can be deleted.** Only calendars could before, so anything else you made by mistake you were stuck with. There is a Delete button beside the New button in each panel. It asks which one, and the question says what goes with it: "Delete the task list Shopping and the 12 tasks in it?" rather than "Are you sure?". It also says when the thing will come back at the next sync, because deleting it here does not delete it at your provider yet.
 
 - **Wixen Mail asks, the first time you start it, what it is allowed to change.** Everything that writes is experimental: sending mail, deleting mail, and sending your changes to tasks, contacts and the calendar back to your provider. None of that has been run against a real account, so expect bugs. Reading your mail is the part that has been used.

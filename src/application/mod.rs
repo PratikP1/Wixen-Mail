@@ -13,6 +13,7 @@ pub mod contacts;
 pub mod contacts_sync;
 pub mod filters;
 pub mod forget;
+pub mod item_fields;
 pub mod mail_auth;
 pub mod mail_controller;
 pub mod mail_sync;

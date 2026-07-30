@@ -1,0 +1,591 @@
+//! What a person is asked for when they make an event, task, reminder or note.
+//!
+//! Until now they were asked for a title and nothing else. Everything the
+//! database can hold was filled in with a guess: an event an hour from now, a
+//! task with no due date, a reminder that never goes off, a note in no folder.
+//! The columns were all there. Nothing put anything in them.
+//!
+//! # Why this is data rather than four dialogs
+//!
+//! Four hand-written dialogs drift. The tab order in one ends up different
+//! from the next, one gets a help line and the others do not, one loses its
+//! accessible names in a refactor. Described as data and rendered by one
+//! builder, every form is laid out the same way, named the same way, and the
+//! only thing that differs is the list of fields, which is the only thing that
+//! should differ.
+//!
+//! It is also the half that can be tested. A dialog cannot be, but "does a
+//! task ask which list it goes in" can.
+//!
+//! # Where the field lists come from
+//!
+//! Not invented. Each is the set the format and both providers agree on:
+//!
+//! - Events: RFC 5545 `VEVENT`, and what Google Calendar and Microsoft Graph
+//!   put on a create form. Summary, start, end, all day, location,
+//!   description, which calendar, busy or free, status, an alert, and a
+//!   repeat.
+//! - Tasks: RFC 5545 `VTODO`, Google Tasks and Microsoft To Do. Title, list,
+//!   due date, notes. Google Tasks has no priority and no repeat, so those two
+//!   are asked for but only Microsoft carries them up.
+//! - Reminders: To Do's reminder half. Title, when, priority, repeat, notes.
+//! - Notes: title, folder, body, pinned. Notes sync nowhere yet, so there is
+//!   no third party shaping this one.
+
+use crate::application::new_item::ItemKind;
+
+/// Which field, so a filled-in form can be read back without matching strings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FieldName {
+    Title,
+    Container,
+    AllDay,
+    StartDate,
+    StartTime,
+    EndDate,
+    EndTime,
+    DueDate,
+    DueTime,
+    Location,
+    Notes,
+    Priority,
+    ShowAs,
+    Status,
+    AlertMinutes,
+    Repeat,
+    Pinned,
+}
+
+/// How a field is filled in, which decides the control it gets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Entry {
+    /// One line of text.
+    Line,
+    /// Several lines.
+    Paragraph,
+    /// A date, entered with a date control rather than typed into a box.
+    Date,
+    /// A time of day.
+    Time,
+    /// One of a fixed set, in the order given. The first is the default.
+    Pick(&'static [&'static str]),
+    /// One of the containers this module has: a calendar, a task list, a note
+    /// folder. Filled in when the form opens, because they are the person's
+    /// own and not known here.
+    PickContainer,
+    /// A whole number, with the range it is allowed.
+    Whole { least: i32, most: i32 },
+    /// On or off.
+    Tick,
+}
+
+/// One thing to fill in.
+#[derive(Debug, Clone)]
+pub struct Field {
+    pub name: FieldName,
+    /// What the control is called. Carries its own mnemonic.
+    pub label: &'static str,
+    /// The sentence a screen reader reads after the label, on focus.
+    ///
+    /// Empty where the label says everything. A description that only repeats
+    /// the label is noise on every visit to the control.
+    pub help: &'static str,
+    pub entry: Entry,
+    /// Whether the form refuses to save without it.
+    pub required: bool,
+}
+
+/// Busy or free, as both providers put it.
+const SHOW_AS: &[&str] = &["Busy", "Free"];
+/// RFC 5545 event status, minus the ones only a server sets.
+const STATUS: &[&str] = &["Confirmed", "Tentative", "Cancelled"];
+const PRIORITY: &[&str] = &["Normal", "High", "Low"];
+const REPEAT: &[&str] = &["Does not repeat", "Daily", "Weekly", "Monthly", "Yearly"];
+
+/// What to ask for, to make one of these.
+///
+/// Order matters: it is the tab order, and it is the order a screen reader
+/// reads the form. Title first because it is what the thing is, then where it
+/// goes, then when, then the rest.
+pub fn fields_for(kind: ItemKind) -> &'static [Field] {
+    match kind {
+        ItemKind::Event => EVENT,
+        ItemKind::Task => TASK,
+        ItemKind::Reminder => REMINDER,
+        ItemKind::Note => NOTE,
+        // Both have their own path: mail opens the composer and a contact
+        // opens the contact dialog, which asks for far more than a form like
+        // this could.
+        ItemKind::Mail | ItemKind::Contact => &[],
+    }
+}
+
+static EVENT: &[Field] = &[
+    Field {
+        name: FieldName::Title,
+        label: "&Title",
+        help: "",
+        entry: Entry::Line,
+        required: true,
+    },
+    Field {
+        name: FieldName::Container,
+        label: "&Calendar",
+        help: "Which calendar this goes in",
+        entry: Entry::PickContainer,
+        required: false,
+    },
+    Field {
+        name: FieldName::AllDay,
+        label: "&All day",
+        help: "The times are ignored when this is ticked",
+        entry: Entry::Tick,
+        required: false,
+    },
+    Field {
+        name: FieldName::StartDate,
+        label: "&Starts",
+        help: "",
+        entry: Entry::Date,
+        required: true,
+    },
+    Field {
+        name: FieldName::StartTime,
+        label: "Start t&ime",
+        help: "",
+        entry: Entry::Time,
+        required: false,
+    },
+    Field {
+        name: FieldName::EndDate,
+        label: "&Ends",
+        help: "",
+        entry: Entry::Date,
+        required: true,
+    },
+    Field {
+        name: FieldName::EndTime,
+        label: "End ti&me",
+        help: "",
+        entry: Entry::Time,
+        required: false,
+    },
+    Field {
+        name: FieldName::Location,
+        label: "&Location",
+        help: "A room, an address, or a link to a meeting",
+        entry: Entry::Line,
+        required: false,
+    },
+    Field {
+        name: FieldName::Repeat,
+        label: "&Repeat",
+        help: "",
+        entry: Entry::Pick(REPEAT),
+        required: false,
+    },
+    Field {
+        name: FieldName::AlertMinutes,
+        label: "Alert minutes &before",
+        help: "Nought for no alert",
+        entry: Entry::Whole {
+            least: 0,
+            most: 40_320,
+        },
+        required: false,
+    },
+    Field {
+        name: FieldName::ShowAs,
+        label: "S&how as",
+        help: "What other people see when they look at your free time",
+        entry: Entry::Pick(SHOW_AS),
+        required: false,
+    },
+    Field {
+        name: FieldName::Status,
+        label: "Stat&us",
+        help: "",
+        entry: Entry::Pick(STATUS),
+        required: false,
+    },
+    Field {
+        name: FieldName::Notes,
+        label: "&Description",
+        help: "",
+        entry: Entry::Paragraph,
+        required: false,
+    },
+];
+
+static TASK: &[Field] = &[
+    Field {
+        name: FieldName::Title,
+        label: "&Title",
+        help: "",
+        entry: Entry::Line,
+        required: true,
+    },
+    Field {
+        name: FieldName::Container,
+        label: "&List",
+        help: "Which task list this goes in",
+        entry: Entry::PickContainer,
+        required: false,
+    },
+    Field {
+        name: FieldName::DueDate,
+        label: "&Due",
+        help: "Leave today's date if it has no deadline",
+        entry: Entry::Date,
+        required: false,
+    },
+    Field {
+        name: FieldName::Priority,
+        label: "&Priority",
+        help: "Google Tasks does not carry this; Microsoft To Do does",
+        entry: Entry::Pick(PRIORITY),
+        required: false,
+    },
+    Field {
+        name: FieldName::Notes,
+        label: "&Notes",
+        help: "",
+        entry: Entry::Paragraph,
+        required: false,
+    },
+];
+
+static REMINDER: &[Field] = &[
+    Field {
+        name: FieldName::Title,
+        label: "&Title",
+        help: "",
+        entry: Entry::Line,
+        required: true,
+    },
+    Field {
+        name: FieldName::DueDate,
+        label: "&Date",
+        help: "",
+        entry: Entry::Date,
+        required: false,
+    },
+    Field {
+        name: FieldName::DueTime,
+        label: "T&ime",
+        help: "When this should go off",
+        entry: Entry::Time,
+        required: false,
+    },
+    Field {
+        name: FieldName::Priority,
+        label: "&Priority",
+        help: "",
+        entry: Entry::Pick(PRIORITY),
+        required: false,
+    },
+    Field {
+        name: FieldName::Repeat,
+        label: "&Repeat",
+        help: "",
+        entry: Entry::Pick(REPEAT),
+        required: false,
+    },
+    Field {
+        name: FieldName::Notes,
+        label: "&Notes",
+        help: "",
+        entry: Entry::Paragraph,
+        required: false,
+    },
+];
+
+static NOTE: &[Field] = &[
+    Field {
+        name: FieldName::Title,
+        label: "&Title",
+        help: "",
+        entry: Entry::Line,
+        required: true,
+    },
+    Field {
+        name: FieldName::Container,
+        label: "&Folder",
+        help: "Which folder this note goes in",
+        entry: Entry::PickContainer,
+        required: false,
+    },
+    Field {
+        name: FieldName::Pinned,
+        label: "&Pin to the top",
+        help: "Pinned notes are listed first",
+        entry: Entry::Tick,
+        required: false,
+    },
+    Field {
+        name: FieldName::Notes,
+        label: "&Body",
+        help: "",
+        entry: Entry::Paragraph,
+        required: false,
+    },
+];
+
+/// A form somebody has filled in.
+///
+/// Values are kept as text because that is what every control gives back and
+/// what the database columns hold. The typed readers below are where a wrong
+/// assumption about the shape of one shows up, rather than three layers later
+/// as a row nobody can explain.
+#[derive(Debug, Default, Clone)]
+pub struct Filled {
+    values: Vec<(FieldName, String)>,
+}
+
+impl Filled {
+    /// Record what was typed into one field.
+    pub fn put(&mut self, name: FieldName, value: impl Into<String>) {
+        let value = value.into();
+        match self.values.iter_mut().find(|(n, _)| *n == name) {
+            Some(slot) => slot.1 = value,
+            None => self.values.push((name, value)),
+        }
+    }
+
+    /// What was typed, trimmed, or empty if the field was not on this form.
+    pub fn text(&self, name: FieldName) -> &str {
+        self.values
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| v.trim())
+            .unwrap_or("")
+    }
+
+    /// The same, but nothing at all rather than an empty string.
+    ///
+    /// The database columns that take an `Option` mean "not set" by `None` and
+    /// "set to nothing" by `Some("")`, and those are different. A description
+    /// somebody left blank is not a description that is blank on purpose.
+    pub fn filled_in(&self, name: FieldName) -> Option<String> {
+        Some(self.text(name))
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
+    }
+
+    /// A ticked box.
+    pub fn ticked(&self, name: FieldName) -> bool {
+        matches!(self.text(name), "true" | "1" | "yes")
+    }
+
+    /// A number, or the fallback when the field was not on the form.
+    pub fn whole(&self, name: FieldName, if_missing: i32) -> i32 {
+        self.text(name).parse().unwrap_or(if_missing)
+    }
+
+    /// What is missing, of the fields that were required.
+    ///
+    /// Named rather than counted, so the message can say which one and focus
+    /// can be put there. "Some required fields are empty" is a message that
+    /// makes somebody hunt.
+    pub fn missing(&self, kind: ItemKind) -> Vec<&'static Field> {
+        fields_for(kind)
+            .iter()
+            .filter(|field| field.required && self.text(field.name).is_empty())
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_the_four_that_were_a_title_in_a_box_now_ask_for_more() {
+        // The whole point. Each of these used to be one text prompt, and
+        // everything else was a guess written straight into the database.
+        for kind in [
+            ItemKind::Event,
+            ItemKind::Task,
+            ItemKind::Reminder,
+            ItemKind::Note,
+        ] {
+            let fields = fields_for(kind);
+            assert!(
+                fields.len() >= 4,
+                "{kind:?} asks for only {} things",
+                fields.len()
+            );
+        }
+    }
+
+    #[test]
+    fn test_mail_and_contacts_are_left_to_their_own_windows() {
+        assert!(fields_for(ItemKind::Mail).is_empty());
+        assert!(fields_for(ItemKind::Contact).is_empty());
+    }
+
+    #[test]
+    fn test_everything_asks_for_a_title_first() {
+        // First because it is what the thing is, and because a list read
+        // aloud has nothing to say about a row with no title.
+        for kind in [
+            ItemKind::Event,
+            ItemKind::Task,
+            ItemKind::Reminder,
+            ItemKind::Note,
+        ] {
+            let first = &fields_for(kind)[0];
+            assert_eq!(first.name, FieldName::Title, "{kind:?}");
+            assert!(first.required, "{kind:?} would allow an untitled row");
+        }
+    }
+
+    #[test]
+    fn test_everything_that_lives_in_a_container_asks_which_one() {
+        // The bug this prevents has already happened twice: a task with no
+        // list can never leave the machine, and a note with no folder is
+        // filed nowhere. Both were fixed by picking a default silently, which
+        // is better than losing it and worse than asking.
+        for kind in [ItemKind::Event, ItemKind::Task, ItemKind::Note] {
+            assert!(
+                fields_for(kind)
+                    .iter()
+                    .any(|f| f.name == FieldName::Container),
+                "{kind:?} does not ask where it goes"
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_event_asks_when_it_starts_and_when_it_ends() {
+        let names: Vec<FieldName> = fields_for(ItemKind::Event).iter().map(|f| f.name).collect();
+
+        for wanted in [
+            FieldName::StartDate,
+            FieldName::StartTime,
+            FieldName::EndDate,
+            FieldName::EndTime,
+            FieldName::AllDay,
+        ] {
+            assert!(
+                names.contains(&wanted),
+                "an event does not ask for {wanted:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_no_field_is_asked_for_twice() {
+        for kind in ItemKind::ALL {
+            let mut names: Vec<FieldName> = fields_for(kind).iter().map(|f| f.name).collect();
+            let count = names.len();
+            names.sort_by_key(|n| format!("{n:?}"));
+            names.dedup();
+            assert_eq!(names.len(), count, "{kind:?} asks for something twice");
+        }
+    }
+
+    #[test]
+    fn test_every_label_has_a_mnemonic_and_they_do_not_clash() {
+        // A form somebody moves through by keyboard needs Alt plus a letter
+        // per field, and two fields sharing a letter means one of them cannot
+        // be reached that way.
+        for kind in ItemKind::ALL {
+            let mut letters: Vec<char> = Vec::new();
+            for field in fields_for(kind) {
+                let mnemonic = field
+                    .label
+                    .split('&')
+                    .nth(1)
+                    .and_then(|rest| rest.chars().next())
+                    .unwrap_or_else(|| panic!("{kind:?} {:?} has no mnemonic", field.name));
+                let lowered = mnemonic.to_ascii_lowercase();
+                assert!(
+                    !letters.contains(&lowered),
+                    "{kind:?}: two fields both use Alt+{mnemonic}"
+                );
+                letters.push(lowered);
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_pick_offers_something_to_pick() {
+        for kind in ItemKind::ALL {
+            for field in fields_for(kind) {
+                if let Entry::Pick(options) = field.entry {
+                    assert!(
+                        options.len() >= 2,
+                        "{kind:?} {:?} is a choice of {}",
+                        field.name,
+                        options.len()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_form_with_no_title_says_which_field_is_missing() {
+        // Not "some fields are empty", which makes somebody hunt through a
+        // form they cannot see.
+        let mut filled = Filled::default();
+        filled.put(FieldName::Notes, "buy milk");
+
+        let missing = filled.missing(ItemKind::Task);
+
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].name, FieldName::Title);
+    }
+
+    #[test]
+    fn test_a_field_left_blank_is_not_set_rather_than_set_to_nothing() {
+        // The database columns tell those apart, and so should this. A
+        // description nobody typed is absent; one typed as spaces is absent
+        // too, which is why it trims first.
+        let mut filled = Filled::default();
+        filled.put(FieldName::Notes, "   ");
+        filled.put(FieldName::Location, "Room 2");
+
+        assert_eq!(filled.filled_in(FieldName::Notes), None);
+        assert_eq!(
+            filled.filled_in(FieldName::Location),
+            Some("Room 2".to_string())
+        );
+        assert_eq!(filled.filled_in(FieldName::Title), None);
+    }
+
+    #[test]
+    fn test_writing_a_field_twice_keeps_the_second() {
+        let mut filled = Filled::default();
+        filled.put(FieldName::Title, "first");
+        filled.put(FieldName::Title, "second");
+
+        assert_eq!(filled.text(FieldName::Title), "second");
+    }
+
+    #[test]
+    fn test_a_number_that_was_never_asked_for_falls_back() {
+        // A task form has no alert field, so reading one has to give the
+        // caller its default rather than nought, which would mean "no alert"
+        // when nobody was asked.
+        let filled = Filled::default();
+
+        assert_eq!(filled.whole(FieldName::AlertMinutes, 15), 15);
+    }
+
+    #[test]
+    fn test_help_says_something_the_label_does_not() {
+        // A description that repeats the label is read out on every visit to
+        // the control and tells nobody anything.
+        for kind in ItemKind::ALL {
+            for field in fields_for(kind) {
+                if field.help.is_empty() {
+                    continue;
+                }
+                let label = field.label.replace('&', "").to_lowercase();
+                assert_ne!(field.help.to_lowercase(), label, "{:?}", field.name);
+            }
+        }
+    }
+}
