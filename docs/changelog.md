@@ -26,6 +26,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **`F6` works.** It moves focus between the sidebar and the list, and says which one it arrived at. It had never worked: a handler was written for it, an id was allocated, a test guarded that id against collisions, three comments described it as working, the shortcut was in the documentation, and the page inside the message preview posted a message back to the host when somebody pressed it. No menu item and no accelerator ever raised the event, so the key did nothing, silently, which looks exactly like a shortcut that works and lands somewhere quiet.
+  `Shift+F6` goes the other way. Both work in every module rather than only in Mail, where the old handler would have moved focus to the mail folder tree even in Tasks or Contacts, which is a control that is not on screen.
+  A test now fails the build if any command has a handler and nothing that raises it. It found eleven more of the same shape on the day it was written.
+
+- **The message preview cannot keep the keyboard.** Loading a page is when a WebView takes focus, and it does not ask. Focus is put back on the message list afterwards, so selecting a message can no longer leave you inside a browser that answers no keys.
+
 - **Windows called it `wixen-mail` wherever it named the program itself.** That is the executable's name and it is right on the file, but it was also what Task Manager listed, what the elevation prompt called it, and what the file's properties showed, so a screen reader read out a hyphenated file name. It says Wixen Mail now, with a publisher and a copyright line where there were none.
 
 - **Links in the guides said what file they went to rather than where they went.** "installing.md" tells you nothing, and somebody pulling up a list of links on the page got a list of file names. They say what is on the other side now. The addresses are unchanged.

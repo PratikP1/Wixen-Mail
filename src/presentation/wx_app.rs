@@ -132,6 +132,7 @@ menu_ids!(
     ID_TOGGLE_STAR,
     ID_REFRESH_FOLDER,
     ID_CYCLE_PANES,
+    ID_PREVIOUS_PANE,
     ID_NEW_EVENT,
     ID_NEW_REMINDER,
     ID_NEW_TASK,
@@ -1953,6 +1954,9 @@ document.addEventListener('keydown', function(e) {
                 let reminder_list = pim_refs.reminder_list;
                 let task_list = pim_refs.task_list;
                 let note_list = pim_refs.note_list;
+                // The sidebar of every module, so F6 cycles the panes of the
+                // one that is open rather than always the mail folder tree.
+                let module_focus = module_focus.clone();
                 move |event| {
                     let id = event.get_id();
                     match id {
@@ -2108,30 +2112,71 @@ document.addEventListener('keydown', function(e) {
                                 let _ = a11y.signal(FeedbackEvent::ActionRefused, "no folder selected");
                             }
                         }
-                        _ if id == ID_CYCLE_PANES => {
-                            // Folders, then messages, then the preview if it
-                            // is showing. Skipping a hidden pane rather than
-                            // focusing something invisible, which is where a
-                            // keyboard user gets stranded.
-                            // Folders and messages only. The preview is not a
-                            // focus stop: it is a browser that swallows every
-                            // key once it has focus, so cycling into it is
-                            // cycling into a dead end.
-                            if folder_tree.has_focus() {
-                                msg_list.set_focus();
-                                let _ = a11y.announce_topic(
-                                    "Messages",
-                                    crate::presentation::accessibility::announcements::Priority::Low,
-                                    "pane",
-                                );
+                        _ if id == ID_CYCLE_PANES || id == ID_PREVIOUS_PANE => {
+                            // The sidebar and the list of whichever module is
+                            // open. Not the preview: it is a browser, and
+                            // once focus is inside it every key is consumed
+                            // there, so cycling into it is cycling into a
+                            // dead end.
+                            //
+                            // This used to move between the mail folder tree
+                            // and the message list whatever module was open,
+                            // which in Tasks or Contacts meant focusing a
+                            // hidden control. It was never noticed because
+                            // nothing raised this event: the handler, the id
+                            // and a test guarding the id all existed, and no
+                            // menu item or accelerator ever fired it, so F6
+                            // did nothing at all for as long as it has been
+                            // documented.
+                            use crate::presentation::panes::{Direction, Pane};
+
+                            let module = lock_state(&state).active_module;
+                            let going = if id == ID_CYCLE_PANES {
+                                Direction::Forward
                             } else {
-                                folder_tree.set_focus();
-                                let _ = a11y.announce_topic(
-                                    "Folders",
-                                    crate::presentation::accessibility::announcements::Priority::Low,
-                                    "pane",
-                                );
+                                Direction::Back
+                            };
+
+                            let sidebar: Option<&dyn WxWidget> = module_focus
+                                .get(module.index())
+                                .map(|tree| tree as &dyn WxWidget);
+                            let list: &dyn WxWidget = match module {
+                                PimModule::Mail => &msg_list,
+                                PimModule::Contacts => &contact_list,
+                                PimModule::Calendar => &cal_event_list,
+                                PimModule::Reminders => &reminder_list,
+                                PimModule::Tasks => &task_list,
+                                PimModule::Notes => &note_list,
+                            };
+
+                            // Asked rather than remembered. A pane this
+                            // remembered would go stale the moment somebody
+                            // clicked, or used Ctrl+1, and then F6 would move
+                            // from a place they had already left.
+                            let here = if sidebar.is_some_and(|pane| pane.has_focus()) {
+                                Some(Pane::Sidebar)
+                            } else if list.has_focus() {
+                                Some(Pane::List)
+                            } else {
+                                None
+                            };
+
+                            let arriving = crate::presentation::panes::from(here, going);
+                            match arriving {
+                                Pane::Sidebar => {
+                                    if let Some(pane) = sidebar {
+                                        pane.set_focus();
+                                    }
+                                }
+                                Pane::List => list.set_focus(),
                             }
+                            // Moving focus without saying where it went is
+                            // the same experience as the key not working.
+                            let _ = a11y.announce_topic(
+                                arriving.spoken(module),
+                                crate::presentation::accessibility::announcements::Priority::Low,
+                                "pane",
+                            );
                         }
                         _ if id == ID_VIEW_COLUMNS => {
                             let current = column_layout.borrow().clone();
@@ -2881,10 +2926,31 @@ document.addEventListener('keydown', function(e) {
                 "Toggle the module navigation buttons",
             )
             .append_separator()
+            // The two that move focus between the panes of whichever module
+            // is open. They are menu items rather than a key handler because
+            // a menu accelerator fires whatever control has focus, which is
+            // the whole point of F6: it is pressed by somebody who wants to
+            // leave where they are.
+            //
+            // Their absence is why F6 did nothing. The handler was written,
+            // the id was allocated, a test guarded the id, and nothing ever
+            // raised the event.
+            .append_item(
+                ID_CYCLE_PANES,
+                "&Next Pane\tF6",
+                "Move focus to the next pane and say which one",
+            )
+            .append_item(
+                ID_PREVIOUS_PANE,
+                "Pre&vious Pane\tShift+F6",
+                "Move focus to the previous pane and say which one",
+            )
+            .append_separator()
             // A bare function key on purpose. Choosing columns is something
             // someone who navigates by ear does often, and it should not cost
             // a three finger stretch. F1, F3, F5, F6 and F9 are taken; F8 is
-            // free.
+            // free. F6 is taken as of the version that made it work: it had
+            // been listed here as taken while being bound to nothing.
             .append_item(
                 ID_VIEW_COLUMNS,
                 "&Columns...\tF8",
@@ -4394,6 +4460,17 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let renderer = HtmlRenderer::new();
             let html = renderer.wrap_body(body);
             preview.set_page(&html, "about:blank");
+            // Loading a document is when a WebView2 takes focus, and it does
+            // so without asking. set_can_focus(false) does not stop it: that
+            // governs this application's own tab traversal, and the browser
+            // is a separate process with windows of its own underneath.
+            //
+            // So focus is put back. If it was never taken this costs nothing,
+            // and if it was, this is the difference between reading the next
+            // message and being stuck in a pane that answers no keys.
+            if !msg_list.has_focus() {
+                msg_list.set_focus();
+            }
         }
         UIUpdate::ConnectionStatusChanged(status) => {
             let previous = {
@@ -6601,6 +6678,7 @@ mod tests {
             ID_TOGGLE_STAR,
             ID_REFRESH_FOLDER,
             ID_CYCLE_PANES,
+            ID_PREVIOUS_PANE,
             ID_SORT_DATE_NEWEST,
             ID_SORT_UNREAD_FIRST,
             ID_VIEW_FOLDER_PANE,

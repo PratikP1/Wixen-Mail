@@ -17,6 +17,21 @@ pub enum PimModule {
 }
 
 impl PimModule {
+    /// Every module, so a list of them is written once rather than per caller.
+    ///
+    /// In `index()` order, which is the order the panels are built and
+    /// switched in. Anything walking all six should use this: hand-written
+    /// copies of this list in construction order are what once put calendar
+    /// where contacts should have been.
+    pub const ALL: [PimModule; 6] = [
+        PimModule::Mail,
+        PimModule::Contacts,
+        PimModule::Calendar,
+        PimModule::Reminders,
+        PimModule::Tasks,
+        PimModule::Notes,
+    ];
+
     /// Human-readable label with accelerator hint.
     pub fn label(&self) -> &'static str {
         match self {

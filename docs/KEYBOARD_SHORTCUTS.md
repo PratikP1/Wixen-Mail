@@ -205,7 +205,9 @@ nothing extra to tab past on ordinary mail.
 ### The Preview Pane
 
 The preview is a visual pane. It never takes focus, and `F6` does not stop
-there.
+there. `F6` moves between the sidebar and the list of whichever module is open:
+folders and messages in Mail, task lists and tasks in Tasks, and so on. It says
+which pane it arrived at.
 
 That is deliberate. The preview is a WebView, which hosts a browser: once focus
 is inside it, the browser consumes `Esc`, `F6` and every menu accelerator, and
@@ -266,7 +268,8 @@ can navigate. Making them real headings is being worked on.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Next Pane | `F6` | Move focus between the folder tree and the message list |
+| Next pane | `F6` | Move focus to the next pane and say which one |
+| Previous pane | `Shift+F6` | Move focus to the previous pane and say which one |
 | Navigate Forward | `Tab` | Move to next element in current pane |
 | Navigate Backward | `Shift+Tab` | Move to previous element in current pane |
 | Navigate List | `↑` `↓` | Move up/down in lists |
