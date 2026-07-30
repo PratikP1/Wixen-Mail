@@ -20,6 +20,9 @@ Versioning follows [SemVer](https://semver.org/): `0.1.0-alpha.N` during active 
 
 ### Fixed
 
+- **Uninstalling while Wixen Mail is open no longer takes your mail with it.** Uninstall deletes the data folder and clears your saved passwords. Doing that under an open copy removed the files it did not have open, left the ones it did, and let the copy still running write its settings back over the gap, leaving something that was neither installed nor removed. Setup and Uninstall now both stop and ask you to close it first. `--erase-all-data` typed by hand refuses for the same reason and says so, with its own exit code so a script can tell "close it and try again" apart from a real failure.
+  Closing one of two open windows does not clear the mark, so the second one still protects itself.
+
 - **A refusal goes to the error stream, where errors belong.** `wixen-mail --allow evrything > log.txt` put the complaint in the file and left the screen empty, so a typo in a shortcut looked like the program starting and then vanishing. The reason now stays on screen, and a successful run's output has nothing but its answer in it.
 
 - **Five links between the documents went nowhere.** The worst was in the alpha testing page, which the first-run screen has a button to open: the section telling you where your mail is kept pointed at a file that has never existed. The accessibility page had three links to guides that were never written, and the user guide's contents listed a section that is not in it. All five now go somewhere real, and a test fails the build if a link between our own documents breaks again.

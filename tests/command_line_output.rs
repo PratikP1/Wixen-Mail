@@ -35,6 +35,15 @@ fn run(arguments: &[&str]) -> Output {
         .expect("the executable should run")
 }
 
+/// The same, with the data folder moved somewhere disposable.
+fn run_against(data_folder: &std::path::Path, arguments: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_wixen-mail"))
+        .args(arguments)
+        .env("WIXEN_MAIL_DATA", data_folder)
+        .output()
+        .expect("the executable should run")
+}
+
 fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).to_string()
 }
@@ -83,6 +92,51 @@ fn test_a_refusal_goes_to_the_error_stream() {
         text(&result.stdout),
         "",
         "a run that refused to start has no output"
+    );
+}
+
+/// Erasing everything is refused while a copy of Wixen Mail is open.
+///
+/// The uninstaller stops before this through Inno's `AppMutex`, so this is the
+/// backstop, and it is the whole of the protection for somebody typing the
+/// flag by hand.
+///
+/// The data folder is moved to a temporary one so that if the guard ever broke
+/// this test would delete a folder made two lines earlier rather than
+/// somebody's mail. It would still reach the credential store, where the one
+/// entry it could remove is the master key, which no version has created since
+/// it was taken out and whose loss costs retyping a password. Worth saying out
+/// loud rather than leaving for somebody to find.
+#[cfg(windows)]
+#[test]
+fn test_erasing_everything_is_refused_while_a_copy_is_open() {
+    use wixen_mail::application::running;
+
+    let folder = tempfile::tempdir().expect("a temporary folder");
+    let keepsake = folder.path().join("please-do-not-delete-me");
+    std::fs::write(&keepsake, b"evidence").expect("writing the marker file");
+
+    // Held for the length of the test, which is what a running Wixen Mail
+    // looks like from outside. Named, because binding to `_` would drop it
+    // here and the child would find nothing running.
+    let _open_copy = running::claim();
+
+    let result = run_against(folder.path(), &["--erase-all-data"]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(3),
+        "a refusal has its own exit code so a wizard can tell it from a failure. stderr: {:?}",
+        text(&result.stderr)
+    );
+    assert!(
+        text(&result.stderr).contains("still open"),
+        "it has to say why, stderr was {:?}",
+        text(&result.stderr)
+    );
+    assert!(
+        keepsake.exists(),
+        "the data folder was erased despite a copy being open"
     );
 }
 

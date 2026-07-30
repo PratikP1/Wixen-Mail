@@ -1,5 +1,6 @@
 #![windows_subsystem = "windows"]
 
+use wixen_mail::application::running::Claim;
 use wixen_mail::common::logging::{LoggerConfig, init_logging};
 use wixen_mail::common::paths::{AppPaths, LegacyLocations, MigrationReport};
 use wixen_mail::presentation::WxMailApp;
@@ -12,14 +13,16 @@ fn main() {
     install_panic_hook();
 
     let asked = command_line::parse(std::env::args().skip(1));
+    // Filled in only if Windows would not say whether a copy is running, so
+    // the reason can wait for the log rather than being lost.
+    let mut unmarked: Option<String> = None;
 
     let run = match asked {
         Command::EraseAllData => {
             // Deliberately before logging is set up. The log file would be
             // opened inside the folder being removed, and an open file is
             // exactly what stops Windows removing it.
-            erase_all_data();
-            return;
+            std::process::exit(erase_all_data());
         }
         Command::Help => return say(command_line::HELP),
         Command::Version => return say(&format!("Wixen Mail {}\n", env!("CARGO_PKG_VERSION"))),
@@ -33,11 +36,35 @@ fn main() {
         Command::Run(run) => run,
     };
 
+    // Held for as long as this program is up, so the uninstaller and
+    // --erase-all-data can both see that deleting the data folder right now
+    // would be deleting it out from under an open window. Bound to a name
+    // rather than to `_`, which would drop it here and mark nothing.
+    //
+    // A second copy is not stopped. Whether Wixen Mail should be one window or
+    // many is a separate question, and the marker only has to say that at
+    // least one is up. Both cases hold it, so closing the first while the
+    // second is still open does not clear the mark.
+    let _running = match wixen_mail::application::running::claim() {
+        Claim::Granted(marker) | Claim::AnotherIsRunning(marker) => Some(marker),
+        Claim::Unknown(why) => {
+            // Deferred: logging is not up yet, and this is worth a line in the
+            // log rather than nothing at all.
+            unmarked = Some(why);
+            None
+        }
+    };
+
     // Before anything opens a file, including the log the next line writes.
     let migration = prepare_data_folder();
 
     let _log_guard = init_logging(LoggerConfig::default()).ok();
     tracing::info!("Starting Wixen Mail v{}", env!("CARGO_PKG_VERSION"));
+    if let Some(why) = unmarked {
+        // Not silently absorbed: without the mark, an uninstall started now
+        // would not know this window is open.
+        tracing::warn!("Could not mark Wixen Mail as running: {why}");
+    }
     // Before anything can be built that might write. Recorded once here, and
     // read wherever a client is made, so the command line narrows every one of
     // them without being threaded through the window layer.
@@ -86,16 +113,56 @@ fn main() {
     }
 }
 
+/// Exit code for a run that would not erase because a copy is open.
+///
+/// Its own number rather than the general failure 1, so a script or a wizard
+/// can tell "close the program and try again" from "something went wrong".
+const REFUSED_A_COPY_IS_OPEN: i32 = 3;
+
 /// Remove the credential store entries and the data folder.
 ///
-/// Nothing is shown on screen. This runs from the uninstaller, where a dialog
-/// would be a window nobody asked for in the middle of somebody else's progress
-/// bar. Anything that could not be removed is written to a file in the
-/// temporary directory, because the folder that would normally hold the log is
-/// the one being deleted.
-fn erase_all_data() {
+/// Refuses while another copy of Wixen Mail is open. Deleting the folder under
+/// a running program takes the files it does not have open, leaves the ones it
+/// does, and lets the copy still running write its settings back over the gap,
+/// so what is left is neither an installation nor a clean machine. The
+/// uninstaller stops before this through `AppMutex`; this is the backstop, and
+/// the whole of the protection for somebody typing the flag by hand.
+///
+/// Otherwise nothing is shown on screen. This runs from the uninstaller, where
+/// a dialog would be a window nobody asked for in the middle of somebody
+/// else's progress bar. Anything that could not be removed is written to a
+/// file in the temporary directory, because the folder that would normally
+/// hold the log is the one being deleted.
+fn erase_all_data() -> i32 {
     let mut left_behind = Vec::new();
 
+    // Held for the whole erase, so a second one cannot start half way through
+    // the first. Named rather than bound to `_`, which would give it up here.
+    let _marker = match wixen_mail::application::running::claim() {
+        Claim::Granted(marker) => marker,
+        Claim::AnotherIsRunning(_) => {
+            let refusal = "Wixen Mail is still open. Nothing has been erased. \
+                           Close it and run this again.";
+            complain(&format!("{refusal}\n"));
+            report_what_was_left(&[refusal.to_string()]);
+            return REFUSED_A_COPY_IS_OPEN;
+        }
+        Claim::Unknown(why) => {
+            // Carrying on rather than refusing. Somebody unable to answer the
+            // question is still entitled to uninstall, and the note is what
+            // keeps the gap visible instead of swallowing it.
+            left_behind.push(format!(
+                "Could not check whether Wixen Mail was still open, so this ran anyway: {why}"
+            ));
+            return finish_erasing(left_behind);
+        }
+    };
+
+    finish_erasing(left_behind)
+}
+
+/// Erase, now that it has been established that nothing else is running.
+fn finish_erasing(mut left_behind: Vec<String>) -> i32 {
     let outcome = wixen_mail::application::forget::run();
     left_behind.extend(
         outcome
@@ -117,9 +184,15 @@ fn erase_all_data() {
         )),
     }
 
-    if !left_behind.is_empty() {
-        report_what_was_left(&left_behind);
+    if left_behind.is_empty() {
+        return 0;
     }
+    report_what_was_left(&left_behind);
+    // Something was left. The uninstaller does not read this today, which is
+    // recorded against the uninstall test rather than guessed at here, but a
+    // command that could not do what it was asked should not report success to
+    // whatever does read it.
+    1
 }
 
 /// Leave a note somewhere that survives the uninstall.

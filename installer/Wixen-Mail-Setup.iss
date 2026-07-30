@@ -53,6 +53,17 @@ SetupIconFile=..\assets\icon.ico
 CloseApplications=yes
 RestartApplications=no
 
+; Uninstalling deletes the data folder and clears the credential store. Doing
+; that under a running copy takes half of it, lets the copy still running write
+; its settings back over the rest, and leaves the program neither installed nor
+; removed. Setup and Uninstall both stop here and ask for it to be closed.
+;
+; The name is held by the running program. It comes from
+; application::running::MUTEX_NAME, and a test in that module fails if the two
+; stop matching, because otherwise the mistake is silent: Uninstall would look
+; for a marker nobody holds, find it free, and go ahead.
+AppMutex=WixenMail-Running
+
 ; "compatible" rather than "os": Windows on ARM runs x64 programs under
 ; emulation, and the stricter spelling would refuse to install on a Surface for
 ; no reason anybody could act on. Needs Inno 6.3 or newer.

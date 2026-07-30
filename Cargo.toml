@@ -1,6 +1,6 @@
 [package]
 name = "wixen-mail"
-version = "0.1.0-alpha.22"
+version = "0.1.0-alpha.23"
 edition = "2024"
 # Stated rather than left implicit, so an older toolchain says which version it
 # wants instead of failing partway through with a parse error. The edition needs
@@ -96,6 +96,12 @@ windows = { version = "0.62.2", features = [
     # Attaching to the console that launched us, so --help can be read. The
     # binary is a GUI subsystem one and has no console of its own.
     "Win32_System_Console",
+    # The named mutex that says a copy is already running, so the uninstaller
+    # does not delete the data folder out from under it. CreateMutexW takes
+    # security attributes, so it is gated behind Win32_Security as well even
+    # though the attributes passed are None.
+    "Win32_System_Threading",
+    "Win32_Security",
 ] }
 
 [target.'cfg(windows)'.build-dependencies]
