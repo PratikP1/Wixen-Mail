@@ -19,6 +19,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   and settings**, which both copies share. It does not do this by running the
   other uninstaller, which would have erased them.
 
+- **Removing the other copy also takes it out of Apps and Features.** It did
+  not, so Windows kept offering to uninstall a program that was no longer on
+  the disk. Setup is elevated while installing for everybody, and Windows then
+  disagrees with itself about who the current user is: the folders belong to
+  whoever started setup and the registry belongs to the elevated account, so
+  the folder was found and removed while the listing was looked for in the
+  wrong place. Setup now clears the listing as the person who started it, says
+  so if any part of the cleanup did not work, and tidies a listing left behind
+  with no program under it.
+
 - **An uninstall no longer stops when the program is already gone.** Uninstall
   asks Wixen Mail to clear its own data folder and credentials first, because
   an uninstaller cannot reach the Windows credential store. If the executable

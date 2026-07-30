@@ -116,12 +116,17 @@ Filename: "{app}\wixen-mail.exe"; Description: "Start {#AppName}"; Flags: nowait
 // So setup looks in the scope it is not installing into, and offers to remove
 // what it finds there first.
 //
-// What it will not catch: an install for everybody is made by an elevated
-// setup, and while it is elevated both HKEY_CURRENT_USER and {localappdata}
-// belong to whoever answered the elevation prompt. Somebody installing for a
-// different person than the one whose per-user copy is stale is looking in the
-// wrong profile and will find nothing. That is the uncommon case and it is not
-// solved here; the common one, where a person elevates their own account, is.
+// Which of the two checks below does the work depends on how setup was
+// started, and the first draft of this had it backwards. Installing for
+// everybody means setup is elevated, and the two halves of "the current user"
+// then disagree: Inno keeps the shell folders pointing at whoever started
+// setup, while HKEY_CURRENT_USER follows the elevated token. So the registry
+// check finds nothing on exactly the path that matters most, and the
+// filesystem check is what actually fires.
+//
+// Still worth having both. The registry check is the one that works when
+// installing for one person, and it is the only one that can find a copy
+// somebody installed somewhere other than the default folder.
 
 const
   UninstallEntry =
@@ -181,37 +186,114 @@ end;
 // a second Start Menu entry with the same name, and leaves the mail alone. The
 // uninstall entry goes too, or Apps and Features keeps offering to remove
 // something that is no longer there.
-procedure RemoveTheOtherCopy(Folder: String);
+// Take the stale entry out of Apps and Features, and say whether that worked.
+//
+// Not RegDeleteKeyIncludingSubkeys when installing for everybody, which is the
+// obvious way and quietly does nothing. Setup is elevated by then, and the two
+// halves of "the current user" stop agreeing: Inno keeps {localappdata} and the
+// rest of the shell folders pointing at whoever started setup, while
+// HKEY_CURRENT_USER follows the token it is now running under. So the folder is
+// found and removed, the registry key is looked for in a different account's
+// hive, and the delete reports nothing because there was nothing there.
+//
+// Observed, not guessed. The first version of this removed the folder and the
+// Start Menu entry and left Apps and Features still offering to uninstall a
+// program that no longer existed.
+//
+// reg.exe run as the original user reaches the right hive whatever setup is
+// running as.
+function ForgetTheOtherCopy(): Boolean;
 var
-  Root: Integer;
+  Outcome: Integer;
 begin
-  DelTree(Folder, True, True, True);
+  if not IsAdminInstallMode() then
+  begin
+    Result := RegDeleteKeyIncludingSubkeys(HKEY_LOCAL_MACHINE, UninstallEntry);
+    Exit;
+  end;
 
-  if IsAdminInstallMode() then
-    Root := HKEY_CURRENT_USER
-  else
-    Root := HKEY_LOCAL_MACHINE;
-  RegDeleteKeyIncludingSubkeys(Root, UninstallEntry);
+  Result := ExecAsOriginalUser(
+    ExpandConstant('{sys}\reg.exe'),
+    'delete "HKCU\' + UninstallEntry + '" /f',
+    '', SW_HIDE, ewWaitUntilTerminated, Outcome) and (Outcome = 0);
+end;
+
+{ Whether Apps and Features still lists a copy that is not on the disk.
+
+  The state a half-finished cleanup leaves, and one nothing else here would
+  find: the folder check has nothing to find, and the registry check cannot see
+  the right hive while elevated. Asked through reg.exe as the original user for
+  the same reason the delete is. }
+function StaleListingExists(): Boolean;
+var
+  Outcome: Integer;
+begin
+  if not IsAdminInstallMode() then
+  begin
+    Result := RegKeyExists(HKEY_LOCAL_MACHINE, UninstallEntry);
+    Exit;
+  end;
+
+  Result := ExecAsOriginalUser(
+    ExpandConstant('{sys}\reg.exe'),
+    'query "HKCU\' + UninstallEntry + '"',
+    '', SW_HIDE, ewWaitUntilTerminated, Outcome) and (Outcome = 0);
+end;
+
+{ Remove the other copy, and return what could not be removed, or ''.
+
+  Every step is reported rather than attempted and forgotten. Each one can fail
+  on its own: a folder can be locked, a registry key can be in a hive setup
+  cannot see. Silence here is what left an entry in Apps and Features for a
+  program that was no longer on the disk, with nobody told. }
+function RemoveTheOtherCopy(Folder: String): String;
+var
+  Shortcut: String;
+begin
+  Result := '';
+
+  DelTree(Folder, True, True, True);
+  if DirExists(Folder) then
+    Result := 'Its folder is still there: ' + Folder;
 
   { Both possible homes for the stale shortcut. Whichever this copy is not
     using is the one that had it. }
   if IsAdminInstallMode() then
-    DelTree(ExpandConstant('{userprograms}\{#AppName}'), True, True, True)
+    Shortcut := ExpandConstant('{userprograms}\{#AppName}')
   else
-    DelTree(ExpandConstant('{commonprograms}\{#AppName}'), True, True, True);
+    Shortcut := ExpandConstant('{commonprograms}\{#AppName}');
+  DelTree(Shortcut, True, True, True);
+  if DirExists(Shortcut) then
+    Result := Result + #13#10 + 'Its Start Menu entry is still there: ' + Shortcut;
+
+  if not ForgetTheOtherCopy() then
+    Result := Result + #13#10
+            + 'It is still listed in Apps and Features. Removing it from there '
+            + 'will report an error, which is harmless: the program it points '
+            + 'at has gone.';
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Uninstaller: String;
+  Leftovers: String;
 begin
   Result := '';
 
   Uninstaller := UninstallerInTheOtherScope();
   if Uninstaller = '' then
     Uninstaller := StrandedUninstaller();
+
   if Uninstaller = '' then
+  begin
+    { Nothing on the disk, but Windows may still be offering to uninstall it.
+      Taken away without asking: there is no program left to remove and nothing
+      belonging to anybody is touched, so a question here would be a question
+      with only one sensible answer. }
+    if StaleListingExists() then
+      ForgetTheOtherCopy();
     Exit;
+  end;
 
   { Asked rather than done, and the message says what will and will not happen
     to the mail. Somebody who has just been told a second copy exists has no way
@@ -231,15 +313,15 @@ begin
        mbConfirmation, MB_YESNO) <> IDYES then
     Exit;
 
-  RemoveTheOtherCopy(ExtractFileDir(Uninstaller));
+  Leftovers := RemoveTheOtherCopy(ExtractFileDir(Uninstaller));
 
-  { Said rather than assumed. A folder can be locked by something this has no
-    control over, and carrying on quietly would leave the exact situation this
-    exists to prevent with nobody told it is still there. }
-  if DirExists(ExtractFileDir(Uninstaller)) then
-    Result := 'The other copy of Wixen Mail could not be removed completely. '
-            + 'Delete this folder by hand, then run setup again:' + #13#10#13#10
-            + ExtractFileDir(Uninstaller);
+  { Said rather than assumed, and said without stopping the install. This
+    version is the one that works; refusing to install it because an old
+    shortcut would not delete would leave somebody with only the old one. }
+  if Leftovers <> '' then
+    MsgBox('Wixen Mail ' + '{#AppVersion}' + ' is installed, but part of the '
+           + 'other copy could not be removed:' + #13#10 + Leftovers,
+           mbInformation, MB_OK);
 end;
 
 [UninstallRun]
