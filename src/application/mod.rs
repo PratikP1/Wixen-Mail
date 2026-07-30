@@ -25,6 +25,7 @@ pub mod messages;
 pub mod new_item;
 pub mod notes;
 pub mod pim_command;
+pub mod pop_sync;
 pub mod receipts;
 pub mod reminders;
 pub mod reply;

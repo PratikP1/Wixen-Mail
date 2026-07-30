@@ -1030,6 +1030,12 @@ impl MessageCache {
         // so the reader can say so without fetching the message again, and so
         // the answer does not depend on a body that may have been evicted.
         self.ensure_column_exists("messages", "receipt_to", "TEXT")?;
+        // The identifier a POP server gives a message, and when this computer
+        // downloaded it. POP3 message numbers shift between sessions, so the
+        // identifier is the only thing that says whether a message is already
+        // here, and the time is what the removal policy counts from.
+        self.ensure_column_exists("messages", "pop_uidl", "TEXT")?;
+        self.ensure_column_exists("messages", "downloaded_at", "TEXT")?;
         // How an account reads its mail, and where from when that is POP.
         // Every account stored before these existed is IMAP, which is what the
         // defaults say and is correct: nothing could configure a POP account.

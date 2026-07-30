@@ -159,6 +159,8 @@ fn to_incoming(message: &ImapMessage, folder_id: i64, in_junk_folder: bool) -> I
         // telling two rows apart, not for handing back to the server.
         labels: Some(message.labels.join(" ")).filter(|labels| !labels.is_empty()),
         receipt_to: message.receipt_to.clone(),
+        // IMAP has UIDs of its own; this is the POP identifier and there is none.
+        pop_uidl: None,
     }
 }
 

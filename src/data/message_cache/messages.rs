@@ -82,9 +82,82 @@ pub struct IncomingMessage {
     pub labels: Option<String>,
     /// Where the sender asked a read receipt to go, if they asked.
     pub receipt_to: Option<String>,
+    /// The identifier a POP server gave it, when it came from one.
+    pub pop_uidl: Option<String>,
 }
 
 impl MessageCache {
+    /// The POP identifiers already downloaded into a folder.
+    ///
+    /// What decides whether a message on the server is new. Never message
+    /// numbers: those are assigned per session and shift as messages are
+    /// deleted, so the same number is a different message next time.
+    pub fn pop_uidls(&self, folder_id: i64) -> Result<std::collections::HashSet<String>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT pop_uidl FROM messages
+                 WHERE folder_id = ?1 AND pop_uidl IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let found = stmt
+            .query_map(params![folder_id], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("Failed to read the identifiers: {}", e)))?
+            .collect::<std::result::Result<std::collections::HashSet<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read the identifiers: {}", e)))?;
+        Ok(found)
+    }
+
+    /// When each POP message in a folder was downloaded.
+    ///
+    /// What the removal policy counts from. A message with no time recorded is
+    /// left out, so it is never removed from the server: a missing time is a
+    /// reason to keep mail, not to delete it.
+    pub fn pop_download_times(
+        &self,
+        folder_id: i64,
+    ) -> Result<std::collections::HashMap<String, chrono::DateTime<chrono::Utc>>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT pop_uidl, downloaded_at FROM messages
+                 WHERE folder_id = ?1 AND pop_uidl IS NOT NULL AND downloaded_at IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let found = stmt
+            .query_map(params![folder_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Failed to read the download times: {}", e)))?
+            .filter_map(|row| {
+                let (uidl, when) = row.ok()?;
+                let when = chrono::DateTime::parse_from_rfc3339(&when).ok()?;
+                Some((uidl, when.into()))
+            })
+            .collect();
+        Ok(found)
+    }
+
+    /// The next unused message number in a folder that has no server numbering.
+    ///
+    /// A local folder and a POP mailbox both need one: the table keys messages
+    /// on folder and number, and neither has a number of its own to use. One
+    /// past the highest, which is stable because nothing renumbers.
+    pub fn next_local_uid(&self, folder_id: i64) -> Result<u32> {
+        let highest: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT MAX(uid) FROM messages WHERE folder_id = ?1",
+                params![folder_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read the folder: {}", e)))?
+            .flatten();
+        Ok(highest.unwrap_or(0).saturating_add(1) as u32)
+    }
     /// Write a message a sync has fetched, updating one already stored.
     ///
     /// Deliberately not `save_message`, which is `INSERT OR REPLACE`. On a
@@ -106,10 +179,11 @@ impl MessageCache {
                      (uid, folder_id, message_id, subject, from_addr, to_addr, cc, date,
                       size_bytes, refs_header, read, starred, deleted, has_attachments,
                       internaldate, answered, draft, reply_to, safety, safety_reasons,
-                      gmail_msgid, labels, receipt_to)
+                      gmail_msgid, labels, receipt_to, pop_uidl, downloaded_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                         ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
+                         ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
                  ON CONFLICT(folder_id, uid) DO UPDATE SET
+                     pop_uidl = excluded.pop_uidl,
                      gmail_msgid = excluded.gmail_msgid,
                      labels = excluded.labels,
                      receipt_to = excluded.receipt_to,
@@ -159,6 +233,15 @@ impl MessageCache {
                     incoming.gmail_message_id.map(|id| id as i64),
                     incoming.labels,
                     incoming.receipt_to,
+                    incoming.pop_uidl,
+                    // Set once, when the row is first written. The update above
+                    // leaves it alone, because the removal policy counts from
+                    // when this computer got the message and re-reading a row
+                    // must not restart that clock.
+                    incoming
+                        .pop_uidl
+                        .as_ref()
+                        .map(|_| chrono::Utc::now().to_rfc3339()),
                 ],
                 |row| row.get(0),
             )
@@ -813,6 +896,7 @@ mod tests {
             gmail_message_id: None,
             labels: None,
             receipt_to: None,
+            pop_uidl: None,
         }
     }
 
