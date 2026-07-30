@@ -65,12 +65,14 @@ In rough order of how useful it is to know.
    message was sent when it was not, a count that does not match what you can
    see, a setting that does not take effect.
 5. **Keyboard traps.** Anywhere Tab or Shift+Tab cannot get you out of.
-6. **Whether the ticks are announced in Folders to Keep Up to Date.** This one
-   is a known doubt rather than a guess. Windows draws those check boxes itself
-   instead of using a control that has them, so whether a screen reader says
-   "ticked" and "unticked" is the platform's answer and has not been checked. If
-   it says only the folder name, say so: the control is then the wrong one and
-   there is no better one available, so it needs a different design.
+6. **Whether the ticks are announced in Folders to Keep Up to Date.** Windows
+   draws those check boxes itself instead of using a control that has them, so
+   the state does not reach a screen reader on its own. Each row now reports
+   itself as a check box with its state, which is the same fix NVDA makes in its
+   own settings. Whether that works is a thing only a screen reader can answer,
+   so it is worth a specific listen: arrow down the list and say whether you
+   hear "ticked" and "not ticked" as well as the folder name, and whether it
+   changes when you press Space.
 7. **Whether the folder list matches what your provider shows you.** New in
    this version, and the part most likely to differ between providers. On Gmail
    in particular: whether your labels are all there, whether anything appears

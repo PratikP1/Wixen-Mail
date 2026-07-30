@@ -78,6 +78,129 @@ impl AccessibleImpl for FixedName {
     }
 }
 
+/// Reports each row of a checked list as a check box that is ticked or not.
+///
+/// On Windows, wxWidgets draws the check boxes in a `wxCheckListBox` itself
+/// rather than using a control that has them, so the platform sees a plain list
+/// and the tick reaches nobody. A screen reader reads the row's text and says
+/// nothing about whether it is on, which on a window whose entire purpose is
+/// ticking things is the whole window.
+///
+/// The fix is the one NVDA uses in its own settings, where the same problem
+/// exists and is solved in Python: attach an accessible object that answers for
+/// each row rather than only for the control, give the row the check box role,
+/// and put the checked state in its state flags. That is what MSAA has for
+/// exactly this, and what a screen reader is already listening for.
+///
+/// Child ids are one-based, which is MSAA's convention: nought is the control
+/// itself and every row after that counts from one. Getting that wrong reports
+/// each row's state one row out, which reads plausibly and is wrong everywhere.
+struct CheckedRows {
+    name: String,
+    description: String,
+    /// Whether each row is ticked, in the order the rows were added.
+    ///
+    /// A snapshot rather than a live look at the control, because an accessible
+    /// object is called from the screen reader's thread and must not reach into
+    /// a widget. It is replaced whenever a tick changes, which is the only time
+    /// it can go stale.
+    ticked: std::sync::Arc<std::sync::Mutex<Vec<bool>>>,
+}
+
+impl AccessibleImpl for CheckedRows {
+    fn get_name(&self, child_id: i32) -> (AccStatus, Option<String>) {
+        if child_id == 0 {
+            return (ffi::wxd_AccStatus_WXD_ACC_OK, Some(self.name.clone()));
+        }
+        // The row's own text is the platform's to give: it is what was put in
+        // the list, and repeating it here would be one more copy to keep in
+        // step for no gain.
+        (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, None)
+    }
+
+    fn get_description(&self, child_id: i32) -> (AccStatus, Option<String>) {
+        match child_id {
+            0 => (
+                ffi::wxd_AccStatus_WXD_ACC_OK,
+                Some(self.description.clone()),
+            ),
+            _ => (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, None),
+        }
+    }
+
+    fn get_role(&self, child_id: i32) -> (AccStatus, wxdragon::accessible::AccRole) {
+        if child_id == 0 {
+            return (
+                ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED,
+                ffi::wxd_AccRole_WXD_ROLE_SYSTEM_LIST,
+            );
+        }
+        // A row is a check box, which is what makes a screen reader look for a
+        // checked state and say "ticked" or "not ticked" rather than reading
+        // the text and stopping.
+        (
+            ffi::wxd_AccStatus_WXD_ACC_OK,
+            ffi::wxd_AccRole_WXD_ROLE_SYSTEM_CHECKBUTTON,
+        )
+    }
+
+    fn get_state(&self, child_id: i32) -> (AccStatus, i64) {
+        if child_id == 0 {
+            return (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, 0);
+        }
+        let Ok(ticked) = self.ticked.lock() else {
+            // A poisoned lock is not a reason to claim a row is unticked, which
+            // would be a wrong answer rather than no answer.
+            return (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, 0);
+        };
+        // One-based, as MSAA counts children.
+        let Some(on) = ticked.get((child_id - 1) as usize) else {
+            return (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, 0);
+        };
+        let state = if *on {
+            wxdragon::accessible::acc_state::CHECKED
+        } else {
+            0
+        };
+        (
+            ffi::wxd_AccStatus_WXD_ACC_OK,
+            state
+                | wxdragon::accessible::acc_state::FOCUSABLE
+                | wxdragon::accessible::acc_state::SELECTABLE,
+        )
+    }
+}
+
+/// What a checked list's rows report, so the ticks can be kept up to date.
+///
+/// Handed back from [`set_accessible_checked_rows`] so the caller can replace
+/// the snapshot when somebody ticks a row. Without that the state is whatever
+/// it was when the window opened, which is worse than none: it would announce
+/// confidently and be wrong the moment anybody pressed Space.
+pub type TickState = std::sync::Arc<std::sync::Mutex<Vec<bool>>>;
+
+/// Give a checked list a name and rows that report whether they are ticked.
+///
+/// The returned handle holds the ticked state. Update it whenever a row is
+/// toggled, in the same order the rows were added.
+pub fn set_accessible_checked_rows(
+    window: &dyn WxWidget,
+    name: &str,
+    description: &str,
+    ticked: Vec<bool>,
+) -> TickState {
+    let state: TickState = std::sync::Arc::new(std::sync::Mutex::new(ticked));
+    window.set_accessible(Accessible::new(
+        window,
+        CheckedRows {
+            name: name.to_string(),
+            description: description.to_string(),
+            ticked: state.clone(),
+        },
+    ));
+    state
+}
+
 /// Give `window` an accessible name that screen readers will announce.
 ///
 /// Use the same wording as the control's visible heading or tree root, so what

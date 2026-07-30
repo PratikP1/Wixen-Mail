@@ -18,26 +18,33 @@
 //! ticks the row under the cursor and arrows move, which is the plainest
 //! arrangement there is for exactly this question.
 //!
-//! # Unverified: whether the tick is announced
+//! # Making the tick reach a screen reader
 //!
-//! On Windows wxWidgets draws the check boxes itself rather than using a
-//! control that has them, so whether the ticked state reaches the accessibility
-//! tree is the platform's answer and not ours, and it has not been checked with
-//! a screen reader. If it turns out not to be announced, this control is the
-//! wrong one and there is no better one in this binding: `wxListCtrl`'s check
-//! boxes, which do carry state through the platform, are not wrapped.
+//! On Windows wxWidgets draws these check boxes itself rather than using a
+//! control that has them, so the platform sees a plain list and the ticked
+//! state reaches nobody. On a window whose entire purpose is ticking things,
+//! that is the window.
 //!
-//! Saying so here rather than assuming it works. Sixteen controls in this
-//! application were once "named" by a call that compiled, passed the tests and
-//! never reached a screen reader. It is on the list in the testing page.
+//! So each row reports itself, through
+//! [`set_accessible_checked_rows`](crate::presentation::accessibility::names::set_accessible_checked_rows),
+//! as a check box with a checked state. It is the same fix NVDA makes in its
+//! own settings, where the problem is identical and the answer is written in
+//! Python: answer for the rows and not only for the control.
+//!
+//! The snapshot is refreshed on every toggle. A state read once when the window
+//! opened would announce confidently and be wrong from the first press of
+//! Space, which is worse than announcing nothing.
+//!
+//! **Still to be confirmed with a screen reader.** The structure is there and
+//! the reasoning is sound; whether NVDA says "ticked" is a thing only NVDA can
+//! answer. Sixteen controls in this application were once named by a call that
+//! compiled, passed the tests and never reached a screen reader.
 //!
 //! The row's own text carries everything except the tick: the folder's name,
 //! how much is in it, and the warning about the one folder that doubles what
 //! gets downloaded. Those are read whatever happens to the check box.
 
-use crate::presentation::accessibility::names::{
-    set_accessible_name, set_accessible_name_and_description,
-};
+use crate::presentation::accessibility::names::{set_accessible_checked_rows, set_accessible_name};
 use wxdragon::prelude::*;
 
 /// One folder, and whether it is currently kept up to date.
@@ -119,11 +126,30 @@ pub fn ask(parent: &Frame, account: &str, folders: &[FolderRow]) -> Option<Vec<(
         // the wrong row is a folder somebody did not ask for.
         list.check(index as u32, folder.syncing);
     }
-    set_accessible_name_and_description(
+    // Each row reports itself as a check box with its ticked state, because
+    // Windows draws these check boxes rather than using a control that has
+    // them, so without this the state reaches nobody.
+    let ticked = set_accessible_checked_rows(
         &list,
         "Folders to keep up to date",
         "Tick a folder to download its messages. Untick one to leave it on the server.",
+        folders.iter().map(|folder| folder.syncing).collect(),
     );
+
+    // Kept up to date as rows are toggled. A snapshot taken once would announce
+    // confidently and be wrong from the first press of Space, which is worse
+    // than announcing nothing.
+    list.on_toggled({
+        // `CheckListBox` is a handle rather than the control, so the closure
+        // takes a copy of it and the rows keep answering after `ask` returns.
+        let ticked = ticked.clone();
+        let rows = folders.len();
+        move |_event| {
+            if let Ok(mut ticked) = ticked.lock() {
+                *ticked = (0..rows).map(|at| list.is_checked(at as u32)).collect();
+            }
+        }
+    });
     sizer.add(&list, 1, SizerFlag::All | SizerFlag::Expand, 8);
 
     let buttons = BoxSizer::builder(Orientation::Horizontal).build();
