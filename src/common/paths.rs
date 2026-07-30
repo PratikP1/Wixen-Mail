@@ -83,7 +83,7 @@ impl AppPaths {
         self.root.join("config")
     }
 
-    /// The cached mail database. Encrypted, and rebuildable from the server.
+    /// The cached mail database. Not encrypted, and rebuildable from the server.
     pub fn cache_dir(&self) -> PathBuf {
         self.root.join("cache")
     }

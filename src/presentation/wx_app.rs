@@ -796,8 +796,11 @@ impl WxMailApp {
     window.contextMenu.postMessage(JSON.stringify(data));
 });
 document.addEventListener('keydown', function(e) {
+    // F6 matches whether or not Shift is held, so Shift+F6 leaves too. Where
+    // it lands is the host's decision, which is why the key is not named here.
     if (e.key === 'Escape' || e.key === 'F6') {
         e.preventDefault();
+        e.stopPropagation();
         window.contextMenu.postMessage(JSON.stringify({ kind: 'leave' }));
     }
 }, true);"#,
@@ -828,9 +831,21 @@ document.addEventListener('keydown', function(e) {
                                 })
                                 .unwrap_or(false);
                             if leaving {
+                                use crate::presentation::panes::Pane;
+
                                 msg_list.set_focus();
+                                // What F6 says anywhere else, so leaving the
+                                // preview and arriving by any other route
+                                // sound the same. Landing in an empty list
+                                // silently is what made F6 feel broken, and
+                                // it would feel the same here.
+                                let (module, holding) = {
+                                    let s = lock_state(&state);
+                                    let module = s.active_module;
+                                    (module, holding_of(&s, module, Pane::List))
+                                };
                                 let _ = a11y.announce_topic(
-                                    "Messages",
+                                    &Pane::List.arrival(module, holding),
                                     crate::presentation::accessibility::announcements::Priority::Normal,
                                     "pane",
                                 );
@@ -1096,6 +1111,29 @@ document.addEventListener('keydown', function(e) {
             focus_targets.sort_by_key(|(module, _)| module.index());
             let module_focus: Vec<TreeCtrl> =
                 focus_targets.into_iter().map(|(_, tree)| tree).collect();
+
+            // Put focus back after the preview loads a message.
+            //
+            // A WebView takes focus when a document finishes loading, and does
+            // not ask. Restoring it has to happen after that, which is what
+            // this event is: doing it straight after `set_page` restores focus
+            // to a pane the browser has not taken it from yet, and then takes
+            // it anyway a moment later.
+            //
+            // Registered here rather than beside the preview because it needs
+            // the folder tree, which does not exist that early.
+            let focus_home_cell = Rc::new(std::cell::Cell::new(FocusHome::Elsewhere));
+            preview.on_loaded({
+                let focus_home_cell = focus_home_cell.clone();
+                move |_| match focus_home_cell.get() {
+                    FocusHome::Sidebar => folder_tree.set_focus(),
+                    FocusHome::List => msg_list.set_focus(),
+                    // Not ours to move. If the browser did take focus from
+                    // somewhere this cannot name, the page's own Escape and F6
+                    // handlers are the way back out.
+                    FocusHome::Elsewhere => {}
+                }
+            });
 
             // ── Module switching helper ──────────────────────────────────
             // Collect sidebar and content panel references for switching
@@ -2410,9 +2448,13 @@ document.addEventListener('keydown', function(e) {
                                 Pane::List => list.set_focus(),
                             }
                             // Moving focus without saying where it went is
-                            // the same experience as the key not working.
+                            // the same experience as the key not working. So
+                            // is moving it to a pane with nothing in it, which
+                            // gives the screen reader no item to read after
+                            // the name, so the arrival says what is there.
+                            let holding = holding_of(&lock_state(&state), module, arriving);
                             let _ = a11y.announce_topic(
-                                arriving.spoken(module),
+                                &arriving.arrival(module, holding),
                                 crate::presentation::accessibility::announcements::Priority::Low,
                                 "pane",
                             );
@@ -2946,6 +2988,7 @@ document.addEventListener('keydown', function(e) {
                                 reader: &reader,
                                 tx: &ui_tx,
                                 rt: &runtime,
+                                focus_home: &focus_home_cell,
                             },
                         );
                     }
@@ -3704,6 +3747,97 @@ fn folder_label(folder: &crate::data::message_cache::CachedFolder) -> String {
     }
 }
 
+/// A stored body as the thing it is, rather than whichever column was filled.
+///
+/// The cache keeps the text and the markup in separate columns, and this used
+/// to be read out as `body_html.or(body_plain)`: one string, with the fact of
+/// which one it was thrown away. Every reading surface downstream then guessed
+/// it back from whether the string contained angle brackets, so a plain message
+/// saying "write to <ada@example.com>" was treated as markup and the address
+/// was deleted from the middle of the sentence with nothing said.
+///
+/// Nothing stored means the body has not been fetched. That is empty text
+/// rather than empty markup, because there is nothing to sanitise.
+fn body_as_written(stored: Option<crate::data::message_cache::bodies::MessageBody>) -> MessageBody {
+    let Some(stored) = stored else {
+        return MessageBody::Plain(String::new());
+    };
+    match (stored.body_html, stored.body_plain) {
+        (Some(html), Some(plain)) => MessageBody::Multipart { plain, html },
+        (Some(html), None) => MessageBody::Html(html),
+        (None, Some(plain)) => MessageBody::Plain(plain),
+        (None, None) => MessageBody::Plain(String::new()),
+    }
+}
+
+/// Where focus belongs once the preview has finished loading a message.
+///
+/// A WebView takes focus when a document loads and does not ask first.
+/// `set_can_focus(false)` does not stop it: that governs this application's own
+/// tab traversal, and the browser is a separate process with windows of its own
+/// underneath. So focus is put back, and this says back where.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FocusHome {
+    /// The folder tree. Somebody reached it deliberately and should keep it.
+    Sidebar,
+    /// The message list, which is where reading mail is done from.
+    List,
+    /// Somewhere this code did not put it, so it is left alone.
+    Elsewhere,
+}
+
+/// Where focus should be put back to after the preview loads.
+///
+/// Asked before the load rather than remembered, for the same reason `F6` asks:
+/// a remembered answer goes stale the moment somebody clicks.
+///
+/// The two panes are checked in the order that matters if both somehow answer
+/// yes, which they should not. Anything else is left alone, because guessing
+/// wrong here moves somebody out of a dialog or a search box, and the page's
+/// own `Escape` and `F6` handlers already cover the case where the browser
+/// took focus from somewhere this cannot name.
+fn focus_home(sidebar_has_focus: bool, list_has_focus: bool) -> FocusHome {
+    if sidebar_has_focus {
+        FocusHome::Sidebar
+    } else if list_has_focus {
+        FocusHome::List
+    } else {
+        FocusHome::Elsewhere
+    }
+}
+
+/// What a pane holds, for the announcement `F6` makes on arriving there.
+///
+/// Only the mail panes and the five module lists have a count to hand, and the
+/// rest say [`Holding::Unknown`] rather than guess. That is deliberate: the
+/// announcement is the only feedback somebody gets, so a wrong one is worse
+/// than a short one.
+fn holding_of(
+    state: &WxUIState,
+    module: PimModule,
+    pane: crate::presentation::panes::Pane,
+) -> crate::presentation::panes::Holding {
+    use crate::presentation::panes::{Holding, Pane};
+
+    // Before an account exists both mail panes are empty and always will be,
+    // which is a different thing to say than "empty".
+    if module == PimModule::Mail && state.accounts.is_empty() {
+        return Holding::NoAccount;
+    }
+    match (module, pane) {
+        (PimModule::Mail, Pane::Sidebar) => Holding::Items(state.folders.len()),
+        (PimModule::Mail, Pane::List) => Holding::Items(state.messages.len()),
+        (PimModule::Contacts, Pane::List) => Holding::Items(state.contacts.len()),
+        (PimModule::Calendar, Pane::List) => Holding::Items(state.events.len()),
+        (PimModule::Reminders, Pane::List) => Holding::Items(state.reminders.len()),
+        (PimModule::Tasks, Pane::List) => Holding::Items(state.tasks.len()),
+        (PimModule::Notes, Pane::List) => Holding::Items(state.notes.len()),
+        // The sidebars of the five other modules. Their contents live in the
+        // tree control rather than in this state, so nothing here counted them.
+        (_, Pane::Sidebar) => Holding::Unknown,
+    }
+}
+
 /// Every account a panel draws from: the one being looked at, and the local one.
 ///
 /// Items no provider syncs are filed under a reserved local id, so a panel that
@@ -3997,9 +4131,8 @@ fn open_single_message(
     if style == Style::Formatted {
         let body = cache
             .as_ref()
-            .and_then(|c| c.get_message_body(message.message_id).ok().flatten())
-            .and_then(|b| b.body_html.or(b.body_plain))
-            .unwrap_or_default();
+            .and_then(|c| c.get_message_body(message.message_id).ok().flatten());
+        let body = body_as_written(body);
         let mut message = message.clone();
         message.attachments = attachments_of(cache, message.message_id);
         show_conversation_as_page(
@@ -4030,9 +4163,8 @@ fn open_in_the_text_reader(
 ) {
     let body = cache
         .as_ref()
-        .and_then(|c| c.get_message_body(message.message_id).ok().flatten())
-        .and_then(|b| b.body_html.or(b.body_plain))
-        .unwrap_or_default();
+        .and_then(|c| c.get_message_body(message.message_id).ok().flatten());
+    let body = body_as_written(body);
     // The list row does not carry the attachments, only whether there are any,
     // because a folder listing that loaded them would do a query per row. The
     // reader is the one place that needs them.
@@ -4085,9 +4217,8 @@ fn conversation_parts(
         .map(|node| {
             let body = cache
                 .as_ref()
-                .and_then(|c| c.get_message_body(node.message_id).ok().flatten())
-                .and_then(|b| b.body_html.or(b.body_plain))
-                .unwrap_or_default();
+                .and_then(|c| c.get_message_body(node.message_id).ok().flatten());
+            let body = body_as_written(body);
             let attachments = attachments_of(cache, node.message_id);
             reader_text::ConversationPart {
                 message: MessageItem {
@@ -4917,7 +5048,11 @@ fn open_for_scanning(
                     safety_reasons: vec!["This message is a scan fixture".to_string()],
                     receipt_to: None,
                 },
-                "<h1>A heading</h1><p>Some text, and <a href=\"https://example.com/\">a link</a>.</p>",
+                &MessageBody::Html(
+                    "<h1>A heading</h1><p>Some text, and \
+                     <a href=\"https://example.com/\">a link</a>.</p>"
+                        .to_string(),
+                ),
             ));
             // Leaked on purpose: the window has to outlive this function or it
             // closes before the scan reaches it, and the process is about to be
@@ -5036,6 +5171,12 @@ struct UpdateTargets<'a> {
     /// to be watched again, and an arrival asks for that folder to be re-read.
     tx: &'a Sender<UIUpdate>,
     rt: &'a Arc<Runtime>,
+    /// Where focus was before the preview began loading a message.
+    ///
+    /// Written here and read by the preview's own load handler, because the
+    /// browser takes focus partway through a load and the answer has to be
+    /// recorded before that happens to still be true.
+    focus_home: &'a Rc<std::cell::Cell<FocusHome>>,
 }
 
 /// Process a single UIUpdate, updating widgets + accessibility.
@@ -5052,6 +5193,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         reader,
         tx,
         rt,
+        focus_home: focus_home_cell,
     } = targets;
 
     use crate::presentation::accessibility::announcements::Priority;
@@ -5097,24 +5239,45 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             reader.open((**document).clone());
         }
         UIUpdate::MessageBodyLoaded(body) => {
-            {
+            let showing = {
                 let mut s = lock_state(state);
                 s.message_preview = body.clone();
-            }
-            let renderer = HtmlRenderer::new();
-            let html = renderer.wrap_body(body);
-            preview.set_page(&html, "about:blank");
-            // Loading a document is when a WebView2 takes focus, and it does
-            // so without asking. set_can_focus(false) does not stop it: that
-            // governs this application's own tab traversal, and the browser
-            // is a separate process with windows of its own underneath.
+                s.selected_message_index
+                    .and_then(|index| s.messages.get(index).cloned())
+            };
+            // The same composition the reading window uses, so the preview has
+            // the message's sender, date and subject as real headings and not
+            // just its body. Built once in one place on purpose: two of them
+            // would be two chances to disagree about a thread's shape.
             //
-            // So focus is put back. If it was never taken this costs nothing,
-            // and if it was, this is the difference between reading the next
-            // message and being stuck in a pane that answers no keys.
-            if !msg_list.has_focus() {
-                msg_list.set_focus();
-            }
+            // Without a message to describe there is nothing to head the body
+            // with, so it is wrapped on its own.
+            let renderer = HtmlRenderer::new();
+            let html = match showing {
+                Some(message) => {
+                    let subject = message.subject.clone();
+                    reader_text::conversation_html(
+                        &subject,
+                        &[reader_text::ConversationPart {
+                            message,
+                            body: body.clone(),
+                            depth: 0,
+                        }],
+                    )
+                }
+                None => renderer.wrap_body(body),
+            };
+            // Where focus is now, recorded before the load rather than after,
+            // because partway through the load the browser takes it and the
+            // answer stops being true. The preview's own load handler puts it
+            // back here once the document has settled.
+            //
+            // This used to say "if the message list does not have focus, give
+            // it focus", which fixed the preview by breaking the folder tree:
+            // anybody who had pressed F6 to reach the tree was pulled out of
+            // it by the next body to arrive.
+            focus_home_cell.set(focus_home(folder_tree.has_focus(), msg_list.has_focus()));
+            preview.set_page(&html, "about:blank");
         }
         UIUpdate::ConnectionStatusChanged(status) => {
             let previous = {
@@ -8418,6 +8581,140 @@ pub(crate) fn prompt_for_new_item(frame: &Frame, item_type: &str) -> Option<Stri
 
 #[cfg(test)]
 mod tests {
+    use crate::presentation::panes::{Holding, Pane};
+    use crate::presentation::ui_types::{MessageItem, PimModule};
+
+    /// A message, for tests that only care that one exists.
+    fn a_message() -> MessageItem {
+        MessageItem {
+            uid: 1,
+            message_id: 1,
+            subject: "Quarterly report".to_string(),
+            from: "Ada Lovelace <ada@example.com>".to_string(),
+            date: "2026-07-30".to_string(),
+            read: false,
+            starred: false,
+            answered: false,
+            draft: false,
+            has_attachments: false,
+            attachments: Vec::new(),
+            thread_depth: 0,
+            is_thread_parent: false,
+            thread_id: None,
+            snippet: String::new(),
+            size_bytes: None,
+            to: "me@example.com".to_string(),
+            cc: String::new(),
+            reply_to: String::new(),
+            safety: crate::service::safety::Safety::Ordinary,
+            safety_reasons: Vec::new(),
+            receipt_to: None,
+        }
+    }
+
+    #[test]
+    fn test_a_stored_body_keeps_whether_it_is_text_or_markup() {
+        // This was read out of the cache as `body_html.or(body_plain)`, which
+        // is a bare String, and three reading surfaces then guessed the kind
+        // back from whether it contained angle brackets. A plain message
+        // saying "write to <ada@example.com>" was read as markup, and the
+        // sanitiser dropped the address out of the middle of the sentence.
+        use crate::common::types::MessageBody;
+        use crate::data::message_cache::bodies::MessageBody as Stored;
+
+        let plain = Stored {
+            body_plain: Some("write to <ada@example.com>".to_string()),
+            body_html: None,
+        };
+        let markup = Stored {
+            body_plain: None,
+            body_html: Some("<p>Hello</p>".to_string()),
+        };
+        let both = Stored {
+            body_plain: Some("Hello".to_string()),
+            body_html: Some("<p>Hello</p>".to_string()),
+        };
+
+        assert!(matches!(
+            super::body_as_written(Some(plain)),
+            MessageBody::Plain(_)
+        ));
+        assert!(matches!(
+            super::body_as_written(Some(markup)),
+            MessageBody::Html(_)
+        ));
+        assert!(matches!(
+            super::body_as_written(Some(both)),
+            MessageBody::Multipart { .. }
+        ));
+    }
+
+    #[test]
+    fn test_a_body_that_was_never_fetched_is_empty_text_not_empty_markup() {
+        use crate::common::types::MessageBody;
+
+        assert_eq!(
+            super::body_as_written(None),
+            MessageBody::Plain(String::new())
+        );
+    }
+
+    #[test]
+    fn test_a_message_loading_does_not_drag_focus_out_of_the_folder_tree() {
+        // The preview takes focus when a document loads, so this used to pull
+        // it back to the message list every time. That fixed the preview and
+        // broke F6: anybody who had just moved to the folder tree was dragged
+        // out of it by the next body to arrive, which from the keyboard is
+        // indistinguishable from F6 not working.
+        assert_eq!(super::focus_home(true, false), super::FocusHome::Sidebar);
+    }
+
+    #[test]
+    fn test_focus_this_code_did_not_place_is_left_where_it_is() {
+        // A dialog, the search box, another window entirely. Yanking it to the
+        // message list is the same overreach pointed somewhere else, and if the
+        // browser really did take focus, the page's own Escape and F6 handlers
+        // are the way back out.
+        assert_eq!(super::focus_home(false, false), super::FocusHome::Elsewhere);
+    }
+
+    #[test]
+    fn test_an_empty_application_is_reported_as_having_no_account() {
+        // What a first run actually looks like, and what made F6 feel dead:
+        // both mail panes are empty, so arriving at either one is silent and
+        // indistinguishable from the key not working.
+        let state = super::WxUIState::default();
+
+        for pane in Pane::ALL {
+            assert_eq!(
+                super::holding_of(&state, PimModule::Mail, pane),
+                Holding::NoAccount,
+                "{pane:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_signed_in_mailbox_reports_what_is_in_each_pane() {
+        // Once an account exists the counts are the useful thing, and they
+        // have to come from the pane focus is arriving at rather than
+        // whichever one was easiest to reach.
+        let mut state = super::WxUIState::default();
+        state
+            .accounts
+            .push(crate::data::account::Account::default());
+        state.folders = vec!["INBOX".to_string(), "Sent".to_string()];
+        state.messages = (0..3).map(|_| a_message()).collect();
+
+        assert_eq!(
+            super::holding_of(&state, PimModule::Mail, Pane::Sidebar),
+            Holding::Items(2)
+        );
+        assert_eq!(
+            super::holding_of(&state, PimModule::Mail, Pane::List),
+            Holding::Items(3)
+        );
+    }
 
     #[test]
     fn test_a_panel_always_shows_local_items_as_well() {

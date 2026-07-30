@@ -80,6 +80,43 @@ impl Pane {
             (PimModule::Notes, Pane::List) => "Notes",
         }
     }
+    /// What to announce on arriving, including when there is nothing here.
+    ///
+    /// [`spoken`](Self::spoken) names the pane and stops. That is enough when
+    /// the pane has something in it, because the screen reader reads the item
+    /// focus landed on straight after. When it is empty there is no such item,
+    /// so the name is the whole announcement and arriving sounds identical to
+    /// the key doing nothing.
+    pub fn arrival(self, module: PimModule, holding: Holding) -> String {
+        let name = self.spoken(module);
+        match holding {
+            Holding::NoAccount => {
+                format!("{name}, no account yet. Press Ctrl+A to add one")
+            }
+            Holding::Items(0) => format!("{name}, empty"),
+            Holding::Items(count) => format!("{name}, {count}"),
+            Holding::Unknown => name.to_string(),
+        }
+    }
+}
+
+/// What is in a pane at the moment focus arrives at it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Holding {
+    /// This many rows, which may be none.
+    Items(usize),
+    /// Nothing, and nothing can be here until a mail account is added.
+    ///
+    /// Separate from `Items(0)` because they call for different words. An
+    /// empty folder is a fact about the mailbox; an empty application is a
+    /// setup step nobody has been told about.
+    NoAccount,
+    /// Nobody counted this pane, so the announcement says only its name.
+    ///
+    /// Honest rather than tidy. Guessing "empty" for a pane whose contents
+    /// were never read would say something false in the one place somebody
+    /// has no way to check it.
+    Unknown,
 }
 
 /// Where `F6` should go, given where focus is now.
@@ -108,6 +145,42 @@ pub enum Direction {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_arriving_somewhere_empty_says_so() {
+        // The whole reason F6 felt broken. The key fired, focus moved, and the
+        // pane it moved to had nothing in it, so the screen reader had nothing
+        // to read after our one word. Silence on arrival and a key that does
+        // nothing are the same experience from the outside.
+        let spoken = Pane::List.arrival(PimModule::Mail, Holding::Items(0));
+
+        assert!(spoken.contains("Messages"), "{spoken}");
+        assert!(spoken.contains("empty"), "{spoken}");
+    }
+
+    #[test]
+    fn test_an_empty_mailbox_says_what_would_fill_it() {
+        // "Mail folders, empty" is true and useless. Nothing can appear in
+        // either mail pane until an account exists, so the announcement says
+        // the one thing that changes that rather than leaving somebody to
+        // wonder whether the pane is broken or the mailbox is quiet.
+        for pane in Pane::ALL {
+            let spoken = pane.arrival(PimModule::Mail, Holding::NoAccount);
+
+            assert!(spoken.contains("no account"), "{spoken}");
+            assert!(spoken.contains("Ctrl+A"), "{spoken}");
+        }
+    }
+
+    #[test]
+    fn test_a_pane_whose_contents_are_not_known_just_names_itself() {
+        // Not every pane has a count to hand. Saying the name alone is what
+        // this did before and is still correct; inventing "empty" for a pane
+        // nobody counted would be worse than saying less.
+        let spoken = Pane::Sidebar.arrival(PimModule::Tasks, Holding::Unknown);
+
+        assert_eq!(spoken, "Task lists");
+    }
 
     #[test]
     fn test_f6_moves_off_the_pane_you_are_on() {

@@ -16,6 +16,7 @@
 
 use super::html_renderer::HtmlRenderer;
 use super::ui_types::MessageItem;
+use crate::common::types::MessageBody;
 use crate::vendor::paperback::html_to_text::{HtmlSourceMode, HtmlToText};
 
 /// A heading inside the composed text, for jump-to-next-heading.
@@ -89,6 +90,27 @@ fn headers(message: &MessageItem) -> String {
     lines.join("\n")
 }
 
+/// What to read out when a message has no text at all.
+///
+/// Said rather than shown as an empty pane. A message that has not been fetched
+/// and a message with nothing in it are different facts.
+fn nothing_to_read() -> String {
+    "This message has no text, or it has not been downloaded yet.".to_string()
+}
+
+/// Whether a body has anything in it at all.
+///
+/// Asked of every part it holds, not just the plain one: `as_plain` answers
+/// with an empty string for an HTML body, so asking it alone would call a whole
+/// rendered message blank.
+fn nothing_in(body: &MessageBody) -> bool {
+    match body {
+        MessageBody::Plain(text) => text.trim().is_empty(),
+        MessageBody::Html(html) => html.trim().is_empty(),
+        MessageBody::Multipart { plain, html } => plain.trim().is_empty() && html.trim().is_empty(),
+    }
+}
+
 /// Turn a body into readable text, and say what structure it had.
 ///
 /// HTML goes through the converter vendored from Paperback, which returns the
@@ -100,18 +122,25 @@ fn headers(message: &MessageItem) -> String {
 /// and keep its grid aside, which is right for a document and wrong for mail:
 /// messages are routinely wrapped in a layout table, and summarising would
 /// reduce a whole message to the word "Table".
-fn body_text(body: &str) -> (String, Vec<Landmark>) {
-    let trimmed = body.trim();
+///
+/// The kind is taken from the body rather than guessed from its punctuation.
+/// Looking for angle brackets reads "write to <ada@example.com>" as markup and
+/// runs it through the HTML converter, which drops it.
+fn body_text(body: &MessageBody) -> (String, Vec<Landmark>) {
+    let markup = match body {
+        MessageBody::Html(html) | MessageBody::Multipart { html, .. } => html,
+        MessageBody::Plain(text) => {
+            let trimmed = text.trim();
+            return if trimmed.is_empty() {
+                (nothing_to_read(), Vec::new())
+            } else {
+                (trimmed.to_string(), Vec::new())
+            };
+        }
+    };
+    let trimmed = markup.trim();
     if trimmed.is_empty() {
-        // Said rather than shown as an empty pane. A message that has not been
-        // fetched and a message with nothing in it are different facts.
-        return (
-            "This message has no text, or it has not been downloaded yet.".to_string(),
-            Vec::new(),
-        );
-    }
-    if !(trimmed.contains('<') && trimmed.contains('>')) {
-        return (trimmed.to_string(), Vec::new());
+        return (nothing_to_read(), Vec::new());
     }
 
     let mut converter = HtmlToText::with_render_tables_inline(true);
@@ -172,7 +201,7 @@ fn body_text(body: &str) -> (String, Vec<Landmark>) {
 }
 
 /// Compose one message for the reader.
-pub fn single_message(message: &MessageItem, body: &str) -> ReaderDocument {
+pub fn single_message(message: &MessageItem, body: &MessageBody) -> ReaderDocument {
     let title = if message.subject.trim().is_empty() {
         "No subject".to_string()
     } else {
@@ -285,10 +314,12 @@ pub fn conversation_html(subject: &str, parts: &[ConversationPart]) -> String {
                 sender: part.message.from.trim().to_string(),
                 date: part.message.date.trim().to_string(),
                 subject: part.message.subject.trim().to_string(),
-                body: if part.body.trim().is_empty() {
-                    "This message has no text, or it has not been downloaded \
-                     yet."
-                        .to_string()
+                body: if nothing_in(&part.body) {
+                    // Said, not shown as a blank space under a heading. A
+                    // message that has not been fetched and a message with
+                    // nothing in it are different facts, and neither of them
+                    // should look like the reader failing to render.
+                    MessageBody::Plain(nothing_to_read())
                 } else {
                     part.body.clone()
                 },
@@ -343,7 +374,13 @@ pub fn pdf_document(name: &str, reading: &crate::service::pdf::PdfReading) -> Re
 #[derive(Debug, Clone)]
 pub struct ConversationPart {
     pub message: MessageItem,
-    pub body: String,
+    /// The body, still saying whether it is text or markup.
+    ///
+    /// Both surfaces this feeds used to guess that from whether the string had
+    /// angle brackets in it, and both got "write to <ada@example.com>" wrong in
+    /// the same way: read as a tag, then dropped by the sanitiser or the HTML
+    /// converter, so an address vanished mid-sentence with nothing said.
+    pub body: MessageBody,
     pub depth: usize,
 }
 
@@ -725,6 +762,35 @@ mod tests {
         assert!(row.contains("PDF document"), "{row}");
     }
 
+    /// A body that is markup.
+    fn html(text: &str) -> MessageBody {
+        MessageBody::Html(text.to_string())
+    }
+
+    /// A body that is text.
+    fn plain(text: &str) -> MessageBody {
+        MessageBody::Plain(text.to_string())
+    }
+
+    /// The kind these tests used to get by accident.
+    ///
+    /// Before the body carried its own kind, every reading surface guessed it
+    /// from whether the string had angle brackets in it. Choosing the same way
+    /// here keeps each test below asserting exactly what it was written to
+    /// assert, so this change cannot quietly move what they cover.
+    fn as_guessed(text: &str) -> MessageBody {
+        if text.contains('<') && text.contains('>') {
+            html(text)
+        } else {
+            plain(text)
+        }
+    }
+
+    /// [`single_message`] for a test that has a bare string.
+    fn read(message: &MessageItem, body: &str) -> ReaderDocument {
+        single_message(message, &as_guessed(body))
+    }
+
     fn thread_of(bodies: &[(&str, usize)]) -> Vec<ConversationPart> {
         bodies
             .iter()
@@ -734,7 +800,7 @@ mod tests {
                 message.from = format!("Person {index} <p{index}@example.com>");
                 ConversationPart {
                     message,
-                    body: (*body).to_string(),
+                    body: as_guessed(body),
                     depth: *depth,
                 }
             })
@@ -925,12 +991,12 @@ mod tests {
             &[
                 ConversationPart {
                     message: first,
-                    body: String::new(),
+                    body: plain(""),
                     depth: 0,
                 },
                 ConversationPart {
                     message: second,
-                    body: String::new(),
+                    body: plain(""),
                     depth: 1,
                 },
             ],
@@ -953,14 +1019,14 @@ mod tests {
 
     #[test]
     fn test_a_message_with_nothing_attached_has_no_list_to_tab_past() {
-        assert!(single_message(&message(), "Hello.").attachments.is_empty());
+        assert!(read(&message(), "Hello.").attachments.is_empty());
     }
 
     #[test]
     fn test_headings_in_a_message_body_become_landmarks_the_reader_can_jump_to() {
         // The reason the converter was vendored. Our own stripped tags and
         // produced a wall of text: readable from the top and nothing else.
-        let doc = single_message(
+        let doc = read(
             &message(),
             "<html><body><h1>Revenue</h1><p>Up.</p><h2>Costs</h2><p>Down.</p></body></html>",
         );
@@ -974,7 +1040,7 @@ mod tests {
         // The header block sits above the body, so every offset the converter
         // gave has to move by exactly that much. Off by one puts the caret in
         // the wrong place and someone listening cannot tell.
-        let doc = single_message(
+        let doc = read(
             &message(),
             "<html><body><h1>Revenue</h1><p>Up.</p></body></html>",
         );
@@ -995,7 +1061,7 @@ mod tests {
     fn test_the_subject_stays_the_only_level_one() {
         // Two level ones give a document two titles, and someone navigating by
         // heading has no way to tell which is the real one.
-        let doc = single_message(
+        let doc = read(
             &message(),
             "<html><body><h1>Revenue</h1><h1>Costs</h1></body></html>",
         );
@@ -1007,7 +1073,7 @@ mod tests {
     fn test_a_link_to_something_unsafe_is_not_listed() {
         // A message body is written by a stranger, and this is the only place
         // the target is looked at before anyone is offered it.
-        let doc = single_message(
+        let doc = read(
             &message(),
             "<html><body><p><a href=\"javascript:alert(1)\">click</a></p></body></html>",
         );
@@ -1023,7 +1089,7 @@ mod tests {
     fn test_a_layout_table_does_not_swallow_the_message() {
         // Mail is routinely wrapped in a layout table. The converter's default
         // would reduce the whole body to the word "Table".
-        let doc = single_message(
+        let doc = read(
             &message(),
             "<html><body><table><tr><td><p>Dear Ada, the report is ready.</p></td></tr></table></body></html>",
         );
@@ -1038,7 +1104,7 @@ mod tests {
     fn test_a_body_that_is_not_html_is_left_exactly_as_it_is() {
         // Plain text mail must not be put through an HTML parser, which would
         // eat anything that looked like a tag.
-        let doc = single_message(&message(), "5 < 6 and 7 > 6, so all is well.");
+        let doc = read(&message(), "5 < 6 and 7 > 6, so all is well.");
         assert!(doc.text.contains("5 < 6 and 7 > 6, so all is well."));
     }
 
@@ -1071,7 +1137,7 @@ mod tests {
 
     #[test]
     fn test_a_message_leads_with_its_subject_and_sender() {
-        let doc = single_message(&message(), "The numbers are attached.");
+        let doc = read(&message(), "The numbers are attached.");
         assert!(
             doc.text
                 .starts_with("Subject: Quarterly report\nFrom: Ada Lovelace")
@@ -1083,7 +1149,7 @@ mod tests {
     fn test_an_empty_field_is_dropped_rather_than_read_as_a_bare_label() {
         // "Cc:" with nothing after it is a word that costs time and says
         // nothing.
-        let doc = single_message(&message(), "Body");
+        let doc = read(&message(), "Body");
         assert!(!doc.text.contains("Cc:"));
         assert!(doc.text.contains("To: me@example.com"));
     }
@@ -1106,7 +1172,7 @@ mod tests {
                 size: 64,
             },
         ];
-        let doc = single_message(&m, "Body");
+        let doc = read(&m, "Body");
         assert!(doc.text.contains("Attachments: invoice.pdf, notes.txt"));
     }
 
@@ -1114,13 +1180,13 @@ mod tests {
     fn test_an_attachment_we_have_no_name_for_still_says_there_is_one() {
         let mut m = message();
         m.has_attachments = true;
-        let doc = single_message(&m, "Body");
+        let doc = read(&m, "Body");
         assert!(doc.text.contains("Attachments: yes"));
     }
 
     #[test]
     fn test_an_html_body_becomes_readable_text_with_its_links_kept() {
-        let doc = single_message(
+        let doc = read(
             &message(),
             "<p>See <a href=\"https://example.com/report\">the report</a>.</p>",
         );
@@ -1140,7 +1206,7 @@ mod tests {
         // A message that has not been fetched and a message with nothing in it
         // are different facts, and an empty pane states neither.
         for empty in ["", "   ", "\n\t "] {
-            let doc = single_message(&message(), empty);
+            let doc = read(&message(), empty);
             assert!(
                 doc.text.contains("has not been downloaded yet"),
                 "an empty body was shown as nothing"
@@ -1153,7 +1219,7 @@ mod tests {
         // A blank tab label is a tab nobody can identify or return to.
         let mut m = message();
         m.subject = "   ".to_string();
-        let doc = single_message(&m, "Body");
+        let doc = read(&m, "Body");
         assert_eq!(doc.title, "No subject");
         assert!(doc.text.starts_with("Subject: No subject"));
     }
@@ -1163,7 +1229,7 @@ mod tests {
         m.from = from.to_string();
         ConversationPart {
             message: m,
-            body: body.to_string(),
+            body: as_guessed(body),
             depth,
         }
     }
@@ -1284,14 +1350,20 @@ mod warning_tests {
         // An empty bar in the tab order of every message is a stop on the way
         // to the text, and it teaches people to tab straight past the one that
         // matters.
-        let document = single_message(&message(Safety::Ordinary), "Hello");
+        let document = single_message(
+            &message(Safety::Ordinary),
+            &MessageBody::Plain("Hello".into()),
+        );
 
         assert_eq!(document.warning, None);
     }
 
     #[test]
     fn test_a_phishing_message_leads_its_warning_with_the_word_warning() {
-        let document = single_message(&message(Safety::Phishing), "Click here");
+        let document = single_message(
+            &message(Safety::Phishing),
+            &MessageBody::Plain("Click here".into()),
+        );
 
         let warning = document.warning.expect("should warn");
         assert!(warning.starts_with("Warning:"), "got {warning}");
@@ -1304,7 +1376,7 @@ mod warning_tests {
         let mut flagged = message(Safety::Spam);
         flagged.safety_reasons = vec!["Your mail provider put it in the junk folder.".to_string()];
 
-        let warning = single_message(&flagged, "Buy things")
+        let warning = single_message(&flagged, &MessageBody::Plain("Buy things".into()))
             .warning
             .expect("should warn");
 
@@ -1313,7 +1385,10 @@ mod warning_tests {
 
     #[test]
     fn test_spam_warns_without_shouting() {
-        let document = single_message(&message(Safety::Spam), "Buy things");
+        let document = single_message(
+            &message(Safety::Spam),
+            &MessageBody::Plain("Buy things".into()),
+        );
 
         let warning = document.warning.expect("should warn");
         assert!(warning.contains("spam"), "got {warning}");

@@ -8,6 +8,39 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **`F6` says what it moved to, including when there is nothing there.** It
+  announced the pane's name and stopped, which is enough when the pane has
+  something in it, because your screen reader reads the row focus lands on next.
+  An empty pane has no such row, so the name was the whole announcement and
+  arriving sounded exactly like the key doing nothing. It now says how many
+  items are there, or that the pane is empty, and before any account is added it
+  says so and tells you `Ctrl+A` adds one. Leaving the preview says the same
+  thing, so arriving by any route sounds the same.
+
+- **A message loading no longer drags you out of the folder tree.** The preview
+  takes focus when it loads a document, without asking, so focus was pulled back
+  to the message list every time one arrived. That fixed the preview and broke
+  `F6`: anybody who had just moved to the folder tree was pulled out of it by
+  the next message body to load. Focus now goes back where it was, and is left
+  alone entirely when it is somewhere this application did not put it.
+
+- **The preview shows the message the way the reading window does**, with the
+  sender, date and subject as real headings above the body rather than the body
+  on its own. Both surfaces are built by the same code, so they cannot drift
+  apart about a conversation's shape.
+
+- **Plain-text messages keep text that only looks like markup.** A body was
+  taken as markup if it contained a `<` and a `>` anywhere, so a plain message
+  saying "write to \<ada@example.com\>" was handed to the sanitiser, which
+  deletes anything tag-shaped: the address disappeared from the middle of the
+  sentence with nothing said. The body now carries whether it is text or markup
+  all the way from the cache, so nothing guesses. This affected the reading
+  window, the conversation page and the preview.
+
+- **One message is no longer announced as a conversation.** Opening a single
+  message read out "1 messages in this conversation." as the first line of the
+  page.
+
 - **Messages open formatted, keeping the sender's headings, links and tables.**
   Every message opened into a text box, which has none of those: no headings to
   press `H` for, no links your screen reader can list, a table flattened into

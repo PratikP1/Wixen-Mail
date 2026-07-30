@@ -67,7 +67,15 @@ pub struct ThreadPart {
     pub sender: String,
     pub date: String,
     pub subject: String,
-    pub body: String,
+    /// The body, still carrying whether it is text or markup.
+    ///
+    /// Not a `String`. This used to be one, and the kind was worked out here by
+    /// looking for angle brackets, which reads "write to <ada@example.com>" as
+    /// a tag and hands it to the sanitiser, and the sanitiser deletes anything
+    /// tag-shaped. [`HtmlRenderer::wrap_body`] had the same bug and had it
+    /// taken out; this path kept it until every message started opening
+    /// through here.
+    pub body: MessageBody,
     pub depth: usize,
 }
 
@@ -261,17 +269,22 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
     /// six, so the depth moves into the text rather than the markup.
     pub fn render_thread(&self, subject: &str, parts: &[ThreadPart]) -> String {
         let mut body = String::new();
-        body.push_str(&format!(
-            "<h1>{}</h1>
-<p>{} messages in this conversation.</p>
-",
-            html_escape::encode_text(if subject.trim().is_empty() {
-                "No subject"
-            } else {
-                subject.trim()
-            }),
-            parts.len()
-        ));
+        let title = html_escape::encode_text(if subject.trim().is_empty() {
+            "No subject"
+        } else {
+            subject.trim()
+        });
+        body.push_str(&format!("<h1>{title}</h1>\n"));
+        // Every message opens through here now, not only threads, so one part
+        // is the common case rather than the odd one. Counting it out loud
+        // gets the number agreement wrong and says the wrong thing about what
+        // was opened, and it is the first line read aloud on the page.
+        if parts.len() > 1 {
+            body.push_str(&format!(
+                "<p>{} messages in this conversation.</p>\n",
+                parts.len()
+            ));
+        }
 
         for (position, part) in parts.iter().enumerate() {
             // Heading levels start at 2: the subject is the document's h1, and
@@ -295,13 +308,15 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
                 sender = html_escape::encode_text(&part.sender),
                 date = html_escape::encode_text(&part.date),
             ));
-            let content = if part.body.contains('<') && part.body.contains('>') {
-                self.sanitize_html(&part.body)
-            } else {
-                format!(
+            // The kind is taken, not worked out, for the reason on `ThreadPart`.
+            let content = match &part.body {
+                MessageBody::Html(html) | MessageBody::Multipart { html, .. } => {
+                    self.sanitize_html(html)
+                }
+                MessageBody::Plain(text) => format!(
                     "<pre style=\"white-space:pre-wrap;font-family:inherit\">{}</pre>",
-                    html_escape::encode_text(&part.body)
-                )
+                    html_escape::encode_text(text)
+                ),
             };
             body.push_str(&content);
             body.push('\n');
@@ -435,9 +450,35 @@ mod tests {
             sender: sender.to_string(),
             date: "2026-07-26".to_string(),
             subject: "Quarterly report".to_string(),
-            body: body.to_string(),
+            body: MessageBody::Html(body.to_string()),
             depth,
         }
+    }
+
+    /// A part whose body kind is the point of the test.
+    fn part_of(sender: &str, depth: usize, body: MessageBody) -> ThreadPart {
+        ThreadPart {
+            sender: sender.to_string(),
+            date: "2026-07-26".to_string(),
+            subject: "Quarterly report".to_string(),
+            body,
+            depth,
+        }
+    }
+
+    #[test]
+    fn test_a_plain_text_body_keeps_text_that_only_looks_like_markup() {
+        // The bug `wrap_body` already had taken out of it, still here: working
+        // the kind out from angle brackets reads "write to <ada@example.com>"
+        // as a tag and hands it to the sanitiser, which deletes anything
+        // tag-shaped. The address disappears out of the middle of the sentence
+        // and nothing says so.
+        let renderer = HtmlRenderer::new();
+        let plain = MessageBody::Plain("write to <ada@example.com> today".to_string());
+
+        let html = renderer.render_thread("Subject", &[part_of("Ada", 0, plain)]);
+
+        assert!(html.contains("ada@example.com"), "{html}");
     }
 
     #[test]
@@ -497,6 +538,30 @@ mod tests {
         let renderer = HtmlRenderer::new();
         let html = renderer.render_thread("Subject", &[part("Ada", 0, "5 < 6 & 7 > 6")]);
         assert!(html.contains("5 &lt; 6 &amp; 7 &gt; 6"));
+    }
+
+    #[test]
+    fn test_one_message_is_not_announced_as_a_conversation() {
+        // Every message opens through this composition now, not only threads,
+        // so most of the time there is exactly one part. Greeting somebody
+        // with "1 messages in this conversation" gets both the number
+        // agreement and the fact wrong, and it is the first thing read aloud.
+        let renderer = HtmlRenderer::new();
+
+        let html = renderer.render_thread("Report", &[part("Ada", 0, "Body")]);
+
+        assert!(!html.contains("1 messages"), "{html}");
+        assert!(!html.contains("conversation"), "{html}");
+    }
+
+    #[test]
+    fn test_a_real_conversation_still_says_how_many_messages_are_in_it() {
+        let renderer = HtmlRenderer::new();
+
+        let html =
+            renderer.render_thread("Report", &[part("Ada", 0, "One"), part("Grace", 1, "Two")]);
+
+        assert!(html.contains("2 messages in this conversation"), "{html}");
     }
 
     #[test]
