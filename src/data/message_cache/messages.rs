@@ -74,6 +74,10 @@ pub struct IncomingMessage {
     pub has_attachments: bool,
     /// What the provider's filter said, and why, merged with the folder.
     pub safety: crate::service::safety::Verdict,
+    /// Gmail's own identifier, the same number under every label it carries.
+    pub gmail_message_id: Option<u64>,
+    /// The labels Gmail has on it, space separated.
+    pub labels: Option<String>,
 }
 
 impl MessageCache {
@@ -97,10 +101,13 @@ impl MessageCache {
                 "INSERT INTO messages
                      (uid, folder_id, message_id, subject, from_addr, to_addr, cc, date,
                       size_bytes, refs_header, read, starred, deleted, has_attachments,
-                      internaldate, answered, draft, reply_to, safety, safety_reasons)
+                      internaldate, answered, draft, reply_to, safety, safety_reasons,
+                      gmail_msgid, labels)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                         ?16, ?17, ?18, ?19, ?20)
+                         ?16, ?17, ?18, ?19, ?20, ?21, ?22)
                  ON CONFLICT(folder_id, uid) DO UPDATE SET
+                     gmail_msgid = excluded.gmail_msgid,
+                     labels = excluded.labels,
                      message_id = excluded.message_id,
                      subject = excluded.subject,
                      from_addr = excluded.from_addr,
@@ -144,10 +151,42 @@ impl MessageCache {
                     // separate sentences and SQLite has no list type worth the
                     // trouble here.
                     incoming.safety.reasons.join("\n"),
+                    incoming.gmail_message_id.map(|id| id as i64),
+                    incoming.labels,
                 ],
                 |row| row.get(0),
             )
             .map_err(|e| Error::Other(format!("Failed to store message: {}", e)))
+    }
+
+    /// Bring one message's flags up to date with the server.
+    ///
+    /// Keyed on folder and UID, which is what a flag fetch hands back. The
+    /// server is the authority here: a message read on a phone is read, and
+    /// this is the only path by which that fact ever reaches the cache.
+    ///
+    /// A flag the server did not send is off. That is the point: unread on the
+    /// server has to be able to turn read back into unread here, and treating
+    /// the absent flag as "leave it alone" would make every change one way.
+    pub fn set_message_flags(&self, folder_id: i64, uid: u32, flags: &[String]) -> Result<()> {
+        let has = |wanted: &str| flags.iter().any(|flag| flag.eq_ignore_ascii_case(wanted));
+        self.conn
+            .execute(
+                "UPDATE messages
+                 SET read = ?3, starred = ?4, answered = ?5, draft = ?6, deleted = ?7
+                 WHERE folder_id = ?1 AND uid = ?2",
+                params![
+                    folder_id,
+                    uid,
+                    has("\\Seen"),
+                    has("\\Flagged"),
+                    has("\\Answered"),
+                    has("\\Draft"),
+                    has("\\Deleted"),
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to update the message flags: {}", e)))?;
+        Ok(())
     }
 
     /// Record what the message turned out to be, once its body has been read.
@@ -750,7 +789,91 @@ mod tests {
             deleted: false,
             has_attachments: false,
             safety: crate::service::safety::Verdict::ordinary(),
+            gmail_message_id: None,
+            labels: None,
         }
+    }
+
+    #[test]
+    fn test_flags_set_elsewhere_reach_the_cache() {
+        // A message read on a phone is read. Before this the header fetch only
+        // asked about messages the cache did not have, so a message already
+        // held stayed unread here for as long as the account existed.
+        let cache = super::super::MessageCache::new(
+            std::env::temp_dir().join(format!(
+                "wixen_flags_{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            )),
+            None,
+        )
+        .unwrap();
+        let folder_id = cache
+            .save_folder(&super::super::CachedFolder {
+                id: 0,
+                account_id: "acc".to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .unwrap();
+        let row_id = cache
+            .upsert_message(&incoming(folder_id, 7, "Quarterly figures"))
+            .unwrap();
+
+        cache
+            .set_message_flags(
+                folder_id,
+                7,
+                &["\\Seen".to_string(), "\\Flagged".to_string()],
+            )
+            .unwrap();
+
+        let stored = cache.get_message(row_id).unwrap().expect("the message");
+        assert!(stored.read, "read on the server is read here");
+        assert!(stored.starred);
+    }
+
+    #[test]
+    fn test_a_flag_the_server_no_longer_sends_is_turned_off() {
+        // Unread on the server has to be able to turn read back into unread
+        // here. Treating an absent flag as "leave it alone" would make every
+        // change one way, and a message marked unread on a phone would stay
+        // read in this list.
+        let cache = super::super::MessageCache::new(
+            std::env::temp_dir().join(format!(
+                "wixen_unflag_{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            )),
+            None,
+        )
+        .unwrap();
+        let folder_id = cache
+            .save_folder(&super::super::CachedFolder {
+                id: 0,
+                account_id: "acc".to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .unwrap();
+        let mut already_read = incoming(folder_id, 9, "Notes");
+        already_read.read = true;
+        let row_id = cache.upsert_message(&already_read).unwrap();
+
+        cache.set_message_flags(folder_id, 9, &[]).unwrap();
+
+        let stored = cache.get_message(row_id).unwrap().expect("the message");
+        assert!(!stored.read, "marked unread elsewhere is unread here");
     }
 
     #[test]

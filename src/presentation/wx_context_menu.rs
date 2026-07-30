@@ -31,11 +31,12 @@ use wxdragon::prelude::*;
 /// keep working.
 pub const fn command_for(action: Action) -> Id {
     use crate::presentation::wx_app::{
-        ID_CONTEXT_COPY_TO_EVENT, ID_CONTEXT_COPY_TO_NOTE, ID_CONTEXT_COPY_TO_TASK,
-        ID_CONTEXT_DELETE_CONTAINER, ID_CONTEXT_DELETE_ITEM, ID_CONTEXT_NEW_CONTAINER,
-        ID_CONTEXT_NEW_ITEM, ID_CONTEXT_SYNC_NOW, ID_CONTEXT_TOGGLE_COMPLETE,
-        ID_CONTEXT_TOGGLE_PIN, ID_DELETE, ID_FORWARD, ID_GET_OLDER, ID_MARK_READ,
-        ID_REFRESH_FOLDER, ID_REPLY, ID_REPLY_ALL, ID_TOGGLE_STAR,
+        ID_CHOOSE_FOLDERS, ID_CONTEXT_COPY_TO_EVENT, ID_CONTEXT_COPY_TO_NOTE,
+        ID_CONTEXT_COPY_TO_TASK, ID_CONTEXT_DELETE_CONTAINER, ID_CONTEXT_DELETE_ITEM,
+        ID_CONTEXT_NEW_CONTAINER, ID_CONTEXT_NEW_ITEM, ID_CONTEXT_SYNC_NOW,
+        ID_CONTEXT_TOGGLE_COMPLETE, ID_CONTEXT_TOGGLE_PIN, ID_COPY_TO_FOLDER, ID_DELETE,
+        ID_FORWARD, ID_GET_OLDER, ID_MARK_READ, ID_MOVE_TO_FOLDER, ID_REFRESH_FOLDER, ID_REPLY,
+        ID_REPLY_ALL, ID_TOGGLE_STAR,
     };
     match action {
         // These are the menu bar's own ids, so the same thing done two ways
@@ -48,6 +49,9 @@ pub const fn command_for(action: Action) -> Id {
         Action::DeleteMessage => ID_DELETE,
         Action::RefreshFolder => ID_REFRESH_FOLDER,
         Action::GetOlder => ID_GET_OLDER,
+        Action::MoveToFolder => ID_MOVE_TO_FOLDER,
+        Action::CopyToFolder => ID_COPY_TO_FOLDER,
+        Action::ChooseFolders => ID_CHOOSE_FOLDERS,
         // These have no menu bar entry, because what they act on is whatever
         // panel is open. Each handler reads the open module and acts on that.
         Action::NewItem => ID_CONTEXT_NEW_ITEM,

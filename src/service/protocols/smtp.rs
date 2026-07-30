@@ -113,8 +113,20 @@ impl SmtpClient {
         self.may_send
     }
 
-    /// Send an email.
-    pub async fn send_email(&self, email: Email, auth: &MailAuth) -> Result<()> {
+    /// Send an email, and hand back exactly what went out.
+    ///
+    /// The bytes are what the Sent copy is made from. Rebuilding the message a
+    /// second time to save it would be a second message: a fresh Date, a fresh
+    /// Message-ID, and a Sent folder whose copy is not the mail anybody
+    /// received.
+    ///
+    /// The Bcc header is not in them. `lettre` takes the addresses out of the
+    /// header into the envelope and removes the header, which is what keeps
+    /// blind copies blind, so the Sent copy records what was written and not
+    /// who was blind copied. Turning that off is `keep_bcc()`, and it must not
+    /// be called: it would put the addresses back on the wire for every
+    /// recipient to read.
+    pub async fn send_email(&self, email: Email, auth: &MailAuth) -> Result<Vec<u8>> {
         if !self.may_send {
             return Err(Error::Security(crate::service::outward::refusal(
                 "send a message",
@@ -217,14 +229,16 @@ impl SmtpClient {
             }
         };
 
-        // Send the email
+        // Taken before the send, because sending consumes the message.
+        let sent = message.formatted();
+
         transport
             .send(message)
             .await
             .map_err(|e| Error::Protocol(format!("Failed to send email: {}", e)))?;
 
         tracing::info!("Email sent successfully");
-        Ok(())
+        Ok(sent)
     }
 
     /// Parse email address into Mailbox

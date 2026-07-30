@@ -10,6 +10,7 @@
 //! is bounded by a timeout, because a stalled connection with no timeout is a
 //! folder that never finishes loading and never says why.
 
+pub mod abilities;
 pub mod mailbox_name;
 pub mod sequence_set;
 pub mod special_use;
@@ -19,8 +20,9 @@ use crate::common::types::{EmailAddress, FolderType};
 use crate::common::{Error, Result, error::redact_provider_message};
 use crate::service::mime;
 use crate::service::protocols::MailAuth;
+use abilities::Abilities;
 use async_imap::imap_proto::NameAttribute;
-use async_imap::types::{Fetch, Flag};
+use async_imap::types::{Capability, Fetch, Flag};
 use futures::TryStreamExt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -51,6 +53,37 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 const HEADER_FIELDS: &str = "SUBJECT FROM TO CC REPLY-TO DATE MESSAGE-ID IN-REPLY-TO REFERENCES \
      AUTHENTICATION-RESULTS X-SPAM-FLAG X-SPAM-STATUS X-FOREFRONT-ANTISPAM-REPORT \
      X-MICROSOFT-ANTISPAM";
+
+/// What Gmail knows about a message that nobody else does.
+///
+/// Asked for only where the server advertises the extension. Sent to a server
+/// that does not have it, the whole fetch is refused, and that would be every
+/// message in every folder rather than a missing field.
+///
+/// `X-GM-THRID`, Gmail's own conversation identifier, is deliberately not asked
+/// for. `async-imap` parses it and offers no way to read it back: `Fetch`
+/// exposes `gmail_msg_id` and `gmail_labels` and keeps the response private, so
+/// the thread id would arrive, cost bandwidth on every message, and be
+/// unreachable. Threading falls back to the References and In-Reply-To headers,
+/// which is what it does on every other server. Worth revisiting if the library
+/// grows the accessor; `application::threading` already prefers a server thread
+/// id over anything it computes.
+const GMAIL_FIELDS: &str = "X-GM-MSGID X-GM-LABELS";
+
+/// What this client calls itself when a server asks, as RFC 2971 pairs.
+///
+/// Courtesy nearly everywhere and a requirement on a few: NetEase refuses a
+/// client that will not say who it is, with an error about an unsafe login that
+/// sends somebody off to check their password.
+///
+/// The product's name, not the crate's. A support desk reading its logs should
+/// see the name on the box.
+fn identification(version: &str) -> [(&'static str, Option<String>); 2] {
+    [
+        ("name", Some("Wixen Mail".to_string())),
+        ("version", Some(version.to_string())),
+    ]
+}
 
 /// IMAP client configuration
 #[derive(Debug, Clone)]
@@ -130,6 +163,70 @@ pub struct ImapFolder {
     pub folder_type: FolderType,
     /// Whether the mailbox can be selected, or is only a name in the hierarchy.
     pub selectable: bool,
+    /// Whether this mailbox holds a copy of every message in the account.
+    ///
+    /// Gmail's All Mail. Syncing it alongside the inbox downloads the whole
+    /// account a second time and shows every message twice.
+    pub holds_all_mail: bool,
+    /// Whether the account is subscribed to this mailbox.
+    ///
+    /// What the person using the account chose to see, in the server's own
+    /// record of it, so the same choice holds in every client they use. A
+    /// server that keeps no subscriptions reports none, and then subscription
+    /// is not what decides which folders sync.
+    pub subscribed: bool,
+}
+
+/// What one mailbox holds, without opening it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FolderCounts {
+    pub total: u32,
+    pub unread: u32,
+}
+
+/// What actually happened when a message was moved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Moved {
+    /// It is in the new folder and out of the old one.
+    Moved,
+    /// It is in the new folder and still in the old one, flagged for removal.
+    ///
+    /// The server has neither MOVE nor UIDPLUS, so there is no way to remove
+    /// the original without removing whatever else in the mailbox somebody
+    /// flagged. Saying so beats leaving somebody to find the second copy.
+    CopiedAndFlagged,
+}
+
+/// What actually happened when a message was deleted.
+///
+/// Three outcomes rather than a yes or no, because they are three different
+/// facts about where somebody's mail now is, and announcing "deleted" over the
+/// two that are not deletions is the kind of wrong that is only discovered
+/// when the message is needed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Deletion {
+    /// In the trash, and recoverable from there.
+    MovedToTrash,
+    /// Copied to the trash, still in the original folder, flagged for removal.
+    CopiedToTrashAndFlagged,
+    /// Gone from the server.
+    Removed,
+    /// Flagged for removal and still in the folder.
+    MarkedOnly,
+}
+
+impl Deletion {
+    /// What to tell somebody, in the words that describe what happened.
+    pub const fn spoken(self) -> &'static str {
+        match self {
+            Deletion::MovedToTrash => "Moved to Trash",
+            Deletion::CopiedToTrashAndFlagged => {
+                "Copied to Trash, and still in this folder marked for removal"
+            }
+            Deletion::Removed => "Deleted",
+            Deletion::MarkedOnly => "Marked for removal, and still in this folder",
+        }
+    }
 }
 
 /// What a mailbox looked like when it was selected.
@@ -142,6 +239,12 @@ pub struct MailboxStatus {
     /// When it differs from the stored value, cached UIDs mean nothing and the
     /// folder has to be read again from scratch.
     pub uid_validity: Option<u32>,
+    /// The mailbox's highest modification sequence, on a CONDSTORE server.
+    ///
+    /// Every change to a message, including a flag somebody set on their
+    /// phone, raises this. Holding the value from the last sync is what lets
+    /// the next one ask for what changed instead of re-reading every flag.
+    pub highest_modseq: Option<u64>,
 }
 
 /// One message, as much of it as a header fetch reveals.
@@ -172,6 +275,18 @@ pub struct ImapMessage {
     /// Read here rather than worked out later, because the headers it comes
     /// from are fetched once and not kept.
     pub safety: crate::service::safety::Verdict,
+    /// Gmail's own identifier for this message, where the server has one.
+    ///
+    /// A Gmail message with three labels is three mailbox entries with three
+    /// different UIDs, and this is the same number in all three. It is the only
+    /// way to tell "the same message again" from "another message", which is
+    /// the difference between a folder listing and a folder listing twice.
+    pub gmail_message_id: Option<u64>,
+    /// The labels Gmail has on this message, its own names for its folders.
+    ///
+    /// Kept because they say where else the same message appears, which is
+    /// what makes a second copy recognisable as a second copy.
+    pub labels: Vec<String>,
 }
 
 impl ImapMessage {
@@ -353,14 +468,33 @@ impl ImapClient {
         };
 
         tracing::info!("Signed in to {}", self.config.server);
-        Ok(ImapSession {
+        let mut session = ImapSession {
             session,
             selected: None,
             // Reading only until somebody says otherwise. A session opened
             // without anybody thinking about it should be the one that cannot
             // remove somebody's mail.
             may_change: false,
-        })
+            abilities: Abilities::default(),
+        };
+
+        // Asked once, here. Everything downstream that behaves differently on
+        // one server than another reads the answer off the session rather than
+        // sending its own CAPABILITY, which used to cost a round trip before
+        // every delete and could answer differently twice in one function.
+        //
+        // A server that will not answer is not a reason to refuse the account:
+        // the floor of IMAP4rev1 is enough to read mail, and that is what an
+        // empty set of abilities means.
+        session.abilities = match session.read_abilities().await {
+            Ok(abilities) => abilities,
+            Err(e) => {
+                tracing::warn!("Could not read what the mail server supports: {e}");
+                Abilities::default()
+            }
+        };
+        session.introduce_ourselves().await;
+        Ok(session)
     }
 
     /// Wrap a socket in TLS, checking the certificate against the host name.
@@ -417,6 +551,8 @@ pub struct ImapSession {
     /// account. So a session may not, unless somebody said otherwise, and
     /// every command that writes asks first.
     may_change: bool,
+    /// What this particular server can do, read once at sign-in.
+    abilities: Abilities,
 }
 
 impl ImapSession {
@@ -438,6 +574,8 @@ impl ImapSession {
             .try_collect()
             .await
             .map_err(protocol_error("Could not read the folder list"))?;
+
+        let subscribed = self.subscribed_paths().await;
 
         let mut folders: Vec<ImapFolder> = names
             .iter()
@@ -463,6 +601,8 @@ impl ImapSession {
                         delimiter.as_deref(),
                     ),
                     selectable: special_use::selectable(&attributes),
+                    holds_all_mail: special_use::holds_all_mail(&attributes),
+                    subscribed: subscribed.contains(&path),
                     display_path,
                     path,
                 }
@@ -482,22 +622,114 @@ impl ImapSession {
         Ok(folders)
     }
 
+    /// Which mailboxes the account is subscribed to.
+    ///
+    /// A failure is not one: a server with no subscription list is a server
+    /// where subscription cannot be what decides anything, and refusing to list
+    /// folders over it would be refusing the account. The empty answer says
+    /// "nothing is subscribed", and the caller treats that as "subscription is
+    /// not the deciding fact here".
+    async fn subscribed_paths(&mut self) -> std::collections::HashSet<String> {
+        let listed = with_timeout(
+            COMMAND_TIMEOUT,
+            self.session.lsub(Some(""), Some("*")),
+            "listing subscriptions",
+        )
+        .await;
+        let stream = match listed {
+            Ok(Ok(stream)) => stream,
+            Ok(Err(e)) => {
+                tracing::warn!("Could not read the folder subscriptions: {e}");
+                return std::collections::HashSet::new();
+            }
+            Err(e) => {
+                tracing::warn!("{e}");
+                return std::collections::HashSet::new();
+            }
+        };
+        match stream.try_collect::<Vec<async_imap::types::Name>>().await {
+            Ok(names) => names.iter().map(|name| name.name().to_string()).collect(),
+            Err(e) => {
+                tracing::warn!("Could not read the folder subscriptions: {e}");
+                std::collections::HashSet::new()
+            }
+        }
+    }
+
+    /// Subscribe to a mailbox, or drop the subscription.
+    ///
+    /// Written to the server rather than kept here, so the same choice holds in
+    /// every client the account is opened in.
+    pub async fn set_subscribed(&mut self, path: &str, subscribed: bool) -> Result<()> {
+        self.may_i("change which folders you are subscribed to")?;
+        let outcome = if subscribed {
+            with_timeout(
+                COMMAND_TIMEOUT,
+                self.session.subscribe(path),
+                "subscribing to a folder",
+            )
+            .await?
+        } else {
+            with_timeout(
+                COMMAND_TIMEOUT,
+                self.session.unsubscribe(path),
+                "unsubscribing from a folder",
+            )
+            .await?
+        };
+        outcome.map_err(protocol_error("Could not change the folder subscription"))
+    }
+
+    /// How many messages a mailbox holds, and how many are unread.
+    ///
+    /// One STATUS command, without opening the mailbox. What this replaced was
+    /// a SELECT followed by a SEARCH UNSEEN for every folder in the tree, which
+    /// is two round trips each and changes which mailbox is open as a side
+    /// effect of asking a question about a different one.
+    pub async fn folder_counts(&mut self, path: &str) -> Result<FolderCounts> {
+        let mailbox = with_timeout(
+            COMMAND_TIMEOUT,
+            self.session.status(path, "(MESSAGES UNSEEN)"),
+            "counting a folder",
+        )
+        .await?
+        .map_err(protocol_error("Could not count the folder"))?;
+
+        Ok(FolderCounts {
+            total: mailbox.exists,
+            // From STATUS this is a count. From SELECT the same field is the
+            // sequence number of the first unseen message, which is why the
+            // count is asked for here and not taken off a select.
+            unread: mailbox.unseen.unwrap_or(0),
+        })
+    }
+
     /// Select a mailbox, and say what is in it.
     ///
     /// The path is the server's own spelling, as `ImapFolder::path` carries it.
     pub async fn select_folder(&mut self, path: &str) -> Result<MailboxStatus> {
-        let mailbox = with_timeout(
-            COMMAND_TIMEOUT,
-            self.session.select(path),
-            "opening the folder",
-        )
-        .await?
+        let mailbox = if self.abilities.condstore {
+            with_timeout(
+                COMMAND_TIMEOUT,
+                self.session.select_condstore(path),
+                "opening the folder",
+            )
+            .await?
+        } else {
+            with_timeout(
+                COMMAND_TIMEOUT,
+                self.session.select(path),
+                "opening the folder",
+            )
+            .await?
+        }
         .map_err(protocol_error("Could not open the folder"))?;
 
         self.selected = Some(path.to_string());
         Ok(MailboxStatus {
             exists: mailbox.exists,
             uid_validity: mailbox.uid_validity,
+            highest_modseq: mailbox.highest_modseq,
         })
     }
 
@@ -544,9 +776,7 @@ impl ImapSession {
     /// a few hundred round trips rather than a hundred thousand.
     pub async fn fetch_headers(&mut self, uids: &[u32]) -> Result<Vec<ImapMessage>> {
         self.require_selected()?;
-        let query = format!(
-            "(UID FLAGS RFC822.SIZE INTERNALDATE BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS ({HEADER_FIELDS})])"
-        );
+        let query = header_query(self.abilities.gmail);
 
         let mut messages = Vec::with_capacity(uids.len());
         for set in sequence_set::chunks(uids, sequence_set::MAX_SET_LENGTH) {
@@ -594,6 +824,61 @@ impl ImapSession {
             .ok_or_else(|| {
                 Error::Protocol(format!("The mail server returned no message for UID {uid}"))
             })
+    }
+
+    /// Read the flags of messages already held, so state set elsewhere arrives.
+    ///
+    /// A message read on a phone, starred in webmail, or answered from another
+    /// machine is a change to a message this cache already has. The header
+    /// fetch only asks about messages it does not hold, so without this a
+    /// message stays unread here for as long as the account exists.
+    ///
+    /// On a CONDSTORE server the whole mailbox is asked at once for whatever
+    /// changed since the last sync, which is usually nothing and costs one
+    /// round trip. Everywhere else the held UIDs are asked for in batches,
+    /// which is a lot of UIDs and no message bodies, so it is cheap in bytes
+    /// and dear in nothing else.
+    pub async fn fetch_flags(
+        &mut self,
+        held: &[u32],
+        changed_since: Option<u64>,
+    ) -> Result<Vec<(u32, Vec<String>)>> {
+        self.require_selected()?;
+
+        if let Some(modseq) = changed_since.filter(|_| self.abilities.condstore) {
+            let stream = with_timeout(
+                COMMAND_TIMEOUT,
+                self.session
+                    .uid_fetch("1:*", format!("(UID FLAGS) (CHANGEDSINCE {modseq})")),
+                "reading what changed",
+            )
+            .await?
+            .map_err(protocol_error("Could not read what changed"))?;
+
+            let fetched: Vec<Fetch> = stream
+                .try_collect()
+                .await
+                .map_err(protocol_error("Could not read what changed"))?;
+            return Ok(fetched.iter().filter_map(flags_from_fetch).collect());
+        }
+
+        let mut flags = Vec::with_capacity(held.len());
+        for set in sequence_set::chunks(held, sequence_set::MAX_SET_LENGTH) {
+            let stream = with_timeout(
+                COMMAND_TIMEOUT,
+                self.session.uid_fetch(&set, "(UID FLAGS)"),
+                "reading message flags",
+            )
+            .await?
+            .map_err(protocol_error("Could not read the message flags"))?;
+
+            let fetched: Vec<Fetch> = stream
+                .try_collect()
+                .await
+                .map_err(protocol_error("Could not read the message flags"))?;
+            flags.extend(fetched.iter().filter_map(flags_from_fetch));
+        }
+        Ok(flags)
     }
 
     /// Whether this session may change anything on the server.
@@ -649,25 +934,121 @@ impl ImapSession {
         self.set_flag(uid, "\\Seen", true).await
     }
 
-    /// Mark a message for removal, and remove it where the server allows.
+    /// Copy a message into another mailbox, leaving the original where it is.
     ///
-    /// Returns whether it is gone. A server without UIDPLUS (RFC 4315) offers
-    /// only a bare EXPUNGE, which removes every message in the mailbox marked
-    /// `\Deleted`, including ones marked by another client or in an earlier
-    /// session. That is somebody else's mail, so we do not do it: the message
-    /// is flagged and left, and the caller says so rather than reporting a
-    /// deletion that did not happen.
-    pub async fn delete_message(&mut self, uid: u32) -> Result<bool> {
-        self.may_i("delete a message")?;
-        self.set_flag(uid, "\\Deleted", true).await?;
+    /// On Gmail this adds a label rather than making a second message, which is
+    /// the same thing seen from the other side and is what somebody asking for
+    /// a copy wants either way.
+    pub async fn copy_message(&mut self, uid: u32, into: &str) -> Result<()> {
+        self.may_i("copy a message")?;
+        self.require_selected()?;
+        with_timeout(
+            COMMAND_TIMEOUT,
+            self.session.uid_copy(uid.to_string(), into),
+            "copying the message",
+        )
+        .await?
+        .map_err(protocol_error("Could not copy the message"))
+    }
 
-        if !self.supports("UIDPLUS").await? {
+    /// Move a message into another mailbox.
+    ///
+    /// One command on a server with MOVE (RFC 6851), which is the only way it
+    /// is safe: copy, flag, expunge is three commands, and a failure between
+    /// any two of them leaves the message in both folders or in neither.
+    ///
+    /// Where MOVE is absent the three steps are done in the order that fails
+    /// safely. The copy goes first, so a failure leaves the original alone; the
+    /// expunge goes last, and if it cannot run the message is in both places
+    /// rather than gone. Both are recoverable. Losing it is not.
+    pub async fn move_message(&mut self, uid: u32, into: &str) -> Result<Moved> {
+        self.may_i("move a message")?;
+        self.require_selected()?;
+
+        if self.abilities.move_command {
+            with_timeout(
+                COMMAND_TIMEOUT,
+                self.session.uid_mv(uid.to_string(), into),
+                "moving the message",
+            )
+            .await?
+            .map_err(protocol_error("Could not move the message"))?;
+            return Ok(Moved::Moved);
+        }
+
+        self.copy_message(uid, into).await?;
+        self.set_flag(uid, "\\Deleted", true).await?;
+        if !self.abilities.uid_expunge {
+            tracing::warn!(
+                "The mail server has neither MOVE nor UIDPLUS, so the copy was made and the original was flagged rather than removed"
+            );
+            return Ok(Moved::CopiedAndFlagged);
+        }
+        self.expunge_one(uid).await?;
+        Ok(Moved::Moved)
+    }
+
+    /// Add a message to a mailbox, as it would have arrived.
+    ///
+    /// Used for the copy of a sent message. `flags` is an IMAP flag list such
+    /// as `(\Seen)`, because a message somebody wrote should not appear in
+    /// Sent as unread mail waiting to be dealt with.
+    pub async fn append_message(
+        &mut self,
+        into: &str,
+        flags: Option<&str>,
+        raw: &[u8],
+    ) -> Result<()> {
+        self.may_i("save a copy of the message")?;
+        with_timeout(
+            COMMAND_TIMEOUT,
+            self.session.append(into, flags, None, raw),
+            "saving a copy of the message",
+        )
+        .await?
+        .map_err(protocol_error("Could not save a copy of the message"))
+    }
+
+    /// Put a message in the trash, or remove it outright.
+    ///
+    /// Moving is the ordinary case and the only one that behaves the same
+    /// everywhere. Flagging and expunging in place means something different on
+    /// each provider: on Gmail it removes one label from a message that stays
+    /// in the account, and which of three things it does depends on a setting
+    /// only reachable in Gmail's own web interface. So a delete that has
+    /// somewhere to put the message moves it there, and the outcome says which
+    /// happened rather than reporting "deleted" over any of them.
+    ///
+    /// `trash` is `None` when the mailbox being deleted from is the trash
+    /// itself, or when the account has no trash folder. Then the message really
+    /// is being removed, and there is nowhere left to move it to.
+    pub async fn delete_message(&mut self, uid: u32, trash: Option<&str>) -> Result<Deletion> {
+        self.may_i("delete a message")?;
+
+        if let Some(trash) = trash {
+            return Ok(match self.move_message(uid, trash).await? {
+                Moved::Moved => Deletion::MovedToTrash,
+                Moved::CopiedAndFlagged => Deletion::CopiedToTrashAndFlagged,
+            });
+        }
+
+        self.set_flag(uid, "\\Deleted", true).await?;
+        if !self.abilities.uid_expunge {
+            // A server without UIDPLUS (RFC 4315) offers only the bare
+            // EXPUNGE, which removes every message in the mailbox flagged
+            // `\Deleted`, including ones flagged by another client or in an
+            // earlier session. That is somebody else's mail.
             tracing::warn!(
                 "The mail server has no UIDPLUS, so the message was marked for deletion and left in place"
             );
-            return Ok(false);
+            return Ok(Deletion::MarkedOnly);
         }
+        self.expunge_one(uid).await?;
+        Ok(Deletion::Removed)
+    }
 
+    /// Remove one message by UID, on a server that can do it by UID.
+    async fn expunge_one(&mut self, uid: u32) -> Result<()> {
         let stream = with_timeout(
             COMMAND_TIMEOUT,
             self.session.uid_expunge(uid.to_string()),
@@ -679,11 +1060,16 @@ impl ImapSession {
             .try_collect()
             .await
             .map_err(protocol_error("Could not delete the message"))?;
-        Ok(true)
+        Ok(())
     }
 
-    /// Whether the server advertises a capability.
-    pub async fn supports(&mut self, capability: &str) -> Result<bool> {
+    /// What this server can do.
+    pub const fn abilities(&self) -> Abilities {
+        self.abilities
+    }
+
+    /// Ask the server what it supports.
+    async fn read_abilities(&mut self) -> Result<Abilities> {
         let capabilities = with_timeout(
             COMMAND_TIMEOUT,
             self.session.capabilities(),
@@ -691,7 +1077,42 @@ impl ImapSession {
         )
         .await?
         .map_err(protocol_error("Could not ask what the server supports"))?;
-        Ok(capabilities.has_str(capability))
+
+        let names: Vec<&str> = capabilities
+            .iter()
+            .filter_map(|capability| match capability {
+                Capability::Atom(name) => Some(name.as_str()),
+                // IMAP4rev1 is the floor and AUTH= mechanisms were settled
+                // before this point, so neither changes anything downstream.
+                Capability::Imap4rev1 | Capability::Auth(_) => None,
+            })
+            .collect();
+        Ok(Abilities::from_capabilities(names))
+    }
+
+    /// Tell the server who is calling, where it asked.
+    ///
+    /// Best effort on purpose. A server that dislikes the ID command should not
+    /// cost somebody their mail, so a failure is logged and the session carries
+    /// on. NetEase is the case that needs it, and NetEase advertises it.
+    async fn introduce_ourselves(&mut self) {
+        if !self.abilities.id {
+            return;
+        }
+        let version = crate::common::version::current();
+        let pairs = identification(&version);
+        let sent = with_timeout(
+            COMMAND_TIMEOUT,
+            self.session
+                .id(pairs.iter().map(|(key, value)| (*key, value.as_deref()))),
+            "introducing ourselves",
+        )
+        .await;
+        match sent {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => tracing::warn!("The mail server would not take an introduction: {e}"),
+            Err(e) => tracing::warn!("{e}"),
+        }
     }
 
     /// Close the session politely.
@@ -923,7 +1344,38 @@ fn message_from_fetch(fetch: &Fetch) -> Option<ImapMessage> {
             .bodystructure()
             .is_some_and(structure::has_attachments),
         safety: crate::service::safety::from_headers(&String::from_utf8_lossy(headers)),
+        gmail_message_id: fetch.gmail_msg_id().copied(),
+        labels: fetch
+            .gmail_labels()
+            .map(|labels| labels.iter().map(|label| label.to_string()).collect())
+            .unwrap_or_default(),
     })
+}
+
+/// What one FETCH asks for when listing a folder.
+///
+/// Built rather than written out, because the Gmail fields must not be asked
+/// for anywhere else. A server that does not know an attribute refuses the
+/// whole command, so one extra word in this string is not a missing field on a
+/// message, it is an empty folder on every server except one.
+fn header_query(gmail: bool) -> String {
+    let extra = if gmail {
+        format!(" {GMAIL_FIELDS}")
+    } else {
+        String::new()
+    };
+    format!(
+        "(UID FLAGS RFC822.SIZE INTERNALDATE BODYSTRUCTURE{extra} \
+         BODY.PEEK[HEADER.FIELDS ({HEADER_FIELDS})])"
+    )
+}
+
+/// The UID and flags out of one FETCH, when it carries a UID.
+fn flags_from_fetch(fetch: &Fetch) -> Option<(u32, Vec<String>)> {
+    Some((
+        fetch.uid?,
+        fetch.flags().map(|flag| flag_name(&flag)).collect(),
+    ))
 }
 
 /// A flag as IMAP spells it.

@@ -51,6 +51,12 @@ pub struct FolderSync {
     /// not one; "1,000 of 40,000" says there is more and that asking again
     /// will get it.
     pub held: usize,
+    /// How many messages already held had their flags brought up to date.
+    ///
+    /// Read as well as counted, because it is the number that says whether
+    /// state set on another device is arriving. Zero on every sync of a mailbox
+    /// somebody also reads on a phone means it is not.
+    pub flags_updated: usize,
     /// Whether the server had renumbered the mailbox since the last sync.
     pub renumbered: bool,
 }
@@ -131,6 +137,12 @@ fn to_incoming(message: &ImapMessage, folder_id: i64, in_junk_folder: bool) -> I
             .safety
             .clone()
             .and(crate::service::safety::from_folder(in_junk_folder)),
+        gmail_message_id: message.gmail_message_id,
+        // Space separated, which is how IMAP writes a flag list and what the
+        // labels already are on the wire. A label with a space in it was
+        // quoted there and is not quoted here, so this is for showing and for
+        // telling two rows apart, not for handing back to the server.
+        labels: Some(message.labels.join(" ")).filter(|labels| !labels.is_empty()),
     }
 }
 
@@ -175,7 +187,7 @@ pub fn store_folders(
 ) -> Result<Vec<(ImapFolder, i64)>> {
     let mut stored = Vec::with_capacity(folders.len());
     for folder in folders {
-        cache.save_folder(&CachedFolder {
+        let id = cache.save_folder(&CachedFolder {
             id: 0,
             account_id: account_id.to_string(),
             name: folder.display_path.clone(),
@@ -184,12 +196,10 @@ pub fn store_folders(
             unread_count: 0,
             total_count: 0,
         })?;
-        // `save_folder` replaces on conflict, so its returned rowid is not the
-        // one to keep. Reading it back gives the id the messages have to point
-        // at.
-        if let Some(row) = cache.get_folder(account_id, &folder.path)? {
-            stored.push((folder.clone(), row.id));
-        }
+        // The two facts only the server can answer, kept so the window that
+        // asks which folders to sync shows the same default the sync uses.
+        cache.set_folder_server_facts(id, folder.holds_all_mail, folder.subscribed)?;
+        stored.push((folder.clone(), id));
     }
     Ok(stored)
 }
@@ -209,6 +219,12 @@ pub async fn sync_folder(
             ..Default::default()
         });
     }
+
+    // Counts first, in one STATUS, before the mailbox is opened. STATUS is
+    // discouraged on the mailbox that is currently selected, and asking here
+    // also means the tree can be given numbers for folders that are never
+    // opened at all.
+    let counts = controller.folder_counts(&folder.path).await?;
 
     let status = controller.select_folder(&folder.path).await?;
     let renumbered = matches!(
@@ -245,10 +261,38 @@ pub async fn sync_folder(
         ))?;
     }
 
+    // Messages already held, whose flags may have changed elsewhere. The
+    // header fetch above only asks about messages this cache does not have, so
+    // without this a message read on a phone stays unread here for as long as
+    // the account exists.
+    let already_held: Vec<u32> = stored
+        .iter()
+        .copied()
+        .filter(|uid| !wanted.contains(uid))
+        .collect();
+    let since = if renumbered {
+        None
+    } else {
+        cache.folder_modseq(folder_id)?
+    };
+    let changed = if already_held.is_empty() && since.is_none() {
+        Vec::new()
+    } else {
+        controller
+            .fetch_flags(&folder.path, &already_held, since)
+            .await?
+    };
+    for (uid, flags) in &changed {
+        cache.set_message_flags(folder_id, *uid, flags)?;
+    }
+    if let Some(modseq) = status.highest_modseq {
+        cache.set_folder_modseq(folder_id, modseq)?;
+    }
+
     // Counts for the folder tree. The server's, not the cache's: only part of
     // a large folder is stored, so counting rows here would tell somebody
     // their inbox holds five hundred messages when it holds forty thousand.
-    let unread = controller.unread_count(&folder.path).await?;
+    let unread = counts.unread as usize;
     cache.set_folder_counts(folder_id, unread, status.exists as usize)?;
 
     Ok(FolderSync {
@@ -257,6 +301,7 @@ pub async fn sync_folder(
         forgotten: forgotten.len(),
         total_on_server: on_server.len(),
         unread,
+        flags_updated: changed.len(),
         // Counted after the write, so it includes what this round brought
         // down. Asking the cache rather than adding up, because a message
         // already held and re-fetched is not a new one.
@@ -296,15 +341,92 @@ pub async fn watch_folder(
     Ok(session.watch(folder.to_string()))
 }
 
+/// What somebody has chosen about each folder, by the server's own path.
+///
+/// A folder with no entry has never been asked about, and gets the default.
+/// The distinction matters: "not chosen yet" and "chosen not to" look the same
+/// as a `false` and mean opposite things when a new folder appears.
+pub type FolderChoices = std::collections::HashMap<String, bool>;
+
+/// What decides whether a folder is worth syncing.
+///
+/// A small type rather than four loose booleans in a signature, so a call site
+/// cannot quietly swap "subscribed" for "selectable" and still compile. It is
+/// also what the cache stores, so the window that asks somebody about a folder
+/// and the sync that acts on the answer are working from the same facts rather
+/// than each guessing from a name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FolderFacts {
+    pub kind: FolderType,
+    /// Whether it can hold messages at all.
+    pub selectable: bool,
+    /// Whether it holds a copy of every message in the account.
+    pub holds_all_mail: bool,
+    /// Whether the account is subscribed to it on the server.
+    pub subscribed: bool,
+}
+
+impl From<&ImapFolder> for FolderFacts {
+    fn from(folder: &ImapFolder) -> Self {
+        Self {
+            kind: folder.folder_type,
+            selectable: folder.selectable,
+            holds_all_mail: folder.holds_all_mail,
+            subscribed: folder.subscribed,
+        }
+    }
+}
+
+/// Whether a folder should sync when nobody has said either way.
+///
+/// Four kinds are left out. Containers that hold no messages, because selecting
+/// one fails. Junk, because downloading a spam folder costs the whole of it and
+/// gives somebody a mailbox of mail they did not ask for. The mailbox that
+/// holds a copy of everything, which is Gmail's All Mail, because every message
+/// in it is also somewhere else, so syncing both downloads the account twice
+/// and lists every message twice. And anything the account is not subscribed
+/// to, which is how somebody has already said they do not want a folder.
+///
+/// Subscription only decides anything where the server keeps subscriptions at
+/// all. A server that keeps none reports none, and reading that as "nothing is
+/// wanted" would sync no folders and look like an account with no mail in it.
+pub fn sync_by_default(facts: FolderFacts, server_keeps_subscriptions: bool) -> bool {
+    facts.selectable
+        && facts.kind != FolderType::Spam
+        && !facts.holds_all_mail
+        && (facts.subscribed || !server_keeps_subscriptions)
+}
+
+/// Whether the server keeps a subscription list at all.
+///
+/// Read from the folders it listed rather than from a capability, because there
+/// is no capability for it: a server either answers LSUB with something or it
+/// does not.
+pub fn keeps_subscriptions(folders: &[ImapFolder]) -> bool {
+    folders.iter().any(|folder| folder.subscribed)
+}
+
 /// The folders worth syncing, and the order to do them in.
 ///
 /// The inbox first, because it is what somebody pressing Check Mail is waiting
-/// for; then the folders mail is filed into. Containers that hold no messages
-/// are skipped.
-pub fn folders_to_sync(folders: &[ImapFolder]) -> Vec<&ImapFolder> {
+/// for; then the folders mail is filed into.
+///
+/// A folder somebody has chosen for is obeyed, whatever the default would have
+/// said, except that an unselectable container is never synced: selecting one
+/// fails, so a tick beside it would be a promise nothing can keep.
+pub fn folders_to_sync<'a>(
+    folders: &'a [ImapFolder],
+    chosen: &FolderChoices,
+) -> Vec<&'a ImapFolder> {
+    let keeps = keeps_subscriptions(folders);
+
     let mut worth: Vec<&ImapFolder> = folders
         .iter()
-        .filter(|folder| folder.selectable && folder.folder_type != FolderType::Spam)
+        .filter(|folder| folder.selectable)
+        .filter(|folder| match chosen.get(&folder.path) {
+            Some(wanted) => *wanted,
+            None => sync_by_default(FolderFacts::from(*folder), keeps),
+        })
         .collect();
     worth.sort_by_key(|folder| folder.folder_type.tree_order());
     worth
@@ -489,7 +611,138 @@ mod tests {
             path: name.to_string(),
             folder_type,
             selectable,
+            holds_all_mail: false,
+            subscribed: true,
         }
+    }
+
+    #[test]
+    fn test_the_folder_holding_every_message_is_left_alone() {
+        // Gmail's All Mail. Every message in the inbox is also in here under a
+        // different UID, so syncing both downloads the account twice and shows
+        // every message twice: once as Inbox, once as All Mail.
+        let mut all_mail = folder("[Gmail]/All Mail", FolderType::Archive, true);
+        all_mail.holds_all_mail = true;
+        let folders = [folder("INBOX", FolderType::Inbox, true), all_mail];
+
+        let names: Vec<&str> = folders_to_sync(&folders, &FolderChoices::new())
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["INBOX"]);
+    }
+
+    #[test]
+    fn test_an_ordinary_archive_is_still_synced() {
+        // Only the mailbox that holds a copy of everything is skipped. A real
+        // archive holds mail that is nowhere else, and skipping it would lose
+        // it from the listing entirely.
+        let folders = [
+            folder("INBOX", FolderType::Inbox, true),
+            folder("Archive", FolderType::Archive, true),
+        ];
+
+        let names: Vec<&str> = folders_to_sync(&folders, &FolderChoices::new())
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["INBOX", "Archive"]);
+    }
+
+    #[test]
+    fn test_a_folder_nobody_is_subscribed_to_is_left_alone() {
+        // Shared servers list mailboxes by the hundred and people subscribe to
+        // a handful. Syncing all of them is somebody else's mail, downloaded
+        // slowly, in a folder tree they cannot navigate.
+        let mut unsubscribed = folder("Old backups 2009", FolderType::Custom, true);
+        unsubscribed.subscribed = false;
+        let folders = [folder("INBOX", FolderType::Inbox, true), unsubscribed];
+
+        let names: Vec<&str> = folders_to_sync(&folders, &FolderChoices::new())
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["INBOX"]);
+    }
+
+    #[test]
+    fn test_the_inbox_is_synced_even_when_nothing_is_subscribed() {
+        // A server that keeps no subscription list reports none, and then
+        // subscription cannot be what decides anything. Reading it as "nothing
+        // is subscribed" would sync no folders at all and look like an account
+        // with no mail in it.
+        let folders = [
+            folder_unsubscribed("INBOX", FolderType::Inbox),
+            folder_unsubscribed("Work", FolderType::Custom),
+        ];
+
+        let names: Vec<&str> = folders_to_sync(&folders, &FolderChoices::new())
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["INBOX", "Work"]);
+    }
+
+    #[test]
+    fn test_a_folder_somebody_asked_for_is_synced_whatever_the_default_says() {
+        // Somebody who wants All Mail, or their junk folder, gets it. The
+        // default is a starting point, not a rule they cannot change.
+        let mut all_mail = folder("[Gmail]/All Mail", FolderType::Archive, true);
+        all_mail.holds_all_mail = true;
+        let folders = [
+            folder("INBOX", FolderType::Inbox, true),
+            all_mail,
+            folder("Junk", FolderType::Spam, true),
+        ];
+        let chosen = FolderChoices::from([
+            ("[Gmail]/All Mail".to_string(), true),
+            ("Junk".to_string(), true),
+        ]);
+
+        let names: Vec<&str> = folders_to_sync(&folders, &chosen)
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect();
+
+        assert!(names.contains(&"[Gmail]/All Mail"), "{names:?}");
+        assert!(names.contains(&"Junk"), "{names:?}");
+    }
+
+    #[test]
+    fn test_a_folder_somebody_turned_off_stays_off() {
+        let folders = [
+            folder("INBOX", FolderType::Inbox, true),
+            folder("Work", FolderType::Custom, true),
+        ];
+        let chosen = FolderChoices::from([("Work".to_string(), false)]);
+
+        let names: Vec<&str> = folders_to_sync(&folders, &chosen)
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["INBOX"]);
+    }
+
+    #[test]
+    fn test_a_container_stays_unsynced_even_if_it_was_ticked() {
+        // Selecting one fails, so a tick beside it is a promise nothing can
+        // keep, and the failure would be reported as a sync error for a folder
+        // that never had messages in it.
+        let folders = [folder("[Gmail]", FolderType::Custom, false)];
+        let chosen = FolderChoices::from([("[Gmail]".to_string(), true)]);
+
+        assert!(folders_to_sync(&folders, &chosen).is_empty());
+    }
+
+    fn folder_unsubscribed(name: &str, folder_type: FolderType) -> ImapFolder {
+        let mut folder = folder(name, folder_type, true);
+        folder.subscribed = false;
+        folder
     }
 
     #[test]
@@ -500,7 +753,7 @@ mod tests {
             folder("INBOX", FolderType::Inbox, true),
             folder("Sent", FolderType::Sent, true),
         ];
-        let order: Vec<&str> = folders_to_sync(&folders)
+        let order: Vec<&str> = folders_to_sync(&folders, &FolderChoices::new())
             .iter()
             .map(|f| f.name.as_str())
             .collect();
@@ -515,7 +768,7 @@ mod tests {
             folder("[Gmail]", FolderType::Custom, false),
             folder("INBOX", FolderType::Inbox, true),
         ];
-        let names: Vec<&str> = folders_to_sync(&folders)
+        let names: Vec<&str> = folders_to_sync(&folders, &FolderChoices::new())
             .iter()
             .map(|f| f.name.as_str())
             .collect();
@@ -531,7 +784,7 @@ mod tests {
             folder("INBOX", FolderType::Inbox, true),
             folder("Junk", FolderType::Spam, true),
         ];
-        let names: Vec<&str> = folders_to_sync(&folders)
+        let names: Vec<&str> = folders_to_sync(&folders, &FolderChoices::new())
             .iter()
             .map(|f| f.name.as_str())
             .collect();

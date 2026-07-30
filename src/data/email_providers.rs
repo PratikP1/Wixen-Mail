@@ -123,6 +123,29 @@ fn get_provider_by_name(name: &str) -> Option<EmailProvider> {
         .find(|p| p.name.eq_ignore_ascii_case(name))
 }
 
+/// The SMTP servers that file a copy of a sent message themselves.
+///
+/// Gmail does, and has always done. Appending our own copy on top of theirs is
+/// how a client ends up with every sent message twice.
+const FILE_THE_COPY_THEMSELVES: [&str; 2] = ["smtp.gmail.com", "smtp.googlemail.com"];
+
+/// Whether this provider puts sent mail in the Sent folder without being asked.
+///
+/// Most do not. An ordinary IMAP and SMTP pair are two separate services that
+/// know nothing about each other, so a message handed to SMTP leaves no trace
+/// in IMAP, and the client is expected to append the copy. Gmail is the
+/// exception, and appending there would duplicate what Google already saved.
+///
+/// Matched on the host rather than taken from the provider preset, because an
+/// account can be set up by hand with no preset attached and still be Gmail.
+pub fn files_sent_copy_itself(smtp_server: &str) -> bool {
+    let host = smtp_server
+        .trim()
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    FILE_THE_COPY_THEMSELVES.iter().any(|known| host == *known)
+}
+
 /// Detect provider from email address
 pub fn detect_provider_from_email(email: &str) -> Option<EmailProvider> {
     let domain = email.split('@').nth(1)?;
@@ -166,6 +189,33 @@ mod tests {
 
         let provider = detect_provider_from_email("user@unknown.com");
         assert!(provider.is_none());
+    }
+
+    #[test]
+    fn test_gmail_files_its_own_sent_copy() {
+        // It always has. Appending ours on top is how a client ends up with
+        // every sent message twice.
+        assert!(files_sent_copy_itself("smtp.gmail.com"));
+        assert!(files_sent_copy_itself("SMTP.GMAIL.COM"));
+        assert!(files_sent_copy_itself("smtp.googlemail.com"));
+    }
+
+    #[test]
+    fn test_an_ordinary_server_expects_the_client_to_save_the_copy() {
+        // SMTP and IMAP are two services that know nothing about each other,
+        // so a message handed to one leaves no trace in the other.
+        assert!(!files_sent_copy_itself("smtp.office365.com"));
+        assert!(!files_sent_copy_itself("smtp.fastmail.com"));
+        assert!(!files_sent_copy_itself("mail.example.com"));
+        assert!(!files_sent_copy_itself(""));
+    }
+
+    #[test]
+    fn test_a_host_that_merely_ends_the_same_is_not_gmail() {
+        // The mistake a `contains` or an `ends_with` would make. Somebody
+        // running their own server would silently lose every Sent copy.
+        assert!(!files_sent_copy_itself("smtp.gmail.com.example.net"));
+        assert!(!files_sent_copy_itself("notsmtp.gmail.com"));
     }
 
     #[test]

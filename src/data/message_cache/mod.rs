@@ -998,6 +998,34 @@ impl MessageCache {
         // we stored names a different message or none, so the folder has to be
         // read again rather than shown wrong.
         self.ensure_column_exists("folders", "uid_validity", "INTEGER")?;
+        // Whether somebody chose to sync this folder. Null means they have
+        // never been asked, which is not the same as "no": a new folder that
+        // appears on the server gets the default, and one they unticked stays
+        // unticked. Reading a null as false would stop every existing account
+        // syncing anything the moment this shipped.
+        self.ensure_column_exists("folders", "sync_enabled", "INTEGER")?;
+        // The mailbox's highest modification sequence at the last sync, on a
+        // server with CONDSTORE. Holding it is what lets the next sync ask
+        // what changed rather than re-reading every flag in the folder.
+        self.ensure_column_exists("folders", "highest_modseq", "INTEGER")?;
+        // Two facts the server reported about the folder, kept so the window
+        // that asks somebody about it shows the same default the sync would
+        // use. Working them out from the folder's name instead only holds for
+        // an English Gmail account: All Mail is called something else in every
+        // other language, and the row would then be ticked by default and
+        // download the whole account.
+        self.ensure_column_exists("folders", "holds_all_mail", "INTEGER NOT NULL DEFAULT 0")?;
+        // Defaults to subscribed, which is what an existing database should
+        // read as: nothing in it was ever recorded as unsubscribed, and a
+        // default of 0 would read as "nobody wants any of these folders".
+        self.ensure_column_exists("folders", "subscribed", "INTEGER NOT NULL DEFAULT 1")?;
+        // Gmail's own identifier for a message, the same number under every
+        // label it carries. Without it two rows for one message look like two
+        // messages, which is what makes a Gmail account list everything twice.
+        self.ensure_column_exists("messages", "gmail_msgid", "INTEGER")?;
+        // The labels Gmail has on the message, space separated, which say
+        // where else the same message appears.
+        self.ensure_column_exists("messages", "labels", "TEXT")?;
         // Answered and Draft, from the server's flags. The columns for these
         // were withdrawn because nothing could fill them; a sync fills them.
         self.ensure_column_exists("messages", "answered", "BOOLEAN DEFAULT 0")?;

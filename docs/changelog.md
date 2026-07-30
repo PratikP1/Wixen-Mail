@@ -6,6 +6,40 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Added
+
+- **Deleting a message puts it in the Trash.** It used to mark the message deleted and clear it out where it stood. That means something different on every provider, and on Gmail it means whichever of three things a setting in Gmail's own web interface says, which Wixen Mail cannot see and never asked about. So a delete now moves the message to Trash, which behaves the same everywhere and can be undone by going and getting it.
+  What you hear is what happened. "Moved to Trash" when it moved, "Deleted" when there was nowhere to move it to and it really is gone, and a longer sentence on the servers that can do neither cleanly, saying the message is in both places. Deleting from the Trash still deletes.
+
+- **Move a message to another folder, or copy it there.** `Ctrl+Shift+V` moves, `Ctrl+Shift+Y` copies, and both are on the message menu key. A window opens with your folders in a tree: arrows move, Right opens the account, Enter chooses. The folder the message is already in is not offered, because choosing it would be a command that appears to do nothing.
+  On servers that have the MOVE command it is one instruction, which is the only way a move is safe. Where it is missing, the copy is made first and the original is removed after, so a failure part way leaves the message in two places rather than none, and it says so.
+
+- **Sent mail gets saved in your Sent folder.** Nothing was saving it. Sending and receiving are two separate services that know nothing about each other, so a message handed to the sending server left no trace anywhere you could look at it. Gmail files its own copy, so Gmail accounts happened to look right; every other account had no record of anything you had sent.
+  Not on Gmail, where a second copy would be a duplicate of the one Google already saved. The copy is marked read, so sending something does not raise your unread count. Blind copy recipients are not in the saved copy, which is the same rule that keeps blind copies blind on the way out.
+
+- **You choose which folders are downloaded.** File, then Folders to Keep Up to Date, or the menu key on the folder tree. A ticked list, one row per folder, saying how many messages are in each. Space ticks the row you are on.
+  This matters most on Gmail, where All Mail holds a copy of every message in the account. Downloading it alongside the Inbox meant fetching everything twice and reading every message twice in the list. It is now off unless you ask for it, and the row says why. It matters on shared and university servers too, which list every mailbox the account can see, often hundreds.
+  Your choice is written to the server as a subscription as well, so a folder you turn off here reads as unwanted in your phone's mail app. If the server will not record it, it says so, and your choice still holds here.
+
+- **State you set on another device arrives.** Reading a message on your phone, starring one in webmail, or answering one from another machine now shows up here. It never did: a sync only asked about messages this copy had not seen, so anything already downloaded kept whatever it said the day it arrived.
+  On servers with CONDSTORE, which includes Fastmail and current Dovecot, this is one instruction asking what has changed. Everywhere else, including Gmail and Microsoft 365, the flags of the messages you hold are read back in batches.
+
+- **Wixen Mail says who it is when a server asks.** Courtesy nearly everywhere and a requirement on a few: NetEase servers refuse a client that will not identify itself, with an error about an unsafe login that sends you off to check a password that was fine.
+
+### Fixed
+
+- **A folder was downloaded again from scratch on every check for mail.** Saving the folder list replaced each folder's row rather than updating it, which gave the folder a new identity, threw away what it knew about the server's numbering, and took every message cached in it along with the old row. So each check for mail started over. It shows up as slowness rather than as an error, which is why it lasted.
+
+- **Gmail's folders were treated as ordinary folders.** They are labels, and one message with three labels is the same message three times, under three different numbers. Wixen Mail now reads Gmail's own identifier for a message, so two rows for one message are recognisable as one message rather than counted twice.
+
+- **Counting a folder no longer opens it.** Working out how many messages are in a folder took two instructions and changed which folder was open as a side effect of asking about a different one. It is one instruction now.
+
+### Known limitations
+
+- Gmail's own conversation identifier is fetched by nobody, including Wixen Mail. The library this is built on parses it and offers no way to read it back, so conversations are worked out from the message headers, as they are on every other provider. Threading is a little worse on Gmail than Gmail's own web interface as a result.
+- The Sent copy does not list blind copy recipients. That is a consequence of how blind copies are kept blind on the way out, and it means the saved copy records what you wrote rather than everyone who received it.
+- Which folders sync is decided per account and applies at the next check for mail, not immediately.
+
 ### Changed
 
 - **Version numbers stopped pretending to be an alpha programme.** This is 0.5.0. It was `0.1.0-alpha.25`, and the twenty-five before it were never tagged and never published: the counter was moving because each build was handed over as a file whose name carries the version, not because twenty-five releases happened. `0.x` already means unstable, so the suffix was saying it a second time and claiming a testing round that has not started. What is unproven is said in sentences, on the first-run screen, in Settings, at the end of `--help` and in the testing page, which is where somebody will actually read it. `-alpha.N` is now kept for staging a release that is about to go to testers.

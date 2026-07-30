@@ -5,7 +5,8 @@
 use crate::common::{Error, Result};
 use crate::service::protocols::MailAuth;
 use crate::service::protocols::imap::{
-    ImapClient, ImapConfig, ImapFolder, ImapMessage, ImapSession, MailboxStatus,
+    Deletion, FolderCounts, ImapClient, ImapConfig, ImapFolder, ImapMessage, ImapSession,
+    MailboxStatus, Moved, abilities::Abilities,
 };
 use crate::service::protocols::pop3::{Pop3Client, Pop3Config, Pop3Session};
 use crate::service::protocols::smtp::{Email, SmtpClient, SmtpConfig};
@@ -232,8 +233,12 @@ impl MailController {
         session.fetch_body(uid).await
     }
 
-    /// Send an email via SMTP
-    pub async fn send_email(&self, req: &SendEmailRequest) -> Result<()> {
+    /// Send an email via SMTP, and hand back what went out.
+    ///
+    /// The bytes are the Sent copy. Whether they are filed, and where, is the
+    /// caller's decision: it needs the account's folder list and whether the
+    /// provider already saved one, and neither belongs to sending.
+    pub async fn send_email(&self, req: &SendEmailRequest) -> Result<Vec<u8>> {
         let config = SmtpConfig {
             server: req.server.clone(),
             port: req.port,
@@ -260,9 +265,9 @@ impl MailController {
             body_html: req.body_html.clone(),
         };
 
-        client.send_email(email, &req.auth).await?;
+        let sent = client.send_email(email, &req.auth).await?;
         tracing::info!("Email sent successfully");
-        Ok(())
+        Ok(sent)
     }
 
     /// How many messages in a folder are unread.
@@ -294,19 +299,87 @@ impl MailController {
         session.set_flag(uid, flag, on).await
     }
 
-    /// Delete a message, and say whether it is really gone.
+    /// Delete a message, and say what actually happened to it.
     ///
-    /// `false` means the server has no UIDPLUS, so the message is marked for
-    /// removal and still there. The caller has to tell the user that, because
-    /// announcing "deleted" over a message that is still in the folder is worse
-    /// than saying what actually happened.
-    pub async fn delete_message(&self, folder: &str, uid: u32) -> Result<bool> {
+    /// `trash` is where deleted mail goes for this account, and `None` when the
+    /// message is already in the trash or the account has no trash folder.
+    /// Passing it in rather than working it out here keeps the folder list in
+    /// one place: the session knows about mailboxes, not about which of them is
+    /// this account's trash.
+    pub async fn delete_message(
+        &self,
+        folder: &str,
+        uid: u32,
+        trash: Option<&str>,
+    ) -> Result<Deletion> {
         let mut guard = self.require_imap().await?;
         let session = &mut *guard;
         if session.selected_folder() != Some(folder) {
             session.select_folder(folder).await?;
         }
-        session.delete_message(uid).await
+        session.delete_message(uid, trash).await
+    }
+
+    /// Move a message to another folder.
+    pub async fn move_message(&self, from: &str, uid: u32, into: &str) -> Result<Moved> {
+        let mut guard = self.require_imap().await?;
+        let session = &mut *guard;
+        if session.selected_folder() != Some(from) {
+            session.select_folder(from).await?;
+        }
+        session.move_message(uid, into).await
+    }
+
+    /// Copy a message into another folder, leaving the original in place.
+    pub async fn copy_message(&self, from: &str, uid: u32, into: &str) -> Result<()> {
+        let mut guard = self.require_imap().await?;
+        let session = &mut *guard;
+        if session.selected_folder() != Some(from) {
+            session.select_folder(from).await?;
+        }
+        session.copy_message(uid, into).await
+    }
+
+    /// Save a copy of a message into a folder, as the Sent copy is saved.
+    pub async fn append_message(&self, into: &str, flags: Option<&str>, raw: &[u8]) -> Result<()> {
+        let mut guard = self.require_imap().await?;
+        let session = &mut *guard;
+        session.append_message(into, flags, raw).await
+    }
+
+    /// Subscribe to a folder, or drop the subscription.
+    pub async fn set_subscribed(&self, path: &str, subscribed: bool) -> Result<()> {
+        let mut guard = self.require_imap().await?;
+        let session = &mut *guard;
+        session.set_subscribed(path, subscribed).await
+    }
+
+    /// How many messages a folder holds, and how many are unread.
+    pub async fn folder_counts(&self, folder: &str) -> Result<FolderCounts> {
+        let mut guard = self.require_imap().await?;
+        let session = &mut *guard;
+        session.folder_counts(folder).await
+    }
+
+    /// Re-read the flags of messages already held.
+    pub async fn fetch_flags(
+        &self,
+        folder: &str,
+        held: &[u32],
+        changed_since: Option<u64>,
+    ) -> Result<Vec<(u32, Vec<String>)>> {
+        let mut guard = self.require_imap().await?;
+        let session = &mut *guard;
+        if session.selected_folder() != Some(folder) {
+            session.select_folder(folder).await?;
+        }
+        session.fetch_flags(held, changed_since).await
+    }
+
+    /// What the connected server can do.
+    pub async fn abilities(&self) -> Result<Abilities> {
+        let guard = self.require_imap().await?;
+        Ok(guard.abilities())
     }
 
     /// Check if connected
@@ -429,7 +502,7 @@ mod tests {
             controller.fetch_message_body("INBOX", 1).await.err(),
             controller.unread_count("INBOX").await.err(),
             controller.set_starred("INBOX", 1, true).await.err(),
-            controller.delete_message("INBOX", 1).await.err(),
+            controller.delete_message("INBOX", 1, None).await.err(),
         ];
         for refusal in refusals {
             let message = refusal

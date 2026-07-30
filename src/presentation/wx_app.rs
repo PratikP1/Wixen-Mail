@@ -148,6 +148,9 @@ menu_ids!(
     ID_NEW_REMINDER,
     ID_NEW_TASK,
     ID_NEW_NOTE,
+    ID_MOVE_TO_FOLDER,
+    ID_COPY_TO_FOLDER,
+    ID_CHOOSE_FOLDERS,
 );
 
 // Sort menu IDs
@@ -2237,6 +2240,19 @@ document.addEventListener('keydown', function(e) {
                                 );
                             }
                         }
+                        _ if id == ID_MOVE_TO_FOLDER || id == ID_COPY_TO_FOLDER => {
+                            move_or_copy_message(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                                id == ID_COPY_TO_FOLDER,
+                            );
+                        }
+                        _ if id == ID_CHOOSE_FOLDERS => {
+                            choose_folders(&state, &message_cache, &frame, &ui_tx, &runtime);
+                        }
                         _ if id == ID_CONTEXT_COPY_TO_TASK
                             || id == ID_CONTEXT_COPY_TO_EVENT
                             || id == ID_CONTEXT_COPY_TO_NOTE =>
@@ -3063,6 +3079,22 @@ document.addEventListener('keydown', function(e) {
                 ID_REFRESH_FOLDER,
                 "&Refresh Folder\tF5",
                 "Read this folder again from the server",
+            )
+            .append_item(
+                ID_CHOOSE_FOLDERS,
+                "&Folders to Keep Up to Date...",
+                "Choose which of this account's folders are downloaded",
+            )
+            .append_separator()
+            .append_item(
+                ID_MOVE_TO_FOLDER,
+                "Mo&ve to Folder...\tCtrl+Shift+V",
+                "Put this message in another folder",
+            )
+            .append_item(
+                ID_COPY_TO_FOLDER,
+                "Cop&y to Folder...\tCtrl+Shift+Y",
+                "Put a copy of this message in another folder",
             )
             .append_separator()
             // Drafts were saved and then unreachable, which is worse than not
@@ -5243,6 +5275,12 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
 
         let controller = MailController::new();
 
+        // Where a copy of each sent message goes, and whether one is needed at
+        // all. Gmail files its own, and appending ours on top is how a Sent
+        // folder ends up with everything twice. Worked out once, before the
+        // loop, because it is the same answer for every message in the queue.
+        let sent_copy_goes_to = sent_copy_destination(&cache, &account);
+
         for msg in &queued {
             // A message the account cannot send is a configuration problem, not
             // a transport failure, and saying which is the difference between a
@@ -5252,7 +5290,8 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
             // long queue can outlive an access token, and a token that expired
             // halfway through would fail every message after it for a reason
             // that reads like a wrong password.
-            let outcome = match crate::application::mail_auth::for_account(&account).await {
+            let auth = crate::application::mail_auth::for_account(&account).await;
+            let outcome = match auth {
                 Ok(auth) => match SendEmailRequest::from_queued(msg, &account, auth) {
                     Some(request) => controller
                         .send_email(&request)
@@ -5266,9 +5305,22 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
             };
 
             match &outcome {
-                Ok(()) => {
+                Ok(raw) => {
                     let _ = cache.delete_outbox_message(&msg.id);
                     sent += 1;
+                    // The copy is filed after the send, and a failure to file
+                    // it is not a failure to send: the message has gone, and
+                    // reporting it as failed would have somebody send it again.
+                    if let Some(folder) = sent_copy_goes_to.as_deref()
+                        && let Err(e) = file_sent_copy(&account, folder, raw).await
+                    {
+                        tracing::warn!("The message was sent, but no copy reached Sent: {e}");
+                        let _ = tx
+                            .send(UIUpdate::StatusUpdated(format!(
+                                "Sent, but no copy could be saved in Sent: {e}"
+                            )))
+                            .await;
+                    }
                 }
                 Err(reason) => {
                     let _ = cache.update_outbox_failure(&msg.id, reason);
@@ -5309,6 +5361,419 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
             .unwrap_or(0);
         let _ = tx.send(UIUpdate::OutboxQueueCount(remaining)).await;
     });
+}
+
+/// Ask where the chosen message should go, and put it there.
+///
+/// The window is opened on this thread, because a dialog belongs to the thread
+/// that owns the window; the server work happens on another, because a round
+/// trip on the UI thread is a frozen window and a screen reader with nothing to
+/// read.
+fn move_or_copy_message(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<crate::data::message_cache::MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    copying: bool,
+) {
+    use crate::application::destinations::{Branch, Destination, Moving, anywhere, offer};
+
+    let Some(cache) = cache.clone() else {
+        return send_status(tx, rt, "No message store is available");
+    };
+    let chosen = {
+        let s = lock_state(state);
+        s.selected_message_index
+            .and_then(|at| s.messages.get(at))
+            .map(|message| (message.message_id, message.uid, message.subject.clone()))
+    };
+    let Some((row_id, uid, subject)) = chosen else {
+        return send_status(tx, rt, "Choose a message first");
+    };
+    let Some(account_id) = lock_state(state).active_account_id.clone() else {
+        return send_status(tx, rt, "Add an account first");
+    };
+
+    // Where it is now, so that folder is not offered. Offering it is offering a
+    // command that silently does nothing, and nobody can tell that from one
+    // that failed.
+    let from = cache.folder_path_for_message(row_id).ok().flatten();
+    let account_name = {
+        let s = lock_state(state);
+        s.accounts
+            .iter()
+            .find(|a| a.id == account_id)
+            .map_or_else(|| account_id.clone(), |a| a.email.clone())
+    };
+
+    let places: Vec<Destination> = cache
+        .get_folders_for_account(&account_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|folder| Destination {
+            name: folder.name,
+            id: folder.path,
+            account_id: account_id.clone(),
+            depth: 0,
+        })
+        .collect();
+    let branches = offer(
+        vec![Branch {
+            account_id: account_id.clone(),
+            account_name,
+            places,
+        }],
+        from.as_deref(),
+    );
+
+    if !anywhere(&branches) {
+        return send_status(
+            tx,
+            rt,
+            crate::presentation::wx_destination::nowhere(Moving::Message),
+        );
+    }
+    let Some(into) =
+        crate::presentation::wx_destination::ask(frame, Moving::Message, copying, &branches)
+    else {
+        return;
+    };
+    let Some(from) = from else {
+        return send_status(tx, rt, "The message is not in a folder we know about");
+    };
+
+    send_status(
+        tx,
+        rt,
+        &format!(
+            "{} {subject}...",
+            if copying { "Copying" } else { "Moving" }
+        ),
+    );
+    spawn_folder_move(state, tx, rt, row_id, uid, subject, from, into, copying);
+}
+
+/// Do the move or copy on the server, and only then change the list.
+///
+/// A moved message leaves the folder it was in, so the row goes once the server
+/// has agreed and not before. A copy leaves it where it is, so nothing about
+/// the list changes at all.
+#[allow(clippy::too_many_arguments)]
+fn spawn_folder_move(
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    message_row_id: i64,
+    uid: u32,
+    subject: String,
+    from: String,
+    into: String,
+    copying: bool,
+) {
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    let account = {
+        let s = lock_state(state);
+        s.active_account_id
+            .as_ref()
+            .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned())
+            .or_else(|| s.accounts.first().cloned())
+    };
+
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        let fail = |reason: String| {
+            say(UIUpdate::ErrorOccurred(format!(
+                "{subject} was not {}: {reason}",
+                if copying { "copied" } else { "moved" }
+            )));
+        };
+
+        let Some(account) = account else {
+            return fail("no account is set up".to_string());
+        };
+        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
+            return fail(format!("{} has no usable IMAP port", account.name));
+        };
+        let auth = match handle.block_on(crate::application::mail_auth::for_account(&account)) {
+            Ok(auth) => auth,
+            Err(e) => return fail(e.to_string()),
+        };
+
+        let controller = MailController::new();
+        if let Err(e) = handle.block_on(controller.connect_imap(
+            account.imap_server.clone(),
+            port,
+            account.username.clone(),
+            auth,
+            account.imap_use_tls,
+            &account.id,
+        )) {
+            return fail(e.to_string());
+        }
+
+        let outcome = if copying {
+            handle
+                .block_on(controller.copy_message(&from, uid, &into))
+                .map(|()| None)
+        } else {
+            handle
+                .block_on(controller.move_message(&from, uid, &into))
+                .map(Some)
+        };
+        let _ = handle.block_on(controller.disconnect_imap());
+
+        match outcome {
+            Ok(None) => say(UIUpdate::StatusUpdated(format!("Copied to {into}: {subject}"))),
+            Ok(Some(moved)) => {
+                // Only now does the row leave the list, because only now is the
+                // message somewhere else.
+                say(UIUpdate::MessageDeletedFromCache(message_row_id));
+                say(UIUpdate::StatusUpdated(match moved {
+                    crate::service::protocols::imap::Moved::Moved => {
+                        format!("Moved to {into}: {subject}")
+                    }
+                    // The server has neither MOVE nor UIDPLUS, so the copy was
+                    // made and the original was flagged rather than removed.
+                    // Saying "moved" over a message that is still in both
+                    // folders is the kind of wrong found from another device.
+                    crate::service::protocols::imap::Moved::CopiedAndFlagged => format!(
+                        "Copied to {into} and marked for removal here, because this server cannot move one message at a time: {subject}"
+                    ),
+                }));
+            }
+            Err(e) => fail(e.to_string()),
+        }
+    });
+}
+
+/// Ask which folders this account keeps up to date, and record the answer.
+///
+/// The choice is written here, so it takes effect on the next sync whatever
+/// happens on the server. Subscriptions are then written to the server as well,
+/// as a courtesy to whatever else reads this account: a folder somebody
+/// unticked here should read as unwanted in their phone's mail app too.
+fn choose_folders(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<crate::data::message_cache::MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    use crate::presentation::wx_folder_choice::{FolderRow, ask};
+
+    let Some(cache) = cache.clone() else {
+        return send_status(tx, rt, "No message store is available");
+    };
+    let Some(account_id) = lock_state(state).active_account_id.clone() else {
+        return send_status(tx, rt, "Add an account first");
+    };
+
+    let stored = cache
+        .get_folders_for_account(&account_id)
+        .unwrap_or_default();
+    if stored.is_empty() {
+        return send_status(
+            tx,
+            rt,
+            "Check mail first, so there is a folder list to choose from",
+        );
+    }
+    let chosen = cache.folder_choices(&account_id).unwrap_or_default();
+
+    let facts = cache.folder_server_facts(&account_id).unwrap_or_default();
+    let keeps_subscriptions = facts.values().any(|(_, subscribed)| *subscribed);
+
+    // What the sync would do as things stand, so somebody who does not care can
+    // close the window and lose nothing. The same rule the sync uses, from the
+    // same facts, rather than a second version of it that can drift out of step
+    // and tick a folder the sync then skips.
+    let rows: Vec<FolderRow> = stored
+        .iter()
+        .map(|folder| {
+            let (holds_all_mail, subscribed) =
+                facts.get(&folder.path).copied().unwrap_or((false, true));
+            let by_default = crate::application::mail_sync::sync_by_default(
+                crate::application::mail_sync::FolderFacts {
+                    kind: crate::common::types::FolderType::from_stored(&folder.folder_type),
+                    // Anything in the cache was listed as somewhere messages
+                    // could be stored, so it is selectable.
+                    selectable: true,
+                    holds_all_mail,
+                    subscribed,
+                },
+                keeps_subscriptions,
+            );
+            FolderRow {
+                syncing: chosen.get(&folder.path).copied().unwrap_or(by_default),
+                path: folder.path.clone(),
+                name: folder.name.clone(),
+                subscribed,
+                holds_all_mail,
+                total: folder.total_count as usize,
+            }
+        })
+        .collect();
+
+    let Some(changed) = ask(frame, &account_id, &rows) else {
+        return;
+    };
+    if changed.is_empty() {
+        return send_status(tx, rt, "Nothing changed");
+    }
+
+    for (path, sync) in &changed {
+        if let Err(e) = cache.set_folder_choice(&account_id, path, *sync) {
+            return send_status(tx, rt, &format!("Could not record the choice: {e}"));
+        }
+    }
+    send_status(
+        tx,
+        rt,
+        &format!(
+            "{} folder{} changed. Check mail to apply it.",
+            changed.len(),
+            if changed.len() == 1 { "" } else { "s" }
+        ),
+    );
+    spawn_subscription_writes(state, tx, rt, changed);
+}
+
+/// Tell the server which folders somebody wants, so other clients agree.
+///
+/// Best effort. The choice is already recorded here and already decides what
+/// syncs, so a server that will not take a subscription change costs nothing
+/// but the courtesy. It is still said out loud rather than swallowed.
+fn spawn_subscription_writes(
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    changed: Vec<(String, bool)>,
+) {
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    let account = {
+        let s = lock_state(state);
+        s.active_account_id
+            .as_ref()
+            .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned())
+    };
+
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        let Some(account) = account else { return };
+        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
+            return;
+        };
+        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
+            return;
+        };
+
+        let controller = MailController::new();
+        if handle
+            .block_on(controller.connect_imap(
+                account.imap_server.clone(),
+                port,
+                account.username.clone(),
+                auth,
+                account.imap_use_tls,
+                &account.id,
+            ))
+            .is_err()
+        {
+            return;
+        }
+
+        let mut refused: Vec<String> = Vec::new();
+        for (path, sync) in &changed {
+            if let Err(e) = handle.block_on(controller.set_subscribed(path, *sync)) {
+                tracing::warn!("Could not change the subscription for {path}: {e}");
+                refused.push(path.clone());
+            }
+        }
+        let _ = handle.block_on(controller.disconnect_imap());
+
+        if !refused.is_empty() {
+            say(UIUpdate::StatusUpdated(format!(
+                "Saved here. The server would not record the change for {}, so other mail apps will not see it.",
+                refused.join(", ")
+            )));
+        }
+    });
+}
+
+/// Where a copy of a sent message should go, if anywhere.
+///
+/// `None` when the provider files its own copy, or when the account has no
+/// Sent folder to put one in. Both are ordinary: Gmail is the first, and a
+/// brand new account that has never synced is the second.
+fn sent_copy_destination(
+    cache: &crate::data::message_cache::MessageCache,
+    account: &crate::data::account::Account,
+) -> Option<String> {
+    if crate::data::email_providers::files_sent_copy_itself(&account.smtp_server) {
+        return None;
+    }
+    cache
+        .get_folders_for_account(&account.id)
+        .ok()?
+        .into_iter()
+        .find(|folder| {
+            crate::common::types::FolderType::from_stored(&folder.folder_type)
+                == crate::common::types::FolderType::Sent
+        })
+        .map(|folder| folder.path)
+}
+
+/// Put a copy of a message that has gone out into the Sent folder.
+///
+/// On its own connection. The send loop has no IMAP session, and opening one
+/// here keeps a failure to file the copy from touching the send at all.
+///
+/// Flagged `\Seen`, because a message somebody wrote themselves is not unread
+/// mail waiting to be dealt with, and an unread count that goes up every time
+/// they send something is a count nobody can use.
+async fn file_sent_copy(
+    account: &crate::data::account::Account,
+    folder: &str,
+    raw: &[u8],
+) -> std::result::Result<(), String> {
+    let port = account
+        .imap_port
+        .trim()
+        .parse::<u16>()
+        .map_err(|_| format!("{} has no usable IMAP port", account.name))?;
+    let auth = crate::application::mail_auth::for_account(account)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let controller = MailController::new();
+    controller
+        .connect_imap(
+            account.imap_server.clone(),
+            port,
+            account.username.clone(),
+            auth,
+            account.imap_use_tls,
+            &account.id,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    let filed = controller
+        .append_message(folder, Some("(\\Seen)"), raw)
+        .await
+        .map_err(|e| e.to_string());
+    let _ = controller.disconnect_imap().await;
+    filed
 }
 
 /// Watch the inbox for arrivals on a connection of its own.
@@ -5548,33 +6013,51 @@ fn spawn_server_change(
             return;
         }
 
+        // Where deleted mail goes for this account. Read from the folders we
+        // already hold rather than asked for, and `None` when the message is
+        // already in the trash, which is when somebody deleting it means it.
+        let trash = cache
+            .get_folders_for_account(&account.id)
+            .unwrap_or_default();
+        let trash = crate::application::destinations::trash_for(
+            trash.iter().map(|folder| {
+                (
+                    folder.path.as_str(),
+                    crate::common::types::FolderType::from_stored(&folder.folder_type),
+                )
+            }),
+            &folder_path,
+        )
+        .map(str::to_string);
+
         let outcome = match change {
             ServerChange::Read(read) => handle
                 .block_on(controller.set_flag(&folder_path, uid, "\\Seen", read))
-                .map(|()| true),
+                .map(|()| None),
             ServerChange::Flagged(flagged) => handle
                 .block_on(controller.set_starred(&folder_path, uid, flagged))
-                .map(|()| true),
-            ServerChange::Deleted => handle.block_on(controller.delete_message(&folder_path, uid)),
+                .map(|()| None),
+            ServerChange::Deleted => handle
+                .block_on(controller.delete_message(&folder_path, uid, trash.as_deref()))
+                .map(Some),
         };
         let _ = handle.block_on(controller.disconnect_imap());
 
         match outcome {
-            Ok(removed) => {
-                if change == ServerChange::Deleted {
-                    // Only now does the row leave the list, because only now is
-                    // it gone on the server.
+            Ok(deletion) => {
+                if let Some(deletion) = deletion {
+                    // Only now does the row leave the list, because only now
+                    // has the server acted on it.
                     say(UIUpdate::MessageDeletedFromCache(message_row_id));
-                    if !removed {
-                        // The server has no UIDPLUS, so it was marked for
-                        // removal rather than removed. Saying "deleted" over a
-                        // message still sitting in the folder is the kind of
-                        // wrong that is only discovered from another device.
-                        say(UIUpdate::StatusUpdated(format!(
-                            "Marked for deletion: {subject}. This server cannot remove one message at a time, so it stays in the folder until the mailbox is next cleaned up."
-                        )));
-                        return;
-                    }
+                    // What actually happened, in the words for it. Announcing
+                    // "deleted" over a message that moved to the trash, or one
+                    // still sitting in the folder flagged, is the kind of wrong
+                    // that is only discovered from another device.
+                    say(UIUpdate::StatusUpdated(format!(
+                        "{}: {subject}",
+                        deletion.spoken()
+                    )));
+                    return;
                 }
                 say(UIUpdate::StatusUpdated(change.done(&subject)));
             }
@@ -6222,8 +6705,13 @@ fn spawn_mail_sync(
         // A watch that fires names one folder, and re-reading the whole
         // account because one message arrived in the inbox is work nobody
         // asked for.
+        //
+        // What somebody chose about each folder wins over the default. An
+        // account nobody has answered for has an empty map, and every folder
+        // gets the default.
+        let chosen = cache.folder_choices(&account.id).unwrap_or_default();
         let worth_syncing: Vec<&crate::service::protocols::imap::ImapFolder> =
-            crate::application::mail_sync::folders_to_sync(&folders)
+            crate::application::mail_sync::folders_to_sync(&folders, &chosen)
                 .into_iter()
                 .filter(|f| only.as_deref().is_none_or(|path| f.path == path))
                 .collect();

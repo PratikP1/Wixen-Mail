@@ -1,0 +1,183 @@
+//! Picking where something goes.
+//!
+//! One window for every move and copy: a message into another folder, a task
+//! onto another list, an event into another calendar. A tree of accounts with
+//! their places under them, because two accounts can both have an Archive and a
+//! flat list of names makes those two rows that read identically.
+//!
+//! The shape of the tree, and which places are offered at all, is decided in
+//! [`crate::application::destinations`] where it can be tested. This builds the
+//! window and reads back what was chosen.
+//!
+//! # Keyboard
+//!
+//! A tree control, so arrows move, Left and Right collapse and expand, and
+//! typing jumps to a name. Enter chooses, Escape leaves. Nothing here needs a
+//! mouse and nothing needs a drag, which is what most mail clients make you do
+//! for exactly this.
+
+use crate::application::destinations::{Branch, Moving, nothing_to_offer};
+use crate::presentation::accessibility::names::{
+    set_accessible_name, set_accessible_name_and_description,
+};
+use wxdragon::prelude::*;
+
+/// What the window is called, and what its tree is described as.
+///
+/// The words differ between moving and copying because they are different acts
+/// and somebody hearing the title should know which one they are in the middle
+/// of. Kept out of the builder so both can be tested.
+pub fn heading(moving: Moving, copying: bool) -> String {
+    let act = if copying { "Copy" } else { "Move" };
+    match moving {
+        Moving::Message => format!("{act} the message to"),
+        // What is being moved, not what it is going into. "Move the calendar
+        // to" is a different sentence from "Move the event to", and only one
+        // of them is what is happening.
+        Moving::Item(kind) => format!("{act} the {} to", kind.holds().label().to_lowercase()),
+    }
+}
+
+/// Ask where something should go.
+///
+/// `None` when somebody cancelled or there was nowhere to offer. The caller
+/// checks for nowhere first, with [`nothing_to_offer`], so that case is a
+/// sentence rather than an empty window.
+pub fn ask(parent: &Frame, moving: Moving, copying: bool, branches: &[Branch]) -> Option<String> {
+    if branches.is_empty() {
+        return None;
+    }
+
+    let title = heading(moving, copying);
+    let dialog = Dialog::builder(parent, &title)
+        .with_size(520, 420)
+        .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
+        .build();
+
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    let tree = TreeCtrl::builder(&dialog)
+        .with_style(TreeCtrlStyle::HasButtons | TreeCtrlStyle::LinesAtRoot)
+        .build();
+    set_accessible_name_and_description(
+        &tree,
+        &title,
+        "Arrow keys move, Right expands an account, Enter chooses.",
+    );
+
+    // Every tree needs a root. The accounts hang off it, and the style hides
+    // it, so nobody has to arrow past a row that means nothing.
+    let root = tree.add_root("Accounts", None, None);
+    // The first real destination, so focus can start somewhere that is an
+    // answer rather than on an account name that is not one.
+    let mut first: Option<TreeItemId> = None;
+
+    if let Some(root) = root.as_ref() {
+        for branch in branches {
+            let Some(account) = tree.append_item(root, &branch.account_name, None, None) else {
+                continue;
+            };
+            for place in &branch.places {
+                // The identifier travels with the row. Matching rows by their
+                // position in a list built alongside would be one list and one
+                // tree that have to stay in step, and the failure is silent:
+                // the wrong folder, with everything reporting success.
+                let row =
+                    tree.append_item_with_data(&account, &place.name, place.id.clone(), None, None);
+                if first.is_none() {
+                    first = row;
+                }
+            }
+            tree.expand(&account);
+        }
+    }
+    sizer.add(&tree, 1, SizerFlag::All | SizerFlag::Expand, 8);
+
+    let buttons = BoxSizer::builder(Orientation::Horizontal).build();
+    let choose = Button::builder(&dialog)
+        .with_label(if copying { "&Copy" } else { "&Move" })
+        .with_id(ID_OK)
+        .build();
+    set_accessible_name(&choose, if copying { "Copy" } else { "Move" });
+    let cancel = Button::builder(&dialog)
+        .with_label("&Cancel")
+        .with_id(ID_CANCEL)
+        .build();
+    set_accessible_name(&cancel, "Cancel");
+    buttons.add(&choose, 0, SizerFlag::All, 6);
+    buttons.add(&cancel, 0, SizerFlag::All, 6);
+    sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
+
+    dialog.set_sizer(sizer, true);
+
+    // Focus lands on the first real destination rather than on the tree's
+    // notion of nothing selected, so the first thing announced is somewhere the
+    // message could go.
+    if let Some(first) = first.as_ref() {
+        tree.select_item(first);
+        tree.ensure_visible(first);
+    }
+    tree.set_focus();
+
+    let answer = dialog.show_modal();
+    // An account row carries no destination, so choosing one gives nothing
+    // rather than the first folder under it. Somebody who meant a folder and
+    // landed on the account gets no move, which they can see, instead of a
+    // move somewhere they did not name.
+    let chosen = if answer == ID_OK {
+        tree.get_selection()
+            .and_then(|selected| tree.get_custom_data(&selected))
+            .and_then(|data| data.downcast_ref::<String>().cloned())
+    } else {
+        None
+    };
+    tree.cleanup_custom_data();
+    dialog.destroy();
+    chosen
+}
+
+/// What to say when there is nowhere to put it.
+///
+/// Re-exported here so a caller that only knows about the window does not have
+/// to reach past it for the sentence that replaces the window.
+pub fn nowhere(moving: Moving) -> &'static str {
+    nothing_to_offer(moving)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::new_item::ContainerKind;
+
+    #[test]
+    fn test_the_title_says_which_act_this_is() {
+        // Moving and copying are different, and somebody hearing the title
+        // should know which one they are in the middle of.
+        assert!(heading(Moving::Message, false).starts_with("Move"));
+        assert!(heading(Moving::Message, true).starts_with("Copy"));
+    }
+
+    #[test]
+    fn test_the_title_says_what_is_being_moved() {
+        assert!(heading(Moving::Message, false).contains("message"));
+
+        for kind in ContainerKind::ALL {
+            let said = heading(Moving::Item(kind), false);
+            assert!(said.starts_with("Move the"), "{kind:?}: {said}");
+            assert!(said.ends_with(" to"), "{kind:?}: {said}");
+        }
+    }
+
+    #[test]
+    fn test_every_kind_names_itself_rather_than_saying_item() {
+        // "Move the item to" tells somebody nothing they did not already know
+        // and reads the same for all four.
+        let said: Vec<String> = ContainerKind::ALL
+            .iter()
+            .map(|kind| heading(Moving::Item(*kind), false))
+            .collect();
+        let unique: std::collections::HashSet<&String> = said.iter().collect();
+
+        assert_eq!(unique.len(), said.len(), "{said:?}");
+    }
+}

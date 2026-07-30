@@ -35,6 +35,22 @@ pub fn selectable(attributes: &[String]) -> bool {
     })
 }
 
+/// Whether this mailbox holds a copy of every message in the account.
+///
+/// RFC 6154 calls it `\All`, and in practice it is Gmail's All Mail. It is not
+/// an archive in the ordinary sense: a message in the inbox is also in here,
+/// under a different UID, so syncing both means downloading the whole account
+/// twice and listing every message twice.
+///
+/// Kept separate from the folder's role, which classifies it as the archive,
+/// because "where mail goes when it leaves the inbox" and "everything, again"
+/// need different answers about whether to sync.
+pub fn holds_all_mail(attributes: &[String]) -> bool {
+    attributes
+        .iter()
+        .any(|attribute| eq_attribute(attribute, "all"))
+}
+
 /// The role a server declared, if it declared one.
 fn from_attributes(attributes: &[String]) -> Option<FolderType> {
     attributes.iter().find_map(|attribute| {
@@ -197,6 +213,24 @@ mod tests {
         // Some servers report a nil delimiter for a flat namespace.
         assert_eq!(classify(&[], "Sent", None), FolderType::Sent);
         assert_eq!(classify(&[], "Sent", Some("")), FolderType::Sent);
+    }
+
+    #[test]
+    fn test_the_mailbox_holding_everything_is_recognised() {
+        // Gmail's All Mail. Syncing it as well as the inbox downloads every
+        // message a second time, under a second UID, and lists it twice.
+        assert!(holds_all_mail(&attrs(&["\\All"])));
+        assert!(holds_all_mail(&attrs(&["\\HasNoChildren", "\\all"])));
+    }
+
+    #[test]
+    fn test_an_ordinary_archive_does_not_hold_everything() {
+        // A real archive folder is somewhere mail is moved to, so a message is
+        // in it or in the inbox, not both. Skipping it would lose mail from
+        // the listing.
+        assert!(!holds_all_mail(&attrs(&["\\Archive"])));
+        assert!(!holds_all_mail(&attrs(&["\\Sent"])));
+        assert!(!holds_all_mail(&[]));
     }
 
     #[test]

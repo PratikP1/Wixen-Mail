@@ -20,6 +20,33 @@
 //! message, or offering the folder the message is already in.
 
 use crate::application::new_item::ContainerKind;
+use crate::common::types::FolderType;
+
+/// Where a deleted message should go, if anywhere.
+///
+/// Deleting mail means moving it to the trash. It is what every other client
+/// does, it is recoverable, and it is the only behaviour that means the same
+/// thing on every server: flagging a message and expunging it in place removes
+/// a label on Gmail, and which of three things that turns into depends on a
+/// setting only reachable in Gmail's own web interface.
+///
+/// `None` means there is nowhere to move it to and the delete is a real one:
+/// either the message is already in the trash, in which case somebody deleting
+/// it again means it, or the account has no trash folder at all.
+pub fn trash_for<'a>(
+    folders: impl IntoIterator<Item = (&'a str, FolderType)>,
+    deleting_from: &str,
+) -> Option<&'a str> {
+    let trash = folders
+        .into_iter()
+        .find(|(_, kind)| *kind == FolderType::Trash)
+        .map(|(path, _)| path)?;
+
+    if trash == deleting_from {
+        return None;
+    }
+    Some(trash)
+}
 
 /// What is being moved or copied, which decides what it can go into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,6 +203,36 @@ mod tests {
             assert!(!said.is_empty(), "{kind:?}");
             assert!(said.contains("no other"), "{kind:?}: {said}");
         }
+    }
+
+    fn mailboxes() -> [(&'static str, FolderType); 3] {
+        [
+            ("INBOX", FolderType::Inbox),
+            ("[Gmail]/Trash", FolderType::Trash),
+            ("Work", FolderType::Custom),
+        ]
+    }
+
+    #[test]
+    fn test_a_deleted_message_goes_to_the_trash() {
+        assert_eq!(trash_for(mailboxes(), "INBOX"), Some("[Gmail]/Trash"));
+    }
+
+    #[test]
+    fn test_deleting_from_the_trash_really_deletes() {
+        // Somebody emptying the trash means it. Moving a message from the
+        // trash to the trash is a command that does nothing, and they cannot
+        // tell that from one that failed.
+        assert_eq!(trash_for(mailboxes(), "[Gmail]/Trash"), None);
+    }
+
+    #[test]
+    fn test_an_account_with_no_trash_folder_deletes_in_place() {
+        // Some servers have none. There is nowhere to move it to, so the only
+        // delete available is the one that removes it.
+        let no_trash = [("INBOX", FolderType::Inbox), ("Work", FolderType::Custom)];
+
+        assert_eq!(trash_for(no_trash, "INBOX"), None);
     }
 
     #[test]

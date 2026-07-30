@@ -94,6 +94,12 @@ pub enum Action {
     CopyToEvent,
     /// Make a note from it.
     CopyToNote,
+    /// Put this message in another folder, and take it out of this one.
+    MoveToFolder,
+    /// Put a copy of this message in another folder, keeping this one.
+    CopyToFolder,
+    /// Choose which of this account's folders are kept up to date.
+    ChooseFolders,
 }
 
 /// One line on a context menu.
@@ -135,6 +141,8 @@ static MESSAGES: &[Entry] = &[
     entry("&Mark as read", Action::MarkRead),
     entry("&Star or unstar", Action::ToggleStar),
     entry("&Delete", Action::DeleteMessage),
+    entry("Mo&ve to folder", Action::MoveToFolder),
+    entry("Cop&y to folder", Action::CopyToFolder),
     // The thing you have to do arrived as an email, and retyping its subject
     // into a task list is the clerical work software exists to remove.
     entry("Copy to a &task", Action::CopyToTask),
@@ -145,6 +153,7 @@ static MESSAGES: &[Entry] = &[
 static MAIL_FOLDERS: &[Entry] = &[
     entry("&Refresh this folder", Action::RefreshFolder),
     entry("Get &older messages", Action::GetOlder),
+    entry("&Folders to keep up to date", Action::ChooseFolders),
 ];
 
 static CONTACTS: &[Entry] = &[
