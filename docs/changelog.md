@@ -37,9 +37,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Known limitations
 
-- Gmail's own conversation identifier is fetched by nobody, including Wixen Mail. The library this is built on parses it and offers no way to read it back, so conversations are worked out from the message headers, as they are on every other provider. Threading is a little worse on Gmail than Gmail's own web interface as a result.
+- Conversations on Gmail are worked out from the message headers, the same way they are on every other provider, so a conversation here can be split differently from the same one in Gmail's web interface. Gmail does publish its own grouping, and the library Wixen Mail is built on reads it and provides no way to get at it, so this is not something Wixen Mail can currently fix at its end.
 - The Sent copy does not list blind copy recipients. That is a consequence of how blind copies are kept blind on the way out, and it means the saved copy records what you wrote rather than everyone who received it.
-- Which folders sync is decided per account and applies at the next check for mail, not immediately.
+- Which folders sync is set per account, not once for all of them. Turning one off takes it out of the folder tree straight away; turning one on brings its messages down at the next check for mail rather than immediately.
 
 ### Changed
 
