@@ -8395,6 +8395,28 @@ fn spawn_mail_sync(
         let mut fetched = 0usize;
         let mut problems: Vec<String> = Vec::new();
 
+        // The account's rules, read once for the whole sync rather than once
+        // per folder. An account with no rules gets `None`, and arriving mail
+        // is not looked at twice for nothing.
+        let engine = cache
+            .get_filter_rules_for_account(&account.id)
+            .map(|stored| {
+                let mut engine = crate::application::filters::FilterEngine::default();
+                engine.load_from_persisted(&stored);
+                engine
+            })
+            .unwrap_or_else(|e| {
+                // Said rather than swallowed. Mail arriving unsorted looks the
+                // same as mail arriving with no rules written.
+                problems.push(format!("Rules could not be read: {}", e));
+                crate::application::filters::FilterEngine::default()
+            });
+        let filtering =
+            (!engine.get_rules().is_empty()).then(|| crate::application::mail_sync::Filtering {
+                rules: &engine,
+                allowed: crate::application::allowed::allowed_for(&account.id),
+            });
+
         for folder in worth_syncing {
             let Some((_, folder_id)) = stored.iter().find(|(f, _)| f.path == folder.path) else {
                 continue;
@@ -8409,6 +8431,7 @@ fn spawn_mail_sync(
                 folder,
                 *folder_id,
                 crate::application::mail_sync::INITIAL_FETCH_LIMIT,
+                filtering.as_ref(),
             )) {
                 Ok(result) => {
                     fetched += result.fetched;
@@ -8441,6 +8464,22 @@ fn spawn_mail_sync(
                     }
                     if result.renumbered {
                         report.push_str(", read again after the server renumbered it");
+                    }
+                    if result.filtered.changed > 0 {
+                        report.push_str(&format!(
+                            ", {} sorted by your rules",
+                            result.filtered.changed
+                        ));
+                    }
+                    if result.filtered.held_back > 0 {
+                        // Said, not passed over. A rule that files invoices
+                        // into a folder and does not is a rule somebody
+                        // believes is working, and the reason is a setting
+                        // they can change.
+                        report.push_str(&format!(
+                            ", {} left alone because changing mail is not allowed",
+                            result.filtered.held_back
+                        ));
                     }
                     say(UIUpdate::StatusUpdated(report));
                 }

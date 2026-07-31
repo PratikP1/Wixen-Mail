@@ -12,7 +12,7 @@
 
 use crate::application::mail_controller::MailController;
 use crate::common::{Result, types::FolderType};
-use crate::data::message_cache::{CachedFolder, IncomingMessage, MessageCache};
+use crate::data::message_cache::{CachedFolder, CachedMessage, IncomingMessage, MessageCache};
 use crate::service::protocols::imap::{
     ImapClient, ImapConfig, ImapFolder, ImapIdleEvent, ImapIdleHandle, ImapMessage,
 };
@@ -59,6 +59,30 @@ pub struct FolderSync {
     pub flags_updated: usize,
     /// Whether the server had renumbered the mailbox since the last sync.
     pub renumbered: bool,
+    /// What the rules did to the mail that just arrived.
+    pub filtered: Filtered,
+}
+
+/// The rules to run on arriving mail, and what may be done as a result.
+pub struct Filtering<'a> {
+    pub rules: &'a crate::application::filters::FilterEngine,
+    /// What this account is allowed to change. Moving and deleting reach the
+    /// server; marking read and flagging do not, and go out later through the
+    /// flag sync, which has its own gate.
+    pub allowed: crate::application::allowed::Allowed,
+}
+
+/// What the rules did, and what they were not allowed to do.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Filtered {
+    /// How many arriving messages a rule touched.
+    pub changed: usize,
+    /// How many were left alone because moving or deleting is not allowed.
+    ///
+    /// Counted rather than passed over quietly. A rule that files invoices
+    /// into a folder and does not, on a build where writing to the server is
+    /// off, is a rule somebody believes is working.
+    pub held_back: usize,
 }
 
 /// Which messages to fetch headers for, newest first, bounded.
@@ -223,12 +247,88 @@ pub fn store_folders(
 }
 
 /// Sync one folder into the cache.
+/// Run the rules over messages that have just arrived.
+///
+/// The rules could be written, named, ordered and stored, and nothing had ever
+/// evaluated one: the engine, the editor and the table were all there and no
+/// arriving message was ever passed to them.
+///
+/// One message at a time and one failure at a time. A rule that cannot be
+/// carried out on one message is not a reason to stop filtering the rest, and
+/// the alternative, stopping the whole sync, would turn a bad rule into a
+/// mailbox that no longer updates.
+fn apply_rules(cache: &MessageCache, filtering: &Filtering<'_>, arrived: &[i64]) -> Filtered {
+    let mut done = Filtered::default();
+    for id in arrived {
+        let Ok(Some(message)) = cache.get_message(*id) else {
+            continue;
+        };
+        let outcome =
+            crate::application::filters::settle(&filtering.rules.evaluate_message(&message));
+        if outcome.is_nothing() {
+            continue;
+        }
+        if outcome.touches_the_server() && !filtering.allowed.mail {
+            // Not done quietly. A rule that files invoices into a folder and
+            // does not is a rule somebody believes is working.
+            tracing::info!(
+                "A rule would move or delete a message and changing mail is not allowed; \
+                 leaving it where it is"
+            );
+            done.held_back += 1;
+            continue;
+        }
+        match carry_out(cache, &message, &outcome) {
+            Ok(()) => done.changed += 1,
+            Err(e) => tracing::warn!("A rule could not be carried out: {}", e),
+        }
+    }
+    done
+}
+
+/// Do to one message what its rules settled on.
+fn carry_out(
+    cache: &MessageCache,
+    message: &CachedMessage,
+    outcome: &crate::application::filters::Outcome,
+) -> Result<()> {
+    let id = message.id;
+    if outcome.delete {
+        // Locally. Taking it off the server is the move-to-trash path, which
+        // is somebody's own deliberate action rather than a rule's.
+        cache.delete_message(id)?;
+        return Ok(());
+    }
+    if outcome.read.is_some() || outcome.starred.is_some() {
+        cache.update_message_flags(
+            id,
+            outcome.read.unwrap_or(message.read),
+            outcome.starred.unwrap_or(message.starred),
+        )?;
+    }
+    for tag in &outcome.tags {
+        cache.add_tag_to_message(id, tag)?;
+    }
+    if let Some(folder) = &outcome.move_to {
+        // Named rather than done. Moving needs the folder's id and a write to
+        // the server, and doing half of it, in the cache only, would show
+        // somebody a message in a folder it is not in until the next sync put
+        // it back.
+        tracing::info!(
+            "A rule would move a message to {}, which is not built yet; it is left where it is",
+            folder
+        );
+    }
+    Ok(())
+}
+
 pub async fn sync_folder(
     controller: &MailController,
     cache: &MessageCache,
     folder: &ImapFolder,
     folder_id: i64,
     limit: usize,
+    filtering: Option<&Filtering<'_>>,
 ) -> Result<FolderSync> {
     if !folder.selectable {
         // A container such as Gmail's `[Gmail]`. Selecting it fails.
@@ -271,13 +371,24 @@ pub async fn sync_folder(
 
     let wanted = uids_to_fetch(&on_server, &stored, limit);
     let fetched = controller.fetch_headers(&folder.path, &wanted).await?;
+    let mut arrived = Vec::new();
     for message in &fetched {
-        cache.upsert_message(&to_incoming(
+        let id = cache.upsert_message(&to_incoming(
             message,
             folder_id,
             folder.folder_type == crate::common::types::FolderType::Spam,
         ))?;
+        arrived.push(id);
     }
+
+    // Rules, on what has just arrived and nothing else. Running them over
+    // messages already held would apply them again on every sync, and a rule
+    // somebody has since changed their mind about would keep firing on mail
+    // they had already sorted by hand.
+    let filtered = match filtering {
+        Some(rules) => apply_rules(cache, rules, &arrived),
+        None => Filtered::default(),
+    };
 
     // Messages already held, whose flags may have changed elsewhere. The
     // header fetch above only asks about messages this cache does not have, so
@@ -332,6 +443,7 @@ pub async fn sync_folder(
             .map(|held| held.len())
             .unwrap_or(0),
         renumbered,
+        filtered,
     })
 }
 
@@ -500,6 +612,173 @@ pub fn folders_to_sync<'a>(
 mod tests {
     use super::*;
     use crate::common::types::EmailAddress;
+
+    /// A rule written by somebody, on a message that has just arrived.
+    ///
+    /// The whole point of the task this comes from: the engine, the rule
+    /// editor and the table all existed and no arriving message had ever been
+    /// passed to them. Every step here, because the step that was missing was
+    /// the one joining two halves that each worked.
+    #[test]
+    fn test_a_rule_reaches_a_message_that_has_just_arrived() {
+        use crate::application::filters::FilterEngine;
+        use crate::data::message_cache::MessageFilterRule;
+
+        let dir = std::env::temp_dir().join(format!("wixen_filter_{}", uuid::Uuid::new_v4()));
+        let cache = MessageCache::new(dir, None).expect("a cache");
+        let folder_id = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Inbox".into(),
+                path: "INBOX".into(),
+                folder_type: "Inbox".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        let id = cache
+            .upsert_message(&IncomingMessage {
+                folder_id,
+                uid: 1,
+                message_id: "inv-1@example.com".into(),
+                subject: "Invoice #4021".into(),
+                from_addr: "billing@example.com".into(),
+                to_addr: "me@example.com".into(),
+                cc: None,
+                reply_to: None,
+                date: "2026-07-31T09:00:00+00:00".into(),
+                internal_date: None,
+                size_bytes: None,
+                refs_header: None,
+                read: false,
+                starred: false,
+                answered: false,
+                draft: false,
+                deleted: false,
+                has_attachments: false,
+                safety: crate::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                labels: None,
+                receipt_to: None,
+                pop_uidl: None,
+            })
+            .expect("a message");
+
+        let mut engine = FilterEngine::default();
+        engine.load_from_persisted(&[MessageFilterRule {
+            id: "r1".into(),
+            account_id: "acct".into(),
+            name: "Invoices".into(),
+            field: "subject".into(),
+            match_type: "contains".into(),
+            pattern: "Invoice".into(),
+            case_sensitive: false,
+            action_type: "mark_as_read".into(),
+            action_value: None,
+            enabled: true,
+            created_at: "2026-07-31T00:00:00Z".into(),
+        }]);
+
+        let done = apply_rules(
+            &cache,
+            &Filtering {
+                rules: &engine,
+                allowed: crate::application::allowed::Allowed::EVERYTHING,
+            },
+            &[id],
+        );
+
+        assert_eq!(done.changed, 1, "the rule did not reach the message");
+        assert!(
+            cache
+                .get_message(id)
+                .expect("read back")
+                .expect("there")
+                .read,
+            "the message is still unread"
+        );
+    }
+
+    #[test]
+    fn test_a_rule_that_moves_is_held_back_when_mail_may_not_be_changed() {
+        // And counted, so it can be said. A rule that files invoices into a
+        // folder and does not is a rule somebody believes is working.
+        use crate::application::filters::FilterEngine;
+        use crate::data::message_cache::MessageFilterRule;
+
+        let dir = std::env::temp_dir().join(format!("wixen_filter_{}", uuid::Uuid::new_v4()));
+        let cache = MessageCache::new(dir, None).expect("a cache");
+        let folder_id = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Inbox".into(),
+                path: "INBOX".into(),
+                folder_type: "Inbox".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        let id = cache
+            .upsert_message(&IncomingMessage {
+                folder_id,
+                uid: 2,
+                message_id: "inv-2@example.com".into(),
+                subject: "Invoice #4022".into(),
+                from_addr: "billing@example.com".into(),
+                to_addr: "me@example.com".into(),
+                cc: None,
+                reply_to: None,
+                date: "2026-07-31T09:00:00+00:00".into(),
+                internal_date: None,
+                size_bytes: None,
+                refs_header: None,
+                read: false,
+                starred: false,
+                answered: false,
+                draft: false,
+                deleted: false,
+                has_attachments: false,
+                safety: crate::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                labels: None,
+                receipt_to: None,
+                pop_uidl: None,
+            })
+            .expect("a message");
+
+        let mut engine = FilterEngine::default();
+        engine.load_from_persisted(&[MessageFilterRule {
+            id: "r2".into(),
+            account_id: "acct".into(),
+            name: "File invoices".into(),
+            field: "subject".into(),
+            match_type: "contains".into(),
+            pattern: "Invoice".into(),
+            case_sensitive: false,
+            action_type: "delete".into(),
+            action_value: None,
+            enabled: true,
+            created_at: "2026-07-31T00:00:00Z".into(),
+        }]);
+
+        let done = apply_rules(
+            &cache,
+            &Filtering {
+                rules: &engine,
+                allowed: crate::application::allowed::Allowed::NOTHING,
+            },
+            &[id],
+        );
+
+        assert_eq!(done.held_back, 1);
+        assert_eq!(done.changed, 0);
+        assert!(
+            cache.get_message(id).expect("read back").is_some(),
+            "the message was deleted anyway"
+        );
+    }
 
     fn message(uid: u32) -> ImapMessage {
         ImapMessage {

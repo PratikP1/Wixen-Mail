@@ -8,6 +8,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Rules run on arriving mail.** They could be written, named, ordered and
+  stored, and nothing had ever evaluated one: the engine, the editor and the
+  table all existed and no arriving message was ever handed to them. Rules now
+  run on mail as it comes down, once, on the messages that just arrived rather
+  than on everything held, and the sync says how many were sorted. A rule that
+  moves or deletes is left undone while changing mail is switched off, and the
+  count of those is said too, because a rule that files invoices and does not is
+  one somebody believes is working.
+
+  Where a message matches several rules that disagree, the answer is settled
+  before anything is written: the later rule wins, and deleting drops the rest
+  rather than moving a message into a folder on its way to the trash.
+
+  **Known limitation:** a rule that moves a message to a folder is named in the
+  log and not carried out. Moving needs a write to the server, and doing half of
+  it in the cache alone would show a message in a folder it is not in until the
+  next sync put it back.
+
 - **Signatures go on messages.** They could be written, named, marked as the
   default and stored, and none of that ever reached a message. One now goes on
   a new message, a reply and a forward, above the quoted original where you are

@@ -194,6 +194,80 @@ impl FilterEngine {
     }
 }
 
+/// What a message's matching rules add up to.
+///
+/// Rules are written one at a time and a message can match several, so the
+/// actions arrive as a list that can contradict itself: one rule says read,
+/// the next says unread, a third says move it and a fourth says delete it.
+/// Carrying them out in order would do all four, leaving the message wherever
+/// the last write happened to land it.
+///
+/// Settled into one answer first, so what happens to a message is decided
+/// before anything is written and can be described before it is done.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Outcome {
+    /// Whether to mark it read, if any rule said so.
+    pub read: Option<bool>,
+    /// Whether to flag it, if any rule said so.
+    pub starred: Option<bool>,
+    /// Where it goes, if any rule moves it.
+    pub move_to: Option<String>,
+    /// What to label it, in the order the rules appear, without repeats.
+    pub tags: Vec<String>,
+    /// Whether it goes to the trash.
+    pub delete: bool,
+}
+
+impl Outcome {
+    /// Whether this does anything at all.
+    pub fn is_nothing(&self) -> bool {
+        self == &Self::default()
+    }
+
+    /// Whether carrying this out changes anything on the server.
+    ///
+    /// Moving and deleting do. Marking read and flagging are written back by
+    /// the flag sync, which has its own gate, so they are not counted here.
+    pub fn touches_the_server(&self) -> bool {
+        self.delete || self.move_to.is_some()
+    }
+}
+
+/// Settle a message's matching actions into one answer.
+///
+/// Later rules win over earlier ones on the questions that have a single
+/// answer, because that is the order they are written in and the order somebody
+/// reading their own rule list expects.
+///
+/// Deleting wins outright and drops the rest. Moving a message and then
+/// deleting it is two writes to reach the same place, and moving a message that
+/// is about to be deleted puts it in the trash from a folder somebody never saw
+/// it in.
+pub fn settle(actions: &[FilterAction]) -> Outcome {
+    let mut outcome = Outcome::default();
+    for action in actions {
+        match action {
+            FilterAction::Delete => {
+                return Outcome {
+                    delete: true,
+                    ..Outcome::default()
+                };
+            }
+            FilterAction::MarkAsRead => outcome.read = Some(true),
+            FilterAction::MarkAsUnread => outcome.read = Some(false),
+            FilterAction::Star => outcome.starred = Some(true),
+            FilterAction::Unstar => outcome.starred = Some(false),
+            FilterAction::MoveToFolder(folder) => outcome.move_to = Some(folder.clone()),
+            FilterAction::AddTag(tag) => {
+                if !outcome.tags.iter().any(|held| held == tag) {
+                    outcome.tags.push(tag.clone());
+                }
+            }
+        }
+    }
+    outcome
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -464,6 +538,65 @@ mod tests {
             &rule("regex", "(a+)+$", false),
             &message_with_subject(&subject)
         ));
+    }
+
+    #[test]
+    fn test_a_message_matching_nothing_has_nothing_done_to_it() {
+        assert!(settle(&[]).is_nothing());
+    }
+
+    #[test]
+    fn test_the_later_rule_wins_when_two_disagree() {
+        // Written in order, read in order. Carrying both out would leave the
+        // message in whichever state the last write happened to land in, which
+        // is the same answer by accident rather than on purpose.
+        let settled = settle(&[FilterAction::MarkAsRead, FilterAction::MarkAsUnread]);
+
+        assert_eq!(settled.read, Some(false));
+    }
+
+    #[test]
+    fn test_deleting_drops_everything_else() {
+        // Moving a message that is about to be deleted puts it in the trash
+        // from a folder nobody ever saw it in.
+        let settled = settle(&[
+            FilterAction::MoveToFolder("Receipts".into()),
+            FilterAction::Star,
+            FilterAction::Delete,
+        ]);
+
+        assert!(settled.delete);
+        assert_eq!(settled.move_to, None);
+        assert_eq!(settled.starred, None);
+    }
+
+    #[test]
+    fn test_nothing_written_after_a_delete_brings_the_message_back() {
+        let settled = settle(&[FilterAction::Delete, FilterAction::MarkAsRead]);
+
+        assert!(settled.delete);
+        assert_eq!(settled.read, None);
+    }
+
+    #[test]
+    fn test_tags_add_up_and_are_not_repeated() {
+        let settled = settle(&[
+            FilterAction::AddTag("work".into()),
+            FilterAction::AddTag("urgent".into()),
+            FilterAction::AddTag("work".into()),
+        ]);
+
+        assert_eq!(settled.tags, vec!["work", "urgent"]);
+    }
+
+    #[test]
+    fn test_only_moving_and_deleting_count_as_touching_the_server() {
+        // What the permission gate asks. Marking read and flagging go through
+        // the flag sync, which has its own.
+        assert!(settle(&[FilterAction::Delete]).touches_the_server());
+        assert!(settle(&[FilterAction::MoveToFolder("Receipts".into())]).touches_the_server());
+        assert!(!settle(&[FilterAction::MarkAsRead]).touches_the_server());
+        assert!(!settle(&[FilterAction::AddTag("work".into())]).touches_the_server());
     }
 
     #[test]
