@@ -171,6 +171,18 @@ exist, so accessibility work is not a review-time cleanup pass, it is part of bu
 Automated checks catch roughly half of accessibility defects. They do not replace testing with real
 assistive technology. Structure present is not experience good.
 
+**Windows has two accessibility channels and this project needs both right.** UI Automation is what
+Narrator reads. MSAA, through `IAccessible`, is what NVDA reads for native controls, and it is the
+only place `set_accessible_name` writes: for an edit box or a button, Windows supplies its own UI
+Automation provider that shadows the MSAA object underneath. So a UI Automation scan reports the
+system's name for those controls and never the one the code set. The accessibility workflow runs
+Axe.Windows over UI Automation and `scripts/msaa-names.ps1` over MSAA, per window, and a name that
+fails on either channel is a name somebody does not hear.
+
+A control with a visible label beside it gets that label as its MSAA name even when nothing set one,
+because Windows falls back to the nearest static text. That is a real name and it is really spoken,
+so a clean run does not mean every name came from this code.
+
 - **Blind, screen readers.** Every control exposes a correct UI Automation Name, Role, Value, and
   State. Focus is managed and never lost when a panel or dialog changes. Announce dynamic changes
   through `presentation::accessibility::screen_reader` rather than relying on the user to discover

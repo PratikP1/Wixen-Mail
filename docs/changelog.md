@@ -65,6 +65,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The accessibility check now measures the names this application sets.** It
+  scanned the UI Automation tree, and for an edit box or a button Windows puts
+  its own UI Automation provider over the top of the accessible object this
+  application supplies. So the check read the system's name for those controls
+  and never the one set here, in either direction: it could report a name
+  missing where one is present and spoken, and every accessible name in the
+  application could have been deleted without it noticing. It now also walks the
+  MSAA tree, which is what NVDA reads for those controls, and says which control
+  and where when one has no name. Proved by taking a name out and watching the
+  check report it.
+
 - **Reminder alerts no longer pile up on top of each other.** With more than
   one reminder overdue, a second alert window opened over the first about a
   minute later, and a third over that, each covering the one being read. The

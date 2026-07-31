@@ -1,11 +1,21 @@
 name: Accessibility
 
-# Automated UI Automation scanning of the running application.
+# Automated scanning of the running application, on both accessibility channels.
 #
-# This catches roughly half of accessibility defects: missing or empty accessible
-# names, wrong control types, unreachable elements, contrast failures the scanner
-# can measure. It does not replace testing with NVDA, JAWS, or Narrator. A clean
-# scan means the structure is present, not that the experience is good.
+# Windows has two. Axe.Windows reads UI Automation, which is what Narrator uses.
+# The second step walks MSAA through IAccessible, which is what NVDA uses for
+# native controls and the only place `set_accessible_name` puts anything: for an
+# edit box or a button, Windows supplies its own UI Automation provider that
+# shadows the MSAA object underneath, so the UI Automation scan reports the
+# system's name and never the one this code set. It had therefore never measured
+# a single accessible name in this application, in either direction, and would
+# not have noticed every one of them being deleted.
+#
+# Together they catch roughly half of accessibility defects: missing or empty
+# accessible names, wrong control types, unreachable elements, contrast failures
+# the scanner can measure. Neither replaces testing with NVDA, JAWS, or
+# Narrator. A clean scan means the structure is present, not that the experience
+# is good.
 #
 # The job is non-blocking on purpose. Treat its findings as a work queue, not a
 # gate, and read the uploaded report rather than the pass/fail badge.
@@ -25,7 +35,7 @@ permissions:
 
 jobs:
   uia-scan:
-    name: UI Automation scan
+    name: Accessibility scan
     runs-on: windows-latest
     continue-on-error: true
 
@@ -102,6 +112,9 @@ jobs:
         $total = 0
         $broken = @()
         $perWindow = @()
+        # Windows holding a control somebody operates that has no name on the
+        # channel NVDA reads.
+        $unnamed = @()
 
         foreach ($target in $targets) {
           # Axe.Windows rejects a relative --outputdirectory, and each window
@@ -155,6 +168,20 @@ jobs:
             $total += $count
             $perWindow += "$target : $count"
             Write-Host "$target scanned with $count violation(s)."
+
+            # The other channel, on the same running window. Exit 2 means the
+            # walk itself failed, which is not a window with nothing wrong with
+            # it and is recorded as broken rather than as a pass.
+            $PSNativeCommandUseErrorActionPreference = $false
+            & pwsh -NoProfile -File scripts/msaa-names.ps1 `
+              -ProcessId $app.Id `
+              -Json (Join-Path $outDir 'msaa-names.json')
+            $msaaExit = $LASTEXITCODE
+            if ($msaaExit -eq 2) {
+              $broken += "$target : the MSAA walk failed, so its names were never read"
+            } elseif ($msaaExit -eq 1) {
+              $unnamed += $target
+            }
           }
           finally {
             if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
@@ -165,6 +192,8 @@ jobs:
         ($perWindow -join '; ') | ForEach-Object { "perwindow=$_" } |
           Out-File -FilePath $env:GITHUB_OUTPUT -Append
         ($broken -join '; ') | ForEach-Object { "broken=$_" } |
+          Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        ($unnamed -join ', ') | ForEach-Object { "unnamed=$_" } |
           Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
         if ($broken.Count -gt 0) {
@@ -196,7 +225,14 @@ jobs:
         }
         $perWindow = '${{ steps.scan.outputs.perwindow }}'
         if ($perWindow) {
-          Add-Content $env:GITHUB_STEP_SUMMARY "Violations per window: $perWindow"
+          Add-Content $env:GITHUB_STEP_SUMMARY "UI Automation violations per window: $perWindow"
+          Add-Content $env:GITHUB_STEP_SUMMARY ''
+        }
+        $unnamed = '${{ steps.scan.outputs.unnamed }}'
+        if ($unnamed) {
+          Add-Content $env:GITHUB_STEP_SUMMARY "**A control somebody operates has no name on the channel NVDA reads, in these windows:** $unnamed"
+          Add-Content $env:GITHUB_STEP_SUMMARY ''
+          Add-Content $env:GITHUB_STEP_SUMMARY 'The scan log names each one and where it sits. Open the `msaa-names.json` beside it for the whole tree.'
           Add-Content $env:GITHUB_STEP_SUMMARY ''
         }
         $count = '${{ steps.scan.outputs.violations }}'
@@ -208,7 +244,7 @@ jobs:
         Add-Content $env:GITHUB_STEP_SUMMARY ''
         Add-Content $env:GITHUB_STEP_SUMMARY 'Download the `accessibility-scan-results` artifact and open it with Accessibility Insights for Windows to inspect them.'
         Add-Content $env:GITHUB_STEP_SUMMARY ''
-        Add-Content $env:GITHUB_STEP_SUMMARY 'This scan covers about half of WCAG. A clean result means the structure is present, not that the experience is good. It is not a substitute for testing with NVDA.'
+        Add-Content $env:GITHUB_STEP_SUMMARY 'This scan covers about half of WCAG, on both accessibility channels: UI Automation, which Narrator reads, and MSAA, which NVDA reads for native controls and which is the only place `set_accessible_name` puts anything. A clean result means the structure is present, not that the experience is good. It is not a substitute for testing with NVDA.'
 
     - name: Upload scan results
       if: always()

@@ -71,9 +71,22 @@ Every commit must pass four checks, run together by `scripts/check.sh`:
 bash scripts/check.sh
 ```
 
-`rustfmt`, `clippy` with `-D warnings`, the test suite, and a release build. A
-separate non-blocking workflow scans the running application's UI Automation tree
-with Axe.Windows on every pull request.
+`rustfmt`, `clippy` with `-D warnings`, the test suite, and a release build. Turn
+them on for every commit with `git config core.hooksPath .githooks`, so the
+answer cannot be lost between running them and committing.
+
+A separate non-blocking workflow starts the application once per window and
+scans it on both of Windows' accessibility channels: Axe.Windows over the UI
+Automation tree, which is what Narrator reads, and `scripts/msaa-names.ps1` over
+the MSAA tree, which is what NVDA reads for native controls.
+
+The second one is new, and until it existed no accessible name in this
+application had ever been measured. For an edit box or a button, Windows
+supplies its own UI Automation provider that shadows the MSAA object underneath
+it, and `set_accessible_name` writes only to MSAA. So the UI Automation scan
+reported the system's name for those controls and never the one the code set,
+and every `set_accessible_name` call in the tree could have been deleted without
+it noticing.
 
 424 tests pass: 394 unit and 30 integration. Several are fuzz tests over
 generated hostile input, covering the HTML renderer, the CalDAV and iCalendar
