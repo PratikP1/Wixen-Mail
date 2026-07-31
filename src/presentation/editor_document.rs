@@ -54,6 +54,12 @@ pub const CHANNEL: &str = "wixenEditor";
 /// The element the message is typed into.
 const BODY_ID: &str = "wixen-body";
 
+/// The page function that gives the caret a block to stand in.
+///
+/// Named once here because two things call it: the keydown handler inside the
+/// page, and every script the toolbar and menu run from the Rust side.
+const BLOCK_FUNCTION: &str = "wixenBlock";
+
 /// Put text into the page as text rather than as markup.
 ///
 /// Two things have to survive. The angle brackets, because a bare address in a
@@ -167,6 +173,34 @@ img {{ max-width: 100%; height: auto; }}
       catch (e2) {{ }}
     }}
   }}
+  // Give the caret a block to stand in.
+  //
+  // A formatting command works on the block the caret is in, and an empty
+  // message has none: the editor is an empty div until something is typed into
+  // it. `insertOrderedList` makes its own block and `insertUnorderedList` does
+  // not, so on a blank message Ctrl+Shift+L announced "Bulleted list" and left
+  // plain text behind, and the Enters after it behaved like plain text, which
+  // reads as a list that will not end.
+  function block() {{
+    if (body.firstChild) {{ return; }}
+    // A command from the menu or the toolbar arrives while the menu has the
+    // focus, and a caret put into an editor nothing is in does not stick. Only
+    // when the focus is somewhere else: calling focus on an editor that
+    // already has it throws the caret away, and doing that here undid the
+    // command for every key press, which is the direction this arrived from.
+    if (document.activeElement !== body) {{ body.focus(); }}
+    body.innerHTML = '<div><br></div>';
+    var caret = document.createRange();
+    caret.setStart(body.firstChild, 0);
+    caret.collapse(true);
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(caret);
+  }}
+  // Also on `window`, because the toolbar and the menu apply their commands by
+  // running a script from the Rust side rather than through the keydown
+  // handler, and an empty message is empty whichever way the command arrives.
+  window.{BLOCK_FUNCTION} = block;
   // The formatting keys, built from the same list the menu is built from.
   var formats = {format_keys};
   // The underlined letters, built from the same list the window is built from.
@@ -236,6 +270,7 @@ img {{ max-width: 100%; height: auto; }}
         continue;
       }}
       event.preventDefault();
+      block();
       document.execCommand(f.command, false, f.value);
       post({{ kind: 'format', index: f.index }});
       return;
@@ -1084,7 +1119,8 @@ pub fn format_script(command: Format) -> String {
         None => "null".to_string(),
     };
     format!(
-        "document.execCommand({name:?}, false, {value}); \
+        "window.{BLOCK_FUNCTION}(); \
+         document.execCommand({name:?}, false, {value}); \
          document.getElementById({BODY_ID:?}).focus();"
     )
 }
@@ -1582,6 +1618,41 @@ mod tests {
         for kind in ["'cancel'", "'send'", "'save'"] {
             assert!(page.contains(kind), "{kind} not posted: {page}");
         }
+    }
+
+    #[test]
+    fn test_a_list_can_be_started_on_a_message_with_nothing_in_it_yet() {
+        // Measured against the running composer: on an empty message
+        // `insertUnorderedList` does nothing at all, while `insertOrderedList`
+        // makes a list. So Ctrl+Shift+L on a blank message announced "Bulleted
+        // list" and left plain text, and every Enter after that behaved like
+        // plain text too, which read as a list that would not end.
+        //
+        // The engine needs a block to put the list around, and an empty
+        // contenteditable has none until something is typed into it.
+        let page = editor_document(&blank(), "en", true);
+
+        assert!(page.contains("function block()"), "{page}");
+        assert!(page.contains("<div><br></div>"), "{page}");
+        assert!(
+            page.contains("block();\n      document.execCommand(f.command"),
+            "the guard has to run before the command, not after: {page}"
+        );
+    }
+
+    #[test]
+    fn test_the_menu_gets_the_same_guard_as_the_key() {
+        // The toolbar and the menu do not go through the keydown handler: they
+        // run a script from the Rust side. An empty message is empty whichever
+        // way the command arrives, so both ways need the block first, and the
+        // page has to hand the function out for the script to reach it.
+        let script = format_script(Format::BulletList);
+
+        assert!(script.starts_with("window.wixenBlock();"), "{script}");
+        assert!(
+            editor_document(&blank(), "en", true).contains("window.wixenBlock = block;"),
+            "the script calls a function the page never exposes"
+        );
     }
 
     #[test]
