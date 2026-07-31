@@ -390,6 +390,7 @@ fn event_entry(
         time_zone: None,
         status: "confirmed".to_string(),
         recurrence_rule: None,
+        categories: String::new(),
         source_provider: Some("local".to_string()),
         etag: None,
         web_link: None,
@@ -626,8 +627,22 @@ pub fn new_pim_item(
             None => Vec::new(),
         };
 
+    // The categories already in use, so somebody's own are offered back to
+    // them. Read from the events themselves rather than kept in a list of
+    // their own, which would be a second place for the same fact and would go
+    // stale the moment an event was deleted.
+    let known_categories: Vec<String> = cache
+        .get_all_events_for_account(&account_id)
+        .map(|events| {
+            events
+                .iter()
+                .flat_map(|event| crate::application::categories::on(&event.categories))
+                .collect()
+        })
+        .unwrap_or_default();
+
     let Some((filled, container_id)) =
-        crate::presentation::wx_item_form::ask_for(frame, kind, &holders)
+        crate::presentation::wx_item_form::ask_for(frame, kind, &holders, &known_categories)
     else {
         return;
     };
@@ -1013,12 +1028,25 @@ fn store_new_item(
     };
     // The repeat choice as an RFC 5545 rule, which is what both providers
     // take. "Does not repeat" is no rule at all rather than a rule saying so.
-    let repeat = |field: FieldName| match filled.text(field) {
-        "Daily" => Some("FREQ=DAILY".to_string()),
-        "Weekly" => Some("FREQ=WEEKLY".to_string()),
-        "Monthly" => Some("FREQ=MONTHLY".to_string()),
-        "Yearly" => Some("FREQ=YEARLY".to_string()),
-        _ => None,
+    // How often it comes round, and when it stops. Both from the one module
+    // that also writes the rule, so the words offered and the rule stored
+    // cannot come apart, and the ending is written into the same rule rather
+    // than kept beside it, because that is where every other reader of an
+    // .ics file looks for it.
+    let repeat = |field: FieldName, starts_on: &str| {
+        use crate::application::repeating::{Repeat, Until, rule, weekday_of_month};
+        let how_often = Repeat::from_label(filled.text(field));
+        let until = match filled.text(FieldName::RepeatUntil) {
+            "On a date" => Until::OnDate(filled.text(FieldName::RepeatUntilDate).to_string()),
+            "After a number of times" => Until::AfterTimes(
+                filled
+                    .text(FieldName::RepeatTimes)
+                    .parse::<u32>()
+                    .unwrap_or(1),
+            ),
+            _ => Until::Forever,
+        };
+        rule(how_often, &until, weekday_of_month(starts_on).as_deref())
     };
 
     match kind {
@@ -1043,7 +1071,13 @@ fn store_new_item(
                 is_all_day: all_day,
                 time_zone: None,
                 status: filled.text(FieldName::Status).to_lowercase(),
-                recurrence_rule: repeat(FieldName::Repeat),
+                recurrence_rule: repeat(
+                    FieldName::Repeat,
+                    &when(FieldName::StartDate, FieldName::StartTime, true),
+                ),
+                // Tidied here rather than trusted, because it can be typed.
+                categories: crate::application::categories::tidy(filled.text(FieldName::Category))
+                    .unwrap_or_default(),
                 source_provider: Some("local".to_string()),
                 etag: None,
                 web_link: None,
@@ -1067,7 +1101,10 @@ fn store_new_item(
                 .filter(|w| !w.trim().is_empty()),
             is_completed: false,
             priority: filled.text(FieldName::Priority).to_lowercase(),
-            repeat_rule: repeat(FieldName::Repeat),
+            repeat_rule: repeat(
+                FieldName::Repeat,
+                &when(FieldName::DueDate, FieldName::DueTime, true),
+            ),
             related_event_id: None,
             created_at: stamp.clone(),
             updated_at: stamp,

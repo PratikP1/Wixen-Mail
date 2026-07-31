@@ -10,7 +10,7 @@ const EVENT_COLS: &str =
      start_datetime, end_datetime, start_date, end_date, is_all_day, time_zone,
      status, recurrence_rule, source_provider, etag, web_link, show_as,
      last_modified_remote, last_synced_at, attendees_json, reminders_json,
-     created_at, updated_at";
+     created_at, updated_at, categories";
 
 /// Map a rusqlite row to a `CalendarEventEntry` (columns must match `EVENT_COLS` order).
 fn map_event_row(row: &rusqlite::Row) -> rusqlite::Result<CalendarEventEntry> {
@@ -40,6 +40,9 @@ fn map_event_row(row: &rusqlite::Row) -> rusqlite::Result<CalendarEventEntry> {
         reminders_json: row.get(22)?,
         created_at: row.get(23)?,
         updated_at: row.get(24)?,
+        // Last, because it was added last: the column list above puts it
+        // there so every position before it stays where it was.
+        categories: row.get(25)?,
     })
 }
 
@@ -53,11 +56,11 @@ impl MessageCache {
               start_datetime, end_datetime, start_date, end_date, is_all_day, time_zone,
               status, recurrence_rule, source_provider, etag, web_link, show_as,
               last_modified_remote, last_synced_at, attendees_json, reminders_json,
-              created_at, updated_at)
+              created_at, updated_at, categories)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
                      ?17, ?18, ?19, ?20, ?21, ?22, ?23,
                      COALESCE((SELECT created_at FROM calendar_events WHERE account_id = ?2 AND provider_event_id = ?3), ?24),
-                     ?25)
+                     ?25, ?26)
              ON CONFLICT(account_id, provider_event_id) DO UPDATE SET
                 calendar_id = excluded.calendar_id,
                 summary = excluded.summary,
@@ -79,6 +82,7 @@ impl MessageCache {
                 last_synced_at = excluded.last_synced_at,
                 attendees_json = excluded.attendees_json,
                 reminders_json = excluded.reminders_json,
+                categories = excluded.categories,
                 updated_at = excluded.updated_at",
             params![
                 &event.id, &event.account_id, &event.provider_event_id, &event.calendar_id,
@@ -90,7 +94,7 @@ impl MessageCache {
                 &event.source_provider, &event.etag, &event.web_link, &event.show_as,
                 &event.last_modified_remote, &event.last_synced_at,
                 &event.attendees_json, &event.reminders_json,
-                &now, &now,
+                &now, &now, &event.categories,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save calendar event: {}", e)))?;
         Ok(())
@@ -315,6 +319,7 @@ mod tests {
             time_zone: None,
             status: "confirmed".to_string(),
             recurrence_rule: None,
+            categories: String::new(),
             source_provider: Some("gmail".to_string()),
             etag: None,
             web_link: None,
@@ -397,6 +402,7 @@ mod tests {
             time_zone: None,
             status: "confirmed".to_string(),
             recurrence_rule: None,
+            categories: String::new(),
             source_provider: Some("gmail".to_string()),
             etag: None,
             web_link: None,

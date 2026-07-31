@@ -653,6 +653,7 @@ fn test_calendar_manager_visibility_filters_unified() {
         time_zone: None,
         status: "confirmed".to_string(),
         recurrence_rule: None,
+        categories: String::new(),
         source_provider: None,
         etag: None,
         web_link: None,

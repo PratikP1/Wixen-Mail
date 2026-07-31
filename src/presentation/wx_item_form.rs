@@ -40,6 +40,8 @@ enum Control {
     Pick(Choice),
     Containers(Choice),
     Whole(SpinCtrl),
+    /// Chosen from a list or typed, for a category.
+    Category(ComboBox),
     Tick(CheckBox),
 }
 
@@ -48,10 +50,15 @@ enum Control {
 /// `None` when the person cancelled. The containers are the ones this module
 /// has; an empty list is fine and means the choice is left out rather than
 /// offered with nothing in it.
+///
+/// `known_categories` are the ones already in use, offered alongside the
+/// built-in ones. A fixed list of categories is one that is wrong for everybody
+/// eventually.
 pub fn ask_for(
     parent: &Frame,
     kind: ItemKind,
     containers: &[Container],
+    known_categories: &[String],
 ) -> Option<(Filled, Option<String>)> {
     let fields = fields_for(kind);
     if fields.is_empty() {
@@ -88,7 +95,7 @@ pub fn ask_for(
         sizer.add(&label, 0, SizerFlag::Left | SizerFlag::Top, 8);
 
         let spoken = name_from_label(field.label);
-        let control = build_control(&dialog, field, containers);
+        let control = build_control(&dialog, field, containers, known_categories);
         name_it(&control, &spoken, field.help);
         add_to_sizer(&sizer, &control);
 
@@ -137,7 +144,12 @@ pub fn ask_for(
 }
 
 /// Build the control one field asks for.
-fn build_control(dialog: &Dialog, field: &Field, containers: &[Container]) -> Control {
+fn build_control(
+    dialog: &Dialog,
+    field: &Field,
+    containers: &[Container],
+    known_categories: &[String],
+) -> Control {
     match &field.entry {
         Entry::Line => Control::Line(TextCtrl::builder(dialog).build()),
         Entry::Paragraph => Control::Paragraph(
@@ -166,6 +178,16 @@ fn build_control(dialog: &Dialog, field: &Field, containers: &[Container]) -> Co
             choice.set_selection(0);
             Control::Containers(choice)
         }
+        // Chosen or typed. A ComboBox rather than a Choice, because a fixed
+        // list of categories is one that is wrong for everybody eventually and
+        // the ones somebody adds are offered back to them afterwards.
+        Entry::PickCategory => {
+            let box_ = ComboBox::builder(dialog).build();
+            for category in crate::application::categories::offered(known_categories) {
+                box_.append(&category);
+            }
+            Control::Category(box_)
+        }
         Entry::Whole { least, most } => {
             let spin = SpinCtrl::builder(dialog).build();
             spin.set_range(*least, *most);
@@ -192,6 +214,7 @@ fn as_widget(control: &Control) -> &dyn WxWidget {
         Control::Time(c) => c,
         Control::Pick(c) | Control::Containers(c) => c,
         Control::Whole(c) => c,
+        Control::Category(c) => c,
         Control::Tick(c) => c,
     }
 }
@@ -209,6 +232,7 @@ fn add_to_sizer(sizer: &BoxSizer, control: &Control) {
         Control::Time(c) => sizer.add(c, 0, flags, 8),
         Control::Pick(c) | Control::Containers(c) => sizer.add(c, 0, flags, 8),
         Control::Whole(c) => sizer.add(c, 0, flags, 8),
+        Control::Category(c) => sizer.add(c, 0, flags, 8),
         Control::Tick(c) => sizer.add(c, 0, flags, 8),
     };
 }
@@ -251,6 +275,10 @@ fn read_back(
             Control::Line(c) | Control::Paragraph(c) => filled.put(field.name, c.get_value()),
             Control::Date(c) => filled.put(field.name, as_stored_date(&c.get_value())),
             Control::Time(c) => filled.put(field.name, as_stored_time(&c.get_value())),
+            // Whatever is in the box, chosen or typed. Tidied where it is
+            // read rather than here, because the same tidying has to apply to
+            // one that came out of the database.
+            Control::Category(c) => filled.put(field.name, c.get_value()),
             Control::Pick(c) => {
                 if let Entry::Pick(options) = field.entry {
                     let at = c.get_selection().unwrap_or(0) as usize;

@@ -318,6 +318,12 @@ pub struct CalendarEventEntry {
     /// "confirmed", "tentative", "cancelled"
     pub status: String,
     pub recurrence_rule: Option<String>,
+    /// What kind of day this is: a birthday, a holiday, a deadline.
+    ///
+    /// Comma separated, and the same shape both providers use for their own
+    /// categories, so a birthday made here can become one there. Empty for an
+    /// event with none, which is most of them.
+    pub categories: String,
     /// "gmail" or "outlook"
     pub source_provider: Option<String>,
     pub etag: Option<String>,
@@ -1111,6 +1117,9 @@ impl MessageCache {
         // message queued before attachments existed, which is the right answer
         // for all of them.
         self.ensure_column_exists("outbox_queue", "attachments", "TEXT NOT NULL DEFAULT ''")?;
+        // What kind of day an event is. Empty for every event stored before
+        // there were categories, which is the right answer for all of them.
+        self.ensure_column_exists("calendar_events", "categories", "TEXT NOT NULL DEFAULT ''")?;
         self.ensure_column_exists("calendar_events", "calendar_id", "TEXT")?;
         self.ensure_column_exists(
             "message_filter_rules",

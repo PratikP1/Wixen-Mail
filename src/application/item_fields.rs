@@ -53,6 +53,14 @@ pub enum FieldName {
     Status,
     AlertMinutes,
     Repeat,
+    /// Whether a repeating series ever stops, and how.
+    RepeatUntil,
+    /// The last day it happens, when it stops on a date.
+    RepeatUntilDate,
+    /// How many times in all, when it stops after a count.
+    RepeatTimes,
+    /// What kind of day this is: a birthday, a holiday, a deadline.
+    Category,
     Pinned,
 }
 
@@ -73,6 +81,12 @@ pub enum Entry {
     /// folder. Filled in when the form opens, because they are the person's
     /// own and not known here.
     PickContainer,
+    /// What kind of day this is, chosen from a list or typed.
+    ///
+    /// Typed as well as chosen, because a fixed list of categories is one that
+    /// is wrong for everybody eventually, and the ones somebody adds are
+    /// offered back to them afterwards.
+    PickCategory,
     /// A whole number, with the range it is allowed.
     Whole { least: i32, most: i32 },
     /// On or off.
@@ -100,7 +114,25 @@ const SHOW_AS: &[&str] = &["Busy", "Free"];
 /// RFC 5545 event status, minus the ones only a server sets.
 const STATUS: &[&str] = &["Confirmed", "Tentative", "Cancelled"];
 const PRIORITY: &[&str] = &["Normal", "High", "Low"];
-const REPEAT: &[&str] = &["Does not repeat", "Daily", "Weekly", "Monthly", "Yearly"];
+/// How often something repeats, taken from the one list that also writes the
+/// rule, so the words offered here and the rules stored cannot come apart.
+const REPEAT: &[&str] = &[
+    "Does not repeat",
+    "Every day",
+    "Every weekday, Monday to Friday",
+    "Every week",
+    "Every two weeks",
+    "Every month, on this date",
+    "Every month, on this weekday",
+    "Every three months",
+    "Every year",
+];
+
+/// When a repeating series stops.
+///
+/// A series could not be told to stop at all before this, so anything set to
+/// repeat repeated for ever and a six week course had to be entered six times.
+const REPEAT_UNTIL: &[&str] = &["Never", "On a date", "After a number of times"];
 
 /// What to ask for, to make one of these.
 ///
@@ -185,6 +217,30 @@ static EVENT: &[Field] = &[
         required: false,
     },
     Field {
+        name: FieldName::RepeatUntil,
+        label: "Repeat &for",
+        help: "Whether the repeat ever stops",
+        entry: Entry::Pick(REPEAT_UNTIL),
+        required: false,
+    },
+    Field {
+        name: FieldName::RepeatUntilDate,
+        label: "Last da&y",
+        help: "The last day it happens, when it stops on a date",
+        entry: Entry::Date,
+        required: false,
+    },
+    Field {
+        name: FieldName::RepeatTimes,
+        label: "Ho&w many times",
+        help: "How many times in all, when it stops after a count",
+        entry: Entry::Whole {
+            least: 1,
+            most: 999,
+        },
+        required: false,
+    },
+    Field {
         name: FieldName::AlertMinutes,
         label: "Alert minutes &before",
         help: "Nought for no alert",
@@ -206,6 +262,13 @@ static EVENT: &[Field] = &[
         label: "Stat&us",
         help: "",
         entry: Entry::Pick(STATUS),
+        required: false,
+    },
+    Field {
+        name: FieldName::Category,
+        label: "Cate&gory",
+        help: "What kind of day this is: a birthday, a holiday, a deadline",
+        entry: Entry::PickCategory,
         required: false,
     },
     Field {
@@ -289,6 +352,30 @@ static REMINDER: &[Field] = &[
         label: "&Repeat",
         help: "",
         entry: Entry::Pick(REPEAT),
+        required: false,
+    },
+    Field {
+        name: FieldName::RepeatUntil,
+        label: "Repeat &for",
+        help: "Whether the repeat ever stops",
+        entry: Entry::Pick(REPEAT_UNTIL),
+        required: false,
+    },
+    Field {
+        name: FieldName::RepeatUntilDate,
+        label: "Last da&y",
+        help: "The last day it happens, when it stops on a date",
+        entry: Entry::Date,
+        required: false,
+    },
+    Field {
+        name: FieldName::RepeatTimes,
+        label: "Ho&w many times",
+        help: "How many times in all, when it stops after a count",
+        entry: Entry::Whole {
+            least: 1,
+            most: 999,
+        },
         required: false,
     },
     Field {

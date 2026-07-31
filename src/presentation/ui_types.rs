@@ -1049,6 +1049,7 @@ mod tests {
             time_zone: None,
             status: "confirmed".into(),
             recurrence_rule: None,
+            categories: String::new(),
             source_provider: Some("caldav".into()),
             etag: None,
             web_link: None,
