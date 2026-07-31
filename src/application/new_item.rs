@@ -389,6 +389,32 @@ mod tests {
     }
 
     #[test]
+    fn test_somebody_with_no_account_at_all_can_still_make_things() {
+        // A POP and SMTP account syncs nothing but mail, and somebody who has
+        // not signed in anywhere yet syncs nothing at all. Neither is a reason
+        // to refuse to let them keep a note, a task or a contact: this
+        // computer holds all of it.
+        //
+        // The managers used to ask "which account is active?" and refuse when
+        // the answer was none, which showed up as the editor never opening.
+        // Whether a provider would carry an item is a question about saving it
+        // somewhere else, not about whether it may exist.
+        for kind in [
+            ItemKind::Event,
+            ItemKind::Task,
+            ItemKind::Note,
+            ItemKind::Reminder,
+            ItemKind::Contact,
+        ] {
+            assert_eq!(
+                destination(kind, &[], None),
+                Some(Destination::Local),
+                "{kind:?} had nowhere to go"
+            );
+        }
+    }
+
+    #[test]
     fn test_an_item_the_default_account_cannot_hold_goes_local() {
         let accounts = vec![account("a1", "me@myhost.example")];
 

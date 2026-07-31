@@ -8,6 +8,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Events, tasks, notes, reminders, contacts and their folders can be made
+  without a mail account.** They could not: the editors asked which account was
+  active, found none, and stopped, which from the outside looked like the
+  window failing to open. Anybody using a POP and SMTP account, which carries
+  mail and nothing else, could not keep a single note, and neither could anybody
+  who had not signed in yet. Whether a provider will carry an item is a question
+  about syncing it, and it belongs at the point of saving; whether you may write
+  one down at all was never in question. Items made this way are kept on this
+  computer, in the same panels as everything else.
+
 - **A command that refuses now says so out loud.** Everything a command had to
   tell you went to the status bar at the bottom of the window and nowhere else,
   which is not somewhere anybody working by ear goes. Pressing Ctrl+Shift+C

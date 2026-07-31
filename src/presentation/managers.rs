@@ -10,6 +10,7 @@
 //! deleted is tested once rather than written out four times.
 
 use crate::application::collection_sync;
+use crate::application::new_item::LOCAL_ACCOUNT_ID;
 use crate::data::message_cache::MessageCache;
 use crate::presentation::contact_convert;
 use crate::presentation::ui_types::{CalendarEventItem, UIUpdate};
@@ -32,9 +33,23 @@ fn manager_account(
     let Some(cache) = cache.clone() else {
         return Err("No message store is available");
     };
-    let Some(account) = lock_state(state).active_account_id.clone() else {
-        return Err("Add an account first: these are stored per account");
-    };
+    // The account being looked at, or this computer. Never a refusal.
+    //
+    // It used to refuse when no account was active, which meant the editor
+    // never opened at all: somebody with a POP and SMTP account, which syncs
+    // mail and nothing else, could not keep a note, a task or a contact, and
+    // neither could anybody who had not signed in anywhere yet. Nothing about
+    // that is a failure to report. Whether a provider will carry an item is a
+    // question about saving it somewhere else, and it belongs at the point of
+    // saving; whether somebody may write one down at all is not in question.
+    //
+    // `local` is a reserved account id that every panel already reads
+    // alongside whichever account is open, so an item filed under it is
+    // visible in the same place as the rest.
+    let account = lock_state(state)
+        .active_account_id
+        .clone()
+        .unwrap_or_else(|| LOCAL_ACCOUNT_ID.to_string());
     Ok((cache, account))
 }
 
@@ -815,10 +830,12 @@ pub fn new_container(
         let s = lock_state(state);
         (s.accounts.clone(), s.default_account_id.clone())
     };
-    let Some(destination) = new_item::destination(kind.holds(), &accounts, default_id.as_deref())
-    else {
-        return send_status(tx, rt, "Add an account first");
-    };
+    // Never nothing for a container: `destination` only answers `None` for
+    // mail, which cannot be sent from this computer alone. A calendar or a
+    // note folder can live here perfectly well, so the fallback is this
+    // computer rather than a refusal.
+    let destination = new_item::destination(kind.holds(), &accounts, default_id.as_deref())
+        .unwrap_or(new_item::Destination::Local);
 
     let Some(name) = crate::presentation::wx_app::prompt_for_new_item(frame, kind.label()) else {
         return;
@@ -1126,9 +1143,12 @@ pub fn copy_message_into(
     let Some(cache) = cache.clone() else {
         return send_status(tx, rt, "No storage is open, so nothing can be saved");
     };
-    let Some(account_id) = lock_state(state).active_account_id.clone() else {
-        return send_status(tx, rt, "Add an account first");
-    };
+    // The account being read, or this computer. Copying a message into a task
+    // is somebody keeping a note of it, and that does not need a provider.
+    let account_id = lock_state(state)
+        .active_account_id
+        .clone()
+        .unwrap_or_else(|| LOCAL_ACCOUNT_ID.to_string());
 
     let title = title_from(source);
     let mut filled = Filled::default();
