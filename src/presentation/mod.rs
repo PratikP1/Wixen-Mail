@@ -4,6 +4,7 @@
 
 pub mod accessibility;
 pub mod command_line;
+pub mod compose_toolbar;
 pub mod contact_convert;
 pub mod date_display;
 pub mod editor_document;

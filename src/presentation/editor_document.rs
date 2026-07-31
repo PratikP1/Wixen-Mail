@@ -231,6 +231,25 @@ img {{ max-width: 100%; height: auto; }}
       post({{ kind: 'spelling' }});
       return;
     }}
+    // Into the toolbar. The nine buttons are out of the tab order, because
+    // nine stops between the subject line and the message is a cost paid on
+    // the way somebody takes every time they write anything.
+    // F8 as well as Ctrl+backslash, and F8 is the one that works.
+    //
+    // Ctrl+backslash was the key asked for and it does not arrive. Measured
+    // against the running composer: the page's handler never fires for it, by
+    // character or by physical key, whether the chord is typed or injected as
+    // raw key events, while Ctrl+Shift+L and Ctrl+Enter beside it arrive every
+    // time. Something between the window and the page keeps it. It stays bound
+    // in case that is this machine rather than every machine, and F8 is bound
+    // beside it so the toolbar has a way in that was watched working.
+    if ((event.key === 'F8' && !event.ctrlKey && !event.altKey && !event.shiftKey)
+        || ((event.key === '\\' || event.code === 'Backslash')
+            && event.ctrlKey && !event.altKey)) {{
+      event.preventDefault();
+      post({{ kind: 'toolbar' }});
+      return;
+    }}
     if (event.key === 'Tab' && !event.ctrlKey && !event.altKey) {{
       if (tableTab(event.shiftKey)) {{ event.preventDefault(); return; }}
       // Outside a table the body used to keep Tab and do nothing with it, so
@@ -1386,6 +1405,8 @@ pub enum EditorMessage {
     Leaving {
         back: bool,
     },
+    /// Ctrl+backslash: go to the toolbar.
+    ToToolbar,
 }
 
 /// Read one message posted by the page.
@@ -1420,6 +1441,7 @@ pub fn parse_message(raw: &str) -> Option<EditorMessage> {
             let index = usize::try_from(value.get("index")?.as_u64()?).ok()?;
             Reached::ALL.get(index).copied().map(EditorMessage::Reached)
         }
+        "toolbar" => Some(EditorMessage::ToToolbar),
         "leave" => Some(EditorMessage::Leaving {
             back: value.get("back")?.as_bool()?,
         }),
@@ -1714,6 +1736,28 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_the_toolbar_key_is_one_backslash_and_not_two() {
+        // The page is a raw string, so a backslash written the way it would be
+        // written in an ordinary Rust string arrives doubled, and the check
+        // compares the key to two backslashes and never matches. Ctrl+backslash
+        // did nothing at all, silently, which is the worst way for a key to
+        // fail: there is no difference between that and a key nobody bound.
+        let page = editor_document(&blank(), "en", true);
+
+        assert!(page.contains(r"event.key === '\\'"), "{page}");
+        assert!(
+            !page.contains(r"'\\\\'"),
+            "the backslash is doubled: {page}"
+        );
+        // The physical key too, because a backslash is not on the same key on
+        // every layout and on some it is not produced at all.
+        assert!(page.contains("event.code === 'Backslash'"), "{page}");
+        // And F8, which is the one that was watched working.
+        assert!(page.contains("event.key === 'F8'"), "{page}");
+        assert!(page.contains("'toolbar'"), "{page}");
     }
 
     #[test]

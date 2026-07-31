@@ -8,6 +8,7 @@ use crate::common::types::MessageBody;
 use crate::presentation::accessibility::names::{
     set_accessible_name, set_accessible_name_and_description,
 };
+use crate::presentation::compose_toolbar;
 use crate::presentation::editor_document;
 use crate::presentation::editor_document::Reached;
 use crate::presentation::html_renderer::HtmlRenderer;
@@ -166,6 +167,22 @@ fn compose_title(mode: &ComposeMode) -> &'static str {
         ComposeMode::Forward { .. } => "Forward",
         ComposeMode::Draft(_) => "Edit Draft",
     }
+}
+
+/// Work put back on the ordinary event loop, and what it is.
+///
+/// Everything here arrives inside the web view's own callback, where it cannot
+/// be done: the spelling check opens modal dialogs from inside a callback the
+/// browser control has not finished making, and a focus change made there is
+/// undone by the browser's own focus work a moment later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Deferred {
+    /// Walk the spelling of the message.
+    Spelling,
+    /// Leave the message body. `back` is Shift+Tab.
+    Leaving { back: bool },
+    /// Go to the toolbar.
+    Toolbar,
 }
 
 /// Show a message that has one thing to say and nothing to decide.
@@ -671,6 +688,84 @@ pub fn show_compose_dialog_full(
 
     format_btn.on_click(move |_| show_format_menu(&dialog));
 
+    // ── The toolbar, worked from the keyboard ─────────────────────────────
+    //
+    // Nine buttons, in the order `compose_toolbar::GROUPS` describes them, so
+    // the position a key lands on is the button it operates. A test pins every
+    // position to exactly one button; nothing pins this list to that one, so
+    // it is written once, here, next to the comment saying so.
+    let toolbar_buttons = [
+        send_toolbar_btn,
+        undo_btn,
+        redo_btn,
+        bold_btn,
+        italic_btn,
+        underline_btn,
+        format_btn,
+        spell_btn,
+        attach_btn,
+    ];
+    debug_assert_eq!(
+        toolbar_buttons.len(),
+        compose_toolbar::GROUPS
+            .iter()
+            .map(|group| group.keys.len())
+            .sum::<usize>()
+    );
+
+    // Where the toolbar cursor is, kept between visits so leaving and coming
+    // back lands where somebody was rather than at the start.
+    // Where the toolbar cursor was, or `None` when focus is somewhere else.
+    //
+    // `None` is what makes the group get named on arrival: the announcement
+    // leaves the group out when it has not changed, and somebody who has just
+    // arrived has not been anywhere for it to have changed from.
+    let toolbar_at: Rc<std::cell::Cell<Option<compose_toolbar::At>>> =
+        Rc::new(std::cell::Cell::new(None));
+
+    // Going to the toolbar: forget where focus was, then focus the button. The
+    // saying is left to the handler below, which is the one place that does it,
+    // so arriving does not announce twice.
+    let go_to = {
+        let toolbar_at = toolbar_at.clone();
+        move |to: Option<compose_toolbar::At>| {
+            let at = to.unwrap_or_default();
+            let Some(position) = at.position() else {
+                return;
+            };
+            let Some(button) = toolbar_buttons.get(position) else {
+                return;
+            };
+            toolbar_at.set(None);
+            button.set_focus();
+        }
+    };
+
+    // Say where each button is when it takes focus, however it was reached.
+    //
+    // Not by taking the arrow keys. That was tried twice, with the typed
+    // handler and with `bind_internal`, and a key event on a button never
+    // reached either one: wxWidgets moves focus by its own arrow rules first
+    // and there is no char hook in this binding to get in front of it. What it
+    // does with the arrows is right anyway, left to right along the row, so
+    // this rides on it rather than fighting it and adds the part that was
+    // missing, which is knowing where you are.
+    for (position, button) in toolbar_buttons.iter().enumerate() {
+        let toolbar_at = toolbar_at.clone();
+        let a11y = a11y.clone();
+        button.on_set_focus(move |event| {
+            event.skip(true);
+            let Some(to) = compose_toolbar::At::at_position(position) else {
+                return;
+            };
+            let from = toolbar_at.replace(Some(to));
+            let _ = a11y.announce(
+                &to.spoken(from),
+                crate::presentation::accessibility::announcements::Priority::Normal,
+            );
+        });
+    }
+
     // ── Attachments ───────────────────────────────────────────────────────
     //
     // Put the list, the line under the message and the announcement back in
@@ -843,44 +938,109 @@ pub fn show_compose_dialog_full(
     // meant Save Draft, and Shift+Tab reached Save Draft when it meant the
     // Subject line. Putting it back on the ordinary event loop lets the
     // browser finish first, which is the same reason F7 goes through a timer.
-    let leaving_for: Rc<std::cell::Cell<Option<bool>>> = Rc::new(std::cell::Cell::new(None));
-    let leave_later = Rc::new(Timer::new(&dialog));
+    let read_compose_data = {
+        let attached = attached.clone();
+        move || {
+            let (body, body_plain) = editor_document::message_from_editor(
+                body_editor.run_script(&editor_document::read_body_script()),
+                body_editor.run_script(&editor_document::read_plain_script()),
+            )?;
+            Some(ComposeData {
+                to: to_field.get_value(),
+                cc: cc_field.get_value(),
+                bcc: bcc_field.get_value(),
+                subject: subject_field.get_value(),
+                body,
+                body_plain,
+                html_mode: true,
+                account_index: account_choice.get_selection(),
+                attachments: attached
+                    .borrow()
+                    .iter()
+                    .map(|file| file.path.clone())
+                    .collect(),
+            })
+        }
+    };
 
-    // F7 typed in the page arrives inside the web view's own callback, and the
-    // check it starts opens modal dialogs. Made once here, because a timer has
-    // to outlive the callback that starts it, and started on demand below.
-    let spell_later = std::rc::Rc::new(Timer::new(&dialog));
-    spell_later.on_tick({
-        let a11y = a11y.clone();
-        move |_| check_spelling(&dialog, body_editor, &a11y)
-    });
-
-    leave_later.on_tick({
-        let leaving_for = leaving_for.clone();
-        move |_| {
-            let Some(back) = leaving_for.take() else {
+    // Reading the window, and the automatic save that uses it.
+    //
+    // Both live above the timer handler because the handler calls the save,
+    // and there is one handler for every timer this dialog owns.
+    let save_draft_now = {
+        let read_compose_data = read_compose_data.clone();
+        move || {
+            // Could not read it, so there is nothing to save that is better
+            // than what is already saved. Silent to the user on purpose: this
+            // fires every couple of minutes and the message is untouched, so
+            // there is nothing for them to do. The log is where it belongs.
+            let Some(data) = read_compose_data() else {
+                tracing::warn!("Autosave skipped: the editor did not answer");
                 return;
             };
-            // The two directions are not done the same way, and each is the
-            // one that was measured to land where it should.
-            //
-            // Forward asks the window, so the answer is whatever the tab order
-            // says and stays right when a control is added. Naming a control
-            // was tried and arrives one further on: focus set to Save Draft
-            // landed on Discard, and Tab is not a key anybody should have to
-            // aim at a destructive button. The argument reads backwards
-            // because it does: `navigate(true)` moves to the control before
-            // this one.
-            //
-            // Backward names the Subject line, because asking the window walks
-            // into the formatting toolbar, which sits between the fields and
-            // the message in the order the controls were made. Somebody
-            // pressing Shift+Tab in the body is going back to the recipients
-            // and the subject, not to the Bold button, which has its own key.
-            if back {
-                subject_field.set_focus();
-            } else {
-                body_editor.navigate(false);
+            // Nothing typed yet is not worth a row in the drafts list, and it
+            // would be one that reads as blank.
+            if data.to.trim().is_empty()
+                && data.subject.trim().is_empty()
+                && data.body.trim().is_empty()
+            {
+                return;
+            }
+            on_autosave(&data);
+        }
+    };
+
+    let waiting: Rc<std::cell::Cell<Option<Deferred>>> = Rc::new(std::cell::Cell::new(None));
+    let later = Rc::new(Timer::new(&dialog));
+
+    // One handler for every timer this window owns, because that is what a
+    // timer event is here.
+    //
+    // `Timer::on_tick` binds the timer event on the *owner*, with nothing to
+    // say which timer fired. Three timers on one dialog therefore meant three
+    // handlers all running on every tick, and that was not only a tidiness
+    // problem: the autosave timer and the spelling timer were both on this
+    // dialog, so every automatic draft save was also opening the spelling
+    // check, a modal dialog, in the middle of somebody typing. It was latent
+    // until a third timer made it obvious.
+    later.on_tick({
+        let waiting = waiting.clone();
+        let go_to = go_to.clone();
+        let toolbar_at = toolbar_at.clone();
+        let a11y = a11y.clone();
+        move |_| {
+            match waiting.take() {
+                Some(Deferred::Spelling) => check_spelling(&dialog, body_editor, &a11y),
+                // Where the toolbar was left, so leaving and coming back lands
+                // where somebody was. The group is named on arrival, always,
+                // because arriving is the moment nobody knows where they are.
+                Some(Deferred::Toolbar) => go_to(toolbar_at.get()),
+                // The two directions are not done the same way, and each is
+                // the one that was measured to land where it should.
+                //
+                // Forward asks the window, so the answer is whatever the tab
+                // order says and stays right when a control is added. Naming a
+                // control was tried and arrives one further on: focus set to
+                // Save Draft landed on Discard, and Tab is not a key anybody
+                // should have to aim at a destructive button. The argument
+                // reads backwards because it does: `navigate(true)` moves to
+                // the control before this one.
+                //
+                // Backward names the Subject line, because asking the window
+                // walks into the formatting toolbar, which sits between the
+                // fields and the message in the order the controls were made.
+                // Somebody pressing Shift+Tab in the body is going back to the
+                // recipients and the subject, not to the Bold button, which
+                // has its own key.
+                Some(Deferred::Leaving { back }) => {
+                    if back {
+                        subject_field.set_focus();
+                    } else {
+                        body_editor.navigate(false);
+                    }
+                }
+                // Nothing was asked for, so this is the autosave timer.
+                None => save_draft_now(),
             }
         }
     });
@@ -888,9 +1048,8 @@ pub fn show_compose_dialog_full(
     body_editor.on_script_message_received({
         let a11y = a11y.clone();
         let typing_speller = typing_speller.clone();
-        let spell_later = spell_later.clone();
-        let leave_later = leave_later.clone();
-        let leaving_for = leaving_for.clone();
+        let later = later.clone();
+        let waiting = waiting.clone();
         let attach_now = attach_files.clone();
         let apply_undo = apply_format.clone();
         move |event| {
@@ -924,7 +1083,8 @@ pub fn show_compose_dialog_full(
                 // which is where the Spelling button's version already runs,
                 // so both routes into the feature behave the same way.
                 Some(editor_document::EditorMessage::CheckSpelling) => {
-                    spell_later.start(1, true);
+                    waiting.set(Some(Deferred::Spelling));
+                    later.start(1, true);
                 }
                 // The sound at the end of a word that is wrong. Not spoken:
                 // the engine has already marked the word, and the screen
@@ -977,7 +1137,8 @@ pub fn show_compose_dialog_full(
                         // the web view's own callback, and the check opens
                         // modal dialogs and runs scripts.
                         Reached::Spelling => {
-                            spell_later.start(1, true);
+                            waiting.set(Some(Deferred::Spelling));
+                            later.start(1, true);
                         }
                         Reached::Attach => attach_now(&a11y),
                         Reached::SaveDraft => dialog.end_modal(ID_SAVE_DRAFT),
@@ -989,8 +1150,15 @@ pub fn show_compose_dialog_full(
                 // only ways out of the body were the mouse and Escape, and
                 // Escape throws the message away.
                 Some(editor_document::EditorMessage::Leaving { back }) => {
-                    leaving_for.set(Some(back));
-                    leave_later.start(1, true);
+                    waiting.set(Some(Deferred::Leaving { back }));
+                    later.start(1, true);
+                }
+                // Ctrl+backslash. Through the same timer as Tab, because this
+                // moves focus too and the browser does its own focus work
+                // after the message is handed over.
+                Some(editor_document::EditorMessage::ToToolbar) => {
+                    waiting.set(Some(Deferred::Toolbar));
+                    later.start(1, true);
                 }
                 // The page is ours, so an unknown message is a bug rather than
                 // an attack, and doing nothing beats guessing which command
@@ -1056,55 +1224,14 @@ pub fn show_compose_dialog_full(
     // does not fit, so anything asked for here has to be safe to run twice. A
     // script that changes the message must either return nothing or return
     // something small; `wixenReplaceWord` returns a position, which is both.
-    let read_compose_data = {
-        let attached = attached.clone();
-        move || {
-            let (body, body_plain) = editor_document::message_from_editor(
-                body_editor.run_script(&editor_document::read_body_script()),
-                body_editor.run_script(&editor_document::read_plain_script()),
-            )?;
-            Some(ComposeData {
-                to: to_field.get_value(),
-                cc: cc_field.get_value(),
-                bcc: bcc_field.get_value(),
-                subject: subject_field.get_value(),
-                body,
-                body_plain,
-                html_mode: true,
-                account_index: account_choice.get_selection(),
-                attachments: attached
-                    .borrow()
-                    .iter()
-                    .map(|file| file.path.clone())
-                    .collect(),
-            })
-        }
-    };
-
     // Held for the life of the dialog: dropping the timer stops it, and the
     // dialog is what it belongs to.
+    // Held for the life of the dialog: dropping the timer stops it, and the
+    // dialog is what it belongs to. It carries no handler of its own, because
+    // a timer event here reaches every handler bound on the dialog, so there
+    // is one of those and it decides what the tick was for.
     let _autosave_timer = autosave.interval().map(|every| {
         let timer = Timer::new(&dialog);
-        let read_compose_data = read_compose_data.clone();
-        timer.on_tick(move |_| {
-            // Could not read it, so there is nothing to save that is better
-            // than what is already saved. Silent to the user on purpose: this
-            // fires every couple of minutes and the message is untouched, so
-            // there is nothing for them to do. The log is where it belongs.
-            let Some(data) = read_compose_data() else {
-                tracing::warn!("Autosave skipped: the editor did not answer");
-                return;
-            };
-            // Nothing typed yet is not worth a row in the drafts list, and
-            // it would be one that reads as blank.
-            if data.to.trim().is_empty()
-                && data.subject.trim().is_empty()
-                && data.body.trim().is_empty()
-            {
-                return;
-            }
-            on_autosave(&data);
-        });
         // Milliseconds, and the cast is safe: the range stops at ten minutes.
         timer.start(every.as_millis() as i32, false);
         timer
@@ -1173,10 +1300,7 @@ pub fn show_compose_dialog_full(
     if let Some(timer) = &_autosave_timer {
         timer.stop();
     }
-    spell_later.stop();
-    // Both are owned by the dialog, and a timer that fires into a handler that
-    // is no longer there is a crash rather than a leak.
-    leave_later.stop();
+    later.stop();
     // wxWidgets does not free a dialog when the Rust value goes; the docs say
     // to destroy it, and wx_calendar has always done so. Nothing here did, so
     // every compose window ever opened stayed for the life of the session,
