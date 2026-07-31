@@ -13,7 +13,7 @@ use crate::application::collection_sync;
 use crate::data::message_cache::MessageCache;
 use crate::presentation::contact_convert;
 use crate::presentation::ui_types::{CalendarEventItem, UIUpdate};
-use crate::presentation::wx_app::{WxUIState, lock_state, send_status};
+use crate::presentation::wx_app::{WxUIState, lock_state, send_refusal, send_status};
 use crate::presentation::{wx_calendar, wx_managers};
 use async_channel::Sender;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -91,7 +91,7 @@ pub fn manage_tags(
 ) {
     let (cache, account) = match manager_account(state, cache) {
         Ok(pair) => pair,
-        Err(reason) => return send_status(tx, rt, reason),
+        Err(reason) => return send_refusal(tx, rt, reason),
     };
     let stored = match cache.get_tags_for_account(&account) {
         Ok(items) => items,
@@ -149,7 +149,7 @@ pub fn manage_signatures(
 ) {
     let (cache, account) = match manager_account(state, cache) {
         Ok(pair) => pair,
-        Err(reason) => return send_status(tx, rt, reason),
+        Err(reason) => return send_refusal(tx, rt, reason),
     };
     let stored = match cache.get_signatures_for_account(&account) {
         Ok(items) => items,
@@ -209,7 +209,7 @@ pub fn manage_filters(
 ) {
     let (cache, account) = match manager_account(state, cache) {
         Ok(pair) => pair,
-        Err(reason) => return send_status(tx, rt, reason),
+        Err(reason) => return send_refusal(tx, rt, reason),
     };
     let stored = match cache.get_filter_rules_for_account(&account) {
         Ok(items) => items,
@@ -277,7 +277,7 @@ pub fn manage_calendar(
 ) {
     let (cache, account) = match manager_account(state, cache) {
         Ok(pair) => pair,
-        Err(reason) => return send_status(tx, rt, reason),
+        Err(reason) => return send_refusal(tx, rt, reason),
     };
     // The events already on screen, rather than an empty list. The dialog used
     // to be handed nothing whatever the calendar held.
@@ -410,7 +410,7 @@ pub fn search_messages(
 
     let (cache, account) = match manager_account(state, cache) {
         Ok(pair) => pair,
-        Err(reason) => return send_status(tx, rt, reason),
+        Err(reason) => return send_refusal(tx, rt, reason),
     };
     match cache.search_messages(&account, query, LIMIT) {
         Ok(rows) => {
@@ -457,7 +457,7 @@ pub fn new_contact(
 ) {
     let (cache, account) = match manager_account(state, cache) {
         Ok(pair) => pair,
-        Err(reason) => return send_status(tx, rt, reason),
+        Err(reason) => return send_refusal(tx, rt, reason),
     };
     let Some(mut edited) = wx_managers::show_new_contact_dialog(frame) else {
         return;

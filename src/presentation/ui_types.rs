@@ -283,6 +283,19 @@ pub enum UIUpdate {
     ConnectionStatusChanged(ConnectionStatus),
     ErrorOccurred(String),
     StatusUpdated(String),
+    /// A command was asked for and did not run, and why.
+    ///
+    /// Separate from [`Self::StatusUpdated`] because they are different things
+    /// to be told, and one of them cannot be missed. Progress can be coalesced
+    /// and can go by unheard; "that did nothing, and here is what to do about
+    /// it" is the answer to a key somebody just pressed.
+    ///
+    /// This exists because status went to the status bar and nowhere else.
+    /// Pressing Ctrl+Shift+C with no account set up ran the command, refused,
+    /// wrote "Add an account first" into a bar at the bottom of the window, and
+    /// said nothing at all. From the keyboard that is indistinguishable from a
+    /// shortcut that was never wired up, and it was reported as one.
+    CommandRefused(String),
     OutboxSendResult {
         queue_id: String,
         success: bool,

@@ -8,6 +8,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A command that refuses now says so out loud.** Everything a command had to
+  tell you went to the status bar at the bottom of the window and nowhere else,
+  which is not somewhere anybody working by ear goes. Pressing Ctrl+Shift+C
+  without an account set up ran the command, refused because contacts are
+  stored per account, wrote "Add an account first" into that bar, and made no
+  sound. From the keyboard that is exactly what an unwired shortcut feels like,
+  and it was reported as one. Refusals are now spoken, above the ordinary run of
+  progress messages, and progress is spoken too but coalesced so a syncing
+  mailbox does not talk over you.
+
 - **The reading window can be left again.** It renders a "Back" button as the
   first thing on the page, and that button did nothing: the channel it sends
   its message on was never opened for that window, and neither was the script

@@ -4512,6 +4512,20 @@ fn persist_column_layout(layout: &ColumnLayout) {
 }
 
 /// Send a simple status update through the async channel.
+/// Say that a command did not run, and why.
+///
+/// Distinct from [`send_status`] because the two are different things to be
+/// told. Progress can be missed; the reason a key you just pressed did nothing
+/// cannot, and it went to the status bar and nowhere else, which for anybody
+/// working by ear is the same as saying nothing.
+pub(crate) fn send_refusal(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, why: &str) {
+    let tx = tx.clone();
+    let why = why.to_string();
+    rt.spawn(async move {
+        let _ = tx.send(UIUpdate::CommandRefused(why)).await;
+    });
+}
+
 pub(crate) fn send_status(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, msg: &str) {
     let tx = tx.clone();
     let msg = msg.to_string();
@@ -5339,6 +5353,25 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 s.status_message = status.clone();
             }
             frame.set_status_text(status, 0);
+            // Said as well as shown. A status bar is a line of text at the
+            // bottom of a window, which is not somewhere anybody navigating by
+            // ear goes, so everything written there was written to nobody.
+            //
+            // Low, and under one topic, because these arrive steadily while a
+            // mailbox syncs: the queue coalesces same-topic announcements, so
+            // the most recent one is heard rather than all of them.
+            let _ = a11y.announce_topic(status, Priority::Low, "status");
+        }
+        UIUpdate::CommandRefused(why) => {
+            {
+                let mut s = lock_state(state);
+                s.status_message = why.clone();
+            }
+            frame.set_status_text(why, 0);
+            // Its own topic and above the ordinary run of status, because this
+            // is the answer to a key somebody just pressed and the one thing
+            // they cannot be left to miss.
+            let _ = a11y.announce_topic(why, Priority::High, "refusal");
         }
         UIUpdate::OutboxSendResult {
             queue_id,
