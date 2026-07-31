@@ -6,7 +6,57 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Added
+
+- **Files can be sent with a message.** The Attach File button has been on the
+  compose window from the beginning with nothing behind it: no handler, no
+  list, no column in the outbox queue, and no part in the message that went
+  out. Alt+A or the button opens a file picker, the file is named and measured
+  out loud when it goes on, Delete in the attachments list takes one off, and
+  the file is read at the moment of sending, so what arrives is the version
+  that existed when you pressed Send rather than when you picked it. The size
+  is checked against what 25 MB becomes after encoding rather than what it is
+  on disk, so a message too large to send says so before the upload instead of
+  arriving back as a bounce an hour later.
+
+- **The compose window can be worked from the keyboard.** Every control whose
+  label underlines a letter now answers to Alt and that letter from inside the
+  message as well as outside it: Alt+T for the recipients, Alt+O for the
+  formatting menu, Alt+A to attach a file. Tab leaves the message body in both
+  directions. Before this the message body kept every key it was given, so the
+  only way out of it was Escape, which throws the message away.
+
+- **The toolbar says what it is.** F8 goes to it, and each button announces its
+  group, its name, the key that does the same thing without the toolbar, and
+  where it sits in the group. Bold, Italic and Underline used to announce as
+  "B", "I" and "U", which is what their labels are.
+
+- **Dates read the same way everywhere, on the clock this machine keeps.** The
+  message list read a date properly and every other list printed what was in
+  the column, so a task due "2026-07-30" was read out as a run of digits. Two
+  new choices, both taken from the machine unless you set them: whether the
+  month is a word or a number, and whether the clock runs to twelve or
+  twenty-four. All four date settings now have somewhere to be set; date style
+  and date order have been in the settings file since they were written with
+  nothing in the application that could change them.
+
+- **Space reads the message rather than the row twice.** Shift+Space on the
+  message list now reads the message itself, with its headings spoken as
+  headings, without opening it. A row that is part of a conversation says how
+  many messages it holds.
+
 ### Fixed
+
+- **A list started on a blank message is a list.** Ctrl+Shift+L on an empty
+  message announced "Bulleted list" and left plain text behind, so every Enter
+  after it behaved like plain text, which is what a list that will not end
+  looks like. Numbered lists appeared to work because the two are handled
+  differently by the engine on an editor with nothing in it.
+
+- **An automatic draft save no longer opens the spelling check.** Both were
+  timers on the compose window, and a timer event reaches every handler on the
+  window it belongs to, so every couple of minutes a modal dialog appeared in
+  the middle of somebody typing.
 
 - **A reply comes from the mailbox you read it in; a new message comes from
   your default account.** Both used to come from whichever mailbox happened to
