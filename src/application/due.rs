@@ -376,6 +376,20 @@ mod tests {
     }
 
     #[test]
+    fn test_a_length_that_is_not_a_whole_hour_is_said_in_minutes() {
+        // Found by mutation testing: the "and at least an hour" half of the
+        // guard was doing no work any test could see, because every length on
+        // offer is either under an hour or a whole number of them. Without it
+        // nothing under an hour that divides by sixty, which is nothing but
+        // zero, would be read as "0 hours".
+        assert_eq!(Snooze(0).label(), "0 minutes");
+        assert_eq!(Snooze(45).label(), "45 minutes");
+        assert_eq!(Snooze(60).label(), "1 hour");
+        assert_eq!(Snooze(90).label(), "90 minutes");
+        assert_eq!(Snooze(180).label(), "3 hours");
+    }
+
+    #[test]
     fn test_a_snooze_moves_it_forward_by_what_it_says() {
         let now = Local
             .with_ymd_and_hms(2026, 7, 26, 9, 0, 0)
