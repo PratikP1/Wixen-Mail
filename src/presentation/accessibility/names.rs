@@ -15,6 +15,40 @@
 //! those platforms these calls are accepted and have no effect. A port would
 //! need `setAccessibilityLabel:` on the NSView for macOS and an ATK name for
 //! GTK, written as separate bridges rather than as a change here.
+//!
+//! # Which reader hears what, measured
+//!
+//! What is set here is an MSAA name, and for a control Windows draws itself,
+//! that is not what UI Automation reports. Windows supplies its own UIA
+//! provider for a native edit, button or combo box, and it answers before the
+//! bridge that would otherwise expose this object. Read through the two APIs
+//! side by side against the running composer, the same control answers twice:
+//!
+//! ```text
+//! Button   UIA='B'                MSAA='Bold, Ctrl+B'
+//! Button   UIA='Attach File...'   MSAA='Attach a file, Alt+A'
+//! Edit     UIA='To:'              MSAA='To'
+//! ```
+//!
+//! So these names are not lost, and a reader that uses IAccessible for ordinary
+//! Win32 controls, which is what NVDA does in a window like this one, hears
+//! exactly what is written here, descriptions included. A reader that uses UI
+//! Automation, which is what Narrator does, hears the control's own window
+//! text: the visible label for a button, the static label beside a field.
+//!
+//! Three things follow, and they are the reason this is written down.
+//!
+//! Set a name here **and** make the visible label say the same thing, wherever
+//! the two can agree. Where they cannot, the name here is the fuller one and
+//! the label is the shorter one, never a different fact.
+//!
+//! A description set here reaches MSAA only. Anything somebody must hear to
+//! work a control cannot live only in a description; put it in the label, or
+//! announce it.
+//!
+//! And the automated scan reads the UI Automation tree, so it is measuring the
+//! labels rather than any of this. A clean scan says the labels are present. It
+//! says nothing at all about these.
 
 use wxdragon::accessible::{AccStatus, Accessible, AccessibleImpl};
 use wxdragon::ffi;

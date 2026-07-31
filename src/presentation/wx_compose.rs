@@ -185,6 +185,20 @@ enum Deferred {
     Toolbar,
 }
 
+/// Whether a half-written message is worth keeping as a draft.
+///
+/// Nothing typed yet is not worth a row in the drafts list, and it would be one
+/// that reads as blank. A signature on its own is nothing typed: it is there
+/// before anybody starts, so the body is asked about as text rather than as
+/// markup, and empty markup counts as empty.
+fn worth_keeping(data: &ComposeData) -> bool {
+    !data.to.trim().is_empty()
+        || !data.cc.trim().is_empty()
+        || !data.bcc.trim().is_empty()
+        || !data.subject.trim().is_empty()
+        || !data.body_plain.trim().is_empty()
+}
+
 /// Show a message that has one thing to say and nothing to decide.
 ///
 /// Beside the announcement rather than instead of it. The announcement is the
@@ -743,13 +757,18 @@ pub fn show_compose_dialog_full(
 
     // Say where each button is when it takes focus, however it was reached.
     //
-    // Not by taking the arrow keys. That was tried twice, with the typed
-    // handler and with `bind_internal`, and a key event on a button never
-    // reached either one: wxWidgets moves focus by its own arrow rules first
-    // and there is no char hook in this binding to get in front of it. What it
-    // does with the arrows is right anyway, left to right along the row, so
-    // this rides on it rather than fighting it and adds the part that was
-    // missing, which is knowing where you are.
+    // Not by taking the arrow keys, and the reason is narrower than it first
+    // looked. Key events do reach a button here: a handler bound with
+    // `bind_internal` sees an ordinary letter. It does not see the arrows or
+    // Escape, because a dialog on Windows offers every message to
+    // `IsDialogMessage` first and that is where Tab, the arrows and Escape are
+    // taken to move focus and to close. The supported way out is the
+    // `wxWANTS_CHARS` style on the control, and this binding exposes neither
+    // that nor a char hook nor the navigation event.
+    //
+    // What wxWidgets does with the arrows is right anyway, left to right along
+    // the row, so this rides on it rather than fighting it and adds the part
+    // that was missing, which is knowing where you are.
     for (position, button) in toolbar_buttons.iter().enumerate() {
         let toolbar_at = toolbar_at.clone();
         let a11y = a11y.clone();
@@ -1246,7 +1265,25 @@ pub fn show_compose_dialog_full(
     let outcome = 'compose: loop {
         let result = dialog.show_modal();
 
-        // Nothing to read for the ways out that discard the message.
+        // Every way out that is not Send or Save Draft ends the message. The
+        // ones that mean it, Discard and Cancel, are buttons somebody chose.
+        // Escape is not: it reaches the dialog from anywhere in the window,
+        // including from a toolbar button, and it used to throw away whatever
+        // had been written with nothing asked and nothing kept. A message
+        // written over ten minutes was one keystroke from gone.
+        //
+        // Discard still discards, because that is the word on the button. The
+        // other ways out keep what was written, and say so.
+        if result == ID_CANCEL
+            && let Some(data) = read_compose_data()
+            && worth_keeping(&data)
+        {
+            let _ = a11y.announce(
+                "Saved as a draft",
+                crate::presentation::accessibility::announcements::Priority::Normal,
+            );
+            break 'compose ComposeResult::SaveDraft(data);
+        }
         if result != ID_SEND && result != ID_SAVE_DRAFT {
             break 'compose ComposeResult::Cancelled;
         }
@@ -2045,6 +2082,52 @@ mod tests {
     #[test]
     fn test_forward_subject_no_double_fwd() {
         assert_eq!(format_forward_subject("Fwd: Hello"), "Fwd: Hello");
+    }
+
+    #[test]
+    fn test_a_message_with_anything_in_it_is_worth_keeping() {
+        // Escape reaches the compose dialog from anywhere in the window and
+        // used to throw the message away with nothing asked and nothing kept.
+        // Each of these on its own is somebody's work.
+        for touched in [
+            |d: &mut ComposeData| d.to = "sam@example.com".into(),
+            |d: &mut ComposeData| d.cc = "ada@example.com".into(),
+            |d: &mut ComposeData| d.bcc = "grace@example.com".into(),
+            |d: &mut ComposeData| d.subject = "Tomorrow".into(),
+            |d: &mut ComposeData| d.body_plain = "See you at nine.".into(),
+        ] {
+            let mut data = written("", "");
+            data.to = String::new();
+            data.subject = String::new();
+            data.body_plain = String::new();
+            touched(&mut data);
+
+            assert!(worth_keeping(&data), "{data:?}");
+        }
+    }
+
+    #[test]
+    fn test_a_message_nobody_has_touched_is_not_kept() {
+        // A blank row in the drafts list is one that announces nothing, on a
+        // list somebody navigates by ear.
+        let mut nothing = written("", "");
+        nothing.to = String::new();
+        nothing.subject = String::new();
+        nothing.body_plain = String::new();
+
+        assert!(!worth_keeping(&nothing));
+    }
+
+    #[test]
+    fn test_markup_with_no_words_in_it_is_still_nothing() {
+        // The editor hands back an empty paragraph for a message nobody has
+        // typed into, so asking about the markup would keep every window ever
+        // opened. The plain text half is what is asked.
+        let mut empty = written("<p><br></p>", "");
+        empty.to = String::new();
+        empty.subject = String::new();
+
+        assert!(!worth_keeping(&empty));
     }
 
     /// A message with both halves as the editor would hand them over.
