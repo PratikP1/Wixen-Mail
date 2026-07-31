@@ -4,6 +4,34 @@ use crate::common::{Error, Result};
 use crate::data::message_cache::{MessageCache, ReminderEntry};
 
 impl MessageCache {
+    /// Put a reminder off until later.
+    ///
+    /// One statement, naming the row, rather than reading the whole reminder
+    /// back and writing it out again. The alert has the identifier and nothing
+    /// else it needs, and reading first means a read that can fail or find
+    /// nothing, and then an answer somebody gave is quietly dropped.
+    ///
+    /// Says how many rows it changed, so a snooze aimed at a reminder that is
+    /// no longer there can be reported rather than looking like it worked.
+    pub fn snooze_reminder(&self, id: &str, until: &str, stamp: &str) -> Result<usize> {
+        self.conn
+            .execute(
+                "UPDATE reminders SET due_datetime = ?2, updated_at = ?3 WHERE id = ?1",
+                rusqlite::params![id, until, stamp],
+            )
+            .map_err(|e| Error::Other(format!("Failed to snooze reminder: {}", e)))
+    }
+
+    /// Mark a reminder finished.
+    pub fn complete_reminder(&self, id: &str, stamp: &str) -> Result<usize> {
+        self.conn
+            .execute(
+                "UPDATE reminders SET is_completed = 1, updated_at = ?2 WHERE id = ?1",
+                rusqlite::params![id, stamp],
+            )
+            .map_err(|e| Error::Other(format!("Failed to complete reminder: {}", e)))
+    }
+
     /// Save (upsert) a reminder.
     pub fn save_reminder(&self, r: &ReminderEntry) -> Result<()> {
         self.conn
@@ -152,6 +180,84 @@ mod tests {
     fn test_cache() -> MessageCache {
         let dir = std::env::temp_dir().join(format!("wixen_rem_test_{}", uuid::Uuid::new_v4()));
         MessageCache::new(dir, None).unwrap()
+    }
+
+    fn one_due(cache: &MessageCache, id: &str, when: &str) {
+        let now = chrono::Utc::now().to_rfc3339();
+        cache
+            .save_reminder(&ReminderEntry {
+                id: id.to_string(),
+                account_id: "acct-1".to_string(),
+                title: "Ring the dentist".to_string(),
+                description: None,
+                due_datetime: Some(when.to_string()),
+                is_completed: false,
+                priority: "normal".to_string(),
+                repeat_rule: None,
+                related_event_id: None,
+                created_at: now.clone(),
+                updated_at: now,
+            })
+            .expect("save");
+    }
+
+    #[test]
+    fn test_a_snooze_moves_the_reminder_and_nothing_else() {
+        let cache = test_cache();
+        one_due(&cache, "rem-1", "2026-07-31 14:43");
+        one_due(&cache, "rem-2", "2026-07-31 15:00");
+
+        let changed = cache
+            .snooze_reminder("rem-1", "2026-07-31 14:58", "2026-07-31T18:44:00Z")
+            .expect("snooze");
+
+        assert_eq!(changed, 1);
+        let after = cache.get_reminders_for_account("acct-1").expect("read");
+        let moved = after.iter().find(|r| r.id == "rem-1").expect("still there");
+        assert_eq!(moved.due_datetime.as_deref(), Some("2026-07-31 14:58"));
+        assert!(!moved.is_completed, "a snooze is not a way of finishing it");
+        let untouched = after.iter().find(|r| r.id == "rem-2").expect("still there");
+        assert_eq!(untouched.due_datetime.as_deref(), Some("2026-07-31 15:00"));
+    }
+
+    #[test]
+    fn test_marking_done_from_the_alert_keeps_the_time_it_was_due() {
+        // The time it was due is a fact about it, and it is what the list
+        // sorts by. Clearing it would move the row somewhere nobody left it.
+        let cache = test_cache();
+        one_due(&cache, "rem-1", "2026-07-31 14:43");
+
+        assert_eq!(
+            cache
+                .complete_reminder("rem-1", "2026-07-31T18:44:00Z")
+                .expect("complete"),
+            1
+        );
+
+        let after = cache.get_reminders_for_account("acct-1").expect("read");
+        assert!(after[0].is_completed);
+        assert_eq!(after[0].due_datetime.as_deref(), Some("2026-07-31 14:43"));
+    }
+
+    #[test]
+    fn test_answering_a_reminder_that_has_gone_says_nothing_changed() {
+        // Rather than reporting success. Somebody could delete a reminder in
+        // one window while its alert is open in another, and an answer that
+        // went nowhere should be visible as one.
+        let cache = test_cache();
+
+        assert_eq!(
+            cache
+                .snooze_reminder("never-existed", "2026-07-31 14:58", "2026-07-31T18:44:00Z")
+                .expect("no error, just nothing to change"),
+            0
+        );
+        assert_eq!(
+            cache
+                .complete_reminder("never-existed", "2026-07-31T18:44:00Z")
+                .expect("no error"),
+            0
+        );
     }
 
     #[test]

@@ -3809,36 +3809,64 @@ fn raise_what_is_due(
             // session because it is in `already`.
             continue;
         }
-        // Writing goes to the database, which is why it happens here and not
-        // on every tick: this is a key press somebody just made, not a poll.
         let Some(cache) = cache.as_ref() else {
             continue;
         };
-        let stored = cache
-            .get_reminders_for_account(crate::application::new_item::LOCAL_ACCOUNT_ID)
-            .ok()
-            .and_then(|found| found.into_iter().find(|r| r.id == item.id));
-        let Some(mut changed) = stored else {
-            continue;
-        };
-        match answer {
+
+        // Written by naming the row rather than by reading the whole reminder
+        // back and saving it out again. The answer somebody has just given is
+        // the thing being kept, and a read in between is a step that can find
+        // nothing and drop it without saying so.
+        let stamp = chrono::Local::now().to_rfc3339();
+        let (written, moved_to) = match answer {
+            // Handled above. Written out rather than left to a catch-all, so
+            // that adding an answer is a compile error here.
             wx_reminder_alert::Answer::Dismissed => continue,
-            wx_reminder_alert::Answer::Done => changed.is_completed = true,
+            wx_reminder_alert::Answer::Done => (cache.complete_reminder(&item.id, &stamp), None),
             wx_reminder_alert::Answer::Snoozed(snooze) => {
-                changed.due_datetime = Some(due::stored(snooze.until(chrono::Local::now())));
+                let until = due::stored(snooze.until(chrono::Local::now()));
+                let done = cache.snooze_reminder(&item.id, &until, &stamp);
                 // Out of `already`, because a snoozed reminder is one that is
                 // meant to come back.
                 already.borrow_mut().remove(&item.id);
+                (done, Some(until))
+            }
+        };
+
+        match written {
+            // Nothing changed means the reminder is no longer there, which is
+            // neither an error nor success. Said, because an answer that went
+            // nowhere otherwise looks exactly like one that worked.
+            Ok(0) => {
+                let _ = a11y.announce(
+                    "That reminder is no longer there, so nothing was changed",
+                    crate::presentation::accessibility::announcements::Priority::High,
+                );
+                continue;
+            }
+            Ok(_) => {}
+            Err(why) => {
+                let said = format!("The reminder could not be saved: {why}");
+                tracing::error!("{said}");
+                let _ = a11y.announce(
+                    &said,
+                    crate::presentation::accessibility::announcements::Priority::High,
+                );
+                continue;
             }
         }
-        changed.updated_at = chrono::Local::now().to_rfc3339();
-        if let Err(why) = cache.save_reminder(&changed) {
-            let said = format!("The reminder could not be saved: {why}");
-            tracing::error!("{said}");
-            let _ = a11y.announce(
-                &said,
-                crate::presentation::accessibility::announcements::Priority::High,
-            );
+
+        // The list this reads from is refreshed only when somebody opens the
+        // Reminders panel, so without this the next look would see the old
+        // time, find it still due, and raise it again.
+        {
+            let mut s = lock_state(state);
+            if let Some(row) = s.reminders.iter_mut().find(|r| r.id == item.id) {
+                match &moved_to {
+                    Some(until) => row.due_datetime = Some(until.clone()),
+                    None => row.is_completed = true,
+                }
+            }
         }
     }
 }

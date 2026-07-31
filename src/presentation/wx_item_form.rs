@@ -59,8 +59,17 @@ pub fn ask_for(
     }
 
     let heading = format!("New {}", kind.label());
+    // No height here. It is worked out from what goes in the window, by
+    // `set_sizer_and_fit` at the bottom of this function.
+    //
+    // It used to be a guess: forty pixels plus fifty-two per field. The guess
+    // was too small, and what fell off the bottom of every one of these windows
+    // was the Save button. There was no way to keep an event, a reminder, a
+    // task or a note, from the keyboard or with a mouse, and no error either:
+    // the window opened, took what was typed, and had nothing that could
+    // agree to it. Pressing Enter did nothing, because the button Enter would
+    // have pressed was not there to be the default.
     let dialog = Dialog::builder(parent, &heading)
-        .with_size(520, 40 + (fields.len() as i32 * 52))
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
         .build();
 
@@ -101,7 +110,15 @@ pub fn ask_for(
     buttons.add(&cancel, 0, SizerFlag::All, 6);
     sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
 
-    dialog.set_sizer(sizer, true);
+    // Save is what Enter presses, so the form can be finished without going to
+    // find a button. It is safe as the default here because the other answer
+    // is Escape, which every dialog already understands.
+    save.set_default();
+
+    // Sized by what is in it. Anything else is a guess that is wrong on a
+    // display it was not guessed on, and the part that falls off the bottom is
+    // the part added last.
+    dialog.set_sizer_and_fit(sizer, true);
 
     // Focus starts on the first field rather than on Save, so the first thing
     // heard is what to fill in.
@@ -205,6 +222,23 @@ fn focus(control: &Control) {
 /// Also gives back the id of the chosen container, which is not a field value:
 /// the control shows names and the database wants ids, and matching them up
 /// by name later is how two calendars called Work end up merged.
+/// A date from a picker, in the form everything downstream stores.
+///
+/// The month is taken as it comes. It used to have one added to it, on the
+/// belief that the binding counts months from nought the way wxWidgets does,
+/// and it does not: `DateTime::month` adds the one itself and is documented as
+/// 1 to 12. So every date anybody typed into an event, a reminder or a task was
+/// filed a month later than they set it, silently, and a reminder set for this
+/// afternoon never went off because it was not due until next month.
+fn as_stored_date(date: &wxdragon::DateTime) -> String {
+    format!("{:04}-{:02}-{:02}", date.year(), date.month(), date.day())
+}
+
+/// A time from a picker, in the form everything downstream stores.
+fn as_stored_time(time: &wxdragon::DateTime) -> String {
+    format!("{:02}:{:02}", time.hour(), time.minute())
+}
+
 fn read_back(
     built: &[(&'static Field, Control)],
     containers: &[Container],
@@ -215,25 +249,8 @@ fn read_back(
     for (field, control) in built {
         match control {
             Control::Line(c) | Control::Paragraph(c) => filled.put(field.name, c.get_value()),
-            Control::Date(c) => {
-                let date = c.get_value();
-                filled.put(
-                    field.name,
-                    format!(
-                        "{:04}-{:02}-{:02}",
-                        date.year(),
-                        date.month() + 1,
-                        date.day()
-                    ),
-                );
-            }
-            Control::Time(c) => {
-                let time = c.get_value();
-                filled.put(
-                    field.name,
-                    format!("{:02}:{:02}", time.hour(), time.minute()),
-                );
-            }
+            Control::Date(c) => filled.put(field.name, as_stored_date(&c.get_value())),
+            Control::Time(c) => filled.put(field.name, as_stored_time(&c.get_value())),
             Control::Pick(c) => {
                 if let Entry::Pick(options) = field.entry {
                     let at = c.get_selection().unwrap_or(0) as usize;
@@ -281,6 +298,52 @@ pub fn complaint_about(missing: &[&Field]) -> String {
 mod tests {
     use super::*;
     use crate::application::item_fields::Filled;
+
+    #[test]
+    fn test_a_date_is_stored_as_the_day_that_was_picked() {
+        // The month used to have one added to it, because wxWidgets counts
+        // months from nought. The binding does not: it adds the one itself.
+        // So a reminder set for the thirty-first of July was filed for the
+        // thirty-first of August, and it never went off, and nothing said so.
+        let midsummer = wxdragon::DateTime::new(2026, 7, 31, 14, 36, 0);
+
+        assert_eq!(as_stored_date(&midsummer), "2026-07-31");
+        assert_eq!(as_stored_time(&midsummer), "14:36");
+    }
+
+    #[test]
+    fn test_the_binding_counts_months_from_one() {
+        // The belief this rests on, written down so it fails here rather than
+        // in somebody's calendar if the binding ever changes.
+        assert_eq!(wxdragon::DateTime::new(2026, 1, 1, 0, 0, 0).month(), 1);
+        assert_eq!(wxdragon::DateTime::new(2026, 12, 1, 0, 0, 0).month(), 12);
+    }
+
+    #[test]
+    fn test_january_and_december_are_padded_and_not_wrapped() {
+        // The two the off-by-one hurt worst: December wrapped into a month
+        // thirteen, which is not a date at all.
+        assert_eq!(
+            as_stored_date(&wxdragon::DateTime::new(2026, 1, 5, 0, 0, 0)),
+            "2026-01-05"
+        );
+        assert_eq!(
+            as_stored_date(&wxdragon::DateTime::new(2026, 12, 25, 0, 0, 0)),
+            "2026-12-25"
+        );
+    }
+
+    #[test]
+    fn test_midnight_and_noon_are_written_the_same_way() {
+        assert_eq!(
+            as_stored_time(&wxdragon::DateTime::new(2026, 7, 1, 0, 0, 0)),
+            "00:00"
+        );
+        assert_eq!(
+            as_stored_time(&wxdragon::DateTime::new(2026, 7, 1, 12, 0, 0)),
+            "12:00"
+        );
+    }
 
     #[test]
     fn test_the_complaint_names_the_field() {
