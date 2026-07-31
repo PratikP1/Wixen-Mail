@@ -274,7 +274,7 @@ static EVENT: &[Field] = &[
     Field {
         name: FieldName::Notes,
         label: "&Description",
-        help: "",
+        help: "Markdown headings and lists are read back when this is read aloud",
         entry: Entry::Paragraph,
         required: false,
     },
@@ -312,7 +312,7 @@ static TASK: &[Field] = &[
     Field {
         name: FieldName::Notes,
         label: "&Notes",
-        help: "",
+        help: "Markdown headings and lists are read back when this is read aloud",
         entry: Entry::Paragraph,
         required: false,
     },
@@ -381,7 +381,7 @@ static REMINDER: &[Field] = &[
     Field {
         name: FieldName::Notes,
         label: "&Notes",
-        help: "",
+        help: "Markdown headings and lists are read back when this is read aloud",
         entry: Entry::Paragraph,
         required: false,
     },
@@ -412,7 +412,7 @@ static NOTE: &[Field] = &[
     Field {
         name: FieldName::Notes,
         label: "&Body",
-        help: "",
+        help: "Markdown headings and lists are read back when this is read aloud",
         entry: Entry::Paragraph,
         required: false,
     },
@@ -485,6 +485,31 @@ impl Filled {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_every_long_field_says_that_markdown_is_understood() {
+        // A feature nobody is told about is one nobody uses. The description
+        // is what a screen reader reads after the field's name, so this is
+        // where somebody finds out without having to be told twice.
+        for kind in [
+            ItemKind::Event,
+            ItemKind::Task,
+            ItemKind::Reminder,
+            ItemKind::Note,
+        ] {
+            for field in fields_for(kind)
+                .iter()
+                .filter(|f| matches!(f.entry, Entry::Paragraph))
+            {
+                assert!(
+                    field.help.to_lowercase().contains("markdown"),
+                    "{:?} {} does not say markdown is understood",
+                    kind,
+                    field.label
+                );
+            }
+        }
+    }
 
     #[test]
     fn test_the_four_that_were_a_title_in_a_box_now_ask_for_more() {

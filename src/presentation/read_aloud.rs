@@ -18,6 +18,7 @@
 use super::ui_types::{
     CalendarEventItem, ContactItem, MessageItem, NoteItem, ReminderItem, TaskItem,
 };
+use crate::application::long_text;
 
 /// How much of an item to read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -240,7 +241,7 @@ impl ReadAloud for NoteItem {
             ("", &self.title),
             ("", if self.pinned { "Pinned" } else { "" }),
             ("Updated", &out.date(&self.updated_at)),
-            ("", &self.body_preview),
+            ("", &long_text::spoken(&self.body)),
         ])
     }
 }
@@ -271,7 +272,10 @@ impl ReadAloud for TaskItem {
             ),
             ("Priority", &self.priority),
             ("Due", &out.date(self.due_date.as_deref().unwrap_or(""))),
-            ("", self.description.as_deref().unwrap_or("")),
+            (
+                "",
+                &long_text::spoken(self.description.as_deref().unwrap_or("")),
+            ),
         ])
     }
 }
@@ -302,7 +306,10 @@ impl ReadAloud for ReminderItem {
             ),
             ("Priority", &self.priority),
             ("Due", &out.date(self.due_datetime.as_deref().unwrap_or(""))),
-            ("", self.description.as_deref().unwrap_or("")),
+            (
+                "",
+                &long_text::spoken(self.description.as_deref().unwrap_or("")),
+            ),
         ])
     }
 }
@@ -333,6 +340,7 @@ impl ReadAloud for CalendarEventItem {
             ("Location", &self.location),
             ("Status", &self.status),
             ("Calendar", self.calendar_name.as_deref().unwrap_or("")),
+            ("", &long_text::spoken(&self.description)),
         ])
     }
 }
@@ -476,6 +484,7 @@ mod tests {
         let note = NoteItem {
             id: "n1".to_string(),
             title: "Shopping".to_string(),
+            body: "Milk".to_string(),
             body_preview: "Milk".to_string(),
             pinned: false,
             updated_at: "2026-07-26".to_string(),
@@ -502,6 +511,7 @@ mod tests {
         let event = CalendarEventItem {
             id: "e1".to_string(),
             summary: "Standup".to_string(),
+            description: String::new(),
             start: "2026-07-27 09:00".to_string(),
             end: "2026-07-27 09:15".to_string(),
             location: String::new(),
@@ -544,10 +554,74 @@ mod tests {
     }
 
     #[test]
+    fn test_reading_a_note_in_full_reads_the_note_and_not_the_preview() {
+        // The preview is one short line for a list column. Reading it back at
+        // somebody who asked for the whole note is answering a different
+        // question, and there was no other way to hear a note's contents.
+        let note = NoteItem {
+            id: "n2".to_string(),
+            title: "Shopping".to_string(),
+            body: "Milk, bread, and the thing for the tap.".to_string(),
+            body_preview: "Milk, bread, and the\u{2026}".to_string(),
+            pinned: false,
+            updated_at: "2026-07-26".to_string(),
+            folder_id: None,
+        };
+
+        let said = note.read_full(aloud());
+
+        assert!(said.contains("the thing for the tap"), "{said}");
+    }
+
+    #[test]
+    fn test_a_heading_in_a_note_is_read_as_a_heading() {
+        let note = NoteItem {
+            id: "n3".to_string(),
+            title: "Trip".to_string(),
+            body: "# Packing\n\n- Passport\n- Charger".to_string(),
+            body_preview: "Packing".to_string(),
+            pinned: false,
+            updated_at: "2026-07-26".to_string(),
+            folder_id: None,
+        };
+
+        let said = note.read_full(aloud());
+
+        assert!(said.contains("heading level 1, Packing"), "{said}");
+        assert!(said.contains("bullet, Passport"), "{said}");
+    }
+
+    #[test]
+    fn test_an_events_description_is_read_at_all() {
+        // Where the dial-in number and the agenda live. Nothing read it.
+        let event = CalendarEventItem {
+            id: "e3".to_string(),
+            summary: "Review".to_string(),
+            description: "Dial in on 555 0123.".to_string(),
+            start: "2026-07-27 09:00".to_string(),
+            end: "2026-07-27 09:15".to_string(),
+            location: String::new(),
+            is_all_day: false,
+            status: "confirmed".to_string(),
+            provider: "local".to_string(),
+            calendar_id: None,
+            calendar_name: None,
+            calendar_color: None,
+        };
+
+        assert!(
+            event.read_full(aloud()).contains("Dial in on 555 0123."),
+            "{}",
+            event.read_full(aloud())
+        );
+    }
+
+    #[test]
     fn test_an_all_day_event_says_so_rather_than_reading_two_identical_times() {
         let event = CalendarEventItem {
             id: "e2".to_string(),
             summary: "Public holiday".to_string(),
+            description: String::new(),
             start: "2026-08-31".to_string(),
             end: "2026-08-31".to_string(),
             location: String::new(),

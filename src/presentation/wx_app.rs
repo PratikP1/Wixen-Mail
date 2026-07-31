@@ -3030,6 +3030,9 @@ impl WxMailApp {
                 // than stored, because dismissing is a decision about now.
                 let already_raised: RefCell<std::collections::HashSet<String>> =
                     RefCell::new(std::collections::HashSet::new());
+                // Whether an alert is on screen right now, which is a different
+                // question from what has already gone off.
+                let one_alert_at_a_time = crate::application::due::OneAtATime::default();
                 // Which message has been open, and since when. `None` when
                 // nothing is open, or when the one that is has already been
                 // dealt with.
@@ -3101,6 +3104,7 @@ impl WxMailApp {
                             &message_cache,
                             &a11y,
                             &already_raised,
+                            &one_alert_at_a_time,
                             date_settings,
                         );
                     }
@@ -3871,9 +3875,18 @@ fn raise_what_is_due(
     cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
     already: &RefCell<std::collections::HashSet<String>>,
+    one_at_a_time: &crate::application::due::OneAtATime,
     dates: date_display::DateSettings,
 ) {
     use crate::application::due;
+
+    // Before anything else. The window below is modal and the event loop keeps
+    // running inside it, so this function runs again while somebody is still
+    // reading the first alert, and without this the next one due opens on top
+    // of it.
+    let Some(_turn) = one_at_a_time.take() else {
+        return;
+    };
 
     let rows: Vec<crate::presentation::ui_types::ReminderItem> = {
         let s = lock_state(state);

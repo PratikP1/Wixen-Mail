@@ -373,6 +373,9 @@ pub enum UIUpdate {
 pub struct CalendarEventItem {
     pub id: String,
     pub summary: String,
+    /// What the organiser wrote: the agenda, the dial-in number, the address
+    /// of the door that is not the main one.
+    pub description: String,
     pub start: String,
     pub end: String,
     pub location: String,
@@ -510,6 +513,9 @@ pub struct NoteFolderItem {
 pub struct NoteItem {
     pub id: String,
     pub title: String,
+    /// The whole note. The preview is one line for a column; this is what
+    /// somebody hears when they ask to have the note read.
+    pub body: String,
     pub body_preview: String,
     pub pinned: bool,
     pub updated_at: String,
@@ -641,6 +647,7 @@ impl CalendarEventItem {
         Self {
             id: entry.id.clone(),
             summary: entry.summary.clone(),
+            description: entry.description.clone().unwrap_or_default(),
             start,
             end,
             location: entry.location.clone().unwrap_or_default(),
@@ -724,6 +731,7 @@ impl NoteItem {
         Self {
             id: entry.id.clone(),
             title: entry.title.clone(),
+            body: entry.body.clone(),
             body_preview: note_preview(&entry.body),
             pinned: entry.pinned,
             updated_at: entry.updated_at.clone(),
@@ -734,10 +742,14 @@ impl NoteItem {
 
 /// Condense a note body into one short line for the list column.
 ///
+/// The first line's words, without its markers: a column reading "## Shopping"
+/// spends its first characters on punctuation nobody wants read out.
+///
 /// Counted in characters rather than bytes, because a note body is free text
 /// and truncating multibyte content by byte offset would panic.
 fn note_preview(body: &str) -> String {
-    let single_line = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    let first = crate::application::long_text::first_line(body);
+    let single_line = first.split_whitespace().collect::<Vec<_>>().join(" ");
     if single_line.chars().count() <= NOTE_PREVIEW_CHARS {
         return single_line;
     }
@@ -764,6 +776,7 @@ mod tests {
         CalendarEventItem {
             id: "e1".into(),
             summary: "Standup".into(),
+            description: String::new(),
             start: start.into(),
             end: start.into(),
             location: String::new(),

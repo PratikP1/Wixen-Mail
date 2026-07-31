@@ -1,6 +1,8 @@
 //! Notes module panel: view and manage notes with folder organization.
 
-use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::accessibility::names::{
+    set_accessible_name, set_accessible_name_and_description,
+};
 use wxdragon::prelude::*;
 
 /// Handles to interactive elements in the notes content panel.
@@ -58,14 +60,29 @@ pub fn build_notes_panel(parent: &Panel) -> NotesPanelHandles {
     let editor_panel = Panel::builder(&panel).build();
     let editor_sizer = BoxSizer::builder(Orientation::Vertical).build();
 
+    // Visible labels as well as accessible names. Two boxes with nothing
+    // written beside them say what they are to a screen reader and to nobody
+    // else (WCAG 3.3.2).
+    let title_label = StaticText::builder(&editor_panel)
+        .with_label("Title")
+        .build();
     let title_input = TextCtrl::builder(&editor_panel).build();
 
     set_accessible_name(&title_input, "Note title");
+    let body_label = StaticText::builder(&editor_panel)
+        .with_label("Body, in Markdown")
+        .build();
     let body_input = TextCtrl::builder(&editor_panel)
         .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
         .build();
 
-    set_accessible_name(&body_input, "Note body");
+    // The description, not the name, so it is said once on arrival rather than
+    // on every visit to a field somebody is typing in.
+    set_accessible_name_and_description(
+        &body_input,
+        "Note body",
+        "Markdown headings and lists are read back when this note is read aloud",
+    );
 
     // Without this the editor accepts typing and throws it away on the next
     // selection, which is worse than being read-only.
@@ -73,7 +90,9 @@ pub fn build_notes_panel(parent: &Panel) -> NotesPanelHandles {
         .with_label("&Save Note")
         .build();
 
+    editor_sizer.add(&title_label, 0, SizerFlag::Left | SizerFlag::Top, 4);
     editor_sizer.add(&title_input, 0, SizerFlag::Expand | SizerFlag::All, 4);
+    editor_sizer.add(&body_label, 0, SizerFlag::Left | SizerFlag::Top, 4);
     editor_sizer.add(&body_input, 1, SizerFlag::Expand | SizerFlag::All, 4);
     editor_sizer.add(&btn_save, 0, SizerFlag::All, 4);
     editor_panel.set_sizer(editor_sizer, true);

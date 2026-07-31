@@ -845,3 +845,49 @@ fn test_task_manager_full_lifecycle() {
     mgr.remove_task_list("list1");
     assert_eq!(mgr.all_tasks().len(), 0);
 }
+
+/// A note written with markdown, from the database to the words a screen reader
+/// says.
+///
+/// Every step in one test because each half was already right on its own and
+/// the note's contents still never reached anybody: the list item carried a
+/// one-line preview, the whole body stayed in the database, and reading a note
+/// aloud read the preview back.
+#[test]
+fn test_a_note_written_in_markdown_is_read_back_with_its_structure() {
+    use wixen_mail::data::message_cache::NoteEntry;
+    use wixen_mail::presentation::read_aloud::{ReadAloud, Reading};
+    use wixen_mail::presentation::ui_types::NoteItem;
+
+    let dir = std::env::temp_dir().join(format!("wixen_md_note_{}", uuid::Uuid::new_v4()));
+    let cache = MessageCache::new(dir, None).expect("a cache");
+    cache
+        .save_note(&NoteEntry {
+            id: "n-md".to_string(),
+            account_id: "acct".to_string(),
+            folder_id: None,
+            title: "Trip".to_string(),
+            body: "# Packing\n\n- Passport\n- Charger".to_string(),
+            format: "plain".to_string(),
+            pinned: false,
+            created_at: "2026-07-31T00:00:00Z".to_string(),
+            updated_at: "2026-07-31T00:00:00Z".to_string(),
+        })
+        .expect("the note saves");
+
+    let stored = cache
+        .get_note("n-md")
+        .expect("the note reads back")
+        .expect("the note is there");
+    let item = NoteItem::from_entry(&stored);
+    let said = item.read_full(Reading {
+        dates: Default::default(),
+        now: chrono::Local::now(),
+    });
+
+    assert!(said.contains("heading level 1, Packing"), "{said}");
+    assert!(said.contains("bullet, Passport"), "{said}");
+    assert!(said.contains("bullet, Charger"), "{said}");
+    // The column shows the words, not the hashes.
+    assert_eq!(item.body_preview, "Packing");
+}

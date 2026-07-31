@@ -282,6 +282,7 @@ mod tests {
         NoteItem {
             id: "n1".to_string(),
             title: "Shopping".to_string(),
+            body: "Milk".to_string(),
             body_preview: "Milk".to_string(),
             pinned: true,
             updated_at: "2026-07-26".to_string(),
@@ -293,6 +294,7 @@ mod tests {
         CalendarEventItem {
             id: "e1".to_string(),
             summary: "Standup".to_string(),
+            description: String::new(),
             start: "2026-07-27 09:00".to_string(),
             end: "2026-07-27 09:15".to_string(),
             location: "Room 2".to_string(),

@@ -8,6 +8,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Notes and descriptions can be written in Markdown.** A note with a heading
+  and a list in it used to come back as one flat run of text, so the shape
+  somebody put there to make it findable was the first thing lost. Now a
+  heading is read as "heading level 1" and a list item as "bullet" or
+  "numbered item", which is the only way speech can say either. Nothing has to
+  be turned on and nothing new has to be learned: what is stored is exactly
+  what was typed, and text that is not Markdown is read exactly as it was
+  written rather than reported as an error. The long field in each of the four
+  item forms says so when you reach it.
+
+- **A note can be heard in full.** Space on a note in the list read the same
+  one-line preview the column already showed, so a note's contents could not be
+  heard without opening it. It reads the whole note now, and the preview column
+  shows the first line's words instead of its Markdown markers.
+
+- **An event's description is read at all.** It holds the agenda and the
+  dial-in number, and nothing read it out.
+
 - **Files can be sent with a message.** The Attach File button has been on the
   compose window from the beginning with nothing behind it: no handler, no
   list, no column in the outbox queue, and no part in the message that went
@@ -46,6 +64,14 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   many messages it holds.
 
 ### Fixed
+
+- **Reminder alerts no longer pile up on top of each other.** With more than
+  one reminder overdue, a second alert window opened over the first about a
+  minute later, and a third over that, each covering the one being read. The
+  alert window is modal and the clock that opens it keeps running inside it, so
+  it went looking for the next reminder while somebody was still answering the
+  first. They come one at a time now, and the next one appears when the one in
+  front of it has been answered.
 
 - **A list started on a blank message is a list.** Ctrl+Shift+L on an empty
   message announced "Bulleted list" and left plain text behind, so every Enter
