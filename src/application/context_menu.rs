@@ -14,9 +14,8 @@
 //! rule is already written down for [`crate::application::pim_command`] and
 //! this follows it.
 //!
-//! Rename, move to another list, mark a whole folder read and empty a folder
-//! are the obvious absences. None of them is implemented, so none of them is
-//! offered.
+//! Rename, mark a whole folder read and empty a folder are the obvious
+//! absences. None of them is implemented, so none of them is offered.
 //!
 //! # Why this is data
 //!
@@ -98,6 +97,17 @@ pub enum Action {
     CopyToNote,
     /// Put this message in another folder, and take it out of this one.
     MoveToFolder,
+    /// Put this event, task or note in another calendar, list or folder.
+    ///
+    /// Separate from [`Action::MoveToFolder`] because what is offered differs:
+    /// a message goes to a mail folder, and an item goes to a container of the
+    /// one kind that holds it. Offering a calendar as a home for a note is not
+    /// a mistake worth making reachable.
+    ///
+    /// Not offered for a contact. A contact is in as many groups as somebody
+    /// puts it in, so it has no one home to move it out of, and "move" would be
+    /// the wrong word for what it would do.
+    MoveItem,
     /// Put a copy of this message in another folder, keeping this one.
     CopyToFolder,
     /// Choose which of this account's folders are kept up to date.
@@ -166,6 +176,7 @@ static CONTACTS: &[Entry] = &[
 
 static EVENTS: &[Entry] = &[
     entry("&New event", Action::NewItem),
+    entry("Mo&ve to another calendar", Action::MoveItem),
     entry("&Delete", Action::DeleteItem),
 ];
 
@@ -177,12 +188,14 @@ static REMINDERS: &[Entry] = &[
 
 static TASKS: &[Entry] = &[
     entry("&New task", Action::NewItem),
+    entry("Mo&ve to another list", Action::MoveItem),
     entry("Mar&k done or not done", Action::ToggleComplete),
     entry("&Delete", Action::DeleteItem),
 ];
 
 static NOTES: &[Entry] = &[
     entry("&New note", Action::NewItem),
+    entry("Mo&ve to another folder", Action::MoveItem),
     entry("&Pin or unpin", Action::TogglePin),
     entry("&Delete", Action::DeleteItem),
 ];
@@ -215,6 +228,26 @@ static CONTACT_GROUPS: &[Entry] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_move_is_offered_exactly_where_it_means_something() {
+        // The menu and the command have to agree. Offering it on a reminder,
+        // which is filed nowhere, would be a stop that teaches nothing; not
+        // offering it on a task would leave the only way to correct a
+        // misfiled one as deleting it and typing it again.
+        use crate::application::pim_command::PimCommand;
+
+        for kind in ItemKind::ALL {
+            let offered = entries_for(Focus::Items(kind))
+                .iter()
+                .any(|e| e.action == Action::MoveItem);
+            assert_eq!(
+                offered,
+                PimCommand::Move.applies_to(kind),
+                "the menu and the command disagree about {kind:?}"
+            );
+        }
+    }
 
     #[test]
     fn test_everything_that_can_hold_focus_offers_something() {

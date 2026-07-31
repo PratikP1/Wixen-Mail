@@ -761,6 +761,13 @@ pub fn pim_command(
             _ => return,
         }
         .map(|()| toggled(command, &name, now)),
+        // Its own path: it has a window in the middle of it, and somebody can
+        // leave that window without choosing, which is not a failure and must
+        // not be announced as one.
+        PimCommand::Move => match move_item(&cache, state, frame, kind, &id, &name) {
+            Some(outcome) => outcome,
+            None => return,
+        },
     };
 
     match outcome {
@@ -1770,6 +1777,168 @@ pub fn delete_container(
                 e
             )));
         }
+    }
+}
+
+/// Ask where an item should go, and put it there.
+///
+/// `None` when there was nowhere to offer or somebody left the window without
+/// choosing. Leaving a chooser is not a failure and must not be announced as
+/// one.
+///
+/// Items filed in the wrong place is the ordinary case rather than the unusual
+/// one: a task typed in a hurry lands on whichever list happened to be open,
+/// and until now the only way to correct that was to delete it and type it
+/// again.
+fn move_item(
+    cache: &MessageCache,
+    state: &Arc<StdMutex<WxUIState>>,
+    frame: &Frame,
+    kind: crate::application::new_item::ItemKind,
+    id: &str,
+    name: &str,
+) -> Option<crate::common::Result<String>> {
+    use crate::application::destinations::{Branch, Destination, Moving, anywhere, offer};
+
+    let holder = kind.kept_in()?;
+    let (account_id, account_name) = {
+        let s = lock_state(state);
+        let id = s.active_account_id.clone()?;
+        let name = s
+            .accounts
+            .iter()
+            .find(|a| a.id == id)
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| id.clone());
+        (id, name)
+    };
+
+    let account_for_lookup = account_id.clone();
+    let places: Vec<Destination> = containers_in(cache, holder, &account_id)
+        .into_iter()
+        .map(|(id, name, _)| Destination {
+            name,
+            id,
+            account_id: account_id.clone(),
+            depth: 0,
+        })
+        .collect();
+    // Where it already is, left out. Offering the container something is
+    // already in is offering a move that does nothing.
+    let branches = offer(
+        vec![Branch {
+            account_id,
+            account_name,
+            places,
+        }],
+        held_in(cache, kind, id, &account_for_lookup).as_deref(),
+    );
+    if !anywhere(&branches) {
+        return Some(Ok(crate::presentation::wx_destination::nowhere(
+            Moving::Item(holder),
+        )
+        .to_string()));
+    }
+
+    let into = crate::presentation::wx_destination::ask(
+        frame,
+        Moving::Item(holder),
+        false,
+        &branches,
+        None,
+    )?;
+    let landed = branches
+        .iter()
+        .flat_map(|branch| branch.places.iter())
+        .find(|place| place.id == into)
+        .map(|place| place.name.clone())
+        .unwrap_or_else(|| into.clone());
+
+    Some(
+        file_under(cache, kind, id, &into, &account_for_lookup)
+            .map(|()| crate::application::pim_command::moved(name, &landed)),
+    )
+}
+
+/// Which container an item is in now, so it is not offered as a destination.
+///
+/// Found in the account's list rather than by a query naming the row. Only
+/// notes have a getter for one, and the lists are already what the panels are
+/// filled from.
+fn held_in(
+    cache: &MessageCache,
+    kind: crate::application::new_item::ItemKind,
+    id: &str,
+    account_id: &str,
+) -> Option<String> {
+    use crate::application::new_item::ItemKind;
+    match kind {
+        ItemKind::Event => {
+            cache
+                .get_all_events_for_account(account_id)
+                .ok()?
+                .into_iter()
+                .find(|e| e.id == id)?
+                .calendar_id
+        }
+        ItemKind::Task => {
+            cache
+                .get_all_tasks_for_account(account_id)
+                .ok()?
+                .into_iter()
+                .find(|t| t.id == id)?
+                .task_list_id
+        }
+        ItemKind::Note => cache.get_note(id).ok().flatten()?.folder_id,
+        _ => None,
+    }
+}
+
+/// Write the item into its new container.
+///
+/// Read, change, write, rather than an UPDATE naming one column, because the
+/// same rows are what the sync compares against and a partial write would send
+/// up an item with everything else blanked.
+fn file_under(
+    cache: &MessageCache,
+    kind: crate::application::new_item::ItemKind,
+    id: &str,
+    into: &str,
+    account_id: &str,
+) -> crate::common::Result<()> {
+    use crate::application::new_item::ItemKind;
+    use crate::common::Error;
+
+    match kind {
+        ItemKind::Event => {
+            let mut event = cache
+                .get_all_events_for_account(account_id)?
+                .into_iter()
+                .find(|e| e.id == id)
+                .ok_or_else(|| Error::Other("That event is no longer there".into()))?;
+            event.calendar_id = Some(into.to_string());
+            cache.save_calendar_event(&event)
+        }
+        ItemKind::Task => {
+            let mut task = cache
+                .get_all_tasks_for_account(account_id)?
+                .into_iter()
+                .find(|t| t.id == id)
+                .ok_or_else(|| Error::Other("That task is no longer there".into()))?;
+            task.task_list_id = Some(into.to_string());
+            cache.save_task(&task)
+        }
+        ItemKind::Note => {
+            let mut note = cache
+                .get_note(id)?
+                .ok_or_else(|| Error::Other("That note is no longer there".into()))?;
+            note.folder_id = Some(into.to_string());
+            cache.save_note(&note)
+        }
+        // Never reached: `kept_in` gives these no container, so the chooser is
+        // never opened for one. Written out rather than caught by a catch-all,
+        // so a new kind of item is a compile error here.
+        ItemKind::Mail | ItemKind::Contact | ItemKind::Reminder => Ok(()),
     }
 }
 

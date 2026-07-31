@@ -46,6 +46,22 @@ pub enum ItemKind {
 }
 
 impl ItemKind {
+    /// What holds one of these, when one thing does.
+    ///
+    /// The inverse of [`ContainerKind::holds`], and partial where that is
+    /// total. A reminder is filed nowhere: the module sorts them into buckets
+    /// worked out from when each is due. A contact is in as many groups as
+    /// somebody puts it in, so no single one is where it lives. And mail is in
+    /// a folder on a server, which is not one of these.
+    pub fn kept_in(self) -> Option<ContainerKind> {
+        match self {
+            ItemKind::Event => Some(ContainerKind::Calendar),
+            ItemKind::Task => Some(ContainerKind::TaskList),
+            ItemKind::Note => Some(ContainerKind::NoteFolder),
+            ItemKind::Mail | ItemKind::Contact | ItemKind::Reminder => None,
+        }
+    }
+
     /// Every kind, so menus and tests cover the whole set.
     pub const ALL: [ItemKind; 6] = [
         ItemKind::Mail,

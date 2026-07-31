@@ -140,6 +140,7 @@ menu_ids!(
     // acts on that, so one id serves every panel rather than one per panel.
     ID_CONTEXT_NEW_ITEM,
     ID_CONTEXT_DELETE_ITEM,
+    ID_CONTEXT_MOVE_ITEM,
     ID_CONTEXT_TOGGLE_COMPLETE,
     ID_CONTEXT_TOGGLE_PIN,
     ID_CONTEXT_NEW_CONTAINER,
@@ -2260,7 +2261,8 @@ impl WxMailApp {
                         _ if id == ID_CONTEXT_NEW_ITEM
                             || id == ID_CONTEXT_DELETE_ITEM
                             || id == ID_CONTEXT_TOGGLE_COMPLETE
-                            || id == ID_CONTEXT_TOGGLE_PIN =>
+                            || id == ID_CONTEXT_TOGGLE_PIN
+                            || id == ID_CONTEXT_MOVE_ITEM =>
                         {
                             use crate::application::pim_command::{PimAction, PimCommand};
                             let module = lock_state(&state).active_module;
@@ -2280,6 +2282,8 @@ impl WxMailApp {
                                     PimCommand::Delete
                                 } else if id == ID_CONTEXT_TOGGLE_COMPLETE {
                                     PimCommand::ToggleComplete
+                                } else if id == ID_CONTEXT_MOVE_ITEM {
+                                    PimCommand::Move
                                 } else {
                                     PimCommand::TogglePin
                                 };

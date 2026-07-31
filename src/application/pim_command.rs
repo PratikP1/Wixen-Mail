@@ -24,6 +24,12 @@ pub enum PimCommand {
     ToggleComplete,
     /// Pinned or not, for notes.
     TogglePin,
+    /// Put it in another calendar, list, folder or group.
+    ///
+    /// Filed in the wrong place is the ordinary case, not the unusual one: a
+    /// task typed in a hurry lands on whichever list was open, and without this
+    /// the only way to correct it was to delete it and type it again.
+    Move,
 }
 
 impl PimCommand {
@@ -40,6 +46,12 @@ impl PimCommand {
             Self::Delete => !matches!(kind, ItemKind::Mail),
             Self::ToggleComplete => matches!(kind, ItemKind::Task | ItemKind::Reminder),
             Self::TogglePin => matches!(kind, ItemKind::Note),
+            // Not a contact: a contact is in as many groups as somebody puts
+            // it in, so there is no one home to move it out of. Not a
+            // reminder: the module holds buckets worked out from when each one
+            // is due, and there is nothing to move it to. Mail moves between
+            // folders by its own path, which has to talk to the server.
+            Self::Move => matches!(kind, ItemKind::Event | ItemKind::Task | ItemKind::Note),
         }
     }
 }
@@ -99,6 +111,18 @@ pub fn deleted(kind: ItemKind, name: &str) -> String {
     }
 }
 
+/// What to say once something has been moved.
+///
+/// Names where it went. "Moved" alone leaves somebody who chose from a tree of
+/// twenty calendars with no way to know which one they landed on, and the whole
+/// reason to move a thing is to put it somewhere in particular.
+pub fn moved(name: &str, into: &str) -> String {
+    match name.trim() {
+        "" => format!("Moved to {into}"),
+        title => format!("{title} moved to {into}"),
+    }
+}
+
 /// What to say after a toggle, which has to name the new state.
 ///
 /// "Done" rather than "toggled". The whole point of a toggle is that you
@@ -111,6 +135,10 @@ pub fn toggled(command: PimCommand, name: &str, now: bool) -> String {
         (PimCommand::TogglePin, true) => "pinned",
         (PimCommand::TogglePin, false) => "unpinned",
         (PimCommand::Delete, _) => "deleted",
+        // Not a state something is now in. Where a thing went is the whole of
+        // what is worth saying about a move, and that needs the destination's
+        // name, which this does not have. Said by `moved` instead.
+        (PimCommand::Move, _) => "moved",
     };
     match name.trim() {
         "" => capitalise(state),
