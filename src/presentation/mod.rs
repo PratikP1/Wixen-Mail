@@ -39,6 +39,7 @@ pub mod wx_item_form;
 pub mod wx_managers;
 pub mod wx_notes_module;
 pub mod wx_reader;
+pub mod wx_reminder_alert;
 pub mod wx_reminders_module;
 pub mod wx_settings;
 pub mod wx_tasks_module;

@@ -18,6 +18,7 @@ use crate::presentation::ui_types::*;
 use crate::presentation::wx_account_manager::{self, AccountManagerAction};
 use crate::presentation::wx_columns;
 use crate::presentation::wx_compose::{self, ComposeMode, ComposeResult};
+use crate::presentation::wx_reminder_alert;
 use crate::presentation::wx_settings;
 use crate::presentation::wx_thread_view;
 
@@ -311,6 +312,33 @@ impl WxMailApp {
                 persist_default_account(state.default_account_id.as_deref());
             }
             state.accounts = accounts;
+        }
+
+        // Reminders, before the window rather than when the Reminders panel is
+        // first opened.
+        //
+        // They are what the alert reads, and a reminder that only goes off
+        // after somebody has been to look at the reminders is one that goes off
+        // after they no longer needed telling. Read here, on the way in, where
+        // reading is safe: on the window's own poll it is a query on the thread
+        // that draws everything, and that was tried and stopped the window.
+        if let Some(cache) = &message_cache {
+            let mut accounts: Vec<String> = state.accounts.iter().map(|a| a.id.clone()).collect();
+            // Items made on this computer live under the local account, which
+            // is not in the accounts list and is where everything belongs for
+            // anybody who has not added a mail account at all.
+            accounts.push(crate::application::new_item::LOCAL_ACCOUNT_ID.to_string());
+            for account in &accounts {
+                match cache.get_reminders_for_account(account) {
+                    Ok(found) => state
+                        .reminders
+                        .extend(found.iter().map(ReminderItem::from_entry)),
+                    // Not swallowed. A reminder that never goes off because the
+                    // read failed looks exactly like one nobody set.
+                    Err(why) => tracing::warn!("Could not read reminders for {account}: {why}"),
+                }
+            }
+            tracing::info!("{} reminders loaded", state.reminders.len());
         }
 
         let accessibility = Accessibility::new()?;
@@ -2981,6 +3009,16 @@ impl WxMailApp {
                 let a11y = a11y.clone();
                 let message_cache = message_cache.clone();
                 let tick_count = std::cell::Cell::new(0u64);
+                // What has already gone off, so an alert closed at nine does
+                // not come back at nine oh one. Held for the session rather
+                // than stored, because dismissing is a decision about now.
+                let already_raised: RefCell<std::collections::HashSet<String>> =
+                    RefCell::new(std::collections::HashSet::new());
+                // When the reminders were last looked at. By the clock rather
+                // than by counting ticks: how often this timer actually fires
+                // is the event loop's business, and counting ticks to a minute
+                // was tried and never got there.
+                let looked_at = std::cell::Cell::new(std::time::Instant::now());
                 move |_| {
                     let n = tick_count.get() + 1;
                     tick_count.set(n);
@@ -3017,6 +3055,27 @@ impl WxMailApp {
                     // anyone with speech switched off sees instead of hearing.
                     if let Some(text) = a11y.take_visual_feedback() {
                         frame.set_status_text(&text, 0);
+                    }
+
+                    // Reminders, once a minute rather than on every tick. This
+                    // runs twenty times a second and a reminder is set to the
+                    // minute, so asking the database twelve hundred times for
+                    // each one of those is work done for an answer that cannot
+                    // have changed.
+                    //
+                    // On this timer rather than one of its own, because a timer
+                    // event reaches every handler bound on its owner and a
+                    // second timer here would run this one as well.
+                    if looked_at.get().elapsed() >= HOW_OFTEN_TO_LOOK {
+                        looked_at.set(std::time::Instant::now());
+                        raise_what_is_due(
+                            &frame,
+                            &state,
+                            &message_cache,
+                            &a11y,
+                            &already_raised,
+                            date_settings,
+                        );
                     }
                 }
             });
@@ -3679,6 +3738,109 @@ fn wire_read_aloud<F>(
         // stop: private mail and personal notes read aloud in a shared room.
         let _ = a11y.announce_content(&text);
     });
+}
+
+/// How often the reminders are looked at.
+///
+/// The poll this rides on is for draining a queue and runs far too often to ask
+/// a database what is due. A reminder is set to the minute, so a minute is as
+/// often as the answer can change.
+const HOW_OFTEN_TO_LOOK: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Raise anything that has come due, one window at a time.
+///
+/// Reminders were stored, listed and synced, and nothing ever went off. Setting
+/// one bought nothing over writing a note with a date on it.
+///
+/// Read from what the reminders panel already holds rather than from the
+/// database. This runs on the window's own poll, so a query here is a query on
+/// the thread that draws everything, and that is not a theoretical objection:
+/// wired to the database it blocked, and the whole window stopped with it. What
+/// the panel holds is what the panel was given, which is every reminder for the
+/// accounts in use.
+///
+/// One at a time and modal, so two reminders that come due in the same minute
+/// arrive one after the other rather than as two windows stacked on each other,
+/// and neither can be left sitting behind the window it interrupted.
+fn raise_what_is_due(
+    frame: &Frame,
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
+    already: &RefCell<std::collections::HashSet<String>>,
+    dates: date_display::DateSettings,
+) {
+    use crate::application::due;
+
+    let rows: Vec<crate::presentation::ui_types::ReminderItem> = {
+        let s = lock_state(state);
+        s.reminders.clone()
+    };
+    if rows.is_empty() {
+        return;
+    }
+
+    let now = chrono::Local::now();
+    let due = {
+        let seen = already.borrow();
+        due::what_is_due(
+            rows.iter().map(|r| {
+                (
+                    r.id.as_str(),
+                    r.title.as_str(),
+                    r.due_datetime.as_deref(),
+                    r.is_completed,
+                )
+            }),
+            now,
+            &seen,
+        )
+    };
+
+    for item in due {
+        // Marked before the window opens, not after. The window is modal and
+        // the event loop keeps running inside it, so this tick can happen again
+        // while somebody is still looking at the first one.
+        already.borrow_mut().insert(item.id.clone());
+
+        let answer = wx_reminder_alert::raise(frame, &item, now, dates, a11y, due::Snooze::ALL[2]);
+        if answer == wx_reminder_alert::Answer::Dismissed {
+            // Nothing to write. It stays due, and it is not raised again this
+            // session because it is in `already`.
+            continue;
+        }
+        // Writing goes to the database, which is why it happens here and not
+        // on every tick: this is a key press somebody just made, not a poll.
+        let Some(cache) = cache.as_ref() else {
+            continue;
+        };
+        let stored = cache
+            .get_reminders_for_account(crate::application::new_item::LOCAL_ACCOUNT_ID)
+            .ok()
+            .and_then(|found| found.into_iter().find(|r| r.id == item.id));
+        let Some(mut changed) = stored else {
+            continue;
+        };
+        match answer {
+            wx_reminder_alert::Answer::Dismissed => continue,
+            wx_reminder_alert::Answer::Done => changed.is_completed = true,
+            wx_reminder_alert::Answer::Snoozed(snooze) => {
+                changed.due_datetime = Some(due::stored(snooze.until(chrono::Local::now())));
+                // Out of `already`, because a snoozed reminder is one that is
+                // meant to come back.
+                already.borrow_mut().remove(&item.id);
+            }
+        }
+        changed.updated_at = chrono::Local::now().to_rfc3339();
+        if let Err(why) = cache.save_reminder(&changed) {
+            let said = format!("The reminder could not be saved: {why}");
+            tracing::error!("{said}");
+            let _ = a11y.announce(
+                &said,
+                crate::presentation::accessibility::announcements::Priority::High,
+            );
+        }
+    }
 }
 
 /// What Space says about the row under the cursor.
