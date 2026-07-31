@@ -598,7 +598,7 @@ fn describe_kind(mime_type: &str, name: &str) -> String {
 ///
 /// Two hundred and forty KB is a fact about a file. Two hundred and forty-five
 /// thousand seven hundred and sixty bytes is a number being read at somebody.
-fn human_size(bytes: usize) -> String {
+pub(crate) fn human_size(bytes: usize) -> String {
     const UNIT: f64 = 1024.0;
     if bytes == 1 {
         return "1 byte".to_string();

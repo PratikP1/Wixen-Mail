@@ -4,6 +4,7 @@
 
 pub mod accounts;
 pub mod allowed;
+pub mod attaching;
 pub mod autosave;
 pub mod caldav_sync;
 pub mod calendar;

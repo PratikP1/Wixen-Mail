@@ -5023,6 +5023,12 @@ fn queue_for_sending(
         // `body` has always meant.
         body: data.body_plain.clone(),
         body_html: Some(data.body.clone()).filter(|html| !html.trim().is_empty()),
+        attachments: data
+            .attachments
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("\n"),
         attempt_count: 0,
         last_error: None,
         created_at: chrono::Local::now().to_rfc3339(),

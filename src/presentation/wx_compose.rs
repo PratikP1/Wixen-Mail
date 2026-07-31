@@ -5,10 +5,15 @@
 //! [`crate::presentation::editor_document`].
 
 use crate::common::types::MessageBody;
-use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::accessibility::names::{
+    set_accessible_name, set_accessible_name_and_description,
+};
 use crate::presentation::editor_document;
+use crate::presentation::editor_document::Reached;
 use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::ui_types::CompositionData;
+use std::cell::RefCell;
+use std::rc::Rc;
 use wxdragon::event::WebViewEvents;
 use wxdragon::event::webview_events::WebViewEventData;
 use wxdragon::prelude::*;
@@ -45,6 +50,8 @@ const ID_SEND: Id = ID_HIGHEST + 110;
 const ID_SAVE_DRAFT: Id = ID_HIGHEST + 111;
 const ID_DISCARD: Id = ID_HIGHEST + 112;
 const ID_ATTACH: Id = ID_HIGHEST + 113;
+/// `WXK_DELETE`, the key that takes a row out of a list on Windows.
+const KEY_DELETE: i32 = 127;
 const ID_UNDO: Id = ID_HIGHEST + 114;
 const ID_REDO: Id = ID_HIGHEST + 115;
 
@@ -75,6 +82,12 @@ pub struct ComposeData {
     pub body_plain: String,
     pub html_mode: bool,
     pub account_index: Option<u32>,
+    /// The files to send with it, where they are on this computer.
+    ///
+    /// Paths rather than bytes, all the way to the moment of sending. A message
+    /// is written over minutes, and a file read at Send is the version somebody
+    /// meant to send rather than the one that existed when they picked it.
+    pub attachments: Vec<std::path::PathBuf>,
 }
 
 /// Mode for opening the compose dialog
@@ -155,6 +168,52 @@ fn compose_title(mode: &ComposeMode) -> &'static str {
     }
 }
 
+/// Show a message that has one thing to say and nothing to decide.
+///
+/// Beside the announcement rather than instead of it. The announcement is the
+/// one somebody hears while their hands are still on the file dialog; this is
+/// what is still on screen a moment later, for anybody reading rather than
+/// listening.
+fn say_so(parent: &Dialog, title: &str, said: &str) {
+    let box_ = MessageDialog::builder(parent, said, title)
+        .with_style(MessageDialogStyle::OK | MessageDialogStyle::IconInformation)
+        .build();
+    box_.show_modal();
+    box_.destroy();
+}
+
+/// Every formatting command on one menu, raised where the caret is.
+///
+/// A menu bar would be the obvious home and a dialog cannot have one, so this
+/// is a menu a button and a key both pop up. Raised from two places now, which
+/// is why it is a function: the button, and Alt+O pressed inside the message
+/// body, which is a web view and keeps every key it is given until the page
+/// hands one back.
+fn show_format_menu(dialog: &Dialog) {
+    let mut menu = Menu::builder();
+    for (index, format) in editor_document::Format::ALL.iter().enumerate() {
+        menu = menu.append_item(
+            ID_FORMAT_FIRST + index as Id,
+            &format.label(),
+            format.spoken(),
+        );
+    }
+    let mut menu = menu
+        .append_separator()
+        .append_item(
+            ID_INSERT_LINK,
+            "Insert &Link...",
+            "Turn the selected text into a link",
+        )
+        .append_item(
+            ID_INSERT_TABLE,
+            "Insert &Table...",
+            "Add a table with proper column headers",
+        )
+        .build();
+    dialog.popup_menu(&mut menu, None);
+}
+
 /// The compose dialog, with automatic draft saving.
 ///
 /// `autosave` decides how often, and `on_autosave` is handed the fields as
@@ -192,8 +251,16 @@ pub fn show_compose_dialog_full(
         .build();
     fields_sizer.add_growable_col(1, 1);
 
+    // Everything the message will carry. Paths rather than bytes: the file is
+    // read at Send, so a picture edited while the message was being written
+    // goes out as the version that existed when it was sent.
+    let attached: Rc<RefCell<Vec<crate::application::attaching::Chosen>>> =
+        Rc::new(RefCell::new(Vec::new()));
+
     // Account selector
-    let account_label = StaticText::builder(&dialog).with_label("&From:").build();
+    let account_label = StaticText::builder(&dialog)
+        .with_label(Reached::From.label())
+        .build();
     let account_choice = Choice::builder(&dialog)
         .with_choices(account_names.iter().map(|s| s.to_string()).collect())
         .with_selection(Some(active_account_index))
@@ -208,7 +275,9 @@ pub fn show_compose_dialog_full(
     fields_sizer.add(&account_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // To field
-    let to_label = StaticText::builder(&dialog).with_label("&To:").build();
+    let to_label = StaticText::builder(&dialog)
+        .with_label(Reached::To.label())
+        .build();
     let to_field = TextCtrl::builder(&dialog).build();
     set_accessible_name(&to_field, "To");
     fields_sizer.add(
@@ -220,7 +289,9 @@ pub fn show_compose_dialog_full(
     fields_sizer.add(&to_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // CC field
-    let cc_label = StaticText::builder(&dialog).with_label("&CC:").build();
+    let cc_label = StaticText::builder(&dialog)
+        .with_label(Reached::Cc.label())
+        .build();
     let cc_field = TextCtrl::builder(&dialog).build();
     set_accessible_name(&cc_field, "Cc");
     fields_sizer.add(
@@ -232,7 +303,9 @@ pub fn show_compose_dialog_full(
     fields_sizer.add(&cc_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // BCC field
-    let bcc_label = StaticText::builder(&dialog).with_label("&BCC:").build();
+    let bcc_label = StaticText::builder(&dialog)
+        .with_label(Reached::Bcc.label())
+        .build();
     let bcc_field = TextCtrl::builder(&dialog).build();
     set_accessible_name(&bcc_field, "Bcc");
     fields_sizer.add(
@@ -244,7 +317,9 @@ pub fn show_compose_dialog_full(
     fields_sizer.add(&bcc_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     // Subject field
-    let subject_label = StaticText::builder(&dialog).with_label("&Subject:").build();
+    let subject_label = StaticText::builder(&dialog)
+        .with_label(Reached::Subject.label())
+        .build();
     let subject_field = TextCtrl::builder(&dialog).build();
     set_accessible_name(&subject_field, "Subject");
     fields_sizer.add(
@@ -262,27 +337,27 @@ pub fn show_compose_dialog_full(
 
     // Prominent Send button (Outlook-style, first in toolbar)
     let send_toolbar_btn = Button::builder(&dialog)
-        .with_label("Se&nd")
+        .with_label(Reached::Send.label())
         .with_id(ID_SEND)
         .with_size(Size::new(72, 30))
         .build();
-    send_toolbar_btn.set_name("Send message (Ctrl+Enter)");
+    set_accessible_name(&send_toolbar_btn, "Send message, Ctrl+Enter");
     toolbar_sizer.add(&send_toolbar_btn, 0, SizerFlag::All, 2);
     toolbar_sizer.add_spacer(12);
 
     // Undo / Redo
     let undo_btn = Button::builder(&dialog)
-        .with_label("&Undo")
+        .with_label(Reached::Undo.label())
         .with_id(ID_UNDO)
         .with_size(Size::new(52, 28))
         .build();
-    undo_btn.set_name("Undo (Ctrl+Z)");
+    set_accessible_name(&undo_btn, "Undo, Ctrl+Z");
     let redo_btn = Button::builder(&dialog)
-        .with_label("&Redo")
+        .with_label(Reached::Redo.label())
         .with_id(ID_REDO)
         .with_size(Size::new(52, 28))
         .build();
-    redo_btn.set_name("Redo (Ctrl+Y)");
+    set_accessible_name(&redo_btn, "Redo, Ctrl+Y");
     toolbar_sizer.add(&undo_btn, 0, SizerFlag::All, 2);
     toolbar_sizer.add(&redo_btn, 0, SizerFlag::All, 2);
     toolbar_sizer.add_spacer(12);
@@ -293,24 +368,24 @@ pub fn show_compose_dialog_full(
         .with_id(ID_BOLD)
         .with_size(Size::new(32, 28))
         .build();
-    bold_btn.set_name("Bold (Ctrl+B)");
+    set_accessible_name(&bold_btn, "Bold, Ctrl+B");
     let italic_btn = Button::builder(&dialog)
         .with_label("I")
         .with_id(ID_ITALIC)
         .with_size(Size::new(32, 28))
         .build();
-    italic_btn.set_name("Italic (Ctrl+I)");
+    set_accessible_name(&italic_btn, "Italic, Ctrl+I");
     let underline_btn = Button::builder(&dialog)
         .with_label("U")
         .with_id(ID_UNDERLINE)
         .with_size(Size::new(32, 28))
         .build();
-    underline_btn.set_name("Underline (Ctrl+U)");
+    set_accessible_name(&underline_btn, "Underline, Ctrl+U");
     // The other eight commands, and the link. Named as a word rather than a
     // symbol: B, I and U are recognisable letters, and there is no glyph for
     // "heading level 2" that anybody reads the same way.
     let format_btn = Button::builder(&dialog)
-        .with_label("F&ormat...")
+        .with_label(Reached::Format.label())
         .with_id(ID_FORMAT_MENU)
         .build();
     set_accessible_name(&format_btn, "Format, opens a menu");
@@ -324,7 +399,7 @@ pub fn show_compose_dialog_full(
     // a key nobody can discover is a key nobody has, and this is the one
     // command in the window that nothing else hints at.
     let spell_btn = Button::builder(&dialog)
-        .with_label("&Spelling")
+        .with_label(Reached::Spelling.label())
         .with_id(ID_SPELL_CHECK)
         .build();
     set_accessible_name(&spell_btn, "Check spelling, F7");
@@ -333,10 +408,10 @@ pub fn show_compose_dialog_full(
 
     // Attach
     let attach_btn = Button::builder(&dialog)
-        .with_label("Attach F&ile...")
+        .with_label(Reached::Attach.label())
         .with_id(ID_ATTACH)
         .build();
-    attach_btn.set_name("Attach file");
+    set_accessible_name(&attach_btn, "Attach a file, Alt+A");
     toolbar_sizer.add(&attach_btn, 0, SizerFlag::All, 2);
 
     // Remove all toolbar buttons from tab order: accessible via keyboard shortcuts
@@ -402,12 +477,36 @@ pub fn show_compose_dialog_full(
 
     main_sizer.add(&body_editor, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
-    // -- Attachment list (initially hidden) --
+    // -- What the message will carry --
+    //
+    // The line and the list say the same thing twice on purpose. The line is
+    // one glance, and it is what gets announced when a file goes on or comes
+    // off, because somebody who cannot see the window has nothing else to tell
+    // them the file arrived. The list is where a particular file is found and
+    // taken off again.
     let attachment_label = StaticText::builder(&dialog)
-        .with_label("No attachments")
+        .with_label(&crate::application::attaching::summary(&[]))
         .build();
     main_sizer.add(
         &attachment_label,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
+        8,
+    );
+
+    let attachment_list = ListBox::builder(&dialog)
+        .with_size(Size::new(-1, 72))
+        .build();
+    set_accessible_name_and_description(
+        &attachment_list,
+        "Attachments",
+        "Delete takes the selected file off the message",
+    );
+    // Nothing attached yet, and an empty list in the tab order is a stop that
+    // announces nothing. It comes back the moment there is a file in it.
+    attachment_list.hide();
+    main_sizer.add(
+        &attachment_list,
         0,
         SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
         8,
@@ -417,15 +516,15 @@ pub fn show_compose_dialog_full(
     let button_sizer = BoxSizer::builder(Orientation::Horizontal).build();
 
     let draft_btn = Button::builder(&dialog)
-        .with_label("Save &Draft")
+        .with_label(Reached::SaveDraft.label())
         .with_id(ID_SAVE_DRAFT)
         .build();
     let discard_btn = Button::builder(&dialog)
-        .with_label("Disc&ard")
+        .with_label(Reached::Discard.label())
         .with_id(ID_DISCARD)
         .build();
     let cancel_btn = Button::builder(&dialog)
-        .with_label("Cance&l")
+        .with_label(Reached::Cancel.label())
         .with_id(ID_CANCEL)
         .build();
 
@@ -570,29 +669,152 @@ pub fn show_compose_dialog_full(
         move |_| check_spelling(&dialog, body_editor, &a11y)
     });
 
-    format_btn.on_click(move |_| {
-        let mut menu = Menu::builder();
-        for (index, format) in editor_document::Format::ALL.iter().enumerate() {
-            menu = menu.append_item(
-                ID_FORMAT_FIRST + index as Id,
-                &format.label(),
-                format.spoken(),
-            );
+    format_btn.on_click(move |_| show_format_menu(&dialog));
+
+    // ── Attachments ───────────────────────────────────────────────────────
+    //
+    // Put the list, the line under the message and the announcement back in
+    // agreement. Called after every change, because three places that each
+    // update themselves are three places that drift.
+    let refresh_attachments = {
+        let attached = attached.clone();
+        move |say: bool, a11y: &crate::presentation::accessibility::Accessibility| {
+            let files = attached.borrow();
+            let summary = crate::application::attaching::summary(&files);
+            attachment_label.set_label(&summary);
+            attachment_list.clear();
+            for file in files.iter() {
+                attachment_list.append(&file.label());
+            }
+            if files.is_empty() {
+                attachment_list.hide();
+            } else {
+                attachment_list.show(true);
+            }
+            // The window has to lay out again: the list appears and disappears,
+            // and the line above it changes width.
+            dialog.layout();
+            if say {
+                let _ = a11y.announce(
+                    &summary,
+                    crate::presentation::accessibility::announcements::Priority::Normal,
+                );
+            }
         }
-        let mut menu = menu
-            .append_separator()
-            .append_item(
-                ID_INSERT_LINK,
-                "Insert &Link...",
-                "Turn the selected text into a link",
-            )
-            .append_item(
-                ID_INSERT_TABLE,
-                "Insert &Table...",
-                "Add a table with proper column headers",
-            )
-            .build();
-        dialog.popup_menu(&mut menu, None);
+    };
+
+    let attach_files = {
+        let attached = attached.clone();
+        let refresh = refresh_attachments.clone();
+        move |a11y: &crate::presentation::accessibility::Accessibility| {
+            let picker = FileDialog::builder(&dialog)
+                .with_message("Attach files")
+                .with_style(FileDialogStyle::Open | FileDialogStyle::FileMustExist)
+                .build();
+            if picker.show_modal() != ID_OK {
+                // Cancelling is a decision. There is no outcome to report, and
+                // announcing one would be noise on a key somebody pressed by
+                // mistake.
+                return;
+            }
+            let Some(path) = picker.get_path() else {
+                let _ = a11y.announce(
+                    "No file was chosen",
+                    crate::presentation::accessibility::announcements::Priority::High,
+                );
+                return;
+            };
+            match crate::application::attaching::Chosen::at(std::path::Path::new(&path)) {
+                Ok(file) => {
+                    let name = file.label();
+                    let first = attached.borrow().is_empty();
+                    attached.borrow_mut().push(file);
+                    // Said before the summary, because the name of the file
+                    // that just went on is the thing being waited for.
+                    //
+                    // How to take one off again is said once, with the first
+                    // file, and then not repeated. It belongs on the list, as
+                    // the description of a control, and a description set that
+                    // way does not reach the accessibility tree for a native
+                    // list in this wxWidgets binding: what a screen reader
+                    // reads there is the line above it. So it is said here,
+                    // where it is heard, rather than left somewhere it is not.
+                    let said = if first {
+                        format!(
+                            "Attached {name}. Press Delete in the attachments list to take one off"
+                        )
+                    } else {
+                        format!("Attached {name}")
+                    };
+                    let _ = a11y.announce(
+                        &said,
+                        crate::presentation::accessibility::announcements::Priority::Normal,
+                    );
+                    refresh(false, a11y);
+                    if let Some(complaint) =
+                        crate::application::attaching::over_the_limit(&attached.borrow())
+                    {
+                        let _ = a11y.announce(
+                            &complaint,
+                            crate::presentation::accessibility::announcements::Priority::High,
+                        );
+                        say_so(&dialog, "Too much to send", &complaint);
+                    }
+                }
+                // Said out loud as well as shown. A file that could not be read
+                // is the case where somebody most needs to know nothing went on
+                // the message, and a dialog they have to find is not that.
+                Err(why) => {
+                    let why = format!("{why}");
+                    let _ = a11y.announce(
+                        &why,
+                        crate::presentation::accessibility::announcements::Priority::High,
+                    );
+                    say_so(&dialog, "That file could not be attached", &why);
+                }
+            }
+        }
+    };
+
+    attach_btn.on_click({
+        let attach = attach_files.clone();
+        let a11y = a11y.clone();
+        move |_| attach(&a11y)
+    });
+
+    // Delete takes the selected file off the message. The key Windows uses for
+    // removing a row from a list, so nothing new has to be learned, and the
+    // announcement names what went rather than only what is left.
+    attachment_list.on_key_down({
+        let attached = attached.clone();
+        let refresh = refresh_attachments.clone();
+        let a11y = a11y.clone();
+        move |event| {
+            let WindowEventData::Keyboard(ref key) = event else {
+                event.skip(true);
+                return;
+            };
+            if key.event.get_key_code() != Some(KEY_DELETE) {
+                event.skip(true);
+                return;
+            }
+            let Some(row) = attachment_list.get_selection() else {
+                return;
+            };
+            let row = row as usize;
+            let gone = {
+                let mut files = attached.borrow_mut();
+                if row >= files.len() {
+                    return;
+                }
+                files.remove(row).name
+            };
+            let _ = a11y.announce(
+                &format!("Removed {gone}"),
+                crate::presentation::accessibility::announcements::Priority::Normal,
+            );
+            refresh(false, &a11y);
+        }
     });
 
     // Send button (in toolbar) closes dialog with ID_SEND
@@ -613,6 +835,17 @@ pub fn show_compose_dialog_full(
     // for the life of the window.
     let typing_speller = std::rc::Rc::new(crate::service::spellcheck::for_language(&language));
 
+    // Where Tab is taking focus, and the timer that takes it there.
+    //
+    // Not set from inside the web view's callback. Tab is a focus key, so the
+    // browser does its own focus work after handing the message over, and it
+    // lands one control past wherever this put it: Tab reached Discard when it
+    // meant Save Draft, and Shift+Tab reached Save Draft when it meant the
+    // Subject line. Putting it back on the ordinary event loop lets the
+    // browser finish first, which is the same reason F7 goes through a timer.
+    let leaving_for: Rc<std::cell::Cell<Option<bool>>> = Rc::new(std::cell::Cell::new(None));
+    let leave_later = Rc::new(Timer::new(&dialog));
+
     // F7 typed in the page arrives inside the web view's own callback, and the
     // check it starts opens modal dialogs. Made once here, because a timer has
     // to outlive the callback that starts it, and started on demand below.
@@ -622,10 +855,44 @@ pub fn show_compose_dialog_full(
         move |_| check_spelling(&dialog, body_editor, &a11y)
     });
 
+    leave_later.on_tick({
+        let leaving_for = leaving_for.clone();
+        move |_| {
+            let Some(back) = leaving_for.take() else {
+                return;
+            };
+            // The two directions are not done the same way, and each is the
+            // one that was measured to land where it should.
+            //
+            // Forward asks the window, so the answer is whatever the tab order
+            // says and stays right when a control is added. Naming a control
+            // was tried and arrives one further on: focus set to Save Draft
+            // landed on Discard, and Tab is not a key anybody should have to
+            // aim at a destructive button. The argument reads backwards
+            // because it does: `navigate(true)` moves to the control before
+            // this one.
+            //
+            // Backward names the Subject line, because asking the window walks
+            // into the formatting toolbar, which sits between the fields and
+            // the message in the order the controls were made. Somebody
+            // pressing Shift+Tab in the body is going back to the recipients
+            // and the subject, not to the Bold button, which has its own key.
+            if back {
+                subject_field.set_focus();
+            } else {
+                body_editor.navigate(false);
+            }
+        }
+    });
+
     body_editor.on_script_message_received({
         let a11y = a11y.clone();
         let typing_speller = typing_speller.clone();
         let spell_later = spell_later.clone();
+        let leave_later = leave_later.clone();
+        let leaving_for = leaving_for.clone();
+        let attach_now = attach_files.clone();
+        let apply_undo = apply_format.clone();
         move |event| {
             let Some(raw) = event.get_string() else {
                 return;
@@ -688,6 +955,42 @@ pub fn show_compose_dialog_full(
                         &spoken,
                         crate::presentation::accessibility::announcements::Priority::Normal,
                     );
+                }
+                // Alt and a letter, which the web view would otherwise have
+                // kept. Everything the compose window offers is on this list,
+                // so from inside the body Alt+T reaches the recipients and
+                // Alt+O opens the formatting menu, the same as everywhere else
+                // in the window.
+                Some(editor_document::EditorMessage::Reached(reached)) => {
+                    use editor_document::Reached;
+                    match reached {
+                        Reached::From => account_choice.set_focus(),
+                        Reached::To => to_field.set_focus(),
+                        Reached::Cc => cc_field.set_focus(),
+                        Reached::Bcc => bcc_field.set_focus(),
+                        Reached::Subject => subject_field.set_focus(),
+                        Reached::Send => dialog.end_modal(ID_SEND),
+                        Reached::Undo => apply_undo(editor_document::Format::Undo),
+                        Reached::Redo => apply_undo(editor_document::Format::Redo),
+                        Reached::Format => show_format_menu(&dialog),
+                        // Through the timer for the same reason F7 is: this is
+                        // the web view's own callback, and the check opens
+                        // modal dialogs and runs scripts.
+                        Reached::Spelling => {
+                            spell_later.start(1, true);
+                        }
+                        Reached::Attach => attach_now(&a11y),
+                        Reached::SaveDraft => dialog.end_modal(ID_SAVE_DRAFT),
+                        Reached::Discard => dialog.end_modal(ID_DISCARD),
+                        Reached::Cancel => dialog.end_modal(ID_CANCEL),
+                    }
+                }
+                // Tab, which outside a table used to do nothing at all, so the
+                // only ways out of the body were the mouse and Escape, and
+                // Escape throws the message away.
+                Some(editor_document::EditorMessage::Leaving { back }) => {
+                    leaving_for.set(Some(back));
+                    leave_later.start(1, true);
                 }
                 // The page is ours, so an unknown message is a bug rather than
                 // an attack, and doing nothing beats guessing which command
@@ -753,27 +1056,36 @@ pub fn show_compose_dialog_full(
     // does not fit, so anything asked for here has to be safe to run twice. A
     // script that changes the message must either return nothing or return
     // something small; `wixenReplaceWord` returns a position, which is both.
-    let read_compose_data = move || {
-        let (body, body_plain) = editor_document::message_from_editor(
-            body_editor.run_script(&editor_document::read_body_script()),
-            body_editor.run_script(&editor_document::read_plain_script()),
-        )?;
-        Some(ComposeData {
-            to: to_field.get_value(),
-            cc: cc_field.get_value(),
-            bcc: bcc_field.get_value(),
-            subject: subject_field.get_value(),
-            body,
-            body_plain,
-            html_mode: true,
-            account_index: account_choice.get_selection(),
-        })
+    let read_compose_data = {
+        let attached = attached.clone();
+        move || {
+            let (body, body_plain) = editor_document::message_from_editor(
+                body_editor.run_script(&editor_document::read_body_script()),
+                body_editor.run_script(&editor_document::read_plain_script()),
+            )?;
+            Some(ComposeData {
+                to: to_field.get_value(),
+                cc: cc_field.get_value(),
+                bcc: bcc_field.get_value(),
+                subject: subject_field.get_value(),
+                body,
+                body_plain,
+                html_mode: true,
+                account_index: account_choice.get_selection(),
+                attachments: attached
+                    .borrow()
+                    .iter()
+                    .map(|file| file.path.clone())
+                    .collect(),
+            })
+        }
     };
 
     // Held for the life of the dialog: dropping the timer stops it, and the
     // dialog is what it belongs to.
     let _autosave_timer = autosave.interval().map(|every| {
         let timer = Timer::new(&dialog);
+        let read_compose_data = read_compose_data.clone();
         timer.on_tick(move |_| {
             // Could not read it, so there is nothing to save that is better
             // than what is already saved. Silent to the user on purpose: this
@@ -862,6 +1174,9 @@ pub fn show_compose_dialog_full(
         timer.stop();
     }
     spell_later.stop();
+    // Both are owned by the dialog, and a timer that fires into a handler that
+    // is no longer there is a crash rather than a leak.
+    leave_later.stop();
     // wxWidgets does not free a dialog when the Rust value goes; the docs say
     // to destroy it, and wx_calendar has always done so. Nothing here did, so
     // every compose window ever opened stayed for the life of the session,
@@ -1619,6 +1934,7 @@ mod tests {
             body_plain: body_plain.to_string(),
             html_mode: true,
             account_index: None,
+            attachments: Vec::new(),
         }
     }
 

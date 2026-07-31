@@ -244,6 +244,18 @@ pub struct QueuedOutboxMessage {
     /// Sending only HTML leaves a text-only reader with raw markup, and sending
     /// only text throws away everything the composer did.
     pub body_html: Option<String>,
+    /// The files to go with it, as paths on this computer, one per line.
+    ///
+    /// Paths rather than the bytes. The queue is a table somebody can copy and
+    /// back up, and a hundred megabytes of base64 in it would make that a
+    /// different thing. It also means the file is read at the moment of
+    /// sending, so a document edited between Send and the retry after a failed
+    /// send goes out as the newer one, which is the one somebody meant.
+    ///
+    /// The cost is stated rather than hidden: a file moved or deleted before
+    /// the queue drains cannot be sent, and [`crate::application::attaching`]
+    /// is where that is turned into a message somebody can act on.
+    pub attachments: String,
     pub attempt_count: i64,
     pub last_error: Option<String>,
     pub created_at: String,
@@ -1095,6 +1107,10 @@ impl MessageCache {
         // a real answer and every older queued row has that answer.
         self.ensure_column_exists("outbox_queue", "cc_addr", "TEXT NOT NULL DEFAULT ''")?;
         self.ensure_column_exists("outbox_queue", "bcc_addr", "TEXT NOT NULL DEFAULT ''")?;
+        // The files to send with it, as paths, one per line. Empty for every
+        // message queued before attachments existed, which is the right answer
+        // for all of them.
+        self.ensure_column_exists("outbox_queue", "attachments", "TEXT NOT NULL DEFAULT ''")?;
         self.ensure_column_exists("calendar_events", "calendar_id", "TEXT")?;
         self.ensure_column_exists(
             "message_filter_rules",

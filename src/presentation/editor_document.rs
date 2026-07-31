@@ -121,6 +121,7 @@ pub fn editor_document(body: &MessageBody, language: &str, mark_spelling: bool) 
     // key at a time, with nothing saying so.
     let phrase_watch = if mark_spelling { "wordAt(at);" } else { "" };
     let format_keys = format_key_table();
+    let reach_keys = reach_key_table();
     let link_id = LINK_PLACEHOLDER_ID;
     let block_markers = markdown_block_table();
     // One definition of the limit, shared by the insert dialog and by Tab.
@@ -168,6 +169,8 @@ img {{ max-width: 100%; height: auto; }}
   }}
   // The formatting keys, built from the same list the menu is built from.
   var formats = {format_keys};
+  // The underlined letters, built from the same list the window is built from.
+  var reaches = {reach_keys};
   // The keys that have to leave, and the ones that act here. Everything else
   // belongs to the editor, which is what somebody typing a message wants, and
   // is why this is a window of its own rather than a pane sharing one.
@@ -195,8 +198,28 @@ img {{ max-width: 100%; height: auto; }}
       return;
     }}
     if (event.key === 'Tab' && !event.ctrlKey && !event.altKey) {{
-      if (tableTab(event.shiftKey)) {{ event.preventDefault(); }}
+      if (tableTab(event.shiftKey)) {{ event.preventDefault(); return; }}
+      // Outside a table the body used to keep Tab and do nothing with it, so
+      // the only ways back to the Subject line were the mouse and Escape, and
+      // Escape throws the message away. Left to itself the browser does not
+      // hand focus out at all, so the key is taken here and the window is
+      // asked to move focus.
+      event.preventDefault();
+      post({{ kind: 'leave', back: event.shiftKey }});
       return;
+    }}
+    // Alt and a letter, which is how a Windows dialog is worked without a
+    // mouse. Held with Ctrl as well it is a formatting key, and those are
+    // matched below.
+    if (event.altKey && !event.ctrlKey && event.key.length === 1) {{
+      var letter = event.key.toLowerCase();
+      for (var r = 0; r < reaches.length; r++) {{
+        if (reaches[r].key === letter) {{
+          event.preventDefault();
+          post({{ kind: 'reach', index: reaches[r].index }});
+          return;
+        }}
+      }}
     }}
     // A key that types a character keeps typing it. On some layouts AltGr,
     // which arrives as Ctrl and Alt together, produces a real character on the
@@ -897,6 +920,113 @@ fn unwrap_link_script() -> String {
     )
 }
 
+/// Something in the composer that Alt and a letter reaches.
+///
+/// Every one of these is a control in the compose window whose label underlines
+/// a letter, which on Windows means Alt and that letter operates it. The message
+/// body is a web view, and a web view keeps every key it is given, so from
+/// inside the body none of them worked: Alt+O did nothing, Alt+T did nothing,
+/// and the only key that left the body was Escape, which throws the message
+/// away. The page watches for these and posts the one that was pressed.
+///
+/// The list is the single place the letters are decided. `wx_compose` builds
+/// each control from [`Reached::label`], so the underline somebody sees and the
+/// key the page watches for are the same statement, and tests pin them
+/// together and check that no two clash.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reached {
+    From,
+    To,
+    Cc,
+    Bcc,
+    Subject,
+    Send,
+    Undo,
+    Redo,
+    Format,
+    Spelling,
+    Attach,
+    SaveDraft,
+    Discard,
+    Cancel,
+}
+
+impl Reached {
+    /// Every one, in the order the page indexes them by.
+    pub const ALL: [Reached; 14] = [
+        Reached::From,
+        Reached::To,
+        Reached::Cc,
+        Reached::Bcc,
+        Reached::Subject,
+        Reached::Send,
+        Reached::Undo,
+        Reached::Redo,
+        Reached::Format,
+        Reached::Spelling,
+        Reached::Attach,
+        Reached::SaveDraft,
+        Reached::Discard,
+        Reached::Cancel,
+    ];
+
+    /// The visible label, with the ampersand that marks the underlined letter.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::From => "&From:",
+            Self::To => "&To:",
+            Self::Cc => "&Cc:",
+            Self::Bcc => "&Bcc:",
+            Self::Subject => "&Subject:",
+            Self::Send => "Se&nd",
+            Self::Undo => "&Undo",
+            Self::Redo => "&Redo",
+            Self::Format => "F&ormat...",
+            // Not "&Spelling": Subject already answers to S, and a letter that
+            // lands on one of two controls depending on which was last cannot
+            // be learned.
+            Self::Spelling => "S&pelling",
+            Self::Attach => "&Attach File...",
+            Self::SaveDraft => "Save &Draft",
+            Self::Discard => "D&iscard",
+            Self::Cancel => "Cance&l",
+        }
+    }
+
+    /// The letter held with Alt, which is the one the label underlines.
+    pub const fn letter(self) -> char {
+        match self {
+            Self::From => 'f',
+            Self::To => 't',
+            Self::Cc => 'c',
+            Self::Bcc => 'b',
+            Self::Subject => 's',
+            Self::Send => 'n',
+            Self::Undo => 'u',
+            Self::Redo => 'r',
+            Self::Format => 'o',
+            Self::Spelling => 'p',
+            Self::Attach => 'a',
+            Self::SaveDraft => 'd',
+            Self::Discard => 'i',
+            Self::Cancel => 'l',
+        }
+    }
+}
+
+/// The letters the page watches for, as the array it walks.
+///
+/// Generated from [`Reached::ALL`] so the page and the window cannot come
+/// apart. The index is the position in that list, which is what comes back.
+fn reach_key_table() -> String {
+    let entries: Vec<String> = Reached::ALL
+        .iter()
+        .enumerate()
+        .map(|(index, reached)| format!("{{key:{:?},index:{index}}}", reached.letter().to_string()))
+        .collect();
+    format!("[{}]", entries.join(","))
+}
+
 /// The formatting keys, as the array the page walks.
 ///
 /// Generated from [`Format::ALL`] so the menu and the keyboard cannot come
@@ -1211,6 +1341,15 @@ pub enum EditorMessage {
     CheckSpelling,
     /// A word was finished, and wants checking.
     WordFinished(String),
+    /// Alt and a letter were pressed, naming a control in the compose window.
+    ///
+    /// The page cannot operate the window it sits in, so it says which control
+    /// was asked for and the Rust side focuses it or runs it.
+    Reached(Reached),
+    /// Tab, so focus leaves the body. `back` is Shift+Tab.
+    Leaving {
+        back: bool,
+    },
 }
 
 /// Read one message posted by the page.
@@ -1241,6 +1380,13 @@ pub fn parse_message(raw: &str) -> Option<EditorMessage> {
         "word" => Some(EditorMessage::WordFinished(
             value.get("text")?.as_str()?.to_string(),
         )),
+        "reach" => {
+            let index = usize::try_from(value.get("index")?.as_u64()?).ok()?;
+            Reached::ALL.get(index).copied().map(EditorMessage::Reached)
+        }
+        "leave" => Some(EditorMessage::Leaving {
+            back: value.get("back")?.as_bool()?,
+        }),
         _ => None,
     }
 }
@@ -1439,6 +1585,77 @@ mod tests {
     }
 
     #[test]
+    fn test_every_underlined_letter_in_the_composer_reaches_it_from_the_body() {
+        // Alt and a letter is how a Windows dialog is worked without a mouse,
+        // and the message body is a web view, which keeps every key it is
+        // given. So Alt+O did nothing, and so did Alt+T, and the only way out
+        // of the body was Escape, which throws the message away.
+        let page = editor_document(&blank(), "en", true);
+
+        for (index, reached) in Reached::ALL.iter().enumerate() {
+            let entry = format!("{{key:{:?},index:{index}}}", reached.letter().to_string());
+            assert!(
+                page.contains(&entry),
+                "Alt+{} does not leave the body, so {} cannot be reached: {page}",
+                reached.letter().to_ascii_uppercase(),
+                reached.label(),
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_letter_is_the_one_underlined_in_the_label() {
+        // The letter and the underline are two statements about the same key.
+        // A label promising Alt+A while the code watches for I is worse than
+        // no mnemonic: it is a key somebody will press and nothing will happen.
+        for reached in Reached::ALL {
+            let marked = reached
+                .label()
+                .split('&')
+                .nth(1)
+                .and_then(|rest| rest.chars().next())
+                .map(|letter| letter.to_ascii_lowercase());
+            assert_eq!(
+                marked,
+                Some(reached.letter()),
+                "{:?} watches for {} and its label underlines something else: {}",
+                reached,
+                reached.letter(),
+                reached.label(),
+            );
+        }
+    }
+
+    #[test]
+    fn test_no_two_things_in_the_composer_answer_to_the_same_letter() {
+        // wxWidgets cycles between controls that share a mnemonic, so a clash
+        // is not a crash. It is worse than that: Alt+S lands on Subject or on
+        // Spelling depending on where the last one left off, which is a key
+        // that cannot be learned.
+        let mut seen = std::collections::HashMap::new();
+        for reached in Reached::ALL {
+            if let Some(other) = seen.insert(reached.letter(), reached) {
+                panic!(
+                    "Alt+{} is both {} and {}",
+                    reached.letter().to_ascii_uppercase(),
+                    other.label(),
+                    reached.label(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_tab_leaves_the_body_in_both_directions() {
+        // Without this the body is a trap. Tab did nothing outside a table, so
+        // the only ways out were the mouse and Escape, and Escape discards.
+        let page = editor_document(&blank(), "en", true);
+
+        assert!(page.contains("'leave'"), "{page}");
+        assert!(page.contains("back: event.shiftKey"), "{page}");
+    }
+
+    #[test]
     fn test_a_message_from_the_page_is_understood() {
         assert_eq!(
             parse_message(r#"{"kind":"send"}"#),
@@ -1452,6 +1669,25 @@ mod tests {
             parse_message(r#"{"kind":"cancel"}"#),
             Some(EditorMessage::Cancel)
         );
+        assert_eq!(
+            parse_message(r#"{"kind":"reach","index":0}"#),
+            Some(EditorMessage::Reached(Reached::ALL[0]))
+        );
+        assert_eq!(
+            parse_message(r#"{"kind":"leave","back":true}"#),
+            Some(EditorMessage::Leaving { back: true })
+        );
+        assert_eq!(
+            parse_message(r#"{"kind":"leave","back":false}"#),
+            Some(EditorMessage::Leaving { back: false })
+        );
+    }
+
+    #[test]
+    fn test_a_letter_nothing_answers_to_does_nothing() {
+        // The index comes back from the page, and a page and a list that have
+        // come apart must not reach whichever command happens to sit there.
+        assert_eq!(parse_message(r#"{"kind":"reach","index":999}"#), None);
     }
 
     #[test]

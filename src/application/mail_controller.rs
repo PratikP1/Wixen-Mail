@@ -49,6 +49,11 @@ pub struct SendEmailRequest {
     pub cc: Vec<String>,
     pub bcc: Vec<String>,
     pub subject: String,
+    /// The files to send with it, where they are on this computer.
+    ///
+    /// Paths rather than bytes all the way to here. They are read once, at the
+    /// moment of sending, by [`crate::application::attaching::read_all`].
+    pub attachments: Vec<std::path::PathBuf>,
     /// The plain text alternative.
     pub body: String,
     /// The HTML alternative, when there is one.
@@ -95,6 +100,7 @@ impl SendEmailRequest {
             cc: addresses(&queued.cc_addr),
             bcc: addresses(&queued.bcc_addr),
             subject: queued.subject.clone(),
+            attachments: crate::application::attaching::split(&queued.attachments),
             body: queued.body.clone(),
             body_html: queued.body_html.clone(),
         })
@@ -263,6 +269,11 @@ impl MailController {
             subject: req.subject.clone(),
             body_text: req.body.clone(),
             body_html: req.body_html.clone(),
+            // Read now rather than when they were picked, so what goes out is
+            // the version that exists at the moment of sending. A file that has
+            // moved stops the send and says which one, rather than sending a
+            // message without the thing it was written about.
+            attachments: crate::application::attaching::read_all(&req.attachments)?,
         };
 
         let sent = client.send_email(email, &req.auth).await?;
@@ -620,6 +631,7 @@ mod tests {
             cc: Vec::new(),
             bcc: Vec::new(),
             subject: "Hello".to_string(),
+            attachments: Vec::new(),
             body: "Body".to_string(),
             body_html: None,
         };
@@ -714,6 +726,7 @@ mod send_request_tests {
             cc_addr: cc.into(),
             bcc_addr: bcc.into(),
             subject: "Quarterly report".into(),
+            attachments: String::new(),
             body: "Attached.".into(),
             attempt_count: 0,
             last_error: None,

@@ -59,6 +59,13 @@ pub struct Email {
     pub subject: String,
     pub body_text: String,
     pub body_html: Option<String>,
+    /// The files to send with it, already read.
+    ///
+    /// Read by [`crate::application::attaching::read_all`] rather than here, so
+    /// that the part of sending which can be checked without a server stays
+    /// checkable: what goes on the wire is decided by [`build_message`], which
+    /// is pure.
+    pub attachments: Vec<crate::application::attaching::Ready>,
 }
 
 impl Email {
@@ -73,8 +80,103 @@ impl Email {
             subject,
             body_text: body,
             body_html: None,
+            attachments: Vec::new(),
         }
     }
+}
+
+/// Turn an email into the message that goes on the wire.
+///
+/// Separate from sending, and pure, because this is the half that can be
+/// checked without a server. Whether a file ends up on the message, and whether
+/// the plain-text half survives being wrapped, are both decided here.
+///
+/// # The shape, and why it changes with the files
+///
+/// With no attachments the message is what it always was: one part for a plain
+/// message, `multipart/alternative` for one with HTML. Wrapping those in
+/// `multipart/mixed` anyway, to leave room for the case with files, would
+/// change what every message without files looks like.
+///
+/// With attachments it is `multipart/mixed`: the body, whichever of those two
+/// shapes it is, then one part per file. That is the nesting every mail client
+/// expects. The other way round, files inside the alternative, makes them
+/// alternatives to the message rather than things sent with it.
+fn build_message(email: &Email) -> Result<Message> {
+    let mut builder = Message::builder()
+        .from(parse_mailbox(&email.from, email.from_name.as_deref())?)
+        .subject(&email.subject);
+
+    for to in &email.to {
+        builder = builder.to(parse_mailbox(to, None)?);
+    }
+    for cc in &email.cc {
+        builder = builder.cc(parse_mailbox(cc, None)?);
+    }
+    // Blind means blind, and that rests on a default rather than on anything
+    // written here: lettre builds the envelope from the Bcc header and then
+    // removes the header, so the address reaches the server and no recipient
+    // sees it. `keep_bcc()` turns that off, and must not be called. Checked
+    // against lettre 0.11.22.
+    for bcc in &email.bcc {
+        builder = builder.bcc(parse_mailbox(bcc, None)?);
+    }
+
+    let both_ways = |html: &str| {
+        MultiPart::alternative()
+            .singlepart(
+                SinglePart::builder()
+                    .header(ContentType::TEXT_PLAIN)
+                    .body(email.body_text.clone()),
+            )
+            .singlepart(
+                SinglePart::builder()
+                    .header(ContentType::TEXT_HTML)
+                    .body(html.to_string()),
+            )
+    };
+    let plain_only = || {
+        SinglePart::builder()
+            .header(ContentType::TEXT_PLAIN)
+            .body(email.body_text.clone())
+    };
+
+    let built = if email.attachments.is_empty() {
+        match &email.body_html {
+            Some(html) => builder.multipart(both_ways(html)),
+            None => builder.body(email.body_text.clone()),
+        }
+    } else {
+        let mut mixed = match &email.body_html {
+            Some(html) => MultiPart::mixed().multipart(both_ways(html)),
+            None => MultiPart::mixed().singlepart(plain_only()),
+        };
+        for file in &email.attachments {
+            let kind = file.content_type.parse::<ContentType>().map_err(|e| {
+                Error::Protocol(format!(
+                    "{} has a content type this cannot write: {e}",
+                    file.name
+                ))
+            })?;
+            mixed = mixed.singlepart(
+                lettre::message::Attachment::new(file.name.clone()).body(file.bytes.clone(), kind),
+            );
+        }
+        builder.multipart(mixed)
+    };
+    built.map_err(|e| Error::Protocol(format!("Failed to build message: {}", e)))
+}
+
+/// Read one address into the form the mail library takes.
+///
+/// Free of `self` because [`build_message`] is, and because parsing an address
+/// never depended on which server it was going to.
+fn parse_mailbox(address: &str, name: Option<&str>) -> Result<Mailbox> {
+    let parsed = address
+        .trim()
+        .parse::<lettre::Address>()
+        .map_err(|e| Error::Protocol(format!("Invalid email address {}: {}", address, e)))?;
+    Ok(Mailbox::new(name.map(str::to_string), parsed))
 }
 
 /// SMTP client for async operations
@@ -143,49 +245,7 @@ impl SmtpClient {
                 .collect::<Vec<_>>()
         );
 
-        // Build the message
-        let mut message_builder = Message::builder()
-            .from(self.parse_mailbox(&email.from, email.from_name.as_deref())?)
-            .subject(&email.subject);
-
-        // Add recipients
-        for to in &email.to {
-            message_builder = message_builder.to(self.parse_mailbox(to, None)?);
-        }
-        for cc in &email.cc {
-            message_builder = message_builder.cc(self.parse_mailbox(cc, None)?);
-        }
-        // Blind means blind, and that rests on a default rather than on
-        // anything written here: lettre builds the envelope from the Bcc
-        // header and then removes the header, so the address reaches the
-        // server and no recipient sees it. `keep_bcc()` turns that off, and
-        // must not be called. Checked against lettre 0.11.22.
-        for bcc in &email.bcc {
-            message_builder = message_builder.bcc(self.parse_mailbox(bcc, None)?);
-        }
-
-        // Build body
-        let message = if let Some(html) = &email.body_html {
-            message_builder
-                .multipart(
-                    MultiPart::alternative()
-                        .singlepart(
-                            SinglePart::builder()
-                                .header(ContentType::TEXT_PLAIN)
-                                .body(email.body_text.clone()),
-                        )
-                        .singlepart(
-                            SinglePart::builder()
-                                .header(ContentType::TEXT_HTML)
-                                .body(html.clone()),
-                        ),
-                )
-                .map_err(|e| Error::Protocol(format!("Failed to build message: {}", e)))?
-        } else {
-            message_builder
-                .body(email.body_text.clone())
-                .map_err(|e| Error::Protocol(format!("Failed to build message: {}", e)))?
-        };
+        let message = build_message(&email)?;
 
         let transport = self.transport(auth)?;
 
@@ -285,20 +345,6 @@ impl SmtpClient {
             .map_err(|e| Error::Protocol(format!("Failed to send the receipt: {e}")))?;
         Ok(())
     }
-
-    /// Parse email address into Mailbox
-    fn parse_mailbox(&self, email: &str, name: Option<&str>) -> Result<Mailbox> {
-        let mailbox = if let Some(name) = name {
-            format!("{} <{}>", name, email)
-                .parse()
-                .map_err(|e| Error::Protocol(format!("Invalid email address: {}", e)))?
-        } else {
-            email
-                .parse()
-                .map_err(|e| Error::Protocol(format!("Invalid email address: {}", e)))?
-        };
-        Ok(mailbox)
-    }
 }
 
 #[cfg(test)]
@@ -334,6 +380,68 @@ mod tests {
     }
 
     use super::*;
+
+    fn plain_note() -> Email {
+        Email::simple(
+            "ada@example.com".to_string(),
+            "sam@example.com".to_string(),
+            "Tomorrow".to_string(),
+            "See attached.".to_string(),
+        )
+    }
+
+    fn on_the_wire(email: &Email) -> String {
+        String::from_utf8_lossy(&build_message(email).expect("a message").formatted()).into_owned()
+    }
+
+    #[test]
+    fn test_a_message_with_no_files_is_the_message_it_always_was() {
+        // Wrapping every message in multipart/mixed to leave room for the case
+        // with files would change what goes out for the case without them.
+        let sent = on_the_wire(&plain_note());
+
+        assert!(!sent.contains("multipart/mixed"), "{sent}");
+        assert!(sent.contains("See attached."), "{sent}");
+    }
+
+    #[test]
+    fn test_a_file_goes_out_with_the_message() {
+        // The composer has had an Attach button since the beginning and there
+        // was no part in the message for the file to become: no column in the
+        // queue, no reading, and nothing here. Every other half of it worked.
+        let mut email = plain_note();
+        email.attachments = vec![crate::application::attaching::Ready {
+            name: "report.pdf".to_string(),
+            content_type: "application/pdf",
+            bytes: b"%PDF-1.7 not really".to_vec(),
+        }];
+
+        let sent = on_the_wire(&email);
+
+        assert!(sent.contains("multipart/mixed"), "{sent}");
+        assert!(sent.contains("application/pdf"), "{sent}");
+        assert!(sent.contains("report.pdf"), "{sent}");
+        assert!(sent.contains("attachment"), "{sent}");
+    }
+
+    #[test]
+    fn test_the_message_is_still_readable_both_ways_with_a_file_on_it() {
+        // The alternative has to survive being wrapped. Losing the plain text
+        // half leaves anybody reading without HTML looking at markup.
+        let mut email = plain_note();
+        email.body_html = Some("<p>See attached.</p>".to_string());
+        email.attachments = vec![crate::application::attaching::Ready {
+            name: "notes.txt".to_string(),
+            content_type: "text/plain",
+            bytes: b"hello".to_vec(),
+        }];
+
+        let sent = on_the_wire(&email);
+
+        assert!(sent.contains("multipart/alternative"), "{sent}");
+        assert!(sent.contains("multipart/mixed"), "{sent}");
+        assert!(sent.contains("<p>See attached.</p>"), "{sent}");
+    }
 
     #[test]
     fn test_smtp_client_creation() {

@@ -548,6 +548,7 @@ fn test_message_cache_outbox_queue() {
         bcc_addr: "blind@example.com".to_string(),
         subject: "Queued message".to_string(),
         body: "Sent while offline".to_string(),
+        attachments: String::new(),
         attempt_count: 0,
         last_error: None,
         created_at: chrono::Utc::now().to_rfc3339(),
