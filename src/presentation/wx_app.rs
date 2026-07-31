@@ -782,35 +782,7 @@ impl WxMailApp {
                 // The page listens for Escape and F6 and posts back to the
                 // host, which moves focus to the message list. It is the same
                 // channel the context menu already uses.
-                if !preview.add_script_message_handler("contextMenu") {
-                    tracing::error!(
-                        "Preview script channel refused; the in-page way out will not work"
-                    );
-                }
-                let script_added = preview.add_user_script(
-                    r#"document.addEventListener('contextmenu', function(e) {
-    e.preventDefault();
-    var link = e.target.closest('a');
-    var data = { kind: 'context', x: e.clientX, y: e.clientY };
-    if (link) { data.href = link.href; data.text = link.textContent; }
-    window.contextMenu.postMessage(JSON.stringify(data));
-});
-document.addEventListener('keydown', function(e) {
-    // F6 matches whether or not Shift is held, so Shift+F6 leaves too. Where
-    // it lands is the host's decision, which is why the key is not named here.
-    if (e.key === 'Escape' || e.key === 'F6') {
-        e.preventDefault();
-        e.stopPropagation();
-        window.contextMenu.postMessage(JSON.stringify({ kind: 'leave' }));
-    }
-}, true);"#,
-                    WebViewUserScriptInjectionTime::AtDocumentStart,
-                );
-                if !script_added {
-                    tracing::error!(
-                        "Preview user script refused; Escape will not leave the preview"
-                    );
-                }
+                wire_the_way_out(&preview, "preview");
 
                 // Handle context menu messages from JS: store link href in state,
                 // show popup menu, let events bubble to frame.on_menu handler.
@@ -819,18 +791,7 @@ document.addEventListener('keydown', function(e) {
                     let a11y = a11y.clone();
                     move |event: WebViewEventData| {
                         if let Some(json) = event.get_string() {
-                            // The way out. Checked before anything else, so a
-                            // malformed context menu payload can never swallow
-                            // the only keystroke that frees a trapped user.
-                            let leaving = serde_json::from_str::<serde_json::Value>(&json)
-                                .ok()
-                                .and_then(|v| {
-                                    v.get("kind")
-                                        .and_then(|k| k.as_str())
-                                        .map(|k| k == "leave")
-                                })
-                                .unwrap_or(false);
-                            if leaving {
+                            if is_leaving(&json) {
                                 use crate::presentation::panes::Pane;
 
                                 msg_list.set_focus();
@@ -3745,6 +3706,69 @@ fn folder_label(folder: &crate::data::message_cache::CachedFolder) -> String {
     } else {
         folder.name.clone()
     }
+}
+
+/// Give a page the way out that its own Back button and Escape key already call.
+///
+/// Every document this application renders carries a Back button as its first
+/// element, and the button's click posts to `window.contextMenu`. The channel
+/// that message arrives on does not exist unless it is registered here, and the
+/// key that does the same thing does not exist unless the script below is
+/// injected.
+///
+/// The conversation window shipped without either. The button was on the page,
+/// the key was in the documentation, and both called into a name that was not
+/// defined, so nothing happened and the only way out of that window was
+/// Alt+F4. It went unnoticed because the preview pane, which is the same page
+/// in a different frame, had all of this and worked.
+///
+/// Refusals are logged rather than ignored. A page whose way out was refused
+/// looks exactly like one that works right up until somebody needs to leave.
+fn wire_the_way_out(view: &WebView, surface: &str) -> bool {
+    let channel = view.add_script_message_handler("contextMenu");
+    if !channel {
+        tracing::error!("{surface}: script channel refused, the Back button will do nothing");
+    }
+    let script = view.add_user_script(
+        r#"document.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    var link = e.target.closest('a');
+    var data = { kind: 'context', x: e.clientX, y: e.clientY };
+    if (link) { data.href = link.href; data.text = link.textContent; }
+    window.contextMenu.postMessage(JSON.stringify(data));
+});
+document.addEventListener('keydown', function(e) {
+    // F6 matches whether or not Shift is held, so Shift+F6 leaves too. Where
+    // it lands is the host's decision, which is why the key is not named here.
+    if (e.key === 'Escape' || e.key === 'F6') {
+        e.preventDefault();
+        e.stopPropagation();
+        window.contextMenu.postMessage(JSON.stringify({ kind: 'leave' }));
+    }
+}, true);"#,
+        WebViewUserScriptInjectionTime::AtDocumentStart,
+    );
+    if !script {
+        tracing::error!("{surface}: user script refused, Escape will not leave the page");
+    }
+    channel && script
+}
+
+/// Whether a message from a page is asking to leave it.
+///
+/// Read before anything else wherever this arrives, so a malformed context menu
+/// payload can never swallow the one keystroke that frees somebody who is
+/// stuck.
+fn is_leaving(json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(json)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("kind")
+                .and_then(|kind| kind.as_str())
+                .map(|kind| kind == "leave")
+        })
+        .unwrap_or(false)
 }
 
 /// A stored body as the thing it is, rather than whichever column was filled.
@@ -7177,6 +7201,21 @@ fn show_conversation_as_page(
         }
     });
 
+    // Before the page is loaded, because the script is injected as each
+    // document is created and one already loaded has missed it.
+    wire_the_way_out(&page, "conversation window");
+    page.on_script_message_received({
+        move |event: WebViewEventData| {
+            if event.get_string().is_some_and(|json| is_leaving(&json)) {
+                // Closing is what going back means here. The close handler
+                // below hides the window and hands control back to whatever
+                // opened it, so there is one way out and not two that could
+                // come to disagree.
+                frame.close(false);
+            }
+        }
+    });
+
     page.set_page(
         &reader_text::conversation_html(subject, parts),
         "about:blank",
@@ -8610,6 +8649,33 @@ mod tests {
             safety_reasons: Vec::new(),
             receipt_to: None,
         }
+    }
+
+    #[test]
+    fn test_the_pages_own_back_button_says_what_the_host_listens_for() {
+        // Two halves of one way out, written in two languages in two files. The
+        // page renders a Back button that posts a payload; the host decides
+        // what a payload means. Nothing but this test connects them, and when
+        // they came apart the button did nothing at all and the window could
+        // only be closed with Alt+F4.
+        let html =
+            crate::presentation::html_renderer::HtmlRenderer::new().render_thread("Subject", &[]);
+        let onclick = html
+            .split("postMessage('")
+            .nth(1)
+            .and_then(|rest| rest.split("')").next())
+            .expect("the Back button posts something");
+
+        // What the browser hands to the host, once it has parsed the attribute.
+        let payload = onclick.replace("&quot;", "\"");
+
+        assert!(super::is_leaving(&payload), "{payload}");
+    }
+
+    #[test]
+    fn test_a_context_menu_payload_is_not_mistaken_for_leaving() {
+        assert!(!super::is_leaving(r#"{"kind":"context","x":10,"y":20}"#));
+        assert!(!super::is_leaving("not json at all"));
     }
 
     #[test]

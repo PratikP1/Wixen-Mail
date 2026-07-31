@@ -8,6 +8,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The reading window can be left again.** It renders a "Back" button as the
+  first thing on the page, and that button did nothing: the channel it sends
+  its message on was never opened for that window, and neither was the script
+  that makes Escape do the same. So the button was there, the key was in the
+  guide, and both called into nothing. The only way out was Alt+F4. Both halves
+  are now set up in one place used by the reading window and the preview alike,
+  and a test ties the button's message to the code that listens for it so they
+  cannot come apart again. The button also now says what it does on the surface
+  you are on: the preview goes back to the message list, the window closes.
+
 - **Setup finds a copy of Wixen Mail installed in the other place, and offers
   to remove it.** Installing for one person and installing for everybody are
   two separate installations that Windows does not tell about each other: they

@@ -204,7 +204,7 @@ impl HtmlRenderer {
                 html_escape::encode_text(text)
             ),
         };
-        self.wrap_prepared(&content)
+        self.wrap_prepared(&content, "Back to message list (Escape)")
     }
 
     /// Put the document shell around markup that is already safe.
@@ -217,7 +217,11 @@ impl HtmlRenderer {
     ///
     /// Everything that comes from a message body has to have been through
     /// [`Self::sanitize_html`] before it reaches here.
-    fn wrap_prepared(&self, content: &str) -> String {
+    /// `way_out` names what the Back button does on this surface. The preview
+    /// sits beside the message list and goes back to it; the reading window is
+    /// a window and closes. One label for both told half of everybody something
+    /// that was not true about the button they were on.
+    fn wrap_prepared(&self, content: &str, way_out: &str) -> String {
         format!(
             r#"<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><style>
@@ -250,8 +254,9 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
     .leave:focus {{ outline-color: #569cd6; }}
 }}
 </style></head><body>
-<button type="button" class="leave" onclick="window.contextMenu.postMessage('{{&quot;kind&quot;:&quot;leave&quot;}}')">Back to message list (Escape)</button>
+<button type="button" class="leave" onclick="window.contextMenu.postMessage('{{&quot;kind&quot;:&quot;leave&quot;}}')">{}</button>
 <main>{}</main></body></html>"#,
+            html_escape::encode_text(way_out),
             content
         )
     }
@@ -326,7 +331,7 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
         // already been through the sanitiser, and sanitising the assembled
         // document again would escape the headings this whole surface exists
         // to produce whenever the plain-text setting is on.
-        self.wrap_prepared(&body)
+        self.wrap_prepared(&body, "Close this window (Escape)")
     }
 
     /// The only URLs this application will hand to the operating system.
@@ -538,6 +543,18 @@ mod tests {
         let renderer = HtmlRenderer::new();
         let html = renderer.render_thread("Subject", &[part("Ada", 0, "5 < 6 & 7 > 6")]);
         assert!(html.contains("5 &lt; 6 &amp; 7 &gt; 6"));
+    }
+
+    #[test]
+    fn test_the_reading_window_says_its_button_closes_the_window() {
+        // The same shell serves two surfaces that go to different places. The
+        // preview sits beside the message list and goes back to it; this is a
+        // window and closes. Telling somebody the button does the other thing
+        // is worse than not labelling it, because they will not check.
+        let html = HtmlRenderer::new().render_thread("Subject", &[part("Ada", 0, "Body")]);
+
+        assert!(html.contains("Close this window"), "{html}");
+        assert!(!html.contains("Back to message list"), "{html}");
     }
 
     #[test]
