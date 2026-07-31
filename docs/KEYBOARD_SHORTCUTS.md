@@ -423,8 +423,8 @@ moves the menu, and sorting from the menu moves the headers.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Next Unread | `Ctrl+]` | Next unread message, wrapping at the end. Says so when there is none, rather than doing nothing. |
-| Previous Unread | `Ctrl+[` | Previous unread message, wrapping at the start |
+| Next Unread | `Ctrl+U` | Next unread message, wrapping at the end. Says so when there is none, rather than doing nothing. |
+| Previous Unread | `Ctrl+Shift+U` | Previous unread message, wrapping at the start |
 | Next Message | `↓` | Move to next message in list |
 | Previous Message | `↑` | Move to previous message in list |
 | First Message | `Home` | Jump to first message |
@@ -703,7 +703,7 @@ the field accelerators for letters without making anything more reachable.
 1. **Use `F6` to move between the folder tree and the message list** - Much faster than using the mouse
 2. **Learn the message action shortcuts** - `Ctrl+R`, `Ctrl+L`, `Delete` are the most common
 3. **Press `Space` on any row** to hear the item, and again to hear all of it. It works the same in every module.
-4. **Use `Ctrl+]` to jump to unread messages** - Quickly find messages that need attention. It wraps at the end and tells you when there are none left.
+4. **Use `Ctrl+U` to jump to unread messages** - Quickly find messages that need attention. It wraps at the end and tells you when there are none left.
 5. **Master the composition shortcuts** - `Ctrl+Enter` to send, `Esc` to cancel
 6. **Context menus are your friend** - `Shift+F10` opens context menu for selected item
 

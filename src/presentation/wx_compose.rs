@@ -159,6 +159,53 @@ fn quoted_under(body: &MessageBody, marker: &str) -> MessageBody {
     }
 }
 
+/// Put the signature above whatever is being quoted.
+///
+/// Above, because that is where somebody replying is already typing and where
+/// every other client puts it. Below the quote it is a signature nobody sees
+/// without paging past the message they just read.
+///
+/// The separator's trailing space is written as a non-breaking one: the editor
+/// is a page, and a page drops a space at the end of a paragraph. It is turned
+/// back into an ordinary space in the text that goes out, by
+/// [`sign_off::canonical_delimiter`].
+fn with_signature(body: &MessageBody, signature: &str) -> MessageBody {
+    if signature.trim().is_empty() {
+        return body.clone();
+    }
+    match body {
+        MessageBody::Plain(text) => MessageBody::Plain(format!(
+            "{}{}",
+            crate::application::sign_off::attach("", signature),
+            text
+        )),
+        MessageBody::Html(html) | MessageBody::Multipart { html, .. } => {
+            MessageBody::Html(format!("{}{}", signature_markup(signature), html))
+        }
+    }
+}
+
+/// A signature as paragraphs, under a separator paragraph.
+fn signature_markup(signature: &str) -> String {
+    let lines: String = signature
+        .trim_end()
+        .lines()
+        .map(|line| format!("<div>{}</div>", html_escape(line)))
+        .collect();
+    format!("<div><br></div><div>--&nbsp;</div>{lines}")
+}
+
+/// The four characters that would otherwise be read as markup.
+///
+/// A signature is somebody's own text and can hold anything, including the
+/// angle brackets around an address.
+fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 /// Title for the compose dialog based on mode.
 fn compose_title(mode: &ComposeMode) -> &'static str {
     match mode {
@@ -259,6 +306,10 @@ pub fn show_compose_dialog_full(
     account_names: &[String],
     active_account_index: u32,
     preview_before_send: bool,
+    // `signature` is the account's default, or nothing. It goes above the
+    // quoted original when the window opens, so it can be read and edited
+    // before sending rather than appearing on the way out.
+    signature: &str,
     autosave: crate::application::autosave::AutosaveInterval,
     a11y: std::sync::Arc<crate::presentation::accessibility::Accessibility>,
     on_autosave: impl Fn(&ComposeData) + 'static,
@@ -573,7 +624,14 @@ pub fn show_compose_dialog_full(
     // Filled before the copy lines are hidden or kept, because whether a reply
     // already copies somebody is what decides it.
     match &mode {
-        ComposeMode::New => {}
+        ComposeMode::New => {
+            if !signature.trim().is_empty() {
+                set_body(&with_signature(
+                    &MessageBody::Plain(String::new()),
+                    signature,
+                ));
+            }
+        }
         ComposeMode::Reply {
             to,
             subject,
@@ -581,7 +639,7 @@ pub fn show_compose_dialog_full(
         } => {
             to_field.set_value(to);
             subject_field.set_value(&format_reply_subject(subject));
-            set_body(&format_reply_body(quoted_body));
+            set_body(&with_signature(&format_reply_body(quoted_body), signature));
         }
         ComposeMode::ReplyAll {
             to,
@@ -592,13 +650,15 @@ pub fn show_compose_dialog_full(
             to_field.set_value(to);
             cc_field.set_value(cc);
             subject_field.set_value(&format_reply_subject(subject));
-            set_body(&format_reply_body(quoted_body));
+            set_body(&with_signature(&format_reply_body(quoted_body), signature));
         }
         ComposeMode::Forward { subject, body } => {
             subject_field.set_value(&format_forward_subject(subject));
-            set_body(&format_forward_body(body));
+            set_body(&with_signature(&format_forward_body(body), signature));
             to_field.set_focus();
         }
+        // A draft carries whatever signature it was saved with. Adding one
+        // here would put a second on every reopen.
         ComposeMode::Draft(data) => {
             to_field.set_value(&data.to);
             cc_field.set_value(&data.cc);
@@ -994,7 +1054,12 @@ pub fn show_compose_dialog_full(
                 bcc: bcc_field.get_value(),
                 subject: subject_field.get_value(),
                 body,
-                body_plain,
+                // The page writes the signature separator with a non-breaking
+                // space, because an ordinary one at the end of a line is
+                // dropped. Put back here, once, where every path out of the
+                // window goes through: sending, saving a draft, and the
+                // automatic save.
+                body_plain: crate::application::sign_off::canonical_delimiter(&body_plain),
                 html_mode: true,
                 account_index: account_choice.get_selection(),
                 attachments: attached

@@ -450,3 +450,137 @@ fn test_f6_and_shift_f6_reach_the_pane_handler() {
         "the F6 command is raised and not handled"
     );
 }
+
+/// Every key the menus bind is written in the shortcuts document, saying the
+/// same thing.
+///
+/// The document is the promise. A reader who cannot see the menu bar finds out
+/// what a key does by reading it, so a key written there that nothing binds is
+/// a key somebody presses, hears nothing, and concludes is broken. It said
+/// `Ctrl+]` for the next unread message in two places while the menu bound
+/// `Ctrl+U`, and the project rule that the document is updated in the same
+/// commit as the shortcut had nothing checking it.
+///
+/// Menus are the source of truth, because they are what Windows dispatches.
+#[test]
+fn test_the_shortcuts_document_and_the_menus_agree() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let doc = fs::read_to_string("docs/KEYBOARD_SHORTCUTS.md").expect("the shortcuts document");
+
+    let mut missing = Vec::new();
+    for key in accelerators(&app) {
+        // Written as `Ctrl+U` in the menu and as `` `Ctrl+U` `` in the table.
+        if !doc.contains(&key) {
+            missing.push(key);
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "these keys are bound in the menus and not in docs/KEYBOARD_SHORTCUTS.md: {missing:?}"
+    );
+}
+
+/// Every key the shortcuts document names is mentioned somewhere in the code.
+///
+/// The direction that went wrong. The document said `Ctrl+]` and `Ctrl+[` for
+/// the next and previous unread message, in a table and again in a tips
+/// section, and nothing anywhere bound either of them: the menu had `Ctrl+U`
+/// and `Ctrl+Shift+U` all along. Somebody reading the document pressed a key,
+/// heard nothing, and had no way to tell that from a broken application.
+///
+/// Where it can, it asks the code for its keys rather than reading them out of
+/// the source text: the editor's formatting keys and the new item keys are
+/// built from tables that spell them, so those tables are the answer. The rest
+/// falls back to whether the key appears in the source at all, because a key
+/// can be bound by a menu accelerator, by a handler matching a code, or by a
+/// mnemonic in a label, and this should not have to know which.
+#[test]
+fn test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of() {
+    let doc = fs::read_to_string("docs/KEYBOARD_SHORTCUTS.md").expect("the shortcuts document");
+    let mut code: String = sources()
+        .iter()
+        .filter_map(|path| fs::read_to_string(path).ok())
+        .collect();
+
+    // The keys the code states outright, which no amount of reading the source
+    // as text would find: both are assembled from parts at run time.
+    for format in wixen_mail::presentation::editor_document::Format::ALL {
+        code.push_str(&format!("\n{}", format.shortcut()));
+    }
+    for kind in wixen_mail::application::new_item::ItemKind::ALL {
+        code.push_str(&format!("\n{}", kind.shortcut()));
+    }
+
+    let mut invented = Vec::new();
+    for key in documented_combinations(&doc) {
+        if bound_somewhere(&key, &code) || invented.contains(&key) {
+            continue;
+        }
+        invented.push(key);
+    }
+
+    assert!(
+        invented.is_empty(),
+        "docs/KEYBOARD_SHORTCUTS.md names these keys and nothing in src/presentation mentions them: {invented:?}"
+    );
+}
+
+/// Whether anything in the source binds this key.
+///
+/// `Alt` and a single letter is a mnemonic, which is not written anywhere as
+/// `Alt+S`: it is the ampersand in a label, so `&Save Note` is what binds
+/// Alt+S. Matched without case because a label capitalises where it likes.
+fn bound_somewhere(key: &str, code: &str) -> bool {
+    if let Some(letter) = key.strip_prefix("Alt+")
+        && letter.chars().count() == 1
+        && letter.chars().all(|c| c.is_ascii_alphabetic())
+    {
+        let lower = format!("&{}", letter.to_ascii_lowercase());
+        let upper = format!("&{}", letter.to_ascii_uppercase());
+        return code.contains(&lower) || code.contains(&upper);
+    }
+    code.contains(key)
+}
+
+/// Every backticked `Ctrl+...` or `Alt+...` combination in the document.
+///
+/// Only the modified ones. A bare `Space` or `Home` in the document is a key
+/// this reads no meaning into, and looking for the word "Space" in the source
+/// would match anything.
+fn documented_combinations(doc: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for piece in doc.split('`').skip(1).step_by(2) {
+        let piece = piece.trim();
+        let modified = piece.starts_with("Ctrl+") || piece.starts_with("Alt+");
+        // One combination, not a sentence that happens to contain one, and not
+        // a sequence like "Ctrl+N, M" whose halves are pressed separately.
+        if modified
+            && !piece.contains(' ')
+            && !piece.contains(',')
+            && !found.contains(&piece.to_string())
+        {
+            found.push(piece.to_string());
+        }
+    }
+    found
+}
+
+/// Every accelerator a menu item carries, as it is written after the tab.
+///
+/// A label built with `format!` carries a second key chosen at run time after
+/// the fixed one, as in `"&Message\tCtrl+N, {}"`. Stopping at the comma takes
+/// the fixed half and leaves the placeholder, which is not a key and is not
+/// what the document would spell out.
+fn accelerators(source: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for (start, _) in source.match_indices(r"\t") {
+        let rest = &source[start + 2..];
+        let end = rest.find(['"', '\\', ',', '{']).unwrap_or(rest.len());
+        let key = rest[..end].trim().to_string();
+        if !key.is_empty() && !found.contains(&key) {
+            found.push(key);
+        }
+    }
+    found
+}

@@ -39,6 +39,7 @@ pub mod repeating;
 pub mod reply;
 pub mod running;
 pub mod search;
+pub mod sign_off;
 pub mod spell_session;
 pub mod tasks;
 pub mod tasks_sync;

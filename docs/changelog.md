@@ -8,6 +8,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Signatures go on messages.** They could be written, named, marked as the
+  default and stored, and none of that ever reached a message. One now goes on
+  a new message, a reply and a forward, above the quoted original where you are
+  already typing, so it can be read and changed before sending rather than
+  appearing on the way out. A draft keeps whatever it was saved with rather than
+  collecting another every time it is reopened.
+
+- **A signature can be skipped when reading.** It is separated by the standard
+  line of two dashes, which is what every other client uses to know where a
+  message ends, and the reading surface marks it as "Signature" so you can jump
+  to it or stop before it. Five lines of job title and disclaimer arrive on
+  every message in a thread and are the same every time.
+
+- **[How Wixen Mail compares](comparison.md)**, a written comparison against
+  Thunderbird and Outlook: what they do that this does not, what this does that
+  they do not, and what a 2025 accessibility study of Thunderbird found its
+  blind testers ran into.
+
 - **Notes and descriptions can be written in Markdown.** A note with a heading
   and a list in it used to come back as one flat run of text, so the shape
   somebody put there to make it findable was the first thing lost. Now a
@@ -64,6 +82,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   many messages it holds.
 
 ### Fixed
+
+- **Next unread is `Ctrl+U`, and the shortcuts document says so.** It said
+  `Ctrl+]` in two places, which nothing had ever bound, so anyone who read the
+  document and pressed it heard nothing and had no way to tell that from a
+  broken application. A test now compares the document against the code both
+  ways, so a key can no longer be written down without being bound or bound
+  without being written down.
 
 - **The accessibility check now measures the names this application sets.** It
   scanned the UI Automation tree, and for an edit box or a button Windows puts

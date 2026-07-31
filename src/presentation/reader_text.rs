@@ -126,6 +126,28 @@ fn nothing_in(body: &MessageBody) -> bool {
 /// The kind is taken from the body rather than guessed from its punctuation.
 /// Looking for angle brackets reads "write to <ada@example.com>" as markup and
 /// runs it through the HTML converter, which drops it.
+/// Where the signature starts, as a place to move to.
+///
+/// The reason the two dashes exist. Five lines of job title and legal
+/// disclaimer arrive on every message in a thread, they are the same every
+/// time, and they are the part somebody listening most wants past. Marking it
+/// is what makes it possible to skip, and it also says where the message
+/// somebody was reading actually ends.
+///
+/// Deeper than a heading, so moving through the headings of a long message does
+/// not keep landing on it.
+fn signature_landmark(text: &str) -> Vec<Landmark> {
+    let (message, signature) = crate::application::sign_off::split(text);
+    if signature.is_none() {
+        return Vec::new();
+    }
+    vec![Landmark {
+        offset: message.len(),
+        level: 6,
+        label: "Signature".to_string(),
+    }]
+}
+
 fn body_text(body: &MessageBody) -> (String, Vec<Landmark>) {
     let markup = match body {
         MessageBody::Html(html) | MessageBody::Multipart { html, .. } => html,
@@ -134,7 +156,7 @@ fn body_text(body: &MessageBody) -> (String, Vec<Landmark>) {
             return if trimmed.is_empty() {
                 (nothing_to_read(), Vec::new())
             } else {
-                (trimmed.to_string(), Vec::new())
+                (trimmed.to_string(), signature_landmark(trimmed))
             };
         }
     };
@@ -162,6 +184,7 @@ fn body_text(body: &MessageBody) -> (String, Vec<Landmark>) {
         .collect();
 
     let mut text = converter.get_text();
+    landmarks.extend(signature_landmark(&text));
 
     // Link targets are gathered at the end rather than left inline. A URL read
     // out mid-sentence is a wall of syllables in the middle of a thought, and
@@ -822,6 +845,34 @@ mod tests {
         } else {
             plain(text)
         }
+    }
+
+    #[test]
+    fn test_a_signature_is_somewhere_a_reader_can_jump_to() {
+        // The reason the two dashes exist. Five lines of job title and legal
+        // disclaimer on every message in a thread is what somebody listening
+        // most wants to skip, and they can only skip what is marked.
+        let doc = read(
+            &message(),
+            "Thanks for the invoice.
+
+-- 
+Ada
+Analytical Engines",
+        );
+
+        assert!(
+            doc.landmarks.iter().any(|l| l.label == "Signature"),
+            "no signature landmark in {:?}",
+            doc.landmarks
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_no_signature_gains_no_landmark_for_one() {
+        let doc = read(&message(), "Thanks for the invoice.");
+
+        assert!(!doc.landmarks.iter().any(|l| l.label == "Signature"));
     }
 
     /// [`single_message`] for a test that has a bare string.

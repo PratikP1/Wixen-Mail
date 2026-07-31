@@ -1027,6 +1027,9 @@ impl WxMailApp {
             // One reader window, reused. Tabs inside it rather than a window
             // per message: a dozen top level windows is a dozen things to find
             // your way back out of, and Ctrl+Tab through tabs is one gesture.
+            // Ctrl+Tab and Ctrl+Shift+Tab are the notebook's own, bound by the
+            // toolkit rather than by anything here, which is why neither is
+            // handled below.
             // Once at startup, and only when link checking is switched on and
             // has a key. Everything about it is inert otherwise.
             spawn_threat_list_refresh(&runtime);
@@ -5112,6 +5115,30 @@ fn open_compose(
         })
         .unwrap_or_else(|_| (Default::default(), true));
 
+    // The account's default signature, for the account this is being sent from
+    // rather than whichever was last looked at. Signatures could be written,
+    // named and marked as the default, and none of that ever reached a message
+    // because nothing read them back.
+    let signature = {
+        let account = lock_state(state)
+            .accounts
+            .get(active as usize)
+            .map(|a| a.id.clone());
+        match (cache.as_ref(), account) {
+            (Some(cache), Some(id)) => match cache.get_default_signature(&id) {
+                Ok(found) => found.map(|s| s.content_plain).unwrap_or_default(),
+                // Said out loud rather than swallowed: a message going out
+                // unsigned when a signature exists is a change somebody would
+                // otherwise have to notice in the sent copy.
+                Err(e) => {
+                    tracing::warn!("The signature could not be read: {}", e);
+                    String::new()
+                }
+            },
+            _ => String::new(),
+        }
+    };
+
     let saver = {
         let state = state.clone();
         let cache = cache.clone();
@@ -5141,6 +5168,7 @@ fn open_compose(
         &names,
         active,
         preview_first,
+        &signature,
         autosave,
         a11y.clone(),
         saver,

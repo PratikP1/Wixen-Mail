@@ -10,7 +10,6 @@ pub mod focus;
 pub mod keyboard;
 pub mod names;
 pub mod screen_reader;
-pub mod shortcuts;
 
 use crate::common::Result;
 
@@ -22,7 +21,6 @@ pub struct Accessibility {
     focus: focus::FocusManager,
     announcements: announcements::AnnouncementQueue,
     automation: automation::AutomationStore,
-    shortcuts: shortcuts::ShortcutManager,
     /// Which channels each event reaches, and the thing that plays the tones.
     feedback: std::sync::Mutex<feedback::FeedbackSettings>,
     earcons: feedback::EarconPlayer,
@@ -43,7 +41,6 @@ impl Accessibility {
             focus: focus::FocusManager::new()?,
             announcements: announcements::AnnouncementQueue::new()?,
             automation: automation::AutomationStore::new()?,
-            shortcuts: shortcuts::ShortcutManager::new(),
             feedback: std::sync::Mutex::new(feedback::FeedbackSettings::default()),
             earcons: feedback::EarconPlayer::new(),
             visual: std::sync::Mutex::new(None),
@@ -367,11 +364,6 @@ impl Accessibility {
     pub fn native_bridge_status(&self) -> screen_reader::NativeBridgeStatus {
         self.screen_reader.status()
     }
-
-    /// Get shortcut manager
-    pub fn shortcuts(&self) -> &shortcuts::ShortcutManager {
-        &self.shortcuts
-    }
 }
 
 impl Default for Accessibility {
@@ -382,7 +374,6 @@ impl Default for Accessibility {
             focus: focus::FocusManager::default(),
             announcements: announcements::AnnouncementQueue::default(),
             automation: automation::AutomationStore::default(),
-            shortcuts: shortcuts::ShortcutManager::new(),
             feedback: std::sync::Mutex::new(feedback::FeedbackSettings::default()),
             earcons: feedback::EarconPlayer::new(),
             visual: std::sync::Mutex::new(None),
