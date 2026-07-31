@@ -2465,7 +2465,14 @@ impl WxMailApp {
                         _ if id == ID_MODULE_NOTES => do_switch(PimModule::Notes),
                         // New item creation (File > New submenu)
                         _ if id == ID_NEW_EVENT => {
-                            do_switch(PimModule::Calendar);
+                            // Deliberately not switching module first. Making
+                            // a task from the mailbox is something somebody
+                            // does in the middle of reading their mail, and
+                            // being moved to Tasks to do it takes them out of
+                            // what they were doing and leaves them to find
+                            // their way back. The item is still filed and the
+                            // panel still refreshed; the difference is that
+                            // nobody is carried off to watch it happen.
                             managers::new_pim_item(
                                 crate::application::new_item::ItemKind::Event,
                                 &state,
@@ -2476,7 +2483,6 @@ impl WxMailApp {
                             );
                         }
                         _ if id == ID_NEW_REMINDER => {
-                            do_switch(PimModule::Reminders);
                             managers::new_pim_item(
                                 crate::application::new_item::ItemKind::Reminder,
                                 &state,
@@ -2487,7 +2493,6 @@ impl WxMailApp {
                             );
                         }
                         _ if id == ID_NEW_TASK => {
-                            do_switch(PimModule::Tasks);
                             managers::new_pim_item(
                                 crate::application::new_item::ItemKind::Task,
                                 &state,
@@ -2498,7 +2503,6 @@ impl WxMailApp {
                             );
                         }
                         _ if id == ID_NEW_NOTE => {
-                            do_switch(PimModule::Notes);
                             managers::new_pim_item(
                                 crate::application::new_item::ItemKind::Note,
                                 &state,

@@ -8,6 +8,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Making a new event, reminder, task or note leaves you where you are.** Each
+  of them moved you to its own module first, so starting a task while reading
+  your mail put you in Tasks and left you to find your way back. The item is
+  filed and the panel refreshed exactly as before; you are simply not carried
+  off to watch it happen.
+
 - **Events, tasks, notes, reminders, contacts and their folders can be made
   without a mail account.** They could not: the editors asked which account was
   active, found none, and stopped, which from the outside looked like the
