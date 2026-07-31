@@ -1970,10 +1970,20 @@ impl WxMailApp {
 
             wire_read_aloud(&msg_list, &a11y, &space_cycle, "mail", {
                 let state = state.clone();
+                let message_cache = message_cache.clone();
                 move |index| {
-                    let s = lock_state(&state);
-                    let message = s.messages.get(index)?;
-                    Some((message.read_id(), message.read_short(), message.read_full()))
+                    let (message, in_conversation) = {
+                        let s = lock_state(&state);
+                        (
+                            s.messages.get(index)?.clone(),
+                            message_rows::conversation_size(&s.messages, index),
+                        )
+                    };
+                    Some((
+                        message.read_id(),
+                        read_the_row(&message, in_conversation),
+                        read_the_whole_message(&message_cache, &message, in_conversation),
+                    ))
                 }
             });
 
@@ -3630,6 +3640,49 @@ fn wire_read_aloud<F>(
         // stop: private mail and personal notes read aloud in a shared room.
         let _ = a11y.announce_content(&text);
     });
+}
+
+/// What Space says about the row under the cursor.
+///
+/// The row and, when it is one, how big the conversation is. The count comes
+/// first because it changes what the rest of the reading means: three replies
+/// under one subject is a different thing to read than one message.
+fn read_the_row(message: &MessageItem, in_conversation: Option<usize>) -> String {
+    match in_conversation {
+        Some(count) => format!("Conversation, {count} messages. {}", message.read_short()),
+        None => message.read_short(),
+    }
+}
+
+/// What Shift+Space says: the message itself, headings and all.
+///
+/// Space used to read the row twice, in two lengths, and the second length was
+/// still the row: subject, sender, dates, flags, and the one-line snippet.
+/// Everything the message said stayed behind a window somebody had to open,
+/// which for a key whose whole purpose is reading without opening is the wrong
+/// side of the line.
+///
+/// Falls back to the row when the body is not cached, because the alternative
+/// is silence on a key that just worked, and the row is what it used to say.
+fn read_the_whole_message(
+    cache: &Option<Arc<MessageCache>>,
+    message: &MessageItem,
+    in_conversation: Option<usize>,
+) -> String {
+    let Some(body) = cache
+        .as_ref()
+        .and_then(|c| c.get_message_body(message.message_id).ok().flatten())
+    else {
+        return read_the_row(message, in_conversation);
+    };
+    let document = reader_text::single_message(message, &body_as_written(Some(body)));
+    match in_conversation {
+        Some(count) => format!(
+            "Conversation, {count} messages. {}",
+            reader_text::read_whole(&document)
+        ),
+        None => reader_text::read_whole(&document),
+    }
 }
 
 /// Read a module's records out of the cache and send them to the UI.

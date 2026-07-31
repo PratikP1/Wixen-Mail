@@ -145,9 +145,77 @@ fn display_address(address: &str) -> String {
     trimmed.to_string()
 }
 
+/// How big the conversation this row belongs to is, when it is one.
+///
+/// `None` for a message that stands alone, and then nothing is said. Saying
+/// "1 message" on every ordinary message is a word on every row that carries no
+/// information, and the rows that are conversations are the ones where the
+/// count changes what somebody does next.
+///
+/// Counted across the loaded list rather than asked of the server, because the
+/// list is what Space is reading and the answer has to arrive with the key
+/// rather than after it.
+pub fn conversation_size(rows: &[MessageItem], index: usize) -> Option<usize> {
+    let thread = rows.get(index)?.thread_id.as_deref()?;
+    if thread.trim().is_empty() {
+        return None;
+    }
+    let size = rows
+        .iter()
+        .filter(|row| row.thread_id.as_deref() == Some(thread))
+        .count();
+    (size > 1).then_some(size)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn in_thread(id: Option<&str>) -> MessageItem {
+        let mut row = message();
+        row.thread_id = id.map(str::to_string);
+        row
+    }
+
+    #[test]
+    fn test_a_conversation_says_how_many_messages_it_holds() {
+        let rows = vec![
+            in_thread(Some("t1")),
+            in_thread(Some("t1")),
+            in_thread(Some("t1")),
+        ];
+
+        assert_eq!(conversation_size(&rows, 0), Some(3));
+    }
+
+    #[test]
+    fn test_a_message_that_stands_alone_says_nothing_about_conversations() {
+        // "1 message" on every ordinary row is a word that carries nothing,
+        // said on the key somebody presses most.
+        let rows = vec![in_thread(Some("t1")), in_thread(Some("t2"))];
+
+        assert_eq!(conversation_size(&rows, 0), None);
+        assert_eq!(conversation_size(&[in_thread(None)], 0), None);
+    }
+
+    #[test]
+    fn test_only_the_messages_in_this_conversation_are_counted() {
+        let rows = vec![
+            in_thread(Some("t1")),
+            in_thread(Some("t2")),
+            in_thread(Some("t1")),
+            in_thread(None),
+        ];
+
+        assert_eq!(conversation_size(&rows, 1), None);
+        assert_eq!(conversation_size(&rows, 2), Some(2));
+    }
+
+    #[test]
+    fn test_a_row_that_is_not_there_is_not_a_conversation() {
+        assert_eq!(conversation_size(&[], 0), None);
+        assert_eq!(conversation_size(&[in_thread(Some("t1"))], 9), None);
+    }
 
     #[test]
     fn test_the_snippet_column_reads_the_stored_snippet() {

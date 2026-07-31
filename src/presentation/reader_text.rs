@@ -233,6 +233,44 @@ pub fn single_message(message: &MessageItem, body: &MessageBody) -> ReaderDocume
     }
 }
 
+/// The whole message as one passage to be read aloud, headings and all.
+///
+/// Space reads the message under the cursor without opening it, and until now
+/// it read the row: subject, sender, the first line. Everything the message
+/// actually said stayed behind a window somebody had to open.
+///
+/// The difference between this and the document's own `text` is the headings.
+/// A reader window can be walked by structure, and speech cannot: a passage
+/// read as one flat run loses which parts were headings, which for a message
+/// with any shape to it is most of what the shape was for. So each heading is
+/// spoken as one, at the level it is.
+///
+/// The subject is skipped. It is the document's own level 1 landmark and it is
+/// also the first line of the header block, so reading every landmark would
+/// say it and then say it again.
+pub fn read_whole(document: &ReaderDocument) -> String {
+    let mut spoken = String::new();
+    if let Some(warning) = &document.warning {
+        // First, not last. Somebody listening has not seen the bar, and a
+        // warning that arrives after the message arrives after it was read.
+        spoken.push_str(warning);
+        spoken.push_str("\n\n");
+    }
+
+    let characters: Vec<char> = document.text.chars().collect();
+    let mut from = 0usize;
+    for landmark in document.landmarks.iter().filter(|l| l.level > 1) {
+        let at = landmark.offset.min(characters.len());
+        if at > from {
+            spoken.extend(&characters[from..at]);
+        }
+        spoken.push_str(&format!("\nheading level {}, ", landmark.level));
+        from = at;
+    }
+    spoken.extend(&characters[from.min(characters.len())..]);
+    spoken
+}
+
 /// The attachments of one message, as the reader needs them.
 ///
 /// The index is the position in the list, and that is the whole contract: it
@@ -1343,6 +1381,71 @@ mod warning_tests {
         let mut m = super::tests::message();
         m.safety = safety;
         m
+    }
+
+    #[test]
+    fn test_reading_a_message_aloud_says_where_its_headings_are() {
+        // Space reads a message without opening it, and a passage read as one
+        // flat run of text loses the thing the reader window gives back: which
+        // parts are headings. Nobody can jump by heading in speech, so the
+        // headings have to be spoken.
+        let document = single_message(
+            &message(Safety::Ordinary),
+            &MessageBody::Html("<h1>Pricing</h1><p>It went up.</p>".into()),
+        );
+
+        let spoken = read_whole(&document);
+
+        assert!(spoken.contains("heading level 2, Pricing"), "{spoken}");
+        assert!(spoken.contains("It went up."), "{spoken}");
+    }
+
+    #[test]
+    fn test_a_message_with_no_headings_is_read_as_it_stands() {
+        // Nothing announced that is not there. A message of two plain
+        // paragraphs must not gain a structure it never had.
+        let document = single_message(
+            &message(Safety::Ordinary),
+            &MessageBody::Plain("Hello.\n\nSee you Tuesday.".into()),
+        );
+
+        let spoken = read_whole(&document);
+
+        assert!(!spoken.contains("heading level 2"), "{spoken}");
+        assert!(spoken.contains("See you Tuesday."), "{spoken}");
+    }
+
+    #[test]
+    fn test_the_subject_is_not_read_twice() {
+        // The subject is the document's own level 1 landmark and is also the
+        // first line of the header block, so reading every landmark would say
+        // it, then say it again.
+        let document = single_message(
+            &message(Safety::Ordinary),
+            &MessageBody::Plain("Body".into()),
+        );
+
+        assert!(
+            !read_whole(&document).contains("heading level 1"),
+            "{}",
+            read_whole(&document)
+        );
+    }
+
+    #[test]
+    fn test_a_message_that_warns_says_so_before_anything_else() {
+        // Somebody listening to a message read aloud has not seen the bar. If
+        // the warning comes after the body it comes after they have read it.
+        let document = single_message(
+            &message(Safety::Phishing),
+            &MessageBody::Plain("Click here".into()),
+        );
+
+        assert!(
+            read_whole(&document).starts_with("Warning:"),
+            "{}",
+            read_whole(&document)
+        );
     }
 
     #[test]
