@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# The four checks, before the commit rather than after it.
+#
+# Running them by hand and then committing is two steps, and the result of the
+# first can be lost between them. It has been, twice: once when a clippy run
+# reused a build fingerprint and reported clean, and once when the output was
+# piped somewhere and the pipeline's exit status was the pipe's rather than the
+# check's. Both put a commit on the branch that CI then failed. This closes the
+# gap by making the commit itself the thing that runs them.
+#
+# Turned on by `git config core.hooksPath .githooks`, which `scripts/check.sh`
+# offers the first time it is run.
+#
+# To commit without it, for a work in progress on a branch nobody builds:
+#
+#   git commit --no-verify
+#
+# Not for main.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+exec "$root/scripts/check.sh"

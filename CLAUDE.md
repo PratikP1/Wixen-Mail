@@ -106,6 +106,21 @@ follows a build can be treated as fresh and report success without linting
 anything. That has already put a clippy failure on `main` after a local run
 reported clean. The script touches `src/lib.rs` first to force the work.
 
+Better, run them on every commit, so the answer cannot be lost between getting
+it and committing:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+That has gone wrong twice now: the stale fingerprint above, and once when the
+script's output was piped elsewhere so the shell read the pipe's exit status
+rather than the script's, and the commit went through against an unformatted
+tree. Never pipe `check.sh` into anything you then test the result of. With the
+hook on, the commit itself runs them and a failure stops it. `--no-verify`
+skips it, which is for a work in progress on a branch nobody builds, not for
+`main`.
+
 Never silence a lint with `#[allow(...)]` to get a commit through. Fix the code, or if the lint is
 genuinely wrong for this case, add the allow with a comment saying why.
 

@@ -7,6 +7,16 @@
 # already put a clippy failure on main once.
 set -euo pipefail
 
+# Offer to run these on every commit, so the answer cannot be lost between
+# getting it and committing. It has been twice: a stale fingerprint reporting
+# clean, and this script's output piped somewhere so the pipeline's exit status
+# was the pipe's rather than this script's.
+if [ "$(git config core.hooksPath || true)" != ".githooks" ]; then
+  echo "Not running on commit. To turn that on:"
+  echo "    git config core.hooksPath .githooks"
+  echo
+fi
+
 touch src/lib.rs
 
 echo "== rustfmt =="
