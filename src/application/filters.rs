@@ -541,6 +541,54 @@ mod tests {
     }
 
     #[test]
+    fn test_a_rule_can_name_any_field_the_engine_claims_to_know() {
+        // Found by mutation testing: deleting the arms for "from", "to",
+        // "date" and "message_id" changed nothing any test could see, so four
+        // of the fields a rule may name had never been matched against. "From"
+        // is the field most rules are written on.
+        let mut message = message_with_subject("Quarterly report");
+        message.from_addr = "billing@example.com".into();
+        message.to_addr = "accounts@example.com".into();
+        message.date = "2026-07-31T09:00:00+00:00".into();
+        message.message_id = "inv-4021@example.com".into();
+        message.cc = Some("audit@example.com".into());
+        message.body_plain = Some("The invoice is attached.".into());
+
+        for (field, pattern) in [
+            ("subject", "Quarterly"),
+            ("from", "billing@"),
+            ("to", "accounts@"),
+            ("cc", "audit@"),
+            ("date", "2026-07-31"),
+            ("message_id", "inv-4021"),
+            ("body_plain", "invoice"),
+            ("read", "false"),
+            ("starred", "false"),
+            ("deleted", "false"),
+        ] {
+            let mut named = rule("contains", pattern, false);
+            named.field = field.into();
+            assert!(
+                FilterEngine::matches(&named, &message),
+                "a rule on {field} looking for {pattern} did not match"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_rule_on_one_field_does_not_match_another_fields_text() {
+        // The other half. Without it, an arm reading the wrong field would
+        // pass the test above whenever both happened to hold the pattern.
+        let mut message = message_with_subject("Quarterly report");
+        message.from_addr = "billing@example.com".into();
+
+        let mut on_from = rule("contains", "Quarterly", false);
+        on_from.field = "from".into();
+
+        assert!(!FilterEngine::matches(&on_from, &message));
+    }
+
+    #[test]
     fn test_a_message_matching_nothing_has_nothing_done_to_it() {
         assert!(settle(&[]).is_nothing());
     }
