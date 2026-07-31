@@ -104,16 +104,37 @@ pub trait ReadAloud {
     /// The identity used to tell one row from the next.
     fn read_id(&self) -> String;
     /// A line.
-    fn read_short(&self) -> String;
+    fn read_short(&self, out: Reading) -> String;
     /// Everything the record holds.
-    fn read_full(&self) -> String;
+    fn read_full(&self, out: Reading) -> String;
 
     /// The text for a depth.
-    fn read(&self, depth: Depth) -> String {
+    fn read(&self, depth: Depth, out: Reading) -> String {
         match depth {
-            Depth::Short => self.read_short(),
-            Depth::Full => self.read_full(),
+            Depth::Short => self.read_short(out),
+            Depth::Full => self.read_full(out),
         }
+    }
+}
+
+/// What a reading needs to know beyond the item itself.
+///
+/// One value rather than two parameters on every method of the trait, so the
+/// next thing a reading depends on does not mean touching six implementations
+/// again.
+///
+/// `now` is carried rather than asked for inside, because a reading is one
+/// utterance and every date in it should be measured from the same instant.
+#[derive(Debug, Clone, Copy)]
+pub struct Reading {
+    pub dates: crate::presentation::date_display::DateSettings,
+    pub now: chrono::DateTime<chrono::Local>,
+}
+
+impl Reading {
+    /// One stored date, written the way this reader asked for it.
+    fn date(&self, stored: &str) -> String {
+        crate::presentation::date_display::spoken(stored, self.now, self.dates)
     }
 }
 
@@ -141,7 +162,7 @@ impl ReadAloud for MessageItem {
         self.message_id.to_string()
     }
 
-    fn read_short(&self) -> String {
+    fn read_short(&self, _out: Reading) -> String {
         let subject = if self.subject.trim().is_empty() {
             "No subject"
         } else {
@@ -150,7 +171,7 @@ impl ReadAloud for MessageItem {
         spoken(&[("", subject), ("From", &self.from), ("", &self.snippet)])
     }
 
-    fn read_full(&self) -> String {
+    fn read_full(&self, out: Reading) -> String {
         let attachments = if self.has_attachments {
             format!("{} attachments", self.attachments.len().max(1))
         } else {
@@ -177,7 +198,7 @@ impl ReadAloud for MessageItem {
             ("From", &self.from),
             ("To", &self.to),
             ("Cc", &self.cc),
-            ("Received", &self.date),
+            ("Received", &out.date(&self.date)),
             ("", &flags),
             ("", &attachments),
             ("", &self.snippet),
@@ -190,11 +211,11 @@ impl ReadAloud for ContactItem {
         self.id.clone()
     }
 
-    fn read_short(&self) -> String {
+    fn read_short(&self, _out: Reading) -> String {
         spoken(&[("", &self.name), ("", &self.email)])
     }
 
-    fn read_full(&self) -> String {
+    fn read_full(&self, _out: Reading) -> String {
         spoken(&[
             ("", &self.name),
             ("Email", &self.email),
@@ -210,15 +231,15 @@ impl ReadAloud for NoteItem {
         self.id.clone()
     }
 
-    fn read_short(&self) -> String {
+    fn read_short(&self, _out: Reading) -> String {
         spoken(&[("", &self.title), ("", &self.body_preview)])
     }
 
-    fn read_full(&self) -> String {
+    fn read_full(&self, out: Reading) -> String {
         spoken(&[
             ("", &self.title),
             ("", if self.pinned { "Pinned" } else { "" }),
-            ("Updated", &self.updated_at),
+            ("Updated", &out.date(&self.updated_at)),
             ("", &self.body_preview),
         ])
     }
@@ -229,15 +250,15 @@ impl ReadAloud for TaskItem {
         self.id.clone()
     }
 
-    fn read_short(&self) -> String {
+    fn read_short(&self, out: Reading) -> String {
         spoken(&[
             ("", &self.title),
             ("", if self.is_completed { "done" } else { "" }),
-            ("Due", self.due_date.as_deref().unwrap_or("")),
+            ("Due", &out.date(self.due_date.as_deref().unwrap_or(""))),
         ])
     }
 
-    fn read_full(&self) -> String {
+    fn read_full(&self, out: Reading) -> String {
         spoken(&[
             ("", &self.title),
             (
@@ -249,7 +270,7 @@ impl ReadAloud for TaskItem {
                 },
             ),
             ("Priority", &self.priority),
-            ("Due", self.due_date.as_deref().unwrap_or("")),
+            ("Due", &out.date(self.due_date.as_deref().unwrap_or(""))),
             ("", self.description.as_deref().unwrap_or("")),
         ])
     }
@@ -260,15 +281,15 @@ impl ReadAloud for ReminderItem {
         self.id.clone()
     }
 
-    fn read_short(&self) -> String {
+    fn read_short(&self, out: Reading) -> String {
         spoken(&[
             ("", &self.title),
             ("", if self.is_completed { "done" } else { "" }),
-            ("Due", self.due_datetime.as_deref().unwrap_or("")),
+            ("Due", &out.date(self.due_datetime.as_deref().unwrap_or(""))),
         ])
     }
 
-    fn read_full(&self) -> String {
+    fn read_full(&self, out: Reading) -> String {
         spoken(&[
             ("", &self.title),
             (
@@ -280,7 +301,7 @@ impl ReadAloud for ReminderItem {
                 },
             ),
             ("Priority", &self.priority),
-            ("Due", self.due_datetime.as_deref().unwrap_or("")),
+            ("Due", &out.date(self.due_datetime.as_deref().unwrap_or(""))),
             ("", self.description.as_deref().unwrap_or("")),
         ])
     }
@@ -291,20 +312,20 @@ impl ReadAloud for CalendarEventItem {
         self.id.clone()
     }
 
-    fn read_short(&self) -> String {
+    fn read_short(&self, out: Reading) -> String {
         let when = if self.is_all_day {
-            format!("{}, all day", self.start)
+            format!("{}, all day", out.date(&self.start))
         } else {
-            self.start.clone()
+            out.date(&self.start)
         };
         spoken(&[("", &self.summary), ("", &when)])
     }
 
-    fn read_full(&self) -> String {
+    fn read_full(&self, out: Reading) -> String {
         let when = if self.is_all_day {
-            format!("{}, all day", self.start)
+            format!("{}, all day", out.date(&self.start))
         } else {
-            format!("{} to {}", self.start, self.end)
+            format!("{} to {}", out.date(&self.start), out.date(&self.end))
         };
         spoken(&[
             ("", &self.summary),
@@ -319,6 +340,25 @@ impl ReadAloud for CalendarEventItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Fixed rather than read from the machine, so these read the same
+    /// wherever they run.
+    fn aloud() -> Reading {
+        use crate::presentation::date_display::{Clock, DateOrder, DateStyle, DateWording};
+        use chrono::TimeZone;
+        Reading {
+            dates: crate::presentation::date_display::DateSettings {
+                style: DateStyle::Absolute,
+                order: DateOrder::MonthFirst,
+                wording: DateWording::Verbal,
+                clock: Clock::TwelveHour,
+            },
+            now: chrono::Local
+                .with_ymd_and_hms(2026, 7, 26, 12, 0, 0)
+                .single()
+                .expect("a real moment"),
+        }
+    }
 
     fn message() -> MessageItem {
         MessageItem {
@@ -395,14 +435,14 @@ mod tests {
     #[test]
     fn test_a_short_message_reading_is_subject_sender_snippet() {
         assert_eq!(
-            message().read_short(),
+            message().read_short(aloud()),
             "Quarterly report. From: Ada Lovelace <ada@example.com>. The numbers are attached."
         );
     }
 
     #[test]
     fn test_a_full_message_reading_carries_what_the_columns_hide() {
-        let full = message().read_full();
+        let full = message().read_full(aloud());
         assert!(full.contains("To: me@example.com"));
         assert!(full.contains("unread, flagged"));
         assert!(full.contains("attachments"));
@@ -417,8 +457,8 @@ mod tests {
         // that failed to load.
         let mut m = message();
         m.subject = "   ".to_string();
-        assert!(m.read_short().starts_with("No subject"));
-        assert!(m.read_full().starts_with("No subject"));
+        assert!(m.read_short(aloud()).starts_with("No subject"));
+        assert!(m.read_full(aloud()).starts_with("No subject"));
     }
 
     #[test]
@@ -484,7 +524,7 @@ mod tests {
         ];
         for (what, reader) in readers {
             for depth in [Depth::Short, Depth::Full] {
-                let text = reader.read(depth);
+                let text = reader.read(depth, aloud());
                 assert!(
                     !text.trim().is_empty(),
                     "{} read nothing at {:?}",
@@ -518,7 +558,11 @@ mod tests {
             calendar_name: None,
             calendar_color: None,
         };
-        assert!(event.read_full().contains("all day"));
-        assert!(!event.read_full().contains("2026-08-31 to 2026-08-31"));
+        assert!(event.read_full(aloud()).contains("all day"));
+        assert!(
+            !event
+                .read_full(aloud())
+                .contains("2026-08-31 to 2026-08-31")
+        );
     }
 }

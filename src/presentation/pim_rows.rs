@@ -16,7 +16,21 @@
 //! on its own. The headings are not reliably announced, so a cell saying "Yes"
 //! is a word with nothing attached to it: it has to say "Done".
 
+use super::date_display::{DateSettings, spoken};
 use super::ui_types::{CalendarEventItem, ContactItem, NoteItem, ReminderItem, TaskItem};
+
+/// One stored date, written the way this reader asked for it.
+///
+/// Every date in every one of these lists goes through here. They used to print
+/// the column, so a task due "2026-07-30" was read out as a run of digits while
+/// the mail list beside it said "July 30, 2026".
+///
+/// `now` is passed in rather than read, because the paint callback runs for
+/// every visible cell and asking the clock per cell is work done thousands of
+/// times for an answer that does not change within a repaint.
+fn date(stored: &str, dates: DateSettings, now: chrono::DateTime<chrono::Local>) -> String {
+    spoken(stored, now, dates)
+}
 
 /// Shown in a cell whose row is not loaded.
 pub const PLACEHOLDER: &str = "Loading";
@@ -33,13 +47,18 @@ pub fn contact_cell(contact: &ContactItem, column: i32) -> String {
 }
 
 /// Calendar: time, summary, calendar, location, status.
-pub fn event_cell(event: &CalendarEventItem, column: i32) -> String {
+pub fn event_cell(
+    event: &CalendarEventItem,
+    column: i32,
+    dates: DateSettings,
+    now: chrono::DateTime<chrono::Local>,
+) -> String {
     match column {
         0 => {
             if event.is_all_day {
                 "All day".to_string()
             } else {
-                event.start.clone()
+                date(&event.start, dates, now)
             }
         }
         1 => non_empty(&event.summary, "No title"),
@@ -51,29 +70,48 @@ pub fn event_cell(event: &CalendarEventItem, column: i32) -> String {
 }
 
 /// Reminders: done, title, due, priority.
-pub fn reminder_cell(reminder: &ReminderItem, column: i32) -> String {
+pub fn reminder_cell(
+    reminder: &ReminderItem,
+    column: i32,
+    dates: DateSettings,
+    now: chrono::DateTime<chrono::Local>,
+) -> String {
     match column {
         0 => flag(reminder.is_completed, "Done"),
         1 => non_empty(&reminder.title, "No title"),
-        2 => reminder.due_datetime.clone().unwrap_or_default(),
+        2 => date(
+            reminder.due_datetime.as_deref().unwrap_or_default(),
+            dates,
+            now,
+        ),
         3 => reminder.priority.clone(),
         _ => String::new(),
     }
 }
 
 /// Tasks: done, title, due, priority.
-pub fn task_cell(task: &TaskItem, column: i32) -> String {
+pub fn task_cell(
+    task: &TaskItem,
+    column: i32,
+    dates: DateSettings,
+    now: chrono::DateTime<chrono::Local>,
+) -> String {
     match column {
         0 => flag(task.is_completed, "Done"),
         1 => non_empty(&task.title, "No title"),
-        2 => task.due_date.clone().unwrap_or_default(),
+        2 => date(task.due_date.as_deref().unwrap_or_default(), dates, now),
         3 => task.priority.clone(),
         _ => String::new(),
     }
 }
 
 /// Notes: title, last modified.
-pub fn note_cell(note: &NoteItem, column: i32) -> String {
+pub fn note_cell(
+    note: &NoteItem,
+    column: i32,
+    dates: DateSettings,
+    now: chrono::DateTime<chrono::Local>,
+) -> String {
     match column {
         0 => {
             let title = non_empty(&note.title, "Untitled");
@@ -86,7 +124,7 @@ pub fn note_cell(note: &NoteItem, column: i32) -> String {
                 title
             }
         }
-        1 => note.updated_at.clone(),
+        1 => date(&note.updated_at, dates, now),
         _ => String::new(),
     }
 }
@@ -115,6 +153,25 @@ fn non_empty(value: &str, fallback: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Fixed rather than read from the machine, so these read the same
+    /// wherever they run.
+    fn at_a_desk() -> DateSettings {
+        DateSettings {
+            style: crate::presentation::date_display::DateStyle::Absolute,
+            order: crate::presentation::date_display::DateOrder::MonthFirst,
+            wording: crate::presentation::date_display::DateWording::Verbal,
+            clock: crate::presentation::date_display::Clock::TwelveHour,
+        }
+    }
+
+    fn midday() -> chrono::DateTime<chrono::Local> {
+        use chrono::TimeZone;
+        chrono::Local
+            .with_ymd_and_hms(2026, 7, 26, 12, 0, 0)
+            .single()
+            .expect("a real moment")
+    }
 
     fn contact() -> ContactItem {
         ContactItem {
@@ -182,8 +239,8 @@ mod tests {
     fn test_a_done_cell_says_done_rather_than_yes() {
         // The heading is not reliably announced, so "Yes" is a word with
         // nothing attached to it.
-        assert_eq!(reminder_cell(&reminder(), 0), "Done");
-        assert_eq!(task_cell(&task(), 0), "");
+        assert_eq!(reminder_cell(&reminder(), 0, at_a_desk(), midday()), "Done");
+        assert_eq!(task_cell(&task(), 0, at_a_desk(), midday()), "");
     }
 
     #[test]
@@ -196,41 +253,53 @@ mod tests {
 
         let mut t = task();
         t.title = String::new();
-        assert_eq!(task_cell(&t, 1), "No title");
+        assert_eq!(task_cell(&t, 1, at_a_desk(), midday()), "No title");
 
         let mut n = note();
         n.title = String::new();
-        assert!(note_cell(&n, 0).ends_with("Untitled"));
+        assert!(note_cell(&n, 0, at_a_desk(), midday()).ends_with("Untitled"));
 
         let mut e = event();
         e.summary = String::new();
-        assert_eq!(event_cell(&e, 1), "No title");
+        assert_eq!(event_cell(&e, 1, at_a_desk(), midday()), "No title");
     }
 
     #[test]
     fn test_an_all_day_event_says_so_instead_of_a_time() {
         let mut e = event();
         e.is_all_day = true;
-        assert_eq!(event_cell(&e, 0), "All day");
-        assert_eq!(event_cell(&event(), 0), "2026-07-27 09:00");
+        assert_eq!(event_cell(&e, 0, at_a_desk(), midday()), "All day");
+        // Not "2026-07-27 09:00", which a screen reader reads as a run of
+        // digits. Every list says a date the way the mail list always did.
+        assert_eq!(
+            event_cell(&event(), 0, at_a_desk(), midday()),
+            "July 27, 2026 at 9:00 AM"
+        );
     }
 
     #[test]
     fn test_a_pin_rides_on_the_title_rather_than_taking_a_column() {
         // A column that is empty on almost every row still costs listening
         // time on all of them.
-        assert_eq!(note_cell(&note(), 0), "Pinned. Shopping");
+        assert_eq!(
+            note_cell(&note(), 0, at_a_desk(), midday()),
+            "Pinned. Shopping"
+        );
         let mut plain = note();
         plain.pinned = false;
-        assert_eq!(note_cell(&plain, 0), "Shopping");
+        assert_eq!(note_cell(&plain, 0, at_a_desk(), midday()), "Shopping");
     }
 
     #[test]
     fn test_a_missing_due_date_is_blank_not_the_word_none() {
         // "None" on every undated row is a syllable per row that carries
         // nothing, and silence already means the same thing.
-        assert_eq!(reminder_cell(&reminder(), 2), "");
-        assert_eq!(task_cell(&task(), 2), "2026-07-30");
+        assert_eq!(reminder_cell(&reminder(), 2, at_a_desk(), midday()), "");
+        // Due on a day, so no midnight is invented for it.
+        assert_eq!(
+            task_cell(&task(), 2, at_a_desk(), midday()),
+            "July 30, 2026"
+        );
     }
 
     #[test]
@@ -241,10 +310,10 @@ mod tests {
         for column in -2..10 {
             for text in [
                 contact_cell(&contact(), column),
-                event_cell(&event(), column),
-                reminder_cell(&reminder(), column),
-                task_cell(&task(), column),
-                note_cell(&note(), column),
+                event_cell(&event(), column, at_a_desk(), midday()),
+                reminder_cell(&reminder(), column, at_a_desk(), midday()),
+                task_cell(&task(), column, at_a_desk(), midday()),
+                note_cell(&note(), column, at_a_desk(), midday()),
             ] {
                 assert!(
                     !text.chars().any(|c| c.is_control()),

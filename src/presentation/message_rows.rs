@@ -9,26 +9,9 @@
 //! to be heard rather than seen. "Unread" beats a bullet, and a date reads as a
 //! date rather than a timestamp.
 
-use super::date_display::{DateOrder, DateStyle, format_for_list};
+use super::date_display::{DateSettings, format_for_list};
 use super::message_columns::MessageColumn;
 use super::ui_types::MessageItem;
-
-/// How dates are being shown, passed in so the cell function stays pure and
-/// the preference is read once rather than per row.
-#[derive(Debug, Clone, Copy)]
-pub struct DateSettings {
-    pub style: DateStyle,
-    pub order: DateOrder,
-}
-
-impl Default for DateSettings {
-    fn default() -> Self {
-        Self {
-            style: DateStyle::RelativeWithinWeek,
-            order: DateOrder::from_system(),
-        }
-    }
-}
 
 /// Shown in a cell whose page has not been loaded yet.
 ///
@@ -70,9 +53,7 @@ pub fn cell_text(
             }
         }
         MessageColumn::Correspondent => display_address(&message.from),
-        MessageColumn::Received | MessageColumn::Sent => {
-            format_for_list(&message.date, now, dates.style, dates.order)
-        }
+        MessageColumn::Received | MessageColumn::Sent => format_for_list(&message.date, now, dates),
         MessageColumn::Snippet => message.snippet.clone(),
         MessageColumn::Thread => thread_cell(message),
         MessageColumn::Size => message.size_bytes.map(size_cell).unwrap_or_default(),

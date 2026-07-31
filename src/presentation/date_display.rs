@@ -29,6 +29,52 @@ pub enum DateStyle {
     RelativeWithinWeek,
 }
 
+/// Whether the month is a word or a number.
+///
+/// Spelled out is easier to hear and longer to read, and which of those matters
+/// depends on the person and on whether they are listening or looking. So it is
+/// a choice, defaulted from the machine rather than decided for everybody.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DateWording {
+    /// 07/26/2026, in whichever order the date is written.
+    Numeric,
+    /// July 26, 2026
+    Verbal,
+}
+
+/// Whether the clock runs to twelve or to twenty-four.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Clock {
+    TwelveHour,
+    TwentyFourHour,
+}
+
+/// Everything that decides how a date is written, in one value.
+///
+/// One value rather than four parameters, because it is threaded through every
+/// list and every reading, and a fifth would otherwise mean touching all of
+/// them. Lives here rather than beside the message list, which is where it
+/// started, because dates are read in six modules and only one of them is mail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DateSettings {
+    pub style: DateStyle,
+    pub order: DateOrder,
+    pub wording: DateWording,
+    pub clock: Clock,
+}
+
+impl Default for DateSettings {
+    /// What the machine already does, so nothing has to be set to get it.
+    fn default() -> Self {
+        Self {
+            style: DateStyle::RelativeWithinWeek,
+            order: DateOrder::from_system(),
+            wording: DateWording::Verbal,
+            clock: Clock::from_system(),
+        }
+    }
+}
+
 const MONTHS: [&str; 12] = [
     "January",
     "February",
@@ -103,48 +149,167 @@ impl DateOrder {
     }
 }
 
+impl DateWording {
+    /// Read the stored preference.
+    pub fn from_setting(value: &str) -> Self {
+        match value {
+            "numeric" => DateWording::Numeric,
+            _ => DateWording::Verbal,
+        }
+    }
+}
+
+impl Clock {
+    /// Read the stored preference.
+    ///
+    /// "auto" follows the machine, so nothing has to be set to get the clock
+    /// the rest of the computer already keeps.
+    pub fn from_setting(value: &str) -> Self {
+        match value {
+            "12" => Clock::TwelveHour,
+            "24" => Clock::TwentyFourHour,
+            _ => Self::from_system(),
+        }
+    }
+
+    /// The clock this machine keeps.
+    #[cfg(target_os = "windows")]
+    pub fn from_system() -> Self {
+        // LOCALE_ITIME: 0 means the twelve hour clock.
+        const LOCALE_USER_DEFAULT: u32 = 0x0400;
+        const LOCALE_ITIME: u32 = 0x00000023;
+
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn GetLocaleInfoW(locale: u32, lctype: u32, data: *mut u16, size: i32) -> i32;
+        }
+
+        let mut buffer = [0u16; 8];
+        let written = unsafe {
+            GetLocaleInfoW(
+                LOCALE_USER_DEFAULT,
+                LOCALE_ITIME,
+                buffer.as_mut_ptr(),
+                buffer.len() as i32,
+            )
+        };
+        // Anything unreadable falls to twelve, which is what this application
+        // did before there was a choice, so an unreadable locale changes
+        // nothing rather than changing every row.
+        if written > 0 && buffer[0] == b'1' as u16 {
+            Clock::TwentyFourHour
+        } else {
+            Clock::TwelveHour
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    pub fn from_system() -> Self {
+        Clock::TwentyFourHour
+    }
+}
+
 /// Format a stored timestamp for a list cell.
 ///
 /// Anything that cannot be parsed is returned unchanged. A date that is not
 /// understood is still better shown as it was stored than replaced with a
 /// guess or an empty cell.
-pub fn format_for_list(
-    stored: &str,
-    now: DateTime<Local>,
-    style: DateStyle,
-    order: DateOrder,
-) -> String {
+pub fn format_for_list(stored: &str, now: DateTime<Local>, settings: DateSettings) -> String {
     let Some(when) = parse(stored) else {
         return stored.to_string();
     };
 
-    if style == DateStyle::RelativeWithinWeek
+    if settings.style == DateStyle::RelativeWithinWeek
         && let Some(relative) = relative_to(when, now)
     {
         return relative;
     }
-    absolute(when, order)
+    absolute(when, settings)
 }
 
-/// The full date and time, spelled out.
-pub fn absolute(when: DateTime<Local>, order: DateOrder) -> String {
-    let month = MONTHS[(when.month() - 1) as usize];
-    let date = match order {
-        DateOrder::MonthFirst => format!("{} {}, {}", month, when.day(), when.year()),
-        DateOrder::DayFirst => format!("{} {} {}", when.day(), month, when.year()),
+/// One stored date, written the way this reader asked for it.
+///
+/// The one function everything outside the mail list calls. Before it, the mail
+/// list read a date properly and every other module printed the column, so a
+/// task due "2026-07-30" was read out as a run of digits, in the place where a
+/// date matters most.
+///
+/// A date stored without a time keeps it that way. A task due on a day is due
+/// on that day, and "at 12:00 AM" is a claim the stored value never made, heard
+/// on every row.
+///
+/// Nothing stored is nothing said, rather than the word "none" or today's date.
+pub fn spoken(stored: &str, now: DateTime<Local>, settings: DateSettings) -> String {
+    if stored.trim().is_empty() {
+        return String::new();
+    }
+    let Some(when) = parse(stored) else {
+        return stored.to_string();
     };
-    format!("{} at {}", date, clock(when))
+    if settings.style == DateStyle::RelativeWithinWeek
+        && let Some(relative) = relative_to(when, now)
+    {
+        return relative;
+    }
+    if stored_carries_a_time(stored) {
+        absolute(when, settings)
+    } else {
+        date_part(when, settings)
+    }
 }
 
-/// A twelve hour clock reading, without a leading zero on the hour.
-fn clock(when: DateTime<Local>) -> String {
-    let (is_pm, hour) = when.hour12();
-    format!(
-        "{}:{:02} {}",
-        hour,
-        when.minute(),
-        if is_pm { "PM" } else { "AM" }
-    )
+/// The full date and time.
+pub fn absolute(when: DateTime<Local>, settings: DateSettings) -> String {
+    format!("{} at {}", date_part(when, settings), clock(when, settings))
+}
+
+/// The date, without the time.
+fn date_part(when: DateTime<Local>, settings: DateSettings) -> String {
+    let month = MONTHS[(when.month() - 1) as usize];
+    match (settings.wording, settings.order) {
+        (DateWording::Verbal, DateOrder::MonthFirst) => {
+            format!("{} {}, {}", month, when.day(), when.year())
+        }
+        (DateWording::Verbal, DateOrder::DayFirst) => {
+            format!("{} {} {}", when.day(), month, when.year())
+        }
+        // Padded, because an unpadded numeric date is harder to scan in a
+        // column and no shorter to hear.
+        (DateWording::Numeric, DateOrder::MonthFirst) => {
+            format!("{:02}/{:02}/{}", when.month(), when.day(), when.year())
+        }
+        (DateWording::Numeric, DateOrder::DayFirst) => {
+            format!("{:02}/{:02}/{}", when.day(), when.month(), when.year())
+        }
+    }
+}
+
+/// The clock reading, on whichever clock this reader keeps.
+fn clock(when: DateTime<Local>, settings: DateSettings) -> String {
+    match settings.clock {
+        // No leading zero on the hour: "09:07 AM" is a zero read out for
+        // nothing, on every row.
+        Clock::TwelveHour => {
+            let (is_pm, hour) = when.hour12();
+            format!(
+                "{}:{:02} {}",
+                hour,
+                when.minute(),
+                if is_pm { "PM" } else { "AM" }
+            )
+        }
+        // Padded, because that is how a twenty-four hour clock is written.
+        Clock::TwentyFourHour => format!("{:02}:{:02}", when.hour(), when.minute()),
+    }
+}
+
+/// Whether the stored value said anything about the time of day.
+///
+/// By what is written rather than by what it parsed to, because everything
+/// parses to a moment: a date alone becomes midnight, and once it has, midnight
+/// is indistinguishable from something genuinely due at midnight.
+fn stored_carries_a_time(stored: &str) -> bool {
+    stored.contains(':')
 }
 
 /// How long ago, if that is within the last week.
@@ -221,10 +386,110 @@ mod tests {
         parse(text).expect("test timestamp should parse")
     }
 
+    /// Fixed rather than [`DateSettings::default`], which asks the machine, so
+    /// these read the same on every machine they run on.
+    fn settings() -> DateSettings {
+        DateSettings {
+            style: DateStyle::Absolute,
+            order: DateOrder::MonthFirst,
+            wording: DateWording::Verbal,
+            clock: Clock::TwelveHour,
+        }
+    }
+
+    #[test]
+    fn test_the_words_can_be_had_as_numbers_instead() {
+        // Spelled out is easier to hear and longer to read. Which is better
+        // depends on the person and on whether they are listening or looking,
+        // so it is a choice rather than a decision made for everybody.
+        let numeric = DateSettings {
+            wording: DateWording::Numeric,
+            ..settings()
+        };
+
+        assert_eq!(
+            absolute(at("2026-07-26 14:30"), numeric),
+            "07/26/2026 at 2:30 PM"
+        );
+        assert_eq!(
+            absolute(
+                at("2026-07-26 14:30"),
+                DateSettings {
+                    order: DateOrder::DayFirst,
+                    ..numeric
+                }
+            ),
+            "26/07/2026 at 2:30 PM"
+        );
+    }
+
+    #[test]
+    fn test_the_clock_can_run_to_twenty_four() {
+        // Most of the world writes 14:30, and reading it back as "2:30 PM" to
+        // somebody who wrote 14:30 is the application arguing with them.
+        let day = DateSettings {
+            clock: Clock::TwentyFourHour,
+            ..settings()
+        };
+
+        assert_eq!(
+            absolute(at("2026-07-26 14:30"), day),
+            "July 26, 2026 at 14:30"
+        );
+        assert_eq!(
+            absolute(at("2026-07-26 00:05"), day),
+            "July 26, 2026 at 00:05"
+        );
+    }
+
+    #[test]
+    fn test_the_defaults_come_from_the_machine() {
+        // Nobody should have to set this to get what the rest of their computer
+        // already does. Whatever it answers has to be one of the two.
+        let clock = Clock::from_setting("auto");
+        assert!(clock == Clock::TwelveHour || clock == Clock::TwentyFourHour);
+
+        assert_eq!(Clock::from_setting("24"), Clock::TwentyFourHour);
+        assert_eq!(Clock::from_setting("12"), Clock::TwelveHour);
+        assert_eq!(DateWording::from_setting("numeric"), DateWording::Numeric);
+        assert_eq!(DateWording::from_setting("verbal"), DateWording::Verbal);
+        // Anything else falls back rather than refusing to show a date.
+        assert_eq!(DateWording::from_setting("nonsense"), DateWording::Verbal);
+    }
+
+    #[test]
+    fn test_one_stored_date_is_spoken_the_same_way_wherever_it_appears() {
+        // The mail list read a date properly and everything else printed what
+        // was in the column, so a task due "2026-07-30" was read as a run of
+        // digits. One function, so a date sounds the same in every module.
+        let now = at("2026-07-26 12:00");
+
+        assert_eq!(spoken("2026-07-30", now, settings()), "July 30, 2026");
+        assert_eq!(
+            spoken("2026-07-30 09:15", now, settings()),
+            "July 30, 2026 at 9:15 AM"
+        );
+    }
+
+    #[test]
+    fn test_a_date_with_no_time_does_not_gain_a_midnight() {
+        // A task due on a day is due on that day. "at 12:00 AM" is a claim the
+        // stored value never made, and it is heard on every row.
+        assert!(!spoken("2026-07-30", at("2026-07-26 12:00"), settings()).contains("AM"));
+    }
+
+    #[test]
+    fn test_nothing_stored_is_nothing_said() {
+        // An empty due date is blank, not the word "none" and not today's date.
+        for stored in ["", "   "] {
+            assert_eq!(spoken(stored, at("2026-07-26 12:00"), settings()), "");
+        }
+    }
+
     #[test]
     fn test_month_first_order() {
         assert_eq!(
-            absolute(at("2026-07-26 14:30"), DateOrder::MonthFirst),
+            absolute(at("2026-07-26 14:30"), settings()),
             "July 26, 2026 at 2:30 PM"
         );
     }
@@ -232,7 +497,13 @@ mod tests {
     #[test]
     fn test_day_first_order() {
         assert_eq!(
-            absolute(at("2026-07-26 14:30"), DateOrder::DayFirst),
+            absolute(
+                at("2026-07-26 14:30"),
+                DateSettings {
+                    order: DateOrder::DayFirst,
+                    ..settings()
+                }
+            ),
             "26 July 2026 at 2:30 PM"
         );
     }
@@ -240,9 +511,9 @@ mod tests {
     #[test]
     fn test_morning_and_midnight_and_noon() {
         // The three that a twelve hour clock gets wrong when hand rolled.
-        assert!(absolute(at("2026-07-26 00:05"), DateOrder::MonthFirst).ends_with("12:05 AM"));
-        assert!(absolute(at("2026-07-26 12:00"), DateOrder::MonthFirst).ends_with("12:00 PM"));
-        assert!(absolute(at("2026-07-26 09:07"), DateOrder::MonthFirst).ends_with("9:07 AM"));
+        assert!(absolute(at("2026-07-26 00:05"), settings()).ends_with("12:05 AM"));
+        assert!(absolute(at("2026-07-26 12:00"), settings()).ends_with("12:00 PM"));
+        assert!(absolute(at("2026-07-26 09:07"), settings()).ends_with("9:07 AM"));
     }
 
     #[test]
@@ -263,8 +534,10 @@ mod tests {
                 format_for_list(
                     stored,
                     now,
-                    DateStyle::RelativeWithinWeek,
-                    DateOrder::MonthFirst
+                    DateSettings {
+                        style: DateStyle::RelativeWithinWeek,
+                        ..settings()
+                    }
                 ),
                 expected,
                 "for {}",
@@ -279,8 +552,10 @@ mod tests {
         let shown = format_for_list(
             "2026-07-18 12:00",
             now,
-            DateStyle::RelativeWithinWeek,
-            DateOrder::MonthFirst,
+            DateSettings {
+                style: DateStyle::RelativeWithinWeek,
+                ..settings()
+            },
         );
         assert_eq!(shown, "July 18, 2026 at 12:00 PM");
     }
@@ -293,8 +568,10 @@ mod tests {
         let shown = format_for_list(
             "2026-07-29 12:00",
             now,
-            DateStyle::RelativeWithinWeek,
-            DateOrder::MonthFirst,
+            DateSettings {
+                style: DateStyle::RelativeWithinWeek,
+                ..settings()
+            },
         );
         assert_eq!(shown, "July 29, 2026 at 12:00 PM");
     }
@@ -302,12 +579,7 @@ mod tests {
     #[test]
     fn test_absolute_style_never_goes_relative() {
         let now = at("2026-07-26 12:00");
-        let shown = format_for_list(
-            "2026-07-26 11:00",
-            now,
-            DateStyle::Absolute,
-            DateOrder::MonthFirst,
-        );
+        let shown = format_for_list("2026-07-26 11:00", now, settings());
         assert_eq!(shown, "July 26, 2026 at 11:00 AM");
     }
 
@@ -331,8 +603,10 @@ mod tests {
                 format_for_list(
                     stored,
                     now,
-                    DateStyle::RelativeWithinWeek,
-                    DateOrder::MonthFirst
+                    DateSettings {
+                        style: DateStyle::RelativeWithinWeek,
+                        ..settings()
+                    }
                 ),
                 stored
             );

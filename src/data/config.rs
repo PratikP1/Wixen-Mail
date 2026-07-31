@@ -124,6 +124,19 @@ pub struct AppConfig {
     /// Day and month order: "auto", "month_first", or "day_first".
     #[serde(default = "default_date_order")]
     pub date_order: String,
+    /// Whether the month is a word or a number: "verbal" or "numeric".
+    ///
+    /// Spelled out is easier to hear and longer to read, and which of those
+    /// matters depends on the person and on whether they are listening or
+    /// looking at it.
+    #[serde(default = "default_date_wording")]
+    pub date_wording: String,
+    /// Whether the clock runs to twelve or twenty-four: "auto", "12", or "24".
+    ///
+    /// "auto" follows the machine, so nothing has to be set here to get the
+    /// clock the rest of the computer already keeps.
+    #[serde(default = "default_clock_hours")]
+    pub clock_hours: String,
     /// Whether message text is read aloud.
     ///
     /// Kept across restarts because someone who works in a shared room needs
@@ -195,6 +208,14 @@ fn default_date_style() -> String {
     "relative".to_string()
 }
 
+fn default_date_wording() -> String {
+    "verbal".to_string()
+}
+
+fn default_clock_hours() -> String {
+    "auto".to_string()
+}
+
 fn default_date_order() -> String {
     "auto".to_string()
 }
@@ -221,6 +242,8 @@ impl Default for AppConfig {
             font_size: 12,
             date_style: default_date_style(),
             date_order: default_date_order(),
+            date_wording: default_date_wording(),
+            clock_hours: default_clock_hours(),
             mute_message_reading: false,
             default_account_id: String::new(),
             draft_autosave_minutes: default_autosave_minutes(),

@@ -45,6 +45,10 @@ struct SettingsWidgets {
     sort_order: Choice,
     read_receipts: Choice,
     read_messages_as: Choice,
+    date_style: Choice,
+    date_order: Choice,
+    date_wording: Choice,
+    clock_hours: Choice,
     // Language
     language: Choice,
     check_spelling_before_send: CheckBox,
@@ -102,7 +106,15 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 
     // ── Tab 3: Reading
     let reading_panel = Panel::builder(&notebook).build();
-    let (sort_order, read_receipts, read_messages_as) = build_reading_tab(&reading_panel, config);
+    let (
+        sort_order,
+        read_receipts,
+        read_messages_as,
+        date_style,
+        date_order,
+        date_wording,
+        clock_hours,
+    ) = build_reading_tab(&reading_panel, config);
     notebook.add_page(&reading_panel, "Reading", false, None);
 
     // ── Tab 4: Language & Spelling
@@ -170,6 +182,10 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         sort_order,
         read_receipts,
         read_messages_as,
+        date_style,
+        date_order,
+        date_wording,
+        clock_hours,
         language,
         check_spelling_before_send,
         check_spelling_as_you_type,
@@ -349,7 +365,11 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, SpinCtrl) 
 }
 
 /// Reading settings: sort order, mark-as-read, threading.
-fn build_reading_tab(panel: &Panel, config: &AppConfig) -> (Choice, Choice, Choice) {
+#[allow(clippy::type_complexity)]
+fn build_reading_tab(
+    panel: &Panel,
+    config: &AppConfig,
+) -> (Choice, Choice, Choice, Choice, Choice, Choice, Choice) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Message List
@@ -516,8 +536,106 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> (Choice, Choice, Choi
 
     sizer.add_sizer(&read_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
+    // -- Dates and times
+    //
+    // Read in every module, and until now settable in none of them: the values
+    // were in the settings file with nothing that could change them. What a
+    // date sounds like is not a detail to somebody who hears every one of them.
+    let date_sec = section(panel, "Dates and Times");
+
+    let date_style = labelled_choice(
+        panel,
+        &date_sec,
+        "How much of a date to say:",
+        "How much of a date to say",
+        &["Relative within the last week", "Always the full date"],
+        match config.date_style.as_str() {
+            "absolute" => 1,
+            _ => 0,
+        },
+    );
+    let date_order = labelled_choice(
+        panel,
+        &date_sec,
+        "Day and month order:",
+        "Day and month order",
+        &[
+            "Follow this computer",
+            "Month first, July 26",
+            "Day first, 26 July",
+        ],
+        match config.date_order.as_str() {
+            "month_first" => 1,
+            "day_first" => 2,
+            _ => 0,
+        },
+    );
+    let date_wording = labelled_choice(
+        panel,
+        &date_sec,
+        "Write the month as:",
+        "Write the month as",
+        &["A word, July 26, 2026", "A number, 07/26/2026"],
+        match config.date_wording.as_str() {
+            "numeric" => 1,
+            _ => 0,
+        },
+    );
+    let clock_hours = labelled_choice(
+        panel,
+        &date_sec,
+        "Clock:",
+        "Clock",
+        &[
+            "Follow this computer",
+            "Twelve hour, 2:30 PM",
+            "Twenty-four hour, 14:30",
+        ],
+        match config.clock_hours.as_str() {
+            "12" => 1,
+            "24" => 2,
+            _ => 0,
+        },
+    );
+
+    sizer.add_sizer(&date_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
     panel.set_sizer(sizer, true);
-    (sort_choice, receipt_choice, style_choice)
+    (
+        sort_choice,
+        receipt_choice,
+        style_choice,
+        date_style,
+        date_order,
+        date_wording,
+        clock_hours,
+    )
+}
+
+/// A choice with a label beside it, added to a section.
+///
+/// Four of these in a row is four copies of the same nine lines, and the copy
+/// that gets the accessible name wrong is the one nobody notices until somebody
+/// meets a control that announces nothing.
+fn labelled_choice(
+    panel: &Panel,
+    section: &StaticBoxSizer,
+    label: &str,
+    spoken: &str,
+    choices: &[&str],
+    selected: u32,
+) -> Choice {
+    let row = BoxSizer::builder(Orientation::Horizontal).build();
+    let text = StaticText::builder(panel).with_label(label).build();
+    let choice = Choice::builder(panel)
+        .with_choices(choices.iter().map(|c| c.to_string()).collect())
+        .with_selection(Some(selected))
+        .build();
+    set_accessible_name(&choice, spoken);
+    row.add(&text, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+    row.add(&choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+    section.add_sizer(&row, 0, SizerFlag::Expand, 0);
+    choice
 }
 
 /// Language & Spelling: which language to check, and whether to check on send.
@@ -1017,6 +1135,30 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         .unwrap_or_default()
         .as_str()
         .to_string();
+
+    // Dates and times, read in every module.
+    cfg.date_style = match sel(&w.date_style) {
+        1 => "absolute",
+        _ => "relative",
+    }
+    .to_string();
+    cfg.date_order = match sel(&w.date_order) {
+        1 => "month_first",
+        2 => "day_first",
+        _ => "auto",
+    }
+    .to_string();
+    cfg.date_wording = match sel(&w.date_wording) {
+        1 => "numeric",
+        _ => "verbal",
+    }
+    .to_string();
+    cfg.clock_hours = match sel(&w.clock_hours) {
+        1 => "12",
+        2 => "24",
+        _ => "auto",
+    }
+    .to_string();
 
     cfg.read_receipts = Policy::ALL
         .get(sel(&w.read_receipts) as usize)

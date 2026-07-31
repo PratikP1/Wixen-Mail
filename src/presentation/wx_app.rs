@@ -628,11 +628,13 @@ impl WxMailApp {
                 .map(|mgr| mgr.app_config().clone())
                 .ok();
             let date_settings = match &stored_config {
-                Some(cfg) => message_rows::DateSettings {
+                Some(cfg) => date_display::DateSettings {
                     style: date_display::DateStyle::from_setting(&cfg.date_style),
                     order: date_display::DateOrder::from_setting(&cfg.date_order),
+                    wording: date_display::DateWording::from_setting(&cfg.date_wording),
+                    clock: date_display::Clock::from_setting(&cfg.clock_hours),
                 },
-                None => message_rows::DateSettings::default(),
+                None => date_display::DateSettings::default(),
             };
             let column_layout = Rc::new(RefCell::new(
                 match stored_config.as_ref().map(|c| c.message_columns.as_str()) {
@@ -942,18 +944,31 @@ impl WxMailApp {
                         return pim_rows::PLACEHOLDER.to_string();
                     };
                     let row = row as usize;
+                    // Asked once per painted cell rather than held, because a
+                    // date shown as "2 days ago" goes stale where a stored one
+                    // does not, and the paint is the moment it is read.
+                    let now = chrono::Local::now();
                     match name {
                         "contacts" => s
                             .contacts
                             .get(row)
                             .map(|c| pim_rows::contact_cell(c, column)),
-                        "calendar" => s.events.get(row).map(|e| pim_rows::event_cell(e, column)),
+                        "calendar" => s
+                            .events
+                            .get(row)
+                            .map(|e| pim_rows::event_cell(e, column, date_settings, now)),
                         "reminders" => s
                             .reminders
                             .get(row)
-                            .map(|r| pim_rows::reminder_cell(r, column)),
-                        "tasks" => s.tasks.get(row).map(|t| pim_rows::task_cell(t, column)),
-                        _ => s.notes.get(row).map(|n| pim_rows::note_cell(n, column)),
+                            .map(|r| pim_rows::reminder_cell(r, column, date_settings, now)),
+                        "tasks" => s
+                            .tasks
+                            .get(row)
+                            .map(|t| pim_rows::task_cell(t, column, date_settings, now)),
+                        _ => s
+                            .notes
+                            .get(row)
+                            .map(|n| pim_rows::note_cell(n, column, date_settings, now)),
                     }
                     .unwrap_or_else(|| pim_rows::PLACEHOLDER.to_string())
                 });
@@ -1006,7 +1021,11 @@ impl WxMailApp {
                 move |index| {
                     let s = lock_state(&state);
                     let item = s.contacts.get(index)?;
-                    Some((item.read_id(), item.read_short(), item.read_full()))
+                    let out = read_aloud::Reading {
+                        dates: date_settings,
+                        now: chrono::Local::now(),
+                    };
+                    Some((item.read_id(), item.read_short(out), item.read_full(out)))
                 }
             });
             wire_read_aloud(&pim_refs.cal_event_list, &a11y, &space_cycle, "calendar", {
@@ -1014,7 +1033,11 @@ impl WxMailApp {
                 move |index| {
                     let s = lock_state(&state);
                     let item = s.events.get(index)?;
-                    Some((item.read_id(), item.read_short(), item.read_full()))
+                    let out = read_aloud::Reading {
+                        dates: date_settings,
+                        now: chrono::Local::now(),
+                    };
+                    Some((item.read_id(), item.read_short(out), item.read_full(out)))
                 }
             });
             wire_read_aloud(&pim_refs.reminder_list, &a11y, &space_cycle, "reminders", {
@@ -1022,7 +1045,11 @@ impl WxMailApp {
                 move |index| {
                     let s = lock_state(&state);
                     let item = s.reminders.get(index)?;
-                    Some((item.read_id(), item.read_short(), item.read_full()))
+                    let out = read_aloud::Reading {
+                        dates: date_settings,
+                        now: chrono::Local::now(),
+                    };
+                    Some((item.read_id(), item.read_short(out), item.read_full(out)))
                 }
             });
             wire_read_aloud(&pim_refs.task_list, &a11y, &space_cycle, "tasks", {
@@ -1030,7 +1057,11 @@ impl WxMailApp {
                 move |index| {
                     let s = lock_state(&state);
                     let item = s.tasks.get(index)?;
-                    Some((item.read_id(), item.read_short(), item.read_full()))
+                    let out = read_aloud::Reading {
+                        dates: date_settings,
+                        now: chrono::Local::now(),
+                    };
+                    Some((item.read_id(), item.read_short(out), item.read_full(out)))
                 }
             });
             wire_read_aloud(&pim_refs.note_list, &a11y, &space_cycle, "notes", {
@@ -1038,7 +1069,11 @@ impl WxMailApp {
                 move |index| {
                     let s = lock_state(&state);
                     let item = s.notes.get(index)?;
-                    Some((item.read_id(), item.read_short(), item.read_full()))
+                    let out = read_aloud::Reading {
+                        dates: date_settings,
+                        now: chrono::Local::now(),
+                    };
+                    Some((item.read_id(), item.read_short(out), item.read_full(out)))
                 }
             });
 
@@ -1979,10 +2014,14 @@ impl WxMailApp {
                             message_rows::conversation_size(&s.messages, index),
                         )
                     };
+                    let out = read_aloud::Reading {
+                        dates: date_settings,
+                        now: chrono::Local::now(),
+                    };
                     Some((
                         message.read_id(),
-                        read_the_row(&message, in_conversation),
-                        read_the_whole_message(&message_cache, &message, in_conversation),
+                        read_the_row(&message, in_conversation, out),
+                        read_the_whole_message(&message_cache, &message, in_conversation, out),
                     ))
                 }
             });
@@ -3647,10 +3686,17 @@ fn wire_read_aloud<F>(
 /// The row and, when it is one, how big the conversation is. The count comes
 /// first because it changes what the rest of the reading means: three replies
 /// under one subject is a different thing to read than one message.
-fn read_the_row(message: &MessageItem, in_conversation: Option<usize>) -> String {
+fn read_the_row(
+    message: &MessageItem,
+    in_conversation: Option<usize>,
+    out: read_aloud::Reading,
+) -> String {
     match in_conversation {
-        Some(count) => format!("Conversation, {count} messages. {}", message.read_short()),
-        None => message.read_short(),
+        Some(count) => format!(
+            "Conversation, {count} messages. {}",
+            message.read_short(out)
+        ),
+        None => message.read_short(out),
     }
 }
 
@@ -3668,12 +3714,13 @@ fn read_the_whole_message(
     cache: &Option<Arc<MessageCache>>,
     message: &MessageItem,
     in_conversation: Option<usize>,
+    out: read_aloud::Reading,
 ) -> String {
     let Some(body) = cache
         .as_ref()
         .and_then(|c| c.get_message_body(message.message_id).ok().flatten())
     else {
-        return read_the_row(message, in_conversation);
+        return read_the_row(message, in_conversation, out);
     };
     let document = reader_text::single_message(message, &body_as_written(Some(body)));
     match in_conversation {
