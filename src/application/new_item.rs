@@ -277,6 +277,30 @@ pub fn destination(
     }
 }
 
+/// Which account a compose window sends from.
+///
+/// Two different questions that were being answered the same way. Answering
+/// something already in a mailbox comes from that mailbox: replying to a work
+/// message from a personal address is the kind of mistake somebody finds out
+/// about once it has arrived, and the mailbox is the only thing that knows
+/// which account the message came to.
+///
+/// Everything else follows the default account, because that is what setting a
+/// default means. Reading another mailbox is not a decision to write from it.
+///
+/// Each falls back to the other, so somebody with one account and no default
+/// set still gets that account rather than nothing.
+pub fn sends_from<'a>(
+    replying: bool,
+    focused: Option<&'a str>,
+    default: Option<&'a str>,
+) -> Option<&'a str> {
+    if replying {
+        return focused.or(default);
+    }
+    default.or(focused)
+}
+
 /// Which account should be the default, given what is configured.
 ///
 /// The first account somebody sets up becomes the default without being asked,
@@ -386,6 +410,35 @@ mod tests {
         let where_to = destination(ItemKind::Contact, &accounts, Some("a1"));
 
         assert_eq!(where_to, Some(Destination::Account("a1".to_string())));
+    }
+
+    #[test]
+    fn test_a_reply_comes_from_the_mailbox_it_was_read_in() {
+        // Answering a work message from a personal address is a mistake
+        // somebody finds out about after it has arrived. The mailbox being read
+        // is the only thing that knows which account the message came to, so it
+        // wins over the default for a reply.
+        assert_eq!(
+            sends_from(true, Some("work"), Some("personal")),
+            Some("work")
+        );
+    }
+
+    #[test]
+    fn test_a_new_message_comes_from_the_default_account() {
+        // Which is what setting a default means. Browsing another mailbox is
+        // not a decision to write from it.
+        assert_eq!(
+            sends_from(false, Some("work"), Some("personal")),
+            Some("personal")
+        );
+    }
+
+    #[test]
+    fn test_either_will_do_when_only_one_of_them_is_known() {
+        assert_eq!(sends_from(true, None, Some("personal")), Some("personal"));
+        assert_eq!(sends_from(false, Some("work"), None), Some("work"));
+        assert_eq!(sends_from(false, None, None), None);
     }
 
     #[test]

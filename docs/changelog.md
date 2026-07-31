@@ -8,6 +8,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A reply comes from the mailbox you read it in; a new message comes from
+  your default account.** Both used to come from whichever mailbox happened to
+  be open, which is right for a reply and wrong for everything else. Answering
+  a work message from a personal address is a mistake you find out about after
+  it has arrived, and browsing another mailbox is not a decision to write from
+  it. Reopening a draft keeps the sender it already had.
+
 - **Making a new event, reminder, task or note leaves you where you are.** Each
   of them moved you to its own module first, so starting a task while reading
   your mail put you in Tasks and left you to find your way back. The item is

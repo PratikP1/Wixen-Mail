@@ -4655,14 +4655,32 @@ fn open_compose(
     a11y: &Arc<Accessibility>,
     mode: ComposeMode,
 ) {
+    // Answering something comes from the mailbox it was read in; writing
+    // something new comes from the default account. Both used to come from
+    // whichever mailbox happened to be open, which is right for a reply and
+    // wrong for everything else.
+    //
+    // Written out rather than as "everything except New", so that a mode added
+    // later has to be thought about instead of quietly counting as a reply.
+    let replying = match mode {
+        ComposeMode::Reply { .. } | ComposeMode::ReplyAll { .. } | ComposeMode::Forward { .. } => {
+            true
+        }
+        // A draft was written from somewhere once already, and reopening it is
+        // not the moment to change its sender.
+        ComposeMode::New | ComposeMode::Draft(_) => false,
+    };
     let (names, active) = state
         .lock()
         .map(|s| {
             let names: Vec<String> = s.accounts.iter().map(|a| a.email.clone()).collect();
-            let active = s
-                .active_account_id
-                .as_ref()
-                .and_then(|id| s.accounts.iter().position(|a| &a.id == id))
+            let sender = crate::application::new_item::sends_from(
+                replying,
+                s.active_account_id.as_deref(),
+                s.default_account_id.as_deref(),
+            );
+            let active = sender
+                .and_then(|id| s.accounts.iter().position(|a| a.id == id))
                 .unwrap_or(0) as u32;
             (names, active)
         })
