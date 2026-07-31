@@ -143,6 +143,103 @@ fn test_every_handled_command_has_something_that_raises_it() {
     );
 }
 
+/// The same question asked the other way round: does pressing it do anything?
+///
+/// The check above proves every handler can be reached. It says nothing about a
+/// control that can be reached and reaches nothing, which is the more common
+/// mistake and the worse one: a handler nobody can raise is invisible, while a
+/// button that answers no key looks broken to the person pressing it.
+///
+/// Attach File was built, given an id, given a label with a mnemonic, put in a
+/// dialog and listed in a test about id ranges. Nothing anywhere handled it. It
+/// was reported as "add attachments does not work", which is exactly what it
+/// was.
+#[test]
+fn test_every_command_something_raises_is_handled() {
+    let mut handled: Vec<String> = Vec::new();
+    let mut raised: Vec<(PathBuf, String)> = Vec::new();
+
+    for path in sources() {
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        for marker in ["id == ", "r == "] {
+            handled.extend(names_after(&text, marker));
+        }
+        // Bound directly to the control rather than through a command id, which
+        // is just as good a way of making a button do something.
+        // A dialog button is handled by returning its id, which the caller
+        // then matches on. That is a handler, just not an `id ==` arm.
+        handled.extend(names_after(&text, "end_modal("));
+        for marker in ["append_item(", "append_check_item(", "add_tool("] {
+            raised.extend(
+                names_after(&text, marker)
+                    .into_iter()
+                    .map(|name| (path.clone(), name)),
+            );
+        }
+    }
+
+    let mut deaf: Vec<String> = raised
+        .iter()
+        .filter(|(_, name)| !handled.contains(name))
+        .filter(|(_, name)| !is_a_standard_id(name))
+        .map(|(_, name)| name.clone())
+        .collect();
+    deaf.sort();
+    deaf.dedup();
+
+    let unexpected: Vec<&String> = deaf
+        .iter()
+        .filter(|d| !KNOWN_DEAF.contains(&d.as_str()))
+        .collect();
+    assert!(
+        unexpected.is_empty(),
+        "{} commands can be invoked and are handled by nothing:\n  {}\n\nGive each one a \
+         handler, or take the control away. A control that answers no key is worse than \
+         one that is not there, because somebody will press it and conclude the \
+         application is broken.",
+        unexpected.len(),
+        unexpected
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    );
+
+    let fixed: Vec<&&str> = KNOWN_DEAF
+        .iter()
+        .filter(|known| !deaf.contains(&known.to_string()))
+        .collect();
+    assert!(
+        fixed.is_empty(),
+        "these are handled now and should come off KNOWN_DEAF: {fixed:?}"
+    );
+}
+
+/// Commands that can be invoked and do nothing, awaiting a decision.
+///
+/// Same rule as `KNOWN_DEAD`: it shrinks, it does not rot.
+const KNOWN_DEAF: &[&str] = &[
+    // Not a command at all. It is the base of the range the formatting run is
+    // allocated ids from, and the handler matches the whole range rather than
+    // this one number, so it is handled and this test cannot see that.
+    "ID_FORMAT_FIRST",
+    // Reader, Go menu. Moving between messages works, but only from the key:
+    // the movement lives inside the text control's own key handler and the
+    // reader's menu handler does not know about it. So the menu says Ctrl+Down
+    // and choosing the item does nothing, which is worse than the key being
+    // undocumented, because it looks like the feature is broken rather than
+    // hidden.
+    "ID_NEXT_LANDMARK",
+    "ID_PREV_LANDMARK",
+    // Reader, Go menu. There is no find in the reader at all. The menu item and
+    // its Ctrl+F were written for something that was never built.
+    "ID_READER_FIND",
+    // View menu. Nothing handles it, so the item is a no-op.
+    "ID_THREAD_VIEW",
+];
+
 /// Handlers that are known to be unreachable, and are waiting on a decision.
 ///
 /// Empty, and it should stay that way. Eleven were listed here on the day this
