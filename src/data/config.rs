@@ -124,6 +124,25 @@ pub struct AppConfig {
     /// Day and month order: "auto", "month_first", or "day_first".
     #[serde(default = "default_date_order")]
     pub date_order: String,
+    /// How long a message is looked at before it counts as read.
+    ///
+    /// "immediately", "never", or a number of seconds. The settings window has
+    /// offered this since it was written and nothing ever read it back, so the
+    /// answer was always immediately, whatever it said on screen.
+    #[serde(default = "default_mark_read_after")]
+    pub mark_read_after: String,
+    /// Whether the Cc and Bcc lines are in the compose window from the start:
+    /// "shown" or "hidden".
+    #[serde(default = "default_copy_lines")]
+    pub copy_lines: String,
+    /// The hour the working day starts, 0 to 23.
+    ///
+    /// Read by the calendar, which says so when an event falls outside it.
+    #[serde(default = "default_day_starts")]
+    pub working_day_starts: u8,
+    /// The hour the working day ends, 1 to 24. Exclusive: 17 means five.
+    #[serde(default = "default_day_ends")]
+    pub working_day_ends: u8,
     /// Whether the month is a word or a number: "verbal" or "numeric".
     ///
     /// Spelled out is easier to hear and longer to read, and which of those
@@ -198,14 +217,41 @@ fn default_allowed() -> crate::application::allowed::Allowed {
 fn default_true() -> bool {
     true
 }
+/// The language messages are checked in, when nothing has been chosen.
+///
+/// This machine's own, when something here can check it. It was "en" for
+/// everybody, so anybody writing in anything else had every word of it called a
+/// mistake until they found the setting, and finding a setting by hearing every
+/// word marked wrong is not finding it.
+///
+/// English when the machine's language is one nothing can check, because
+/// English checked is better than nothing checked.
 fn default_language() -> String {
-    "en".to_string()
+    crate::service::spellcheck::language_of_this_machine().unwrap_or_else(|| "en".to_string())
 }
 fn default_sort_order() -> String {
     "date_newest".to_string()
 }
 fn default_date_style() -> String {
     "relative".to_string()
+}
+
+fn default_mark_read_after() -> String {
+    crate::application::reading_habits::MarkRead::default().as_stored()
+}
+
+fn default_copy_lines() -> String {
+    crate::application::reading_habits::CopyLines::default()
+        .as_stored()
+        .to_string()
+}
+
+fn default_day_starts() -> u8 {
+    crate::application::reading_habits::WorkingDay::default().starts
+}
+
+fn default_day_ends() -> u8 {
+    crate::application::reading_habits::WorkingDay::default().ends
 }
 
 fn default_date_wording() -> String {
@@ -243,6 +289,10 @@ impl Default for AppConfig {
             date_style: default_date_style(),
             date_order: default_date_order(),
             date_wording: default_date_wording(),
+            mark_read_after: default_mark_read_after(),
+            copy_lines: default_copy_lines(),
+            working_day_starts: default_day_starts(),
+            working_day_ends: default_day_ends(),
             clock_hours: default_clock_hours(),
             mute_message_reading: false,
             default_account_id: String::new(),

@@ -5,6 +5,7 @@
 //! and persisted through `AppConfig` / `ConfigManager`.
 
 use crate::application::autosave::AutosaveInterval;
+use crate::application::reading_habits::{CopyLines, MarkRead, WorkingDay};
 use crate::application::reading_style::Style as ReadingStyle;
 use crate::application::receipts::Policy;
 use crate::data::config::AppConfig;
@@ -49,6 +50,9 @@ struct SettingsWidgets {
     date_order: Choice,
     date_wording: Choice,
     clock_hours: Choice,
+    mark_read_after: Choice,
+    sort_then: Choice,
+    copy_lines: Choice,
     // Language
     language: Choice,
     check_spelling_before_send: CheckBox,
@@ -60,6 +64,8 @@ struct SettingsWidgets {
     cal_show_weekends: CheckBox,
     cal_first_day: Choice,
     default_reminder: TextCtrl,
+    day_starts: Choice,
+    day_ends: Choice,
     // Advanced
     log_level: Choice,
     download_folder: TextCtrl,
@@ -114,6 +120,9 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         date_order,
         date_wording,
         clock_hours,
+        mark_read_after,
+        sort_then,
+        copy_lines,
     ) = build_reading_tab(&reading_panel, config);
     notebook.add_page(&reading_panel, "Reading", false, None);
 
@@ -125,8 +134,14 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 
     // ── Tab 5: Calendar & PIM
     let pim_panel = Panel::builder(&notebook).build();
-    let (cal_default_view, cal_show_weekends, cal_first_day, default_reminder) =
-        build_calendar_pim_tab(&pim_panel, config);
+    let (
+        cal_default_view,
+        cal_show_weekends,
+        cal_first_day,
+        default_reminder,
+        day_starts,
+        day_ends,
+    ) = build_calendar_pim_tab(&pim_panel, config);
     notebook.add_page(&pim_panel, "Calendar && PIM", false, None);
 
     // ── Tab 6: Feedback
@@ -186,6 +201,9 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         date_order,
         date_wording,
         clock_hours,
+        mark_read_after,
+        sort_then,
+        copy_lines,
         language,
         check_spelling_before_send,
         check_spelling_as_you_type,
@@ -195,6 +213,8 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         cal_show_weekends,
         cal_first_day,
         default_reminder,
+        day_starts,
+        day_ends,
         log_level,
         download_folder,
         check_links_with_google,
@@ -369,7 +389,18 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, SpinCtrl) 
 fn build_reading_tab(
     panel: &Panel,
     config: &AppConfig,
-) -> (Choice, Choice, Choice, Choice, Choice, Choice, Choice) {
+) -> (
+    Choice,
+    Choice,
+    Choice,
+    Choice,
+    Choice,
+    Choice,
+    Choice,
+    Choice,
+    Choice,
+    Choice,
+) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Message List
@@ -425,32 +456,27 @@ fn build_reading_tab(
     // -- Reading Behaviour
     let read_sec = section(panel, "Reading Behaviour");
 
-    let markread_row = BoxSizer::builder(Orientation::Horizontal).build();
-    let markread_label = StaticText::builder(panel)
-        .with_label("Mark as read after:")
-        .build();
-    let markread_choices: Vec<String> = [
-        "Immediately",
-        "After 2 seconds",
-        "After 5 seconds",
-        "Manually",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
-    let markread_choice = Choice::builder(panel)
-        .with_choices(markread_choices)
-        .with_selection(Some(0))
-        .build();
-    set_accessible_name(&markread_choice, "Mark as read after");
-    markread_row.add(
-        &markread_label,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
+    // Built from the list rather than from a second copy of the words, and
+    // read back below. It was neither before: four fixed choices, a fixed
+    // selection, and nothing that saved it, so the answer was always
+    // "immediately" whatever it said here.
+    let markread_choice = labelled_choice(
+        panel,
+        &read_sec,
+        "&Mark as read after:",
+        "Mark as read after",
+        &MarkRead::ALL
+            .iter()
+            .map(|c| c.label())
+            .collect::<Vec<_>>()
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        MarkRead::ALL
+            .iter()
+            .position(|c| *c == MarkRead::from_setting(&config.mark_read_after))
+            .unwrap_or(0) as u32,
     );
-    markread_row.add(&markread_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
-    read_sec.add_sizer(&markread_row, 0, SizerFlag::Expand, 0);
 
     // How a message opens. First in this section, because it is the biggest
     // difference between two ways of reading the same mail.
@@ -581,6 +607,25 @@ fn build_reading_tab(
             _ => 0,
         },
     );
+    let sort_then = labelled_choice(
+        panel,
+        &date_sec,
+        "Then &by:",
+        "Then by",
+        &SECOND_LEVEL_LABELS,
+        second_level_index(&config.message_columns),
+    );
+    let copy_lines = labelled_choice(
+        panel,
+        &date_sec,
+        "Cc and Bcc &lines:",
+        "Cc and Bcc lines",
+        &["Always in the compose window", "Only when they are in use"],
+        match CopyLines::from_setting(&config.copy_lines) {
+            CopyLines::Shown => 0,
+            CopyLines::Hidden => 1,
+        },
+    );
     let clock_hours = labelled_choice(
         panel,
         &date_sec,
@@ -609,7 +654,63 @@ fn build_reading_tab(
         date_order,
         date_wording,
         clock_hours,
+        markread_choice,
+        sort_then,
+        copy_lines,
     )
+}
+
+/// What the second level of the sort can be, in the order it is offered.
+///
+/// A short list rather than every column. The question people actually ask of a
+/// mailbox is "among the ones from today, which have I not read", and offering
+/// fifteen columns here would bury it.
+const SECOND_LEVEL_LABELS: [&str; 4] = [
+    "Nothing else",
+    "Unread first",
+    "Sender, A to Z",
+    "Subject, A to Z",
+];
+
+/// The second level a stored layout holds, as a position in that list.
+fn second_level_index(stored: &str) -> u32 {
+    use crate::presentation::message_columns::{ColumnLayout, FolderKind, MessageColumn};
+    let layout = ColumnLayout::from_stored(stored, FolderKind::Inbox);
+    match layout.sort.then.map(|then| then.column) {
+        Some(MessageColumn::Unread) => 1,
+        Some(MessageColumn::Correspondent) => 2,
+        Some(MessageColumn::Subject) => 3,
+        _ => 0,
+    }
+}
+
+/// The second level chosen, put back into the stored layout.
+///
+/// The layout is where the sort lives, so this reads the one that is stored,
+/// changes the one part this control decides, and writes it out again. Writing
+/// a fresh layout instead would throw away the columns somebody arranged, which
+/// for anybody navigating a list by ear is real work.
+fn with_second_level(stored: &str, chosen: u32) -> String {
+    use crate::presentation::message_columns::{
+        By, ColumnLayout, FolderKind, MessageColumn, SortDirection,
+    };
+    let mut layout = ColumnLayout::from_stored(stored, FolderKind::Inbox);
+    layout.sort.then = match chosen {
+        1 => Some(By {
+            column: MessageColumn::Unread,
+            direction: SortDirection::Ascending,
+        }),
+        2 => Some(By {
+            column: MessageColumn::Correspondent,
+            direction: SortDirection::Ascending,
+        }),
+        3 => Some(By {
+            column: MessageColumn::Subject,
+            direction: SortDirection::Ascending,
+        }),
+        _ => None,
+    };
+    layout.to_stored()
 }
 
 /// A choice with a label beside it, added to a section.
@@ -794,7 +895,7 @@ fn build_language_tab(
 fn build_calendar_pim_tab(
     panel: &Panel,
     config: &AppConfig,
-) -> (Choice, CheckBox, Choice, TextCtrl) {
+) -> (Choice, CheckBox, Choice, TextCtrl, Choice, Choice) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Calendar View
@@ -885,9 +986,77 @@ fn build_calendar_pim_tab(
 
     sizer.add_sizer(&rem_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
+    // -- The working day
+    //
+    // The calendar read every hour the same way, so nine in the morning and
+    // three in the morning sounded alike and an event outside the working day
+    // said nothing about itself. A meeting at seven in the evening is a fact
+    // somebody wants to notice.
+    let day_sec = section(panel, "Working Day");
+    let day = WorkingDay::from_setting(config.working_day_starts, config.working_day_ends);
+    let day_starts = labelled_choice(
+        panel,
+        &day_sec,
+        "Starts &at:",
+        "The working day starts at",
+        &HOURS,
+        day.starts as u32,
+    );
+    let day_ends = labelled_choice(
+        panel,
+        &day_sec,
+        "&Ends at:",
+        "The working day ends at",
+        &HOURS,
+        // The list runs from midnight, and the end is the first hour outside
+        // the day, so five in the afternoon is the entry at seventeen.
+        (day.ends as u32).min(HOURS.len() as u32 - 1),
+    );
+    sizer.add_sizer(&day_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
     panel.set_sizer(sizer, true);
-    (view_choice, weekends_cb, first_day_choice, rem_field)
+    (
+        view_choice,
+        weekends_cb,
+        first_day_choice,
+        rem_field,
+        day_starts,
+        day_ends,
+    )
 }
+
+/// Every hour of the day, named rather than numbered.
+///
+/// "Midnight" and "noon" rather than "12 AM" and "12 PM", which are the two
+/// nobody agrees about, and a twenty-four hour reading beside each so the list
+/// reads the same to somebody who keeps either clock.
+const HOURS: [&str; 25] = [
+    "Midnight, 00",
+    "1 AM, 01",
+    "2 AM, 02",
+    "3 AM, 03",
+    "4 AM, 04",
+    "5 AM, 05",
+    "6 AM, 06",
+    "7 AM, 07",
+    "8 AM, 08",
+    "9 AM, 09",
+    "10 AM, 10",
+    "11 AM, 11",
+    "Noon, 12",
+    "1 PM, 13",
+    "2 PM, 14",
+    "3 PM, 15",
+    "4 PM, 16",
+    "5 PM, 17",
+    "6 PM, 18",
+    "7 PM, 19",
+    "8 PM, 20",
+    "9 PM, 21",
+    "10 PM, 22",
+    "11 PM, 23",
+    "Midnight, 24",
+];
 
 /// Advanced: log level, download folder, cache info, link checking.
 fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, CheckBox) {
@@ -1160,6 +1329,19 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     }
     .to_string();
 
+    cfg.mark_read_after = MarkRead::ALL
+        .get(sel(&w.mark_read_after) as usize)
+        .copied()
+        .unwrap_or_default()
+        .as_stored();
+    cfg.copy_lines = match sel(&w.copy_lines) {
+        1 => CopyLines::Hidden,
+        _ => CopyLines::Shown,
+    }
+    .as_stored()
+    .to_string();
+    cfg.message_columns = with_second_level(&base.message_columns, sel(&w.sort_then));
+
     cfg.read_receipts = Policy::ALL
         .get(sel(&w.read_receipts) as usize)
         .copied()
@@ -1191,6 +1373,12 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         2 => 6,
         _ => 0,
     };
+    // Kept through the same check the calendar reads it through, so a day
+    // that ends before it starts never reaches the file.
+    let day = WorkingDay::from_setting(sel(&w.day_starts) as u8, sel(&w.day_ends) as u8);
+    cfg.working_day_starts = day.starts;
+    cfg.working_day_ends = day.ends;
+
     cfg.default_reminder_minutes = w
         .default_reminder
         .get_value()

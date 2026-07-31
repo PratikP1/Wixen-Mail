@@ -16,6 +16,8 @@
 //! on its own. The headings are not reliably announced, so a cell saying "Yes"
 //! is a word with nothing attached to it: it has to say "Done".
 
+use crate::application::reading_habits::WorkingDay;
+
 use super::date_display::{DateSettings, spoken};
 use super::ui_types::{CalendarEventItem, ContactItem, NoteItem, ReminderItem, TaskItem};
 
@@ -30,6 +32,16 @@ use super::ui_types::{CalendarEventItem, ContactItem, NoteItem, ReminderItem, Ta
 /// times for an answer that does not change within a repaint.
 fn date(stored: &str, dates: DateSettings, now: chrono::DateTime<chrono::Local>) -> String {
     spoken(stored, now, dates)
+}
+
+/// The hour of the day a stored time falls in.
+///
+/// Read out of the text rather than parsed into a moment, because that is all
+/// this needs, and because a stored value with no time in it should answer
+/// nothing rather than answering midnight.
+fn hour_of(stored: &str) -> Option<u8> {
+    let (_, time) = stored.trim().split_once([' ', 'T'])?;
+    time.split(':').next()?.parse().ok()
 }
 
 /// Shown in a cell whose row is not loaded.
@@ -52,13 +64,23 @@ pub fn event_cell(
     column: i32,
     dates: DateSettings,
     now: chrono::DateTime<chrono::Local>,
+    day: WorkingDay,
 ) -> String {
     match column {
         0 => {
             if event.is_all_day {
                 "All day".to_string()
             } else {
-                date(&event.start, dates, now)
+                // The time, and whether it falls outside the working day.
+                // Words rather than a colour, because a colour is not
+                // available to the person this is for, and nothing at all
+                // inside the day, so most rows in most calendars cost nothing
+                // to hear.
+                let when = date(&event.start, dates, now);
+                match hour_of(&event.start).map(|hour| day.note_for(hour)) {
+                    Some(note) if !note.is_empty() => format!("{when}, {note}"),
+                    _ => when,
+                }
             }
         }
         1 => non_empty(&event.summary, "No title"),
@@ -173,6 +195,54 @@ mod tests {
             .expect("a real moment")
     }
 
+    #[test]
+    fn test_an_event_outside_the_working_day_says_so() {
+        // A meeting at seven in the evening is a fact somebody wants to
+        // notice, and every hour used to read the same way.
+        let mut evening = event();
+        evening.start = "2026-07-27 19:00".to_string();
+
+        let cell = event_cell(&evening, 0, at_a_desk(), midday(), WorkingDay::default());
+
+        assert!(cell.contains("after the working day"), "{cell}");
+    }
+
+    #[test]
+    fn test_an_event_inside_the_working_day_costs_nothing_to_hear() {
+        // Most rows in most calendars, so a word on every one of them is a
+        // word paid for on all of them.
+        let mut morning = event();
+        morning.start = "2026-07-27 10:00".to_string();
+
+        let cell = event_cell(&morning, 0, at_a_desk(), midday(), WorkingDay::default());
+
+        assert!(!cell.contains("working day"), "{cell}");
+    }
+
+    #[test]
+    fn test_an_all_day_event_is_not_told_it_is_out_of_hours() {
+        // It has no hour to be outside of.
+        let mut all_day = event();
+        all_day.is_all_day = true;
+
+        assert_eq!(
+            event_cell(&all_day, 0, at_a_desk(), midday(), WorkingDay::default()),
+            "All day"
+        );
+    }
+
+    #[test]
+    fn test_an_event_with_no_time_in_it_says_nothing_about_hours() {
+        // Rather than being treated as midnight, which every working day is
+        // outside of, so every one of them would carry the note.
+        let mut dateless = event();
+        dateless.start = "2026-07-27".to_string();
+
+        let cell = event_cell(&dateless, 0, at_a_desk(), midday(), WorkingDay::default());
+
+        assert!(!cell.contains("working day"), "{cell}");
+    }
+
     fn contact() -> ContactItem {
         ContactItem {
             id: "c1".to_string(),
@@ -261,18 +331,24 @@ mod tests {
 
         let mut e = event();
         e.summary = String::new();
-        assert_eq!(event_cell(&e, 1, at_a_desk(), midday()), "No title");
+        assert_eq!(
+            event_cell(&e, 1, at_a_desk(), midday(), WorkingDay::default()),
+            "No title"
+        );
     }
 
     #[test]
     fn test_an_all_day_event_says_so_instead_of_a_time() {
         let mut e = event();
         e.is_all_day = true;
-        assert_eq!(event_cell(&e, 0, at_a_desk(), midday()), "All day");
+        assert_eq!(
+            event_cell(&e, 0, at_a_desk(), midday(), WorkingDay::default()),
+            "All day"
+        );
         // Not "2026-07-27 09:00", which a screen reader reads as a run of
         // digits. Every list says a date the way the mail list always did.
         assert_eq!(
-            event_cell(&event(), 0, at_a_desk(), midday()),
+            event_cell(&event(), 0, at_a_desk(), midday(), WorkingDay::default()),
             "July 27, 2026 at 9:00 AM"
         );
     }
@@ -310,7 +386,13 @@ mod tests {
         for column in -2..10 {
             for text in [
                 contact_cell(&contact(), column),
-                event_cell(&event(), column, at_a_desk(), midday()),
+                event_cell(
+                    &event(),
+                    column,
+                    at_a_desk(),
+                    midday(),
+                    WorkingDay::default(),
+                ),
                 reminder_cell(&reminder(), column, at_a_desk(), midday()),
                 task_cell(&task(), column, at_a_desk(), midday()),
                 note_cell(&note(), column, at_a_desk(), midday()),

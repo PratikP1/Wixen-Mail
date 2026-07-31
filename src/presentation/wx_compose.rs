@@ -4,6 +4,7 @@
 //! The message body is a `WebView` holding a contenteditable page, built by
 //! [`crate::presentation::editor_document`].
 
+use crate::application::reading_habits::CopyLines;
 use crate::common::types::MessageBody;
 use crate::presentation::accessibility::names::{
     set_accessible_name, set_accessible_name_and_description,
@@ -569,6 +570,8 @@ pub fn show_compose_dialog_full(
     dialog.set_sizer(main_sizer, true);
 
     // ── Pre-populate fields based on mode ────────────────────────────────
+    // Filled before the copy lines are hidden or kept, because whether a reply
+    // already copies somebody is what decides it.
     match &mode {
         ComposeMode::New => {}
         ComposeMode::Reply {
@@ -605,6 +608,27 @@ pub fn show_compose_dialog_full(
             // coming back. Escaping it would show somebody their tags.
             set_body(&MessageBody::Html(data.body.clone()));
         }
+    }
+
+    // ── The copy lines ────────────────────────────────────────────────────
+    //
+    // Two empty fields between the recipient and the subject are two stops on
+    // the way, every time anybody writes anything, and most messages go to one
+    // person. Anybody who copies people on most of what they send wants the
+    // opposite, so it is a choice, and a reply that already copies somebody
+    // shows them regardless: hiding a field with an address in it hides who is
+    // being written to.
+    //
+    // Alt+C and Alt+B still reach them, and bring them back when they do.
+    let copy_lines = crate::data::config::ConfigManager::load_stored()
+        .map(|config| CopyLines::from_setting(&config.app_config().copy_lines))
+        .unwrap_or_default();
+    if !copy_lines.shows(&cc_field.get_value(), &bcc_field.get_value()) {
+        cc_label.hide();
+        cc_field.hide();
+        bcc_label.hide();
+        bcc_field.hide();
+        dialog.layout();
     }
 
     // ── Formatting ───────────────────────────────────────────────────────
@@ -1145,8 +1169,21 @@ pub fn show_compose_dialog_full(
                     match reached {
                         Reached::From => account_choice.set_focus(),
                         Reached::To => to_field.set_focus(),
-                        Reached::Cc => cc_field.set_focus(),
-                        Reached::Bcc => bcc_field.set_focus(),
+                        // Asking for a line that is put away brings it back.
+                        // A key that focuses a hidden field is a key that does
+                        // nothing, and there would be no way to tell.
+                        Reached::Cc => {
+                            cc_label.show(true);
+                            cc_field.show(true);
+                            dialog.layout();
+                            cc_field.set_focus();
+                        }
+                        Reached::Bcc => {
+                            bcc_label.show(true);
+                            bcc_field.show(true);
+                            dialog.layout();
+                            bcc_field.set_focus();
+                        }
                         Reached::Subject => subject_field.set_focus(),
                         Reached::Send => dialog.end_modal(ID_SEND),
                         Reached::Undo => apply_undo(editor_document::Format::Undo),

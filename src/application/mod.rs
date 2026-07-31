@@ -29,6 +29,7 @@ pub mod new_item;
 pub mod notes;
 pub mod pim_command;
 pub mod pop_sync;
+pub mod reading_habits;
 pub mod reading_style;
 pub mod receipts;
 pub mod reminders;

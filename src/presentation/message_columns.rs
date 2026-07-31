@@ -171,16 +171,16 @@ impl SortDirection {
     }
 }
 
-/// How the list is ordered.
+/// One column and which way it runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Sort {
+pub struct By {
     pub column: MessageColumn,
     pub direction: SortDirection,
 }
 
-impl Sort {
-    /// The `ORDER BY` body for this sort.
-    pub fn order_by_clause(&self) -> String {
+impl By {
+    /// The `ORDER BY` term for this one column.
+    fn term(&self) -> String {
         let direction = match self.direction {
             SortDirection::Ascending => "ASC",
             SortDirection::Descending => "DESC",
@@ -188,13 +188,83 @@ impl Sort {
         format!("{} {}", self.column.sort_expression(), direction)
     }
 
-    /// How the sort is announced once it has been applied.
-    pub fn spoken(&self) -> String {
+    /// How it is written in the stored layout.
+    fn key(&self) -> String {
+        format!("{}:{}", self.column.key(), self.direction.key())
+    }
+
+    /// Read one back, or nothing if it names a column this build has never
+    /// heard of.
+    fn from_key(stored: &str) -> Option<Self> {
+        let (column, direction) = stored.split_once(':')?;
+        Some(Self {
+            column: MessageColumn::from_key(column)?,
+            direction: match direction {
+                "asc" => SortDirection::Ascending,
+                "desc" => SortDirection::Descending,
+                _ => return None,
+            },
+        })
+    }
+
+    /// What is said about it.
+    fn spoken(&self) -> String {
         format!(
-            "Sorted by {}, {}",
+            "{}, {}",
             self.column.heading().to_lowercase(),
             self.direction.spoken_for(self.column)
         )
+    }
+}
+
+/// How the list is ordered.
+///
+/// Two levels, because one is not enough for the question people actually ask
+/// of a mailbox: newest first is right until there are twenty from today, and
+/// then what is wanted is unread first among those. A single column cannot say
+/// that, and sorting twice by hand does not survive the next refresh.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Sort {
+    pub column: MessageColumn,
+    pub direction: SortDirection,
+    /// What decides the order between rows the first level calls equal.
+    ///
+    /// `None` for one level, which is what every stored layout written before
+    /// this had and what most people want.
+    pub then: Option<By>,
+}
+
+impl Sort {
+    /// The first level on its own, as a value.
+    pub fn first(&self) -> By {
+        By {
+            column: self.column,
+            direction: self.direction,
+        }
+    }
+
+    /// The `ORDER BY` body for this sort.
+    ///
+    /// Both levels when there are two, in that order, which is what SQL does
+    /// with a comma. A second level naming the same column as the first is
+    /// left out: it decides nothing and reads as though it might.
+    pub fn order_by_clause(&self) -> String {
+        match self.then.filter(|then| then.column != self.column) {
+            Some(then) => format!("{}, {}", self.first().term(), then.term()),
+            None => self.first().term(),
+        }
+    }
+
+    /// How the sort is announced once it has been applied.
+    pub fn spoken(&self) -> String {
+        match self.then.filter(|then| then.column != self.column) {
+            Some(then) => format!(
+                "Sorted by {}, then by {}",
+                self.first().spoken(),
+                then.spoken()
+            ),
+            None => format!("Sorted by {}", self.first().spoken()),
+        }
     }
 
     /// The ordering the message list actually runs for this sort.
@@ -285,6 +355,7 @@ impl ColumnLayout {
             sort: Sort {
                 column: sort_column,
                 direction: SortDirection::Descending,
+                then: None,
             },
         }
     }
@@ -361,30 +432,37 @@ impl ColumnLayout {
             MailSortOption::DateNewestFirst => Sort {
                 column: MessageColumn::Received,
                 direction: SortDirection::Descending,
+                then: None,
             },
             MailSortOption::DateOldestFirst => Sort {
                 column: MessageColumn::Received,
                 direction: SortDirection::Ascending,
+                then: None,
             },
             MailSortOption::SenderAZ => Sort {
                 column: MessageColumn::Correspondent,
                 direction: SortDirection::Ascending,
+                then: None,
             },
             MailSortOption::SenderZA => Sort {
                 column: MessageColumn::Correspondent,
                 direction: SortDirection::Descending,
+                then: None,
             },
             MailSortOption::SubjectAZ => Sort {
                 column: MessageColumn::Subject,
                 direction: SortDirection::Ascending,
+                then: None,
             },
             MailSortOption::SubjectZA => Sort {
                 column: MessageColumn::Subject,
                 direction: SortDirection::Descending,
+                then: None,
             },
             MailSortOption::UnreadFirst => Sort {
                 column: MessageColumn::Unread,
                 direction: SortDirection::Descending,
+                then: None,
             },
         };
     }
@@ -396,6 +474,11 @@ impl ColumnLayout {
     /// the first click has to pick the direction people actually want: newest
     /// first for a date, A to Z for text.
     pub fn sort_by(&mut self, column: MessageColumn) -> String {
+        // The second level is kept across a change of the first, because it is
+        // a standing preference rather than part of this click. Somebody who
+        // has asked for unread first among equals still wants that after
+        // sorting by sender.
+        let then = self.sort.then;
         self.sort = if self.sort.column == column {
             Sort {
                 column,
@@ -403,6 +486,7 @@ impl ColumnLayout {
                     SortDirection::Ascending => SortDirection::Descending,
                     SortDirection::Descending => SortDirection::Ascending,
                 },
+                then,
             }
         } else {
             Sort {
@@ -411,6 +495,7 @@ impl ColumnLayout {
                     MessageColumn::Received | MessageColumn::Sent => SortDirection::Descending,
                     _ => SortDirection::Ascending,
                 },
+                then,
             }
         };
         self.sort.spoken()
@@ -423,12 +508,14 @@ impl ColumnLayout {
     /// The layout in its stored form.
     pub fn to_stored(&self) -> String {
         let columns: Vec<&str> = self.order.iter().map(|c| c.key()).collect();
-        format!(
-            "{}|{}:{}",
-            columns.join(","),
-            self.sort.column.key(),
-            self.sort.direction.key()
-        )
+        // The second level is appended after a semicolon, so a layout written
+        // before there was one still reads here and one written here still
+        // reads in a build that only knows the first.
+        let sort = match self.sort.then {
+            Some(then) => format!("{};{}", self.sort.first().key(), then.key()),
+            None => self.sort.first().key(),
+        };
+        format!("{}|{}", columns.join(","), sort)
     }
 
     /// Read a stored layout, falling back to the default for anything unusable.
@@ -450,16 +537,15 @@ impl ColumnLayout {
             return default;
         }
 
-        let sort = sort
-            .split_once(':')
-            .and_then(|(column, direction)| {
-                let column = MessageColumn::from_key(column)?;
-                let direction = match direction {
-                    "asc" => SortDirection::Ascending,
-                    "desc" => SortDirection::Descending,
-                    _ => return None,
-                };
-                Some(Sort { column, direction })
+        let (first, then) = match sort.split_once(';') {
+            Some((first, then)) => (first, By::from_key(then)),
+            None => (sort, None),
+        };
+        let sort = By::from_key(first)
+            .map(|by| Sort {
+                column: by.column,
+                direction: by.direction,
+                then,
             })
             .unwrap_or(default.sort);
 
@@ -505,6 +591,7 @@ mod tests {
         layout.sort = Sort {
             column: MessageColumn::Received,
             direction: SortDirection::Descending,
+            then: None,
         };
 
         let said = layout.sort_by(MessageColumn::Subject);
@@ -524,6 +611,7 @@ mod tests {
         layout.sort = Sort {
             column: MessageColumn::Subject,
             direction: SortDirection::Ascending,
+            then: None,
         };
         let said = layout.sort_by(MessageColumn::Received);
         assert_eq!(layout.sort.direction, SortDirection::Descending);
@@ -536,7 +624,11 @@ mod tests {
         // than a header that cannot be sorted.
         for column in MessageColumn::ALL {
             for direction in [SortDirection::Ascending, SortDirection::Descending] {
-                let sort = Sort { column, direction };
+                let sort = Sort {
+                    column,
+                    direction,
+                    then: None,
+                };
                 assert!(
                     sort.as_mail_sort_option().is_some(),
                     "{:?} {:?} has no sort to run",
@@ -555,12 +647,124 @@ mod tests {
             let sort = Sort {
                 column: MessageColumn::Unread,
                 direction,
+                then: None,
             };
             assert_eq!(
                 sort.as_mail_sort_option(),
                 Some(crate::presentation::ui_types::MailSortOption::UnreadFirst)
             );
         }
+    }
+
+    #[test]
+    fn test_a_second_level_decides_the_rows_the_first_calls_equal() {
+        // Newest first is right until there are twenty from today, and then
+        // what is wanted is unread first among those.
+        let sort = Sort {
+            column: MessageColumn::Received,
+            direction: SortDirection::Descending,
+            then: Some(By {
+                column: MessageColumn::Unread,
+                direction: SortDirection::Ascending,
+            }),
+        };
+
+        assert_eq!(
+            sort.order_by_clause(),
+            "COALESCE(m.internaldate, m.date) DESC, m.read ASC"
+        );
+        assert_eq!(
+            sort.spoken(),
+            "Sorted by received, newest first, then by unread, ascending"
+        );
+    }
+
+    #[test]
+    fn test_one_level_is_written_and_said_the_way_it_always_was() {
+        let sort = Sort {
+            column: MessageColumn::Subject,
+            direction: SortDirection::Ascending,
+            then: None,
+        };
+
+        assert_eq!(sort.order_by_clause(), "m.subject COLLATE NOCASE ASC");
+        assert_eq!(sort.spoken(), "Sorted by subject, ascending");
+    }
+
+    #[test]
+    fn test_a_second_level_on_the_same_column_is_left_out() {
+        // It decides nothing, and announcing it reads as though it might.
+        let sort = Sort {
+            column: MessageColumn::Subject,
+            direction: SortDirection::Ascending,
+            then: Some(By {
+                column: MessageColumn::Subject,
+                direction: SortDirection::Descending,
+            }),
+        };
+
+        assert_eq!(sort.order_by_clause(), "m.subject COLLATE NOCASE ASC");
+        assert!(!sort.spoken().contains("then by"), "{}", sort.spoken());
+    }
+
+    #[test]
+    fn test_both_levels_survive_being_stored() {
+        let mut layout = ColumnLayout::defaults_for(FolderKind::Inbox);
+        layout.sort.then = Some(By {
+            column: MessageColumn::Unread,
+            direction: SortDirection::Ascending,
+        });
+
+        let back = ColumnLayout::from_stored(&layout.to_stored(), FolderKind::Inbox);
+
+        assert_eq!(back.sort, layout.sort);
+    }
+
+    #[test]
+    fn test_a_layout_stored_before_there_was_a_second_level_still_reads() {
+        // Written by every build up to now. It has one level and no semicolon,
+        // and losing somebody's column arrangement over that would be a poor
+        // trade for a feature they had not asked for yet.
+        let old = "unread,subject,received|received:desc";
+
+        let back = ColumnLayout::from_stored(old, FolderKind::Inbox);
+
+        assert_eq!(back.sort.column, MessageColumn::Received);
+        assert_eq!(back.sort.direction, SortDirection::Descending);
+        assert_eq!(back.sort.then, None);
+        assert_eq!(back.order.len(), 3);
+    }
+
+    #[test]
+    fn test_a_second_level_naming_a_column_this_build_does_not_know_is_dropped() {
+        // Rather than losing the whole layout. A newer build may know columns
+        // this one does not.
+        let newer = "unread,subject|subject:asc;invented:desc";
+
+        let back = ColumnLayout::from_stored(newer, FolderKind::Inbox);
+
+        assert_eq!(back.sort.column, MessageColumn::Subject);
+        assert_eq!(back.sort.then, None);
+    }
+
+    #[test]
+    fn test_changing_the_first_level_keeps_the_second() {
+        // It is a standing preference rather than part of this click.
+        let mut layout = ColumnLayout::defaults_for(FolderKind::Inbox);
+        layout.sort.then = Some(By {
+            column: MessageColumn::Unread,
+            direction: SortDirection::Ascending,
+        });
+
+        layout.sort_by(MessageColumn::Correspondent);
+
+        assert_eq!(
+            layout.sort.then,
+            Some(By {
+                column: MessageColumn::Unread,
+                direction: SortDirection::Ascending
+            })
+        );
     }
 
     #[test]
@@ -603,7 +807,11 @@ mod tests {
     fn test_every_column_can_sort_both_ways() {
         for column in MessageColumn::ALL {
             for direction in [SortDirection::Ascending, SortDirection::Descending] {
-                let sort = Sort { column, direction };
+                let sort = Sort {
+                    column,
+                    direction,
+                    then: None,
+                };
                 assert!(!sort.order_by_clause().is_empty());
             }
         }
@@ -616,6 +824,7 @@ mod tests {
         let sort = Sort {
             column: MessageColumn::Received,
             direction: SortDirection::Descending,
+            then: None,
         };
         assert_eq!(
             sort.order_by_clause(),
@@ -718,6 +927,7 @@ mod tests {
         layout.sort = Sort {
             column: MessageColumn::Size,
             direction: SortDirection::Ascending,
+            then: None,
         };
 
         let stored = layout.to_stored();

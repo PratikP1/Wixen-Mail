@@ -664,6 +664,23 @@ impl WxMailApp {
                 },
                 None => date_display::DateSettings::default(),
             };
+            // The hours somebody actually works, so an event outside them
+            // says so. Read once here rather than per painted cell.
+            let working_day = stored_config
+                .as_ref()
+                .map(|cfg| {
+                    crate::application::reading_habits::WorkingDay::from_setting(
+                        cfg.working_day_starts,
+                        cfg.working_day_ends,
+                    )
+                })
+                .unwrap_or_default();
+            let marks_read = stored_config
+                .as_ref()
+                .map(|cfg| {
+                    crate::application::reading_habits::MarkRead::from_setting(&cfg.mark_read_after)
+                })
+                .unwrap_or_default();
             let column_layout = Rc::new(RefCell::new(
                 match stored_config.as_ref().map(|c| c.message_columns.as_str()) {
                     Some(stored) if !stored.is_empty() => {
@@ -981,10 +998,9 @@ impl WxMailApp {
                             .contacts
                             .get(row)
                             .map(|c| pim_rows::contact_cell(c, column)),
-                        "calendar" => s
-                            .events
-                            .get(row)
-                            .map(|e| pim_rows::event_cell(e, column, date_settings, now)),
+                        "calendar" => s.events.get(row).map(|e| {
+                            pim_rows::event_cell(e, column, date_settings, now, working_day)
+                        }),
                         "reminders" => s
                             .reminders
                             .get(row)
@@ -3014,6 +3030,10 @@ impl WxMailApp {
                 // than stored, because dismissing is a decision about now.
                 let already_raised: RefCell<std::collections::HashSet<String>> =
                     RefCell::new(std::collections::HashSet::new());
+                // Which message has been open, and since when. `None` when
+                // nothing is open, or when the one that is has already been
+                // dealt with.
+                let opened_at: RefCell<Option<(i64, std::time::Instant)>> = RefCell::new(None);
                 // When the reminders were last looked at. By the clock rather
                 // than by counting ticks: how often this timer actually fires
                 // is the event loop's business, and counting ticks to a minute
@@ -3066,6 +3086,13 @@ impl WxMailApp {
                     // On this timer rather than one of its own, because a timer
                     // event reaches every handler bound on its owner and a
                     // second timer here would run this one as well.
+                    // A message that has been open long enough counts as read.
+                    //
+                    // On this poll rather than a timer of its own, for the same
+                    // reason the reminders are: a timer event reaches every
+                    // handler on the window it belongs to.
+                    mark_the_open_one_read(&state, &ui_tx, &runtime, &a11y, &opened_at, marks_read);
+
                     if looked_at.get().elapsed() >= HOW_OFTEN_TO_LOOK {
                         looked_at.set(std::time::Instant::now());
                         raise_what_is_due(
@@ -3738,6 +3765,82 @@ fn wire_read_aloud<F>(
         // stop: private mail and personal notes read aloud in a shared room.
         let _ = a11y.announce_content(&text);
     });
+}
+
+/// Mark the message somebody is looking at read, once they have looked long
+/// enough.
+///
+/// The setting for this has been in the settings window since it was written
+/// and there has never been anything behind it: nothing read the control back,
+/// and nothing anywhere marked a message read on its own. So the answer was
+/// always "never", whatever it said on screen.
+///
+/// Timed from when the selection landed on the message rather than from when
+/// its body arrived, because what is being measured is how long somebody has
+/// been on it. Moving off before the time is up leaves it unread, which is the
+/// whole point: arrowing down a list to find something reads every message on
+/// the way, and marking each one would empty the unread count and lose the one
+/// that mattered.
+fn mark_the_open_one_read(
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+    opened_at: &RefCell<Option<(i64, std::time::Instant)>>,
+    marks_read: crate::application::reading_habits::MarkRead,
+) {
+    if !marks_read.marks_at_all() {
+        return;
+    }
+
+    let open = {
+        let s = lock_state(state);
+        s.selected_message_index
+            .and_then(|index| s.messages.get(index))
+            .filter(|message| !message.read)
+            .map(|message| (message.message_id, message.uid, message.subject.clone()))
+    };
+    let Some((row, uid, subject)) = open else {
+        opened_at.replace(None);
+        return;
+    };
+
+    let since = {
+        let mut watching = opened_at.borrow_mut();
+        match *watching {
+            // Still the same one, so the clock keeps running.
+            Some((watched, since)) if watched == row => since,
+            // A different message, or the first. The clock starts now.
+            _ => {
+                let now = std::time::Instant::now();
+                *watching = Some((row, now));
+                now
+            }
+        }
+    };
+    if let Some(wait) = marks_read.delay()
+        && since.elapsed() < wait
+    {
+        return;
+    }
+
+    // Cleared before the write, so a slow server does not mean asking twice.
+    opened_at.replace(None);
+    {
+        let mut s = lock_state(state);
+        if let Some(message) = s.messages.iter_mut().find(|m| m.message_id == row) {
+            message.read = true;
+        }
+    }
+    // Not announced. This is not something somebody did, and a spoken "marked
+    // as read" between every message and the next is a word paid for on all of
+    // them. The count in the folder tree is where it shows.
+    let _ = a11y;
+    let sent = tx.clone();
+    rt.spawn(async move {
+        let _ = sent.send(UIUpdate::MessageReadToggled(row, true)).await;
+    });
+    spawn_server_change(state, tx, rt, row, uid, subject, ServerChange::Read(true));
 }
 
 /// How often the reminders are looked at.

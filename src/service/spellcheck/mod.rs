@@ -209,6 +209,75 @@ pub struct LanguageChoice {
 /// built-in list is offered instead with everything but English marked
 /// unavailable, because the fallback checker only ships an English word list
 /// however many alphabets it knows.
+/// The language this machine is set to, when something can check it.
+///
+/// The stored default was "en" for everybody, so anybody writing in anything
+/// else had every word of it called a mistake until they found the setting.
+/// This asks the machine instead, and only answers with a language something
+/// here can actually check: offering one nothing has a dictionary for is the
+/// same failure wearing a different label.
+///
+/// `None` when the machine's language is not one of them, and then the stored
+/// default stands, because English checked is better than nothing checked.
+pub fn language_of_this_machine() -> Option<String> {
+    let wanted = system_language()?.to_ascii_lowercase();
+    let choices = available_languages();
+    // The exact tag first: en-GB should not settle for en-US when both are
+    // there, because the two disagree about half the words somebody types.
+    if let Some(exact) = choices
+        .iter()
+        .find(|c| c.available && c.tag.to_ascii_lowercase() == wanted)
+    {
+        return Some(exact.tag.clone());
+    }
+    let family = wanted.split('-').next().unwrap_or_default().to_string();
+    if family.is_empty() {
+        return None;
+    }
+    choices
+        .iter()
+        .find(|c| {
+            c.available && c.tag.to_ascii_lowercase().split('-').next() == Some(family.as_str())
+        })
+        .map(|c| c.tag.clone())
+}
+
+/// The language tag Windows says this machine is set to.
+#[cfg(target_os = "windows")]
+fn system_language() -> Option<String> {
+    const LOCALE_USER_DEFAULT: u32 = 0x0400;
+    // LOCALE_SNAME: the full tag, "en-GB" rather than a number.
+    const LOCALE_SNAME: u32 = 0x0000005c;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetLocaleInfoW(locale: u32, lctype: u32, data: *mut u16, size: i32) -> i32;
+    }
+
+    let mut buffer = [0u16; 85];
+    let written = unsafe {
+        GetLocaleInfoW(
+            LOCALE_USER_DEFAULT,
+            LOCALE_SNAME,
+            buffer.as_mut_ptr(),
+            buffer.len() as i32,
+        )
+    };
+    if written <= 1 {
+        return None;
+    }
+    // The count includes the terminator.
+    Some(String::from_utf16_lossy(&buffer[..(written - 1) as usize]))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn system_language() -> Option<String> {
+    std::env::var("LANG")
+        .ok()
+        .and_then(|value| value.split('.').next().map(|tag| tag.replace('_', "-")))
+        .filter(|tag| !tag.is_empty() && tag != "C")
+}
+
 pub fn available_languages() -> Vec<LanguageChoice> {
     #[cfg(windows)]
     {
@@ -932,6 +1001,29 @@ impl Default for I18n {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_the_machines_language_is_one_something_can_check() {
+        // Offering a language nothing has a dictionary for is the same failure
+        // as defaulting to the wrong one: every word comes back a mistake.
+        if let Some(chosen) = super::language_of_this_machine() {
+            let choices = super::available_languages();
+            let found = choices
+                .iter()
+                .find(|c| c.tag == chosen)
+                .unwrap_or_else(|| panic!("{chosen} is not in the list at all"));
+            assert!(found.available, "{chosen} has nothing that can check it");
+        }
+    }
+
+    #[test]
+    fn test_no_answer_is_a_real_answer() {
+        // A machine set to a language nothing here checks keeps the stored
+        // default, because English checked beats nothing checked.
+        let answer = super::language_of_this_machine();
+
+        assert!(answer.is_none() || !answer.unwrap().trim().is_empty());
+    }
 
     fn wrong(word: &str, suggestions: &[&str]) -> SpellError {
         SpellError {
