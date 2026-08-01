@@ -541,6 +541,93 @@ mod tests {
     }
 
     #[test]
+    fn test_every_stored_action_becomes_the_action_it_names() {
+        // The other half of a rule: what it does. Found by mutation testing,
+        // which deleted the arms for moving, labelling, marking unread,
+        // flagging and unflagging without a single test noticing. A rule that
+        // matched correctly and then did nothing would have looked fine here.
+        use crate::data::message_cache::MessageFilterRule;
+
+        let stored = |action_type: &str, value: Option<&str>| MessageFilterRule {
+            id: "r1".into(),
+            account_id: "acct".into(),
+            name: "A rule".into(),
+            field: "subject".into(),
+            match_type: "contains".into(),
+            pattern: "Invoice".into(),
+            case_sensitive: false,
+            action_type: action_type.into(),
+            action_value: value.map(str::to_string),
+            enabled: true,
+            created_at: "2026-08-01T00:00:00Z".into(),
+        };
+
+        let read = |action_type: &str, value: Option<&str>| {
+            FilterEngine::from_persisted_rule(&stored(action_type, value)).map(|r| r.action)
+        };
+
+        assert!(matches!(
+            read("move_to_folder", Some("Receipts")),
+            Some(FilterAction::MoveToFolder(ref to)) if to == "Receipts"
+        ));
+        assert!(matches!(
+            read("add_tag", Some("Work")),
+            Some(FilterAction::AddTag(ref name)) if name == "Work"
+        ));
+        assert!(matches!(
+            read("mark_as_read", None),
+            Some(FilterAction::MarkAsRead)
+        ));
+        assert!(matches!(
+            read("mark_as_unread", None),
+            Some(FilterAction::MarkAsUnread)
+        ));
+        assert!(matches!(read("star", None), Some(FilterAction::Star)));
+        assert!(matches!(read("unstar", None), Some(FilterAction::Unstar)));
+        assert!(matches!(read("delete", None), Some(FilterAction::Delete)));
+        // A rule this version does not understand is dropped rather than
+        // guessed at. Guessing would carry out something nobody asked for on
+        // somebody's mail.
+        assert!(read("teleport", None).is_none());
+    }
+
+    #[test]
+    fn test_an_action_that_needs_a_value_and_has_none_is_dropped() {
+        // Moving to a folder with no folder named, or labelling with no label.
+        // Both would otherwise become an action carried out against an empty
+        // name, which on a move means a folder called nothing.
+        use crate::data::message_cache::MessageFilterRule;
+
+        let empty = |action_type: &str, value: Option<&str>| MessageFilterRule {
+            id: "r1".into(),
+            account_id: "acct".into(),
+            name: "A rule".into(),
+            field: "subject".into(),
+            match_type: "contains".into(),
+            pattern: "Invoice".into(),
+            case_sensitive: false,
+            action_type: action_type.into(),
+            action_value: value.map(str::to_string),
+            enabled: true,
+            created_at: "2026-08-01T00:00:00Z".into(),
+        };
+
+        for action_type in ["move_to_folder", "add_tag"] {
+            for value in [None, Some(""), Some("   ")] {
+                assert!(
+                    FilterEngine::from_persisted_rule(&empty(action_type, value)).is_none(),
+                    "{action_type} with {value:?} was accepted"
+                );
+            }
+        }
+        assert_eq!(
+            FilterEngine::validated_action_value(Some(&" Receipts ".to_string())).as_deref(),
+            Some("Receipts"),
+            "a name with spaces around it was not tidied"
+        );
+    }
+
+    #[test]
     fn test_every_way_of_matching_says_yes_when_it_should() {
         // Found by mutation testing: only "contains", "starts_with",
         // "is_empty" and "regex" were ever exercised. Deleting the arm for
