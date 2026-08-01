@@ -105,6 +105,41 @@ and is now closed:
   the limit now has a test saying it goes in one command, and one character
   past it has a test saying it does not.
 
+## Reading a report against a tree that has moved
+
+cargo-mutants copies the tree when it starts and works on the copy, so the
+report describes the commit the run began at, not the commit it finished at.
+That is fine for the run and misleading afterwards.
+
+It happened on the first `data` run: the early findings were acted on while the
+run was still going, so by the time it finished its list of misses included
+about twenty in `account.rs` and `config.rs` that already had tests. Check a
+finding against the current tree before treating it as open.
+
+The other half of the same point: a finding is a fact whatever the totals say,
+so acting on one mid-run is fine. Quoting the totals mid-run is not.
+
+## What reading a module turns up that a mutant does not
+
+Worth knowing, because the two are not the same list and the sweep is better
+for doing both.
+
+cargo-mutants replaces a whole function body, or one binary operator. So it
+never asks what happens to one arm of a `match`, and it never changes a literal
+sitting in an argument list. Three of the largest findings in `data` came from
+reading rather than from the report:
+
+- Eleven of the thirteen domains account setup recognises had no test. The
+  report could not have found this: the function's body was covered.
+- The preset fields, including whether a provider connects with TLS, were
+  unchecked except Gmail's.
+- `save_account` writes an empty string into the password column, and that
+  literal is the whole reason the credential store exists here. Changed to the
+  real password, every test still passed.
+
+So: run the report, and read the module for match arms, literal arguments, and
+anything a comment says is deliberate.
+
 ## Progress
 
 | Area | Result | Done |
@@ -112,7 +147,7 @@ and is now closed:
 | `application/filters`, `due`, `tagging`, `sign_off` | 157 mutants, 141 caught, 16 unviable, 0 missed | 2026-08-01 |
 | `common` | 89 mutants, 63 caught, 13 missed, 11 unviable, 2 timeouts. All 13 closed | 2026-08-01 |
 | `service/protocols` | 327 mutants, 133 caught, 113 missed, 81 unviable. Closed: flag accessors, credential redaction, the write gate. Of the rest, all but one are socket methods, see below | 2026-08-01 |
-| `data` | | |
+| `data` | Running, 513 mutants. `account.rs`, `config.rs`, `email_providers.rs`, `message_cache/{accounts,contacts,mod}.rs` closed while it ran, so its report is stale for those | started 2026-08-01 |
 | `application` (rest) | | |
 | `service` (rest) | | |
 | `presentation` (not the window) | | |
