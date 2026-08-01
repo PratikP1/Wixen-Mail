@@ -151,6 +151,12 @@ pub struct MessageItem {
     /// without fetching anything, and so the answer does not depend on a body
     /// the cache may have evicted.
     pub receipt_to: Option<String>,
+    /// Which account this message is in.
+    ///
+    /// Taken from the row rather than from whichever account is open, because
+    /// with one inbox across several accounts those are different answers, and
+    /// acting on a row using the open account would reach the wrong server.
+    pub account_id: String,
     /// The labels somebody has put on it, by name.
     ///
     /// Names rather than colours. A colour tells most of the people this is
@@ -207,6 +213,7 @@ impl MessageItem {
             safety: row.safety,
             safety_reasons: row.safety_reasons.clone(),
             receipt_to: row.receipt_to.clone(),
+            account_id: row.account_id.clone(),
             // Filled by the caller, which has the cache. A row comes out of
             // one query and its labels are in another table; asking here would
             // be a second query per row of a five hundred row page.
@@ -1275,6 +1282,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            account_id: String::new(),
             labels: Vec::new(),
         }
     }

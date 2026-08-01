@@ -8,6 +8,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **One list for every account's inbox.** "All Inboxes" is the first thing in
+  the folder tree. Anybody with more than one account works out of one list
+  rather than several, and switching accounts to find out whether anything
+  arrived is worse by ear than by eye: it is a walk through a tree rather than a
+  glance at a sidebar.
+
+  Each row carries the account it came from, so flagging, labelling or deleting
+  one from that list reaches the right server. That was worth fixing on its own:
+  every action on a message used whichever account happened to be open, which
+  was right only while looking at that account's own folder.
+
 - **Ctrl and a number puts a label on a message.** Labels could be made, named,
   coloured, edited and deleted, and none of that ever reached a message: the
   table, the join table and the manager were all there and nothing put one on

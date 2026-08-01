@@ -21,12 +21,12 @@ them is a thing this project can get right or get wrong:
 | What the testers found | Where Wixen Mail stands |
 |---|---|
 | Keyboard shortcuts did not follow common norms | Shortcuts follow Windows and match Outlook and Thunderbird where those agree, and `docs/KEYBOARD_SHORTCUTS.md` is checked against the code by a test |
-| Search and filter results made for a confusing experience | Search announces its result count; filters have not been built yet |
+| Search and filter results made for a confusing experience | Search announces its result count, and rules run on arriving mail and say how many they sorted |
 | NVDA users met structures that lacked the context they expected | The message list is a report-view list with named columns, and every row can be read in full with Space |
 | Narrator gave no confirmation for actions like moving messages | Every action that changes something announces what it did |
 | Narrator did not recognise menu stage changes in submenus | Not verified. No Narrator pass has been done |
 | JAWS could not read message bodies on a braille display | The reading surface writes text, not a rendered view, so braille gets the same content. Not verified with a display |
-| JAWS opened filter menus silently | Filters have not been built yet |
+| JAWS opened filter menus silently | Not verified with JAWS. The rule editor is an ordinary dialog with named controls |
 
 The pattern across all three screen readers is the same: the structure was
 present and the experience was not. That is the distinction this project's
@@ -41,11 +41,7 @@ implying they exist.
 
 | Missing | Why it matters | Tracked |
 |---|---|---|
-| Signatures | Every comparable client has them, per account. Blind users also specifically want signatures to be skippable when reading, which needs the client to know where one starts | Not yet |
-| Unified inbox | Anyone with more than one account works out of one list, not several | Not yet |
-| Message filters and rules | The engine exists in `application::filters` and nothing runs it against arriving mail | Not yet |
 | Saved searches | A search worth running twice is worth keeping | Not yet |
-| Tags or labels, on number keys | Thunderbird's `Ctrl+1` to `Ctrl+9`. The fastest triage gesture there is | Not yet |
 | Templates | Repetitive replies without retyping | Not yet |
 | Several identities per account | One mailbox, more than one address to send as | Not yet |
 | Import and export of mail | Nothing leaves this application in a standard format yet. That makes it hard to leave, which is not a property to be proud of | Not yet |
@@ -88,16 +84,24 @@ mailbox cannot flood them.
 **A mute for reading aloud.** Private mail gets read out in rooms with other
 people in them.
 
+**Every action uses the account the message is in.** Sounds like nothing until
+one list holds mail from several accounts, at which point using whichever
+account is open sends a flag change to the wrong server.
+
 ## What this says about what to build next
 
-The gaps above are not equally urgent. Ranked by what a person hits first:
+All four of the ones ranked here when this was written have since been built: signatures, rules
+running on arriving mail, one list for every inbox, and labels on the number
+keys. Three of them turned out not to be missing features at all. Each had its
+storage, its editor and its tests already written, and nothing ever called the
+last step, which is its own lesson about where to look next.
 
-1. **Signatures.** Hit on the first message sent. Small, self-contained.
-2. **Filters running against arriving mail.** The engine is already written and
-   tested; what is missing is the part that runs it.
-3. **Unified inbox.** Hit by anyone with two accounts, which is most people.
-4. **Tags on number keys.** The fastest thing to build of these and the one that
-   changes daily use most.
+What is left, in the order somebody would miss it:
+
+1. **Saved searches.** A search worth running twice is worth keeping.
+2. **Templates.** Repetitive replies without retyping.
+3. **Several identities per account.** One mailbox, more than one address.
+4. **Import and export.**
 
 Import and export matters more than its position here suggests, for a reason
 that is not about features: a client somebody cannot leave is a client they

@@ -15,6 +15,14 @@ use rusqlite::{OptionalExtension, params};
 pub struct MessageListRow {
     pub id: i64,
     pub uid: u32,
+    /// Which account this message is in.
+    ///
+    /// Carried on the row rather than taken from whichever account is open.
+    /// Those are the same thing only while one account's own folder is
+    /// showing. With one inbox across several accounts they are not, and
+    /// acting on a row using the open account would send a flag change to the
+    /// wrong server.
+    pub account_id: String,
     /// The `Message-ID` header, which threading matches references against.
     pub message_id: String,
     /// `References` and `In-Reply-To`, space separated.
@@ -529,6 +537,79 @@ impl MessageCache {
     /// `order_by` must come from `Sort::order_by_clause`, which builds it from
     /// fixed strings chosen by matching on an enum. Nothing a user typed
     /// reaches it, which is what makes interpolating it here safe.
+    /// Every account's inbox, newest first, as one list.
+    ///
+    /// Anybody with more than one account works out of one list rather than
+    /// several, and switching accounts to find out whether anything arrived is
+    /// the work a unified inbox exists to remove.
+    ///
+    /// Every row carries the account it came from, which is what lets a flag
+    /// change from this list reach the right server.
+    ///
+    /// Bounded, because this is every inbox at once and the list is virtual:
+    /// what it needs is the newest page, not the whole of everything.
+    pub fn unified_inbox(&self, limit: usize) -> Result<Vec<MessageListRow>> {
+        let query = format!(
+            "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject,
+                    m.from_addr, m.to_addr, m.cc, m.reply_to, m.date, m.snippet,
+                    m.size_bytes, m.read, m.starred, m.answered, m.draft,
+                    (m.has_attachments = 1
+                     OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
+                    m.safety, m.safety_reasons, m.receipt_to
+             FROM messages m
+             INNER JOIN folders f ON m.folder_id = f.id
+             WHERE f.folder_type = 'Inbox' AND m.deleted = 0
+             ORDER BY m.date DESC, m.uid DESC
+             LIMIT {}",
+            limit as i64
+        );
+        let mut stmt = self
+            .conn
+            .prepare(&query)
+            .map_err(|e| Error::Other(format!("Failed to prepare the unified inbox: {}", e)))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(MessageListRow {
+                    id: row.get(0)?,
+                    uid: row.get(1)?,
+                    account_id: row.get(2)?,
+                    message_id: row.get(3)?,
+                    refs_header: row.get(4)?,
+                    subject: row.get(5)?,
+                    from_addr: row.get(6)?,
+                    to_addr: row.get(7)?,
+                    cc: row.get(8)?,
+                    reply_to: row.get(9)?,
+                    date: row.get(10)?,
+                    snippet: row.get(11)?,
+                    size_bytes: row.get(12)?,
+                    read: row.get(13)?,
+                    starred: row.get(14)?,
+                    answered: row.get(15)?,
+                    draft: row.get(16)?,
+                    has_attachments: row.get(17)?,
+                    safety: crate::service::safety::Safety::from_stored(
+                        &row.get::<_, Option<String>>(18)?.unwrap_or_default(),
+                    ),
+                    // Stored one per line, because SQLite has no list type
+                    // worth the trouble and the bar reads them as sentences.
+                    safety_reasons: row
+                        .get::<_, Option<String>>(19)?
+                        .unwrap_or_default()
+                        .lines()
+                        .filter(|line| !line.trim().is_empty())
+                        .map(str::to_string)
+                        .collect(),
+                    receipt_to: row.get(20)?,
+                })
+            })
+            .map_err(|e| Error::Other(format!("Failed to read the unified inbox: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect the unified inbox: {}", e)))?;
+        Ok(rows)
+    }
+
     pub fn get_message_list_sorted(
         &self,
         folder_id: i64,
@@ -540,7 +621,7 @@ impl MessageCache {
         // move a row out from under somebody's cursor.
         let order = order_by.unwrap_or("m.date DESC");
         let query = format!(
-            "SELECT m.id, m.uid, m.message_id, m.refs_header, m.subject, m.from_addr,
+            "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject, m.from_addr,
                     m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
                     m.read, m.starred, m.answered, m.draft,
                     (m.has_attachments = 1
@@ -561,23 +642,24 @@ impl MessageCache {
                 Ok(MessageListRow {
                     id: row.get(0)?,
                     uid: row.get(1)?,
-                    message_id: row.get(2)?,
-                    refs_header: row.get(3)?,
-                    subject: row.get(4)?,
-                    from_addr: row.get(5)?,
-                    to_addr: row.get(6)?,
-                    cc: row.get(7)?,
-                    reply_to: row.get(8)?,
-                    date: row.get(9)?,
-                    snippet: row.get(10)?,
-                    size_bytes: row.get(11)?,
-                    read: row.get(12)?,
-                    starred: row.get(13)?,
-                    answered: row.get(14)?,
-                    draft: row.get(15)?,
-                    has_attachments: row.get(16)?,
+                    account_id: row.get(2)?,
+                    message_id: row.get(3)?,
+                    refs_header: row.get(4)?,
+                    subject: row.get(5)?,
+                    from_addr: row.get(6)?,
+                    to_addr: row.get(7)?,
+                    cc: row.get(8)?,
+                    reply_to: row.get(9)?,
+                    date: row.get(10)?,
+                    snippet: row.get(11)?,
+                    size_bytes: row.get(12)?,
+                    read: row.get(13)?,
+                    starred: row.get(14)?,
+                    answered: row.get(15)?,
+                    draft: row.get(16)?,
+                    has_attachments: row.get(17)?,
                     safety: crate::service::safety::Safety::from_stored(
-                        &row.get::<_, Option<String>>(17)?.unwrap_or_default(),
+                        &row.get::<_, Option<String>>(18)?.unwrap_or_default(),
                     ),
                     // Stored one per line, because SQLite has no list type
                     // worth the trouble and the bar reads them as sentences.
@@ -588,7 +670,7 @@ impl MessageCache {
                         .filter(|line| !line.trim().is_empty())
                         .map(str::to_string)
                         .collect(),
-                    receipt_to: row.get(19)?,
+                    receipt_to: row.get(20)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to list messages: {}", e)))?
@@ -687,6 +769,9 @@ impl MessageCache {
                 Ok(MessageListRow {
                     id: row.get(0)?,
                     uid: row.get(1)?,
+                    // The search is scoped to one account, so every row it
+                    // returns belongs to that account by construction.
+                    account_id: account_id.to_string(),
                     message_id: row.get(2)?,
                     refs_header: row.get(3)?,
                     subject: row.get(4)?,
@@ -1564,6 +1649,73 @@ mod tests {
             starred: false,
             deleted: false,
         }
+    }
+
+    #[test]
+    fn test_every_inbox_comes_back_as_one_list_naming_its_account() {
+        // The whole point: somebody with two accounts works out of one list.
+        // The account on each row is what lets flagging from that list reach
+        // the right server, so it is asserted rather than assumed.
+        let (cache, first) = listing_cache();
+        let second = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acc-2".to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .unwrap();
+        cache
+            .save_message(&listing_message(first, 1, "From the first", "2026-08-01"))
+            .unwrap();
+        cache
+            .save_message(&listing_message(second, 1, "From the second", "2026-08-02"))
+            .unwrap();
+
+        let rows = cache.unified_inbox(50).expect("the combined list");
+
+        let subjects: Vec<&str> = rows.iter().map(|r| r.subject.as_str()).collect();
+        assert!(subjects.contains(&"From the first"), "{subjects:?}");
+        assert!(subjects.contains(&"From the second"), "{subjects:?}");
+        let accounts: Vec<&str> = rows.iter().map(|r| r.account_id.as_str()).collect();
+        assert!(accounts.contains(&"acc-1"), "{accounts:?}");
+        assert!(accounts.contains(&"acc-2"), "{accounts:?}");
+    }
+
+    #[test]
+    fn test_the_combined_list_leaves_out_folders_that_are_not_inboxes() {
+        // Otherwise it is not an inbox, it is everything, and the one list
+        // somebody works out of fills up with sent mail and drafts.
+        let (cache, inbox) = listing_cache();
+        let sent = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acc-1".to_string(),
+                name: "Sent".to_string(),
+                path: "Sent".to_string(),
+                folder_type: "Sent".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .unwrap();
+        cache
+            .save_message(&listing_message(inbox, 1, "Arrived", "2026-08-01"))
+            .unwrap();
+        cache
+            .save_message(&listing_message(sent, 2, "Went out", "2026-08-02"))
+            .unwrap();
+
+        let subjects: Vec<String> = cache
+            .unified_inbox(50)
+            .expect("the combined list")
+            .into_iter()
+            .map(|r| r.subject)
+            .collect();
+
+        assert_eq!(subjects, vec!["Arrived".to_string()]);
     }
 
     #[test]

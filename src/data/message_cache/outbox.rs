@@ -109,6 +109,7 @@ impl MessageCache {
                 Ok(super::MessageListRow {
                     id: row.get(0)?,
                     uid: 0,
+                    account_id: account_id.to_string(),
                     message_id: String::new(),
                     refs_header: None,
                     subject: waiting_label(&subject, attempts, last_error.as_deref()),

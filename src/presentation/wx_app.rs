@@ -1827,6 +1827,15 @@ impl WxMailApp {
                         if name == "Mail Folders" {
                             return;
                         }
+                        if name == ALL_INBOXES {
+                            {
+                                let mut s = lock_state(&state);
+                                s.selected_folder = Some(name.clone());
+                            }
+                            frame.set_title("All Inboxes - Mail - Wixen Mail");
+                            load_every_inbox(&folder_cache, &ui_tx);
+                            return;
+                        }
                         let (folder_id, account_id) = {
                             let mut s = lock_state(&state);
                             s.selected_folder = Some(name.clone());
@@ -3654,6 +3663,54 @@ pub(crate) fn lock_state(state: &Arc<StdMutex<WxUIState>>) -> std::sync::MutexGu
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// What the one-list-for-every-account row is called in the folder tree.
+///
+/// Plain words rather than "Unified Inbox", which is a phrase from other mail
+/// clients rather than from English. Somebody hearing this row read out should
+/// know what it holds without having met the term.
+const ALL_INBOXES: &str = "All Inboxes";
+
+/// How many messages the combined list holds.
+///
+/// Every account's inbox at once, so this is the newest page rather than the
+/// whole of everything. Named rather than written into the query, because a
+/// bare number in a listing is a decision nobody can find again.
+const ALL_INBOXES_LIMIT: usize = 500;
+
+/// Fill the message list with every account's inbox at once.
+///
+/// Anybody with more than one account works out of one list. Switching accounts
+/// to find out whether anything arrived is exactly the work this removes, and
+/// it is worse by ear than by eye: it is a walk through a tree rather than a
+/// glance at a sidebar.
+///
+/// Each row carries the account it came from, so flagging or deleting one from
+/// this list reaches the right server rather than whichever account happens to
+/// be open.
+fn load_every_inbox(cache: &Option<Arc<MessageCache>>, tx: &Sender<UIUpdate>) {
+    let Some(cache) = cache.as_ref() else {
+        let _ = tx.try_send(UIUpdate::ErrorOccurred("No storage is open".to_string()));
+        return;
+    };
+    match cache.unified_inbox(ALL_INBOXES_LIMIT) {
+        Ok(rows) => {
+            let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
+            apply_threading(&rows, &mut items);
+            attach_labels(cache, &mut items);
+            let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
+        }
+        Err(e) => {
+            // Said rather than left as an empty list. No mail and mail that
+            // could not be read are different facts, and an empty inbox is the
+            // more reassuring of the two to be told wrongly.
+            tracing::error!("Failed to read every inbox: {}", e);
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The inboxes could not be read: {e}"
+            )));
+        }
+    }
+}
+
 /// Every label id, in the order the number keys reach them.
 ///
 /// One list rather than nine names written out at each of the three places
@@ -3717,6 +3774,7 @@ fn sample_mailbox(count: usize) -> Vec<MessageItem> {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            account_id: String::new(),
             labels: Vec::new(),
         })
         .collect()
@@ -4927,6 +4985,7 @@ fn conversation_parts(
                     safety: crate::service::safety::Safety::Ordinary,
                     safety_reasons: Vec::new(),
                     receipt_to: None,
+                    account_id: String::new(),
                     labels: Vec::new(),
                 },
                 body,
@@ -5795,6 +5854,7 @@ fn open_for_scanning(
                     safety: crate::service::safety::Safety::Suspicious,
                     safety_reasons: vec!["This message is a scan fixture".to_string()],
                     receipt_to: None,
+                    account_id: String::new(),
                     labels: Vec::new(),
                 },
                 &MessageBody::Html(
@@ -5954,6 +6014,11 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
             folder_tree.delete_all_items();
             if let Some(root) = folder_tree.add_root("Mail Folders", None, None) {
+                // First, because it is where somebody with more than one
+                // account starts, and because arrowing past it to reach a
+                // named folder costs one keystroke while hunting for it at the
+                // bottom of a list of twenty costs twenty.
+                folder_tree.append_item(&root, ALL_INBOXES, None, None);
                 for f in folders {
                     folder_tree.append_item(&root, f, None, None);
                 }
@@ -7681,9 +7746,22 @@ fn spawn_server_change(
 ) {
     let tx = tx.clone();
     let handle = rt.handle().clone();
+    // The account the message is in, not the one that happens to be open.
+    //
+    // They are the same only while somebody is looking at one account's own
+    // folder. Flagging a row in a list drawn from several accounts would
+    // otherwise send that flag to a different server, where the same uid names
+    // a different message entirely.
     let (accounts, account_id) = {
         let s = lock_state(state);
-        (s.accounts.clone(), s.active_account_id.clone())
+        let owner = s
+            .messages
+            .iter()
+            .find(|m| m.message_id == message_row_id)
+            .map(|m| m.account_id.clone())
+            .filter(|id| !id.is_empty())
+            .or_else(|| s.active_account_id.clone());
+        (s.accounts.clone(), owner)
     };
     let account = account_id
         .as_ref()
@@ -9477,6 +9555,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            account_id: String::new(),
             labels: Vec::new(),
         }
     }
@@ -9831,6 +9910,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            account_id: String::new(),
             labels: Vec::new(),
         }
     }
@@ -9909,6 +9989,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            account_id: String::new(),
             labels: Vec::new(),
         };
         let messages = vec![read(true), read(false), read(true), read(false)];
@@ -9957,6 +10038,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            account_id: String::new(),
             labels: Vec::new(),
         };
         m.read = false;

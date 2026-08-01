@@ -1221,6 +1221,7 @@ Analytical Engines",
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            account_id: String::new(),
             labels: Vec::new(),
         }
     }
