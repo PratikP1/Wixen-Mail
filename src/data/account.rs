@@ -2,11 +2,10 @@
 //!
 //! This module provides data structures and logic for managing multiple email accounts.
 
-use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
 /// Email account configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct Account {
     /// Unique account identifier
     pub id: String,
@@ -29,22 +28,17 @@ pub struct Account {
 
     /// Authentication
     pub username: String,
-    #[serde(skip_serializing)] // Don't serialize password to logs
     pub password: String,
 
     /// Whether this account uses OAuth2 for authentication.
     /// Determined automatically from the provider (Gmail, Outlook).
-    #[serde(default)]
     pub use_oauth: bool,
 
     /// OAuth2 tokens (obtained during the authorization flow).
     /// Client ID/Secret are NOT stored per-account: they come from
     /// the app-level credentials module (`oauth_credentials`).
-    #[serde(default)]
     pub oauth_access_token: String,
-    #[serde(default)]
     pub oauth_refresh_token: String,
-    #[serde(default)]
     pub oauth_token_expires_at: Option<String>,
 
     /// Account settings
@@ -55,20 +49,17 @@ pub struct Account {
     pub provider: Option<String>,
 
     /// Last sync timestamp
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_sync: Option<SystemTime>,
 
     /// Account color for visual distinction (hex code)
-    #[serde(default = "default_account_color")]
     pub color: String,
 
     /// Which protocol this account reads mail with.
     ///
-    /// Stored as a word rather than the enum, so an account file written by a
+    /// Stored as a word rather than the enum, so an account row written by a
     /// later version reads back as IMAP instead of failing to parse. Every
     /// account written before this existed is IMAP, which is what the default
     /// says, and is correct: nothing could configure a POP account until now.
-    #[serde(default)]
     pub protocol: String,
 
     /// The POP server, for an account that reads mail with POP3.
@@ -77,11 +68,8 @@ pub struct Account {
     /// switched between the two while somebody is setting it up, and sharing
     /// one set of fields means switching quietly rewrites the other server's
     /// address into a box labelled for this one.
-    #[serde(default)]
     pub pop_server: String,
-    #[serde(default)]
     pub pop_port: String,
-    #[serde(default = "default_true")]
     pub pop_use_tls: bool,
 
     /// Whether to leave downloaded mail on the POP server.
@@ -90,7 +78,6 @@ pub struct Account {
     /// has, and a client that removes mail as it downloads leaves somebody with
     /// one copy on one computer. Turning it off is a decision about where their
     /// only copy lives.
-    #[serde(default = "default_true")]
     pub pop_leave_on_server: bool,
 
     /// Remove mail from the POP server this many days after downloading it.
@@ -98,12 +85,29 @@ pub struct Account {
     /// Nought means never, which is the default. A mailbox that is never
     /// cleared eventually fills, and the alternative to this is somebody
     /// finding out when mail stops arriving.
-    #[serde(default)]
     pub pop_remove_after_days: u32,
 }
 
-fn default_true() -> bool {
-    true
+/// Everything about an account except its secrets.
+///
+/// Written out rather than derived, because this struct holds a password and
+/// two OAuth tokens and `Debug` is what a tracing line prints. Nothing prints
+/// an account today; this is so the first line that does is not a leak into a
+/// file people are asked to attach to bug reports.
+///
+/// Fields are listed rather than skipped, so a field added later is left out
+/// until somebody decides it is safe to print.
+impl std::fmt::Debug for Account {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Account")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("email", &self.email)
+            .field("protocol", &self.protocol)
+            .field("enabled", &self.enabled)
+            .field("use_oauth", &self.use_oauth)
+            .finish_non_exhaustive()
+    }
 }
 
 fn default_account_color() -> String {
@@ -502,6 +506,51 @@ mod tests {
     }
 
     #[test]
+    fn test_an_account_does_not_carry_its_secrets_into_a_log() {
+        // Debug is what a tracing line prints, and this struct holds a
+        // password and two OAuth tokens. Nothing prints an account today, so
+        // this is here to stop the first line that does from being a leak,
+        // into a file people are asked to attach to bug reports.
+        let mut account = Account::new("Work".to_string(), "user@example.com".to_string());
+        account.password = "hunter2-the-real-one".to_string();
+        account.oauth_access_token = "ya29.an-access-token".to_string();
+        account.oauth_refresh_token = "1-a-refresh-token".to_string();
+
+        let printed = format!("{account:?}");
+
+        for secret in [
+            "hunter2-the-real-one",
+            "ya29.an-access-token",
+            "1-a-refresh-token",
+        ] {
+            assert!(
+                !printed.contains(secret),
+                "an account printed {secret} where a log could keep it"
+            );
+        }
+        assert!(
+            printed.contains("user@example.com"),
+            "a printed account says nothing about which account it is"
+        );
+    }
+
+    #[test]
+    fn test_a_new_account_gets_a_colour_that_is_a_colour() {
+        // The colour tells accounts apart in a list. Empty, or a word, it is
+        // not something a control can be given, and it is a supplementary cue
+        // rather than the only one, so nothing else would report it missing.
+        let account = Account::new("Work".to_string(), "user@example.com".to_string());
+        let colour = &account.color;
+
+        assert_eq!(colour.len(), 7, "{colour} is not a #rrggbb colour");
+        assert!(colour.starts_with('#'), "{colour} does not start with #");
+        assert!(
+            colour[1..].chars().all(|c| c.is_ascii_hexdigit()),
+            "{colour} is not made of hex digits"
+        );
+    }
+
+    #[test]
     fn test_microsoft_addresses_default_to_browser_sign_in() {
         // Microsoft has withdrawn password sign-in more widely than Google has,
         // so an app password there fails more often than not.
@@ -569,10 +618,13 @@ mod tests {
             "user@live.com",
             "user@msn.com",
         ] {
-            assert_eq!(
+            assert!(
                 offers_app_passwords(address),
+                "{address} is no longer known to offer app passwords"
+            );
+            assert!(
                 app_password_url(address).is_some(),
-                "{address} disagrees with itself"
+                "{address} offers app passwords with nowhere to get one"
             );
         }
     }

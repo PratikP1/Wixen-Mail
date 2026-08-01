@@ -167,6 +167,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   about it to say what it is. It now says "Unknown", which is at least
   something to move past.
 
+- **An account can no longer print its own password.** The account record holds
+  a password and two sign-in tokens, and the debug format a diagnostic line
+  would print included all three. Nothing prints one today, so nothing has
+  leaked; the format now leaves the secrets out, so the first line that does
+  print an account is not a leak into a file people are asked to attach to bug
+  reports.
+
 - **The mail sync is tested.** What to fetch, what to forget, whose flags to
   ask about, whether a folder has been renumbered and what to do with what
   comes back are all decisions, and none of them had ever run in a test,
