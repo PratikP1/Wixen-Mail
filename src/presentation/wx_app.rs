@@ -151,6 +151,11 @@ menu_ids!(
     ID_LABEL_8,
     ID_LABEL_9,
     ID_LABEL_NONE,
+    ID_HELP_CONTENTS,
+    // The first of one id per help page, taken in order from the topic list.
+    // A block rather than one id each, because the list is data and the ids
+    // should not have to be edited when a page is added to it.
+    ID_HELP_TOPIC_FIRST,
     ID_CONTEXT_NEW_ITEM,
     ID_CONTEXT_DELETE_ITEM,
     ID_CONTEXT_MOVE_ITEM,
@@ -3037,6 +3042,25 @@ impl WxMailApp {
                                 tracing::error!("Sample mailbox never reached the list: {}", e);
                             }
                         }
+                        _ if id == ID_HELP_CONTENTS => {
+                            // F1 lands here from anywhere, and opens the page
+                            // about whatever module is showing rather than the
+                            // contents. Somebody who presses it is already
+                            // stuck, and by ear the difference between the
+                            // right page and a list of pages is minutes.
+                            let module = lock_state(&state).active_module;
+                            open_help(crate::application::help::for_module(module), &ui_tx, &runtime);
+                        }
+                        _ if id >= ID_HELP_TOPIC_FIRST
+                            && id
+                                < ID_HELP_TOPIC_FIRST
+                                    + crate::application::help::TOPICS.len() as i32 =>
+                        {
+                            let at = (id - ID_HELP_TOPIC_FIRST) as usize;
+                            if let Some(topic) = crate::application::help::TOPICS.get(at) {
+                                open_help(topic, &ui_tx, &runtime);
+                            }
+                        }
                         _ if id == ID_ABOUT => show_about_dialog(&frame),
                         _ => tracing::debug!("Unhandled menu ID: {:?}", id),
                     }
@@ -3626,15 +3650,42 @@ impl WxMailApp {
             .append_item(ID_SETTINGS, "&Settings\tCtrl+,", "Application preferences")
             .build();
 
+        // One entry per page, from the same list the contents page is built
+        // from, so a page added in one place appears in both.
+        //
+        // F1 sits on Contents as a hint of where the key goes. It is handled
+        // for whatever is open rather than only here, so pressing it in the
+        // calendar opens the calendar's page.
         let help = Menu::builder()
             .append_item(
-                ID_LOAD_SCALE_SAMPLE,
-                "Load &Sample Mailbox",
-                "Fill the message list with 200,000 generated messages to test it at scale",
+                ID_HELP_CONTENTS,
+                "&Contents\tF1",
+                "Everything Wixen Mail can tell you, by topic",
             )
             .append_separator()
-            .append_item(ID_ABOUT, "&About\tF1", "About Wixen Mail")
             .build();
+        for (index, topic) in crate::application::help::TOPICS.iter().enumerate() {
+            help.append(
+                ID_HELP_TOPIC_FIRST + index as i32,
+                topic.title,
+                topic.covers,
+                wxdragon::menus::ItemKind::Normal,
+            );
+        }
+        help.append_separator();
+        help.append(
+            ID_LOAD_SCALE_SAMPLE,
+            "Load &Sample Mailbox",
+            "Fill the message list with 200,000 generated messages to test it at scale",
+            wxdragon::menus::ItemKind::Normal,
+        );
+        help.append_separator();
+        help.append(
+            ID_ABOUT,
+            "A&bout",
+            "About Wixen Mail",
+            wxdragon::menus::ItemKind::Normal,
+        );
 
         MenuBar::builder()
             .append(file, "&File")
@@ -3706,6 +3757,25 @@ fn load_every_inbox(cache: &Option<Arc<MessageCache>>, tx: &Sender<UIUpdate>) {
             tracing::error!("Failed to read every inbox: {}", e);
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
                 "The inboxes could not be read: {e}"
+            )));
+        }
+    }
+}
+
+/// Open one page of help in the browser.
+///
+/// Said when it fails, because a menu entry that appears to do nothing is the
+/// worst kind of broken: somebody presses it again, and then decides help does
+/// not work rather than that one page is missing.
+fn open_help(topic: &crate::application::help::Topic, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
+    use crate::application::help::plain;
+    match crate::presentation::help_page::open(topic.file) {
+        Ok(_) => send_status(tx, rt, &format!("Opened {}", plain(topic.title))),
+        Err(e) => {
+            tracing::error!("Help page {} could not be opened: {}", topic.file, e);
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "{} could not be opened: {e}",
+                plain(topic.title)
             )));
         }
     }

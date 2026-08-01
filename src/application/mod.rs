@@ -20,6 +20,7 @@ pub mod due;
 pub mod filters;
 pub mod forget;
 pub mod from_message;
+pub mod help;
 pub mod item_fields;
 pub mod local_folders;
 pub mod long_text;

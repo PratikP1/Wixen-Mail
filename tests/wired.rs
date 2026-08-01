@@ -85,10 +85,12 @@ fn test_every_handled_command_has_something_that_raises_it() {
             "append_item(",
             "append_check_item(",
             "append_radio_item(",
-            // The bare form, used when a menu is built conditionally rather
-            // than in one builder chain. The message preview's context menu
-            // adds its link items this way, only when the click was on a link.
-            "menu.append(",
+            // The bare form, used when a menu is built item by item rather
+            // than in one builder chain: a context menu whose entries depend
+            // on what was clicked, or a submenu built from a list. Matched on
+            // the method rather than on one receiver's name, because the
+            // receiver is whatever the menu is called.
+            ".append(",
             "with_id(",
             "add_tool(",
             "end_modal(",
@@ -163,7 +165,14 @@ fn test_every_command_something_raises_is_handled() {
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
         };
-        for marker in ["id == ", "r == "] {
+        for marker in [
+            "id == ", "r == ",
+            // A block of ids handled by a range, which is how a menu built
+            // from a list of unknown length is answered. The id it starts at
+            // stands for the block: the check cannot enumerate the rest, and
+            // the first one going unhandled is what a broken block looks like.
+            "id >= ",
+        ] {
             handled.extend(names_after(&text, marker));
         }
         // Bound directly to the control rather than through a command id, which
@@ -182,7 +191,7 @@ fn test_every_command_something_raises_is_handled() {
             "add_tool(",
             // A menu built item by item rather than in a builder chain, which
             // is how a submenu with a variable number of entries is made.
-            "menu.append(",
+            ".append(",
         ] {
             raised.extend(
                 names_after(&text, marker)

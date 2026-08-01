@@ -283,7 +283,7 @@ can navigate. Making them real headings is being worked on.
 |--------|----------|-------------|
 | Quit Application | `Ctrl+Q` | Exit Wixen Mail |
 | Open Settings | `Ctrl+,` | Open settings dialog |
-| Open Help | `F1` | Show help documentation |
+| Help for what you are looking at | `F1` | Opens the page about the module you are in. Every page is on the Help menu, which is the contents. |
 | Close Dialog | `Esc` | Close the current dialog or window |
 
 ### Window and Pane Navigation

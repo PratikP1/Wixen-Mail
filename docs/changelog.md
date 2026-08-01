@@ -8,6 +8,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **F1 opens help for whatever you are looking at, and the Help menu lists
+  every page.** The guides were written and they ship beside the program, and
+  there was no way in: no contents, no F1, and the only button that opened one
+  was on the first-run screen, which you see once. F1 used to open the About
+  box, which is a version number and a licence and not what anybody presses F1
+  for.
+
+  Landing on the right page matters more by ear than by eye. Somebody who can
+  see a page skims it for the part they need; somebody listening reads it in
+  order, so the difference between the right page and a list of pages is
+  minutes.
+
+  **Not done:** none of this is published on the website yet. The pages ship
+  with the program and open from it.
+
 - **One list for every account's inbox.** "All Inboxes" is the first thing in
   the folder tree. Anybody with more than one account works out of one list
   rather than several, and switching accounts to find out whether anything
