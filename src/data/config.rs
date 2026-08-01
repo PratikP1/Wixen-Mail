@@ -302,7 +302,7 @@ impl Default for AppConfig {
             enable_notifications: true,
             log_level: "info".to_string(),
             preview_before_send: true,
-            language: "en".to_string(),
+            language: default_language(),
             check_spelling_before_send: true,
             allowed_changes: default_allowed(),
             allowed_per_account: HashMap::new(),
@@ -314,12 +314,12 @@ impl Default for AppConfig {
                 .as_str()
                 .to_string(),
             told_about_the_alpha: false,
-            check_spelling_as_you_type: true,
-            default_sort_order: "date_newest".to_string(),
-            calendar_default_view: "agenda".to_string(),
-            calendar_show_weekends: true,
+            check_spelling_as_you_type: default_true(),
+            default_sort_order: default_sort_order(),
+            calendar_default_view: default_calendar_view(),
+            calendar_show_weekends: default_true(),
             calendar_first_day_of_week: 0,
-            default_reminder_minutes: 15,
+            default_reminder_minutes: default_reminder_minutes(),
         }
     }
 }
@@ -702,7 +702,18 @@ mod tests {
     #[test]
     fn test_app_config_defaults_complete() {
         let config = AppConfig::default();
-        assert_eq!(config.language, "en");
+        // Not "en". The language follows this machine, so asserting English
+        // only passes on an English machine, and it passed here while a fresh
+        // installation was quietly hardcoding "en" for everybody.
+        assert!(
+            config.language.len() >= 2
+                && config
+                    .language
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-'),
+            "{} is not a language the spell checker could be asked for",
+            config.language
+        );
         assert_eq!(config.default_sort_order, "date_newest");
         assert_eq!(config.calendar_default_view, "agenda");
         assert!(config.calendar_show_weekends);
@@ -824,6 +835,107 @@ mod permission_tests {
             .insert("eager".to_string(), Allowed::EVERYTHING);
 
         assert_eq!(settings.allowed_for("eager"), Allowed::NOTHING);
+    }
+
+    #[test]
+    fn test_a_settings_file_written_before_these_existed_reads_the_way_it_should() {
+        // Every settings file on disk predates most of these, so what they
+        // fall back to is what an upgrade gets. Several of them decide how a
+        // date or a time is spoken, and a wrong one is not an error anybody
+        // sees: it is every date read the wrong way round, with nothing on
+        // screen to say why.
+        //
+        // Built by taking the fields back out of a current config rather than
+        // hand-writing the older shape, so it does not break the next time an
+        // unrelated field is added.
+        let mut older = serde_json::to_value(AppConfig::default()).expect("a config to serialise");
+        let fields = older.as_object_mut().expect("an object");
+        for gone in [
+            "check_spelling_as_you_type",
+            "default_sort_order",
+            "date_style",
+            "date_order",
+            "mark_read_after",
+            "copy_lines",
+            "working_day_starts",
+            "working_day_ends",
+            "date_wording",
+            "clock_hours",
+            "draft_autosave_minutes",
+            "calendar_default_view",
+            "calendar_show_weekends",
+            "default_reminder_minutes",
+        ] {
+            assert!(
+                fields.remove(gone).is_some(),
+                "{gone} is not written to the settings file any more, so this test covers nothing"
+            );
+        }
+
+        let parsed: AppConfig =
+            serde_json::from_value(older).expect("an older settings file still opens");
+
+        assert_eq!(parsed.date_style, "relative");
+        assert_eq!(parsed.date_order, "auto");
+        assert_eq!(parsed.date_wording, "verbal");
+        assert_eq!(parsed.clock_hours, "auto");
+        assert_eq!(parsed.default_sort_order, "date_newest");
+        assert_eq!(parsed.calendar_default_view, "agenda");
+        assert_eq!(parsed.default_reminder_minutes, 15);
+        assert!(
+            parsed.check_spelling_as_you_type,
+            "spelling would stop being checked for everybody upgrading"
+        );
+        assert!(
+            parsed.calendar_show_weekends,
+            "weekends would disappear from the calendar"
+        );
+
+        // These belong to the module that owns the setting. What matters here
+        // is that the field falls back to it rather than to nothing.
+        assert_eq!(
+            parsed.mark_read_after,
+            crate::application::reading_habits::MarkRead::default().as_stored()
+        );
+        assert_eq!(
+            parsed.copy_lines,
+            crate::application::reading_habits::CopyLines::default().as_stored()
+        );
+        assert_eq!(
+            parsed.working_day_starts,
+            crate::application::reading_habits::WorkingDay::default().starts
+        );
+        assert_eq!(
+            parsed.working_day_ends,
+            crate::application::reading_habits::WorkingDay::default().ends
+        );
+        assert_eq!(
+            parsed.draft_autosave_minutes,
+            crate::application::autosave::AutosaveInterval::default().minutes()
+        );
+        assert!(
+            parsed.working_day_starts < parsed.working_day_ends,
+            "the working day ends before it starts"
+        );
+    }
+
+    #[test]
+    fn test_a_fresh_installation_checks_spelling_in_this_machine_s_language() {
+        // A settings file comes into being two ways: this default for a fresh
+        // installation, and serde's per-field defaults for a file written
+        // before a field existed. They were written out twice and drifted.
+        //
+        // The language is where it showed. A fresh installation got "en"
+        // whatever the machine was set to, so anybody writing in another
+        // language had every word of it called a mistake until they found the
+        // setting, and finding a setting by hearing every word marked wrong is
+        // not finding it. An upgraded file already followed the machine.
+        assert_eq!(
+            AppConfig::default().language,
+            crate::service::spellcheck::language_of_this_machine()
+                .unwrap_or_else(|| "en".to_string()),
+            "a fresh installation does not check spelling in this machine's language"
+        );
     }
 
     #[test]

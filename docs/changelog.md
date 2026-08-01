@@ -167,6 +167,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   about it to say what it is. It now says "Unknown", which is at least
   something to move past.
 
+- **A new installation now checks spelling in the language the machine is set
+  to.** Following the machine was done once and only half of it landed. A
+  settings file written before the setting existed picked the machine's
+  language up correctly, but a fresh installation wrote "en" for everybody, so
+  anybody writing in another language had every word of it called a mistake
+  until they found the setting. Finding a setting by hearing every word marked
+  wrong is not finding it.
+
+  The cause was that a settings file comes into being two ways and they were
+  written out twice. They now use the same answer for every setting, so they
+  cannot drift apart again.
+
 - **An account can no longer print its own password.** The account record holds
   a password and two sign-in tokens, and the debug format a diagnostic line
   would print included all three. Nothing prints one today, so nothing has
