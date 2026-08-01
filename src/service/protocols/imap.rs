@@ -1489,6 +1489,76 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_a_message_reports_the_flags_the_server_gave_it() {
+        // Found by mutation testing: every one of these could have returned a
+        // fixed answer with the suite still green. `seen` answering true for
+        // everything is the worst of them, because a mailbox would arrive
+        // entirely read and nothing would ever be announced as new.
+        let with = |flags: &[&str]| ImapMessage {
+            uid: 1,
+            flags: flags.iter().map(|f| f.to_string()).collect(),
+            ..Default::default()
+        };
+
+        let read = with(&["\\Seen"]);
+        assert!(read.seen());
+        assert!(!read.flagged());
+        assert!(!read.answered());
+        assert!(!read.draft());
+        assert!(!read.deleted());
+
+        assert!(with(&["\\Flagged"]).flagged());
+        assert!(with(&["\\Answered"]).answered());
+        assert!(with(&["\\Draft"]).draft());
+        assert!(with(&["\\Deleted"]).deleted());
+
+        let none = with(&[]);
+        assert!(!none.seen(), "a message with no flags read as already read");
+        assert!(!none.flagged());
+        assert!(!none.answered());
+        assert!(!none.draft());
+        assert!(!none.deleted());
+    }
+
+    #[test]
+    fn test_a_flag_is_recognised_however_the_server_spells_it() {
+        // Servers differ on case, and a message read on another client that
+        // came back as \seen would otherwise arrive unread every time.
+        assert!(
+            ImapMessage {
+                uid: 1,
+                flags: vec!["\\seen".to_string()],
+                ..Default::default()
+            }
+            .seen()
+        );
+    }
+
+    #[test]
+    fn test_each_way_of_deleting_is_described_differently() {
+        // Deleting behaves differently depending on what the server allowed,
+        // and somebody who cannot see the folder list has only this sentence
+        // to tell them which of the four happened.
+        let all = [
+            Deletion::MovedToTrash,
+            Deletion::CopiedToTrashAndFlagged,
+            Deletion::Removed,
+            Deletion::MarkedOnly,
+        ];
+        let mut said: Vec<&str> = all.iter().map(|d| d.spoken()).collect();
+
+        for sentence in &said {
+            assert!(!sentence.trim().is_empty(), "a deletion said nothing");
+        }
+        let before = said.len();
+        said.sort_unstable();
+        said.dedup();
+        assert_eq!(before, said.len(), "two kinds of deletion read the same");
+        assert!(Deletion::MovedToTrash.spoken().contains("Trash"));
+        assert!(Deletion::Removed.spoken().contains("Deleted"));
+    }
+
+    #[test]
     fn test_a_server_with_no_name_is_refused_before_a_socket_is_opened() {
         let config = ImapConfig {
             server: "   ".to_string(),
