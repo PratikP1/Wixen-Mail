@@ -737,20 +737,38 @@ impl MessageCache {
         })
     }
 
-    /// Extract the TYPE= parameter from a vCard property prefix (e.g., "TEL;TYPE=WORK" → "Work")
+    /// The label a vCard property carries, as something worth reading out.
+    ///
+    /// "TEL;TYPE=WORK" gives "Work". The label is what tells two phone numbers
+    /// apart when they are read aloud, so it is taken in the shapes other
+    /// clients write it rather than only the tidiest one: RFC 6350 makes the
+    /// parameter name case insensitive, lets several types be listed at once,
+    /// and lets the value be quoted.
     fn extract_vcard_type_param(prefix: &str) -> String {
+        const NO_LABEL: &str = "Other";
+
         for part in prefix.split(';') {
-            if let Some(val) = part.strip_prefix("TYPE=") {
-                // Title case the first word (e.g., "WORK" → "Work", "HOME" → "Home")
-                let lower = val.to_lowercase();
-                let mut chars = lower.chars();
-                return match chars.next() {
-                    None => "Other".to_string(),
-                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                };
+            let Some((name, value)) = part.split_once('=') else {
+                continue;
+            };
+            if !name.eq_ignore_ascii_case("TYPE") {
+                continue;
             }
+
+            let value = value.trim_matches('"');
+            let head = match value.split_once(',') {
+                Some((first, _)) => first,
+                None => value,
+            };
+
+            let lower = head.trim().to_lowercase();
+            let mut chars = lower.chars();
+            return match chars.next() {
+                None => NO_LABEL.to_string(),
+                Some(letter) => letter.to_uppercase().collect::<String>() + chars.as_str(),
+            };
         }
-        "Other".to_string()
+        NO_LABEL.to_string()
     }
 
     fn escape_vcard_text(value: &str) -> String {
@@ -848,8 +866,22 @@ impl MessageCache {
         lines
     }
 
+    /// A name to show for somebody whose address arrived without one.
+    ///
+    /// The part before the @ is what other clients show and what somebody
+    /// would recognise. An address with nothing before it is malformed, and
+    /// these are read out of headers written by strangers, so it gets a word
+    /// instead: a contact with an empty name is a row in the list that
+    /// announces nothing at all when it is read out.
     fn email_local_part_or_unknown(email: &str) -> String {
-        email.split('@').next().unwrap_or("Unknown").to_string()
+        let local = match email.split_once('@') {
+            Some((local, _)) => local,
+            None => email,
+        };
+        match local.trim() {
+            "" => "Unknown".to_string(),
+            name => name.to_string(),
+        }
     }
 }
 
@@ -998,6 +1030,143 @@ mod tests {
                 folded.len()
             );
         }
+    }
+
+    #[test]
+    fn test_the_characters_that_separate_vcard_fields_are_escaped_on_the_way_out() {
+        // A vCard separates fields with semicolons and lists with commas, so
+        // a contact called "Hopper, Grace" written out unescaped becomes two
+        // contacts, or one with the surname in the wrong field.
+        assert_eq!(MessageCache::escape_vcard_text("a,b"), "a\\,b");
+        assert_eq!(MessageCache::escape_vcard_text("a;b"), "a\\;b");
+        assert_eq!(MessageCache::escape_vcard_text("a\\b"), "a\\\\b");
+        assert_eq!(MessageCache::escape_vcard_text("a\nb"), "a\\nb");
+    }
+
+    #[test]
+    fn test_a_name_with_punctuation_survives_export_and_being_read_back() {
+        // Escaping and unescaping have to be exact inverses or an exported
+        // contact does not come back the way it went out, which is the one
+        // thing a .vcf file is for.
+        for original in [
+            "Hopper, Grace",
+            "12 High Street; Flat 2",
+            "back\\slash",
+            "two\nlines",
+            "all of it: \\ ; , \n",
+            "",
+            "\u{4f60}\u{597d}, world",
+        ] {
+            let escaped = MessageCache::escape_vcard_text(original);
+
+            assert_eq!(
+                MessageCache::unescape_vcard_text(&escaped),
+                original,
+                "{original:?} did not survive the round trip"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_backslash_before_nothing_in_particular_is_left_alone() {
+        // Import takes files written by other clients, and a stray backslash
+        // is not a reason to lose the rest of the line.
+        assert_eq!(MessageCache::unescape_vcard_text("a\\qb"), "a\\qb");
+        assert_eq!(
+            MessageCache::unescape_vcard_text("ends with\\"),
+            "ends with\\"
+        );
+        assert_eq!(MessageCache::unescape_vcard_text("\\N"), "\n");
+    }
+
+    #[test]
+    fn test_a_phone_or_address_keeps_the_label_it_arrived_with() {
+        // The label is what tells two numbers apart when they are read out.
+        // Without it every row says "Other" and somebody has to ring one to
+        // find out which is which.
+        for (prefix, expected) in [
+            ("TEL;TYPE=WORK", "Work"),
+            ("EMAIL;TYPE=HOME", "Home"),
+            ("ADR;TYPE=work", "Work"),
+            // RFC 6350 makes the parameter name case insensitive, and other
+            // clients do write it in lower case.
+            ("TEL;type=CELL", "Cell"),
+            ("TEL;Type=Fax", "Fax"),
+            // Several types at once, which is ordinary in an exported file.
+            // The first is the one worth saying.
+            ("TEL;TYPE=WORK,VOICE", "Work"),
+            ("TEL;TYPE=\"WORK,VOICE\"", "Work"),
+            // Another parameter first, which is also ordinary.
+            ("TEL;PREF=1;TYPE=HOME", "Home"),
+            // Nothing to go on.
+            ("TEL", "Other"),
+            ("TEL;TYPE=", "Other"),
+            ("TEL;PREF=1", "Other"),
+        ] {
+            assert_eq!(
+                MessageCache::extract_vcard_type_param(prefix),
+                expected,
+                "{prefix} was labelled wrongly"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_name_and_address_are_read_out_of_the_shapes_a_header_uses() {
+        for (token, name, email) in [
+            (
+                "Grace Hopper <grace@example.com>",
+                "Grace Hopper",
+                "grace@example.com",
+            ),
+            (
+                "\"Hopper, Grace\" <grace@example.com>",
+                "Hopper, Grace",
+                "grace@example.com",
+            ),
+            ("<grace@example.com>", "", "grace@example.com"),
+            ("grace@example.com", "", "grace@example.com"),
+            ("  grace@example.com  ", "", "grace@example.com"),
+        ] {
+            assert_eq!(
+                MessageCache::parse_name_email(token),
+                Some((name.to_string(), email.to_string())),
+                "{token:?} was read wrongly"
+            );
+        }
+    }
+
+    #[test]
+    fn test_something_that_is_not_an_address_is_not_taken_for_one() {
+        // Auto-import adds a contact for everything it finds in a header. One
+        // that is not an address is a row in the contact list that can never
+        // be written to and that nothing will ever explain.
+        for token in ["", "   ", "Grace Hopper", "<not-an-address>", "<>"] {
+            assert_eq!(
+                MessageCache::parse_name_email(token),
+                None,
+                "{token:?} was taken for an address"
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_address_with_nothing_before_the_at_still_gets_a_name() {
+        // Auto-import reads addresses out of headers written by strangers. A
+        // contact with an empty name is a row in the list that announces
+        // nothing when it is read out, and nothing about it says what it is.
+        assert_eq!(
+            MessageCache::email_local_part_or_unknown("grace@example.com"),
+            "grace"
+        );
+        assert_eq!(
+            MessageCache::email_local_part_or_unknown("@example.com"),
+            "Unknown"
+        );
+        assert_eq!(
+            MessageCache::email_local_part_or_unknown("   @example.com"),
+            "Unknown"
+        );
     }
 
     #[test]

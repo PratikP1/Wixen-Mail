@@ -151,6 +151,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **An imported contact keeps the labels on its phone numbers and addresses.**
+  "Work", "Home", "Mobile" and the rest were only read when the file wrote the
+  parameter name in capitals and listed exactly one label. RFC 6350 says the
+  name is case insensitive and lets several labels be listed at once, and other
+  clients do both, so a file exported from one of them came in with every
+  number labelled "Other". The label is what tells two numbers apart when they
+  are read out, and without it the only way to find out which is which is to
+  ring one.
+
+- **A contact taken from an address with nothing before the @ now has a name.**
+  Auto-import reads addresses out of headers written by strangers, and a
+  malformed one produced a contact whose name was an empty string: a row in the
+  contact list that announces nothing at all when it is read out, with nothing
+  about it to say what it is. It now says "Unknown", which is at least
+  something to move past.
+
 - **The mail sync is tested.** What to fetch, what to forget, whose flags to
   ask about, whether a folder has been renumbered and what to do with what
   comes back are all decisions, and none of them had ever run in a test,
