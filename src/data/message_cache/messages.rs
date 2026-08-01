@@ -1092,6 +1092,193 @@ mod tests {
     }
 
     #[test]
+    fn test_a_locally_made_message_gets_a_number_of_its_own() {
+        // A local folder and a POP mailbox have no numbering from a server, so
+        // this invents one, and the table keys messages on folder and number.
+        // Handing out the same number twice means the second message replaces
+        // the first: mail lost with nothing to show it.
+        let cache = fresh("local_uid");
+        let inbox = folder(&cache, "Local");
+        let other = folder(&cache, "Elsewhere");
+
+        assert_eq!(
+            cache.next_local_uid(inbox).unwrap(),
+            1,
+            "an empty folder should start at one"
+        );
+
+        cache.upsert_message(&incoming(inbox, 1, "First")).unwrap();
+        assert_eq!(cache.next_local_uid(inbox).unwrap(), 2);
+
+        cache.upsert_message(&incoming(inbox, 7, "Jumped")).unwrap();
+        assert_eq!(
+            cache.next_local_uid(inbox).unwrap(),
+            8,
+            "the next number has to clear the highest, not the count"
+        );
+
+        assert_eq!(
+            cache.next_local_uid(other).unwrap(),
+            1,
+            "numbering is per folder, and one folder's messages moved another's"
+        );
+    }
+
+    #[test]
+    fn test_a_message_is_found_by_the_id_its_sender_gave_it() {
+        // How a reply is matched to what it answers, and how the outgoing copy
+        // filed in Sent is recognised as one already held.
+        let cache = fresh("by_message_id");
+        let inbox = folder(&cache, "INBOX");
+        let elsewhere = folder(&cache, "Archive");
+        cache.upsert_message(&incoming(inbox, 42, "Hello")).unwrap();
+
+        assert_eq!(
+            cache
+                .message_uid_by_message_id(inbox, "<42@example.com>")
+                .unwrap(),
+            Some(42)
+        );
+        assert_eq!(
+            cache
+                .message_uid_by_message_id(inbox, "<nobody@example.com>")
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            cache
+                .message_uid_by_message_id(elsewhere, "<42@example.com>")
+                .unwrap(),
+            None,
+            "a message was found in a folder it is not in"
+        );
+    }
+
+    #[test]
+    fn test_the_row_behind_a_server_number_is_the_right_row() {
+        // The sync speaks in server numbers and the label tables speak in row
+        // ids. The wrong row here puts somebody's label on another message.
+        let cache = fresh("row_for_uid");
+        let inbox = folder(&cache, "INBOX");
+        let archive = folder(&cache, "Archive");
+        let first = cache.upsert_message(&incoming(inbox, 5, "First")).unwrap();
+        let second = cache.upsert_message(&incoming(inbox, 9, "Second")).unwrap();
+
+        assert_eq!(cache.message_row_for_uid(inbox, 5).unwrap(), Some(first));
+        assert_eq!(cache.message_row_for_uid(inbox, 9).unwrap(), Some(second));
+        assert_ne!(first, second);
+        assert_eq!(
+            cache.message_row_for_uid(inbox, 404).unwrap(),
+            None,
+            "a number this cache does not hold was given a row"
+        );
+        assert_eq!(
+            cache.message_row_for_uid(archive, 5).unwrap(),
+            None,
+            "a number was matched in the wrong folder"
+        );
+    }
+
+    #[test]
+    fn test_the_mailbox_to_open_for_a_message_is_the_one_holding_it() {
+        // Fetching a body means selecting a mailbox first. The wrong path is a
+        // message that will not open, and an empty one is a command the server
+        // rejects.
+        let cache = fresh("folder_path");
+        let inbox = folder(&cache, "INBOX");
+        let archive = folder(&cache, "Archive");
+        let here = cache.upsert_message(&incoming(inbox, 1, "Here")).unwrap();
+        let there = cache
+            .upsert_message(&incoming(archive, 1, "There"))
+            .unwrap();
+
+        assert_eq!(
+            cache.folder_path_for_message(here).unwrap(),
+            Some("INBOX".to_string())
+        );
+        assert_eq!(
+            cache.folder_path_for_message(there).unwrap(),
+            Some("Archive".to_string())
+        );
+        assert_eq!(
+            cache.folder_path_for_message(999_999).unwrap(),
+            None,
+            "a message that is not held was given a mailbox"
+        );
+    }
+
+    #[test]
+    fn test_a_verdict_worked_out_later_can_be_stored_and_read_back() {
+        // The verdict from the headers is stored as the message arrives, and
+        // that path is tested. This is the other one: a link checked after the
+        // fact, written against the message and read again when it is opened.
+        // Losing it means the warning bar stops appearing, which is a warning
+        // somebody does not get.
+        use crate::service::safety::{Safety, Verdict};
+        let cache = fresh("safety_round_trip");
+        let inbox = folder(&cache, "INBOX");
+        let id = cache
+            .upsert_message(&incoming(inbox, 1, "Sign in"))
+            .unwrap();
+        let other = cache.upsert_message(&incoming(inbox, 2, "Lunch")).unwrap();
+
+        assert_eq!(
+            cache.message_safety(id).unwrap().level,
+            Safety::Ordinary,
+            "a message nothing has been said about is not a warning"
+        );
+
+        cache
+            .set_message_safety(
+                id,
+                &Verdict {
+                    level: Safety::Phishing,
+                    reasons: vec!["The link goes somewhere else".to_string()],
+                },
+            )
+            .unwrap();
+
+        let stored = cache.message_safety(id).unwrap();
+        assert_eq!(stored.level, Safety::Phishing);
+        assert_eq!(stored.reasons, ["The link goes somewhere else"]);
+        assert_eq!(
+            cache.message_safety(other).unwrap().level,
+            Safety::Ordinary,
+            "one message's verdict was written against another"
+        );
+    }
+
+    #[test]
+    fn test_an_empty_reason_is_not_read_out_as_one() {
+        // The reasons are stored one to a line, so a trailing newline or a
+        // blank line would otherwise become a bullet with nothing in it in the
+        // warning the reader hears.
+        use crate::service::safety::{Safety, Verdict};
+        let cache = fresh("safety_reasons");
+        let inbox = folder(&cache, "INBOX");
+        let id = cache
+            .upsert_message(&incoming(inbox, 1, "Sign in"))
+            .unwrap();
+
+        cache
+            .set_message_safety(
+                id,
+                &Verdict {
+                    level: Safety::Suspicious,
+                    reasons: vec![
+                        "One".to_string(),
+                        "   ".to_string(),
+                        String::new(),
+                        "Two".to_string(),
+                    ],
+                },
+            )
+            .unwrap();
+
+        assert_eq!(cache.message_safety(id).unwrap().reasons, ["One", "Two"]);
+    }
+
+    #[test]
     fn test_flags_set_elsewhere_reach_the_cache() {
         // A message read on a phone is read. Before this the header fetch only
         // asked about messages the cache did not have, so a message already

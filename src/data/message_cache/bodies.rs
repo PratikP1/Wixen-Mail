@@ -467,6 +467,80 @@ mod tests {
     }
 
     #[test]
+    fn test_reading_a_body_again_makes_something_else_the_candidate() {
+        // The test above saves the two bodies in the order it wants them
+        // evicted, so it passes whether or not reading one counts for
+        // anything. This one saves them in the opposite order to the answer it
+        // expects, so the only thing that can produce it is the read being
+        // recorded. Without that, opening the same message every day is no
+        // protection: it is dropped as though it had never been looked at, and
+        // has to be downloaded again.
+        let (cache, _dir) = body_test_cache();
+        let first = cache.save_message(&cached(1, "First")).unwrap();
+        let second = cache.save_message(&cached(2, "Second")).unwrap();
+        cache
+            .save_message_body(first, Some("aaaaaaaaaa"), None)
+            .unwrap();
+        cache
+            .save_message_body(second, Some("bbbbbbbbbb"), None)
+            .unwrap();
+
+        cache.touch_message_body(first).unwrap();
+
+        assert_eq!(cache.evict_bodies_over(10).unwrap(), 10);
+        assert!(
+            cache.get_message_body(first).unwrap().is_some(),
+            "the body that was just read is the one that was dropped"
+        );
+        assert!(cache.get_message_body(second).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_eviction_keeps_going_until_it_is_under_the_budget() {
+        // It stops when the running total is small enough, so the total has to
+        // come down by what each body actually freed. Getting that wrong stops
+        // after one and leaves the cache over its limit, which is a folder
+        // that grows without bound on a machine somebody chose this client for
+        // because it was meant to be light.
+        let (cache, _dir) = body_test_cache();
+        let mut ids = Vec::new();
+        for n in 1..=3 {
+            let id = cache.save_message(&cached(n, "Body")).unwrap();
+            cache
+                .save_message_body(id, Some("aaaaaaaaaa"), None)
+                .unwrap();
+            ids.push(id);
+        }
+        assert_eq!(cache.cached_body_bytes().unwrap(), 30);
+
+        let freed = cache.evict_bodies_over(10).unwrap();
+
+        assert_eq!(freed, 20, "it stopped before reaching the budget");
+        assert_eq!(cache.cached_body_bytes().unwrap(), 10);
+        assert!(
+            cache.get_message_body(ids[2]).unwrap().is_some(),
+            "the most recently stored body should be the one kept"
+        );
+    }
+
+    #[test]
+    fn test_the_time_a_body_was_read_is_a_time() {
+        // Eviction orders on this as text, so a constant, or anything that is
+        // not a date, makes the order meaningless without failing anywhere.
+        let earlier = now();
+        let later = now();
+
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(&earlier).is_ok(),
+            "{earlier} is not a date"
+        );
+        assert!(
+            later >= earlier,
+            "two readings came back in the wrong order: {earlier} then {later}"
+        );
+    }
+
+    #[test]
     fn test_eviction_under_budget_does_nothing() {
         let (cache, _dir) = body_test_cache();
         let id = cache.save_message(&cached(1, "Small")).unwrap();

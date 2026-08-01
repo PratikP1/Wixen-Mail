@@ -284,6 +284,57 @@ mod tests {
     }
 
     #[test]
+    fn test_deleting_a_note_folder_takes_the_notes_in_it() {
+        // Reporting success and removing nothing leaves the folder in the list
+        // after somebody deleted it, and it comes back on the next start.
+        // Leaving the notes behind is worse: they belong to a folder that is
+        // gone, so nothing in the application can reach them again.
+        let cache = test_cache();
+        let kept = cache.ensure_default_note_folder("acct-1").unwrap();
+        let going = NoteFolderEntry {
+            id: "folder-going".to_string(),
+            account_id: "acct-1".to_string(),
+            name: "Old ideas".to_string(),
+            display_order: 1,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+        cache.save_note_folder(&going).unwrap();
+        for (id, folder) in [("note-going", &going.id), ("note-kept", &kept.id)] {
+            cache
+                .save_note(&NoteEntry {
+                    id: id.to_string(),
+                    account_id: "acct-1".to_string(),
+                    folder_id: Some(folder.clone()),
+                    title: "A note".to_string(),
+                    body: "Something worth keeping".to_string(),
+                    format: "plain".to_string(),
+                    pinned: false,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                    updated_at: chrono::Utc::now().to_rfc3339(),
+                })
+                .unwrap();
+        }
+
+        cache.delete_note_folder(&going.id).unwrap();
+
+        let folders = cache.get_note_folders_for_account("acct-1").unwrap();
+        assert_eq!(
+            folders.iter().map(|f| f.id.as_str()).collect::<Vec<_>>(),
+            [kept.id.as_str()],
+            "the folder was reported deleted and is still there"
+        );
+        assert!(
+            cache.get_notes_for_folder(&going.id).unwrap().is_empty(),
+            "the notes outlived the folder holding them"
+        );
+        assert_eq!(
+            cache.get_notes_for_folder(&kept.id).unwrap().len(),
+            1,
+            "deleting one folder took another folder's notes"
+        );
+    }
+
+    #[test]
     fn test_note_crud() {
         let cache = test_cache();
         let nf = cache.ensure_default_note_folder("acct-1").unwrap();

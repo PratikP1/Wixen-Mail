@@ -325,6 +325,84 @@ mod tests {
     }
 
     #[test]
+    fn test_a_folder_says_which_account_it_belongs_to_and_what_kind_it_is() {
+        // The sync works in folder ids and everything else works in account
+        // ids, and this row is the only thing holding both. The wrong answer
+        // sends a flag, a deletion or a send to another account's server, and
+        // no answer at all stops the action with nothing to explain it.
+        let cache = fresh("folder_identity");
+        let mut mine = inbox();
+        mine.account_id = "acc-mine".to_string();
+        mine.path = "INBOX".to_string();
+        let mine_id = cache.save_folder(&mine).unwrap();
+
+        let mut theirs = inbox();
+        theirs.account_id = "acc-theirs".to_string();
+        theirs.path = "Sent".to_string();
+        theirs.folder_type = "Sent".to_string();
+        let theirs_id = cache.save_folder(&theirs).unwrap();
+
+        assert_eq!(
+            cache.folder_account(mine_id).unwrap(),
+            Some("acc-mine".to_string())
+        );
+        assert_eq!(
+            cache.folder_account(theirs_id).unwrap(),
+            Some("acc-theirs".to_string())
+        );
+        assert_eq!(
+            cache.folder_account(999_999).unwrap(),
+            None,
+            "a folder that is not there was given an account"
+        );
+
+        assert_eq!(
+            cache.folder_kind(mine_id).unwrap(),
+            Some(crate::common::types::FolderType::Inbox)
+        );
+        assert_eq!(
+            cache.folder_kind(theirs_id).unwrap(),
+            Some(crate::common::types::FolderType::Sent)
+        );
+        assert_eq!(cache.folder_kind(999_999).unwrap(), None);
+    }
+
+    #[test]
+    fn test_what_the_server_says_a_folder_holds_is_what_is_stored() {
+        // Counted from the server, not from the rows here, because only part
+        // of a large folder is cached. Not storing it leaves every folder
+        // reading as empty in the tree, which is where somebody looks to find
+        // out whether anything new has arrived.
+        let cache = fresh("folder_counts");
+        let first = cache.save_folder(&inbox()).unwrap();
+        let mut second = inbox();
+        second.path = "Archive".to_string();
+        let second_id = cache.save_folder(&second).unwrap();
+
+        cache.set_folder_counts(first, 3, 40_000).unwrap();
+
+        let read_back = |id: i64| {
+            cache
+                .get_folders_for_account(&inbox().account_id)
+                .unwrap()
+                .into_iter()
+                .find(|f| f.id == id)
+                .expect("the folder")
+        };
+        let counted = read_back(first);
+        assert_eq!(counted.unread_count, 3, "the unread count was not stored");
+        assert_eq!(
+            counted.total_count, 40_000,
+            "the total was not stored, or was counted from what is cached"
+        );
+        assert_eq!(
+            read_back(second_id).unread_count,
+            0,
+            "one folder's counts were written to another"
+        );
+    }
+
+    #[test]
     fn test_saving_the_folder_list_again_keeps_what_the_folder_knows() {
         // Every sync saves the folder list. Replacing the row instead of
         // updating it threw away UIDVALIDITY, the modification sequence and

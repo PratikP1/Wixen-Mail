@@ -526,6 +526,48 @@ mod tests {
     }
 
     #[test]
+    fn test_deleting_a_task_list_takes_the_tasks_in_it() {
+        // Same shape as the note folder. A list reported deleted and still
+        // present comes back on the next start; tasks left behind belong to a
+        // list that is gone, so nothing can reach them to finish or remove.
+        let cache = test_cache();
+        cache.save_task_list(&shared_list()).unwrap();
+        let other = TaskListEntry {
+            id: "google:other".to_string(),
+            // A different name as well as a different id: one account cannot
+            // have two lists called the same thing.
+            name: "Household".to_string(),
+            ..shared_list()
+        };
+        cache.save_task_list(&other).unwrap();
+        cache.save_task(&shared_task("task-going")).unwrap();
+        cache
+            .save_task(&TaskEntry {
+                task_list_id: Some(other.id.clone()),
+                ..shared_task("task-kept")
+            })
+            .unwrap();
+
+        cache.delete_task_list("google:list").unwrap();
+
+        let lists = cache.get_task_lists_for_account("acc").unwrap();
+        assert_eq!(
+            lists.iter().map(|l| l.id.as_str()).collect::<Vec<_>>(),
+            [other.id.as_str()],
+            "the list was reported deleted and is still there"
+        );
+        assert!(
+            cache.get_tasks_for_list("google:list").unwrap().is_empty(),
+            "the tasks outlived the list holding them"
+        );
+        assert_eq!(
+            cache.get_tasks_for_list(&other.id).unwrap().len(),
+            1,
+            "deleting one list took another list's tasks"
+        );
+    }
+
+    #[test]
     fn test_task_list_crud() {
         let cache = test_cache();
         let tl = cache.ensure_default_task_list("acct-1").unwrap();

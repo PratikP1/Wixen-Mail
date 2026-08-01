@@ -200,6 +200,18 @@ impl MessageCache {
         if let Err(e) = credentials::forget(account_id) {
             tracing::warn!("Removed {account_id} but its saved password is still stored: {e}");
         }
+
+        // And so does the mail. This used to remove the account row alone,
+        // leaving every folder, message, body and draft it owned in a database
+        // that is not encrypted and does get copied and backed up, with
+        // nothing left in the application able to reach them. Somebody who
+        // removes an account has said what they want to happen to it.
+        //
+        // Folders go first and the messages and bodies follow them, because
+        // the schema cascades and `foreign_keys` is on.
+        self.clear_account_cache(account_id)?;
+        self.clear_drafts(account_id)?;
+
         self.conn
             .execute("DELETE FROM accounts WHERE id = ?1", params![account_id])
             .map_err(|e| Error::Other(format!("Failed to delete account: {}", e)))?;
@@ -394,6 +406,103 @@ mod tests {
             "the password outlived the account"
         );
         assert!(cache.load_accounts().expect("accounts to load").is_empty());
+    }
+
+    #[test]
+    fn test_deleting_an_account_takes_its_mail_with_it() {
+        // Removing an account left every folder, message, body and draft it
+        // owned in the database, with nothing left in the application able to
+        // reach them. The cache is not encrypted and gets copied and backed
+        // up, so mail from an account somebody deliberately removed stayed on
+        // disk indefinitely. The two methods that clear it existed and nothing
+        // called either.
+        let cache = a_cache("account_removal");
+        for id in ["acc-going", "acc-staying"] {
+            cache
+                .save_account(&an_account(id, &format!("{id}@example.com"), "pw"))
+                .expect("an account to save");
+            let folder_id = cache
+                .save_folder(&super::super::CachedFolder {
+                    id: 0,
+                    account_id: id.to_string(),
+                    name: "INBOX".to_string(),
+                    path: "INBOX".to_string(),
+                    folder_type: "Inbox".to_string(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .expect("a folder to save");
+            cache
+                .save_message(&super::super::CachedMessage {
+                    id: 0,
+                    uid: 1,
+                    folder_id,
+                    message_id: format!("m@{id}"),
+                    subject: "Kept".to_string(),
+                    from_addr: "sender@example.com".to_string(),
+                    to_addr: "me@example.com".to_string(),
+                    cc: None,
+                    date: "2026-08-01".to_string(),
+                    body_plain: Some("Body".to_string()),
+                    body_html: None,
+                    read: false,
+                    starred: false,
+                    deleted: false,
+                })
+                .expect("a message to save");
+            cache
+                .save_draft(&super::super::CachedDraft {
+                    id: format!("draft-{id}"),
+                    account_id: id.to_string(),
+                    to_addr: "someone@example.com".to_string(),
+                    cc: None,
+                    bcc: None,
+                    subject: "Half written".to_string(),
+                    body: "Body".to_string(),
+                    created_at: "2026-08-01".to_string(),
+                    updated_at: "2026-08-01".to_string(),
+                })
+                .expect("a draft to save");
+        }
+
+        cache
+            .delete_account("acc-going")
+            .expect("the account to be deleted");
+
+        assert!(
+            cache
+                .get_folders_for_account("acc-going")
+                .expect("folders to be readable")
+                .is_empty(),
+            "the removed account's folders are still in the database"
+        );
+        assert!(
+            cache
+                .load_drafts("acc-going")
+                .expect("drafts to be readable")
+                .is_empty(),
+            "the removed account's drafts are still in the database"
+        );
+
+        // And the account left behind keeps everything.
+        assert_eq!(
+            cache
+                .get_folders_for_account("acc-staying")
+                .expect("folders to be readable")
+                .len(),
+            1,
+            "removing one account took another account's mail"
+        );
+        assert_eq!(
+            cache
+                .load_drafts("acc-staying")
+                .expect("drafts to be readable")
+                .len(),
+            1,
+            "removing one account took another account's drafts"
+        );
+
+        credentials::forget("acc-staying").ok();
     }
 
     #[test]
