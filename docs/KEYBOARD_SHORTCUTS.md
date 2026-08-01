@@ -427,10 +427,14 @@ it off again. Nine labels have a key; a tenth is reached from the Label menu.
 An account starts with the five Thunderbird uses, in the same order, so the
 numbers you already know still work: Important, Work, Personal, To Do, Later.
 
-**A label stays on this computer for now.** Each one carries the IMAP keyword
-that would make it the same label in Thunderbird, and nothing sends those to the
-server yet, so a message you label here is not labelled anywhere else and a
-label you set on your phone does not arrive here.
+Labels travel as IMAP keywords, so a message you label here is labelled in
+Thunderbird too, and a label you set on your phone arrives here on the next
+check. A label you make yourself carries a keyword built from the letters of its
+name, because a keyword cannot hold a space.
+
+Sending a label to the server is a change to your mailbox, so it is switched off
+until you allow changes to mail in Settings. Until then labels work here and go
+no further.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|

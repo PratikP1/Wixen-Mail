@@ -802,6 +802,23 @@ impl MessageCache {
     }
 
     /// Get a specific message by ID
+    /// The row id of a message named by its folder and uid.
+    ///
+    /// The sync speaks in uids because that is what the server uses; the tag
+    /// tables speak in row ids. `None` for a uid this cache does not hold,
+    /// which happens whenever the server reports a message that has not been
+    /// downloaded.
+    pub fn message_row_for_uid(&self, folder_id: i64, uid: u32) -> Result<Option<i64>> {
+        self.conn
+            .query_row(
+                "SELECT id FROM messages WHERE folder_id = ?1 AND uid = ?2",
+                params![folder_id, uid],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to find the message: {}", e)))
+    }
+
     pub fn get_message(&self, message_id: i64) -> Result<Option<CachedMessage>> {
         let mut stmt = self
             .conn

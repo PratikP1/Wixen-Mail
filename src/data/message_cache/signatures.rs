@@ -110,9 +110,14 @@ impl MessageCache {
         Ok(signature)
     }
 
-    /// Update a signature
-    pub fn update_signature(&self, signature: &Signature) -> Result<()> {
-        self.conn
+    /// Update a signature, and say how many rows that touched.
+    ///
+    /// The count matters, for the same reason it does on a label. Updating a
+    /// row that is not there is not an error in SQL, so a caller that creates
+    /// only when the update fails would never create anything.
+    pub fn update_signature(&self, signature: &Signature) -> Result<usize> {
+        let touched = self
+            .conn
             .execute(
                 "UPDATE signatures
              SET name = ?1, content_plain = ?2, content_html = ?3, is_default = ?4
@@ -135,7 +140,7 @@ impl MessageCache {
                 )
                 .map_err(|e| Error::Other(format!("Failed to update defaults: {}", e)))?;
         }
-        Ok(())
+        Ok(touched)
     }
 
     /// Delete a signature

@@ -25,16 +25,26 @@
 //! The names and colours are Thunderbird's, because somebody arriving from
 //! there should find their own labels rather than have to rebuild them.
 //!
-//! # What is not built yet
+//! # How a label travels
 //!
-//! A label stays on this computer. Each one carries the IMAP keyword that would
-//! make it the same label in Thunderbird, and nothing sends those keywords to
-//! the server yet, so a message labelled here is not labelled anywhere else and
-//! a label set on a phone does not arrive here.
+//! As an IMAP keyword, which is what every other client reads. The five an
+//! account starts with carry the keywords Thunderbird uses, so a message
+//! labelled Work here is labelled Work there. A label somebody makes carries a
+//! keyword built from the letters of its name, because a keyword is an atom and
+//! cannot hold a space.
 //!
-//! Said here, in the changelog and in the settings screen rather than left to
-//! be discovered by somebody who labelled a month of mail and then opened it on
-//! another machine.
+//! The keyword is stored beside the name rather than worked out at send time.
+//! Renaming a label must not change what it was already sent under: that would
+//! leave the old keyword on every message on the server with nothing here
+//! recognising it.
+//!
+//! A name with no letters or digits in it, like "!!!", has no keyword that
+//! could be sent. That label works here and goes no further, which the log says
+//! rather than pretending it was sent.
+//!
+//! Writing a keyword to the server is a write, so it is gated exactly like
+//! every other change to a mailbox and does not happen at all until somebody
+//! allows it.
 
 /// A label somebody can put on a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,6 +94,46 @@ pub const TO_BEGIN_WITH: [Label; 5] = [
         keyword: "$label5",
     },
 ];
+
+/// The keyword a label somebody made themselves travels as.
+///
+/// An IMAP keyword is an atom: no spaces and none of the characters the
+/// protocol reserves. A label called "Follow up" cannot be sent as it is, so
+/// its keyword is the letters and digits of its name with the rest taken out.
+///
+/// The name is kept beside it in the database, so this is a wire format rather
+/// than a rename: "Follow up" is still called "Follow up" everywhere somebody
+/// reads it.
+///
+/// `None` for a name with nothing usable in it. A label called "!!!" has no
+/// keyword that could be sent, and inventing one would put a label on somebody's
+/// mailbox under a name they never chose.
+pub fn keyword_from(name: &str) -> Option<String> {
+    let usable: String = name.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+    if usable.is_empty() {
+        return None;
+    }
+    // Not prefixed with a dollar. That prefix is for keywords with an agreed
+    // meaning across clients, and a label somebody invented has none.
+    Some(usable)
+}
+
+/// The keyword one of the starting labels travels as.
+pub fn keyword_for(name: &str) -> Option<&'static str> {
+    TO_BEGIN_WITH
+        .iter()
+        .find(|label| label.name.eq_ignore_ascii_case(name))
+        .map(|label| label.keyword)
+}
+
+/// Whether a keyword is one this application would have written.
+///
+/// A mailbox carries keywords from every client that has touched it, including
+/// ones this knows nothing about. Those are left alone rather than turned into
+/// labels nobody made.
+pub fn is_a_label_keyword(keyword: &str, known: &[String]) -> bool {
+    known.iter().any(|held| held == keyword)
+}
 
 /// How many labels the number keys can reach.
 ///
@@ -159,6 +209,40 @@ mod tests {
             .iter()
             .map(|label| label.name.to_string())
             .collect()
+    }
+
+    #[test]
+    fn test_a_label_with_a_space_in_it_still_has_a_keyword() {
+        // An IMAP keyword is an atom, so "Follow up" cannot be sent as it is.
+        assert_eq!(keyword_from("Follow up").as_deref(), Some("Followup"));
+        assert_eq!(keyword_from("Q4 / 2026").as_deref(), Some("Q42026"));
+    }
+
+    #[test]
+    fn test_a_name_with_nothing_usable_in_it_has_no_keyword() {
+        // Inventing one would put a label on somebody's mailbox under a name
+        // they never chose.
+        assert_eq!(keyword_from("!!!"), None);
+        assert_eq!(keyword_from("   "), None);
+    }
+
+    #[test]
+    fn test_the_starting_labels_keep_the_keywords_other_clients_know() {
+        // These are the ones with an agreed meaning, so they carry the dollar
+        // prefix and are not derived from their names.
+        assert_eq!(keyword_for("Important"), Some("$label1"));
+        assert_eq!(keyword_for("later"), Some("$label5"));
+        assert_eq!(keyword_for("Follow up"), None);
+    }
+
+    #[test]
+    fn test_a_keyword_from_another_client_is_not_turned_into_a_label() {
+        // A mailbox carries keywords from everything that has touched it.
+        let ours = vec!["$label1".to_string(), "Followup".to_string()];
+
+        assert!(is_a_label_keyword("$label1", &ours));
+        assert!(!is_a_label_keyword("$MailFlagBit0", &ours));
+        assert!(!is_a_label_keyword("NonJunk", &ours));
     }
 
     #[test]

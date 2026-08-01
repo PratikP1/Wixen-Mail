@@ -142,10 +142,20 @@ pub fn manage_tags(
             name: row.name.clone(),
             color: row.color.clone(),
             created_at: now_stamp(),
+            // One of the five with an agreed meaning keeps its shared keyword;
+            // anything somebody typed gets one made from its letters. A name
+            // with no letters in it has none, and that label stays here.
+            keyword: crate::application::tagging::keyword_for(&row.name)
+                .map(str::to_string)
+                .or_else(|| crate::application::tagging::keyword_from(&row.name)),
         };
-        // Update, then create if there was nothing to update. Asking first
+        // Update, then create if the update touched nothing. Asking first
         // would be a round trip to learn what the write settles anyway.
-        if cache.update_tag(&tag).is_err()
+        //
+        // On the count rather than on an error: updating a row that is not
+        // there is not an error in SQL, so the old test never created
+        // anything and every new label was silently dropped.
+        if cache.update_tag(&tag).unwrap_or(0) == 0
             && let Err(e) = cache.create_tag(&tag)
         {
             failures.push(format!("{}: {}", row.name, e));
@@ -205,7 +215,10 @@ pub fn manage_signatures(
             is_default: row.is_default,
             created_at: now_stamp(),
         };
-        if cache.update_signature(&signature).is_err()
+        // On the count, not on an error, for the same reason as the labels
+        // above: an update that matched nothing is not a failure in SQL, so
+        // every new signature was silently dropped.
+        if cache.update_signature(&signature).unwrap_or(0) == 0
             && let Err(e) = cache.create_signature(&signature)
         {
             failures.push(format!("{}: {}", row.name, e));

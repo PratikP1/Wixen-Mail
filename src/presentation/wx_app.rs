@@ -3980,7 +3980,7 @@ fn label_the_message(
     let Some(cache) = cache.as_ref() else {
         return send_status(tx, rt, "No storage is open");
     };
-    let (message_id, account_id) = {
+    let (message_id, uid, subject, account_id) = {
         let s = lock_state(state);
         let Some(index) = s.selected_message_index else {
             // Said rather than done silently. A key that appears to do nothing
@@ -3990,7 +3990,12 @@ fn label_the_message(
         let Some(message) = s.messages.get(index) else {
             return send_status(tx, rt, "That row is no longer there");
         };
-        (message.message_id, s.active_account_id.clone())
+        (
+            message.message_id,
+            message.uid,
+            message.subject.clone(),
+            s.active_account_id.clone(),
+        )
     };
     let Some(account_id) = account_id else {
         return send_status(tx, rt, "No account is open");
@@ -4013,8 +4018,27 @@ fn label_the_message(
         None => {
             let mut removed = 0;
             for tag in labels.iter().filter(|tag| on_it.contains(&tag.name)) {
-                if cache.remove_tag_from_message(message_id, &tag.id).is_ok() {
-                    removed += 1;
+                if cache.remove_tag_from_message(message_id, &tag.id).is_err() {
+                    continue;
+                }
+                removed += 1;
+                // Each one to the server as well. Clearing locally and not on
+                // the server would put every label back on the next sync,
+                // which reads as a key that did not work.
+                if let Some(keyword) = tag.keyword.clone() {
+                    spawn_server_change(
+                        state,
+                        tx,
+                        rt,
+                        message_id,
+                        uid,
+                        subject.clone(),
+                        ServerChange::Labelled {
+                            keyword,
+                            on: false,
+                            name: tag.name.clone(),
+                        },
+                    );
                 }
             }
             tagging::all_removed(removed)
@@ -4031,6 +4055,29 @@ fn label_the_message(
             };
             if let Err(e) = written {
                 return send_status(tx, rt, &format!("The label did not stick: {e}"));
+            }
+            // And the server, so the label is there on another device and in
+            // whatever client somebody opens next. A label with no keyword has
+            // nothing that could be sent and stays here, which the settings
+            // screen says rather than leaving it to be noticed.
+            match label.keyword.clone() {
+                Some(keyword) => spawn_server_change(
+                    state,
+                    tx,
+                    rt,
+                    message_id,
+                    uid,
+                    subject,
+                    ServerChange::Labelled {
+                        keyword,
+                        on: turning_on,
+                        name: label.name.clone(),
+                    },
+                ),
+                None => tracing::info!(
+                    "The label {} has no keyword, so it stays on this computer",
+                    label.name
+                ),
             }
             tagging::spoken(&label.name, turning_on)
         }
@@ -4065,6 +4112,7 @@ fn labels_for(
             name: label.name.to_string(),
             color: label.colour.to_string(),
             created_at: made_at.clone(),
+            keyword: Some(label.keyword.to_string()),
         })?;
     }
     cache.get_tags_for_account(account_id)
@@ -6335,6 +6383,21 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // because one message arrived is work nobody asked for.
             spawn_mail_sync(state, tx, rt, Some(folder.clone()));
         }
+        UIUpdate::LabelsChanged(cache_id) => {
+            // Reread from the cache rather than told what changed. The cache is
+            // the one place that knows what actually stuck, and sending the
+            // names alongside would be a second answer able to disagree with
+            // the first.
+            if let Some(cache) = &message_cache
+                && let Ok(tags) = cache.get_tags_for_message(*cache_id)
+            {
+                let names: Vec<String> = tags.into_iter().map(|tag| tag.name).collect();
+                let mut s = lock_state(state);
+                if let Some(row) = s.messages.iter_mut().find(|m| m.message_id == *cache_id) {
+                    row.labels = names;
+                }
+            }
+        }
         UIUpdate::MessageStarredToggled(cache_id, new_starred) => {
             let read = {
                 let mut s = lock_state(state);
@@ -7550,11 +7613,24 @@ fn spawn_mail_watch(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt:
 }
 
 /// A change to a message the server has to be told about.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Not `Copy` since a label carries its keyword and its name. Passed by value
+/// once, which is what every caller does.
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum ServerChange {
     Read(bool),
     Flagged(bool),
     Deleted(Deleting),
+    /// A label going on or coming off, as the keyword it travels as.
+    ///
+    /// The keyword rather than the name, because the name is what somebody
+    /// reads and the keyword is what the protocol carries. A label with no
+    /// keyword never gets here: it stays on this machine, and that is said.
+    Labelled {
+        keyword: String,
+        on: bool,
+        name: String,
+    },
 }
 
 impl ServerChange {
@@ -7566,6 +7642,15 @@ impl ServerChange {
             ServerChange::Flagged(true) => format!("Flagged: {subject}"),
             ServerChange::Flagged(false) => format!("Unflagged: {subject}"),
             ServerChange::Deleted(_) => format!("Deleted: {subject}"),
+            // Named by the label rather than by the message. The message is
+            // the row somebody is already on; which label went on is the part
+            // they cannot see.
+            ServerChange::Labelled { name, on: true, .. } => format!("{name} added: {subject}"),
+            ServerChange::Labelled {
+                name, on: false, ..
+            } => {
+                format!("{name} removed: {subject}")
+            }
         }
     }
 }
@@ -7622,6 +7707,12 @@ fn spawn_server_change(
                     say(UIUpdate::MessageStarredToggled(message_row_id, !applied));
                 }
                 ServerChange::Deleted(_) => {}
+                // Put back the way it was, on the row and in the database.
+                // A label that was announced as added and did not reach the
+                // server is worse than one that took a moment: an
+                // announcement that turned out to be wrong has to be
+                // corrected rather than left standing.
+                ServerChange::Labelled { .. } => say(UIUpdate::LabelsChanged(message_row_id)),
             }
             say(UIUpdate::ErrorOccurred(format!(
                 "The change did not reach the server, so it has been undone here: {reason}"
@@ -7701,16 +7792,19 @@ fn spawn_server_change(
         )
         .map(str::to_string);
 
-        let outcome = match change {
+        let outcome = match &change {
             ServerChange::Read(read) => handle
-                .block_on(controller.set_flag(&folder_path, uid, "\\Seen", read))
+                .block_on(controller.set_flag(&folder_path, uid, "\\Seen", *read))
                 .map(|()| None),
             ServerChange::Flagged(flagged) => handle
-                .block_on(controller.set_starred(&folder_path, uid, flagged))
+                .block_on(controller.set_starred(&folder_path, uid, *flagged))
                 .map(|()| None),
             ServerChange::Deleted(_) => handle
                 .block_on(controller.delete_message(&folder_path, uid, trash.as_deref()))
                 .map(Some),
+            ServerChange::Labelled { keyword, on, .. } => handle
+                .block_on(controller.set_flag(&folder_path, uid, keyword, *on))
+                .map(|()| None),
         };
         let _ = handle.block_on(controller.disconnect_imap());
 

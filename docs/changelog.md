@@ -24,9 +24,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   what you type cannot tell "label this work" from somebody spelling their way
   to a message about invoice 4021.
 
-  **Known limitation:** a label stays on this computer. Each carries the IMAP
-  keyword that would make it the same label in Thunderbird, and nothing sends
-  those to the server yet.
+  Labels travel as IMAP keywords, so one put on here is on the message in
+  Thunderbird too, and one set on a phone arrives here on the next check. A
+  label made by hand carries a keyword built from the letters of its name,
+  since a keyword cannot hold a space. Renaming a label keeps the keyword it was
+  already sent under, because changing it would leave the old one on every
+  message on the server with nothing here recognising it. Sending is a change to
+  the mailbox, so it waits until changes to mail are allowed.
 
 - **Rules run on arriving mail.** They could be written, named, ordered and
   stored, and nothing had ever evaluated one: the engine, the editor and the
@@ -120,6 +124,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   many messages it holds.
 
 ### Fixed
+
+- **A new label or signature made in its manager is now actually saved.** Both
+  were written by trying to update the row and creating it only if that failed.
+  Updating a row that does not exist is not a failure in SQL, so the create
+  never ran: every label and every signature made in a manager was accepted,
+  reported as saved, and silently dropped. Found while wiring labels to the
+  server, by a test that asked what the update had actually touched.
 
 - **Next unread is `Ctrl+U`, and the shortcuts document says so.** It said
   `Ctrl+]` in two places, which nothing had ever bound, so anyone who read the

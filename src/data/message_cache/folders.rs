@@ -169,6 +169,21 @@ impl MessageCache {
     ///
     /// Asked before a folder is listed, because the Outbox is not read from the
     /// messages table and nothing else can tell from the id alone.
+    /// Which account a folder belongs to.
+    ///
+    /// The sync works in folder ids and the tag tables work in account ids, and
+    /// this is the one row that knows both.
+    pub fn folder_account(&self, folder_id: i64) -> Result<Option<String>> {
+        self.conn
+            .query_row(
+                "SELECT account_id FROM folders WHERE id = ?1",
+                params![folder_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read the folder: {}", e)))
+    }
+
     pub fn folder_kind(&self, folder_id: i64) -> Result<Option<crate::common::types::FolderType>> {
         self.conn
             .query_row(

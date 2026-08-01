@@ -415,6 +415,18 @@ pub async fn sync_folder(
     };
     for (uid, flags) in &changed {
         cache.set_message_flags(folder_id, *uid, flags)?;
+        // The keywords among those flags are labels, put on elsewhere or taken
+        // off elsewhere. Without this a label set on a phone never arrived and
+        // one removed there stayed here for as long as the account existed,
+        // which is the same gap the flag sync itself was written to close.
+        if let Ok(Some(account)) = cache.folder_account(folder_id)
+            && let Ok(Some(row)) = cache.message_row_for_uid(folder_id, *uid)
+            && let Err(e) = cache.match_labels_to_keywords(row, &account, flags)
+        {
+            // Said rather than swallowed: labels quietly not arriving looks
+            // exactly like nobody having set any.
+            tracing::warn!("The labels on message {row} could not be brought up to date: {e}");
+        }
     }
     if let Some(modseq) = status.highest_modseq {
         cache.set_folder_modseq(folder_id, modseq)?;

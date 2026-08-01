@@ -376,6 +376,12 @@ pub enum UIUpdate {
     /// value when it refuses one that was already applied here, so the list
     /// never keeps showing a state the server did not take.
     MessageStarredToggled(i64, bool),
+    /// A message's labels have changed and the row should be read again.
+    ///
+    /// Carries no list of names: the row is reread from the cache, which is
+    /// the one place that knows what stuck. Sending the names would mean two
+    /// answers to the same question and a way for them to disagree.
+    LabelsChanged(i64),
 }
 
 /// Calendar event item for UI display

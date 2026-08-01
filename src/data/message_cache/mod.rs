@@ -117,6 +117,17 @@ pub struct Tag {
     pub name: String,
     pub color: String,
     pub created_at: String,
+    /// What this label travels as on the wire, when it travels at all.
+    ///
+    /// Stored rather than derived from the name at send time, so renaming a
+    /// label keeps the keyword it was sent under. Renaming "Work" to
+    /// "Employer" must not orphan every message already labelled with it on
+    /// the server.
+    ///
+    /// `None` for a label made before this column existed, and for a name with
+    /// no usable keyword in it at all. Such a label works here and does not
+    /// leave the machine, which is said rather than hidden.
+    pub keyword: Option<String>,
 }
 
 /// Email signature information
@@ -990,6 +1001,11 @@ impl MessageCache {
         // The snippet lives on the message rather than the body because
         // bodies are evicted under a budget and the snippet column has to keep
         // reading on every row after that happens.
+        // What a label travels as on the wire. Added rather than derived at
+        // send time, because a label somebody renames keeps the keyword it was
+        // sent under: renaming "Work" to "Employer" must not orphan every
+        // message already labelled with it on the server.
+        self.ensure_column_exists("tags", "keyword", "TEXT")?;
         self.ensure_column_exists("messages", "snippet", "TEXT")?;
         self.ensure_column_exists("messages", "size_bytes", "INTEGER")?;
         // The References and In-Reply-To headers, space separated. Threading
