@@ -76,13 +76,33 @@ makes the walk over the string never finish. A timeout is not a survivor: the
 change was noticed. It does say the loop's bound is arithmetic, which is worth
 knowing.
 
+## What `service/protocols` is turning up
+
+Two kinds of finding, and they need different answers.
+
+**The gate that stops an alpha build changing a real mailbox had no test.**
+Replaced with "yes", the whole suite stayed green. The decision has been pulled
+out into a free function so it can be asked without a socket: a safety property
+testable only against a live server is one that does not get tested. Every flag
+accessor on a fetched message was the same kind of gap, and `seen` answering
+true for everything means a mailbox arrives entirely read.
+
+**Most of the rest cannot be answered here.** `poll_read`, `poll_write`,
+`connect`, `fetch_headers`, `fetch_body`, `all_uids` and the other session
+methods are the socket, and a mutant in them survives because nothing short of a
+server exercises them. Do not write tests that pretend otherwise. Their
+verification is the live account run, which is its own tracked work, and the
+sync logic that sits on top of them is covered through the `Mailbox` trait.
+
+When reading this area's report, sort the findings into those two piles first.
+
 ## Progress
 
 | Area | Result | Done |
 |---|---|---|
 | `application/filters`, `due`, `tagging`, `sign_off` | 157 mutants, 141 caught, 16 unviable, 0 missed | 2026-08-01 |
 | `common` | 89 mutants, 63 caught, 13 missed, 11 unviable, 2 timeouts. All 13 closed | 2026-08-01 |
-| `service/protocols` | | |
+| `service/protocols` | Started. Findings so far closed: flag accessors, credential redaction, the write gate. Most of the rest is socket code, see below | in progress |
 | `data` | | |
 | `application` (rest) | | |
 | `service` (rest) | | |
