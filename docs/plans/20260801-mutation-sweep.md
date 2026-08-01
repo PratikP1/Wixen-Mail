@@ -184,6 +184,50 @@ So: run the report, and read the module for literals that carry a decision, and
 for anything a comment says is deliberate. Those are what the report cannot
 reach.
 
+## What `data` turned up, and the twelve left on purpose
+
+The two runs disagreed completely about where the gaps were, which is the
+poisoning above and worth seeing once: the first said all 67 were in five files
+and none in the other fourteen. The second, with the tests isolated, said none
+in those five and 53 across seven of the fourteen. The first run had been
+reporting "caught" for a test failure that had nothing to do with the mutant.
+
+The 53 fell into four kinds. Worth reading before the next area, because they
+will be the same kinds.
+
+**A thing that reports success and does nothing.** Deleting a note folder, a
+task list or a queued message. Clearing an account's mail. Recording a folder's
+counts. Storing a safety verdict. Each is a command somebody gave that the
+interface then says it carried out.
+
+**A lookup that answers for the wrong row, or for none.** Which mailbox holds a
+message, which row a server number means, which account a folder belongs to.
+These are how an action finds its target, so the wrong answer is a flag or a
+deletion landing on somebody else's message.
+
+**Arithmetic at a boundary.** Where a vCard line folds, where a sequence set
+splits, how far eviction has to go. Each is right in the middle and wrong at
+the edge, which is the case nobody writes a test for.
+
+**A test that names the thing it does not check.** The eviction test called
+"least recently read" passed with the read never being recorded, because it
+saved the bodies in the order it wanted them dropped. The folding round trip
+joined the pieces with nothing between them, so it could not see a missing
+continuation space. These are worse than no test: they are read as covered.
+
+Twelve are left, and each for a stated reason:
+
+- **Eight** are the contact group membership functions. Nothing calls them, so
+  a saved group can never hold anybody. Tests there would make dead code look
+  alive, which is the failure this whole sweep exists to find. Task #110 is the
+  decision about which half of that feature to keep.
+- **Three** are the comparison in `migrate_inline_bodies` that decides whether
+  to write a line to the log. Changing it changes what is logged and nothing
+  else. Not worth a test that captures log output.
+- **One** is equivalent rather than surviving: in `parse_name_email`, whether
+  the bracket check is `>` or `>=` cannot matter, because the two positions
+  hold different characters and can never be equal.
+
 ## Progress
 
 | Area | Result | Done |
@@ -191,7 +235,7 @@ reach.
 | `application/filters`, `due`, `tagging`, `sign_off` | 157 mutants, 141 caught, 16 unviable, 0 missed | 2026-08-01 |
 | `common` | 89 mutants, 63 caught, 13 missed, 11 unviable, 2 timeouts. All 13 closed | 2026-08-01 |
 | `service/protocols` | 327 mutants, 133 caught, 113 missed, 81 unviable. Closed: flag accessors, credential redaction, the write gate. Of the rest, all but one are socket methods, see below | 2026-08-01 |
-| `data` | First run void: the tests shared one file and poisoned it partway through, so its caught figure means nothing. Findings acted on before that was known are still real and are closed. Re-running | 2026-08-01 |
+| `data` | First run void, see above. Second run, with the tests isolated: 510 mutants, 364 caught, 53 missed, 93 unviable. All 53 triaged; what is deliberately left is below | 2026-08-01 |
 | `application` (rest) | | |
 | `service` (rest) | | |
 | `presentation` (not the window) | | |
