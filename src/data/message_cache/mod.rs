@@ -1206,9 +1206,17 @@ impl MessageCache {
         Ok(())
     }
 
+    /// Add a column to an existing table, if it is not there already.
+    ///
+    /// SQL has no way to bind an identifier, so the table and the column go
+    /// into the statement as text and are checked first. `column_def` is not
+    /// checked and cannot usefully be: it is a fragment of SQL by definition,
+    /// so anything that let a real definition through would let anything
+    /// through. Every one of the three passed today is a literal in this file,
+    /// and a caller that changes that has to answer for the definition itself.
     fn ensure_column_exists(&self, table: &str, column: &str, column_def: &str) -> Result<()> {
         fn is_safe_identifier(value: &str) -> bool {
-            value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            !value.is_empty() && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         }
         if !is_safe_identifier(table) || !is_safe_identifier(column) {
             return Err(Error::Other(
@@ -1291,5 +1299,54 @@ mod tests {
         let temp_dir = env::temp_dir().join("wixen_mail_test");
         let cache = MessageCache::new(temp_dir, None);
         assert!(cache.is_ok());
+    }
+
+    #[test]
+    fn test_a_schema_change_refuses_a_name_that_is_not_one() {
+        // The table and the column are written into the statement as text,
+        // because SQL cannot bind an identifier. Every name passed today is a
+        // literal in this file, so there is nothing to exploit; the check is
+        // what keeps that true the first time one comes from anywhere else,
+        // and nothing was watching it.
+        //
+        // Worth knowing, from taking the check out and seeing which of these
+        // still failed: the blatant shapes below are refused by rusqlite and
+        // SQLite on their own, because a prepared statement holding a second
+        // statement is rejected and the rest do not parse. What the check adds
+        // is the names SQLite would accept, like one with a space in it. So it
+        // is defence in depth, not the only thing standing here.
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("a clock that has passed 1970")
+            .as_nanos();
+        let cache = MessageCache::new(
+            env::temp_dir().join(format!("wixen_mail_test_identifier_{nanos}")),
+            None,
+        )
+        .expect("a cache to open");
+
+        for (table, column) in [
+            ("messages; DROP TABLE messages", "note"),
+            ("messages", "note) --"),
+            ("messages\"", "note"),
+            ("messages", "note'"),
+            ("messages", "note note"),
+            ("", "note"),
+            ("messages", ""),
+        ] {
+            assert!(
+                cache.ensure_column_exists(table, column, "TEXT").is_err(),
+                "{table:?}.{column:?} was accepted into a schema statement"
+            );
+        }
+
+        // And an ordinary one still goes through, or the check above has
+        // simply turned schema changes off and would pass either way.
+        assert!(
+            cache
+                .ensure_column_exists("messages", "added_by_a_test", "TEXT")
+                .is_ok(),
+            "an ordinary column could not be added"
+        );
     }
 }
