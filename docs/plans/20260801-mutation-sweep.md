@@ -105,6 +105,43 @@ and is now closed:
   the limit now has a test saying it goes in one command, and one character
   past it has a test saying it does not.
 
+## A shared file between runs makes the whole report a lie
+
+Read this before trusting any number here.
+
+cargo-mutants copies the source tree, so each mutant builds in isolation. It
+does not isolate anything the tests write at runtime, and `env::temp_dir()` is
+the same folder for every one of them. Seven tests here opened a database at a
+fixed path in it.
+
+So the first mutant that damaged stored data left that damage in a file the
+next several hundred mutants would open. From that point every mutant was
+reported caught, because a test failed on every run: not the test watching that
+mutant, just the one reading the poisoned file. A mutant nothing was watching
+looks exactly like one that was.
+
+It happened on the first `data` run. `delete_account` replaced with "do
+nothing" was correctly caught, and left an extra account behind while being
+caught. Everything after it is unusable, and the first run's 353 caught, 67
+missed has to be thrown away rather than corrected: there is no way to tell
+from the report where the poisoning started.
+
+The tests now open a folder named for the moment they run. Before starting a
+sweep over any area, check that nothing in it writes to a fixed path:
+
+```bash
+grep -rn 'temp_dir()\.join("' src/ | grep -v format!
+```
+
+Three hits are expected and are not tests: the fallback log folder, the
+uninstall log, and the folder help pages are converted into when the program's
+own folder cannot be written to. Those are fixed on purpose, because somebody
+has to be able to find them. Anything else in that list is a test sharing a
+file with every run before it.
+
+This is worth more attention than it sounds. The failure mode is a report that
+says everything is fine.
+
 ## Reading a report against a tree that has moved
 
 cargo-mutants copies the tree when it starts and works on the copy, so the
@@ -154,7 +191,7 @@ reach.
 | `application/filters`, `due`, `tagging`, `sign_off` | 157 mutants, 141 caught, 16 unviable, 0 missed | 2026-08-01 |
 | `common` | 89 mutants, 63 caught, 13 missed, 11 unviable, 2 timeouts. All 13 closed | 2026-08-01 |
 | `service/protocols` | 327 mutants, 133 caught, 113 missed, 81 unviable. Closed: flag accessors, credential redaction, the write gate. Of the rest, all but one are socket methods, see below | 2026-08-01 |
-| `data` | Running, 513 mutants. `account.rs`, `config.rs`, `email_providers.rs`, `message_cache/{accounts,contacts,mod}.rs` closed while it ran, so its report is stale for those | started 2026-08-01 |
+| `data` | First run void: the tests shared one file and poisoned it partway through, so its caught figure means nothing. Findings acted on before that was known are still real and are closed. Re-running | 2026-08-01 |
 | `application` (rest) | | |
 | `service` (rest) | | |
 | `presentation` (not the window) | | |
