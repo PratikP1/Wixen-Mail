@@ -1279,6 +1279,65 @@ mod tests {
     }
 
     #[test]
+    fn test_an_empty_reason_is_not_read_out_on_any_surface_that_lists_it() {
+        // Three places read the reasons back, and each strips the blank lines
+        // for itself. The one behind a single message was tested above; these
+        // two were not. A blank reason is a bullet with nothing in it in the
+        // warning a reader hears, which is worse than terse: it sounds like
+        // something was said and missed.
+        use crate::service::safety::{Safety, Verdict};
+        let cache = fresh("blank_reasons");
+        let inbox = cache
+            .save_folder(&super::super::CachedFolder {
+                id: 0,
+                account_id: "acc".to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .unwrap();
+        let id = cache
+            .upsert_message(&incoming(inbox, 1, "Suspended account"))
+            .unwrap();
+        cache
+            .set_message_safety(
+                id,
+                &Verdict {
+                    level: Safety::Phishing,
+                    reasons: vec![
+                        "One".to_string(),
+                        "   ".to_string(),
+                        String::new(),
+                        "Two".to_string(),
+                    ],
+                },
+            )
+            .unwrap();
+
+        let from_all_inboxes = cache.unified_inbox(50).unwrap();
+        assert_eq!(
+            from_all_inboxes
+                .iter()
+                .find(|r| r.id == id)
+                .expect("the message should be in the unified inbox")
+                .safety_reasons,
+            ["One", "Two"]
+        );
+
+        let from_a_search = cache.search_messages("acc", "Suspended", 50).unwrap();
+        assert_eq!(
+            from_a_search
+                .iter()
+                .find(|r| r.id == id)
+                .expect("the message should be found by searching")
+                .safety_reasons,
+            ["One", "Two"]
+        );
+    }
+
+    #[test]
     fn test_flags_set_elsewhere_reach_the_cache() {
         // A message read on a phone is read. Before this the header fetch only
         // asked about messages the cache did not have, so a message already

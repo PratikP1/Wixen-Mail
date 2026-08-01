@@ -892,6 +892,19 @@ mod tests {
     use std::env;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    /// A cache in a folder of its own, so tests do not share a database.
+    fn a_cache(what_for: &str) -> MessageCache {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock that has passed 1970")
+            .as_nanos();
+        MessageCache::new(
+            env::temp_dir().join(format!("wixen_mail_test_{what_for}_{nanos}")),
+            None,
+        )
+        .expect("a cache to open")
+    }
+
     // ── Fuzzing the vCard reader ────────────────────────────────────────
     //
     // A .vcf file is chosen by the user and written by somebody else's
@@ -1015,6 +1028,143 @@ mod tests {
                 "folding and unfolding changed the line"
             );
         }
+    }
+
+    #[test]
+    fn test_a_folded_line_is_folded_the_way_the_format_says() {
+        // The round trip above joins the unfolded pieces with nothing between
+        // them, so it comes out right whether or not the continuation spaces
+        // are where they belong. Other clients are not so forgiving: a line
+        // without its leading space is a new property to them, so a long note
+        // arrives as a broken one, or the card is rejected.
+        //
+        // RFC 6350 counts 75 octets, and the continuation space is one of
+        // them.
+        const LIMIT: usize = 75;
+        let folded = MessageCache::fold_vcard_line(&format!("NOTE:{}", "a".repeat(300)));
+        let lines: Vec<&str> = folded.lines().collect();
+
+        assert!(
+            lines.len() > 1,
+            "a 305 character line was not folded at all"
+        );
+        assert_eq!(
+            lines[0].len(),
+            LIMIT,
+            "the first line stops short of the limit, so it folds more than it needs to"
+        );
+        assert!(
+            !lines[0].starts_with(' '),
+            "the first line begins with a continuation space"
+        );
+        for line in &lines[1..] {
+            assert!(
+                line.starts_with(' '),
+                "a continuation line has no leading space: {line:?}"
+            );
+            assert!(
+                !line[1..].starts_with(' '),
+                "a continuation line has two leading spaces: {line:?}"
+            );
+            assert!(
+                line.len() <= LIMIT,
+                "a folded line is {} octets, over the {LIMIT} the format allows",
+                line.len()
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_folded_line_is_read_back_as_one_line_not_several() {
+        // The unfolding decides this, and the round trip above cannot see it,
+        // because it joins whatever it gets. Read as separate lines, the tail
+        // of a long note is not a note at all: it is a property nothing
+        // recognises, so the note arrives cut off at seventy-five characters
+        // with the rest silently dropped.
+        let original = format!("NOTE:{}", "a".repeat(300));
+        let folded = MessageCache::fold_vcard_line(&original);
+
+        let unfolded = MessageCache::unfold_vcard_lines(&folded);
+
+        assert_eq!(
+            unfolded.len(),
+            1,
+            "a folded line came back as {} separate properties",
+            unfolded.len()
+        );
+        assert_eq!(unfolded[0], original);
+    }
+
+    #[test]
+    fn test_a_line_continued_with_a_tab_is_also_joined_on() {
+        // RFC 6350 allows either. A card folded with tabs comes from a real
+        // client, and reading it as separate properties loses the same way.
+        let unfolded = MessageCache::unfold_vcard_lines("NOTE:the beginning\r\n\tand the rest\r\n");
+
+        assert_eq!(unfolded, ["NOTE:the beginningand the rest"]);
+    }
+
+    #[test]
+    fn test_something_that_is_not_an_address_does_not_become_a_contact() {
+        // Import takes files from anywhere. A contact whose address is not one
+        // can never be written to, and it sits in the list looking like
+        // somebody you could reach.
+        let cache = a_cache("vcard_bad_address");
+        let imported = cache
+            .import_contacts_from_vcard(
+                "acc-1",
+                "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Nobody\r\nEMAIL:not-an-address\r\nEND:VCARD",
+            )
+            .expect("the import to run");
+
+        assert_eq!(imported, 0, "a contact with no real address was imported");
+        assert!(
+            cache
+                .get_contacts_for_account("acc-1")
+                .expect("contacts to be readable")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_a_photo_carried_in_the_card_survives_going_out_and_coming_back() {
+        // The photo is base64 and is folded across many lines, so it comes back
+        // with spaces through it and they have to be taken out again. Keeping
+        // the whitespace instead of dropping it, which is a one character
+        // change, leaves the data unusable in both directions and nothing said
+        // so.
+        let cache = a_cache("vcard_photo");
+        let photo = "a".repeat(400);
+        cache
+            .import_contacts_from_vcard(
+                "acc-1",
+                &format!(
+                    "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Grace Hopper\r\nEMAIL:grace@example.com\r\n{}END:VCARD",
+                    MessageCache::fold_vcard_line(&format!("PHOTO;ENCODING=b:{photo}"))
+                ),
+            )
+            .expect("the import to run");
+
+        let contacts = cache
+            .get_contacts_for_account("acc-1")
+            .expect("contacts to be readable");
+        assert_eq!(
+            contacts[0].avatar_data_base64.as_deref(),
+            Some(photo.as_str()),
+            "the photo did not survive being read in"
+        );
+
+        let exported = cache
+            .export_contacts_to_vcard("acc-1")
+            .expect("the export to run");
+        let read_again = MessageCache::unfold_vcard_lines(&exported)
+            .into_iter()
+            .find_map(|line| {
+                line.strip_prefix("PHOTO;ENCODING=b:")
+                    .map(|value| value.to_string())
+            })
+            .expect("the exported card to carry the photo");
+        assert_eq!(read_again, photo, "the photo did not survive being written");
     }
 
     #[test]
