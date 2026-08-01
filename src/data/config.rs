@@ -402,41 +402,8 @@ impl AccountConfig {
     }
 }
 
-/// Legacy configuration (for backwards compatibility)
-#[derive(Debug, Clone)]
-pub struct Config {
-    settings: HashMap<String, String>,
-}
-
-impl Config {
-    /// Create a new configuration
-    pub fn new() -> Self {
-        Self {
-            settings: HashMap::new(),
-        }
-    }
-
-    /// Get a setting value
-    pub fn get(&self, key: &str) -> Option<&String> {
-        self.settings.get(key)
-    }
-
-    /// Set a setting value
-    pub fn set(&mut self, key: String, value: String) {
-        self.settings.insert(key, value);
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Configuration manager with file persistence
 pub struct ConfigManager {
-    /// Legacy config
-    config: Config,
     /// Application configuration
     app_config: AppConfig,
     /// Account configurations
@@ -472,7 +439,6 @@ impl ConfigManager {
         })?;
 
         Ok(Self {
-            config: Config::new(),
             app_config: AppConfig::default(),
             account_configs: HashMap::new(),
             config_dir,
@@ -593,16 +559,6 @@ impl ConfigManager {
         }
         Ok(())
     }
-
-    /// Get legacy configuration (deprecated)
-    pub fn config(&self) -> &Config {
-        &self.config
-    }
-
-    /// Get mutable legacy configuration (deprecated)
-    pub fn config_mut(&mut self) -> &mut Config {
-        &mut self.config
-    }
 }
 
 #[cfg(test)]
@@ -610,10 +566,123 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_config_creation() {
-        let mut config = Config::new();
-        config.set("test".to_string(), "value".to_string());
-        assert_eq!(config.get("test"), Some(&"value".to_string()));
+    fn test_settings_chosen_in_one_session_are_there_in_the_next() {
+        // Nothing covered the round trip through the folder, so reading the
+        // settings back could have done nothing at all and every test still
+        // passed. What that looks like is every setting somebody chose
+        // reverting on restart, silently, including what this build is allowed
+        // to change at a server.
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let mut first =
+            ConfigManager::in_dir(dir.path().join("config")).expect("a settings folder");
+        first.app_config_mut().date_wording = "numeric".to_string();
+        first.app_config_mut().working_day_starts = 6;
+        first.app_config_mut().allowed_changes = crate::application::allowed::Allowed::NOTHING;
+        first.save().expect("the settings to be written");
+
+        let mut later =
+            ConfigManager::in_dir(dir.path().join("config")).expect("the same settings folder");
+        later.load().expect("the settings to be read back");
+
+        assert_eq!(later.app_config().date_wording, "numeric");
+        assert_eq!(later.app_config().working_day_starts, 6);
+        assert_eq!(
+            later.app_config().allowed_changes,
+            crate::application::allowed::Allowed::NOTHING,
+            "an upgrade would have handed back permissions somebody took away"
+        );
+    }
+
+    #[test]
+    fn test_an_account_s_settings_come_back_from_its_own_file() {
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let mut first =
+            ConfigManager::in_dir(dir.path().join("config")).expect("a settings folder");
+        let mut account = AccountConfig::new("acc-1".to_string(), "Work".to_string());
+        account.check_interval_minutes = 30;
+        account.default_folder = "Archive".to_string();
+        account.signature = Some("Sent from Wixen Mail".to_string());
+        first
+            .set_account_config(account)
+            .expect("the account to be accepted");
+        first.save().expect("the settings to be written");
+
+        let mut later =
+            ConfigManager::in_dir(dir.path().join("config")).expect("the same settings folder");
+        later.load().expect("the settings to be read back");
+
+        let read_back = later
+            .get_account_config("acc-1")
+            .expect("the account to have been read back");
+        assert_eq!(read_back.name, "Work");
+        assert_eq!(read_back.check_interval_minutes, 30);
+        assert_eq!(read_back.default_folder, "Archive");
+        assert_eq!(read_back.signature.as_deref(), Some("Sent from Wixen Mail"));
+    }
+
+    #[test]
+    fn test_only_the_account_files_are_read_as_accounts() {
+        // The second time this shape has come up: `is_settings_file` in
+        // `common` had the same two halves never checked apart. With `or` in
+        // place of `and`, every .json file in the folder is opened as an
+        // account, and one that does not parse stops the settings loading at
+        // all, which is somebody's whole configuration gone on startup.
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let folder = dir.path().join("config");
+        let mut manager = ConfigManager::in_dir(folder.clone()).expect("a settings folder");
+        manager
+            .set_account_config(a_valid_account_config())
+            .expect("the account to be accepted");
+        manager.save().expect("the settings to be written");
+
+        // Neither of these is an account file, and each is one half of the
+        // test the loader makes.
+        fs::write(folder.join("notes.json"), "{\"not\": \"an account\"}")
+            .expect("a stray json file");
+        fs::write(folder.join("account_notes.txt"), "not json at all")
+            .expect("a stray account-looking file");
+
+        let mut later = ConfigManager::in_dir(folder).expect("the same settings folder");
+        later
+            .load()
+            .expect("a stray file in the folder stopped the settings loading");
+
+        assert!(later.get_account_config("acc-1").is_some());
+        assert!(later.get_account_config("notes").is_none());
+        assert!(later.get_account_config("account_notes").is_none());
+    }
+
+    #[test]
+    fn test_removing_an_account_takes_its_file_with_it() {
+        // A file left behind is an account that comes back on the next start,
+        // after somebody has deleted it.
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let folder = dir.path().join("config");
+        let mut manager = ConfigManager::in_dir(folder.clone()).expect("a settings folder");
+        manager
+            .set_account_config(a_valid_account_config())
+            .expect("the account to be accepted");
+        manager.save().expect("the settings to be written");
+        assert!(folder.join("account_acc-1.json").exists());
+
+        manager
+            .remove_account_config("acc-1")
+            .expect("the account to be removed");
+
+        assert!(
+            !folder.join("account_acc-1.json").exists(),
+            "the account's file is still in the settings folder"
+        );
+        let mut later = ConfigManager::in_dir(folder).expect("the same settings folder");
+        later.load().expect("the settings to be read back");
+        assert!(
+            later.get_account_config("acc-1").is_none(),
+            "the deleted account came back on the next start"
+        );
+    }
+
+    fn a_valid_account_config() -> AccountConfig {
+        AccountConfig::new("acc-1".to_string(), "Work".to_string())
     }
 
     #[test]
