@@ -95,6 +95,15 @@ verification is the live account run, which is its own tracked work, and the
 sync logic that sits on top of them is covered through the `Mailbox` trait.
 
 When reading this area's report, sort the findings into those two piles first.
+Of the 113 that survived the finished run, all but one fall in the second pile:
+they are `ImapSession` methods whose whole body is a round trip. One does not,
+and is worth a test:
+
+- `imap/sequence_set.rs`, `chunks`: the length comparison that decides where a
+  sequence set is split. Pure, already has tests, and the boundary between `>`
+  and `>=` is not among them. Getting it wrong means an IMAP command one
+  character over the limit, which the server rejects, which reads to somebody
+  as a folder that will not load.
 
 ## Progress
 
@@ -102,7 +111,7 @@ When reading this area's report, sort the findings into those two piles first.
 |---|---|---|
 | `application/filters`, `due`, `tagging`, `sign_off` | 157 mutants, 141 caught, 16 unviable, 0 missed | 2026-08-01 |
 | `common` | 89 mutants, 63 caught, 13 missed, 11 unviable, 2 timeouts. All 13 closed | 2026-08-01 |
-| `service/protocols` | Started. Findings so far closed: flag accessors, credential redaction, the write gate. Most of the rest is socket code, see below | in progress |
+| `service/protocols` | 327 mutants, 133 caught, 113 missed, 81 unviable. Closed: flag accessors, credential redaction, the write gate. Of the rest, all but one are socket methods, see below | 2026-08-01 |
 | `data` | | |
 | `application` (rest) | | |
 | `service` (rest) | | |
