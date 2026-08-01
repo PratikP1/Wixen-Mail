@@ -225,6 +225,208 @@ mod tests {
     use super::*;
     use std::env;
 
+    /// A cache in a folder of its own, so tests do not share a database.
+    fn a_cache(what_for: &str) -> MessageCache {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("a clock that has passed 1970")
+            .as_nanos();
+        MessageCache::new(
+            env::temp_dir().join(format!("wixen_mail_test_{what_for}_{nanos}")),
+            None,
+        )
+        .expect("a cache to open")
+    }
+
+    fn an_account(id: &str, email: &str, password: &str) -> crate::data::account::Account {
+        let mut account = crate::data::account::Account::new("Test".to_string(), email.to_string());
+        account.id = id.to_string();
+        account.username = email.to_string();
+        account.password = password.to_string();
+        account.imap_server = "imap.example.com".to_string();
+        account.smtp_server = "smtp.example.com".to_string();
+        account
+    }
+
+    /// What the password column holds, straight out of the table.
+    fn password_column(cache: &MessageCache, account_id: &str) -> String {
+        cache
+            .conn
+            .query_row(
+                "SELECT password FROM accounts WHERE id = ?1",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .expect("the account to be in the table")
+    }
+
+    #[test]
+    fn test_a_password_is_never_written_to_the_database() {
+        // This is the whole reason the credential store exists here. The
+        // database is meant to be copyable and backup-safe, and a password in
+        // it makes every copy of it a copy of the password. Saving and loading
+        // an account was tested; what the column ended up holding was not, so
+        // writing the password there as well would have passed.
+        let cache = a_cache("password_column");
+        let account = an_account("acc-column", "work@example.com", "secret123");
+
+        cache.save_account(&account).expect("an account to save");
+
+        assert_eq!(
+            password_column(&cache, "acc-column"),
+            "",
+            "the password was written into the database"
+        );
+        assert_eq!(
+            credentials::load("acc-column").expect("the credential store to answer"),
+            Some("secret123".to_string()),
+            "the password did not reach the credential store"
+        );
+
+        credentials::forget("acc-column").ok();
+    }
+
+    #[test]
+    fn test_a_password_left_in_the_database_by_an_older_version_is_moved_out() {
+        // Every installation from before the credential store has one of
+        // these. It has to keep working, and it has to stop leaving the
+        // password behind once it has.
+        let cache = a_cache("password_migration");
+        let account = an_account("acc-old", "old@example.com", "unused");
+        cache.save_account(&account).expect("an account to save");
+
+        // Put it back the way the older version left it: in the column,
+        // encoded, and nothing in the credential store.
+        credentials::forget("acc-old").expect("the credential store to forget");
+        cache
+            .conn
+            .execute(
+                "UPDATE accounts SET password = ?1 WHERE id = ?2",
+                params!["c2VjcmV0MTIz", "acc-old"], // "secret123"
+            )
+            .expect("the older shape to be written");
+
+        let loaded = cache.load_accounts().expect("accounts to load");
+
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(
+            loaded[0].password, "secret123",
+            "the password an older version saved could not be read"
+        );
+        assert_eq!(
+            credentials::load("acc-old").expect("the credential store to answer"),
+            Some("secret123".to_string()),
+            "the password was read but never moved to the credential store"
+        );
+        assert_eq!(
+            password_column(&cache, "acc-old"),
+            "",
+            "the old copy is still in the database"
+        );
+
+        credentials::forget("acc-old").ok();
+    }
+
+    #[test]
+    fn test_a_password_this_computer_cannot_read_leaves_the_account_loadable() {
+        // It happens: the database was copied from another machine. The
+        // account has to load so somebody can type the password again. This
+        // used to hand back an empty password silently, and the account then
+        // said "authentication failed", which sends somebody looking for a
+        // wrong password instead of entering the right one.
+        let cache = a_cache("password_unreadable");
+        let account = an_account("acc-unreadable", "moved@example.com", "unused");
+        cache.save_account(&account).expect("an account to save");
+
+        credentials::forget("acc-unreadable").expect("the credential store to forget");
+        cache
+            .conn
+            .execute(
+                "UPDATE accounts SET password = ?1 WHERE id = ?2",
+                params!["not something that decodes", "acc-unreadable"],
+            )
+            .expect("the unreadable shape to be written");
+
+        let loaded = cache.load_accounts().expect("accounts to load");
+
+        assert_eq!(loaded.len(), 1, "the account would not load at all");
+        assert_eq!(loaded[0].email, "moved@example.com");
+        assert_eq!(
+            loaded[0].password, "",
+            "an unreadable password came back as something"
+        );
+    }
+
+    #[test]
+    fn test_an_account_with_no_password_keeps_none() {
+        // An OAuth account has no password, and storing an empty one would
+        // leave an entry in the credential store that means nothing.
+        let cache = a_cache("password_absent");
+        let account = an_account("acc-oauth", "oauth@example.com", "");
+
+        cache.save_account(&account).expect("an account to save");
+
+        assert_eq!(
+            credentials::load("acc-oauth").expect("the credential store to answer"),
+            None,
+            "an empty password was stored as though it were one"
+        );
+        assert_eq!(
+            cache.load_accounts().expect("accounts to load")[0].password,
+            ""
+        );
+    }
+
+    #[test]
+    fn test_deleting_an_account_takes_its_password_with_it() {
+        // A password left behind with nothing naming it is a secret nobody can
+        // find to remove.
+        let cache = a_cache("password_deletion");
+        cache
+            .save_account(&an_account("acc-going", "going@example.com", "secret123"))
+            .expect("an account to save");
+
+        cache.delete_account("acc-going").expect("it to be deleted");
+
+        assert_eq!(
+            credentials::load("acc-going").expect("the credential store to answer"),
+            None,
+            "the password outlived the account"
+        );
+        assert!(cache.load_accounts().expect("accounts to load").is_empty());
+    }
+
+    #[test]
+    fn test_a_sync_time_is_recorded_against_the_account_it_belongs_to() {
+        let cache = a_cache("sync_time");
+        cache
+            .save_account(&an_account("acc-one", "one@example.com", "a"))
+            .expect("an account to save");
+        cache
+            .save_account(&an_account("acc-two", "two@example.com", "b"))
+            .expect("an account to save");
+
+        cache
+            .update_account_last_sync("acc-one")
+            .expect("a sync to be recorded");
+
+        let loaded = cache.load_accounts().expect("accounts to load");
+        let synced = |id: &str| {
+            loaded
+                .iter()
+                .find(|a| a.id == id)
+                .expect("the account")
+                .last_sync
+                .is_some()
+        };
+
+        assert!(synced("acc-one"), "the sync was not recorded");
+        assert!(!synced("acc-two"), "it was recorded against both accounts");
+
+        credentials::forget("acc-one").ok();
+        credentials::forget("acc-two").ok();
+    }
+
     #[test]
     fn test_account_persistence() {
         let temp_dir = env::temp_dir().join("wixen_mail_test_accounts");
