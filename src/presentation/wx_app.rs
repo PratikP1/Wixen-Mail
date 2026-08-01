@@ -138,6 +138,19 @@ menu_ids!(
     ID_PREVIOUS_PANE,
     // Raised by the context menus. Each works out which module is open and
     // acts on that, so one id serves every panel rather than one per panel.
+    // Ctrl and a number, one per label, plus Ctrl+0 to take them all off. Nine
+    // because that is how many digits there are that are not zero; a tenth
+    // label is reached from the menu, as it is everywhere else.
+    ID_LABEL_1,
+    ID_LABEL_2,
+    ID_LABEL_3,
+    ID_LABEL_4,
+    ID_LABEL_5,
+    ID_LABEL_6,
+    ID_LABEL_7,
+    ID_LABEL_8,
+    ID_LABEL_9,
+    ID_LABEL_NONE,
     ID_CONTEXT_NEW_ITEM,
     ID_CONTEXT_DELETE_ITEM,
     ID_CONTEXT_MOVE_ITEM,
@@ -2181,6 +2194,17 @@ impl WxMailApp {
                                 }
                             }
                         }
+                        _ if LABEL_IDS.contains(&id) || id == ID_LABEL_NONE => {
+                            let number = LABEL_IDS.iter().position(|held| *held == id);
+                            label_the_message(
+                                &state,
+                                &message_cache,
+                                &a11y,
+                                &ui_tx,
+                                &runtime,
+                                number.map(|at| at + 1),
+                            );
+                        }
                         _ if id == ID_TOGGLE_STAR => {
                             let toggled = {
                                 let mut s = lock_state(&state);
@@ -3468,6 +3492,37 @@ impl WxMailApp {
             )
             .build();
 
+        // One entry per label, carrying Ctrl and its number, and a last one to
+        // take them all off. The names here are the ones an account starts
+        // with; they are rewritten from the account's own labels when those
+        // load, so renaming a label changes the menu rather than leaving it
+        // describing something that no longer exists.
+        //
+        // Ctrl and a digit rather than the bare digit Thunderbird uses. A bare
+        // digit in a list is also a character, and a list that jumps to what
+        // you type cannot tell "label this work" from somebody spelling their
+        // way to a message about invoice 4021.
+        let labels_menu = Menu::builder().build();
+        for (index, id) in LABEL_IDS.iter().enumerate() {
+            let name = crate::application::tagging::TO_BEGIN_WITH
+                .get(index)
+                .map(|label| label.name)
+                .unwrap_or("Label");
+            labels_menu.append(
+                *id,
+                &format!("{name}\tCtrl+{}", index + 1),
+                "Put this label on the message, or take it off",
+                wxdragon::menus::ItemKind::Normal,
+            );
+        }
+        labels_menu.append_separator();
+        labels_menu.append(
+            ID_LABEL_NONE,
+            "&Remove every label\tCtrl+0",
+            "Take all the labels off this message",
+            wxdragon::menus::ItemKind::Normal,
+        );
+
         let message = Menu::builder()
             .append_item(ID_REPLY, "&Reply\tCtrl+R", "Reply to sender")
             .append_item(ID_REPLY_ALL, "Reply &All\tCtrl+Shift+R", "Reply to all")
@@ -3505,6 +3560,7 @@ impl WxMailApp {
                 "Tell this sender you have read their message",
             )
             .build();
+        message.append_submenu(labels_menu, "&Label", "Put a label on this message");
 
         let tools = Menu::builder()
             .append_item(
@@ -3598,6 +3654,16 @@ pub(crate) fn lock_state(state: &Arc<StdMutex<WxUIState>>) -> std::sync::MutexGu
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Every label id, in the order the number keys reach them.
+///
+/// One list rather than nine names written out at each of the three places
+/// that need them: the menu that offers them, the handler that answers them,
+/// and the code that renames them when an account's labels load.
+const LABEL_IDS: [i32; 9] = [
+    ID_LABEL_1, ID_LABEL_2, ID_LABEL_3, ID_LABEL_4, ID_LABEL_5, ID_LABEL_6, ID_LABEL_7, ID_LABEL_8,
+    ID_LABEL_9,
+];
+
 /// How many messages the sample mailbox generates.
 const SAMPLE_MAILBOX_SIZE: usize = 200_000;
 
@@ -3651,6 +3717,7 @@ fn sample_mailbox(count: usize) -> Vec<MessageItem> {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            labels: Vec::new(),
         })
         .collect()
 }
@@ -3876,6 +3943,133 @@ const HOW_OFTEN_TO_LOOK: std::time::Duration = std::time::Duration::from_secs(60
 /// One at a time and modal, so two reminders that come due in the same minute
 /// arrive one after the other rather than as two windows stacked on each other,
 /// and neither can be left sitting behind the window it interrupted.
+/// Fill in each message's labels, for the ones that have any.
+///
+/// One query for the whole folder rather than one per row: a page of five
+/// hundred messages would otherwise be five hundred round trips to answer a
+/// question most of them answer with "none".
+fn attach_labels(cache: &MessageCache, items: &mut [MessageItem]) {
+    for item in items.iter_mut() {
+        let Ok(tags) = cache.get_tags_for_message(item.message_id) else {
+            continue;
+        };
+        item.labels = tags.into_iter().map(|tag| tag.name).collect();
+    }
+}
+
+/// Put a label on the message under the cursor, or take one off.
+///
+/// `number` is which label, or `None` for "take them all off".
+///
+/// Labels could be made, named, coloured and deleted, and none of that ever
+/// reached a message: the table, the join table and the manager were all there
+/// and nothing put one on anything. It is the fastest thing there is for
+/// working through an inbox by ear, because it decides one thing about a
+/// message without opening it or leaving the row.
+fn label_the_message(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    number: Option<usize>,
+) {
+    use crate::application::tagging;
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let Some(cache) = cache.as_ref() else {
+        return send_status(tx, rt, "No storage is open");
+    };
+    let (message_id, account_id) = {
+        let s = lock_state(state);
+        let Some(index) = s.selected_message_index else {
+            // Said rather than done silently. A key that appears to do nothing
+            // is indistinguishable from one that is broken.
+            return send_status(tx, rt, "Choose a message first");
+        };
+        let Some(message) = s.messages.get(index) else {
+            return send_status(tx, rt, "That row is no longer there");
+        };
+        (message.message_id, s.active_account_id.clone())
+    };
+    let Some(account_id) = account_id else {
+        return send_status(tx, rt, "No account is open");
+    };
+
+    let labels = match labels_for(cache, &account_id) {
+        Ok(labels) => labels,
+        // Not swallowed: no labels and labels that could not be read look the
+        // same from the outside and are different problems.
+        Err(e) => return send_status(tx, rt, &format!("The labels could not be read: {e}")),
+    };
+    let on_it: Vec<String> = cache
+        .get_tags_for_message(message_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|tag| tag.name)
+        .collect();
+
+    let said = match number {
+        None => {
+            let mut removed = 0;
+            for tag in labels.iter().filter(|tag| on_it.contains(&tag.name)) {
+                if cache.remove_tag_from_message(message_id, &tag.id).is_ok() {
+                    removed += 1;
+                }
+            }
+            tagging::all_removed(removed)
+        }
+        Some(number) => {
+            let Some(label) = tagging::at_number(&labels, number) else {
+                return send_status(tx, rt, &tagging::nothing_there(number));
+            };
+            let turning_on = tagging::turns_on(&on_it, &label.name);
+            let written = if turning_on {
+                cache.add_tag_to_message(message_id, &label.id)
+            } else {
+                cache.remove_tag_from_message(message_id, &label.id)
+            };
+            if let Err(e) = written {
+                return send_status(tx, rt, &format!("The label did not stick: {e}"));
+            }
+            tagging::spoken(&label.name, turning_on)
+        }
+    };
+
+    // Spoken rather than left in the status line. A label is not visible from
+    // the row it is on, so somebody who pressed the wrong number has no other
+    // way to find out what they just did.
+    let _ = a11y.announce(&said, Priority::Normal);
+    send_status(tx, rt, &said);
+}
+
+/// This account's labels, making the starting five if it has none yet.
+///
+/// Made on first use rather than when an account is added, so an account that
+/// existed before labels did gets them too.
+fn labels_for(
+    cache: &MessageCache,
+    account_id: &str,
+) -> crate::common::Result<Vec<crate::data::message_cache::Tag>> {
+    let held = cache.get_tags_for_account(account_id)?;
+    if !held.is_empty() {
+        return Ok(held);
+    }
+    let made_at = chrono::Local::now().to_rfc3339();
+    for label in crate::application::tagging::TO_BEGIN_WITH {
+        cache.create_tag(&crate::data::message_cache::Tag {
+            // Named for the keyword rather than a fresh identifier, so the
+            // same label made twice on two machines is one label and not two.
+            id: format!("{account_id}:{}", label.keyword),
+            account_id: account_id.to_string(),
+            name: label.name.to_string(),
+            color: label.colour.to_string(),
+            created_at: made_at.clone(),
+        })?;
+    }
+    cache.get_tags_for_account(account_id)
+}
+
 fn raise_what_is_due(
     frame: &Frame,
     state: &Arc<StdMutex<WxUIState>>,
@@ -4685,6 +4879,7 @@ fn conversation_parts(
                     safety: crate::service::safety::Safety::Ordinary,
                     safety_reasons: Vec::new(),
                     receipt_to: None,
+                    labels: Vec::new(),
                 },
                 body,
                 depth: node.depth,
@@ -4854,6 +5049,7 @@ fn load_folder_messages(
         Ok(rows) => {
             let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
             apply_threading(&rows, &mut items);
+            attach_labels(cache, &mut items);
             let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
         }
         Err(e) => {
@@ -5551,6 +5747,7 @@ fn open_for_scanning(
                     safety: crate::service::safety::Safety::Suspicious,
                     safety_reasons: vec!["This message is a scan fixture".to_string()],
                     receipt_to: None,
+                    labels: Vec::new(),
                 },
                 &MessageBody::Html(
                     "<h1>A heading</h1><p>Some text, and \
@@ -9186,6 +9383,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            labels: Vec::new(),
         }
     }
 
@@ -9539,6 +9737,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            labels: Vec::new(),
         }
     }
 
@@ -9616,6 +9815,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            labels: Vec::new(),
         };
         let messages = vec![read(true), read(false), read(true), read(false)];
 
@@ -9663,6 +9863,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            labels: Vec::new(),
         };
         m.read = false;
         let messages = vec![m];

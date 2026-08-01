@@ -41,6 +41,7 @@ pub mod running;
 pub mod search;
 pub mod sign_off;
 pub mod spell_session;
+pub mod tagging;
 pub mod tasks;
 pub mod tasks_sync;
 pub mod threading;

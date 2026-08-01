@@ -151,6 +151,12 @@ pub struct MessageItem {
     /// without fetching anything, and so the answer does not depend on a body
     /// the cache may have evicted.
     pub receipt_to: Option<String>,
+    /// The labels somebody has put on it, by name.
+    ///
+    /// Names rather than colours. A colour tells most of the people this is
+    /// for nothing at all, and a label that is only a colour is a label they
+    /// cannot know is there.
+    pub labels: Vec<String>,
 }
 
 impl MessageItem {
@@ -201,6 +207,10 @@ impl MessageItem {
             safety: row.safety,
             safety_reasons: row.safety_reasons.clone(),
             receipt_to: row.receipt_to.clone(),
+            // Filled by the caller, which has the cache. A row comes out of
+            // one query and its labels are in another table; asking here would
+            // be a second query per row of a five hundred row page.
+            labels: Vec::new(),
         }
     }
 }
@@ -1259,6 +1269,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            labels: Vec::new(),
         }
     }
 

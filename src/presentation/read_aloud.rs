@@ -201,6 +201,9 @@ impl ReadAloud for MessageItem {
             ("Cc", &self.cc),
             ("Received", &out.date(&self.date)),
             ("", &flags),
+            // Said, because a label is not visible from the row it is on and a
+            // colour swatch is not a thing everybody can read.
+            ("Labels", &crate::application::tagging::joined(&self.labels)),
             ("", &attachments),
             ("", &self.snippet),
         ])
@@ -392,6 +395,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            labels: Vec::new(),
         }
     }
 

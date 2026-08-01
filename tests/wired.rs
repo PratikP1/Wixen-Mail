@@ -171,7 +171,19 @@ fn test_every_command_something_raises_is_handled() {
         // A dialog button is handled by returning its id, which the caller
         // then matches on. That is a handler, just not an `id ==` arm.
         handled.extend(names_after(&text, "end_modal("));
-        for marker in ["append_item(", "append_check_item(", "add_tool("] {
+        // A guard of the form `SOME_IDS.contains(&id)` handles every id in
+        // that list. The label keys are built by counting rather than by
+        // naming, so without this neither half of the pair was visible here
+        // and a whole submenu could have been unwired unnoticed.
+        handled.extend(ids_in_lists_used_with_contains(&text));
+        for marker in [
+            "append_item(",
+            "append_check_item(",
+            "add_tool(",
+            // A menu built item by item rather than in a builder chain, which
+            // is how a submenu with a variable number of entries is made.
+            "menu.append(",
+        ] {
             raised.extend(
                 names_after(&text, marker)
                     .into_iter()
@@ -511,6 +523,10 @@ fn test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of() {
     for kind in wixen_mail::application::new_item::ItemKind::ALL {
         code.push_str(&format!("\n{}", kind.shortcut()));
     }
+    // The label keys, which the menu builds by counting rather than by naming.
+    for number in 1..=wixen_mail::application::tagging::REACHABLE_BY_KEY {
+        code.push_str(&format!("\nCtrl+{number}"));
+    }
 
     let mut invented = Vec::new();
     for key in documented_combinations(&doc) {
@@ -580,6 +596,50 @@ fn accelerators(source: &str) -> Vec<String> {
         let key = rest[..end].trim().to_string();
         if !key.is_empty() && !found.contains(&key) {
             found.push(key);
+        }
+    }
+    found
+}
+
+/// Every command id in a list that a match guard tests with `contains`.
+///
+/// `_ if SOME_IDS.contains(&id) =>` handles all of them, and the plain search
+/// for `id == ID_THING` cannot see that. Written generally rather than for the
+/// one list that needed it, so the next one is covered without a change here.
+fn ids_in_lists_used_with_contains(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for (at, _) in text.match_indices(".contains(&id)") {
+        // The list's name is the identifier just before the dot.
+        let before = &text[..at];
+        let name: String = before
+            .chars()
+            .rev()
+            .take_while(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || *c == '_')
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        if name.is_empty() {
+            continue;
+        }
+        let Some(declared) = text.find(&format!("const {name}:")) else {
+            continue;
+        };
+        let Some(opens) = text[declared..].find('[').map(|at| declared + at) else {
+            continue;
+        };
+        // The second `[` opens the values; the first is the array's type.
+        let Some(values) = text[opens + 1..].find('[').map(|at| opens + 1 + at) else {
+            continue;
+        };
+        let Some(closes) = text[values..].find(']').map(|at| values + at) else {
+            continue;
+        };
+        for piece in text[values + 1..closes].split(',') {
+            let id = piece.trim();
+            if id.starts_with("ID_") {
+                found.push(id.to_string());
+            }
         }
     }
     found

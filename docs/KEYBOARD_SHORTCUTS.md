@@ -419,6 +419,34 @@ moves the menu, and sorting from the menu moves the headers.
 | Flag Message | `Ctrl+Shift+S` | Flag or unflag the selected message |
 | Mark as Read | (Message menu) | Mark the selected message as read. This is not on `Space`: `Space` reads the item aloud, in every module. |
 
+### Labels
+
+Ctrl and a number puts a label on the message you are on, and the same keys take
+it off again. Nine labels have a key; a tenth is reached from the Label menu.
+
+An account starts with the five Thunderbird uses, in the same order, so the
+numbers you already know still work: Important, Work, Personal, To Do, Later.
+
+**A label stays on this computer for now.** Each one carries the IMAP keyword
+that would make it the same label in Thunderbird, and nothing sends those to the
+server yet, so a message you label here is not labelled anywhere else and a
+label you set on your phone does not arrive here.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Important | `Ctrl+1` | Put the first label on, or take it off |
+| Work | `Ctrl+2` | The second label |
+| Personal | `Ctrl+3` | The third |
+| To Do | `Ctrl+4` | The fourth |
+| Later | `Ctrl+5` | The fifth |
+| The sixth to ninth labels | `Ctrl+6` to `Ctrl+9` | Nothing is there until you make a sixth label, and pressing one says so |
+| Remove every label | `Ctrl+0` | Takes them all off, and says how many there were |
+
+Thunderbird uses the bare number keys for this. Wixen Mail uses Ctrl and the
+number for a reason rather than a preference: a bare digit in a list is also a
+character, and a list that jumps to what you type cannot tell "label this work"
+from somebody spelling their way to a message about invoice 4021.
+
 ### Message Navigation
 
 | Action | Shortcut | Description |

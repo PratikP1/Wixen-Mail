@@ -303,6 +303,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            labels: Vec::new(),
         }
     }
 

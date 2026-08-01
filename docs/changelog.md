@@ -8,6 +8,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Ctrl and a number puts a label on a message.** Labels could be made, named,
+  coloured, edited and deleted, and none of that ever reached a message: the
+  table, the join table and the manager were all there and nothing put one on
+  anything. It is the fastest thing there is for working through an inbox by
+  ear, because it decides one thing about a message without opening it or
+  leaving the row. The same key takes the label off again, `Ctrl+0` removes them
+  all and says how many there were, and a number with no label on it says so
+  rather than doing nothing. Reading a message in full says its labels, because
+  a colour on a row is not something everybody can read.
+
+  An account starts with the five Thunderbird uses, in the same order.
+  Thunderbird puts these on the bare number keys; this uses Ctrl and the number,
+  because a bare digit in a list is also a character and a list that jumps to
+  what you type cannot tell "label this work" from somebody spelling their way
+  to a message about invoice 4021.
+
+  **Known limitation:** a label stays on this computer. Each carries the IMAP
+  keyword that would make it the same label in Thunderbird, and nothing sends
+  those to the server yet.
+
 - **Rules run on arriving mail.** They could be written, named, ordered and
   stored, and nothing had ever evaluated one: the engine, the editor and the
   table all existed and no arriving message was ever handed to them. Rules now
