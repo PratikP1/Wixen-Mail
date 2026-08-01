@@ -293,6 +293,84 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_a_protocol_reads_back_as_what_it_was_stored_as() {
+        // Found by mutation testing: nothing checked what `as_str` produced,
+        // so it could have written an empty string into every account row and
+        // no test would have said so. This is a storage format, and the value
+        // written today has to be the value read back by a version shipped
+        // next year.
+        for protocol in Protocol::ALL {
+            assert_eq!(
+                Protocol::from_stored(protocol.as_str()),
+                protocol,
+                "{protocol:?} did not survive being stored"
+            );
+            assert!(!protocol.as_str().is_empty());
+        }
+        assert_eq!(Protocol::Imap.as_str(), "imap");
+        assert_eq!(Protocol::Pop3.as_str(), "pop3");
+    }
+
+    #[test]
+    fn test_the_older_spelling_of_pop_is_still_read() {
+        // Rows written before the conversion existed used whichever spelling
+        // the caller happened to pass. Dropping this arm turns those accounts
+        // into IMAP accounts, which then read no mail at all.
+        assert_eq!(Protocol::from_stored("pop"), Protocol::Pop3);
+        assert_eq!(Protocol::from_stored("POP3"), Protocol::Pop3);
+        assert_eq!(Protocol::from_stored("  pop3  "), Protocol::Pop3);
+    }
+
+    #[test]
+    fn test_an_unknown_protocol_still_reads_mail() {
+        // An account written by a later version, or edited by hand, should
+        // keep working rather than quietly become an account that reads none.
+        assert_eq!(Protocol::from_stored("jmap"), Protocol::Imap);
+        assert_eq!(Protocol::from_stored(""), Protocol::Imap);
+    }
+
+    #[test]
+    fn test_each_protocol_is_described_differently_where_somebody_reads_it() {
+        // Both said the same thing would make the chooser useless, and neither
+        // saying anything would make it unreadable.
+        assert!(Protocol::Imap.spoken().contains("server"));
+        assert!(Protocol::Pop3.spoken().contains("this computer"));
+        assert_ne!(Protocol::Imap.spoken(), Protocol::Pop3.spoken());
+    }
+
+    #[test]
+    fn test_every_kind_of_folder_reads_back_as_itself() {
+        // The Outbox arm was untested, which would have made every outbox an
+        // ordinary folder: no queue, and mail waiting to go out filed where
+        // nothing looks for it.
+        for (stored, expected) in [
+            ("inbox", FolderType::Inbox),
+            ("sent", FolderType::Sent),
+            ("drafts", FolderType::Drafts),
+            ("outbox", FolderType::Outbox),
+            ("trash", FolderType::Trash),
+            ("spam", FolderType::Spam),
+            ("junk", FolderType::Spam),
+            ("archive", FolderType::Archive),
+            ("Projects", FolderType::Custom),
+        ] {
+            assert_eq!(
+                FolderType::from_stored(stored),
+                expected,
+                "{stored} read back wrongly"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_folder_kind_is_read_however_it_was_spelled() {
+        // Rows written before the conversion existed used whatever case the
+        // caller passed.
+        assert_eq!(FolderType::from_stored("INBOX"), FolderType::Inbox);
+        assert_eq!(FolderType::from_stored(" Outbox "), FolderType::Outbox);
+    }
+
+    #[test]
     fn test_email_address_display() {
         let addr = EmailAddress::new(
             "test@example.com".to_string(),

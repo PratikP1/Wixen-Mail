@@ -225,6 +225,59 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    #[test]
+    fn test_only_the_settings_files_are_collected() {
+        // Found by mutation testing: the two halves of the account-file test
+        // were never checked apart, so `and` could become `or` unnoticed. With
+        // `or`, every file whose name merely ends in .json is a settings file,
+        // and a migration sweeps up whatever else somebody kept in that folder.
+        for name in ["app_config.json", "account_work.json", "account_.json"] {
+            assert!(
+                is_settings_file(&OsString::from(name)),
+                "{name} was not recognised as a settings file"
+            );
+        }
+        for name in [
+            // Ends in .json but is not ours.
+            "notes.json",
+            // Starts with account_ but is not JSON, which is how a backup made
+            // by hand usually looks.
+            "account_work.json.bak",
+            "account_work.txt",
+            "message_cache.db",
+            "",
+        ] {
+            assert!(
+                !is_settings_file(&OsString::from(name)),
+                "{name} was collected and should not have been"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_report_is_empty_only_when_nothing_happened() {
+        // It decides whether a migration is worth saying anything about, so
+        // one that always answers "nothing happened" means files quietly moved
+        // with no record of where they went.
+        let mut report = MigrationReport::default();
+        assert!(report.is_empty());
+
+        report.moved.push(PathBuf::from("account_work.json"));
+        assert!(
+            !report.is_empty(),
+            "a report with a move in it read as empty"
+        );
+
+        let mut failed = MigrationReport::default();
+        failed
+            .failed
+            .push((PathBuf::from("oauth.toml"), "in use".to_string()));
+        assert!(
+            !failed.is_empty(),
+            "a report with a failure in it read as empty"
+        );
+    }
+
     fn write(path: &Path, body: &str) {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).unwrap();

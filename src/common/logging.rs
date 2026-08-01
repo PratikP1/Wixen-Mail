@@ -179,6 +179,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_every_level_can_be_asked_for_by_name() {
+        // Found by mutation testing: only some of the arms were exercised, so
+        // deleting the one for "warn" or "trace" changed nothing any test
+        // could see. These come off the command line and out of the settings
+        // file, and a level that silently falls back is a person who asked for
+        // more detail in a bug report and did not get it.
+        for (written, expected) in [
+            ("error", LogLevel::Error),
+            ("warn", LogLevel::Warn),
+            ("info", LogLevel::Info),
+            ("debug", LogLevel::Debug),
+            ("trace", LogLevel::Trace),
+        ] {
+            assert_eq!(
+                LogLevel::parse(written),
+                Some(expected),
+                "{written} was not understood"
+            );
+            assert_eq!(
+                LogLevel::parse(&written.to_uppercase()),
+                Some(expected),
+                "{written} was not understood in capitals"
+            );
+        }
+        assert_eq!(LogLevel::parse("chatty"), None);
+    }
+
+    #[test]
+    fn test_the_log_folder_is_somewhere_real() {
+        // Not the empty path, which is what this became under mutation and
+        // which would put the log wherever the shortcut happened to start.
+        // Logs nobody can find are logs nobody can send with a bug report.
+        let dir = default_log_dir();
+
+        assert!(dir.is_absolute(), "the log folder is not an absolute path");
+        assert!(dir.ends_with("logs"), "{dir:?} is not a logs folder");
+    }
+
+    #[test]
     fn test_sensitive_string() {
         let sensitive = SensitiveString::new("secret-password".to_string());
         assert_eq!(sensitive.reveal(), "secret-password");
