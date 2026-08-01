@@ -124,21 +124,28 @@ so acting on one mid-run is fine. Quoting the totals mid-run is not.
 Worth knowing, because the two are not the same list and the sweep is better
 for doing both.
 
-cargo-mutants replaces a whole function body, or one binary operator. So it
-never asks what happens to one arm of a `match`, and it never changes a literal
-sitting in an argument list. Three of the largest findings in `data` came from
-reading rather than from the report:
+cargo-mutants replaces a whole function body, replaces one binary operator, and
+deletes one arm of a `match`. What it does not do is change a literal sitting
+in an argument list, and it cannot see a value that is only wrong in the world
+rather than wrong in the code.
 
-- Eleven of the thirteen domains account setup recognises had no test. The
-  report could not have found this: the function's body was covered.
-- The preset fields, including whether a provider connects with TLS, were
-  unchecked except Gmail's.
+Two of the largest findings in `data` came from reading rather than from the
+report:
+
 - `save_account` writes an empty string into the password column, and that
   literal is the whole reason the credential store exists here. Changed to the
-  real password, every test still passed.
+  real password, every test still passed. No mutant would have asked.
+- The preset fields, including whether a provider connects over TLS, were
+  unchecked except Gmail's. Same reason: they are literals in a list.
 
-So: run the report, and read the module for match arms, literal arguments, and
-anything a comment says is deliberate.
+A third was found by reading and did also appear in the report, which is worth
+being straight about. Eleven of the thirteen domains account setup recognises
+had no test, and the report named three deleted match arms. Reading got there
+first; it was not something the report could not have found.
+
+So: run the report, and read the module for literals that carry a decision, and
+for anything a comment says is deliberate. Those are what the report cannot
+reach.
 
 ## Progress
 
