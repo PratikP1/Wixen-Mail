@@ -541,6 +541,21 @@ mod tests {
     }
 
     #[test]
+    fn test_the_engine_hands_back_the_rules_it_was_given() {
+        // Found by mutation testing: nothing asked what get_rules returned, so
+        // an engine reporting an empty list would have passed every test. It is
+        // what the sync checks before deciding whether to look at arriving mail
+        // at all, so an empty answer means rules that silently never run.
+        let mut engine = FilterEngine::default();
+        engine
+            .add_rule(rule("contains", "Invoice", false))
+            .expect("the rule is added");
+
+        assert_eq!(engine.get_rules().len(), 1);
+        assert_eq!(engine.get_rules()[0].pattern, "Invoice");
+    }
+
+    #[test]
     fn test_a_rule_can_name_any_field_the_engine_claims_to_know() {
         // Found by mutation testing: deleting the arms for "from", "to",
         // "date" and "message_id" changed nothing any test could see, so four

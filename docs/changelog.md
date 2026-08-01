@@ -136,6 +136,14 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The mail sync is tested.** What to fetch, what to forget, whose flags to
+  ask about, whether a folder has been renumbered and what to do with what
+  comes back are all decisions, and none of them had ever run in a test,
+  because running them meant having a server. The transport now has a name of
+  its own, so a sync can be run against a scripted server instead of a socket.
+  Six tests cover the paths that used to be reachable only against a live
+  account.
+
 - **A new label or signature made in its manager is now actually saved.** Both
   were written by trying to update the row and creating it only if that failed.
   Updating a row that does not exist is not a failure in SQL, so the create

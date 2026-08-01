@@ -241,6 +241,66 @@ mod tests {
     }
 
     #[test]
+    fn test_a_reminder_due_at_this_exact_moment_goes_off() {
+        // The boundary, found by mutation testing: nothing said whether "due
+        // now" counts as due. A reminder set for nine that is skipped at nine
+        // and raised at nine oh one is a reminder that is always late.
+        let rows = one("r1", "2026-07-26 09:00");
+
+        let due = what_is_due(borrowed(&rows), at("2026-07-26 09:00"), &nothing_raised());
+
+        assert_eq!(due.len(), 1, "a reminder due right now was passed over");
+        assert!(
+            !due[0].late,
+            "it was called overdue in the minute it was due"
+        );
+    }
+
+    #[test]
+    fn test_a_reminder_exactly_a_day_late_is_still_worth_raising() {
+        // The other boundary. A machine asleep for a day comes back to
+        // reminders that went off while it was off, and the one right on the
+        // edge should arrive rather than being dropped in silence.
+        let rows = one("r1", "2026-07-26 09:00");
+
+        let due = what_is_due(borrowed(&rows), at("2026-07-27 09:00"), &nothing_raised());
+
+        assert_eq!(due.len(), 1, "a reminder exactly a day late was dropped");
+        assert!(due[0].late);
+    }
+
+    #[test]
+    fn test_a_reminder_a_second_over_a_day_late_is_let_go() {
+        // Past the edge. Raising a week of them at somebody is a wall of
+        // alerts nobody reads.
+        let rows = one("r1", "2026-07-26 09:00");
+
+        let due = what_is_due(
+            borrowed(&rows),
+            at("2026-07-27 09:00:01"),
+            &nothing_raised(),
+        );
+
+        assert!(
+            due.is_empty(),
+            "something a day and a second late was raised"
+        );
+    }
+
+    #[test]
+    fn test_a_reminder_exactly_a_minute_past_is_not_yet_overdue() {
+        // "More than a minute past is late" is the rule, so a minute exactly
+        // is not. Calling it overdue would make almost every reminder sound
+        // urgent.
+        let rows = one("r1", "2026-07-26 09:00");
+
+        let due = what_is_due(borrowed(&rows), at("2026-07-26 09:01"), &nothing_raised());
+
+        assert_eq!(due.len(), 1);
+        assert!(!due[0].late, "a minute exactly was called overdue");
+    }
+
+    #[test]
     fn test_a_reminder_that_is_not_due_yet_is_left_alone() {
         let rows = one("r1", "2026-07-26 10:00");
 

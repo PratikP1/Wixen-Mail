@@ -247,6 +247,87 @@ pub fn store_folders(
 }
 
 /// Sync one folder into the cache.
+/// What a sync needs from a mail server.
+///
+/// Named for what it is rather than for the protocol behind it. The sync does
+/// not care whether the answers come over IMAP, and saying so in the type is
+/// what lets the whole of `sync_folder` be tested: everything below this line
+/// is decisions about what to fetch, forget and reconcile, and none of it had
+/// ever been run in a test because running it meant having a server.
+///
+/// Five methods, which is the whole of what a sync asks. Anything larger would
+/// be a description of the IMAP client rather than of what this needs.
+pub(crate) trait Mailbox {
+    /// How many messages a folder holds and how many are unread.
+    ///
+    /// Asked before the folder is opened, because the answer is wanted for
+    /// folders that are never opened at all.
+    async fn folder_counts(
+        &self,
+        folder: &str,
+    ) -> Result<crate::service::protocols::imap::FolderCounts>;
+
+    /// Open a folder, and say what state the server reports for it.
+    async fn select_folder(
+        &self,
+        folder: &str,
+    ) -> Result<crate::service::protocols::imap::MailboxStatus>;
+
+    /// Every message the folder holds, by uid.
+    ///
+    /// The whole folder rather than a page: it is what says which stored
+    /// messages the server no longer has, and a page would report every
+    /// message outside it as deleted.
+    async fn list_uids(&self, folder: &str) -> Result<Vec<u32>>;
+
+    /// The headers of the named messages.
+    async fn fetch_headers(&self, folder: &str, uids: &[u32]) -> Result<Vec<ImapMessage>>;
+
+    /// The flags of messages already held, for the ones that have changed.
+    ///
+    /// `changed_since` is the modification sequence a CONDSTORE server uses to
+    /// answer in one round trip. `None` asks about every uid given.
+    async fn fetch_flags(
+        &self,
+        folder: &str,
+        held: &[u32],
+        changed_since: Option<u64>,
+    ) -> Result<Vec<(u32, Vec<String>)>>;
+}
+
+impl Mailbox for MailController {
+    async fn folder_counts(
+        &self,
+        folder: &str,
+    ) -> Result<crate::service::protocols::imap::FolderCounts> {
+        MailController::folder_counts(self, folder).await
+    }
+
+    async fn select_folder(
+        &self,
+        folder: &str,
+    ) -> Result<crate::service::protocols::imap::MailboxStatus> {
+        MailController::select_folder(self, folder).await
+    }
+
+    async fn list_uids(&self, folder: &str) -> Result<Vec<u32>> {
+        MailController::list_uids(self, folder).await
+    }
+
+    async fn fetch_headers(&self, folder: &str, uids: &[u32]) -> Result<Vec<ImapMessage>> {
+        MailController::fetch_headers(self, folder, uids).await
+    }
+
+    async fn fetch_flags(
+        &self,
+        folder: &str,
+        held: &[u32],
+        changed_since: Option<u64>,
+    ) -> Result<Vec<(u32, Vec<String>)>> {
+        MailController::fetch_flags(self, folder, held, changed_since).await
+    }
+}
+
 /// Run the rules over messages that have just arrived.
 ///
 /// The rules could be written, named, ordered and stored, and nothing had ever
@@ -322,8 +403,8 @@ fn carry_out(
     Ok(())
 }
 
-pub async fn sync_folder(
-    controller: &MailController,
+pub(crate) async fn sync_folder<M: Mailbox>(
+    controller: &M,
     cache: &MessageCache,
     folder: &ImapFolder,
     folder_id: i64,
@@ -790,6 +871,293 @@ mod tests {
             cache.get_message(id).expect("read back").is_some(),
             "the message was deleted anyway"
         );
+    }
+
+    /// A mail server that answers from a script rather than a socket.
+    ///
+    /// The whole of `sync_folder` was untestable before the transport had a
+    /// name: what to fetch, what to forget, whose flags to ask about and what
+    /// to do with what comes back are all decisions, and none of them had ever
+    /// been run in a test because running them meant having a server.
+    struct Scripted {
+        on_server: Vec<u32>,
+        headers: Vec<ImapMessage>,
+        flags: Vec<(u32, Vec<String>)>,
+        counts: crate::service::protocols::imap::FolderCounts,
+        uid_validity: Option<u32>,
+        /// Which uids the header fetch was asked for, so a test can check that
+        /// a sync asked for the right ones rather than only that it ended up
+        /// with the right rows.
+        asked_for: std::cell::RefCell<Vec<u32>>,
+    }
+
+    impl Default for Scripted {
+        fn default() -> Self {
+            Self {
+                on_server: Vec::new(),
+                headers: Vec::new(),
+                flags: Vec::new(),
+                counts: crate::service::protocols::imap::FolderCounts {
+                    total: 0,
+                    unread: 0,
+                },
+                uid_validity: Some(1),
+                asked_for: std::cell::RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl Mailbox for Scripted {
+        async fn folder_counts(
+            &self,
+            _folder: &str,
+        ) -> Result<crate::service::protocols::imap::FolderCounts> {
+            Ok(self.counts)
+        }
+
+        async fn select_folder(
+            &self,
+            _folder: &str,
+        ) -> Result<crate::service::protocols::imap::MailboxStatus> {
+            Ok(crate::service::protocols::imap::MailboxStatus {
+                uid_validity: self.uid_validity,
+                highest_modseq: None,
+            })
+        }
+
+        async fn list_uids(&self, _folder: &str) -> Result<Vec<u32>> {
+            Ok(self.on_server.clone())
+        }
+
+        async fn fetch_headers(&self, _folder: &str, uids: &[u32]) -> Result<Vec<ImapMessage>> {
+            self.asked_for.borrow_mut().extend_from_slice(uids);
+            Ok(self
+                .headers
+                .iter()
+                .filter(|m| uids.contains(&m.uid))
+                .cloned()
+                .collect())
+        }
+
+        async fn fetch_flags(
+            &self,
+            _folder: &str,
+            held: &[u32],
+            _since: Option<u64>,
+        ) -> Result<Vec<(u32, Vec<String>)>> {
+            Ok(self
+                .flags
+                .iter()
+                .filter(|(uid, _)| held.contains(uid))
+                .cloned()
+                .collect())
+        }
+    }
+
+    fn a_cache() -> (MessageCache, i64, ImapFolder) {
+        let dir = std::env::temp_dir().join(format!("wixen_sync_{}", uuid::Uuid::new_v4()));
+        let cache = MessageCache::new(dir, None).expect("a cache");
+        let folder_id = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Inbox".into(),
+                path: "INBOX".into(),
+                folder_type: "Inbox".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        let folder = ImapFolder {
+            name: "Inbox".into(),
+            display_path: "INBOX".into(),
+            path: "INBOX".into(),
+            folder_type: FolderType::Inbox,
+            selectable: true,
+            holds_all_mail: false,
+            subscribed: true,
+        };
+        (cache, folder_id, folder)
+    }
+
+    fn run<M: Mailbox>(
+        server: &M,
+        cache: &MessageCache,
+        id: i64,
+        folder: &ImapFolder,
+    ) -> FolderSync {
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(sync_folder(server, cache, folder, id, 500, None))
+            .expect("the sync runs")
+    }
+
+    #[test]
+    fn test_a_sync_brings_down_what_the_server_has() {
+        let (cache, id, folder) = a_cache();
+        let server = Scripted {
+            on_server: vec![1, 2],
+            headers: vec![message(1), message(2)],
+            counts: crate::service::protocols::imap::FolderCounts {
+                total: 2,
+                unread: 1,
+            },
+            ..Default::default()
+        };
+
+        let done = run(&server, &cache, id, &folder);
+
+        assert_eq!(done.fetched, 2);
+        assert_eq!(done.held, 2);
+        assert_eq!(done.total_on_server, 2);
+        assert_eq!(done.unread, 1);
+        assert_eq!(*server.asked_for.borrow(), vec![1, 2]);
+    }
+
+    #[test]
+    fn test_a_second_sync_asks_only_about_what_it_does_not_have() {
+        // Asking again for everything is how a large mailbox becomes a sync
+        // that never visibly finishes.
+        let (cache, id, folder) = a_cache();
+        run(
+            &Scripted {
+                on_server: vec![1],
+                headers: vec![message(1)],
+                ..Default::default()
+            },
+            &cache,
+            id,
+            &folder,
+        );
+
+        let second = Scripted {
+            on_server: vec![1, 2],
+            headers: vec![message(1), message(2)],
+            ..Default::default()
+        };
+        let done = run(&second, &cache, id, &folder);
+
+        assert_eq!(done.fetched, 1, "it fetched something it already had");
+        assert_eq!(*second.asked_for.borrow(), vec![2]);
+    }
+
+    #[test]
+    fn test_a_message_the_server_no_longer_has_leaves_the_list() {
+        // A row that is gone from the server but still listed is worse than a
+        // list a little behind: somebody arrows onto it, presses Enter, and
+        // gets an error instead of mail.
+        let (cache, id, folder) = a_cache();
+        run(
+            &Scripted {
+                on_server: vec![1, 2],
+                headers: vec![message(1), message(2)],
+                ..Default::default()
+            },
+            &cache,
+            id,
+            &folder,
+        );
+
+        let done = run(
+            &Scripted {
+                on_server: vec![2],
+                headers: vec![message(2)],
+                ..Default::default()
+            },
+            &cache,
+            id,
+            &folder,
+        );
+
+        assert_eq!(done.forgotten, 1);
+        assert_eq!(cache.stored_uids(id).expect("held").len(), 1);
+    }
+
+    #[test]
+    fn test_a_flag_set_on_another_device_arrives_on_the_next_sync() {
+        let (cache, id, folder) = a_cache();
+        run(
+            &Scripted {
+                on_server: vec![1],
+                headers: vec![ImapMessage {
+                    flags: Vec::new(),
+                    ..message(1)
+                }],
+                ..Default::default()
+            },
+            &cache,
+            id,
+            &folder,
+        );
+
+        let done = run(
+            &Scripted {
+                on_server: vec![1],
+                headers: vec![message(1)],
+                flags: vec![(1, vec![String::from("\\Seen")])],
+                ..Default::default()
+            },
+            &cache,
+            id,
+            &folder,
+        );
+
+        assert_eq!(done.flags_updated, 1);
+    }
+
+    #[test]
+    fn test_a_renumbered_mailbox_is_read_again_from_scratch() {
+        // Every uid held names a different message now, or none. Keeping them
+        // would show somebody the wrong mail under the right subject.
+        let (cache, id, folder) = a_cache();
+        run(
+            &Scripted {
+                on_server: vec![1],
+                headers: vec![message(1)],
+                uid_validity: Some(1),
+                ..Default::default()
+            },
+            &cache,
+            id,
+            &folder,
+        );
+
+        // The same uid, meaning a different message. This is the case the
+        // forget exists for: uid 1 is still on the server, so nothing else
+        // would notice it had changed, and without re-reading the folder
+        // somebody would see the old subject on the new mail for ever.
+        let after = Scripted {
+            on_server: vec![1],
+            headers: vec![ImapMessage {
+                subject: "A different message entirely".into(),
+                ..message(1)
+            }],
+            uid_validity: Some(2),
+            ..Default::default()
+        };
+        let done = run(&after, &cache, id, &folder);
+
+        assert!(done.renumbered);
+        assert_eq!(
+            *after.asked_for.borrow(),
+            vec![1],
+            "the folder was not read again after being renumbered"
+        );
+        assert_eq!(done.fetched, 1);
+    }
+
+    #[test]
+    fn test_a_folder_that_cannot_be_opened_is_passed_over_rather_than_failing() {
+        // Gmail's `[Gmail]` is a container. Selecting it fails, and one such
+        // folder must not end the sync of the account it sits in.
+        let (cache, id, mut folder) = a_cache();
+        folder.selectable = false;
+
+        let done = run(&Scripted::default(), &cache, id, &folder);
+
+        assert_eq!(done.fetched, 0);
+        assert_eq!(done.folder, "Inbox");
     }
 
     fn message(uid: u32) -> ImapMessage {
