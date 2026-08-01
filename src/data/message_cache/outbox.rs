@@ -224,6 +224,179 @@ mod tests {
         assert!(empty.is_empty());
     }
 
+    fn a_cache(what_for: &str) -> MessageCache {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock that has passed 1970")
+            .as_nanos();
+        MessageCache::new(
+            env::temp_dir().join(format!("wixen_mail_test_outbox_{what_for}_{nanos}")),
+            None,
+        )
+        .expect("a cache to open")
+    }
+
+    fn queued(id: &str, account_id: &str, subject: &str, created_at: &str) -> QueuedOutboxMessage {
+        QueuedOutboxMessage {
+            id: id.to_string(),
+            account_id: account_id.to_string(),
+            to_addr: "alice@example.com".to_string(),
+            cc_addr: String::new(),
+            bcc_addr: String::new(),
+            subject: subject.to_string(),
+            body: "Body".to_string(),
+            attempt_count: 0,
+            last_error: None,
+            created_at: created_at.to_string(),
+            body_html: None,
+            attachments: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_a_waiting_message_says_what_it_is_doing() {
+        // This is the line read out for every message in the Outbox, and all
+        // four ways of writing it were untested. A message that has failed
+        // four times sounding exactly like one that has not been tried is the
+        // whole difficulty this label exists to remove.
+        for (attempts, last_error, expected) in [
+            (0, None, "Report, waiting to send"),
+            (0, Some("network down"), "Report, waiting to send"),
+            (1, None, "Report, tried once"),
+            // One failure is usually the network and says nothing worth
+            // hearing, so the reason is held back until it repeats.
+            (1, Some("network down"), "Report, tried once"),
+            (
+                4,
+                Some("mailbox full"),
+                "Report, tried 4 times: mailbox full",
+            ),
+            (4, None, "Report, tried 4 times"),
+        ] {
+            assert_eq!(
+                waiting_label("Report", attempts, last_error),
+                expected,
+                "{attempts} attempts with {last_error:?} was said wrongly"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_waiting_message_with_no_subject_is_still_something_to_hear() {
+        // An empty subject leaves a row that opens with a comma, which is a
+        // row somebody cannot tell from the one above it.
+        assert_eq!(waiting_label("", 0, None), "No subject, waiting to send");
+        // A subject of nothing but spaces counts as no subject, or the row is
+        // read out as a pause followed by a comma.
+        assert_eq!(waiting_label("   ", 2, None), "No subject, tried 2 times");
+    }
+
+    #[test]
+    fn test_the_outbox_shows_this_account_s_waiting_mail_oldest_first() {
+        // Showing another account's queue here would be somebody's mail listed
+        // under the wrong account, and cancelling from that list would then
+        // reach across to it.
+        let cache = a_cache("rows");
+        cache
+            .queue_outbox_message(&queued("b", "acc-1", "Second", "2026-08-01T10:00:00Z"))
+            .expect("a message to queue");
+        cache
+            .queue_outbox_message(&queued("a", "acc-1", "First", "2026-08-01T09:00:00Z"))
+            .expect("a message to queue");
+        cache
+            .queue_outbox_message(&queued("z", "acc-2", "Elsewhere", "2026-08-01T09:30:00Z"))
+            .expect("a message to queue");
+
+        let rows = cache.outbox_rows("acc-1").expect("the outbox to be read");
+
+        assert_eq!(
+            rows.iter().map(|r| r.subject.as_str()).collect::<Vec<_>>(),
+            ["First, waiting to send", "Second, waiting to send"],
+            "the outbox listed the wrong messages, or in the wrong order"
+        );
+        assert!(
+            rows.iter().all(|r| r.account_id == "acc-1"),
+            "a row was labelled with the wrong account"
+        );
+        assert!(
+            rows.iter().all(|r| r.read),
+            "waiting mail counted itself as unread mail to deal with"
+        );
+        assert_eq!(
+            rows[0].to_addr, "alice@example.com",
+            "the row does not say where the message is going"
+        );
+
+        // The same filter, on the other way in.
+        assert_eq!(
+            cache
+                .load_outbox_messages("acc-1")
+                .expect("the queue to load")
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn test_cancelling_a_waiting_message_removes_it_and_says_whether_it_did() {
+        // Cancelling is the one thing worth doing to a message that has not
+        // gone. Reporting success without removing it leaves somebody
+        // believing they stopped a message that is still on its way.
+        let cache = a_cache("cancel");
+        cache
+            .queue_outbox_message(&queued("a", "acc-1", "Going", "2026-08-01T09:00:00Z"))
+            .expect("a message to queue");
+        let row_id = cache.outbox_rows("acc-1").expect("the outbox")[0].id;
+
+        assert!(
+            cache.cancel_queued(row_id).expect("the cancel to run"),
+            "cancelling a message that is there reported that it was not"
+        );
+        assert!(
+            cache.outbox_rows("acc-1").expect("the outbox").is_empty(),
+            "the message was reported cancelled and is still queued"
+        );
+        assert!(
+            !cache.cancel_queued(row_id).expect("the cancel to run"),
+            "cancelling nothing reported that it cancelled something"
+        );
+    }
+
+    #[test]
+    fn test_a_failure_is_counted_against_the_message_it_happened_to() {
+        let cache = a_cache("failure");
+        cache
+            .queue_outbox_message(&queued("a", "acc-1", "Mine", "2026-08-01T09:00:00Z"))
+            .expect("a message to queue");
+        cache
+            .queue_outbox_message(&queued("b", "acc-1", "Theirs", "2026-08-01T10:00:00Z"))
+            .expect("a message to queue");
+
+        cache
+            .update_outbox_failure("a", "mailbox full")
+            .expect("the failure to be recorded");
+        cache
+            .update_outbox_failure("a", "mailbox full")
+            .expect("the failure to be recorded");
+
+        let queue = cache.load_outbox_messages("acc-1").expect("the queue");
+        let counted = |id: &str| {
+            queue
+                .iter()
+                .find(|m| m.id == id)
+                .expect("the message")
+                .attempt_count
+        };
+
+        assert_eq!(counted("a"), 2, "the failures were not counted up");
+        assert_eq!(counted("b"), 0, "a failure was counted against both");
+        assert_eq!(
+            cache.outbox_rows("acc-1").expect("the outbox")[0].subject,
+            "Mine, tried 2 times: mailbox full",
+            "the outbox does not say why it keeps failing"
+        );
+    }
+
     #[test]
     fn test_the_queue_keeps_cc_and_bcc() {
         // The queue is where they were lost. The composer collects them, the
