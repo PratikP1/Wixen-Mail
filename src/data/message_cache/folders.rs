@@ -276,7 +276,13 @@ mod tests {
 
     #[test]
     fn test_folder_operations() {
-        let temp_dir = env::temp_dir().join("wixen_mail_test_folders");
+        let temp_dir = env::temp_dir().join(format!(
+            "wixen_mail_test_folders_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("a clock that has passed 1970")
+                .as_nanos()
+        ));
         let cache = MessageCache::new(temp_dir, None).unwrap();
 
         let folder = CachedFolder {

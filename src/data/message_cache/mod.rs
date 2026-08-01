@@ -1296,7 +1296,13 @@ mod tests {
 
     #[test]
     fn test_message_cache_creation() {
-        let temp_dir = env::temp_dir().join("wixen_mail_test");
+        let temp_dir = env::temp_dir().join(format!(
+            "wixen_mail_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("a clock that has passed 1970")
+                .as_nanos()
+        ));
         let cache = MessageCache::new(temp_dir, None);
         assert!(cache.is_ok());
     }

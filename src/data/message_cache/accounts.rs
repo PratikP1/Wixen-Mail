@@ -429,7 +429,13 @@ mod tests {
 
     #[test]
     fn test_account_persistence() {
-        let temp_dir = env::temp_dir().join("wixen_mail_test_accounts");
+        let temp_dir = env::temp_dir().join(format!(
+            "wixen_mail_test_accounts_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("a clock that has passed 1970")
+                .as_nanos()
+        ));
         let cache = MessageCache::new(temp_dir, None).unwrap();
 
         let account = crate::data::account::Account {
