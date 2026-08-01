@@ -541,6 +541,82 @@ mod tests {
     }
 
     #[test]
+    fn test_every_way_of_matching_says_yes_when_it_should() {
+        // Found by mutation testing: only "contains", "starts_with",
+        // "is_empty" and "regex" were ever exercised. Deleting the arm for
+        // "equals", "not_equals", "ends_with", "is_not_empty", "is_true" or
+        // "is_false" changed nothing any test could see, so six of the eleven
+        // ways a rule can be written had never been run.
+        let message = message_with_subject("Quarterly report");
+
+        for (match_type, pattern) in [
+            ("contains", "Quarterly"),
+            ("not_contains", "Annual"),
+            ("equals", "Quarterly report"),
+            ("not_equals", "Something else"),
+            ("starts_with", "Quarterly"),
+            ("ends_with", "report"),
+            ("is_not_empty", ""),
+            ("regex", "^Quarterly"),
+        ] {
+            assert!(
+                FilterEngine::matches(&rule(match_type, pattern, false), &message),
+                "{match_type} looking for {pattern:?} did not match"
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_way_of_matching_says_no_when_it_should() {
+        // The other half. Without it an arm that always answered yes would
+        // pass the test above.
+        let message = message_with_subject("Quarterly report");
+
+        for (match_type, pattern) in [
+            ("contains", "Annual"),
+            ("not_contains", "Quarterly"),
+            ("equals", "Quarterly"),
+            ("not_equals", "Quarterly report"),
+            ("starts_with", "report"),
+            ("ends_with", "Quarterly"),
+            ("is_empty", ""),
+            ("regex", "^report"),
+        ] {
+            assert!(
+                !FilterEngine::matches(&rule(match_type, pattern, false), &message),
+                "{match_type} looking for {pattern:?} matched when it should not"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_rule_can_ask_whether_a_flag_is_set() {
+        // "is_true" and "is_false" are how a rule names a flag rather than
+        // text: read, starred, deleted. Both arms were untested, so both would
+        // have gone on answering the same way whichever flag was asked about.
+        let mut message = message_with_subject("Quarterly report");
+        message.read = true;
+        message.starred = false;
+
+        let asked = |field: &str, match_type: &str| {
+            let mut named = rule(match_type, "", false);
+            named.field = field.to_string();
+            FilterEngine::matches(&named, &message)
+        };
+
+        assert!(
+            asked("read", "is_true"),
+            "a read message did not answer is_true"
+        );
+        assert!(!asked("read", "is_false"));
+        assert!(
+            asked("starred", "is_false"),
+            "an unflagged message did not answer is_false"
+        );
+        assert!(!asked("starred", "is_true"));
+    }
+
+    #[test]
     fn test_the_engine_hands_back_the_rules_it_was_given() {
         // Found by mutation testing: nothing asked what get_rules returned, so
         // an engine reporting an empty list would have passed every test. It is
