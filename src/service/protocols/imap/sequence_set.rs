@@ -201,6 +201,52 @@ mod tests {
         );
     }
 
+    /// A set of `count` UIDs with no two adjacent, every one four digits wide,
+    /// so the length it writes to is arithmetic rather than guesswork:
+    /// four characters each and one comma between them.
+    fn four_digit_uids(count: u32) -> Vec<u32> {
+        (0..count).map(|n| 1000 + n * 2).collect()
+    }
+
+    fn written_length(count: u32) -> usize {
+        (count as usize) * 5 - 1
+    }
+
+    #[test]
+    fn test_a_set_that_exactly_fills_the_limit_is_not_split() {
+        // The comparison deciding this is the difference between `>` and `>=`,
+        // and nothing was watching it. Splitting one character early is not
+        // wrong, it is a second round trip on every batch that lands on the
+        // boundary, which on a large mailbox is a folder that takes twice as
+        // long to open for no reason anybody could see.
+        let uids = four_digit_uids(5);
+        let exactly = written_length(5);
+
+        let produced = chunks(&uids, exactly);
+
+        assert_eq!(
+            produced,
+            vec!["1000,1002,1004,1006,1008".to_string()],
+            "a set that fits exactly was split"
+        );
+        assert_eq!(produced[0].len(), exactly);
+    }
+
+    #[test]
+    fn test_one_character_past_the_limit_starts_a_new_command() {
+        // The other side of the same comparison. Over the limit has to split,
+        // or the server rejects a command that is one character too long and
+        // the folder does not load at all.
+        let uids = four_digit_uids(5);
+        let one_short = written_length(5) - 1;
+
+        assert_eq!(
+            chunks(&uids, one_short),
+            vec!["1000,1002,1004,1006".to_string(), "1008".to_string()],
+            "a set one character over the limit was sent whole"
+        );
+    }
+
     #[test]
     fn test_everything_that_fits_goes_in_one_command() {
         let uids = [1, 2, 3, 9, 40, 41];

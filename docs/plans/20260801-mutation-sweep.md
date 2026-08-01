@@ -96,14 +96,14 @@ sync logic that sits on top of them is covered through the `Mailbox` trait.
 
 When reading this area's report, sort the findings into those two piles first.
 Of the 113 that survived the finished run, all but one fall in the second pile:
-they are `ImapSession` methods whose whole body is a round trip. One does not,
-and is worth a test:
+they are `ImapSession` methods whose whole body is a round trip. One did not,
+and is now closed:
 
 - `imap/sequence_set.rs`, `chunks`: the length comparison that decides where a
-  sequence set is split. Pure, already has tests, and the boundary between `>`
-  and `>=` is not among them. Getting it wrong means an IMAP command one
-  character over the limit, which the server rejects, which reads to somebody
-  as a folder that will not load.
+  sequence set is split. Pure, well tested at every other point, and the
+  boundary between `>` and `>=` was not among them. A set that exactly fills
+  the limit now has a test saying it goes in one command, and one character
+  past it has a test saying it does not.
 
 ## Progress
 
