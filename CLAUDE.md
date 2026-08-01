@@ -144,6 +144,21 @@ about two days, so it is used scoped, and the pull request check runs it on the
 diff only. Before trusting a new regression test, take the fix out and watch the
 test fail; a test that has never been red proves nothing.
 
+`application::filters`, `due`, `tagging` and `sign_off` are clean as of
+2026-08-01: 157 mutants, 141 caught, 16 that would not compile, none missed. It
+took three passes to get there, and what the first two found is the pattern
+worth remembering. The tests covered the paths somebody would think to write a
+test for and left whole families of behaviour untouched: four of the fields a
+filter rule can name, six of the eleven ways it can match, five of the actions
+it can carry out. Each family had one member with a test and the rest with
+none. When a function switches on a string, test every arm both ways, or expect
+mutation testing to find the ones you skipped.
+
+Read a partial run as partial. `mutants.out` is written as it goes, and reading
+it mid-run once produced a commit message quoting seventeen of eighteen caught
+when the real figure was thirty-seven of fifty-one. Wait for the process to
+exit.
+
 ```bash
 cargo llvm-cov --lib --summary-only
 ```
