@@ -703,6 +703,202 @@ mod tests {
         assert_eq!(manager.get_active_account_id(), Some(&id2));
     }
 
+    /// Three accounts, the middle one switched off, and the ids to reach them.
+    fn three_accounts() -> (AccountManager, Vec<String>) {
+        let mut manager = AccountManager::new();
+        let mut ids = Vec::new();
+        for name in ["First", "Second", "Third"] {
+            let account =
+                create_valid_account(name, &format!("{}@example.com", name.to_lowercase()));
+            ids.push(
+                manager
+                    .add_account(account)
+                    .expect("an account to be added"),
+            );
+        }
+        (manager, ids)
+    }
+
+    #[test]
+    fn test_an_account_is_found_by_its_own_id_and_not_another() {
+        // Every action on a message reaches a server through this lookup, so
+        // the wrong account here is a flag, a deletion or a send arriving at
+        // somebody else's mailbox. Nothing checked that the id asked for was
+        // the id returned.
+        let (mut manager, ids) = three_accounts();
+
+        for (id, expected) in ids.iter().zip(["First", "Second", "Third"]) {
+            assert_eq!(
+                manager.get_account(id).map(|a| a.name.as_str()),
+                Some(expected),
+                "asking for {id} did not give back {expected}"
+            );
+            assert_eq!(
+                manager.get_account_mut(id).map(|a| a.name.clone()),
+                Some(expected.to_string()),
+                "asking to change {id} reached the wrong account"
+            );
+        }
+
+        assert!(manager.get_account("no-such-account").is_none());
+        assert!(manager.get_account_mut("no-such-account").is_none());
+    }
+
+    #[test]
+    fn test_the_active_account_is_the_one_that_was_made_active() {
+        let (mut manager, ids) = three_accounts();
+
+        manager
+            .set_active_account(&ids[2])
+            .expect("the third account exists");
+
+        assert_eq!(
+            manager.get_active_account().map(|a| a.name.as_str()),
+            Some("Third")
+        );
+        assert!(
+            manager.set_active_account("no-such-account").is_err(),
+            "an account that is not there was made the active one"
+        );
+        assert_eq!(
+            manager.get_active_account().map(|a| a.name.as_str()),
+            Some("Third"),
+            "a failed switch moved the active account anyway"
+        );
+    }
+
+    #[test]
+    fn test_changing_an_account_changes_that_one_and_leaves_the_rest() {
+        let (mut manager, ids) = three_accounts();
+        let mut changed = manager
+            .get_account(&ids[1])
+            .expect("the second account")
+            .clone();
+        changed.name = "Renamed".to_string();
+
+        manager
+            .update_account(changed)
+            .expect("a change to be saved");
+
+        assert_eq!(
+            manager.get_account(&ids[1]).map(|a| a.name.as_str()),
+            Some("Renamed"),
+            "the change was reported as saved and was not"
+        );
+        assert_eq!(
+            manager.get_account(&ids[0]).map(|a| a.name.as_str()),
+            Some("First"),
+            "changing one account changed another"
+        );
+        assert_eq!(manager.get_accounts().len(), 3, "an account went missing");
+    }
+
+    #[test]
+    fn test_changing_an_account_that_is_not_there_is_refused() {
+        let (mut manager, _) = three_accounts();
+        let stranger = create_valid_account("Stranger", "stranger@example.com");
+
+        assert!(manager.update_account(stranger).is_err());
+        assert_eq!(manager.get_accounts().len(), 3);
+    }
+
+    #[test]
+    fn test_only_the_accounts_left_switched_on_are_listed_for_syncing() {
+        // What this list leaves out is not fetched, and mail that is not
+        // fetched is not there to be missed. An empty answer is a mailbox
+        // that has quietly stopped arriving.
+        let (mut manager, ids) = three_accounts();
+
+        manager
+            .set_account_enabled(&ids[1], false)
+            .expect("the second account exists");
+
+        let enabled: Vec<&str> = manager
+            .get_enabled_accounts()
+            .iter()
+            .map(|a| a.name.as_str())
+            .collect();
+
+        assert_eq!(enabled, ["First", "Third"]);
+        assert!(
+            !manager
+                .get_account(&ids[1])
+                .expect("the second account")
+                .enabled,
+            "the account was reported switched off and was not"
+        );
+        assert!(
+            manager
+                .set_account_enabled("no-such-account", false)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_accounts_loaded_from_storage_replace_what_was_there() {
+        let (mut manager, _) = three_accounts();
+
+        let only = create_valid_account("Only", "only@example.com");
+        let id = only.id.clone();
+        manager.load(vec![only], Some(id.clone()));
+
+        assert_eq!(manager.get_accounts().len(), 1);
+        assert_eq!(manager.get_active_account_id(), Some(&id));
+    }
+
+    #[test]
+    fn test_an_account_reads_mail_with_the_protocol_it_was_given() {
+        // Answering IMAP for a POP account is an account that reads no mail
+        // and says nothing about why.
+        let mut account = create_valid_account("Test", "test@example.com");
+
+        for (stored, expected) in [
+            ("imap", crate::common::types::Protocol::Imap),
+            ("pop3", crate::common::types::Protocol::Pop3),
+            ("POP3", crate::common::types::Protocol::Pop3),
+            ("something else", crate::common::types::Protocol::Imap),
+            ("", crate::common::types::Protocol::Imap),
+        ] {
+            account.protocol = stored.to_string();
+            assert_eq!(account.protocol(), expected, "{stored} was read wrongly");
+        }
+    }
+
+    #[test]
+    fn test_an_account_made_from_a_preset_takes_that_preset_s_servers() {
+        let gmail = crate::data::email_providers::detect_provider_from_email("user@gmail.com")
+            .expect("gmail is a preset");
+
+        let account =
+            Account::from_provider("Work".to_string(), "user@gmail.com".to_string(), &gmail);
+
+        assert_eq!(account.imap_server, "imap.gmail.com");
+        assert_eq!(account.imap_port, "993");
+        assert!(account.imap_use_tls);
+        assert_eq!(account.smtp_server, "smtp.gmail.com");
+        assert_eq!(account.smtp_port, "587");
+        assert!(account.smtp_use_tls);
+        assert_eq!(account.username, "user@gmail.com");
+        assert_eq!(account.provider.as_deref(), Some("gmail"));
+    }
+
+    #[test]
+    fn test_an_account_remembers_when_it_last_synced() {
+        // The gap since the last sync is how "not syncing" gets noticed at
+        // all. Never recording one leaves it looking like it has never run.
+        let mut account = create_valid_account("Test", "test@example.com");
+        assert!(account.last_sync.is_none());
+
+        account.mark_synced();
+
+        let when = account.last_sync.expect("a sync to have been recorded");
+        assert!(
+            when.elapsed().expect("a clock that moves forwards")
+                < std::time::Duration::from_secs(60),
+            "the recorded time is not now"
+        );
+    }
+
     #[test]
     fn test_migrate_from_account_config() {
         use crate::presentation::ui_types::AccountConfig;
