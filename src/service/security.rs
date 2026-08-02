@@ -105,20 +105,33 @@ impl SecurityService {
     /// Returns configured trusted domains from `WIXEN_TRUSTED_DOMAINS` (comma-separated),
     /// or falls back to the built-in default list when unset/empty.
     fn trusted_domains() -> Vec<String> {
-        if let Ok(raw) = std::env::var("WIXEN_TRUSTED_DOMAINS") {
-            let parsed = raw
-                .split(',')
-                .map(|d| d.trim().to_lowercase())
-                .filter(|d| !d.is_empty())
-                .collect::<Vec<_>>();
-            if !parsed.is_empty() {
-                return parsed;
-            }
+        std::env::var("WIXEN_TRUSTED_DOMAINS")
+            .ok()
+            .and_then(|raw| Self::trusted_domains_from(&raw))
+            .unwrap_or_else(|| {
+                TRUSTED_BRAND_DOMAINS
+                    .iter()
+                    .map(|d| d.to_string())
+                    .collect()
+            })
+    }
+
+    /// The domains named in a comma-separated setting, or nothing usable.
+    ///
+    /// Split out from reading the environment so it can be tested. Setting a
+    /// variable is process-wide, and every other test in this suite shares the
+    /// process, so a test that set one would change what its neighbours see.
+    fn trusted_domains_from(raw: &str) -> Option<Vec<String>> {
+        let parsed: Vec<String> = raw
+            .split(',')
+            .map(|d| d.trim().to_lowercase())
+            .filter(|d| !d.is_empty())
+            .collect();
+        if parsed.is_empty() {
+            None
+        } else {
+            Some(parsed)
         }
-        TRUSTED_BRAND_DOMAINS
-            .iter()
-            .map(|d| d.to_string())
-            .collect::<Vec<_>>()
     }
 
     fn key_path() -> Result<PathBuf> {
@@ -465,6 +478,160 @@ mod tests {
             .analyze_message_security("sender@example.com", "hello", content, None)
             .unwrap();
         assert!(report.smime_signed);
+    }
+
+    #[test]
+    fn test_the_domains_somebody_names_in_the_setting_are_the_ones_used() {
+        // Blank entries and a setting that is only separators have to fall
+        // back to the built-in list. An empty list of trusted domains means
+        // deceptive link detection matches nothing at all, quietly.
+        assert_eq!(
+            SecurityService::trusted_domains_from("PayPal.com, hsbc.co.uk"),
+            Some(vec!["paypal.com".to_string(), "hsbc.co.uk".to_string()])
+        );
+        assert_eq!(
+            SecurityService::trusted_domains_from("paypal.com,,  ,hsbc.co.uk"),
+            Some(vec!["paypal.com".to_string(), "hsbc.co.uk".to_string()])
+        );
+        assert_eq!(SecurityService::trusted_domains_from(""), None);
+        assert_eq!(SecurityService::trusted_domains_from(" , , "), None);
+
+        assert!(
+            !SecurityService::trusted_domains().is_empty(),
+            "with nothing set there still has to be a list to check against"
+        );
+    }
+
+    #[test]
+    fn test_every_marker_that_says_a_message_is_signed_or_encrypted() {
+        // Each of these is one arm of a chain, and only one arm of each had a
+        // test. Missing one means a message that is signed or encrypted is
+        // reported as neither, and the reader is told nothing about something
+        // they would want to know.
+        let service = SecurityService::new().unwrap();
+
+        for marker in [
+            "-----BEGIN PGP SIGNED MESSAGE-----",
+            "-----BEGIN PGP SIGNATURE-----",
+        ] {
+            assert!(service.detect_pgp_signed(marker), "for {marker}");
+        }
+        assert!(!service.detect_pgp_signed("nothing here"));
+
+        assert!(service.detect_pgp_encrypted("-----BEGIN PGP MESSAGE-----"));
+        assert!(!service.detect_pgp_encrypted("-----BEGIN PGP SIGNATURE-----"));
+
+        for marker in [
+            "Content-Type: application/pkcs7-signature",
+            "smime-type=signed-data",
+            "name=smime.p7s",
+            "APPLICATION/PKCS7-SIGNATURE",
+        ] {
+            assert!(service.detect_smime_signed(marker), "for {marker}");
+        }
+        assert!(!service.detect_smime_signed("an ordinary message"));
+
+        for marker in [
+            "Content-Type: application/pkcs7-mime",
+            "smime-type=enveloped-data",
+            "name=smime.p7m",
+        ] {
+            assert!(service.detect_smime_encrypted(marker), "for {marker}");
+        }
+        assert!(!service.detect_smime_encrypted("an ordinary message"));
+    }
+
+    #[test]
+    fn test_what_a_signature_is_said_to_be_worth() {
+        // Reporting a bad signature as good is the worst answer this file can
+        // give, and reporting a good one as unknown wastes the only thing a
+        // signature is for. Each phrase is one arm and only one had a test.
+        let service = SecurityService::new().unwrap();
+
+        assert_eq!(
+            service.signature_status_from_content("good signature", false),
+            SignatureVerificationStatus::NotSigned,
+            "nothing signed it, so there is nothing to report"
+        );
+
+        for phrase in [
+            "bad signature",
+            "signature invalid",
+            "x-wixen-signature: invalid",
+        ] {
+            assert_eq!(
+                service.signature_status_from_content(phrase, true),
+                SignatureVerificationStatus::Invalid,
+                "for {phrase}"
+            );
+        }
+
+        for phrase in [
+            "good signature",
+            "signature verified",
+            "x-wixen-signature: valid",
+        ] {
+            assert_eq!(
+                service.signature_status_from_content(phrase, true),
+                SignatureVerificationStatus::Valid,
+                "for {phrase}"
+            );
+        }
+
+        assert_eq!(
+            service.signature_status_from_content("signed, and nothing said about it", true),
+            SignatureVerificationStatus::Unknown
+        );
+        // A message saying both is not to be called good.
+        assert_eq!(
+            service.signature_status_from_content("good signature but signature invalid", true),
+            SignatureVerificationStatus::Invalid
+        );
+    }
+
+    #[test]
+    fn test_where_one_level_of_risk_becomes_the_next() {
+        // The bands decide what the reader is told, and the middle two had no
+        // test at all, so either could have been deleted and every message in
+        // it would have been called something else.
+        for (score, expected) in [
+            (0, PhishingRiskLevel::None),
+            (19, PhishingRiskLevel::None),
+            (20, PhishingRiskLevel::Low),
+            (39, PhishingRiskLevel::Low),
+            (40, PhishingRiskLevel::Medium),
+            (69, PhishingRiskLevel::Medium),
+            (70, PhishingRiskLevel::High),
+            (100, PhishingRiskLevel::High),
+        ] {
+            assert_eq!(
+                SecurityService::risk_from_score(score),
+                expected,
+                "for a score of {score}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_link_naming_a_bank_that_goes_somewhere_else_is_deceptive() {
+        // Both halves have to hold: the text has to name a trusted domain and
+        // the address has to not be it. Either half alone calls an ordinary
+        // link deceptive, and a warning on every message is a warning nobody
+        // reads by the third one.
+        let service = SecurityService::new().unwrap();
+
+        assert!(
+            service.has_deceptive_links(r#"<a href="http://elsewhere.example/x">paypal.com</a>"#),
+            "a link reading paypal.com and going elsewhere was not noticed"
+        );
+        assert!(
+            !service.has_deceptive_links(r#"<a href="https://paypal.com/x">paypal.com</a>"#),
+            "a link that goes where it says was called deceptive"
+        );
+        assert!(
+            !service.has_deceptive_links(r#"<a href="https://example.com/x">our website</a>"#),
+            "a link naming no bank at all was called deceptive"
+        );
     }
 
     #[test]

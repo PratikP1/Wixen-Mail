@@ -219,6 +219,41 @@ mod tests {
     }
 
     #[test]
+    fn test_a_name_with_no_dot_in_it_is_still_the_name_it_came_with() {
+        // Every test here used a name containing a dot, so the check for a
+        // name that is nothing but dots could be turned round and only a name
+        // without one would show it. Every attachment called "Scan" or
+        // "Notes" would have been saved as "attachment", and a mailbox full of
+        // those is a mailbox where none of them can be told apart.
+        assert_eq!(safe_file_name("Quarterly report"), "Quarterly report");
+        assert_eq!(safe_file_name("Scan"), "Scan");
+    }
+
+    #[test]
+    fn test_a_long_tail_after_the_last_dot_is_not_treated_as_an_extension() {
+        // Keeping what follows the last dot only makes sense while it is short
+        // enough to be an extension. Fifteen characters is one and sixteen is
+        // not, and on either side of that the whole name still has to come in
+        // under the limit, which is the thing this function is for.
+        let fifteen = format!("{}.{}", "a".repeat(200), "b".repeat(15));
+        let sixteen = format!("{}.{}", "a".repeat(200), "b".repeat(16));
+
+        let kept = safe_file_name(&fifteen);
+        assert!(
+            kept.ends_with(&format!(".{}", "b".repeat(15))),
+            "a fifteen character extension was not kept: {kept}"
+        );
+        assert!(kept.chars().count() <= MAX_LENGTH);
+
+        let cut = safe_file_name(&sixteen);
+        assert!(
+            !cut.ends_with(&format!(".{}", "b".repeat(16))),
+            "sixteen characters were kept as though they were an extension: {cut}"
+        );
+        assert!(cut.chars().count() <= MAX_LENGTH);
+    }
+
+    #[test]
     fn test_every_result_is_usable_as_a_name() {
         // The property the rest of the application relies on, over everything
         // above at once.
