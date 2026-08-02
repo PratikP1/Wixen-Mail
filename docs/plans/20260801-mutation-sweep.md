@@ -126,6 +126,13 @@ caught. Everything after it is unusable, and the first run's 353 caught, 67
 missed has to be thrown away rather than corrected: there is no way to tell
 from the report where the poisoning started.
 
+The `service/protocols` result above was checked against this and stands. It
+ran before the poisoning started, nothing under it touches the temporary
+folder, and its report holds 113 misses: had the suite been failing on every
+mutant, near enough everything would have come back caught. That last point is
+the quick test to apply to any older report. A run with almost no misses is not
+necessarily good news.
+
 The tests now open a folder named for the moment they run. Before starting a
 sweep over any area, check that nothing in it writes to a fixed path:
 
@@ -235,7 +242,7 @@ Twelve are left, and each for a stated reason:
 | `application/filters`, `due`, `tagging`, `sign_off` | 157 mutants, 141 caught, 16 unviable, 0 missed | 2026-08-01 |
 | `common` | 89 mutants, 63 caught, 13 missed, 11 unviable, 2 timeouts. All 13 closed | 2026-08-01 |
 | `service/protocols` | 327 mutants, 133 caught, 113 missed, 81 unviable. Closed: flag accessors, credential redaction, the write gate. Of the rest, all but one are socket methods, see below | 2026-08-01 |
-| `data` | First run void, see above. Second run, with the tests isolated: 510 mutants, 364 caught, 53 missed, 93 unviable. All 53 triaged; what is deliberately left is below | 2026-08-01 |
+| `data` | Done. 510 mutants, 405 caught, 12 missed, 93 unviable, checked on a clean run after the work. The 12 are the ones left on purpose, listed above. First run void, second found 53 | 2026-08-01 |
 | `application` (rest) | | |
 | `service` (rest) | | |
 | `presentation` (not the window) | | |
