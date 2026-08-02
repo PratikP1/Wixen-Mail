@@ -366,6 +366,69 @@ mod tests {
     }
 
     #[test]
+    fn test_which_week_of_the_month_a_date_falls_in() {
+        // "2TU" is the second Tuesday. Counting the week wrongly moves a
+        // monthly series a week either way for good, and somebody finds out by
+        // missing the meeting.
+        //
+        // July 2026: the 2nd is a Thursday, so the 1st is a Wednesday.
+        assert_eq!(weekday_of_month("2026-07-01"), Some("1WE".to_string()));
+        assert_eq!(weekday_of_month("2026-07-07"), Some("1TU".to_string()));
+        assert_eq!(weekday_of_month("2026-07-08"), Some("2WE".to_string()));
+        assert_eq!(weekday_of_month("2026-07-15"), Some("3WE".to_string()));
+        assert_eq!(weekday_of_month("2026-07-22"), Some("4WE".to_string()));
+    }
+
+    #[test]
+    fn test_how_many_days_a_month_has() {
+        // The last week is worked out from this, so a month the wrong length
+        // makes the last Tuesday the second to last, or the other way round.
+        assert_eq!(days_in_month(2026, 1), 31);
+        assert_eq!(days_in_month(2026, 4), 30);
+        assert_eq!(days_in_month(2026, 2), 28);
+        // A leap year, and the century rule either side of it.
+        assert_eq!(days_in_month(2028, 2), 29);
+        assert_eq!(days_in_month(1900, 2), 28);
+        assert_eq!(days_in_month(2000, 2), 29);
+        // December has to roll the year over to find its own length.
+        assert_eq!(days_in_month(2026, 12), 31);
+    }
+
+    #[test]
+    fn test_a_series_that_repeats_no_times_is_not_a_series() {
+        // A count of nought is not a series that stops immediately, it is a
+        // rule that says nothing. Reading it as a real count leaves an item
+        // that repeats zero times, which is an item nobody ever sees again.
+        assert_eq!(Until::from_rule("FREQ=DAILY;COUNT=0"), Until::Forever);
+        assert_eq!(Until::from_rule("FREQ=DAILY;COUNT=1"), Until::AfterTimes(1));
+        assert_eq!(
+            Until::from_rule("FREQ=DAILY;COUNT=12"),
+            Until::AfterTimes(12)
+        );
+    }
+
+    #[test]
+    fn test_the_short_name_for_a_repeat_is_understood_as_well_as_the_phrase() {
+        // The phrase is what the settings show; the short word is what older
+        // stored items hold. Not understanding one turns a series into a
+        // single item, silently, which is the failure this function was
+        // written to prevent.
+        for (written, expected) in [
+            ("Daily", Repeat::Daily),
+            ("Weekly", Repeat::Weekly),
+            ("Monthly", Repeat::Monthly),
+            ("Yearly", Repeat::Yearly),
+            ("Every day", Repeat::Daily),
+            ("Every week", Repeat::Weekly),
+            ("Every year", Repeat::Yearly),
+            ("  Daily  ", Repeat::Daily),
+            ("something nobody offers", Repeat::Never),
+        ] {
+            assert_eq!(Repeat::from_label(written), expected, "for {written:?}");
+        }
+    }
+
+    #[test]
     fn test_the_last_weekday_of_a_month_is_written_as_the_last() {
         // The thirtieth of July 2026 is the last Thursday, and writing it as
         // the fifth would skip every month that has only four.

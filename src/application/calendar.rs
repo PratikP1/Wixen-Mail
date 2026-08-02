@@ -1073,6 +1073,137 @@ mod tests {
     }
 
     #[test]
+    fn test_a_calendar_shows_the_events_that_belong_to_it_and_no_others() {
+        // The list for one calendar is what somebody opens to see that
+        // calendar. Another calendar's events in it, or none of its own, are
+        // both a diary that cannot be trusted.
+        let mut mgr = CalendarManager::default();
+        mgr.add_calendar(make_calendar("cal1", "Work", true));
+        mgr.add_calendar(make_calendar("cal2", "Personal", true));
+        mgr.add_event(make_event("e1", "Work meeting", Some("cal1")));
+        mgr.add_event(make_event("e2", "Dentist", Some("cal2")));
+        mgr.add_event(make_event("e3", "Unfiled", None));
+
+        let work: Vec<&str> = mgr
+            .events_for_calendar("cal1")
+            .iter()
+            .map(|e| e.id.as_str())
+            .collect();
+
+        assert_eq!(work, ["e1"]);
+        assert_eq!(
+            mgr.events_for_calendar("cal2")
+                .iter()
+                .map(|e| e.id.as_str())
+                .collect::<Vec<_>>(),
+            ["e2"]
+        );
+        assert!(
+            mgr.events_for_calendar("cal3").is_empty(),
+            "a calendar with nothing in it returned something"
+        );
+    }
+
+    #[test]
+    fn test_only_the_calendars_left_showing_are_listed_as_showing() {
+        // What the list of calendars offers to filter by. An empty answer
+        // hides every calendar somebody has, and an answer that ignores the
+        // setting puts back the ones they hid.
+        let mut mgr = CalendarManager::default();
+        mgr.add_calendar(make_calendar("cal1", "Work", true));
+        mgr.add_calendar(make_calendar("cal2", "Personal", false));
+        mgr.add_calendar(make_calendar("cal3", "Family", true));
+
+        let showing: Vec<&str> = mgr
+            .visible_calendars()
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+
+        assert_eq!(showing, ["cal1", "cal3"]);
+    }
+
+    #[test]
+    fn test_an_all_day_event_belongs_to_the_day_it_is_on() {
+        // An all-day event carries a date rather than a time, so it is matched
+        // a different way from a timed one. Getting it wrong drops birthdays
+        // and holidays out of the day they are on, and they are exactly the
+        // events somebody checks the calendar for.
+        let mut mgr = CalendarManager::default();
+        let mut holiday = make_event("e1", "Holiday", None);
+        holiday.is_all_day = true;
+        holiday.start_date = Some("2026-03-06".to_string());
+        holiday.start_datetime = String::new();
+        mgr.add_event(holiday);
+
+        assert_eq!(
+            mgr.events_for_day("2026-03-06")
+                .iter()
+                .map(|e| e.id.as_str())
+                .collect::<Vec<_>>(),
+            ["e1"]
+        );
+        assert!(
+            mgr.events_for_day("2026-03-07").is_empty(),
+            "an all-day event turned up on the wrong day"
+        );
+    }
+
+    #[test]
+    fn test_a_range_takes_what_is_inside_it_and_stops_at_both_ends() {
+        // Both ends have to hold. With either dropped, a week view shows
+        // everything before it or everything after it, which is a diary that
+        // reads as though the whole year were this week.
+        let mut mgr = CalendarManager::default();
+        for (id, starts) in [
+            ("before", "2026-03-01T09:00:00Z"),
+            ("first", "2026-03-05T09:00:00Z"),
+            ("last", "2026-03-07T09:00:00Z"),
+            ("after", "2026-03-09T09:00:00Z"),
+        ] {
+            let mut event = make_event(id, id, None);
+            event.start_datetime = starts.to_string();
+            mgr.add_event(event);
+        }
+
+        let inside: Vec<&str> = mgr
+            .events_in_range("2026-03-05T00:00:00Z", "2026-03-07T23:59:59Z")
+            .iter()
+            .map(|e| e.id.as_str())
+            .collect();
+
+        assert_eq!(inside, ["first", "last"]);
+    }
+
+    #[test]
+    fn test_removing_an_event_removes_that_one() {
+        // Reported as removed and still there is an appointment somebody has
+        // cancelled and will be reminded about. Removing the wrong one, or all
+        // of them, is worse.
+        let mut mgr = CalendarManager::default();
+        mgr.add_event(make_event("e1", "Keep", None));
+        mgr.add_event(make_event("e2", "Cancel", None));
+        mgr.add_event(make_event("e3", "Keep", None));
+
+        mgr.remove_event("e2");
+
+        assert_eq!(
+            mgr.all_events()
+                .iter()
+                .map(|e| e.id.as_str())
+                .collect::<Vec<_>>(),
+            ["e1", "e3"]
+        );
+
+        mgr.remove_event("nothing with this id");
+        assert_eq!(
+            mgr.all_events().len(),
+            2,
+            "removing nothing removed something"
+        );
+    }
+
+    #[test]
     fn test_hidden_calendar_events_excluded_from_unified() {
         let mut mgr = CalendarManager::default();
         mgr.add_calendar(make_calendar("cal1", "Work", true));
