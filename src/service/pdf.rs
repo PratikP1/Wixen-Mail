@@ -422,6 +422,81 @@ mod tests {
     }
 
     #[test]
+    fn test_a_heading_that_is_the_whole_page_is_still_found() {
+        // A one line document is a real thing to be sent, and a landmark that
+        // is the entire text is exactly as useful as any other.
+        let text: Vec<char> = "Chapter one".chars().collect();
+
+        assert_eq!(find_from(&text, "Chapter one", 0), Some(0));
+    }
+
+    #[test]
+    fn test_looking_for_a_heading_that_is_not_there_ends_rather_than_running_on() {
+        // The search has to stop at the last place the text could still hold
+        // the whole heading. Stopping anywhere later reads past the end, and
+        // this runs over text extracted from a stranger's attachment.
+        let text: Vec<char> = "Chapter one and then some more".chars().collect();
+
+        assert_eq!(find_from(&text, "absent", 0), None);
+        assert_eq!(
+            find_from(&text, "Chapter", 5),
+            None,
+            "the only match is before where the search began"
+        );
+    }
+
+    #[test]
+    fn test_the_note_says_no_headings_only_when_there_are_none() {
+        // Every page contributes a marker, so a document with headings of its
+        // own has more than one per page. Getting this the wrong way round
+        // tells a reader there is nothing to jump to when there is, which is
+        // the difference between reading the part they want and reading all of
+        // it.
+        let marker = PdfHeading {
+            offset: 0,
+            level: 2,
+            label: "Page 1".to_string(),
+        };
+        let real = PdfHeading {
+            offset: 7,
+            level: 3,
+            label: "Introduction".to_string(),
+        };
+        let text = "Page 1\nSome words\n";
+
+        let with_one = note_for(Structure::Inferred, 1, 1, text, &[marker.clone(), real]);
+        assert!(
+            !with_one.contains("No headings were found"),
+            "a document with a heading was said to have none: {with_one}"
+        );
+
+        let with_none = note_for(Structure::Inferred, 1, 1, text, &[marker]);
+        assert!(
+            with_none.contains("No headings were found"),
+            "a document with no headings did not say so: {with_none}"
+        );
+    }
+
+    #[test]
+    fn test_a_document_only_partly_read_says_how_much_is_missing() {
+        // Silence here reads as "that was the whole thing", and somebody acts
+        // on a document having seen a fifth of it.
+        let text = "Page 1\nSome words\n";
+
+        let whole = note_for(Structure::Tagged, 3, 3, text, &[]);
+        assert!(
+            !whole.contains("Only the first"),
+            "a document read in full claimed to be cut short: {whole}"
+        );
+
+        let part = note_for(Structure::Tagged, 10, 3, text, &[]);
+        assert!(
+            part.contains("Only the first 3 of 10 pages"),
+            "a document cut short did not say so: {part}"
+        );
+    }
+
+    #[test]
     fn test_a_needle_longer_than_the_text_is_not_found_rather_than_a_panic() {
         let text: Vec<char> = "short".chars().collect();
 

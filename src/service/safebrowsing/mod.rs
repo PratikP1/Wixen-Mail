@@ -414,6 +414,63 @@ mod tests {
     }
 
     #[test]
+    fn test_each_threat_list_is_asked_for_by_its_own_name() {
+        // The name goes into the request and into the file the copy is kept
+        // in. Wrong, and the answer is about a different list than the one the
+        // verdict will be reported as.
+        for (kind, expected) in [
+            (ThreatKind::Malware, "MALWARE"),
+            (ThreatKind::SocialEngineering, "SOCIAL_ENGINEERING"),
+            (ThreatKind::UnwantedSoftware, "UNWANTED_SOFTWARE"),
+            (
+                ThreatKind::PotentiallyHarmfulApplication,
+                "POTENTIALLY_HARMFUL_APPLICATION",
+            ),
+        ] {
+            assert_eq!(kind.as_api_name(), expected, "for {kind:?}");
+        }
+    }
+
+    #[test]
+    fn test_each_list_is_kept_in_a_file_of_its_own_under_the_cache() {
+        // One file per list, named for the list. Sharing a path makes each
+        // update overwrite the last, so three of the four lists are always
+        // whatever was fetched most recently.
+        let cache = std::path::Path::new("C:\\cache");
+        let mut seen = std::collections::BTreeSet::new();
+
+        for kind in [
+            ThreatKind::Malware,
+            ThreatKind::SocialEngineering,
+            ThreatKind::UnwantedSoftware,
+            ThreatKind::PotentiallyHarmfulApplication,
+        ] {
+            let path = list_path(cache, kind);
+            assert!(
+                path.starts_with(cache),
+                "{path:?} is not under the cache folder"
+            );
+            assert!(
+                path.to_string_lossy().contains("safebrowsing"),
+                "{path:?} is not in the safebrowsing folder"
+            );
+            assert!(seen.insert(path.clone()), "{path:?} is used for two lists");
+        }
+    }
+
+    #[test]
+    fn test_a_scheme_with_nothing_after_it_is_not_a_link_to_ask_about() {
+        // "https://" on its own has no host, so there is nothing to look up
+        // and asking would spend one of the thirty questions on nothing.
+        assert!(links_in("see https:// and http:// here").is_empty());
+        assert_eq!(
+            links_in("see https://a here"),
+            vec!["https://a".to_string()],
+            "one character past the scheme is a link"
+        );
+    }
+
+    #[test]
     fn test_an_email_address_is_not_a_link() {
         // Hashing one would put four bytes derived from somebody's address in
         // a position to be sent to Google.

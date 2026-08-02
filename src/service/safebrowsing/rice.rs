@@ -234,6 +234,59 @@ mod tests {
     }
 
     #[test]
+    fn test_the_largest_update_we_allow_is_not_refused_for_being_too_large() {
+        // The bounds exist to refuse a response that could not be real. Set
+        // one notch too tight and they refuse a real one instead, and the
+        // local list then never updates: link checking quietly stops working
+        // against anything added to the threat lists after that day.
+        let at_the_limit = RiceDelta {
+            first_value: 1,
+            parameter: 2,
+            entries: MAX_ENTRIES,
+            data: Vec::new(),
+        };
+
+        let refusal = decode(&at_the_limit)
+            .expect_err("an empty stream cannot be read")
+            .to_string();
+
+        assert!(
+            !refusal.contains("more than any real list"),
+            "a list of exactly the largest size allowed was refused for being too large"
+        );
+    }
+
+    #[test]
+    fn test_the_largest_parameter_we_allow_is_not_refused_for_being_too_large() {
+        let at_the_limit = RiceDelta {
+            first_value: 1,
+            parameter: MAX_PARAMETER,
+            entries: 1,
+            data: Vec::new(),
+        };
+
+        let refusal = decode(&at_the_limit)
+            .expect_err("an empty stream cannot be read")
+            .to_string();
+
+        assert!(
+            !refusal.contains("cannot be read"),
+            "the largest parameter allowed was refused for being too large"
+        );
+    }
+
+    #[test]
+    fn test_a_difference_exactly_as_large_as_its_parameter_allows_is_read() {
+        // The ceiling is the largest quotient that still fits, so a value
+        // sitting exactly on it is a real value, not a malformed one. Refusing
+        // it throws away an update that was fine.
+        let ceiling_difference = 1u32 << 31;
+        let encoded = encode(&[0, ceiling_difference], 31);
+
+        assert_eq!(decode(&encoded).unwrap(), vec![0, ceiling_difference]);
+    }
+
+    #[test]
     fn test_a_list_survives_the_round_trip() {
         // Sorted ascending, which is what the protocol sends and what the
         // difference encoding assumes.

@@ -272,10 +272,23 @@ else; the offset of a misspelling, which is where the editor underlines and
 where somebody working by ear is sent, had nothing checking it pointed at the
 word.
 
-One thing here is unreachable and stays: two arms of `mime::header_text`, for
-headers `mail-parser` always hands back as text. They are kept, with the reason
-written next to them, because without them a future parser version would drop a
-read receipt request silently.
+Three things here are unreachable and stay, each for a different reason worth
+telling apart.
+
+Two arms of `mime::header_text`, for headers `mail-parser` always hands back as
+text. Kept, with the reason written next to them, because without them a future
+parser version would drop a read receipt request silently.
+
+Five in `credentials`, which sit inside `#[cfg(not(test))]`. They are not
+compiled while the tests run, so a mutation there cannot change anything and
+the suite passes by default. That is the seam working: it exists so no test
+ever writes into the credential store of whoever ran it, which happened once
+and left an account behind in a real Windows Credential Manager. A report
+cannot tell "unreachable under test" from "untested", so this one has to be
+recognised by reading.
+
+Four in `ical_subscription`, which is an HTTP fetch. Same pile as the rest of
+the network.
 
 ## Progress
 

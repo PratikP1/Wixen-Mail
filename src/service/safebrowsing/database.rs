@@ -305,6 +305,35 @@ mod tests {
     }
 
     #[test]
+    fn test_a_removal_of_the_entry_just_past_the_end_is_refused() {
+        // One past the end is the case that separates a check from a check
+        // that is one out. Accepted, it removes nothing and says nothing, and
+        // this copy of the list then differs from the server's with no sign of
+        // it: every later update applies its indices to the wrong entries.
+        let set = PrefixSet::from_prefixes([10, 20]);
+
+        let error = set
+            .apply(&[2], &[])
+            .expect_err("index 2 of a list of two is past the end");
+
+        assert!(error.to_string().contains("out of step"), "{error}");
+
+        // And the last real entry is still removable.
+        let trimmed = set.apply(&[1], &[]).expect("index 1 is the last entry");
+        assert_eq!(trimmed.len(), 1);
+    }
+
+    #[test]
+    fn test_a_list_with_something_in_it_does_not_report_itself_as_empty() {
+        // An empty list means nothing has been fetched yet, and the checker
+        // reads that as nothing to ask about. Always saying empty turns link
+        // checking off without turning anything off.
+        assert!(PrefixSet::new().is_empty());
+        assert!(!PrefixSet::from_prefixes([1]).is_empty());
+        assert!(!PrefixSet::from_prefixes([1, 2, 3]).is_empty());
+    }
+
+    #[test]
     fn test_the_checksum_notices_a_list_that_has_drifted() {
         // What Google sends it for. Two lists differing by one prefix have to
         // produce different figures or a drifted copy goes unnoticed.
