@@ -151,6 +151,14 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A phishing site is now recognised under one more of its names.** Safe
+  Browsing lists a site under its own address and under its parent domains, and
+  the client has to ask about each of them. For an address with more than five
+  parts, such as one buried under several levels of a free hosting service, the
+  first of those parent forms was being skipped. A site listed under exactly
+  that form was never matched, so no warning appeared. Every test covering this
+  used a three part address, which cannot show the fault.
+
 - **An imported contact keeps the labels on its phone numbers and addresses.**
   "Work", "Home", "Mobile" and the rest were only read when the file wrote the
   parameter name in capitals and listed exactly one label. RFC 6350 says the

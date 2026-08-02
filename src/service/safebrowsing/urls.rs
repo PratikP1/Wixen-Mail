@@ -289,8 +289,14 @@ fn host_suffixes(host: &str) -> Vec<String> {
     let parts: Vec<&str> = host.split('.').collect();
     let mut suffixes = vec![host.to_string()];
     // Google takes the last five components, then works up to two.
+    //
+    // `max(1)` rather than `start + 1`. Cut nought is the whole host, which is
+    // already the first entry, so a host of five components or fewer has to
+    // begin at one. A longer one has to begin at `start` itself, which is the
+    // last five components: adding one to it skipped that form, so a site
+    // listed under it was never matched.
     let start = parts.len().saturating_sub(MAX_HOSTS);
-    for cut in (start + 1)..parts.len().saturating_sub(1) {
+    for cut in start.max(1)..parts.len().saturating_sub(1) {
         suffixes.push(parts[cut..].join("."));
     }
     suffixes.dedup();
@@ -395,6 +401,109 @@ mod tests {
     }
 
     #[test]
+    fn test_what_is_a_scheme_and_what_is_a_host_with_a_port() {
+        // The difference is a dot: a scheme name has none, a host does. Get it
+        // wrong one way and every bare link in a message body stops being
+        // checked at all; get it wrong the other way and somebody's email
+        // address, taken out of a mailto: link, is turned into a question sent
+        // to Google.
+        for (raw, expected_host) in [
+            // Not web addresses, so there is nothing to ask about.
+            ("mailto:someone@example.com", None),
+            ("javascript:alert(1)", None),
+            ("tel:+441234", None),
+            ("web+mail:something", None),
+            ("ftp://example.com/file", None),
+            // Web addresses, with and without a scheme written out.
+            ("http://example.com/path", Some("example.com")),
+            ("HTTPS://Example.COM/path", Some("example.com")),
+            ("example.com/path", Some("example.com")),
+            // A host and a port is not a scheme, whatever it looks like.
+            ("example.com:8080/path", Some("example.com")),
+            ("example.com:8080", Some("example.com")),
+        ] {
+            assert_eq!(
+                canonicalise(raw).map(|u| u.host),
+                expected_host.map(str::to_string),
+                "for {raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_something_after_a_colon_that_is_not_a_port_stays_part_of_the_name() {
+        // Only digits after the colon make it a port. Treating anything else
+        // as one throws away part of the host, and the question then asked is
+        // about a different site than the one in the message.
+        assert_eq!(
+            canonicalise("http://example.com:notaport/path").map(|u| u.host),
+            Some("example.com:notaport".to_string())
+        );
+    }
+
+    #[test]
+    fn test_the_characters_a_path_cannot_carry_are_escaped() {
+        // The matcher and the browser have to agree about what the path is. A
+        // space left as a space, or a byte outside the printable range left
+        // alone, is a hash computed over something the server will never see.
+        for (raw, expected) in [
+            ("http://example.com/a b", "/a%20b"),
+            ("http://example.com/a\u{7f}b", "/a%7Fb"),
+            ("http://example.com/a%b", "/a%25b"),
+            ("http://example.com/plain", "/plain"),
+        ] {
+            assert_eq!(
+                canonicalise(raw).map(|u| u.path),
+                Some(expected.to_string()),
+                "for {raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_path_that_walks_up_and_back_down_ends_where_it_lands() {
+        // Both ends of this matter. Losing a trailing slash asks about a
+        // different expression than the one listed, and keeping a `..` asks
+        // about a path no server will ever serve.
+        for (raw, expected) in [
+            ("http://example.com/a/", "/a/"),
+            ("http://example.com/a/.", "/a/"),
+            ("http://example.com/a/b/..", "/a/"),
+            ("http://example.com/a/b/../c", "/a/c"),
+            ("http://example.com/a//b", "/a/b"),
+            ("http://example.com", "/"),
+        ] {
+            assert_eq!(
+                canonicalise(raw).map(|u| u.path),
+                Some(expected.to_string()),
+                "for {raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_only_a_leading_zero_makes_a_number_octal() {
+        // 192.016.001.1 is octal to a resolver, and reading it as decimal asks
+        // about a machine nobody mentioned. Reading an ordinary number as
+        // octal is the same mistake pointing the other way: 192.16.1.1 would
+        // become 192.14.1.1.
+        for (raw, expected) in [
+            ("http://192.016.001.1/", "192.14.1.1"),
+            ("http://192.16.1.1/", "192.16.1.1"),
+            ("http://192.0.0.1/", "192.0.0.1"),
+            // Out of range for an address, so it is left as the name it is.
+            ("http://999.1.1.1/", "999.1.1.1"),
+            ("http://1.2.3/", "1.2.3"),
+        ] {
+            assert_eq!(
+                canonicalise(raw).map(|u| u.host),
+                Some(expected.to_string()),
+                "for {raw}"
+            );
+        }
+    }
+
+    #[test]
     fn test_a_url_split_across_lines_is_put_back_together() {
         // Whitespace inside a URL is stripped, so a link wrapped by a mail
         // client still resolves to the site it resolves to.
@@ -421,6 +530,62 @@ mod tests {
             "b.c/",
         ] {
             assert!(found.contains(&expected.to_string()), "missing {expected}");
+        }
+    }
+
+    #[test]
+    fn test_a_deep_host_is_asked_about_under_its_last_five_components() {
+        // The rule is the exact host, then up to four more starting from the
+        // last five components and dropping the leading one each time. The
+        // first of those four was being skipped whenever the host had more
+        // than five components, so a site listed under it was never matched
+        // and the warning never appeared. Every test here used a three
+        // component host, which cannot see it.
+        let url = canonicalise("http://a.b.c.d.e.f/path").unwrap();
+
+        let hosts: Vec<String> = expressions(&url)
+            .into_iter()
+            .filter_map(|e| e.split('/').next().map(str::to_string))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+
+        assert_eq!(
+            hosts,
+            [
+                "a.b.c.d.e.f".to_string(),
+                "b.c.d.e.f".to_string(),
+                "c.d.e.f".to_string(),
+                "d.e.f".to_string(),
+                "e.f".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_shallow_host_is_not_asked_about_under_its_own_name_twice() {
+        // The other end of the same loop. With five components or fewer there
+        // is nothing to start from but the host itself, and it is already
+        // asked about, so it must not be repeated.
+        for (raw, expected) in [
+            ("http://a.b.c/p", vec!["a.b.c", "b.c"]),
+            ("http://a.b.c.d/p", vec!["a.b.c.d", "b.c.d", "c.d"]),
+            (
+                "http://a.b.c.d.e/p",
+                vec!["a.b.c.d.e", "b.c.d.e", "c.d.e", "d.e"],
+            ),
+        ] {
+            let url = canonicalise(raw).unwrap();
+            let hosts: Vec<String> = expressions(&url)
+                .into_iter()
+                .filter_map(|e| e.split('/').next().map(str::to_string))
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            let mut expected: Vec<String> = expected.into_iter().map(str::to_string).collect();
+            expected.sort();
+
+            assert_eq!(hosts, expected, "for {raw}");
         }
     }
 
