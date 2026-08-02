@@ -1203,6 +1203,104 @@ mod tests {
     }
 
     #[test]
+    fn test_a_misspelling_is_reported_where_it_actually_is() {
+        // The offset is where the editor underlines, and where somebody
+        // working by ear is sent when they ask for the next mistake. One
+        // character out and they arrive at a word that is spelled correctly,
+        // with nothing to say why.
+        let checker = SpellChecker::new();
+        for text in [
+            "the quick brwn fox jumps over the lazzy dog",
+            "Hello, wrrld! Is teh dog here?",
+            "(wrrld) and [teh] again",
+            "first line has wrrld\nsecond line has teh\r\nthird is fine",
+            "  leading spaces then wrrld",
+        ] {
+            for error in checker.check_text(text) {
+                let end = error.offset + error.word.len();
+                assert!(
+                    end <= text.len(),
+                    "{} runs past the end of {text:?}",
+                    error.word
+                );
+                assert_eq!(
+                    &text[error.offset..end],
+                    error.word,
+                    "{:?} was reported at {} of {text:?}, where the text says {:?}",
+                    error.word,
+                    error.offset,
+                    &text[error.offset..end]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_the_misspellings_in_a_line_are_all_found() {
+        // The offsets being right is worth nothing if the words are missed.
+        let checker = SpellChecker::new();
+
+        let found: Vec<String> = checker
+            .check_text("the quick brwn fox jumps over the lazzy dog")
+            .into_iter()
+            .map(|e| e.word)
+            .collect();
+
+        assert!(found.contains(&"brwn".to_string()), "{found:?}");
+        assert!(found.contains(&"lazzy".to_string()), "{found:?}");
+        assert!(!found.contains(&"quick".to_string()), "{found:?}");
+    }
+
+    #[test]
+    fn test_every_language_is_named_the_way_somebody_would_say_it() {
+        // This is the name read out in the settings list. Without it the row
+        // says "pt-BR", which is not something somebody chooses from by ear.
+        // Nine of these were one arm each and none of them had a test.
+        for (code, expected) in [
+            ("en-US", "English (US)"),
+            ("en-GB", "English (UK)"),
+            ("en", "English"),
+            ("en-AU", "English"),
+            ("es-ES", "Spanish"),
+            ("fr-FR", "French"),
+            ("de-DE", "German"),
+            ("pt-BR", "Portuguese (Brazil)"),
+            ("pt-PT", "Portuguese"),
+            ("it-IT", "Italian"),
+            // Nothing known about it, so the code itself is the honest answer.
+            ("nl-NL", "nl-NL"),
+        ] {
+            assert_eq!(Locale::from_code(code).display_name, expected, "for {code}");
+        }
+    }
+
+    #[test]
+    fn test_what_is_not_a_word_worth_checking() {
+        // Marking any of these turns a message full of ordinary content into a
+        // message full of mistakes, and a spell checker that cries wolf on
+        // every address and every price is one somebody turns off.
+        let checker = SpellChecker::new();
+
+        for token in [
+            "",
+            "x",
+            "123",
+            "3.14",
+            "1,000",
+            "2026-08-02",
+            "test@example.com",
+            "http://example.com",
+            "https://example.com",
+            "www.example.com",
+        ] {
+            assert!(checker.is_correct(token), "{token:?} was called a mistake");
+        }
+
+        // And something that really is one is still found.
+        assert!(!checker.is_correct("wrrld"));
+    }
+
+    #[test]
     fn test_locale_rtl_detection() {
         let en = Locale::from_code("en-US");
         assert_eq!(en.direction, TextDirection::LeftToRight);
