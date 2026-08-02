@@ -235,6 +235,48 @@ Twelve are left, and each for a stated reason:
   the bracket check is `>` or `>=` cannot matter, because the two positions
   hold different characters and can never be equal.
 
+## What `service` turned up
+
+1,296 mutants, 629 caught, 483 missed, 183 that will not compile, one timeout.
+The large miss count is expected here and most of it is not work.
+
+**Roughly half is the network, and stays that way.** `protocols`, the provider
+clients, `oauth` and the Safe Browsing client are sockets and round trips. A
+mutant in one survives because nothing short of a real server exercises it, and
+a test that pretended otherwise would be a test of the pretence. Their
+verification is the live account run, which is tracked separately. The rule
+from the protocols pass holds: sort the report into those two piles before
+touching anything.
+
+**A second group could not be tested at all, and that was the finding.** Every
+path into `oauth_credentials` runs through an environment variable or through a
+gitignored file in somebody's settings folder, so all twenty-eight of its
+findings were one finding: unreachable, not untested. The same was true of the
+trusted domains list in `security`. In both cases the decision was also written
+out several times, once per source, which is what let the copies differ. Pulling
+the decision out of the plumbing fixed both problems at once, and that is the
+shape to reach for whenever a whole file comes back untestable: the fault is
+usually that a decision is welded to how its inputs arrive.
+
+**What was left was worth finding.** The largest was in Safe Browsing: for an
+address with more than five components the first parent form was skipped, so a
+site listed under exactly that form was never matched and no warning appeared.
+Every test used a three part address and none could see it. Found by reading
+the arithmetic a mutant had flagged and working out what it would break, which
+showed the unmutated version was already wrong.
+
+Also: an attachment without a dot in its name would have been saved as
+"attachment"; a bad signature could be reported as unknown rather than invalid;
+two risk bands could vanish and every message in them be described as something
+else; the offset of a misspelling, which is where the editor underlines and
+where somebody working by ear is sent, had nothing checking it pointed at the
+word.
+
+One thing here is unreachable and stays: two arms of `mime::header_text`, for
+headers `mail-parser` always hands back as text. They are kept, with the reason
+written next to them, because without them a future parser version would drop a
+read receipt request silently.
+
 ## Progress
 
 | Area | Result | Done |
@@ -244,5 +286,5 @@ Twelve are left, and each for a stated reason:
 | `service/protocols` | 327 mutants, 133 caught, 113 missed, 81 unviable. Closed: flag accessors, credential redaction, the write gate. Of the rest, all but one are socket methods, see below | 2026-08-01 |
 | `data` | Done. 510 mutants, 405 caught, 12 missed, 93 unviable, checked on a clean run after the work. The 12 are the ones left on purpose, listed above. First run void, second found 53 | 2026-08-01 |
 | `application` (rest) | | |
-| `service` (rest) | | |
+| `service` | 1,296 mutants, 629 caught, 483 missed, 183 unviable. Closed in the pure modules: safe browsing URLs, attachment names, security, OAuth credentials, spelling, mime, safety. About half the remainder is socket code and stays, see above | 2026-08-02 |
 | `presentation` (not the window) | | |

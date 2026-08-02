@@ -359,6 +359,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_every_reason_is_said_as_something_worth_hearing() {
+        // The analyser writes its indicators as notes to a developer. Read out
+        // to somebody deciding whether to trust a message, "Sender/response
+        // instruction mismatch" is a phrase to decode rather than a fact to
+        // act on. The urgency one carries the phrase it found on the end, so
+        // it is matched by its beginning, and that was the arm with nothing
+        // watching it.
+        let urgent = as_sentence("Urgency or account pressure phrase: 'verify now'");
+        assert!(
+            urgent.contains("pushes for an urgent response"),
+            "an urgency reason was read out as its own label: {urgent}"
+        );
+
+        // Anything the analyser learns later still reaches somebody as itself,
+        // rather than being dropped for not being on the list.
+        assert_eq!(
+            as_sentence("Something nobody has written a sentence for"),
+            "Something nobody has written a sentence for."
+        );
+        assert_eq!(
+            as_sentence("Already ends in a full stop."),
+            "Already ends in a full stop."
+        );
+    }
+
+    #[test]
     fn test_an_ordinary_message_says_nothing() {
         let verdict = from_headers("Subject: lunch\r\nFrom: friend@example.com\r\n");
 

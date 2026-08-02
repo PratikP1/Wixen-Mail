@@ -132,6 +132,13 @@ fn receipt_request(message: &Message<'_>) -> Option<String> {
 /// An address header comes back parsed rather than as a string, so the address
 /// is rebuilt from its parts. A malformed one arrives as raw text and is taken
 /// as it is: an odd receipt request is still a fact about the message.
+///
+/// The list and address arms are not reached today, and that is deliberate
+/// rather than an oversight. `mail-parser` hands back both headers this is
+/// called with as plain text, whether they carry one address, a name and an
+/// address, or several, and there are tests for all of those shapes. The arms
+/// stay because without them a future version that does parse them would fall
+/// to the empty answer below and lose the request with nothing said.
 fn header_text(value: &HeaderValue<'_>) -> String {
     match value {
         HeaderValue::Text(text) => text.to_string(),
@@ -301,6 +308,46 @@ mod tests {
         // Most mail does not, so the absence has to read as absence rather
         // than as an empty request that would put a notice on every message.
         assert_eq!(parse(plain_message().as_bytes()).unwrap().receipt_to, None);
+    }
+
+    #[test]
+    fn test_a_receipt_request_is_read_whatever_shape_it_arrives_in() {
+        // The header is written by whatever sent the message, so it turns up
+        // as a bare address, as a name and address, as more than one address,
+        // and under the older name. Missing any of those loses the request,
+        // and the reader is never asked whether to answer it.
+        for (header, written) in [
+            ("Disposition-Notification-To", "ada@example.com"),
+            (
+                "Disposition-Notification-To",
+                "Ada Lovelace <ada@example.com>",
+            ),
+            (
+                "Disposition-Notification-To",
+                "ada@example.com, charles@example.com",
+            ),
+            ("Return-Receipt-To", "ada@example.com"),
+        ] {
+            let raw = format!(
+                concat!(
+                    "From: Ada Lovelace <ada@example.com>\r\n",
+                    "To: charles@example.com\r\n",
+                    "Subject: Please confirm\r\n",
+                    "{}: {}\r\n",
+                    "\r\n",
+                    "Body\r\n"
+                ),
+                header, written
+            );
+
+            let asked = parse(raw.as_bytes()).unwrap().receipt_to;
+
+            let asked = asked.unwrap_or_else(|| panic!("{header}: {written} was not noticed"));
+            assert!(
+                asked.contains("ada@example.com"),
+                "{header}: {written} came back as {asked:?}"
+            );
+        }
     }
 
     #[test]
