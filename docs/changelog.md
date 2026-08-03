@@ -151,6 +151,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A calendar on your own server is asked for its dates in the shape a
+  calendar server reads.** The request named the span of months to send back,
+  six months behind and a year ahead, in an everyday date format carrying
+  fractions of a second and a numeric time offset. Calendars are dated one
+  particular way and a server that checks what it is asked refuses the whole
+  request, so nothing came back, the calendar stayed as it was, and the only
+  thing anybody was told was that the server had said no. The two dates are now
+  written the way the calendar standard asks for.
+
+  This is still untried against a real calendar server, so how forgiving each
+  one was of the old request is unknown.
+
 - **Mail now goes out from your address, not from the name you sign in with.**
   The account screen asks for an email address and a sign-in name in two
   separate boxes, and plenty of mail servers, corporate ones especially, want a
