@@ -275,19 +275,58 @@ mod tests {
 
         let complaint = over_the_limit(&[twenty_megabytes]).expect("20 MB should be too much");
 
+        // The figure read out is the size on the wire, not the size on disk,
+        // because that is the number the provider is measuring against.
+        assert!(complaint.contains("26.7 MB"), "{complaint}");
         assert!(complaint.contains("25 MB"), "{complaint}");
         assert!(complaint.contains("send a link"), "{complaint}");
     }
 
     #[test]
+    fn test_a_file_that_still_fits_once_encoded_is_left_alone() {
+        // The other side of the same sum. 18 MB on disk is 24 MB encoded, which
+        // fits, and complaining about it would send somebody looking for a file
+        // to remove that did not need removing.
+        assert_eq!(over_the_limit(&[sized("scan.tif", 18 * 1024 * 1024)]), None);
+    }
+
+    #[test]
     fn test_the_type_comes_from_the_extension() {
+        // Every extension this knows, not a sample of them. Four of twenty were
+        // checked before, so any of the other sixteen could have quietly become
+        // "a file" and the recipient's client would have offered to save it
+        // rather than open it.
         for (name, expected) in [
             ("report.pdf", "application/pdf"),
             ("Photo.JPG", "image/jpeg"),
+            ("scan.jpeg", "image/jpeg"),
             ("notes.txt", "text/plain"),
+            ("run.log", "text/plain"),
+            ("readme.md", "text/plain"),
+            ("page.html", "text/html"),
+            ("page.htm", "text/html"),
+            ("rows.csv", "text/csv"),
+            ("meeting.ics", "text/calendar"),
+            ("forwarded.eml", "message/rfc822"),
+            ("shot.png", "image/png"),
+            ("loop.gif", "image/gif"),
+            ("logo.svg", "image/svg+xml"),
+            ("photo.webp", "image/webp"),
+            ("bundle.zip", "application/zip"),
+            ("letter.doc", "application/msword"),
+            (
+                "letter.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ),
+            ("book.xls", "application/vnd.ms-excel"),
             (
                 "sheet.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
+            ("deck.ppt", "application/vnd.ms-powerpoint"),
+            (
+                "deck.pptx",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             ),
         ] {
             assert_eq!(content_type(name), expected, "for {name}");

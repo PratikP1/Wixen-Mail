@@ -31,7 +31,16 @@ fn addresses(field: &str) -> Vec<String> {
 pub struct SendEmailRequest {
     pub server: String,
     pub port: u16,
+    /// The name the server is signed in with. For authentication only.
+    ///
+    /// On a corporate mail server this is often a bare name or a domain and a
+    /// name, and never an address at all, so it must not be used as the sender.
     pub username: String,
+    /// The address the message is sent from, and the one recipients reply to.
+    ///
+    /// The account's own address, which is a separate field from the login and
+    /// nothing keeps the two equal.
+    pub from_address: String,
     pub auth: MailAuth,
     pub use_tls: bool,
     pub to: Vec<String>,
@@ -94,6 +103,7 @@ impl SendEmailRequest {
             server: account.smtp_server.clone(),
             port,
             username: account.username.clone(),
+            from_address: account.email.clone(),
             auth,
             use_tls: account.smtp_use_tls,
             to: recipients,
@@ -261,7 +271,10 @@ impl MailController {
         };
 
         let email = Email {
-            from: req.username.clone(),
+            // The account's address, not the name it signs in with. On a
+            // corporate server the two differ and the login is often not an
+            // address at all.
+            from: req.from_address.clone(),
             from_name: None,
             to: req.to.clone(),
             cc: req.cc.clone(),
@@ -532,6 +545,7 @@ mod tests {
 
         let refusals = [
             controller.fetch_folders().await.err(),
+            controller.select_folder("INBOX").await.err(),
             controller.list_uids("INBOX").await.err(),
             controller.fetch_headers("INBOX", &[1]).await.err(),
             controller.fetch_message_body("INBOX", 1).await.err(),
@@ -543,6 +557,13 @@ mod tests {
             controller.append_message("Sent", None, b"raw").await.err(),
             controller.set_subscribed("Work", true).await.err(),
             controller.fetch_flags("INBOX", &[1], None).await.err(),
+            // A count here is worse than an error. The caller reads it as the
+            // old copy of the draft having been cleaned up, appends the new
+            // one, and the server ends up holding the same draft twice.
+            controller
+                .remove_by_message_id("Drafts", "<abc@example.com>")
+                .await
+                .err(),
         ];
         for refusal in refusals {
             let message = refusal
@@ -588,6 +609,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_refused_pop3_connection_says_the_server_could_not_be_reached() {
+        // The mail side already had this and the POP side did not, so a version
+        // that reported success with no session behind it would have passed.
+        // Signing in is then attempted against nothing, and every later command
+        // says "not connected" for a reason nobody can act on.
+        let controller = MailController::new();
+
+        let error = controller
+            .connect_pop3(
+                "127.0.0.1".to_string(),
+                1,
+                "test@example.com".to_string(),
+                "password".to_string(),
+                false,
+            )
+            .await
+            .expect_err("nothing listens on port 1")
+            .to_string();
+
+        assert!(
+            error.contains("Could not reach the mail server"),
+            "got {error}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_pop3_commands_refuse_without_a_connection() {
         // What the old test could not check, because the POP3 client it tested
         // opened no socket: it answered every command out of a HashMap of three
@@ -625,6 +672,7 @@ mod tests {
             server: "smtp.example.com".to_string(),
             port: 587,
             username: "test@example.com".to_string(),
+            from_address: "test@example.com".to_string(),
             auth: MailAuth::Password("password".to_string()),
             use_tls: true,
             to: vec!["to@example.com".to_string()],
@@ -701,6 +749,32 @@ mod send_request_tests {
 
         assert_eq!(req.cc, ["bob@example.com", "dan@example.com"]);
         assert_eq!(req.bcc, ["carol@example.com"]);
+    }
+
+    #[test]
+    fn test_a_message_is_sent_from_the_account_address_and_not_the_login_name() {
+        // The account screen asks for an address and a login in two boxes and
+        // nothing keeps them equal. On a corporate server the login is often a
+        // bare name, or a domain and a name, so every message went out claiming
+        // to be from something that is not an address, and a reply to it goes
+        // nowhere. Where the login is not address-shaped the send fails
+        // instead, naming an address the person never typed in that box.
+        let mut corporate = account();
+        corporate.email = "ada.lovelace@example.com".to_string();
+        corporate.username = "EXAMPLE\\alovelace".to_string();
+
+        let req = SendEmailRequest::from_queued(
+            &queued("you@example.com"),
+            &corporate,
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+
+        assert_eq!(req.from_address, "ada.lovelace@example.com");
+        assert_eq!(
+            req.username, "EXAMPLE\\alovelace",
+            "the login is still what signs in"
+        );
     }
 
     #[test]

@@ -288,6 +288,44 @@ mod tests {
     }
 
     #[test]
+    fn test_a_less_than_sign_inside_a_quoted_name_does_not_start_an_address() {
+        // Inside quotes it is just a character somebody typed. Treated as the
+        // start of an address it would swallow every comma after it and turn a
+        // whole header into one recipient that does not exist.
+        assert_eq!(
+            split_addresses("\"a<b\", c@example.com"),
+            vec!["\"a<b\"".to_string(), "c@example.com".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_a_greater_than_sign_inside_a_quoted_name_does_not_close_an_address() {
+        // The mirror of the rule on the opening bracket. Closing early would
+        // let the comma after it split one address into two.
+        assert_eq!(
+            split_addresses("<\"a>b\",c@example.com>"),
+            vec!["<\"a>b\",c@example.com>".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_a_comma_inside_angle_brackets_does_not_separate_addresses() {
+        // The half of the splitting rule nothing watched. Splitting here makes
+        // two recipients out of one and both of them bounce.
+        assert_eq!(
+            split_addresses("<a,b@example.com>, c@example.com"),
+            vec!["<a,b@example.com>".to_string(), "c@example.com".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_an_address_with_the_brackets_the_wrong_way_round_is_left_alone() {
+        // Slicing from the opening bracket to a closing one that came first is
+        // a panic, on a header a stranger wrote.
+        assert_eq!(key_of("a>b<c"), "a>b<c");
+    }
+
+    #[test]
     fn test_semicolons_separate_recipients_too() {
         // Some clients and some people write them.
         let message = RepliedTo {
@@ -352,6 +390,8 @@ mod tests {
             "<",
             ">",
             "<<>>",
+            "a>b<c",
+            ">x<",
             "\"unclosed <a@example.com>",
             "a@example.com,",
             ",a@example.com",

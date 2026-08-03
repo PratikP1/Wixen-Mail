@@ -151,6 +151,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Mail now goes out from your address, not from the name you sign in with.**
+  The account screen asks for an email address and a sign-in name in two
+  separate boxes, and plenty of mail servers, corporate ones especially, want a
+  bare name or a domain and a name to sign in. Every message sent was addressed
+  as coming from the sign-in name. A reply to it went nowhere, and where the
+  sign-in name is not an address at all the send failed with a complaint about
+  an address nobody had typed in that box. The copy filed in Sent carried the
+  same wrong sender, and a draft of the same message did not, because drafts
+  were already filed under the account address.
+
 - **A task deleted on an account signed in to both task services stays
   deleted.** Tasks go up and down in two passes, one for each service, and both
   run over the same account. The pass for one service read the other's waiting
