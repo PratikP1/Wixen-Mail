@@ -467,19 +467,203 @@ mod tests {
     }
 
     #[test]
+    fn test_a_tone_exactly_one_gap_later_still_sounds() {
+        // The gap is the shortest interval at which two tones are still heard
+        // as two events, so the boundary belongs to the second tone rather
+        // than to the suppression. The burst test above steps over it in both
+        // directions and never lands on it.
+        //
+        // Named rather than written as a number, so it keeps meaning the
+        // boundary if the constant moves.
+        let player = EarconPlayer::new();
+        let start = std::time::Instant::now();
+        assert!(player.play_at(Event::MisspelledWord.tone(), start));
+        assert!(player.play_at(Event::MisspelledWord.tone(), start + EARCON_GAP));
+    }
+
+    #[test]
+    fn test_the_gap_between_tones_holds_when_the_clock_is_the_real_one() {
+        // Everything above tests `play_at`, and nothing outside this file
+        // calls it: the application calls `play`, which is the same decision
+        // with the clock read from the system. This says that reading the
+        // clock keeps the decision rather than replacing it.
+        //
+        // Two adjacent statements cannot be a tenth of a second apart, so the
+        // second call is inside the gap. On Windows the first one really does
+        // sound, which is why the shortest tone in the set is the one used;
+        // the suite already beeps for the burst test above.
+        let player = EarconPlayer::new();
+        assert!(player.play(Event::MisspelledWord.tone()));
+        assert!(!player.play(Event::MisspelledWord.tone()));
+    }
+
+    #[test]
     fn test_nothing_is_signalled_by_sound_alone() {
         // A sound with no written equivalent is invisible to a deaf-blind user
         // and meaningless to anyone who has not learned it yet.
+        //
+        // The channels are named here rather than asked through
+        // `carries_text`. Calling the predicate under test as its own witness
+        // made this assertion pass for any answer that predicate gave.
         let mut settings = FeedbackSettings::default();
         settings.set_channel_enabled(Channel::Earcon, true);
         for event in Event::ALL {
             settings.set_event_channels(event, set(&[Channel::Earcon]));
             let channels = settings.channels_for(event);
             assert!(
-                channels.iter().any(Channel::carries_text),
+                channels
+                    .iter()
+                    .any(|c| matches!(c, Channel::Speech | Channel::Braille | Channel::Visual)),
                 "{:?} would have been sound only",
                 event
             );
+        }
+    }
+
+    #[test]
+    fn test_an_event_set_to_sound_only_still_gets_a_written_channel() {
+        // The same rule with the answer written out, so a change that stops
+        // adding the written channel back cannot pass by agreeing with itself.
+        let mut settings = FeedbackSettings::default();
+        settings.set_channel_enabled(Channel::Earcon, true);
+        settings.set_event_channels(Event::NewMail, set(&[Channel::Earcon]));
+        assert_eq!(
+            settings.channels_for(Event::NewMail),
+            set(&[Channel::Earcon, Channel::Braille])
+        );
+    }
+
+    #[test]
+    fn test_the_written_channel_added_back_is_braille_before_the_status_line() {
+        // Which one is added back is a deliberate order and not an accident of
+        // how the enum is written: braille first because it is the quietest
+        // way to say something to somebody who is already reading it, then the
+        // status line, then speech. With braille switched off the status line
+        // is what stands in.
+        let mut settings = FeedbackSettings::default();
+        settings.set_channel_enabled(Channel::Earcon, true);
+        settings.set_channel_enabled(Channel::Braille, false);
+        settings.set_event_channels(Event::NewMail, set(&[Channel::Earcon]));
+        assert_eq!(
+            settings.channels_for(Event::NewMail),
+            set(&[Channel::Earcon, Channel::Visual])
+        );
+    }
+
+    #[test]
+    fn test_choosing_channels_for_one_event_leaves_the_others_alone() {
+        // Somebody who configures two events keeps both. The existing
+        // round-trip test only ever sets one, so nothing said this.
+        let mut settings = FeedbackSettings::default();
+        settings.set_event_channels(Event::NewMail, set(&[Channel::Speech]));
+        settings.set_event_channels(Event::SendFailed, set(&[Channel::Braille]));
+        assert_eq!(
+            settings.channels_for(Event::NewMail),
+            set(&[Channel::Speech])
+        );
+        assert_eq!(
+            settings.channels_for(Event::SendFailed),
+            set(&[Channel::Braille])
+        );
+    }
+
+    #[test]
+    fn test_setting_an_event_twice_replaces_rather_than_stacks() {
+        // Changing your mind about one event has to overwrite the old answer.
+        // A second entry left behind the first is the one that gets found.
+        let mut settings = FeedbackSettings::default();
+        settings.set_event_channels(Event::NewMail, set(&[Channel::Speech]));
+        settings.set_event_channels(Event::NewMail, set(&[Channel::Braille]));
+        assert_eq!(
+            settings.channels_for(Event::NewMail),
+            set(&[Channel::Braille])
+        );
+    }
+
+    #[test]
+    fn test_switching_one_channel_off_survives_a_restart_on_its_own() {
+        // What gets stored when somebody unticks the speech box and changes
+        // nothing else. Thrown away, they switch speech off again every
+        // launch and never work out why it comes back.
+        let restored = FeedbackSettings::from_stored("off=speech");
+        assert!(!restored.is_channel_enabled(Channel::Speech));
+        // Earcons are off in the default and on in what was stored, so this is
+        // the assertion that says the stored value was kept rather than
+        // quietly replaced by the default.
+        assert!(restored.is_channel_enabled(Channel::Earcon));
+    }
+
+    #[test]
+    fn test_a_stored_choice_for_one_event_survives_on_its_own() {
+        // The same discard the other way round: a per-event choice with no
+        // switched-off channels beside it.
+        let restored = FeedbackSettings::from_stored("thread_landed=braille");
+        assert_eq!(
+            restored.channels_for(Event::ThreadLanded),
+            set(&[Channel::Braille])
+        );
+    }
+
+    #[test]
+    fn test_no_two_events_say_the_same_words() {
+        // The written form is what a deaf-blind user gets, and two events that
+        // read alike are one event as far as they are concerned. Nothing in
+        // the mutation run can reach a string, so this is written out.
+        let mut seen: Vec<&str> = Vec::new();
+        for event in Event::ALL {
+            let text = event.text();
+            assert!(
+                !seen.contains(&text),
+                "{:?} says the same as an earlier event: {}",
+                event,
+                text
+            );
+            seen.push(text);
+        }
+    }
+
+    #[test]
+    fn test_every_event_has_its_own_stored_name() {
+        // These are the names somebody's preferences are filed under. Two
+        // events sharing one moves their settings to the wrong event with
+        // nothing said about it.
+        let mut seen: Vec<&str> = Vec::new();
+        for event in Event::ALL {
+            let key = event.key();
+            assert!(!seen.contains(&key), "{:?} reuses the name {}", event, key);
+            seen.push(key);
+        }
+        let mut channel_names: Vec<&str> = Vec::new();
+        for channel in Channel::ALL {
+            let key = channel.key();
+            assert!(
+                !channel_names.contains(&key),
+                "{:?} reuses the name {}",
+                channel,
+                key
+            );
+            channel_names.push(key);
+        }
+    }
+
+    #[test]
+    fn test_a_stored_name_never_contains_the_characters_that_separate_them() {
+        // `to_stored` joins groups with a comma, names to values with an
+        // equals sign, and values to each other with a plus. A name carrying
+        // any of those cannot be read back.
+        for name in Event::ALL
+            .into_iter()
+            .map(|e| e.key())
+            .chain(Channel::ALL.into_iter().map(|c| c.key()))
+        {
+            for separator in [',', '=', '+'] {
+                assert!(
+                    !name.contains(separator),
+                    "{} carries the {} that separates stored settings",
+                    name,
+                    separator
+                );
+            }
         }
     }
 

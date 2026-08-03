@@ -112,9 +112,11 @@ impl Accessibility {
             })?;
         }
         self.set_focus("folder_tree")?;
+        // Said out loud, so it is a sentence somebody would say. "Accessibility
+        // initialized" told the person hearing it nothing about their mail.
         self.announcements
             .push(announcements::Announcement::interface(
-                "Accessibility initialized",
+                "Wixen Mail is ready",
                 announcements::Priority::Normal,
             ))?;
         self.flush_announcements()?;
@@ -168,16 +170,6 @@ impl Accessibility {
         Ok(())
     }
 
-    /// Signal an event on whichever channels the user has chosen.
-    ///
-    /// Callers name the fact, not the medium. That is what keeps the
-    /// never-sound-alone rule in one place instead of depending on every call
-    /// site remembering it, and what lets someone switch the whole application
-    /// from speech to earcons without touching any of this code.
-    ///
-    /// `detail` is appended to the event's own wording when there is something
-    /// specific worth saying, such as which message or how many. Pass an empty
-    /// string when the event says it all.
     /// Play an event's tone on its own, where the written form is elsewhere.
     ///
     /// Everywhere else, nothing is signalled by sound alone: a tone reaches
@@ -194,17 +186,32 @@ impl Accessibility {
     ///
     /// Obeys the earcon channel setting like every other sound, so somebody who
     /// has sounds off never hears it.
-    pub fn earcon(&self, event: feedback::Event) -> Result<()> {
+    ///
+    /// Returns whether the tone sounded. The player already knows the
+    /// difference between sounded and held back by the pace limit, and says so
+    /// for the reason written on it: a caller that assumes instead is a caller
+    /// that reports a sound nobody made.
+    pub fn earcon(&self, event: feedback::Event) -> Result<bool> {
         let channels = match self.feedback.lock() {
             Ok(settings) => settings.channels_for(event),
-            Err(_) => return Ok(()),
+            Err(_) => return Ok(false),
         };
-        if channels.contains(&feedback::Channel::Earcon) {
-            self.earcons.play(event.tone());
+        if !channels.contains(&feedback::Channel::Earcon) {
+            return Ok(false);
         }
-        Ok(())
+        Ok(self.earcons.play(event.tone()))
     }
 
+    /// Signal an event on whichever channels the user has chosen.
+    ///
+    /// Callers name the fact, not the medium. That is what keeps the
+    /// never-sound-alone rule in one place instead of depending on every call
+    /// site remembering it, and what lets someone switch the whole application
+    /// from speech to earcons without touching any of this code.
+    ///
+    /// `detail` is appended to the event's own wording when there is something
+    /// specific worth saying, such as which message or how many. Pass an empty
+    /// string when the event says it all.
     pub fn signal(&self, event: feedback::Event, detail: &str) -> Result<()> {
         let channels = match self.feedback.lock() {
             Ok(settings) => settings.channels_for(event),
@@ -384,6 +391,204 @@ impl Default for Accessibility {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every line the code released to the bridge, oldest first.
+    ///
+    /// This says what was asked for. It is not evidence that anybody heard
+    /// anything: only a run with a real screen reader is that, and no
+    /// assertion below should be read as claiming otherwise.
+    fn lines_released(a11y: &Accessibility) -> Vec<String> {
+        a11y.screen_reader
+            .events()
+            .expect("events")
+            .into_iter()
+            .filter_map(|event| match event {
+                automation::AutomationEvent::LiveRegion(_, text) => Some(text),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_the_words_still_go_out_when_speech_is_off_and_braille_is_on() {
+        // The case this module was written for. Speech and braille ride one
+        // notification, so either one on its own has to release it; requiring
+        // both leaves a deaf-blind user with nothing at all when a send fails.
+        //
+        // Proves the text was released to the bridge, not that a braille
+        // display showed it. Only a screen reader run says the second.
+        let a11y = Accessibility::new().expect("accessibility");
+        let mut settings = a11y.feedback_settings();
+        settings.set_channel_enabled(feedback::Channel::Speech, false);
+        a11y.set_feedback_settings(settings);
+
+        a11y.signal(feedback::Event::SendFailed, "")
+            .expect("signal");
+
+        let released = lines_released(&a11y);
+        assert!(
+            released.iter().any(|line| line == "Message not sent"),
+            "nothing went out with speech off and braille on: {:?}",
+            released
+        );
+    }
+
+    #[test]
+    fn test_an_announcement_is_queued_and_released_in_the_one_call() {
+        // Forty-odd call sites announce and none of them flush afterwards, so
+        // queueing and releasing have to be the same call. Nothing covered
+        // this: the ordering test pushes onto the queue directly and goes
+        // round the outside of it.
+        //
+        // Pins that the text reached the bridge. Whether it is spoken is a
+        // screen reader question.
+        let a11y = Accessibility::new().expect("accessibility");
+        a11y.announce("Message moved to Archive", announcements::Priority::Normal)
+            .expect("announce");
+        assert_eq!(
+            a11y.screen_reader
+                .last_announcement()
+                .expect("last announcement")
+                .as_deref(),
+            Some("Message moved to Archive")
+        );
+    }
+
+    #[test]
+    fn test_an_event_that_replaces_its_earlier_self_still_says_something() {
+        // Every signalled event with a text channel goes out through this
+        // call, so if it went quiet the tone and the status line would survive
+        // and the words would not. That is the sound-alone failure the module
+        // exists to prevent, arriving by the back door.
+        let a11y = Accessibility::new().expect("accessibility");
+        a11y.announce_topic(
+            "12 of 40 messages",
+            announcements::Priority::Low,
+            "message-count",
+        )
+        .expect("announce");
+        assert_eq!(
+            a11y.screen_reader
+                .last_announcement()
+                .expect("last announcement")
+                .as_deref(),
+            Some("12 of 40 messages")
+        );
+    }
+
+    #[test]
+    fn test_muting_stops_the_message_text_and_leaves_the_applications_own_words() {
+        // The fast mute for private mail: it silences what a message says and
+        // nothing else, so muting before a screen share does not also cost
+        // somebody their error messages.
+        //
+        // The lines here are obviously made up. A test fixture must never be
+        // a way to get something that looks like real mail into a log file.
+        let a11y = Accessibility::new().expect("accessibility");
+        a11y.announce_content("first placeholder line")
+            .expect("content");
+        assert_eq!(
+            a11y.screen_reader
+                .last_announcement()
+                .expect("last announcement")
+                .as_deref(),
+            Some("first placeholder line")
+        );
+
+        a11y.set_content_muted(true);
+        a11y.announce_content("second placeholder line")
+            .expect("content");
+        a11y.announce("Connected", announcements::Priority::Normal)
+            .expect("announce");
+
+        let released = lines_released(&a11y);
+        assert!(
+            !released
+                .iter()
+                .any(|line| line == "second placeholder line"),
+            "muted message text was still released: {:?}",
+            released
+        );
+        assert!(
+            released.iter().any(|line| line == "Connected"),
+            "mute took the application's own words with it: {:?}",
+            released
+        );
+    }
+
+    #[test]
+    fn test_the_mute_switch_remembers_which_way_it_is_set() {
+        // The menu item toggles whatever this reports, and the stored
+        // preference is put back through it at startup. Stuck at one answer,
+        // the menu item inverts nothing and the preference disappears.
+        let a11y = Accessibility::new().expect("accessibility");
+        assert!(!a11y.is_content_muted());
+        a11y.set_content_muted(true);
+        assert!(a11y.is_content_muted());
+        a11y.set_content_muted(false);
+        assert!(!a11y.is_content_muted());
+    }
+
+    #[test]
+    fn test_a_tone_is_reported_as_suppressed_when_the_sound_channel_is_off() {
+        // Sounded and suppressed are different answers, and this used to give
+        // the same one for both. A tone the pace limit swallowed, or that the
+        // sound channel is switched off for, now says so instead of leaving
+        // the caller to assume.
+        //
+        // The shortest tone in the set, because on Windows the middle call
+        // here really does sound.
+        let a11y = Accessibility::new().expect("accessibility");
+        assert!(
+            !a11y
+                .earcon(feedback::Event::MisspelledWord)
+                .expect("earcon"),
+            "sounds are off by default, so nothing should have played"
+        );
+
+        let mut settings = a11y.feedback_settings();
+        settings.set_channel_enabled(feedback::Channel::Earcon, true);
+        a11y.set_feedback_settings(settings);
+
+        assert!(
+            a11y.earcon(feedback::Event::MisspelledWord)
+                .expect("earcon"),
+            "with sounds on the first tone should play"
+        );
+        assert!(
+            !a11y
+                .earcon(feedback::Event::MisspelledWord)
+                .expect("earcon"),
+            "a second tone in the same instant should be held back"
+        );
+    }
+
+    #[test]
+    fn test_nothing_said_at_startup_is_wording_from_inside_the_program() {
+        // Heard, not read. A line about something being initialized tells the
+        // person hearing it nothing about their mail, and it is exactly the
+        // sort of phrase this project's rule on machine words is there to keep
+        // out of the ones people hear.
+        //
+        // This pins what the code asks to say. Whether anybody hears it is a
+        // separate question, and a real one: the window that carries
+        // announcements is registered after this runs.
+        let a11y = Accessibility::new().expect("accessibility");
+        a11y.initialize().expect("initialize");
+        let released = lines_released(&a11y);
+        assert!(
+            released.iter().any(|line| line == "Wixen Mail is ready"),
+            "startup released {:?}",
+            released
+        );
+        assert!(
+            !released
+                .iter()
+                .any(|line| line.to_lowercase().contains("initial")),
+            "startup released {:?}",
+            released
+        );
+    }
 
     #[test]
     fn test_signalling_an_event_reaches_the_visual_channel() {

@@ -868,6 +868,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **Startup says "Wixen Mail is ready" instead of "Accessibility initialized".** The old line was wording from inside the program, said out loud to somebody who wants to know about their mail.
+  Whether either line is heard at all is a separate question and still open. The window that carries announcements is registered after this one is queued, so the first two lines of a session go out on a path that reports success and is not delivered here. That needs a screen reader to settle and is not fixed by this change.
+
 - **Version numbers stopped pretending to be an alpha programme.** This is 0.5.0. It was `0.1.0-alpha.25`, and the twenty-five before it were never tagged and never published: the counter was moving because each build was handed over as a file whose name carries the version, not because twenty-five releases happened. `0.x` already means unstable, so the suffix was saying it a second time and claiming a testing round that has not started. What is unproven is said in sentences, on the first-run screen, in Settings, at the end of `--help` and in the testing page, which is where somebody will actually read it. `-alpha.N` is now kept for staging a release that is about to go to testers.
   Builds between releases carry the commit they came from, as `0.5.0+g64c73dd`, in the file name, in Apps and Features, in `--version` and in the first line of the log. So a bug report can be matched to the code it came from even when several builds share a version.
 

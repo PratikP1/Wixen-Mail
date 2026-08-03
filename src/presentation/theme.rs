@@ -259,14 +259,25 @@ impl Rgb {
 /// answer both for high contrast and for anybody whose system is set up in a
 /// way we have not thought of.
 pub fn current(setting: &str) -> Option<Palette> {
-    if windows_high_contrast() {
-        // Whatever the setting says. Somebody running high contrast has chosen
-        // their colours, usually because nothing else is legible to them, and
-        // an application that paints over that has removed the reason they set
-        // it. This wins over an explicit Light or Dark for the same reason.
+    palette_for(
+        setting,
+        wxdragon::is_system_dark_mode(),
+        windows_high_contrast(),
+    )
+}
+
+/// Which palette follows from the setting and what the machine reports.
+///
+/// Split from [`current`] so the rule can be stated without asking the machine
+/// anything. High contrast wins whatever the setting says: somebody running it
+/// has chosen their colours, usually because nothing else is legible to them,
+/// and an application that paints over that has removed the reason they set it.
+/// That beats an explicit Light or Dark for the same reason.
+fn palette_for(setting: &str, system_is_dark: bool, high_contrast: bool) -> Option<Palette> {
+    if high_contrast {
         return None;
     }
-    Theme::from_setting(setting).palette(wxdragon::is_system_dark_mode())
+    Theme::from_setting(setting).palette(system_is_dark)
 }
 
 /// Whether Windows is in a high contrast theme.
@@ -285,7 +296,6 @@ fn windows_high_contrast() -> bool {
             scheme: *mut u16,
         }
         const SPI_GETHIGHCONTRAST: u32 = 0x0042;
-        const HCF_HIGHCONTRASTON: u32 = 0x0000_0001;
 
         #[link(name = "user32")]
         unsafe extern "system" {
@@ -313,12 +323,33 @@ fn windows_high_contrast() -> bool {
                 0,
             )
         };
-        ok != 0 && info.flags & HCF_HIGHCONTRASTON != 0
+        high_contrast_from(ok, info.flags)
     }
     #[cfg(not(target_os = "windows"))]
     {
         false
     }
+}
+
+/// The one bit in that flags word that says high contrast is on.
+///
+/// The word carries others, such as whether a high contrast scheme is merely
+/// available, so it cannot be read as a whole.
+const HCF_HIGHCONTRASTON: u32 = 0x0000_0001;
+
+/// Read what Windows answered, separately from asking it.
+///
+/// Two decisions, and getting either wrong paints over the colours of somebody
+/// who cannot read anything else. A failed call is not an answer: when `ok` is
+/// zero the flags word was never filled in, so reading it is reading nothing,
+/// and the safe reading is that high contrast is off and our palette stays in
+/// charge. And only [`HCF_HIGHCONTRASTON`] means on, whatever else is set
+/// beside it.
+///
+/// Outside the platform gate on purpose, so it is compiled and tested
+/// everywhere rather than only where it runs.
+const fn high_contrast_from(ok: i32, flags: u32) -> bool {
+    ok != 0 && flags & HCF_HIGHCONTRASTON != 0
 }
 
 /// Paint a container, and only a container.
@@ -346,6 +377,76 @@ mod tests {
         // Order does not matter: it is a ratio between two colours, not a
         // direction.
         assert!((contrast(black, white) - contrast(white, black)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_a_channel_inside_the_linear_part_of_the_curve_is_divided_not_scaled() {
+        // WCAG's transfer function is a straight line below 0.03928 of full
+        // scale and a power curve above it, and dividing by 12.92 is that
+        // line. Real palette colours go through it: the warning brown in the
+        // light theme has a blue channel of 3. The other tests here only ever
+        // push pure black through this branch, and zero comes back as zero
+        // whatever the arithmetic is, so the line itself went unchecked.
+        //
+        // 10 is the largest channel value still inside the linear segment
+        // (10/255 is 0.03922); 11 is outside it.
+        let ratio = contrast(Rgb::new(10, 10, 10), Rgb::new(0, 0, 0));
+        assert!(
+            (ratio - 1.0607).abs() < 0.001,
+            "near black against black came out at {ratio:.4}:1"
+        );
+    }
+
+    #[test]
+    fn test_green_carries_most_of_the_luminance() {
+        // The three coefficients say how much each primary contributes to how
+        // bright a colour looks, and they are not interchangeable. Swapping
+        // red and green leaves black against white at 21:1 and white against
+        // white at 1:1, so the formula test above would not notice, and every
+        // palette figure has enough margin to stay green as well.
+        let black = Rgb::new(0, 0, 0);
+        let green = contrast(Rgb::new(0, 255, 0), black);
+        let red = contrast(Rgb::new(255, 0, 0), black);
+        let blue = contrast(Rgb::new(0, 0, 255), black);
+        assert!(green > red, "green {green:.2} is not above red {red:.2}");
+        assert!(red > blue, "red {red:.2} is not above blue {blue:.2}");
+    }
+
+    #[test]
+    fn test_a_failed_question_to_windows_is_not_read_as_high_contrast() {
+        // When the call reports failure the flags word was never filled in, so
+        // whatever is sitting in it means nothing. Believing it would hand the
+        // whole interface to a setting nobody asked for.
+        assert!(!high_contrast_from(0, HCF_HIGHCONTRASTON));
+        assert!(high_contrast_from(1, HCF_HIGHCONTRASTON));
+    }
+
+    #[test]
+    fn test_only_the_high_contrast_on_bit_means_high_contrast_is_on() {
+        // 0x02 is the neighbouring bit, which says a high contrast scheme is
+        // available rather than in use. Reading the word as a whole, or with
+        // the wrong operator, either paints over somebody's high contrast
+        // colours or refuses to paint for everybody else.
+        const HCF_AVAILABLE: u32 = 0x0000_0002;
+        assert!(!high_contrast_from(1, 0));
+        assert!(!high_contrast_from(1, HCF_AVAILABLE));
+        assert!(high_contrast_from(1, HCF_HIGHCONTRASTON | HCF_AVAILABLE));
+    }
+
+    #[test]
+    fn test_high_contrast_beats_a_theme_somebody_chose_by_hand() {
+        // The precedence the comment on `current` states and nothing checked.
+        // Somebody who picked Dark last year and switched high contrast on
+        // this morning meant the high contrast.
+        assert_eq!(palette_for("dark", false, true), None);
+        assert_eq!(palette_for("light", true, true), None);
+    }
+
+    #[test]
+    fn test_without_high_contrast_the_chosen_theme_is_what_gets_drawn() {
+        assert_eq!(palette_for("light", true, false), Some(Palette::LIGHT));
+        assert_eq!(palette_for("dark", false, false), Some(Palette::DARK));
+        assert_eq!(palette_for("default", true, false), Some(Palette::DARK));
     }
 
     #[test]
