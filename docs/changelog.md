@@ -151,6 +151,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A mail server cannot take over a folder kept on this computer.** Sent mail,
+  drafts, a trash you can recover from, and everything read over POP live in
+  folders on this computer, in the same list as the folders on the server. The
+  only thing separating them is the path, and nothing stopped a server handing
+  back a mailbox named the same as one of them. When that happened the folder on
+  this computer was treated as the server's: the next check for mail asked which
+  of those messages the server still had, was told none of them, and deleted
+  every one along with the copy it was holding. For a sent copy, a saved draft,
+  or a mailbox read over POP, that was the only copy there was.
+
+  A mailbox listed under the reserved name is now left out of the folder list,
+  so it can neither be synced nor rename the folder it collided with. The names
+  it uses cannot be typed and no ordinary server sends them, so nothing real is
+  refused. This has not been seen happening to anybody, and like everything else
+  here it has not run against a live server.
+
 - **A task deletion refused on permission now says to sign in again.** Changing
   a task and deleting one are refused by the task service in the same way, and
   only one of them said so. An account signed in before this program could

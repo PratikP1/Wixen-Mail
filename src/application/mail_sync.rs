@@ -222,6 +222,15 @@ fn join_addresses(addresses: &[crate::common::types::EmailAddress]) -> String {
 /// segment: the tree is one flat level, so two folders called "2026" under
 /// different parents would be two rows reading the same and nothing to tell
 /// them apart. "Archive/2026" says which one it is.
+///
+/// A mailbox named the same as a folder that lives on this computer is left
+/// out. Both kinds share a table and are told apart by the path, so storing one
+/// would hand the server the row holding mail it has never seen: a sent copy, a
+/// draft, or the whole of a mailbox read over POP. The next check for mail
+/// would ask the server which of those messages it still has, be told none of
+/// them, and delete every one of them and its stored body. Nothing legitimate
+/// is lost by refusing, because the prefix uses a character a mailbox name does
+/// not carry.
 pub fn store_folders(
     cache: &MessageCache,
     account_id: &str,
@@ -229,6 +238,12 @@ pub fn store_folders(
 ) -> Result<Vec<(ImapFolder, i64)>> {
     let mut stored = Vec::with_capacity(folders.len());
     for folder in folders {
+        if crate::application::local_folders::is_local(&folder.path) {
+            tracing::warn!(
+                "The server listed a mailbox named like a folder kept on this computer, so it was left out of the folder list"
+            );
+            continue;
+        }
         let id = cache.save_folder(&CachedFolder {
             id: 0,
             account_id: account_id.to_string(),
@@ -1110,6 +1125,101 @@ mod tests {
 
         let rows = cache.get_folders_for_account("acct").expect("the rows");
         assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn test_mail_that_lives_only_here_survives_a_server_claiming_its_folder() {
+        // The folders on this computer share a table with the server's and are
+        // told apart by the one thing they have: a path under a reserved
+        // prefix. Nothing else marks them, so if the server hands back a
+        // mailbox with that same path, the row is taken over: the sync gets the
+        // identifier of the folder on this computer, asks the server which
+        // messages it holds, is told none of them, and deletes every one of
+        // them and its stored body. For a sent copy, a draft, or a whole POP
+        // mailbox, that is the only copy there was.
+        let dir = std::env::temp_dir().join(format!("wixen_reserved_{}", uuid::Uuid::new_v4()));
+        let cache = MessageCache::new(dir, None).expect("a cache");
+        let here =
+            crate::application::local_folders::local_sent(crate::common::types::Protocol::Pop3)
+                .expect("a folder on this computer");
+        let mine = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Sent".into(),
+                path: here.clone(),
+                folder_type: "Sent".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("the folder on this computer");
+        let message = cache
+            .upsert_message(&IncomingMessage {
+                folder_id: mine,
+                uid: 9001,
+                message_id: "sent-1@example.com".into(),
+                subject: "What went out".into(),
+                from_addr: "me@example.com".into(),
+                to_addr: "them@example.com".into(),
+                cc: None,
+                reply_to: None,
+                date: "2026-08-01T09:00:00+00:00".into(),
+                internal_date: None,
+                size_bytes: None,
+                refs_header: None,
+                read: true,
+                starred: false,
+                answered: false,
+                draft: false,
+                deleted: false,
+                has_attachments: false,
+                safety: crate::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                labels: None,
+                receipt_to: None,
+                pop_uidl: None,
+            })
+            .expect("the only copy");
+        cache
+            .save_message_body(message, Some("what went out"), None)
+            .expect("its body");
+
+        // A server that lists a mailbox named the same as the reserved path,
+        // which nothing stops it doing, and then reports it as empty.
+        let listed = vec![folder(&here, FolderType::Sent, true)];
+        let stored = store_folders(&cache, "acct", &listed).expect("the list is stored");
+
+        // The same steps a check for mail runs, in the same order.
+        for wanted in folders_to_sync(&listed, &FolderChoices::new()) {
+            let Some((_, id)) = stored.iter().find(|(f, _)| f.path == wanted.path) else {
+                continue;
+            };
+            run(&Scripted::default(), &cache, *id, wanted);
+        }
+
+        assert!(
+            cache
+                .stored_uids(mine)
+                .expect("the folder is readable")
+                .contains(&9001),
+            "the message was deleted because the server did not list it"
+        );
+        assert!(
+            cache
+                .get_message_body(message)
+                .expect("the body is readable")
+                .is_some(),
+            "the stored body went with it"
+        );
+        assert_eq!(
+            cache
+                .get_folder("acct", &here)
+                .expect("the folder is readable")
+                .expect("the folder is still there")
+                .name,
+            "Sent",
+            "the server renamed a folder that is not its own"
+        );
     }
 
     #[test]

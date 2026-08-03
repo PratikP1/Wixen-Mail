@@ -6645,10 +6645,14 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
 
         let controller = MailController::new();
 
-        // Where a copy of each sent message goes, and whether one is needed at
-        // all. Gmail files its own, and appending ours on top is how a Sent
-        // folder ends up with everything twice. Worked out once, before the
+        // Where a copy of each sent message goes. Worked out once, before the
         // loop, because it is the same answer for every message in the queue.
+        //
+        // It does not ask whether a copy is wanted, and on some accounts it
+        // should. A provider that files its own copy of everything it sends,
+        // which Gmail does, ends up with a Sent folder holding everything
+        // twice. Nothing here checks for that yet, and whether to skip the copy
+        // for those accounts is not settled.
         let sent_copy_goes_to = sent_copy_destination(&cache, &account);
 
         for msg in &queued {

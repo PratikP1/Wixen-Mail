@@ -14,7 +14,7 @@
 //!
 //! # Why they are ordinary folders
 //!
-//! They go in the same table as the server's, with a flag saying they are
+//! They go in the same table as the server's, under a path that says they are
 //! local. Everything downstream then works without knowing the difference: the
 //! tree lists them, the message list opens them, search reads them, move and
 //! copy offer them. The alternative was a second kind of folder with a second
@@ -33,10 +33,14 @@ use crate::common::types::{FolderType, Protocol};
 
 /// The prefix every local folder's path starts with.
 ///
-/// A reserved word rather than something a server might also use. IMAP mailbox
-/// names are the server's own, and there is no rule stopping one being called
-/// "Local", so the marker is the flag on the row and this is only a readable
-/// identifier that will not collide in practice.
+/// The path is the only thing telling a folder on this computer from one on the
+/// server: they share a table and there is no column saying which is which. So
+/// the prefix has to be reserved, and it is reserved twice over. It opens with
+/// a character a mailbox name does not carry, and a mailbox the server lists
+/// under it is refused rather than stored, which is what keeps a server from
+/// taking over a folder holding the only copy of somebody's mail. The word
+/// after it is there to read, not to tell them apart: nothing stops a server
+/// calling a mailbox "Local".
 pub const LOCAL_PREFIX: &str = "\u{1}Local";
 
 /// One folder that lives here.
