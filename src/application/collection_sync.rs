@@ -150,6 +150,29 @@ mod tests {
     }
 
     #[test]
+    fn test_a_list_with_a_row_to_delete_has_something_to_save() {
+        // The half that is easy to lose. Nothing left to write looks like
+        // nothing to do, and the delete is skipped, which is the record the
+        // user removed still sitting in the database.
+        let changes = diff(&[row("a", "Work")], Vec::new());
+
+        assert!(
+            !changes.is_empty(),
+            "a deletion was reported as nothing to do"
+        );
+    }
+
+    #[test]
+    fn test_a_list_with_a_row_to_write_has_something_to_save() {
+        let changes = diff(&[], vec![row("a", "Work")]);
+
+        assert!(
+            !changes.is_empty(),
+            "a new row was reported as nothing to do"
+        );
+    }
+
+    #[test]
     fn test_identity_can_differ_between_the_two_sides() {
         // The dialogs hand back their own row type, not the stored one, so the
         // two keys are read by different functions.

@@ -249,6 +249,23 @@ impl Provider {
     fn is_local(self, id: &str) -> bool {
         !id.starts_with(self.prefix())
     }
+
+    /// Whether an id was made on this computer rather than by any provider.
+    ///
+    /// A different question from [`Self::is_local`], which only asks whether
+    /// the id belongs to *this* provider. One account can be signed in to
+    /// both, and both passes run over the same rows, so an id Microsoft gave
+    /// out is not local just because it is the Google pass looking at it.
+    fn made_here(id: &str) -> bool {
+        ![Self::Google, Self::Microsoft]
+            .iter()
+            .any(|provider| id.starts_with(provider.prefix()))
+    }
+
+    /// Whether an id is the other provider's business rather than this pass's.
+    fn belongs_to_another(self, id: &str) -> bool {
+        self.is_local(id) && !Self::made_here(id)
+    }
 }
 
 /// Send everything changed here that the provider has not been told about.
@@ -270,10 +287,17 @@ async fn push_tasks(
     // otherwise be pushed and then deleted, which is two calls to reach the
     // same place, and the second one would fail if the first had not landed.
     for gone in cache.deleted_tasks(account_id).unwrap_or_default() {
-        if provider.is_local(&gone.id) {
+        if Provider::made_here(&gone.id) {
             // Made here and never sent, so there is nothing at the other end
             // to delete. The tombstone is cleared rather than carried forever.
             let _ = cache.forget_deleted_task(&gone.id);
+            continue;
+        }
+        if provider.belongs_to_another(&gone.id) {
+            // The other provider's task, on an account signed in to both.
+            // Its own pass sends this deletion, so clearing the tombstone
+            // here would leave nobody to send it and the task would come
+            // back on the next pull, which reads as the delete never working.
             continue;
         }
         let Some(list_id) = gone.task_list_id.as_deref() else {
@@ -297,6 +321,13 @@ async fn push_tasks(
     }
 
     for task in cache.pending_tasks(account_id).unwrap_or_default() {
+        let list_id = task.task_list_id.clone().unwrap_or_default();
+        if provider.belongs_to_another(&list_id) {
+            // The other provider's list, on an account signed in to both. Its
+            // own pass sends this moments later, so counting it as staying
+            // here would be untrue by the time anybody read it.
+            continue;
+        }
         // A task in no list, or in a list this computer made, has nowhere at
         // the other end to be put. Sending it anyway would ask the provider
         // for a list it has never heard of, be refused, and be tried again on
@@ -305,14 +336,10 @@ async fn push_tasks(
         // The flag stays set rather than being cleared, because moving the task
         // into a synced list should send it. It is counted rather than reported
         // as a failure: nothing went wrong, it just lives here.
-        let Some(list_id) = task
-            .task_list_id
-            .clone()
-            .filter(|list| !provider.is_local(list))
-        else {
+        if provider.is_local(&list_id) {
             result.local_only += 1;
             continue;
-        };
+        }
         match push_one(cache, client, token, provider, &list_id, &task).await {
             Ok(()) => result.sent += 1,
             Err(e) if refused_for_permission(&e) => result.needs_sign_in = true,
@@ -535,7 +562,7 @@ pub async fn sync_microsoft_tasks(
             .iter()
             .map(|task| ms_task_to_entry(task, account_id, &entry.id).id)
             .collect();
-        for gone in gone_from(&held, &arrived, "ms:") {
+        for gone in gone_from(&held, &arrived, Provider::Microsoft.prefix()) {
             if cache.drop_synced_task(&gone).is_ok() {
                 result.deleted += 1;
             }
@@ -555,6 +582,35 @@ pub async fn sync_microsoft_tasks(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data::message_cache::TaskListEntry;
+
+    /// A cache of its own, in a directory nothing else writes to.
+    ///
+    /// Two tests sharing a database file make each other pass, which is how a
+    /// whole suite comes to prove nothing.
+    fn a_cache(name: &str) -> MessageCache {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("wixen_tasks_sync_{name}_{nanos}"));
+        MessageCache::new(dir, None).expect("a cache")
+    }
+
+    /// A list for tasks to hang on. Saving a task in a list that is not there
+    /// is refused, because the column is a foreign key.
+    fn a_list(cache: &MessageCache, id: &str) {
+        cache
+            .save_task_list(&TaskListEntry {
+                id: id.to_string(),
+                account_id: "acc-1".to_string(),
+                name: "My Tasks".to_string(),
+                color: String::new(),
+                display_order: 0,
+                created_at: String::new(),
+            })
+            .expect("a list");
+    }
 
     fn task(id: &str) -> TaskEntry {
         TaskEntry {
@@ -1018,5 +1074,472 @@ mod tests {
                 "a message leaked into the status line: {said}"
             );
         }
+    }
+
+    #[test]
+    fn test_a_provider_that_needs_signing_in_again_is_not_forgotten_by_the_other_one() {
+        // One account can be signed in to both, and only one of them may be
+        // refusing changes. Folding the two together has to keep the answer
+        // that somebody has to act on, whichever half it came from.
+        let mut total = TaskSyncResult::default();
+
+        total.absorb(TaskSyncResult {
+            needs_sign_in: true,
+            ..Default::default()
+        });
+        assert!(total.needs_sign_in);
+
+        total.absorb(TaskSyncResult::default());
+
+        assert!(
+            total.needs_sign_in,
+            "the second provider having nothing to say cleared it"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_task_deleted_before_it_ever_reached_the_provider_leaves_nothing_to_tell_it() {
+        // Nothing at the other end to delete, so the tombstone has done its
+        // job. Carrying it means asking the provider on every sync, forever,
+        // about a task it has never heard of.
+        let cache = a_cache("never_sent_deletion");
+        a_list(&cache, "google:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "task-local-1".to_string(),
+                task_list_id: Some("google:list".to_string()),
+                ..task("x")
+            })
+            .expect("a task");
+        cache.delete_task("task-local-1").expect("a deletion");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &TasksClient::new(),
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+
+        assert!(
+            cache
+                .deleted_tasks("acc-1")
+                .expect("the deletions")
+                .is_empty(),
+            "a deletion with nothing at the other end is still being carried"
+        );
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(result.sent, 0);
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_waiting_for_one_provider_is_not_thrown_away_by_the_other() {
+        // One account can be signed in to both, and both passes read the same
+        // tombstones against the same account. A pass that reads the other
+        // provider's deletion as one made here clears it, so nobody ever
+        // sends it, and the next pull puts the task back. A deletion that
+        // undoes itself is the exact failure tombstones exist to prevent.
+        let cache = a_cache("other_providers_deletion");
+        a_list(&cache, "ms:list");
+        cache.save_task(&task("ms:t1")).expect("a task");
+        cache.delete_task("ms:t1").expect("a deletion");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &TasksClient::new(),
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+
+        assert_eq!(
+            cache.deleted_tasks("acc-1").expect("the deletions").len(),
+            1,
+            "one pass threw away a deletion the other has not sent yet"
+        );
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(result.sent, 0);
+    }
+
+    #[tokio::test]
+    async fn test_a_task_waiting_for_one_provider_is_not_called_kept_here_by_the_other() {
+        // The other pass runs against the same account moments later and
+        // sends it, so "kept on this computer" is untrue by the time anybody
+        // reads it.
+        let cache = a_cache("other_providers_list");
+        a_list(&cache, "ms:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "ms:t2".to_string(),
+                pending: true,
+                ..task("x")
+            })
+            .expect("a task");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &TasksClient::new(),
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+
+        assert_eq!(
+            result.local_only, 0,
+            "a task the other provider is about to send was reported as staying here"
+        );
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(result.sent, 0);
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_the_provider_refused_is_reported_and_tried_again_next_time() {
+        // Refused for an ordinary reason, so it is a problem to report rather
+        // than a reason to tell somebody to sign in again. The tombstone
+        // survives, because failing once is not a reason to drop a deletion.
+        let cache = a_cache("refused_deletion");
+        a_list(&cache, "google:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "google:t1".to_string(),
+                task_list_id: Some("google:list".to_string()),
+                ..task("x")
+            })
+            .expect("a task");
+        cache.delete_task("google:t1").expect("a deletion");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &TasksClient::new(),
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+
+        assert_eq!(result.errors.len(), 1, "{:?}", result.errors);
+        assert!(
+            !result.needs_sign_in,
+            "an ordinary refusal was read as a permission one"
+        );
+        assert_eq!(result.sent, 0);
+        assert_eq!(
+            cache.deleted_tasks("acc-1").expect("the deletions").len(),
+            1,
+            "a deletion was dropped for having failed once"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_task_in_a_list_the_provider_owns_is_sent_rather_than_kept_here() {
+        // The sign of the list check, and what happens when the send is
+        // refused: the failure is reported against the task's id, and nothing
+        // claims the change reached the account.
+        let cache = a_cache("sent_not_kept");
+        a_list(&cache, "google:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "task-local-3".to_string(),
+                task_list_id: Some("google:list".to_string()),
+                pending: true,
+                ..task("x")
+            })
+            .expect("a task");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &TasksClient::new(),
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+
+        assert_eq!(
+            result.local_only, 0,
+            "a task in the provider's own list was written off as living here"
+        );
+        assert_eq!(result.sent, 0, "a send that did not happen was counted");
+        assert_eq!(result.errors.len(), 1, "{:?}", result.errors);
+        assert!(
+            result.errors[0].starts_with("Task task-local-3:"),
+            "the failure does not say which row: {}",
+            result.errors[0]
+        );
+        assert!(!result.needs_sign_in);
+    }
+
+    #[tokio::test]
+    async fn test_a_task_in_a_list_this_computer_made_is_counted_rather_than_reported_as_a_failure()
+    {
+        // The list has no copy at the provider, so there is nowhere to put the
+        // task. Nothing went wrong, so it is counted once and said plainly,
+        // and the flag stays set so moving it into a synced list still sends
+        // it.
+        let cache = a_cache("kept_here");
+        a_list(&cache, "local-list-1");
+        cache
+            .save_task(&TaskEntry {
+                id: "task-local-2".to_string(),
+                task_list_id: Some("local-list-1".to_string()),
+                pending: true,
+                ..task("x")
+            })
+            .expect("a task");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &TasksClient::new(),
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+
+        assert_eq!(result.local_only, 1);
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(result.sent, 0);
+        assert_eq!(
+            cache
+                .pending_tasks("acc-1")
+                .expect("the pending tasks")
+                .len(),
+            1,
+            "the change stopped waiting without ever being sent"
+        );
+    }
+
+    #[test]
+    fn test_a_task_made_here_takes_the_id_the_provider_gave_it_and_stops_waiting() {
+        // Keeping the old row as well would show the task twice, and leaving
+        // it waiting would create it at the provider all over again on the
+        // next sync.
+        let cache = a_cache("settle_new");
+        a_list(&cache, "google:list");
+        let was = TaskEntry {
+            id: "task-local-4".to_string(),
+            task_list_id: Some("google:list".to_string()),
+            pending: true,
+            ..task("x")
+        };
+        cache.save_task(&was).expect("a task");
+        let stored = TaskEntry {
+            id: "google:new".to_string(),
+            remote_updated: Some("2026-07-02T09:00:00Z".to_string()),
+            pending: false,
+            ..was.clone()
+        };
+
+        settle(&cache, &was, stored, true).expect("the row to be brought into line");
+
+        assert!(
+            cache.find_task("task-local-4").expect("a lookup").is_none(),
+            "the row under the old id is still there"
+        );
+        let now = cache
+            .find_task("google:new")
+            .expect("a lookup")
+            .expect("the row under the provider's id");
+        assert!(!now.pending, "it is still waiting to be sent");
+        assert_eq!(now.remote_updated.as_deref(), Some("2026-07-02T09:00:00Z"));
+        assert_eq!(
+            cache
+                .get_tasks_for_list("google:list")
+                .expect("the list")
+                .len(),
+            1,
+            "the task is in the list twice"
+        );
+    }
+
+    #[test]
+    fn test_a_task_the_provider_already_had_keeps_its_id_and_learns_the_new_stamp() {
+        // The other half. Without the new stamp the next pull decides the
+        // provider changed the task and overwrites what was just sent.
+        let cache = a_cache("settle_known");
+        a_list(&cache, "google:list");
+        let was = TaskEntry {
+            id: "google:t1".to_string(),
+            task_list_id: Some("google:list".to_string()),
+            pending: true,
+            remote_updated: Some("2026-07-01T10:00:00Z".to_string()),
+            ..task("x")
+        };
+        cache.save_task(&was).expect("a task");
+        let stored = TaskEntry {
+            remote_updated: Some("2026-07-02T09:00:00Z".to_string()),
+            pending: false,
+            ..was.clone()
+        };
+
+        settle(&cache, &was, stored, false).expect("the row to be brought into line");
+
+        let now = cache
+            .find_task("google:t1")
+            .expect("a lookup")
+            .expect("the row");
+        assert!(!now.pending, "it is still waiting to be sent");
+        assert_eq!(now.remote_updated.as_deref(), Some("2026-07-02T09:00:00Z"));
+        assert!(
+            cache
+                .pending_tasks("acc-1")
+                .expect("the pending tasks")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_a_task_the_provider_has_that_we_have_never_seen_is_stored() {
+        // The first sync of an account. If this writes nothing the list is
+        // empty and the summary still says the sync went fine.
+        let cache = a_cache("first_sync");
+        a_list(&cache, "ms:list");
+        let arriving = TaskEntry {
+            remote_updated: Some("2026-07-01T10:00:00Z".to_string()),
+            ..task("ms:a")
+        };
+        let mut result = TaskSyncResult::default();
+
+        take_or_skip(&cache, &[], arriving, &mut result);
+
+        assert_eq!(result.stored, 1);
+        assert_eq!(result.unchanged, 0);
+        assert_eq!(result.replaced, 0);
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert!(
+            cache.find_task("ms:a").expect("a lookup").is_some(),
+            "the task the provider sent was never written down"
+        );
+    }
+
+    #[test]
+    fn test_a_task_nobody_touched_is_counted_once_and_left_in_the_database_as_it_was() {
+        // The overwhelmingly common case. Rewriting it would churn the
+        // database and leave the summary able to report only the size of the
+        // list.
+        let cache = a_cache("untouched");
+        a_list(&cache, "ms:list");
+        let held = TaskEntry {
+            title: "Ring the clinic".to_string(),
+            remote_updated: Some("2026-07-01T10:00:00Z".to_string()),
+            ..task("ms:a")
+        };
+        cache.save_task(&held).expect("a task");
+        let arriving = TaskEntry {
+            remote_updated: held.remote_updated.clone(),
+            ..task("ms:a")
+        };
+        let mut result = TaskSyncResult::default();
+
+        take_or_skip(&cache, std::slice::from_ref(&held), arriving, &mut result);
+
+        assert_eq!(result.unchanged, 1);
+        assert_eq!(result.stored, 0);
+        assert_eq!(
+            cache
+                .find_task("ms:a")
+                .expect("a lookup")
+                .expect("the row")
+                .title,
+            "Ring the clinic",
+            "a task nobody touched was rewritten"
+        );
+    }
+
+    #[test]
+    fn test_a_change_made_here_moments_ago_is_left_waiting_rather_than_overwritten() {
+        // Changed between the push and the pull. It keeps its flag and its own
+        // words and goes up on the next sync, which is the promise every other
+        // pending change gets.
+        let cache = a_cache("changed_between");
+        a_list(&cache, "ms:list");
+        let held = TaskEntry {
+            title: "Ring the clinic".to_string(),
+            pending: true,
+            remote_updated: Some("2026-07-01T10:00:00Z".to_string()),
+            ..task("ms:a")
+        };
+        cache.save_task(&held).expect("a task");
+        let arriving = TaskEntry {
+            remote_updated: held.remote_updated.clone(),
+            ..task("ms:a")
+        };
+        let mut result = TaskSyncResult::default();
+
+        take_or_skip(&cache, std::slice::from_ref(&held), arriving, &mut result);
+
+        assert_eq!(result.unchanged, 1);
+        assert_eq!(result.stored, 0);
+        let now = cache.find_task("ms:a").expect("a lookup").expect("the row");
+        assert!(now.pending, "the change stopped waiting without being sent");
+        assert_eq!(now.title, "Ring the clinic", "the local change was undone");
+    }
+
+    #[test]
+    fn test_a_change_only_the_provider_made_is_stored_without_being_called_a_loss() {
+        // Nothing was changed here, so nothing was lost. Saying otherwise
+        // sends somebody looking for an edit that never existed.
+        let cache = a_cache("provider_only");
+        a_list(&cache, "ms:list");
+        let held = TaskEntry {
+            remote_updated: Some("2026-07-01T10:00:00Z".to_string()),
+            ..task("ms:a")
+        };
+        cache.save_task(&held).expect("a task");
+        let arriving = TaskEntry {
+            remote_updated: Some("2026-07-02T09:00:00Z".to_string()),
+            ..task("ms:a")
+        };
+        let mut result = TaskSyncResult::default();
+
+        take_or_skip(&cache, std::slice::from_ref(&held), arriving, &mut result);
+
+        assert_eq!(result.stored, 1);
+        assert_eq!(result.replaced, 0, "a loss was invented");
+    }
+
+    #[test]
+    fn test_a_change_the_server_replaced_is_counted_as_a_loss_as_well_as_stored() {
+        // Both sides changed, so the provider wins and somebody has to be
+        // told. An edit that disappears with nothing said is indistinguishable
+        // from one that never saved.
+        let cache = a_cache("both_changed");
+        a_list(&cache, "ms:list");
+        let held = TaskEntry {
+            title: "Ring the clinic".to_string(),
+            pending: true,
+            remote_updated: Some("2026-07-01T10:00:00Z".to_string()),
+            ..task("ms:a")
+        };
+        cache.save_task(&held).expect("a task");
+        let arriving = TaskEntry {
+            title: "Ring the surgery".to_string(),
+            remote_updated: Some("2026-07-02T09:00:00Z".to_string()),
+            ..task("ms:a")
+        };
+        let mut result = TaskSyncResult::default();
+
+        take_or_skip(&cache, std::slice::from_ref(&held), arriving, &mut result);
+
+        assert_eq!(result.replaced, 1, "a lost edit was not counted");
+        assert_eq!(result.stored, 1);
+        let now = cache.find_task("ms:a").expect("a lookup").expect("the row");
+        assert_eq!(now.title, "Ring the surgery");
+        assert!(!now.pending);
     }
 }

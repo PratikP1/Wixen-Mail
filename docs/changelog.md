@@ -151,6 +151,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A task deleted on an account signed in to both task services stays
+  deleted.** Tasks go up and down in two passes, one for each service, and both
+  run over the same account. The pass for one service read the other's waiting
+  deletions as tasks made on this computer and never sent, so it threw away the
+  record of them. The other pass then had nothing to send, and its own read put
+  the task back. A task somebody deleted returned with nothing said, which is
+  the failure that record exists to prevent.
+
+  The same confusion also counted a task the other service was about to send as
+  one kept on this computer, so the line after a sync said it was staying here
+  moments before it went.
+
 - **A contact whose only work detail is a department keeps it when it goes to
   Google.** The department was read and then thrown away. Nothing was sent
   unless the contact also had a company or a job title, so a person filed only
