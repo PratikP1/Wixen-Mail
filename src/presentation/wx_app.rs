@@ -7444,6 +7444,7 @@ fn check_pop_mail(
         inbox,
         housekeeping,
         false,
+        chrono::Utc::now(),
     )) {
         Ok(result) => {
             say(UIUpdate::ConnectionStatusChanged(

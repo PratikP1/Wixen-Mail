@@ -151,6 +151,32 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Mail collected over POP is now checked for spam and phishing the way mail
+  from other accounts is.** Every message from a POP account was recorded as
+  ordinary whatever it carried, so the safety word that other accounts get on a
+  row, and read out with it, never appeared. The check reads what the sending
+  and receiving servers already decided and wrote into the message, so it costs
+  nothing and sends no part of anybody's mail anywhere. Only what a server wrote
+  above the message counts, so somebody quoting one of those lines in what they
+  wrote cannot decide how their own message is marked.
+
+  Nothing on this path has run against a live POP server. The second check, the
+  one that reads the message text itself, still does not run on POP accounts.
+
+- **Mail collected over POP now says how big each message is.** The size column
+  was blank on every message from a POP account, and sorting by size heaped them
+  all together at one end. Messages already downloaded keep their blank size,
+  because mail collected this way is never fetched a second time; only mail
+  collected from now on carries it.
+
+- **A message collected over POP with a missing or unreadable date is now dated
+  when it arrived.** An undated message sorted to the far end of the list, which
+  by ear is a walk to the bottom of the mailbox rather than a glance. The trade
+  is that an old message with a broken date now looks like it arrived today,
+  which is the better end of it: a message somebody can find, dated
+  approximately, beats one correctly dated to nothing where nobody looks.
+  Messages already stored keep the date they have.
+
 - **A mail server cannot take over a folder kept on this computer.** Sent mail,
   drafts, a trash you can recover from, and everything read over POP live in
   folders on this computer, in the same list as the folders on the server. The
