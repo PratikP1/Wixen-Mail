@@ -263,11 +263,6 @@ against a real account.
 
 ### Working style
 
-Apply the skill that fits the task without being asked. `tdd` and `elegant-code` on every coding
-task. `writing-craft` or `writing-style` on prose. `dead-code-hunter` after a feature.
-`naming-review`, `commit-hygiene`, `defensive-boundaries`, `dependency-audit`, and
-`root-cause-investigator` as they fit.
-
 Report outcomes faithfully. If tests fail, say so and show the output. If a step was skipped or
 gated, say that. If something is done and verified, say it plainly. A feature that compiles but
 was never reached is not implemented, and reporting it as implemented is the failure mode this
@@ -333,13 +328,7 @@ does, in the same commit as the change rather than in a jump at release time.
 the commit that makes it, and honest "Known limitations" notes belong there too. A feature list that
 implies something works when it does not is worse than no entry.
 
-Releases are cut deliberately. The Release workflow runs only on manual dispatch, never on push, and
-you pick the level (`patch`, `minor`, `alpha`, `beta`, `rc`, or `release`) when you dispatch it. It
-bumps from whatever version it finds, commits that bump back to `main`, and tags. Since it computes
-the next version from the current one, check what is in `Cargo.toml` before dispatching so the level
-you pick lands where you expect.
-
-`alpha`, `beta`, and `rc` publish as GitHub prereleases. `patch`, `minor` and `release` publish as
-full releases, so use them when the version genuinely is what it says.
+Releases are cut deliberately, never as a side effect of a push. The mechanics of dispatching one,
+and which levels publish as prereleases, are in the `cutting-a-release` skill.
 
 <!-- END GUARDRAILS -->
