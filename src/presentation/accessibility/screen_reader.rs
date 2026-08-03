@@ -55,12 +55,14 @@ mod native {
     /// These mirror what the announcement queue already decided, so the two do
     /// not fight: something urgent is told never to be dropped, and something
     /// routine is allowed to be superseded by a newer one on the same topic.
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum Processing {
         /// Keep every one of these, in order.
         ImportantAll = 0,
         /// Keep only the most recent important one.
         ImportantMostRecent = 1,
+        /// Keep every one of these, dropping them only under pressure.
+        All = 2,
         /// Keep only the most recent, dropping older ones on the same activity.
         MostRecent = 3,
     }
@@ -139,6 +141,28 @@ mod native {
         }
     }
 
+    /// Whether a window can carry an announcement at all.
+    ///
+    /// Zero is what the lookup gives back when nothing is in front, and an
+    /// event addressed to it reaches nobody.
+    fn window_can_carry_announcement(hwnd: isize) -> bool {
+        hwnd != 0
+    }
+
+    /// Whether the host object the system handed back can be used.
+    ///
+    /// Both answers have to agree: the call can report success and still hand
+    /// back nothing, and using that would be reading from a null pointer.
+    fn provider_is_usable(result: i32, provider_is_null: bool) -> bool {
+        result == 0 && !provider_is_null
+    }
+
+    /// Whether the notification went out. Zero is success here, as everywhere
+    /// else in this interface.
+    fn notification_succeeded(result: i32) -> bool {
+        result == 0
+    }
+
     /// Speak and braille `text` through the screen reader.
     ///
     /// Returns false when no assistive technology is listening or the platform
@@ -155,14 +179,14 @@ mod native {
             // gating on it turned every announcement into a silent no-op.
             // Raising the event when nobody is listening costs almost nothing.
             let hwnd = GetForegroundWindow();
-            if hwnd == 0 {
+            if !window_can_carry_announcement(hwnd) {
                 tracing::warn!("No foreground window, so the announcement had nowhere to go");
                 return false;
             }
 
             let mut provider: *mut c_void = std::ptr::null_mut();
             let host = UiaHostProviderFromHwnd(hwnd, &mut provider);
-            if host != 0 || provider.is_null() {
+            if !provider_is_usable(host, provider.is_null()) {
                 tracing::warn!("UiaHostProviderFromHwnd failed with 0x{:08x}", host);
                 return false;
             }
@@ -186,12 +210,15 @@ mod native {
             SysFreeString(activity_id);
             release(provider);
 
-            if result != 0 {
-                tracing::warn!("UiaRaiseNotificationEvent failed with 0x{:08x}", result);
-            } else {
+            // A report of silence is read against these two lines, so a failed
+            // call must not be logged as a delivered one.
+            let delivered = notification_succeeded(result);
+            if delivered {
                 tracing::debug!("Notification raised for {} characters", text.len());
+            } else {
+                tracing::warn!("UiaRaiseNotificationEvent failed with 0x{:08x}", result);
             }
-            result == 0
+            delivered
         }
     }
 
@@ -203,7 +230,7 @@ mod native {
     pub fn notify_name_change() {
         unsafe {
             let hwnd = GetForegroundWindow();
-            if hwnd != 0 {
+            if window_can_carry_announcement(hwnd) {
                 NotifyWinEvent(EVENT_OBJECT_NAMECHANGE, hwnd, OBJID_CLIENT, CHILDID_SELF);
             }
         }
@@ -223,6 +250,81 @@ mod native {
             .encode_wide()
             .chain(std::iter::once(0))
             .collect()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// A weak test on purpose: it guards these numbers against a typo and
+        /// says nothing about whether an event reaches anybody. Only a screen
+        /// reader can answer that. They are worth pinning anyway, because a
+        /// wrong one points the event at something that does not exist and
+        /// Windows still reports success.
+        /// The decisions below are ordinary logic that used to sit inside the
+        /// unsafe calls. Pinning them says the code asks the right question of
+        /// what Windows answered. It says nothing about anything being spoken,
+        /// which only a screen reader run can say.
+        #[test]
+        fn test_a_window_of_zero_cannot_carry_an_announcement() {
+            assert!(!window_can_carry_announcement(0));
+            assert!(window_can_carry_announcement(0x1234));
+        }
+
+        #[test]
+        fn test_a_call_that_reported_success_and_handed_back_nothing_is_still_a_failure() {
+            assert!(provider_is_usable(0, false));
+            assert!(!provider_is_usable(0, true));
+        }
+
+        #[test]
+        fn test_a_failed_call_is_not_usable_whatever_it_handed_back() {
+            assert!(!provider_is_usable(-2147024809, false));
+            assert!(!provider_is_usable(-2147024809, true));
+        }
+
+        #[test]
+        fn test_only_a_result_of_zero_means_the_announcement_went_out() {
+            assert!(notification_succeeded(0));
+            assert!(!notification_succeeded(-2147024809));
+        }
+
+        #[test]
+        fn test_the_win32_identifiers_are_the_values_windows_defines() {
+            assert_eq!(EVENT_OBJECT_NAMECHANGE, 0x800C);
+            assert_eq!(EVENT_OBJECT_LIVEREGIONCHANGED, 0x8019);
+            assert_eq!(OBJID_CLIENT, -4);
+            assert_eq!(CHILDID_SELF, 0);
+            assert_eq!(NOTIFICATION_KIND_OTHER, 4);
+        }
+    }
+}
+
+// ── Working out how to say it ────────────────────────────────────────────────
+
+/// The window an announcement can be carried on, if one was registered.
+///
+/// Zero is the value the handle holds before the main window exists, and it is
+/// also what a failed registration leaves behind, so it means "nowhere to say
+/// this" rather than a window.
+#[cfg(target_os = "windows")]
+fn live_region_target(handle: isize) -> Option<isize> {
+    (handle != 0).then_some(handle)
+}
+
+/// How hard the screen reader should hold on to an announcement.
+///
+/// The topic is what tells the screen reader which announcements are versions
+/// of one another, so only a line that has one may replace its own earlier
+/// value. Without a topic there is nothing to group by, and asking for the most
+/// recent only would let any two unrelated lines silence each other.
+#[cfg(target_os = "windows")]
+fn notification_processing(urgency: Urgency, topic: &str) -> native::Processing {
+    match (urgency, topic.is_empty()) {
+        (Urgency::Urgent, _) => native::Processing::ImportantAll,
+        (Urgency::Important, _) => native::Processing::ImportantMostRecent,
+        (Urgency::Routine, false) => native::Processing::MostRecent,
+        (Urgency::Routine, true) => native::Processing::All,
     }
 }
 
@@ -278,7 +380,14 @@ impl ScreenReaderBridge {
     pub fn set_live_region(&self, handle: isize) {
         self.live_region
             .store(handle, std::sync::atomic::Ordering::Relaxed);
-        tracing::info!("Announcements will be carried on window 0x{:x}", handle);
+        // Zero is the one value that means the registration failed, and a
+        // report of "nothing was spoken" is read against this line, so it must
+        // not say that all is well.
+        if handle == 0 {
+            tracing::warn!("No window to carry announcements, so none will be spoken");
+        } else {
+            tracing::info!("Announcements will be carried on window 0x{:x}", handle);
+        }
     }
 
     /// Announce text to the screen reader.
@@ -313,8 +422,10 @@ impl ScreenReaderBridge {
             // The live region is the path that works here. The notification
             // call reports success and is never delivered, so it is only tried
             // when there is no live region to use.
-            let live_region = self.live_region.load(std::sync::atomic::Ordering::Relaxed);
-            if live_region != 0 && native::announce_via_live_region(live_region, text) {
+            let registered = self.live_region.load(std::sync::atomic::Ordering::Relaxed);
+            if let Some(hwnd) = live_region_target(registered)
+                && native::announce_via_live_region(hwnd, text)
+            {
                 tracing::debug!(
                     "Announced through the live region: {} characters",
                     text.len()
@@ -322,12 +433,7 @@ impl ScreenReaderBridge {
                 return Ok(());
             }
 
-            let processing = match (urgency, topic.is_empty()) {
-                (Urgency::Urgent, _) => native::Processing::ImportantAll,
-                (Urgency::Important, _) => native::Processing::ImportantMostRecent,
-                (Urgency::Routine, false) => native::Processing::MostRecent,
-                (Urgency::Routine, true) => native::Processing::MostRecent,
-            };
+            let processing = notification_processing(urgency, topic);
             if !native::raise_notification(text, processing, topic) {
                 // No assistive technology listening, or a Windows build without
                 // the notification API. The fallback cannot carry our text, so
@@ -408,5 +514,98 @@ mod tests {
             Some("Hello")
         );
         assert!(!bridge.events().unwrap().is_empty());
+    }
+
+    /// Registering the window is the one wiring step everything else depends
+    /// on: without it there is nowhere to carry an announcement. This proves
+    /// the handle is recorded, and nothing at all about anything being spoken
+    /// through it, which only a screen reader run can say.
+    #[test]
+    fn test_registering_the_announcement_window_records_the_handle_it_was_given() {
+        let bridge = ScreenReaderBridge::default();
+        bridge.set_live_region(0x1234);
+        assert_eq!(
+            bridge
+                .live_region
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0x1234
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_handle_of_zero_means_nowhere_to_carry_an_announcement() {
+        assert_eq!(live_region_target(0), None);
+        assert_eq!(live_region_target(0x1234), Some(0x1234));
+    }
+
+    /// Proves the code refuses a handle it cannot use, so the caller goes on to
+    /// try its other path instead of believing something was said. It proves
+    /// nothing about anything being heard. Do not extend this to a made-up
+    /// non-zero handle: that would poke a real window on whatever machine is
+    /// running the tests.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_zero_window_handle_is_refused_rather_than_announced_through() {
+        assert!(!native::announce_via_live_region(0, "connection lost"));
+    }
+
+    /// The text is on the path of every announcement, so a truncated or empty
+    /// conversion is silence. This is ordinary pure code that happens to live
+    /// behind the platform gate.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_text_handed_to_windows_is_utf16_and_null_terminated() {
+        assert_eq!(native::wide("Hi"), vec![0x0048_u16, 0x0069, 0x0000]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_character_outside_the_common_range_survives_as_a_pair() {
+        // A subject line can carry anything a sender typed, including an emoji,
+        // which needs two code units rather than one.
+        assert_eq!(native::wide("\u{1F600}"), vec![0xD83D_u16, 0xDE00, 0x0000]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_an_urgent_announcement_is_marked_never_to_be_dropped() {
+        assert_eq!(
+            notification_processing(Urgency::Urgent, ""),
+            native::Processing::ImportantAll
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_an_important_announcement_keeps_the_latest_of_its_kind() {
+        assert_eq!(
+            notification_processing(Urgency::Important, ""),
+            native::Processing::ImportantMostRecent
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_routine_announcement_on_a_topic_may_replace_its_own_earlier_value() {
+        assert_eq!(
+            notification_processing(Urgency::Routine, "message-count"),
+            native::Processing::MostRecent
+        );
+    }
+
+    /// A topic is what says which announcements are versions of one another.
+    /// Without one there is nothing to group by, so asking the screen reader to
+    /// keep only the most recent lets any two unrelated lines silence each
+    /// other: "Message moved to Archive" then "Draft saved" leaves only the
+    /// second. Most announcements in the application carry no topic, so this is
+    /// the common case rather than an edge.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_routine_announcement_with_no_topic_does_not_silence_the_one_before_it() {
+        assert_eq!(
+            notification_processing(Urgency::Routine, ""),
+            native::Processing::All
+        );
     }
 }

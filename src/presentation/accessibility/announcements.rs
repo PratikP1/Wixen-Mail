@@ -244,8 +244,14 @@ impl AnnouncementQueue {
 
         if state.skipped > 0 && !spoken.is_empty() {
             let skipped = std::mem::take(&mut state.skipped);
+            // Heard rather than read, so it has to be a sentence somebody says.
+            let word = if skipped == 1 {
+                "announcement"
+            } else {
+                "announcements"
+            };
             spoken.push(Spoken {
-                text: format!("{} announcements skipped", skipped),
+                text: format!("{} {} skipped", skipped, word),
                 priority: Priority::Normal,
                 kind: Kind::Interface,
                 topic: None,
@@ -283,6 +289,18 @@ mod tests {
     /// A fixed starting point so tests never depend on wall-clock time.
     fn t0() -> Instant {
         Instant::now()
+    }
+
+    /// Fill the queue right up to capacity with distinct lines, so that the
+    /// next push has to decide what to give up. The texts differ because a
+    /// repeat is dropped before capacity is ever considered, and they carry no
+    /// topic so none of them supersedes another.
+    fn fill_to_capacity(queue: &AnnouncementQueue, priority: Priority) {
+        for n in 0..CAPACITY {
+            queue
+                .push(Announcement::interface(format!("chatter {}", n), priority))
+                .unwrap();
+        }
     }
 
     /// Just the text, for the tests that only care what was said.
@@ -396,6 +414,134 @@ mod tests {
             "a silent drop is a lie about what happened: {:?}",
             spoken
         );
+    }
+
+    #[test]
+    fn test_a_full_queue_makes_room_for_an_urgent_line_rather_than_turning_it_away() {
+        let q = AnnouncementQueue::new().unwrap();
+        fill_to_capacity(&q, Priority::Low);
+        q.push(Announcement::interface("connection lost", Priority::Urgent))
+            .unwrap();
+        // Mid-sync chatter must not be the reason nobody hears the connection
+        // drop. Urgent skips the rate limit, so it comes out of the first drain.
+        assert_eq!(
+            drained(&q, t0()).first().map(String::as_str),
+            Some("connection lost")
+        );
+    }
+
+    #[test]
+    fn test_a_full_queue_turns_away_a_newcomer_no_more_important_than_what_is_already_waiting() {
+        let q = AnnouncementQueue::new().unwrap();
+        fill_to_capacity(&q, Priority::Urgent);
+        q.push(Announcement::interface("late arrival", Priority::Urgent))
+            .unwrap();
+        let spoken = drained(&q, t0());
+        assert!(
+            !spoken.iter().any(|s| s == "late arrival"),
+            "nothing already owed to the user should be displaced for this: {:?}",
+            spoken
+        );
+        assert!(
+            spoken.iter().any(|s| s == "chatter 31"),
+            "the newest of the equally important is what would have gone: {:?}",
+            spoken
+        );
+    }
+
+    #[test]
+    fn test_when_room_must_be_made_the_newest_of_the_least_important_goes_not_the_line_that_has_waited_longest()
+     {
+        let q = AnnouncementQueue::new().unwrap();
+        fill_to_capacity(&q, Priority::Low);
+        q.push(Announcement::interface("connection lost", Priority::Urgent))
+            .unwrap();
+
+        // The rate limit spreads the rest over several windows, so collect
+        // until the queue runs dry.
+        let mut all = Vec::new();
+        let mut now = t0();
+        for _ in 0..12 {
+            let batch = drained(&q, now);
+            if batch.is_empty() {
+                break;
+            }
+            all.extend(batch);
+            now += WINDOW + Duration::from_millis(1);
+        }
+
+        assert!(
+            all.iter().any(|s| s == "chatter 0"),
+            "the line that has waited longest must not be the one sacrificed: {:?}",
+            all
+        );
+        assert!(
+            !all.iter().any(|s| s == "chatter 31"),
+            "the newest of the least important is what makes room: {:?}",
+            all
+        );
+    }
+
+    #[test]
+    fn test_making_room_for_an_urgent_line_still_reports_the_line_it_displaced() {
+        let q = AnnouncementQueue::new().unwrap();
+        fill_to_capacity(&q, Priority::Low);
+        q.push(Announcement::interface("connection lost", Priority::Urgent))
+            .unwrap();
+        let spoken = drained(&q, t0());
+        assert!(
+            spoken.iter().any(|s| s.contains("skipped")),
+            "a line dropped to make room is still a line the user is owed: {:?}",
+            spoken
+        );
+    }
+
+    #[test]
+    fn test_one_skipped_announcement_is_counted_in_the_singular() {
+        let q = AnnouncementQueue::new().unwrap();
+        fill_to_capacity(&q, Priority::Normal);
+        q.push(Announcement::interface("one too many", Priority::Normal))
+            .unwrap();
+        // This sentence is heard, not read, so the grammar is the feature.
+        assert_eq!(
+            drained(&q, t0()).last().map(String::as_str),
+            Some("1 announcement skipped")
+        );
+    }
+
+    #[test]
+    fn test_a_second_drain_inside_the_same_second_releases_nothing_more() {
+        let q = AnnouncementQueue::new().unwrap();
+        let now = t0();
+        for n in 0..(MAX_PER_WINDOW + 2) {
+            q.push(Announcement::interface(
+                format!("item {}", n),
+                Priority::Normal,
+            ))
+            .unwrap();
+        }
+        assert_eq!(drained(&q, now).len(), MAX_PER_WINDOW);
+        assert!(
+            drained(&q, now + Duration::from_millis(1)).is_empty(),
+            "a syncing mailbox must not get around the pace by draining again"
+        );
+    }
+
+    #[test]
+    fn test_the_rate_limit_lifts_once_a_full_second_has_passed() {
+        // A boundary test, and a small one: it says only that the window is
+        // over at exactly one second rather than just after it.
+        let q = AnnouncementQueue::new().unwrap();
+        let now = t0();
+        for n in 0..(MAX_PER_WINDOW + 2) {
+            q.push(Announcement::interface(
+                format!("item {}", n),
+                Priority::Normal,
+            ))
+            .unwrap();
+        }
+        assert_eq!(drained(&q, now).len(), MAX_PER_WINDOW);
+        assert_eq!(drained(&q, now + WINDOW).len(), 2);
     }
 
     #[test]

@@ -151,6 +151,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Two things said one after the other no longer cancel each other out.**
+  Anything the program says that is not about a job in progress was handed to
+  the screen reader marked "keep only the newest of these", with nothing
+  attached to say which job it belonged to. Almost everything spoken carries
+  no such label, so they all looked like versions of one another, and
+  "Message moved to Archive" followed quickly by "Draft saved" could leave you
+  hearing only the second. Announcements with nothing to group them are now
+  each kept in their own right. A line that does say what it belongs to, such
+  as a count climbing while a folder loads, still replaces its own earlier
+  value, because that is what it is for.
+
+  **Still to be confirmed with a screen reader.** How each of NVDA, Narrator
+  and JAWS holds on to these is theirs to decide, so only a run with each can
+  say what it sounds like now.
+
+- **One skipped announcement is now counted as one.** When speech is running
+  further behind than anyone will listen to, the queue drops the least
+  important thing waiting and then says how many went. That sentence is heard
+  rather than read, and at one it said "1 announcements skipped".
+
 - **The folder chooser no longer tells a screen reader it is empty.** The list
   of folders to keep up to date had been given an object that reports each row
   as a check box, so the tick would be spoken as well as the folder's name.
