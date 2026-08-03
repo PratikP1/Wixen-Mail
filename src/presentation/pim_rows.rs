@@ -19,6 +19,7 @@
 use crate::application::reading_habits::WorkingDay;
 
 use super::date_display::{DateSettings, spoken};
+use super::read_aloud::{priority_worth_saying, status_worth_saying};
 use super::ui_types::{CalendarEventItem, ContactItem, NoteItem, ReminderItem, TaskItem};
 
 /// One stored date, written the way this reader asked for it.
@@ -86,7 +87,7 @@ pub fn event_cell(
         1 => non_empty(&event.summary, "No title"),
         2 => event.calendar_name.clone().unwrap_or_default(),
         3 => event.location.clone(),
-        4 => event.status.clone(),
+        4 => status_cell(&event.status),
         _ => String::new(),
     }
 }
@@ -106,7 +107,7 @@ pub fn reminder_cell(
             dates,
             now,
         ),
-        3 => reminder.priority.clone(),
+        3 => priority_cell(&reminder.priority),
         _ => String::new(),
     }
 }
@@ -122,7 +123,7 @@ pub fn task_cell(
         0 => flag(task.is_completed, "Done"),
         1 => non_empty(&task.title, "No title"),
         2 => date(task.due_date.as_deref().unwrap_or_default(), dates, now),
-        3 => task.priority.clone(),
+        3 => priority_cell(&task.priority),
         _ => String::new(),
     }
 }
@@ -158,6 +159,42 @@ pub fn note_cell(
 /// negative case, which costs no listening time.
 fn flag(value: bool, meaning: &str) -> String {
     if value { meaning } else { "" }.to_string()
+}
+
+/// How an event's status reads, or nothing when it is going ahead.
+///
+/// The same rule the flag columns follow. Almost every event in almost every
+/// calendar is confirmed, so a column that said so would spend a word on every
+/// row that never varies, and would bury the cancelled one in a run of
+/// identical ones. Which values are worth hearing is decided in one place and
+/// shared with the reading of an event, so the list and the reading agree.
+fn status_cell(status: &str) -> String {
+    as_a_word(status_worth_saying(status))
+}
+
+/// How a priority reads, or nothing when it is the ordinary one.
+///
+/// "Normal" is what this program writes when a provider has no notion of
+/// priority at all, so it is on nearly every task and reminder. The cell is
+/// read without its heading, so what is left says what it is a level of.
+fn priority_cell(priority: &str) -> String {
+    let level = as_a_word(priority_worth_saying(priority));
+    if level.is_empty() {
+        level
+    } else {
+        format!("{level} priority")
+    }
+}
+
+/// A stored token said as a word.
+///
+/// The values arrive lowercased from every provider, and a cell is read on its
+/// own rather than after a heading, so it starts the way a sentence does.
+fn as_a_word(token: &str) -> String {
+    match token.trim().chars().next() {
+        Some(first) => first.to_uppercase().to_string() + &token.trim()[first.len_utf8()..],
+        None => String::new(),
+    }
 }
 
 /// Fall back to a stated absence rather than an empty cell.
@@ -378,6 +415,136 @@ mod tests {
         assert_eq!(
             task_cell(&task(), 2, at_a_desk(), midday()),
             "July 30, 2026"
+        );
+    }
+
+    #[test]
+    fn test_a_contact_row_reads_the_email_phone_and_company_it_holds() {
+        // Three columns whose headings promise three different fields. A row
+        // that went blank in all three would read as a name and three
+        // silences, which is what a row that failed to load sounds like.
+        assert_eq!(contact_cell(&contact(), 1), "grace@example.com");
+        assert_eq!(contact_cell(&contact(), 2), "555 0100");
+        assert_eq!(contact_cell(&contact(), 3), "Navy");
+    }
+
+    #[test]
+    fn test_an_event_row_reads_the_calendar_and_the_location_it_holds() {
+        assert_eq!(
+            event_cell(&event(), 2, at_a_desk(), midday(), WorkingDay::default()),
+            "Work"
+        );
+        assert_eq!(
+            event_cell(&event(), 3, at_a_desk(), midday(), WorkingDay::default()),
+            "Room 2"
+        );
+    }
+
+    #[test]
+    fn test_an_event_in_no_named_calendar_says_nothing_rather_than_none() {
+        let mut loose = event();
+        loose.calendar_name = None;
+
+        assert_eq!(
+            event_cell(&loose, 2, at_a_desk(), midday(), WorkingDay::default()),
+            ""
+        );
+    }
+
+    #[test]
+    fn test_a_reminder_row_reads_the_title_it_holds() {
+        assert_eq!(
+            reminder_cell(&reminder(), 1, at_a_desk(), midday()),
+            "Call the dentist"
+        );
+    }
+
+    #[test]
+    fn test_a_reminder_with_a_due_date_says_the_date_rather_than_nothing() {
+        // The sibling of the test above it. Silence is right for a reminder
+        // with no due date and wrong for one that has it, and only having both
+        // tells the two apart.
+        let mut due = reminder();
+        due.due_datetime = Some("2026-07-30 14:30".to_string());
+
+        assert_eq!(
+            reminder_cell(&due, 2, at_a_desk(), midday()),
+            "July 30, 2026 at 2:30 PM"
+        );
+    }
+
+    #[test]
+    fn test_a_completed_task_says_done_rather_than_falling_silent() {
+        // The sibling of the silence a task that is not finished keeps.
+        let mut finished = task();
+        finished.is_completed = true;
+
+        assert_eq!(task_cell(&finished, 0, at_a_desk(), midday()), "Done");
+    }
+
+    #[test]
+    fn test_a_note_row_says_when_it_was_last_changed() {
+        // As a date rather than as the stored string, which a screen reader
+        // reads as a run of digits.
+        assert_eq!(
+            note_cell(&note(), 1, at_a_desk(), midday()),
+            "July 26, 2026"
+        );
+    }
+
+    #[test]
+    fn test_an_event_that_is_going_ahead_costs_nothing_to_hear() {
+        // Almost every event in almost every calendar is confirmed, and this
+        // column used to speak that word on every one of them. It is the same
+        // rule the Done column and the reading of an event already follow.
+        assert_eq!(
+            event_cell(&event(), 4, at_a_desk(), midday(), WorkingDay::default()),
+            ""
+        );
+    }
+
+    #[test]
+    fn test_a_cancelled_event_says_so_rather_than_falling_silent() {
+        // The one value in this column somebody has to notice, and it used to
+        // sit in a run of identical words.
+        let mut called_off = event();
+        called_off.status = "cancelled".to_string();
+
+        assert_eq!(
+            event_cell(&called_off, 4, at_a_desk(), midday(), WorkingDay::default()),
+            "Cancelled"
+        );
+    }
+
+    #[test]
+    fn test_an_ordinary_priority_costs_nothing_to_hear() {
+        // "normal" is what this program writes when a provider has no notion
+        // of priority at all, so it is on nearly every task and reminder.
+        let mut plain = reminder();
+        plain.priority = "normal".to_string();
+
+        assert_eq!(reminder_cell(&plain, 3, at_a_desk(), midday()), "");
+        assert_eq!(task_cell(&task(), 3, at_a_desk(), midday()), "");
+    }
+
+    #[test]
+    fn test_a_reminder_of_an_unusual_priority_says_what_the_level_is_a_level_of() {
+        // The cell is read without its heading, so "high" on its own is a word
+        // with nothing attached to it.
+        assert_eq!(
+            reminder_cell(&reminder(), 3, at_a_desk(), midday()),
+            "High priority"
+        );
+    }
+
+    #[test]
+    fn test_a_task_of_an_unusual_priority_says_what_the_level_is_a_level_of() {
+        let mut urgent = task();
+        urgent.priority = "high".to_string();
+
+        assert_eq!(
+            task_cell(&urgent, 3, at_a_desk(), midday()),
+            "High priority"
         );
     }
 

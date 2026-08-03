@@ -198,6 +198,26 @@ mod tests {
     }
 
     #[test]
+    fn test_each_choice_says_in_its_label_what_it_will_and_will_not_change() {
+        // The label is the whole of what somebody in a hurry reads before
+        // answering, so a wrong one is a person agreeing to something they did
+        // not agree to. The test above only asks that a label exists.
+        //
+        // This pins the words the code produces. Whether they reach the
+        // accessibility tree as the radio buttons' names is a screen reader
+        // question, and it is not answered here.
+        assert_eq!(Choice::ReadOnly.label(), "Read my mail, change nothing");
+        assert_eq!(
+            Choice::TasksAndContacts.label(),
+            "Also let it change my tasks, contacts and calendar"
+        );
+        assert_eq!(
+            Choice::Everything.label(),
+            "Let it do everything, including sending mail"
+        );
+    }
+
+    #[test]
     fn test_the_page_it_points_at_exists_in_the_repository() {
         // A button offering to open a document that is not there is worse
         // than no button. This only proves the file is in the repository; the

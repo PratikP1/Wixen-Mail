@@ -77,17 +77,25 @@ pub fn open(file_name: &str) -> Result<PathBuf> {
 /// to, which is what an all-users install under Program Files looks like to
 /// somebody who is not an administrator.
 fn convert_folder(from: &Path) -> Result<PathBuf> {
-    let into = if is_writable(from) {
-        from.to_path_buf()
-    } else {
-        let ours = std::env::temp_dir().join("wixen-mail-help");
-        std::fs::create_dir_all(&ours)
-            .map_err(|e| Error::Other(format!("Could not make {}: {e}", ours.display())))?;
-        ours
-    };
+    let into = destination_for(from, is_writable(from));
+    std::fs::create_dir_all(&into)
+        .map_err(|e| Error::Other(format!("Could not make {}: {e}", into.display())))?;
 
     convert_into(from, &into)?;
     Ok(into)
+}
+
+/// Where the pages go, given whether the folder holding the documents takes a
+/// file.
+///
+/// Apart from the asking, because asking means writing a file and deleting it
+/// again, and what can go wrong here is the decision rather than the probe.
+fn destination_for(from: &Path, can_write: bool) -> PathBuf {
+    if can_write {
+        from.to_path_buf()
+    } else {
+        std::env::temp_dir().join("wixen-mail-help")
+    }
 }
 
 /// Convert every Markdown file in `from`, writing the pages to `into`.
@@ -367,6 +375,35 @@ mod tests {
             .skip(1)
             .filter_map(|rest| rest.split_once('"').map(|(target, _)| target.to_string()))
             .collect()
+    }
+
+    #[test]
+    fn test_the_pages_are_written_beside_the_documents_when_that_folder_takes_a_file() {
+        // The folder that comes back is where the pages went, and the caller
+        // joins the page name onto it. A folder that is not where they went is
+        // a button that opens nothing, and the links between the pages only
+        // resolve without rewriting because they sit beside their sources.
+        let documents = tempfile::tempdir().expect("somewhere to put them");
+        std::fs::write(documents.path().join("guide.md"), "# A guide\n").expect("a document");
+
+        let into = convert_folder(documents.path()).expect("a folder that takes a file");
+
+        assert_eq!(into, documents.path());
+        assert!(documents.path().join("guide.html").exists());
+    }
+
+    #[test]
+    fn test_the_pages_go_to_a_folder_of_our_own_when_the_program_s_folder_refuses() {
+        // What an all-users install under Program Files looks like to somebody
+        // who is not an administrator. Asked as a decision rather than by
+        // arranging a folder Windows will refuse, which depends on the
+        // machine's permissions, on elevation and on virtualisation.
+        let program_files = Path::new(r"C:\Program Files\Wixen Mail\docs");
+
+        let into = destination_for(program_files, false);
+
+        assert_ne!(into, program_files);
+        assert!(into.starts_with(std::env::temp_dir()), "{}", into.display());
     }
 
     #[test]

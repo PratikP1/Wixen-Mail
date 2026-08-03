@@ -948,6 +948,52 @@ mod tests {
     }
 
     #[test]
+    fn test_each_module_knows_what_kind_of_container_its_sidebar_holds() {
+        // What the New and Delete container commands act on. If every module
+        // answered "nothing", five of the six would refuse to make a calendar,
+        // a task list, a note folder or a contact group, and would explain
+        // themselves with a sentence about mail folders.
+        use crate::application::new_item::ContainerKind;
+
+        assert_eq!(
+            PimModule::Contacts.container_kind(),
+            Some(ContainerKind::ContactGroup)
+        );
+        assert_eq!(
+            PimModule::Calendar.container_kind(),
+            Some(ContainerKind::Calendar)
+        );
+        assert_eq!(
+            PimModule::Tasks.container_kind(),
+            Some(ContainerKind::TaskList)
+        );
+        assert_eq!(
+            PimModule::Notes.container_kind(),
+            Some(ContainerKind::NoteFolder)
+        );
+        // Mail folders belong to the server, and a reminder belongs to an
+        // account and nothing smaller.
+        assert_eq!(PimModule::Mail.container_kind(), None);
+        assert_eq!(PimModule::Reminders.container_kind(), None);
+    }
+
+    #[test]
+    fn test_a_connection_state_names_itself_and_an_error_carries_its_reason() {
+        // This pins the words the code produces. It does not pin that anybody
+        // hears them: the text goes into a status bar field, and no Windows
+        // screen reader announces one of those on its own. Whether the reason
+        // for a dropped connection reaches a person is a separate question,
+        // and it is not answered here.
+        assert_eq!(ConnectionStatus::Disconnected.to_string(), "Disconnected");
+        assert_eq!(ConnectionStatus::Connecting.to_string(), "Connecting...");
+        assert_eq!(ConnectionStatus::Connected.to_string(), "Connected");
+        assert_eq!(
+            ConnectionStatus::Error("Sending failed".to_string()).to_string(),
+            "Error: Sending failed"
+        );
+    }
+
+    #[test]
     fn test_pim_module_shortcut_hints() {
         assert_eq!(PimModule::Mail.shortcut_hint(), "Ctrl+Shift+1");
         assert_eq!(PimModule::Notes.shortcut_hint(), "Ctrl+Shift+6");

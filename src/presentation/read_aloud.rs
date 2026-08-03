@@ -182,7 +182,10 @@ fn finished_wording_when_it_is(is_completed: bool) -> &'static str {
 /// Nearly every task and reminder carries the default, so saying it on every
 /// row spends two words that never vary and never inform. The unread and
 /// flagged wording above already works this way.
-fn priority_worth_saying(priority: &str) -> &str {
+///
+/// Shared with the list cells rather than decided twice, so a task read out and
+/// the same task arrowed past in a list agree about what is worth hearing.
+pub(super) fn priority_worth_saying(priority: &str) -> &str {
     if priority.eq_ignore_ascii_case("normal") {
         ""
     } else {
@@ -192,7 +195,9 @@ fn priority_worth_saying(priority: &str) -> &str {
 
 /// A status worth the words. Nearly every event is confirmed; a cancelled one
 /// is the reason this is read at all.
-fn status_worth_saying(status: &str) -> &str {
+///
+/// Shared with the list cells for the same reason as the priority above.
+pub(super) fn status_worth_saying(status: &str) -> &str {
     if status.eq_ignore_ascii_case("confirmed") {
         ""
     } else {

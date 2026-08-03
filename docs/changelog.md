@@ -165,6 +165,14 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   said when it is not the ordinary one and a status when an event is not
   confirmed, which is how "unread" and "flagged" already worked.
 
+  The lists went on saying it after the reading stopped. Arrowing down a
+  calendar said "confirmed" on every row and buried the cancelled one among
+  them; arrowing down tasks or reminders said "normal" on nearly all of them,
+  since that is what gets written when a provider has no notion of priority at
+  all. Those columns now follow the same rule as the reading, and what is left
+  says what it is: "High priority" rather than "high", "Cancelled" rather than
+  "cancelled".
+
 - **An event missing one of its times no longer trails off on the word "to".**
   The start and the end were joined before empty parts were dropped, so an
   event with no end read as "July 27, 2026 at 9:00 AM to" and stopped, which

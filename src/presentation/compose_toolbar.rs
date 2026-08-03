@@ -250,6 +250,20 @@ mod tests {
     }
 
     #[test]
+    fn test_the_left_arrow_moves_back_along_a_group_rather_than_forward() {
+        // In a group of two, back and forward land on the same button, so the
+        // wrapping test above cannot tell the two directions apart. Formatting
+        // has four, where walking the wrong way means arrowing back from
+        // Underline lands on the menu button instead of on Italic.
+        let from = At { group: 2, key: 2 };
+
+        let back = from.along(false);
+
+        assert_eq!(back, At { group: 2, key: 1 });
+        assert_eq!(back.spoken(Some(from)), "Italic, Ctrl+I, 2 of 4");
+    }
+
+    #[test]
     fn test_the_toolbar_wraps_too() {
         let last_group = GROUPS.len() - 1;
 

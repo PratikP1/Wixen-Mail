@@ -238,6 +238,62 @@ mod tests {
     }
 
     #[test]
+    fn test_a_size_of_exactly_one_kilobyte_reads_as_one_kilobyte() {
+        // The boundary itself, which is the value the rule is written around.
+        // A kilobyte read out as four digits is the thing this column exists
+        // to stop.
+        let mut m = message();
+        m.size_bytes = Some(1024);
+
+        assert_eq!(
+            cell_text(
+                &m,
+                MessageColumn::Size,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            "1 KB"
+        );
+    }
+
+    #[test]
+    fn test_a_whole_number_of_megabytes_drops_the_decimal_point() {
+        // "1.0 MB" is a syllable that carries nothing, said on a column read
+        // for every message.
+        let mut m = message();
+        m.size_bytes = Some(1_048_576);
+
+        assert_eq!(
+            cell_text(
+                &m,
+                MessageColumn::Size,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            "1 MB"
+        );
+    }
+
+    #[test]
+    fn test_a_size_that_cannot_be_right_says_nothing_rather_than_a_negative_number() {
+        // Read back off disk, so nothing in this layer can promise it is
+        // sensible. Nothing written here can produce it today; the guard is
+        // what stops "minus one bytes" if anything ever does.
+        let mut m = message();
+        m.size_bytes = Some(-1);
+
+        assert_eq!(
+            cell_text(
+                &m,
+                MessageColumn::Size,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            ""
+        );
+    }
+
+    #[test]
     fn test_an_unknown_size_says_nothing_rather_than_zero() {
         // We do not know the size until the envelope has been fetched, and
         // "0 bytes" is a claim, not an absence.

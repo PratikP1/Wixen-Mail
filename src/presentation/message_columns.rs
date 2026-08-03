@@ -11,7 +11,6 @@
 //! three on every row; separate ones let someone keep unread and drop the rest.
 
 use crate::presentation::ui_types::MailSortOption;
-use std::fmt;
 
 /// A column the message list can show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -302,14 +301,13 @@ pub enum FolderKind {
 }
 
 /// Something the caller asked for that cannot be done.
+///
+/// The sentence inside it is announced as it stands, by the column chooser
+/// that raised it. There is deliberately no `Display`: one that formatted this
+/// differently would be a second way for a refusal to read, reachable from
+/// nowhere, and one of the two would drift.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColumnError(pub String);
-
-impl fmt::Display for ColumnError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
 
 /// The visible columns, their order, and the sort.
 #[derive(Debug, Clone, PartialEq, Eq)]
