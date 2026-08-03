@@ -151,6 +151,43 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Syncing an address book no longer wipes the parts of a contact only this
+  application holds.** A postal address, a photo saved with a contact, the card
+  a contact was imported from, a relationship such as "sister", and any custom
+  field you added are stored here and nowhere else. Neither Google nor Microsoft
+  carries them, so every sync replaced them with nothing and counted it as an
+  update. Reading contacts was enough to trigger it, so it happened even with
+  changes to your accounts switched off, and where an account is signed in to
+  both address books the two took turns doing it. A sync now writes only the
+  fields the address book it came from actually holds, and leaves the rest of
+  the contact alone. The website and any second phone number survive a Microsoft
+  sync for the same reason.
+
+  Contacts already emptied by earlier syncs are not brought back. There is
+  nothing left to bring them back from.
+
+- **The same person in two address books stops being taken back and forth.**
+  Where an account is signed in to both Google and Microsoft and a person is in
+  both, each sync took the stored contact off the other, rewrote which address
+  book it came from, and reported it as a new contact. It never settled. A
+  contact is now left alone once one address book holds it, and the sync says
+  one contact was skipped.
+
+- **A contact with no email address no longer destroys the one stored before
+  it.** A contact with only a phone number is ordinary, and this stores contacts
+  by their email address, so the second one saved took the first one's place
+  while the sync counted both as new. The second and any later ones are now left
+  alone instead. Only one contact without an email address can be stored per
+  account, and that has not changed here: this stops the loss, it does not yet
+  give you the other contacts. A contact that arrives with no email address and
+  no full name is now shown by its first and last name where the address book
+  gave them, rather than by a blank line in the list.
+
+  The count of skipped contacts appears after a sync, but there is still no way
+  to read which contacts they were. That gap is not fixed here.
+
+  None of this has run against a live Google or Microsoft account.
+
 - **A list inside a list is read as what you typed.** In a note or an event
   description, an item holding a list of the other kind was announced with the
   inner list's kind: a bullet with numbered points under it was read as

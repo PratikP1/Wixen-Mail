@@ -1368,6 +1368,61 @@ mod tests {
         assert!(empty.is_empty());
     }
 
+    /// A record of a limit, not a regression test: this passes today and it
+    /// passed before anything was fixed. An account can hold one contact with
+    /// no email address, because the address is what tells two stored contacts
+    /// apart. The second one saved takes the first one's row. What changed is
+    /// that a sync no longer walks into this: it leaves the later contact
+    /// alone and says so, instead of overwriting the earlier one.
+    #[test]
+    fn test_an_account_can_hold_only_one_contact_with_no_email_address() {
+        fn a_contact(id: &str, name: &str) -> ContactEntry {
+            ContactEntry {
+                id: id.to_string(),
+                account_id: "test@example.com".to_string(),
+                name: name.to_string(),
+                email: String::new(),
+                provider_contact_id: None,
+                phone: None,
+                company: None,
+                job_title: None,
+                website: None,
+                address: None,
+                birthday: None,
+                avatar_url: None,
+                avatar_data_base64: None,
+                source_provider: None,
+                last_synced_at: None,
+                vcard_raw: None,
+                notes: None,
+                favorite: false,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                nickname: None,
+                department: None,
+                relationship: None,
+                emails_json: None,
+                phones_json: None,
+                addresses_json: None,
+                custom_fields_json: None,
+            }
+        }
+
+        let cache = a_cache("two_contacts_with_no_address");
+        cache
+            .save_contact(&a_contact("phone-only-1", "Phone Only Person"))
+            .expect("the first contact to save");
+        cache
+            .save_contact(&a_contact("phone-only-2", "Another Phone Only Person"))
+            .expect("the second contact to save");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].name, "Another Phone Only Person");
+    }
+
     #[test]
     fn test_vcard_import_export() {
         let nanos = SystemTime::now()

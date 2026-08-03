@@ -1,7 +1,12 @@
-//! Bidirectional contacts sync engine for Google and Microsoft.
+//! Reading contacts from Google and Microsoft address books into this
+//! application, and sending newly created ones back.
 //!
-//! Converts between provider-specific contact formats and the local
-//! `ContactEntry` model, then synchronizes using incremental tokens/delta links.
+//! Converts between each provider's contact format and the stored contact,
+//! asking only for what changed since the last run where the provider offers
+//! that. Reading is the whole of it in practice: a contact created here is
+//! sent outward on a full sync when the account allows changes, and no edit
+//! made here ever reaches a provider. None of this has run against a live
+//! account.
 
 use crate::common::Result;
 use crate::data::message_cache::{ContactEntry, MessageCache, SyncState};
@@ -23,6 +28,134 @@ pub struct SyncResult {
     pub errors: Vec<String>,
 }
 
+/// Written to the stored contact and to the sync state. Existing databases
+/// carry these exact words, so they must not change.
+const GOOGLE_ADDRESS_BOOK: &str = "gmail";
+const MICROSOFT_ADDRESS_BOOK: &str = "outlook";
+const CONTACTS_SYNC: &str = "contacts";
+
+/// Shown for a contact that arrived with nothing to call it by.
+const UNNAMED_CONTACT: &str = "Unknown";
+
+/// What to call a contact whose address book gave no full name. A contact with
+/// no email address has to be findable in the list too, so this is never empty.
+fn a_name_to_show_instead(given_name: &str, family_name: &str, email: &str) -> String {
+    let both_parts = format!("{} {}", given_name, family_name);
+    let both_parts = both_parts.trim();
+    if !both_parts.is_empty() {
+        return both_parts.to_string();
+    }
+    email
+        .split('@')
+        .next()
+        .filter(|before_the_at| !before_the_at.is_empty())
+        .unwrap_or(UNNAMED_CONTACT)
+        .to_string()
+}
+
+// ── Matching a provider's copy of a person to a stored contact ──────────────
+
+/// Which stored contact, if any, a provider's copy of a person is.
+enum LocalContactMatch<'a> {
+    /// This stored contact is that person; fold the provider's copy into it.
+    Stored(&'a ContactEntry),
+    /// Nobody stored here is that person; store them.
+    NotStoredYet,
+    /// Another contact already holds that address, and an address can only
+    /// belong to one, so this one is left as it is rather than taken.
+    AddressBelongsToAnother(&'a ContactEntry),
+}
+
+fn find_local_contact<'a>(
+    locals: &'a [ContactEntry],
+    provider_contact_id: &str,
+    email: &str,
+) -> LocalContactMatch<'a> {
+    if let Some(same_person) = locals
+        .iter()
+        .find(|c| c.provider_contact_id.as_deref() == Some(provider_contact_id))
+    {
+        return LocalContactMatch::Stored(same_person);
+    }
+    match locals.iter().find(|c| c.email == email) {
+        Some(typed_here) if typed_here.provider_contact_id.is_none() => {
+            LocalContactMatch::Stored(typed_here)
+        }
+        Some(someone_elses) => LocalContactMatch::AddressBelongsToAnother(someone_elses),
+        None => LocalContactMatch::NotStoredYet,
+    }
+}
+
+/// What to tell somebody about a contact a sync could not store, in the two
+/// ways that can happen. They need different answers, so they read differently.
+fn contact_not_stored_message(stored: &ContactEntry, incoming: &ContactEntry) -> String {
+    if incoming.email.is_empty() {
+        format!(
+            "'{}' has no email address, and an address book here can hold only one contact without one, so this contact was not stored.",
+            incoming.name
+        )
+    } else {
+        format!(
+            "'{}' is in two address books under this account. Only one of them can be kept here, so this copy was left as it is.",
+            stored.name
+        )
+    }
+}
+
+// ── Folding a provider's copy into the stored contact ───────────────────────
+
+/// The stored contact with Google's copy of it folded in.
+///
+/// Every field Google holds is named here, and Google's value wins for each of
+/// them. Everything else falls through from the stored contact, because this
+/// application is the only place it exists: a postal address, a saved photo,
+/// the card a contact was imported from, a relationship, custom fields. A
+/// field added to a contact later is kept unless somebody adds it to this list.
+fn google_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> ContactEntry {
+    ContactEntry {
+        name: remote.name.clone(),
+        email: remote.email.clone(),
+        provider_contact_id: remote.provider_contact_id.clone(),
+        phone: remote.phone.clone(),
+        company: remote.company.clone(),
+        job_title: remote.job_title.clone(),
+        website: remote.website.clone(),
+        birthday: remote.birthday.clone(),
+        avatar_url: remote.avatar_url.clone(),
+        source_provider: remote.source_provider.clone(),
+        last_synced_at: remote.last_synced_at.clone(),
+        notes: remote.notes.clone(),
+        nickname: remote.nickname.clone(),
+        department: remote.department.clone(),
+        emails_json: remote.emails_json.clone(),
+        phones_json: remote.phones_json.clone(),
+        ..local.clone()
+    }
+}
+
+/// The stored contact with Microsoft's copy of it folded in.
+///
+/// Same rule as the Google side, over a shorter list: Microsoft carries no
+/// website and no second phone number, so neither is touched here.
+fn microsoft_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> ContactEntry {
+    ContactEntry {
+        name: remote.name.clone(),
+        email: remote.email.clone(),
+        provider_contact_id: remote.provider_contact_id.clone(),
+        phone: remote.phone.clone(),
+        company: remote.company.clone(),
+        job_title: remote.job_title.clone(),
+        department: remote.department.clone(),
+        nickname: remote.nickname.clone(),
+        birthday: remote.birthday.clone(),
+        notes: remote.notes.clone(),
+        source_provider: remote.source_provider.clone(),
+        last_synced_at: remote.last_synced_at.clone(),
+        emails_json: remote.emails_json.clone(),
+        ..local.clone()
+    }
+}
+
 // ── Google Contacts Sync ────────────────────────────────────────────────────
 
 /// Sync contacts with Google People API.
@@ -35,7 +168,7 @@ pub async fn sync_google_contacts(
     let mut result = SyncResult::default();
 
     // Load sync state
-    let state = cache.get_sync_state(account_id, "contacts", "gmail")?;
+    let state = cache.get_sync_state(account_id, CONTACTS_SYNC, GOOGLE_ADDRESS_BOOK)?;
     let sync_token = state.as_ref().and_then(|s| s.sync_token.as_deref());
 
     // Fetch remote contacts (incremental if we have a sync token)
@@ -77,39 +210,20 @@ pub async fn sync_google_contacts(
 
         let remote_contact = google_person_to_contact(person, account_id);
 
-        // Look for existing local contact by provider_contact_id
         let locals = cache.get_contacts_for_account(account_id)?;
-        let existing = locals
-            .iter()
-            .find(|c| c.provider_contact_id.as_deref() == Some(&person.resource_name));
-
-        match existing {
-            Some(local) => {
-                // Update local with remote data (server wins)
-                let mut merged = remote_contact;
-                merged.id = local.id.clone();
-                merged.favorite = local.favorite; // preserve local-only flag
-                cache.save_contact(&merged)?;
+        match find_local_contact(&locals, &person.resource_name, &remote_contact.email) {
+            LocalContactMatch::Stored(local) => {
+                cache.save_contact(&google_fields_over_local(local, &remote_contact))?;
                 result.updated_local += 1;
             }
-            None => {
-                // Check if we have a matching email (already imported)
-                let by_email = locals
-                    .iter()
-                    .find(|c| c.email == remote_contact.email && c.provider_contact_id.is_none());
-                match by_email {
-                    Some(local) => {
-                        let mut merged = remote_contact;
-                        merged.id = local.id.clone();
-                        merged.favorite = local.favorite;
-                        cache.save_contact(&merged)?;
-                        result.updated_local += 1;
-                    }
-                    None => {
-                        cache.save_contact(&remote_contact)?;
-                        result.created_local += 1;
-                    }
-                }
+            LocalContactMatch::NotStoredYet => {
+                cache.save_contact(&remote_contact)?;
+                result.created_local += 1;
+            }
+            LocalContactMatch::AddressBelongsToAnother(stored) => {
+                result
+                    .errors
+                    .push(contact_not_stored_message(stored, &remote_contact));
             }
         }
     }
@@ -120,7 +234,7 @@ pub async fn sync_google_contacts(
         let locals = cache.get_contacts_for_account(account_id)?;
         for local in &locals {
             if local.provider_contact_id.is_none()
-                && local.source_provider.as_deref() != Some("gmail")
+                && local.source_provider.as_deref() != Some(GOOGLE_ADDRESS_BOOK)
             {
                 let person = contact_to_google_person(local);
                 match google.create_contact(token, &person).await {
@@ -128,7 +242,7 @@ pub async fn sync_google_contacts(
                         // Update local with provider ID
                         let mut updated = local.clone();
                         updated.provider_contact_id = Some(created.resource_name);
-                        updated.source_provider = Some("gmail".to_string());
+                        updated.source_provider = Some(GOOGLE_ADDRESS_BOOK.to_string());
                         updated.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
                         cache.save_contact(&updated)?;
                         result.created_remote += 1;
@@ -152,8 +266,8 @@ pub async fn sync_google_contacts(
             .map(|s| s.id.clone())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
         account_id: account_id.to_string(),
-        sync_type: "contacts".to_string(),
-        provider: "gmail".to_string(),
+        sync_type: CONTACTS_SYNC.to_string(),
+        provider: GOOGLE_ADDRESS_BOOK.to_string(),
         sync_token: new_sync_token,
         delta_link: None,
         last_full_sync: if sync_token.is_none() {
@@ -180,7 +294,7 @@ pub async fn sync_microsoft_contacts(
     let mut result = SyncResult::default();
 
     // Load sync state
-    let state = cache.get_sync_state(account_id, "contacts", "outlook")?;
+    let state = cache.get_sync_state(account_id, CONTACTS_SYNC, MICROSOFT_ADDRESS_BOOK)?;
     let delta_link = state.as_ref().and_then(|s| s.delta_link.as_deref());
 
     // Fetch remote contacts
@@ -207,35 +321,19 @@ pub async fn sync_microsoft_contacts(
         let remote_contact = ms_contact_to_contact(ms_contact, account_id);
 
         let locals = cache.get_contacts_for_account(account_id)?;
-        let existing = locals
-            .iter()
-            .find(|c| c.provider_contact_id.as_deref() == Some(&ms_contact.id));
-
-        match existing {
-            Some(local) => {
-                let mut merged = remote_contact;
-                merged.id = local.id.clone();
-                merged.favorite = local.favorite;
-                cache.save_contact(&merged)?;
+        match find_local_contact(&locals, &ms_contact.id, &remote_contact.email) {
+            LocalContactMatch::Stored(local) => {
+                cache.save_contact(&microsoft_fields_over_local(local, &remote_contact))?;
                 result.updated_local += 1;
             }
-            None => {
-                let by_email = locals
-                    .iter()
-                    .find(|c| c.email == remote_contact.email && c.provider_contact_id.is_none());
-                match by_email {
-                    Some(local) => {
-                        let mut merged = remote_contact;
-                        merged.id = local.id.clone();
-                        merged.favorite = local.favorite;
-                        cache.save_contact(&merged)?;
-                        result.updated_local += 1;
-                    }
-                    None => {
-                        cache.save_contact(&remote_contact)?;
-                        result.created_local += 1;
-                    }
-                }
+            LocalContactMatch::NotStoredYet => {
+                cache.save_contact(&remote_contact)?;
+                result.created_local += 1;
+            }
+            LocalContactMatch::AddressBelongsToAnother(stored) => {
+                result
+                    .errors
+                    .push(contact_not_stored_message(stored, &remote_contact));
             }
         }
     }
@@ -245,14 +343,14 @@ pub async fn sync_microsoft_contacts(
         let locals = cache.get_contacts_for_account(account_id)?;
         for local in &locals {
             if local.provider_contact_id.is_none()
-                && local.source_provider.as_deref() != Some("outlook")
+                && local.source_provider.as_deref() != Some(MICROSOFT_ADDRESS_BOOK)
             {
                 let ms_contact = contact_to_ms_contact(local);
                 match ms_client.create_contact(token, &ms_contact).await {
                     Ok(created) => {
                         let mut updated = local.clone();
                         updated.provider_contact_id = Some(created.id);
-                        updated.source_provider = Some("outlook".to_string());
+                        updated.source_provider = Some(MICROSOFT_ADDRESS_BOOK.to_string());
                         updated.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
                         cache.save_contact(&updated)?;
                         result.created_remote += 1;
@@ -276,8 +374,8 @@ pub async fn sync_microsoft_contacts(
             .map(|s| s.id.clone())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
         account_id: account_id.to_string(),
-        sync_type: "contacts".to_string(),
-        provider: "outlook".to_string(),
+        sync_type: CONTACTS_SYNC.to_string(),
+        provider: MICROSOFT_ADDRESS_BOOK.to_string(),
         sync_token: None,
         delta_link: new_delta_link,
         last_full_sync: if delta_link.is_none() {
@@ -359,11 +457,12 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
         id: uuid::Uuid::new_v4().to_string(),
         account_id: account_id.to_string(),
         name: if name.is_empty() {
-            primary_email
-                .split('@')
-                .next()
-                .unwrap_or("Unknown")
-                .to_string()
+            let parts = person.names.first();
+            a_name_to_show_instead(
+                parts.map(|n| n.given_name.as_str()).unwrap_or_default(),
+                parts.map(|n| n.family_name.as_str()).unwrap_or_default(),
+                &primary_email,
+            )
         } else {
             name
         },
@@ -377,7 +476,7 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
         birthday,
         avatar_url,
         avatar_data_base64: None,
-        source_provider: Some("gmail".to_string()),
+        source_provider: Some(GOOGLE_ADDRESS_BOOK.to_string()),
         last_synced_at: Some(now.clone()),
         vcard_raw: None,
         notes,
@@ -511,11 +610,7 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         id: uuid::Uuid::new_v4().to_string(),
         account_id: account_id.to_string(),
         name: if ms.display_name.is_empty() {
-            primary_email
-                .split('@')
-                .next()
-                .unwrap_or("Unknown")
-                .to_string()
+            a_name_to_show_instead(&ms.given_name, &ms.surname, &primary_email)
         } else {
             ms.display_name.clone()
         },
@@ -529,7 +624,7 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         birthday: ms.birthday.clone(),
         avatar_url: None,
         avatar_data_base64: None,
-        source_provider: Some("outlook".to_string()),
+        source_provider: Some(MICROSOFT_ADDRESS_BOOK.to_string()),
         last_synced_at: Some(now.clone()),
         vcard_raw: None,
         notes: ms.personal_notes.clone(),
@@ -1022,5 +1117,338 @@ mod tests {
         let ms = contact_to_ms_contact(&contact);
 
         assert_eq!(ms.department, "Finance");
+    }
+
+    // ── What a sync must not destroy ────────────────────────────────────────
+
+    fn a_google_person(resource_name: &str, name: &str, email: &str) -> GooglePerson {
+        GooglePerson {
+            resource_name: resource_name.to_string(),
+            names: vec![GoogleName {
+                display_name: name.to_string(),
+                given_name: name.split(' ').next().unwrap_or_default().to_string(),
+                family_name: name.split(' ').nth(1).unwrap_or_default().to_string(),
+            }],
+            email_addresses: vec![GoogleEmail {
+                value: email.to_string(),
+                email_type: "home".to_string(),
+                metadata: None,
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn a_microsoft_contact(id: &str, name: &str, email: &str) -> MsGraphContact {
+        MsGraphContact {
+            id: id.to_string(),
+            display_name: name.to_string(),
+            email_addresses: vec![MsEmailAddress {
+                name: name.to_string(),
+                address: email.to_string(),
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn alice_from_google() -> ContactEntry {
+        google_person_to_contact(
+            &a_google_person("people/c1", "Alice Smith", "alice@example.com"),
+            "acct",
+        )
+    }
+
+    fn alice_from_microsoft() -> ContactEntry {
+        ms_contact_to_contact(
+            &a_microsoft_contact("AAMkAGI2", "Alice Smith", "alice@example.com"),
+            "acct",
+        )
+    }
+
+    #[test]
+    fn test_a_google_sync_keeps_the_custom_fields_a_person_typed_here() {
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.custom_fields_json = Some(r#"[{"label":"Blood type","value":"O"}]"#.to_string());
+
+        let merged = google_fields_over_local(&local, &alice_from_google());
+
+        assert_eq!(merged.custom_fields_json, local.custom_fields_json);
+    }
+
+    #[test]
+    fn test_a_google_sync_keeps_the_relationship_note_a_person_typed_here() {
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.relationship = Some("Sister".to_string());
+
+        let merged = google_fields_over_local(&local, &alice_from_google());
+
+        assert_eq!(merged.relationship.as_deref(), Some("Sister"));
+    }
+
+    #[test]
+    fn test_a_google_sync_keeps_postal_addresses_stored_only_here() {
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.address = Some("12 Mill Lane, Leeds".to_string());
+        local.addresses_json = Some(
+            r#"[{"label":"Home","street":"12 Mill Lane","city":"Leeds","state":"","zip":"LS1","country":"UK"}]"#
+                .to_string(),
+        );
+
+        let merged = google_fields_over_local(&local, &alice_from_google());
+
+        assert_eq!(merged.address, local.address);
+        assert_eq!(merged.addresses_json, local.addresses_json);
+    }
+
+    #[test]
+    fn test_a_google_sync_keeps_a_photo_saved_with_the_contact() {
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.avatar_data_base64 = Some("iVBORw0KGgo=".to_string());
+
+        let merged = google_fields_over_local(&local, &alice_from_google());
+
+        assert_eq!(merged.avatar_data_base64.as_deref(), Some("iVBORw0KGgo="));
+    }
+
+    #[test]
+    fn test_a_google_sync_keeps_the_vcard_a_contact_was_imported_from() {
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.vcard_raw = Some("BEGIN:VCARD\r\nEND:VCARD\r\n".to_string());
+
+        let merged = google_fields_over_local(&local, &alice_from_google());
+
+        assert_eq!(merged.vcard_raw, local.vcard_raw);
+    }
+
+    #[test]
+    fn test_a_microsoft_sync_keeps_the_website_it_cannot_carry() {
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.website = Some("https://alice.example".to_string());
+
+        let merged = microsoft_fields_over_local(&local, &alice_from_microsoft());
+
+        assert_eq!(merged.website.as_deref(), Some("https://alice.example"));
+    }
+
+    #[test]
+    fn test_a_microsoft_sync_keeps_the_extra_phone_numbers_it_cannot_carry() {
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.phones_json = Some(r#"[{"label":"Home","number":"+44 113 496 0000"}]"#.to_string());
+
+        let merged = microsoft_fields_over_local(&local, &alice_from_microsoft());
+
+        assert_eq!(merged.phones_json, local.phones_json);
+    }
+
+    #[test]
+    fn test_a_microsoft_sync_keeps_custom_fields_a_relationship_and_a_saved_photo() {
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.custom_fields_json = Some(r#"[{"label":"Blood type","value":"O"}]"#.to_string());
+        local.relationship = Some("Sister".to_string());
+        local.avatar_data_base64 = Some("iVBORw0KGgo=".to_string());
+        local.addresses_json = Some(r#"[{"label":"Home"}]"#.to_string());
+        local.vcard_raw = Some("BEGIN:VCARD\r\nEND:VCARD\r\n".to_string());
+
+        let merged = microsoft_fields_over_local(&local, &alice_from_microsoft());
+
+        assert_eq!(merged.custom_fields_json, local.custom_fields_json);
+        assert_eq!(merged.relationship, local.relationship);
+        assert_eq!(merged.avatar_data_base64, local.avatar_data_base64);
+        assert_eq!(merged.addresses_json, local.addresses_json);
+        assert_eq!(merged.vcard_raw, local.vcard_raw);
+    }
+
+    #[test]
+    fn test_a_google_sync_still_takes_the_name_and_details_from_the_provider() {
+        let local = a_local_contact("Old Name", "alice@example.com");
+        let mut remote = alice_from_google();
+        remote.phone = Some("+44 113 496 0000".to_string());
+        remote.company = Some("Acme".to_string());
+        remote.website = Some("https://acme.example".to_string());
+        remote.emails_json =
+            Some(r#"[{"label":"work","address":"alice@acme.example"}]"#.to_string());
+
+        let merged = google_fields_over_local(&local, &remote);
+
+        assert_eq!(merged.name, "Alice Smith");
+        assert_eq!(merged.phone, remote.phone);
+        assert_eq!(merged.company, remote.company);
+        assert_eq!(merged.website, remote.website);
+        assert_eq!(merged.emails_json, remote.emails_json);
+        assert_eq!(merged.id, local.id);
+    }
+
+    #[test]
+    fn test_a_microsoft_sync_still_takes_the_name_company_and_notes_from_the_provider() {
+        let local = a_local_contact("Old Name", "alice@example.com");
+        let mut remote = alice_from_microsoft();
+        remote.company = Some("Contoso".to_string());
+        remote.notes = Some("Met at the conference".to_string());
+
+        let merged = microsoft_fields_over_local(&local, &remote);
+
+        assert_eq!(merged.name, "Alice Smith");
+        assert_eq!(merged.company, remote.company);
+        assert_eq!(merged.notes, remote.notes);
+        assert_eq!(merged.id, local.id);
+    }
+
+    #[test]
+    fn test_a_sync_keeps_the_favourite_flag() {
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.favorite = true;
+
+        assert!(google_fields_over_local(&local, &alice_from_google()).favorite);
+        assert!(microsoft_fields_over_local(&local, &alice_from_microsoft()).favorite);
+    }
+
+    // ── Which stored contact a provider's copy of a person is ───────────────
+
+    #[test]
+    fn test_a_contact_the_other_address_book_already_holds_is_left_alone() {
+        let mut stored = a_local_contact("Alice Smith", "alice@example.com");
+        stored.provider_contact_id = Some("AAMkAGI2".to_string());
+        stored.source_provider = Some("outlook".to_string());
+        let locals = vec![stored];
+
+        let found = find_local_contact(&locals, "people/c1", "alice@example.com");
+
+        assert!(matches!(
+            found,
+            LocalContactMatch::AddressBelongsToAnother(_)
+        ));
+    }
+
+    #[test]
+    fn test_a_contact_that_moved_to_a_new_id_does_not_overwrite_the_old_row() {
+        let mut stored = a_local_contact("Alice Smith", "alice@example.com");
+        stored.provider_contact_id = Some("people/c1".to_string());
+        stored.source_provider = Some("gmail".to_string());
+        let locals = vec![stored];
+
+        let found = find_local_contact(&locals, "people/c9", "alice@example.com");
+
+        assert!(matches!(
+            found,
+            LocalContactMatch::AddressBelongsToAnother(_)
+        ));
+    }
+
+    #[test]
+    fn test_a_contact_is_found_by_the_id_its_address_book_gave_it() {
+        let mut stored = a_local_contact("Alice Smith", "alice@example.com");
+        stored.provider_contact_id = Some("people/c1".to_string());
+        let locals = vec![stored];
+
+        let found = find_local_contact(&locals, "people/c1", "moved@example.com");
+
+        assert!(matches!(found, LocalContactMatch::Stored(_)));
+    }
+
+    #[test]
+    fn test_a_contact_typed_here_is_adopted_by_the_address_book_with_the_same_address() {
+        let locals = vec![a_local_contact("Alice Smith", "alice@example.com")];
+
+        let found = find_local_contact(&locals, "people/c1", "alice@example.com");
+
+        assert!(matches!(found, LocalContactMatch::Stored(_)));
+    }
+
+    #[test]
+    fn test_a_person_nobody_has_stored_yet_is_new() {
+        let found = find_local_contact(&[], "people/c1", "alice@example.com");
+
+        assert!(matches!(found, LocalContactMatch::NotStoredYet));
+    }
+
+    // ── Contacts with no email address ──────────────────────────────────────
+
+    #[test]
+    fn test_a_second_contact_with_no_email_address_does_not_take_the_first_ones_place() {
+        let mut stored = a_local_contact("Phone Only Person", "");
+        stored.provider_contact_id = Some("people/c1".to_string());
+        let locals = vec![stored];
+
+        let found = find_local_contact(&locals, "people/c2", "");
+
+        assert!(matches!(
+            found,
+            LocalContactMatch::AddressBelongsToAnother(_)
+        ));
+    }
+
+    #[test]
+    fn test_the_first_contact_with_no_email_address_is_still_stored() {
+        let found = find_local_contact(&[], "people/c1", "");
+
+        assert!(matches!(found, LocalContactMatch::NotStoredYet));
+    }
+
+    #[test]
+    fn test_a_google_contact_with_no_email_address_and_no_name_is_not_called_nothing() {
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            ..Default::default()
+        };
+
+        let contact = google_person_to_contact(&person, "acct");
+
+        assert!(!contact.name.is_empty());
+    }
+
+    #[test]
+    fn test_a_microsoft_contact_with_no_email_address_and_no_name_is_not_called_nothing() {
+        let ms = MsGraphContact {
+            id: "AAMk1".to_string(),
+            ..Default::default()
+        };
+
+        let contact = ms_contact_to_contact(&ms, "acct");
+
+        assert!(!contact.name.is_empty());
+    }
+
+    #[test]
+    fn test_a_google_contact_with_no_email_address_is_called_by_its_parts_of_a_name() {
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            names: vec![GoogleName {
+                display_name: String::new(),
+                given_name: "Phone".to_string(),
+                family_name: "Only".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        let contact = google_person_to_contact(&person, "acct");
+
+        assert_eq!(contact.name, "Phone Only");
+    }
+
+    #[test]
+    fn test_a_microsoft_contact_with_no_email_address_is_called_by_its_parts_of_a_name() {
+        let ms = MsGraphContact {
+            id: "AAMk1".to_string(),
+            given_name: "Phone".to_string(),
+            surname: "Only".to_string(),
+            ..Default::default()
+        };
+
+        let contact = ms_contact_to_contact(&ms, "acct");
+
+        assert_eq!(contact.name, "Phone Only");
+    }
+
+    #[test]
+    fn test_a_contact_left_alone_is_explained_differently_from_one_with_no_address() {
+        let stored = a_local_contact("Alice Smith", "alice@example.com");
+        let in_both_books = a_local_contact("Alice Smith", "alice@example.com");
+        let no_address = a_local_contact("Phone Only Person", "");
+
+        let two_books = contact_not_stored_message(&stored, &in_both_books);
+        let no_room = contact_not_stored_message(&stored, &no_address);
+
+        assert!(two_books.contains("two address books"), "{two_books}");
+        assert!(no_room.contains("no email address"), "{no_room}");
+        assert!(no_room.contains("Phone Only Person"), "{no_room}");
     }
 }
