@@ -427,7 +427,9 @@ fn contact_to_google_person(contact: &ContactEntry) -> GooglePerson {
         })
         .unwrap_or_default();
 
-    let organizations = if contact.company.is_some() || contact.job_title.is_some() {
+    let has_work_details =
+        contact.company.is_some() || contact.job_title.is_some() || contact.department.is_some();
+    let organizations = if has_work_details {
         vec![GoogleOrganization {
             name: contact.company.clone().unwrap_or_default(),
             title: contact.job_title.clone().unwrap_or_default(),
@@ -575,6 +577,40 @@ fn contact_to_ms_contact(contact: &ContactEntry) -> MsGraphContact {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data::message_cache::{EmailEntry, PhoneEntry};
+
+    /// A local contact with every optional field empty. Each test sets only the
+    /// one or two fields its behaviour is about.
+    fn a_local_contact(name: &str, email: &str) -> ContactEntry {
+        ContactEntry {
+            id: "local-1".to_string(),
+            account_id: "test@example.com".to_string(),
+            name: name.to_string(),
+            email: email.to_string(),
+            provider_contact_id: None,
+            phone: None,
+            company: None,
+            job_title: None,
+            website: None,
+            address: None,
+            birthday: None,
+            avatar_url: None,
+            avatar_data_base64: None,
+            source_provider: None,
+            last_synced_at: None,
+            vcard_raw: None,
+            notes: None,
+            favorite: false,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            nickname: None,
+            department: None,
+            relationship: None,
+            emails_json: None,
+            phones_json: None,
+            addresses_json: None,
+            custom_fields_json: None,
+        }
+    }
 
     #[test]
     fn test_google_person_to_contact() {
@@ -768,5 +804,223 @@ mod tests {
         assert_eq!(back.phone, original.phone);
         assert_eq!(back.company, original.company);
         assert_eq!(back.nickname, original.nickname);
+    }
+
+    #[test]
+    fn test_a_google_contact_with_two_email_addresses_keeps_both_with_their_labels() {
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            email_addresses: vec![
+                GoogleEmail {
+                    value: "work@example.com".to_string(),
+                    email_type: "work".to_string(),
+                    metadata: None,
+                },
+                GoogleEmail {
+                    value: "home@example.com".to_string(),
+                    email_type: String::new(),
+                    metadata: None,
+                },
+            ],
+            ..Default::default()
+        };
+
+        let contact = google_person_to_contact(&person, "acct");
+
+        assert_eq!(contact.email, "work@example.com");
+        let stored = contact
+            .emails_json
+            .expect("two addresses are kept as a list");
+        let entries: Vec<EmailEntry> = serde_json::from_str(&stored).expect("valid JSON list");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].address, "work@example.com");
+        assert_eq!(entries[0].label, "work");
+        assert_eq!(entries[1].address, "home@example.com");
+        assert_eq!(entries[1].label, "Other");
+    }
+
+    #[test]
+    fn test_a_google_contact_with_one_email_address_stores_no_email_list() {
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            email_addresses: vec![GoogleEmail {
+                value: "only@example.com".to_string(),
+                email_type: "home".to_string(),
+                metadata: None,
+            }],
+            ..Default::default()
+        };
+
+        let contact = google_person_to_contact(&person, "acct");
+
+        assert_eq!(contact.email, "only@example.com");
+        assert!(contact.emails_json.is_none());
+    }
+
+    #[test]
+    fn test_a_google_contact_with_two_phone_numbers_keeps_both_with_their_labels() {
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            phone_numbers: vec![
+                GooglePhone {
+                    value: "+1-555-0101".to_string(),
+                    phone_type: "work".to_string(),
+                },
+                GooglePhone {
+                    value: "+1-555-0202".to_string(),
+                    phone_type: String::new(),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let contact = google_person_to_contact(&person, "acct");
+
+        assert_eq!(contact.phone.as_deref(), Some("+1-555-0101"));
+        let stored = contact.phones_json.expect("two numbers are kept as a list");
+        let entries: Vec<PhoneEntry> = serde_json::from_str(&stored).expect("valid JSON list");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].number, "+1-555-0101");
+        assert_eq!(entries[0].label, "work");
+        assert_eq!(entries[1].number, "+1-555-0202");
+        assert_eq!(entries[1].label, "Other");
+    }
+
+    #[test]
+    fn test_a_google_contact_with_one_phone_number_stores_no_phone_list() {
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            phone_numbers: vec![GooglePhone {
+                value: "+1-555-0101".to_string(),
+                phone_type: "mobile".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        let contact = google_person_to_contact(&person, "acct");
+
+        assert_eq!(contact.phone.as_deref(), Some("+1-555-0101"));
+        assert!(contact.phones_json.is_none());
+    }
+
+    #[test]
+    fn test_a_contact_with_only_a_company_is_still_sent_to_google_with_it() {
+        let mut contact = a_local_contact("Bob Jones", "bob@example.com");
+        contact.company = Some("Acme".to_string());
+
+        let person = contact_to_google_person(&contact);
+
+        assert_eq!(person.organizations.len(), 1);
+        assert_eq!(person.organizations[0].name, "Acme");
+        assert!(person.organizations[0].title.is_empty());
+    }
+
+    #[test]
+    fn test_a_contact_with_only_a_job_title_is_still_sent_to_google_with_it() {
+        let mut contact = a_local_contact("Bob Jones", "bob@example.com");
+        contact.job_title = Some("Engineer".to_string());
+
+        let person = contact_to_google_person(&contact);
+
+        assert_eq!(person.organizations.len(), 1);
+        assert_eq!(person.organizations[0].title, "Engineer");
+        assert!(person.organizations[0].name.is_empty());
+    }
+
+    #[test]
+    fn test_a_contact_with_only_a_department_is_still_sent_to_google_with_it() {
+        let mut contact = a_local_contact("Bob Jones", "bob@example.com");
+        contact.department = Some("Finance".to_string());
+
+        let person = contact_to_google_person(&contact);
+
+        assert_eq!(person.organizations.len(), 1);
+        assert_eq!(person.organizations[0].department, "Finance");
+    }
+
+    #[test]
+    fn test_a_contact_with_no_work_details_is_sent_to_google_without_an_organization() {
+        let contact = a_local_contact("Bob Jones", "bob@example.com");
+
+        let person = contact_to_google_person(&contact);
+
+        assert!(person.organizations.is_empty());
+    }
+
+    #[test]
+    fn test_a_microsoft_contact_with_two_email_addresses_keeps_both() {
+        let ms = MsGraphContact {
+            id: "AAMk1".to_string(),
+            display_name: "Carol White".to_string(),
+            email_addresses: vec![
+                MsEmailAddress {
+                    name: "Carol White".to_string(),
+                    address: "carol@outlook.com".to_string(),
+                },
+                MsEmailAddress {
+                    name: "Carol White".to_string(),
+                    address: "carol@contoso.com".to_string(),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let contact = ms_contact_to_contact(&ms, "acct");
+
+        assert_eq!(contact.email, "carol@outlook.com");
+        let stored = contact
+            .emails_json
+            .expect("two addresses are kept as a list");
+        let entries: Vec<EmailEntry> = serde_json::from_str(&stored).expect("valid JSON list");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].address, "carol@outlook.com");
+        assert_eq!(entries[1].address, "carol@contoso.com");
+    }
+
+    #[test]
+    fn test_a_microsoft_contact_with_one_email_address_stores_no_email_list() {
+        let ms = MsGraphContact {
+            id: "AAMk1".to_string(),
+            email_addresses: vec![MsEmailAddress {
+                name: String::new(),
+                address: "only@outlook.com".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        let contact = ms_contact_to_contact(&ms, "acct");
+
+        assert_eq!(contact.email, "only@outlook.com");
+        assert!(contact.emails_json.is_none());
+    }
+
+    #[test]
+    fn test_a_nickname_is_carried_when_a_contact_is_pushed_to_microsoft() {
+        let mut contact = a_local_contact("Carol White", "carol@outlook.com");
+        contact.nickname = Some("Care".to_string());
+
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(ms.nick_name, "Care");
+    }
+
+    #[test]
+    fn test_a_job_title_is_carried_when_a_contact_is_pushed_to_microsoft() {
+        let mut contact = a_local_contact("Carol White", "carol@outlook.com");
+        contact.job_title = Some("Director".to_string());
+
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(ms.job_title, "Director");
+    }
+
+    #[test]
+    fn test_a_department_is_carried_when_a_contact_is_pushed_to_microsoft() {
+        let mut contact = a_local_contact("Carol White", "carol@outlook.com");
+        contact.department = Some("Finance".to_string());
+
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(ms.department, "Finance");
     }
 }

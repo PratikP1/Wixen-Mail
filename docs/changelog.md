@@ -151,6 +151,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A contact whose only work detail is a department keeps it when it goes to
+  Google.** The department was read and then thrown away. Nothing was sent
+  unless the contact also had a company or a job title, so a person filed only
+  under "Finance" arrived at the account with no work details at all, and the
+  next sync brought that emptiness back down over the local copy.
+
 - **A phishing site is now recognised under one more of its names.** Safe
   Browsing lists a site under its own address and under its parent domains, and
   the client has to ask about each of them. For an address with more than five
