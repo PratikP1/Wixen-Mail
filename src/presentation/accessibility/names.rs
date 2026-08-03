@@ -142,6 +142,18 @@ struct CheckedRows {
 }
 
 impl AccessibleImpl for CheckedRows {
+    /// Defer to the list's own row enumeration.
+    ///
+    /// The same override, for the same reason, as the one on the fixed name
+    /// above: the trait's default answers `OK` with a count of nought, which
+    /// wxWidgets takes as the real answer rather than a request to fall back.
+    /// Without this, an object written to report each row's tick reported that
+    /// there were no rows, so every folder vanished from the accessibility tree
+    /// and nothing was left to carry a tick.
+    fn get_child_count(&self) -> (AccStatus, i32) {
+        (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, 0)
+    }
+
     fn get_name(&self, child_id: i32) -> (AccStatus, Option<String>) {
         if child_id == 0 {
             return (ffi::wxd_AccStatus_WXD_ACC_OK, Some(self.name.clone()));
@@ -223,16 +235,26 @@ pub fn set_accessible_checked_rows(
     description: &str,
     ticked: Vec<bool>,
 ) -> TickState {
-    let state: TickState = std::sync::Arc::new(std::sync::Mutex::new(ticked));
-    window.set_accessible(Accessible::new(
-        window,
-        CheckedRows {
-            name: name.to_string(),
-            description: description.to_string(),
-            ticked: state.clone(),
-        },
-    ));
+    let (rows, state) = checked_rows(name, description, ticked);
+    window.set_accessible(Accessible::new(window, rows));
     state
+}
+
+/// Work out what the rows will report, and the handle that changes it.
+///
+/// Kept apart from attaching them to a window so the contract the whole design
+/// rests on can be stated on its own: the handle handed back is the same
+/// snapshot the rows read, so writing a new set of ticks through it changes
+/// what a row answers. Attaching is a call into wxWidgets that cannot be read
+/// back, so it can only be checked with a screen reader.
+fn checked_rows(name: &str, description: &str, ticked: Vec<bool>) -> (CheckedRows, TickState) {
+    let state: TickState = std::sync::Arc::new(std::sync::Mutex::new(ticked));
+    let rows = CheckedRows {
+        name: name.to_string(),
+        description: description.to_string(),
+        ticked: state.clone(),
+    };
+    (rows, state)
 }
 
 /// Give `window` an accessible name that screen readers will announce.
@@ -290,8 +312,233 @@ pub fn name_from_label(label: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{AccessibleImpl, FixedName, name_from_label};
+    use super::{AccessibleImpl, CheckedRows, FixedName, name_from_label};
+    use wxdragon::accessible::acc_state::{CHECKED, FOCUSABLE, SELECTABLE};
     use wxdragon::ffi;
+
+    /// A checked list carrying the wording the folder chooser really uses.
+    ///
+    /// Every test below pins what this code *answers* when the platform asks
+    /// it. Whether a screen reader then speaks the answer is a separate
+    /// question that only a screen reader pass settles.
+    fn checked_list(ticked: Vec<bool>) -> CheckedRows {
+        CheckedRows {
+            name: "Folders to keep up to date".to_string(),
+            description: "Tick a folder to download its messages.".to_string(),
+            ticked: std::sync::Arc::new(std::sync::Mutex::new(ticked)),
+        }
+    }
+
+    #[test]
+    fn test_a_checked_list_does_not_claim_it_has_no_rows() {
+        // The trait default answers OK with a count of zero, which is a
+        // positive claim that the list is empty rather than a request to fall
+        // back, and it is written through whatever the control really holds.
+        // Without this override the folder chooser reported no folders at all,
+        // which is worse than the missing tick this class was written to fix.
+        let list = checked_list(vec![true, false]);
+
+        let (status, count) = list.get_child_count();
+
+        assert_eq!(
+            status,
+            ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED,
+            "reporting a row's tick must not hide the rows"
+        );
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_a_checked_list_answers_with_its_own_name_when_asked_for_child_zero() {
+        let list = checked_list(vec![true]);
+
+        let (status, name) = list.get_name(0);
+
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_OK);
+        assert_eq!(name.as_deref(), Some("Folders to keep up to date"));
+    }
+
+    #[test]
+    fn test_a_row_is_not_handed_the_lists_name() {
+        // The same trap the settings tabs fell into, where every tab reported
+        // itself as "Settings categories". Here it would give every folder the
+        // name of the list holding them.
+        let list = checked_list(vec![true, false]);
+
+        let (status, name) = list.get_name(1);
+
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED);
+        assert!(name.is_none());
+    }
+
+    #[test]
+    fn test_a_checked_list_answers_with_its_description_when_asked_for_child_zero() {
+        let list = checked_list(vec![true]);
+
+        let (status, description) = list.get_description(0);
+
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_OK);
+        assert_eq!(
+            description.as_deref(),
+            Some("Tick a folder to download its messages.")
+        );
+    }
+
+    #[test]
+    fn test_a_row_is_not_handed_the_lists_description() {
+        // Handing it down would read the list's instructions again on every
+        // arrow key, which is the flooding an announcement is supposed to
+        // avoid.
+        let list = checked_list(vec![true, false]);
+
+        let (status, description) = list.get_description(2);
+
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED);
+        assert!(description.is_none());
+    }
+
+    #[test]
+    fn test_a_row_asks_to_be_a_check_box() {
+        // The whole point of the class. Windows draws these ticks itself, so
+        // without the check box role a screen reader reads the folder's name
+        // and stops, with nothing to say whether it is on.
+        let list = checked_list(vec![true]);
+
+        let (status, role) = list.get_role(1);
+
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_OK);
+        assert_eq!(role, ffi::wxd_AccRole_WXD_ROLE_SYSTEM_CHECKBUTTON);
+    }
+
+    #[test]
+    fn test_the_list_itself_does_not_claim_to_be_a_check_box() {
+        // Only the status is worth stating: wxWidgets reads the role back only
+        // when the answer is OK, so the value beside NOT_IMPLEMENTED reaches
+        // nobody and asserting on it would pin a fact nothing reads.
+        let list = checked_list(vec![true]);
+
+        let (status, _role) = list.get_role(0);
+
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED);
+    }
+
+    #[test]
+    fn test_a_ticked_row_answers_with_the_checked_flag() {
+        let list = checked_list(vec![true]);
+
+        let (status, state) = list.get_state(1);
+
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_OK);
+        assert!(state & CHECKED != 0, "a ticked row must report it");
+    }
+
+    #[test]
+    fn test_an_unticked_row_answers_without_the_checked_flag() {
+        let list = checked_list(vec![false]);
+
+        let (status, state) = list.get_state(1);
+
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_OK);
+        assert!(
+            state & CHECKED == 0,
+            "an unticked row must not report a tick"
+        );
+    }
+
+    #[test]
+    fn test_the_list_itself_leaves_its_state_to_the_platform() {
+        // Child nought is the list, not a row. Answering for it with a row's
+        // flags would report the whole control as ticked.
+        let list = checked_list(vec![true]);
+
+        let (status, state) = list.get_state(0);
+
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED);
+        assert_eq!(state, 0);
+    }
+
+    #[test]
+    fn test_the_first_row_is_child_one_and_reads_the_first_tick() {
+        // Child ids count from one, as Microsoft Active Accessibility does.
+        // Counting them from nought reports every row's state one row out,
+        // which reads plausibly and is wrong everywhere.
+        let list = checked_list(vec![true, false, false]);
+
+        let (_status, state) = list.get_state(1);
+
+        assert!(
+            state & CHECKED != 0,
+            "the first row must read the first tick"
+        );
+    }
+
+    #[test]
+    fn test_a_row_past_the_end_of_the_snapshot_answers_nothing_rather_than_unticked() {
+        // Answering OK with no flags would be a claim that the row is not
+        // ticked, which is a wrong answer rather than no answer.
+        let list = checked_list(vec![true, true]);
+
+        let (status, state) = list.get_state(3);
+
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED);
+        assert_eq!(state, 0);
+    }
+
+    #[test]
+    fn test_a_poisoned_snapshot_answers_nothing_rather_than_unticked() {
+        let ticked = std::sync::Arc::new(std::sync::Mutex::new(vec![true]));
+        let poison = ticked.clone();
+        let _ = std::thread::spawn(move || {
+            let _held = poison.lock().expect("a fresh mutex is not poisoned");
+            panic!("poison the snapshot");
+        })
+        .join();
+        let list = CheckedRows {
+            name: "Folders to keep up to date".to_string(),
+            description: "Tick a folder to download its messages.".to_string(),
+            ticked,
+        };
+
+        let (status, state) = list.get_state(1);
+
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED);
+        assert_eq!(state, 0);
+    }
+
+    #[test]
+    fn test_every_row_answers_as_focusable_and_selectable() {
+        // An OK answer replaces the platform's own flags rather than adding to
+        // them, so anything left out here is a fact about the row that nothing
+        // else supplies.
+        let list = checked_list(vec![true]);
+
+        let (_status, state) = list.get_state(1);
+
+        assert!(state & CHECKED != 0, "the tick is missing");
+        assert!(state & FOCUSABLE != 0, "the row cannot be focused");
+        assert!(state & SELECTABLE != 0, "the row cannot be selected");
+    }
+
+    #[test]
+    fn test_the_returned_handle_is_the_snapshot_the_rows_read() {
+        // What the folder chooser relies on when somebody presses Space: it
+        // writes the new ticks through this handle and expects the rows to
+        // answer with them. A handle wired to a different snapshot would leave
+        // every row reporting whatever was true when the window opened.
+        let (rows, handle) = super::checked_rows(
+            "Folders to keep up to date",
+            "Tick a folder to download its messages.",
+            vec![true],
+        );
+
+        *handle.lock().expect("a fresh mutex is not poisoned") = vec![false];
+
+        let (_status, state) = rows.get_state(1);
+        assert!(
+            state & CHECKED == 0,
+            "unticking a row must change what it answers"
+        );
+    }
 
     #[test]
     fn test_the_name_is_the_only_thing_replaced() {

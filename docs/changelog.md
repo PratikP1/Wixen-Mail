@@ -151,6 +151,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The folder chooser no longer tells a screen reader it is empty.** The list
+  of folders to keep up to date had been given an object that reports each row
+  as a check box, so the tick would be spoken as well as the folder's name.
+  That object also answered "no rows in here" whenever it was asked how many
+  rows the list held, and that answer was believed. So the change meant to make
+  the ticks audible hid every folder instead, and a list with nothing in it is
+  worse than a list read without its ticks.
+
+  **Still to be confirmed with a screen reader.** The list now leaves counting
+  its own rows to the control, which is what the same object beside it has
+  always done for the same reason. Whether a screen reader then says "ticked"
+  on each row is a thing only a screen reader run can answer.
+
+  **Known limitation:** a row still reports that it can take focus and can be
+  selected, and never that it currently is either. Answering for a row replaces
+  the platform's own flags rather than adding to them, so the row the cursor is
+  sitting on looks like any other. Fixing it means telling the rows which one is
+  selected, which is a change to how the list is set up rather than a missing
+  line.
+
 - **Getting started is now written for the person using the program.** Pressing
   F1 anywhere outside mail opened a page of build instructions: install Rust,
   clone the repository, run the build. Somebody who is stuck in the middle of
