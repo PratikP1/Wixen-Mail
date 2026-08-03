@@ -151,6 +151,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A list inside a list is read as what you typed.** In a note or an event
+  description, an item holding a list of the other kind was announced with the
+  inner list's kind: a bullet with numbered points under it was read as
+  "numbered item", and a numbered step with bullets under it was read as
+  "bullet". The kind of each item is now taken when the item starts rather than
+  when it ends, which is the moment before the inner list exists.
+
+- **The experimental warning in Settings reads as sentences.** The warning
+  beside the two Allowed Changes boxes had runs of stray spaces in the middle of
+  it, and the version a screen reader was given differed from the version on
+  screen. Both came from the same sentence being typed twice. There is now one
+  sentence, said once.
+
 - **A calendar on your own server is asked for its dates in the shape a
   calendar server reads.** The request named the span of months to send back,
   six months behind and a year ahead, in an everyday date format carrying

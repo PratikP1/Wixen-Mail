@@ -646,6 +646,56 @@ mod tests {
     }
 
     #[test]
+    fn test_a_container_is_named_by_the_words_people_use_for_it() {
+        // These names reach somebody twice: in the New menu, and lowercased in
+        // the question asked before a container is deleted. A name nobody uses
+        // for the thing makes both of those read as somebody else's software.
+        assert_eq!(ContainerKind::Calendar.label(), "Calendar");
+        assert_eq!(ContainerKind::TaskList.label(), "Task list");
+        assert_eq!(ContainerKind::NoteFolder.label(), "Note folder");
+        assert_eq!(ContainerKind::ContactGroup.label(), "Contact group");
+    }
+
+    #[test]
+    fn test_every_container_is_offered_for_the_kind_of_thing_it_holds() {
+        // The new-item form asks this to fill its list of calendars, lists,
+        // folders and groups. An answer of "none" empties that list and files
+        // everything with no holder, which looks like nothing happening.
+        for container in ContainerKind::ALL {
+            assert_eq!(
+                ContainerKind::holding(container.holds()),
+                Some(container),
+                "{container:?}"
+            );
+        }
+        // Mail is in a folder on a server, and a reminder belongs to an
+        // account and nothing smaller.
+        assert_eq!(ContainerKind::holding(ItemKind::Mail), None);
+        assert_eq!(ContainerKind::holding(ItemKind::Reminder), None);
+    }
+
+    #[test]
+    fn test_only_the_kinds_that_live_in_one_container_can_be_moved_between_them() {
+        // Move asks where a thing is kept, and gives up quietly when the
+        // answer is nowhere. If the answer were nowhere for everything, Move
+        // would stop working with no message to say so.
+        assert_eq!(ItemKind::Event.kept_in(), Some(ContainerKind::Calendar));
+        assert_eq!(ItemKind::Task.kept_in(), Some(ContainerKind::TaskList));
+        assert_eq!(ItemKind::Note.kept_in(), Some(ContainerKind::NoteFolder));
+
+        assert_eq!(ItemKind::Mail.kept_in(), None);
+        assert_eq!(ItemKind::Reminder.kept_in(), None);
+        // Deliberately not the mirror of the question above: a contact group
+        // holds contacts, and a contact is in as many groups as somebody puts
+        // it in, so there is no single home to move it out of.
+        assert_eq!(ItemKind::Contact.kept_in(), None);
+        assert_eq!(
+            ContainerKind::holding(ItemKind::Contact),
+            Some(ContainerKind::ContactGroup)
+        );
+    }
+
+    #[test]
     fn test_a_local_item_is_filed_under_the_reserved_account() {
         assert_eq!(Destination::Local.account_id(), "local");
         assert_eq!(Destination::Account("a1".to_string()).account_id(), "a1");

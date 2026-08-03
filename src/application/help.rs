@@ -186,6 +186,16 @@ mod tests {
     }
 
     #[test]
+    fn test_f1_opens_the_page_for_the_module_you_are_in() {
+        // Landing on a page is not the same as landing on the right one. For
+        // somebody listening, the wrong page is read in order from the top,
+        // which is the difference between an answer and four minutes of
+        // reading.
+        assert_eq!(for_module(PimModule::Mail).file, "getting-started.md");
+        assert_eq!(for_module(PimModule::Calendar).file, "USER_GUIDE.md");
+    }
+
+    #[test]
     fn test_a_title_on_a_page_carries_no_menu_marker() {
         // Read aloud, an ampersand in the middle of a title is the word "and".
         assert_eq!(plain("&Getting started"), "Getting started");

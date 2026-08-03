@@ -301,6 +301,43 @@ mod tests {
     }
 
     #[test]
+    fn test_a_repeat_across_a_change_of_markup_is_not_hidden_by_an_earlier_full_stop() {
+        // The gap between two words is only the text actually between them.
+        // Gathering it from one node too early drags in the whole of the
+        // earlier node, so a full stop further back in that node is read as a
+        // sentence break and a real repeat across bold or a link is never
+        // reported.
+        let nodes = vec![
+            TextNode {
+                text: "End. the".to_string(),
+                block: 0,
+            },
+            TextNode {
+                text: "the".to_string(),
+                block: 0,
+            },
+        ];
+
+        let words = words_in(&nodes);
+
+        assert_eq!(words.len(), 3, "{words:?}");
+        assert!(!words[2].after_break, "{words:?}");
+    }
+
+    #[test]
+    fn test_a_span_of_text_is_taken_by_the_units_the_page_counts() {
+        // The far end is exclusive and both ends have to hold, so an empty
+        // span is empty and a span that runs to the end of the text stops
+        // there. Every gap between two words is taken this way.
+        assert_eq!(utf16_slice("café naïve", 5, 10), "naïve");
+        assert_eq!(utf16_slice("End. the", 4, usize::MAX), " the");
+        assert_eq!(utf16_slice("End. the", 3, 3), "");
+        // Outside the basic plane one character is two units, which is the
+        // whole reason this counts rather than slices.
+        assert_eq!(utf16_slice("\u{1F98A} fox", 2, 3), " ");
+    }
+
+    #[test]
     fn test_punctuation_on_its_own_produces_no_words() {
         assert!(words_in(&one("  ...  ")).is_empty());
         assert!(words_in(&[]).is_empty());

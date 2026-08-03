@@ -828,14 +828,14 @@ fn build_language_tab(
     allow_mail.set_value(config.allowed_changes.mail);
     allowed_sec.add(&allow_mail, 0, SizerFlag::All, 4);
 
+    // One sentence, said once. The label and the accessible name were two
+    // hand-written copies that had already drifted apart.
     let allowed_note = StaticText::builder(panel)
-        .with_label(
-            "Both are experimental: none of this has been run against a real account yet,              so expect bugs. Reading your mail is the part that has been used. A message              that has been sent cannot be recalled, and a message deleted from a server              may have been the only copy.",
-        )
+        .with_label(crate::application::allowed::EXPERIMENTAL_WARNING)
         .build();
     set_accessible_name(
         &allowed_note,
-        "Both are experimental: none of this has been run against a real account yet,          so expect bugs. Reading your mail is the part that has been used. A message          that has been sent cannot be recalled, and a message deleted from a server          may have been the only copy.",
+        crate::application::allowed::EXPERIMENTAL_WARNING,
     );
     allowed_sec.add(&allowed_note, 0, SizerFlag::Expand | SizerFlag::All, 4);
 

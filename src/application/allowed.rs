@@ -94,13 +94,17 @@ impl Allowed {
     pub fn spoken(self) -> &'static str {
         match (self.mail, self.personal_information) {
             (true, true) => {
-                "Everything, including sending mail. Experimental: none of this                  has been tried against a real account yet"
+                "Everything, including sending mail. Experimental: none of this \
+                 has been tried against a real account yet"
             }
             (false, true) => {
-                "Tasks, contacts and calendar. Mail is read only. Experimental:                  changes to tasks, contacts and the calendar have never been                  tried against a real account"
+                "Tasks, contacts and calendar. Mail is read only. Experimental: \
+                 changes to tasks, contacts and the calendar have never been \
+                 tried against a real account"
             }
             (true, false) => {
-                "Mail only, including sending. Experimental: this has never                  been tried against a real account"
+                "Mail only, including sending. Experimental: this has never \
+                 been tried against a real account"
             }
             (false, false) => "Nothing. This account is read only, which is safe",
         }
@@ -115,6 +119,21 @@ impl Allowed {
         self.anything()
     }
 }
+
+/// The warning shown beside the two Allowed Changes boxes.
+///
+/// Kept here rather than typed into the settings screen, because it was typed
+/// there and the copy drifted: the visible label and the accessible name were
+/// two hand-written strings that differed from each other, and both had lost
+/// their line continuations, so each carried a run of stray spaces in the
+/// middle of a sentence somebody hears.
+///
+/// One sentence per idea, and the irreversible parts last, because that is the
+/// part somebody has to still be listening for.
+pub const EXPERIMENTAL_WARNING: &str = "Both are experimental: none of this has been run against a real account yet, \
+     so expect bugs. Reading your mail is the part that has been used. A message \
+     that has been sent cannot be recalled, and a message deleted from a server \
+     may have been the only copy.";
 
 /// Everything that has an opinion about what may be changed.
 ///
@@ -245,6 +264,20 @@ mod tests {
         assert!(Allowed::FOR_TESTING.spoken().contains("Mail is read only"));
         assert!(Allowed::EVERYTHING.spoken().contains("sending mail"));
         assert!(Allowed::EVERYTHING.spoken() != Allowed::FOR_TESTING.spoken());
+    }
+
+    #[test]
+    fn test_the_experimental_warning_reads_as_sentences_rather_than_a_wrapped_literal() {
+        // A wrapped string literal that loses its continuations keeps every
+        // space of the indenting, and this one is read aloud. Runs of stray
+        // spaces are silence in the middle of a sentence somebody is relying
+        // on to tell them what cannot be undone.
+        assert!(
+            !EXPERIMENTAL_WARNING.contains("  "),
+            "{EXPERIMENTAL_WARNING}"
+        );
+        assert!(EXPERIMENTAL_WARNING.contains("cannot be recalled"));
+        assert!(EXPERIMENTAL_WARNING.contains("only copy"));
     }
 
     #[test]

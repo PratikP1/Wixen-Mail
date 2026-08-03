@@ -208,6 +208,16 @@ mod tests {
     }
 
     #[test]
+    fn test_the_stored_copy_lines_choice_survives_the_trip() {
+        // Anything other than the word this writes reads back as shown, so a
+        // wrong stored word reverts the choice at the next start with nothing
+        // said anywhere.
+        for choice in [CopyLines::Shown, CopyLines::Hidden] {
+            assert_eq!(CopyLines::from_setting(choice.as_stored()), choice);
+        }
+    }
+
+    #[test]
     fn test_an_unreadable_setting_falls_to_the_default_rather_than_refusing() {
         // A settings file somebody has edited by hand should not stop mail
         // from working.

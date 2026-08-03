@@ -61,7 +61,13 @@ struct Collector {
     pieces: Vec<Piece>,
     text: String,
     heading: Option<usize>,
-    in_item: bool,
+    /// Whether an item is open, and whether its own list is numbered.
+    ///
+    /// The kind is taken when the item starts rather than when it closes. An
+    /// item holding a list is closed by that inner list's first item, by which
+    /// point the inner list is already on the stack, so reading the kind at
+    /// closing time announces a bullet as a numbered item and the reverse.
+    in_item: Option<bool>,
     in_quote: bool,
     /// How deep the lists go, and whether each is numbered. A list inside a
     /// list must not end the outer one, or its remaining items become
@@ -82,7 +88,7 @@ impl Collector {
             // would otherwise swallow that item's words.
             Event::Start(Tag::Item) => {
                 self.finish();
-                self.in_item = true;
+                self.in_item = Some(self.lists.last().copied().unwrap_or(false));
             }
             Event::Start(Tag::BlockQuote(_)) => self.in_quote = true,
             Event::Text(run) | Event::Code(run) => self.text.push_str(&run),
@@ -110,9 +116,9 @@ impl Collector {
         }
         self.pieces.push(if let Some(level) = heading {
             Piece::Heading { level, text: said }
-        } else if was_item {
+        } else if let Some(ordered) = was_item {
             Piece::Item {
-                ordered: self.lists.last().copied().unwrap_or(false),
+                ordered,
                 text: said,
             }
         } else if was_quote {
@@ -251,6 +257,43 @@ mod tests {
             .filter(|p| matches!(p, Piece::Item { ordered: false, .. }))
             .count();
         assert_eq!(bullets, 3, "{pieces:?}");
+    }
+
+    #[test]
+    fn test_an_item_is_read_as_the_kind_of_list_it_is_in() {
+        // An item that holds a list of the other kind was announced with the
+        // inner list's kind, so a bullet somebody typed was read as "numbered
+        // item" and a numbered one as "bullet".
+        assert_eq!(
+            structure("- Outer\n  1. Inner\n- Two").first(),
+            Some(&Piece::Item {
+                ordered: false,
+                text: "Outer".to_string()
+            })
+        );
+        assert_eq!(
+            structure("1. First\n   - inner\n2. Second").first(),
+            Some(&Piece::Item {
+                ordered: true,
+                text: "First".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_numbered_list_carries_on_being_numbered_after_an_inner_list_ends() {
+        // The inner list has to be taken off the stack when it closes, or the
+        // rest of the outer list is announced as the inner list's kind.
+        let pieces = structure("1. First\n   - inner\n2. Second");
+
+        assert_eq!(
+            pieces.last(),
+            Some(&Piece::Item {
+                ordered: true,
+                text: "Second".to_string()
+            }),
+            "{pieces:?}"
+        );
     }
 
     #[test]

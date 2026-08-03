@@ -214,6 +214,21 @@ mod tests {
     }
 
     #[test]
+    fn test_a_move_says_what_moved_and_where_it_went() {
+        // Silence after a move is indistinguishable from a move that failed,
+        // and "moved" without a destination leaves somebody who chose from a
+        // tree of twenty lists no way to know where they landed.
+        assert_eq!(moved("Buy milk", "Shopping"), "Buy milk moved to Shopping");
+    }
+
+    #[test]
+    fn test_a_move_of_an_untitled_row_still_says_where_it_went() {
+        // A row whose title never loaded still went somewhere, and where it
+        // went is the part worth hearing.
+        assert_eq!(moved("   ", "Shopping"), "Moved to Shopping");
+    }
+
+    #[test]
     fn test_a_command_is_only_offered_where_it_means_something() {
         // A menu item that does nothing on the panel you are on is a stop that
         // teaches nothing and costs a moment every time it is passed.
