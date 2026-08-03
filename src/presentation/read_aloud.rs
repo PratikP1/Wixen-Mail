@@ -158,6 +158,48 @@ fn spoken(parts: &[(&str, &str)]) -> String {
         .join(". ")
 }
 
+/// The word for whether an item is finished.
+///
+/// The same word the list column uses, so one state is called one thing
+/// wherever it is met (WCAG 3.2.4). The short reading says nothing at all when
+/// an item is unfinished, to keep it to a line; the full reading says it,
+/// because silence cannot be told apart from a reading that failed.
+fn finished_wording(is_completed: bool) -> &'static str {
+    if is_completed { "Done" } else { "Not done" }
+}
+
+/// The same word, said only when the item is finished, for the short reading.
+fn finished_wording_when_it_is(is_completed: bool) -> &'static str {
+    if is_completed {
+        finished_wording(is_completed)
+    } else {
+        ""
+    }
+}
+
+/// A priority worth the words, which is any but the ordinary one.
+///
+/// Nearly every task and reminder carries the default, so saying it on every
+/// row spends two words that never vary and never inform. The unread and
+/// flagged wording above already works this way.
+fn priority_worth_saying(priority: &str) -> &str {
+    if priority.eq_ignore_ascii_case("normal") {
+        ""
+    } else {
+        priority
+    }
+}
+
+/// A status worth the words. Nearly every event is confirmed; a cancelled one
+/// is the reason this is read at all.
+fn status_worth_saying(status: &str) -> &str {
+    if status.eq_ignore_ascii_case("confirmed") {
+        ""
+    } else {
+        status
+    }
+}
+
 impl ReadAloud for MessageItem {
     fn read_id(&self) -> String {
         self.message_id.to_string()
@@ -225,7 +267,10 @@ impl ReadAloud for ContactItem {
             ("Email", &self.email),
             ("Phone", &self.phone),
             ("Company", &self.company),
-            ("", if self.favorite { "Favourite" } else { "" }),
+            // Spelled the way the menu item, the tree node and the detail
+            // pane spell it. One record read two ways is two records to
+            // anybody listening.
+            ("", if self.favorite { "Favorite" } else { "" }),
         ])
     }
 }
@@ -257,7 +302,7 @@ impl ReadAloud for TaskItem {
     fn read_short(&self, out: Reading) -> String {
         spoken(&[
             ("", &self.title),
-            ("", if self.is_completed { "done" } else { "" }),
+            ("", finished_wording_when_it_is(self.is_completed)),
             ("Due", &out.date(self.due_date.as_deref().unwrap_or(""))),
         ])
     }
@@ -265,15 +310,8 @@ impl ReadAloud for TaskItem {
     fn read_full(&self, out: Reading) -> String {
         spoken(&[
             ("", &self.title),
-            (
-                "",
-                if self.is_completed {
-                    "Completed"
-                } else {
-                    "Not completed"
-                },
-            ),
-            ("Priority", &self.priority),
+            ("", finished_wording(self.is_completed)),
+            ("Priority", priority_worth_saying(&self.priority)),
             ("Due", &out.date(self.due_date.as_deref().unwrap_or(""))),
             (
                 "",
@@ -291,7 +329,7 @@ impl ReadAloud for ReminderItem {
     fn read_short(&self, out: Reading) -> String {
         spoken(&[
             ("", &self.title),
-            ("", if self.is_completed { "done" } else { "" }),
+            ("", finished_wording_when_it_is(self.is_completed)),
             ("Due", &out.date(self.due_datetime.as_deref().unwrap_or(""))),
         ])
     }
@@ -299,15 +337,8 @@ impl ReadAloud for ReminderItem {
     fn read_full(&self, out: Reading) -> String {
         spoken(&[
             ("", &self.title),
-            (
-                "",
-                if self.is_completed {
-                    "Completed"
-                } else {
-                    "Not completed"
-                },
-            ),
-            ("Priority", &self.priority),
+            ("", finished_wording(self.is_completed)),
+            ("Priority", priority_worth_saying(&self.priority)),
             ("Due", &out.date(self.due_datetime.as_deref().unwrap_or(""))),
             (
                 "",
@@ -332,16 +363,25 @@ impl ReadAloud for CalendarEventItem {
     }
 
     fn read_full(&self, out: Reading) -> String {
+        let start = out.date(&self.start);
+        let end = out.date(&self.end);
+        // Joined before the empty parts are dropped, so a missing end has to
+        // be handled here: "9:00 AM to" and then silence sounds like the
+        // reading was cut off.
         let when = if self.is_all_day {
-            format!("{}, all day", out.date(&self.start))
+            format!("{start}, all day")
+        } else if end.trim().is_empty() || end == start {
+            start
+        } else if start.trim().is_empty() {
+            end
         } else {
-            format!("{} to {}", out.date(&self.start), out.date(&self.end))
+            format!("{start} to {end}")
         };
         spoken(&[
             ("", &self.summary),
             ("", &when),
             ("Location", &self.location),
-            ("Status", &self.status),
+            ("Status", status_worth_saying(&self.status)),
             ("Calendar", self.calendar_name.as_deref().unwrap_or("")),
             ("", &long_text::spoken(&self.description)),
         ])
@@ -350,6 +390,10 @@ impl ReadAloud for CalendarEventItem {
 
 #[cfg(test)]
 mod tests {
+    // Every test here asserts on the words this module asks to have said. That
+    // is all a test can settle. Whether any of it reaches a listener runs
+    // through the announcement queue and a Windows notification call, and only
+    // a screen reader pass answers that.
     use super::*;
 
     /// Fixed rather than read from the machine, so these read the same
@@ -397,6 +441,71 @@ mod tests {
             receipt_to: None,
             account_id: String::new(),
             labels: Vec::new(),
+        }
+    }
+
+    fn contact() -> ContactItem {
+        ContactItem {
+            id: "c1".to_string(),
+            name: "Grace Hopper".to_string(),
+            email: "grace@example.com".to_string(),
+            phone: String::new(),
+            company: String::new(),
+            favorite: false,
+        }
+    }
+
+    fn note() -> NoteItem {
+        NoteItem {
+            id: "n1".to_string(),
+            title: "Shopping".to_string(),
+            body: "Milk".to_string(),
+            body_preview: "Milk".to_string(),
+            pinned: false,
+            updated_at: "2026-07-26".to_string(),
+            folder_id: None,
+        }
+    }
+
+    fn task() -> TaskItem {
+        TaskItem {
+            id: "t1".to_string(),
+            title: "File the report".to_string(),
+            description: None,
+            due_date: None,
+            is_completed: false,
+            priority: "normal".to_string(),
+            task_list_id: None,
+            parent_task_id: None,
+        }
+    }
+
+    fn reminder() -> ReminderItem {
+        ReminderItem {
+            id: "r1".to_string(),
+            title: "Call the dentist".to_string(),
+            description: None,
+            due_datetime: None,
+            is_completed: false,
+            priority: "high".to_string(),
+        }
+    }
+
+    fn event() -> CalendarEventItem {
+        CalendarEventItem {
+            id: "e1".to_string(),
+            summary: "Standup".to_string(),
+            description: String::new(),
+            start: "2026-07-27 09:00".to_string(),
+            end: "2026-07-27 09:15".to_string(),
+            location: String::new(),
+            is_all_day: false,
+            status: "confirmed".to_string(),
+            provider: "local".to_string(),
+            calendar_id: None,
+            calendar_name: None,
+            calendar_color: None,
+            reminder_minutes: None,
         }
     }
 
@@ -478,56 +587,11 @@ mod tests {
     fn test_every_module_reads_something_in_both_depths() {
         // Space has to answer in all six modules. A module where it returns
         // nothing is a key that appears broken.
-        let contact = ContactItem {
-            id: "c1".to_string(),
-            name: "Grace Hopper".to_string(),
-            email: "grace@example.com".to_string(),
-            phone: String::new(),
-            company: String::new(),
-            favorite: false,
-        };
-        let note = NoteItem {
-            id: "n1".to_string(),
-            title: "Shopping".to_string(),
-            body: "Milk".to_string(),
-            body_preview: "Milk".to_string(),
-            pinned: false,
-            updated_at: "2026-07-26".to_string(),
-            folder_id: None,
-        };
-        let task = TaskItem {
-            id: "t1".to_string(),
-            title: "File the report".to_string(),
-            description: None,
-            due_date: None,
-            is_completed: false,
-            priority: "normal".to_string(),
-            task_list_id: None,
-            parent_task_id: None,
-        };
-        let reminder = ReminderItem {
-            id: "r1".to_string(),
-            title: "Call the dentist".to_string(),
-            description: None,
-            due_datetime: None,
-            is_completed: false,
-            priority: "high".to_string(),
-        };
-        let event = CalendarEventItem {
-            id: "e1".to_string(),
-            summary: "Standup".to_string(),
-            description: String::new(),
-            start: "2026-07-27 09:00".to_string(),
-            end: "2026-07-27 09:15".to_string(),
-            location: String::new(),
-            is_all_day: false,
-            status: "confirmed".to_string(),
-            provider: "local".to_string(),
-            calendar_id: None,
-            calendar_name: None,
-            calendar_color: None,
-            reminder_minutes: None,
-        };
+        let contact = contact();
+        let note = note();
+        let task = task();
+        let reminder = reminder();
+        let event = event();
 
         let mail = message();
         let readers: Vec<(&str, &dyn ReadAloud)> = vec![
@@ -557,6 +621,211 @@ mod tests {
             }
             assert!(!reader.read_id().is_empty(), "{} has no id", what);
         }
+    }
+
+    #[test]
+    fn test_each_module_reads_the_rows_own_id_so_moving_between_rows_starts_again() {
+        // The id is not decoration. SpaceCycle compares it to decide whether
+        // the cursor moved, so a row whose identity is a constant would mean
+        // arrowing down and pressing Space read the new row's whole text
+        // straight away, which is the exact thing the cycle exists to stop.
+        assert_eq!(message().read_id(), "7");
+        assert_eq!(contact().read_id(), "c1");
+        assert_eq!(note().read_id(), "n1");
+        assert_eq!(task().read_id(), "t1");
+        assert_eq!(reminder().read_id(), "r1");
+        assert_eq!(event().read_id(), "e1");
+
+        // Two different rows in one module, which is what the ids are for.
+        let mut cycle = SpaceCycle::new();
+        cycle.press("tasks", &task().read_id());
+        assert_eq!(cycle.press("tasks", &reminder().read_id()), Depth::Short);
+    }
+
+    #[test]
+    fn test_a_due_date_in_a_reading_is_spoken_in_words_not_as_stored_digits() {
+        // The point of the whole module: a date inside a reading goes through
+        // the same wording as a date in a column, rather than being read back
+        // as the run of digits the database happens to hold.
+        let mut task = task();
+        task.due_date = Some("2026-07-30".to_string());
+
+        assert_eq!(
+            task.read_short(aloud()),
+            "File the report. Due: July 30, 2026"
+        );
+    }
+
+    #[test]
+    fn test_a_short_contact_reading_is_the_name_and_the_address() {
+        assert_eq!(
+            contact().read_short(aloud()),
+            "Grace Hopper. grace@example.com"
+        );
+    }
+
+    #[test]
+    fn test_a_full_contact_reading_carries_the_phone_number_the_column_hides() {
+        // The phone number has no column, so this is the only way to hear it
+        // without opening the record.
+        let mut contact = contact();
+        contact.phone = "555 0100".to_string();
+        contact.company = "Analytical Engines".to_string();
+        contact.favorite = true;
+
+        assert_eq!(
+            contact.read_full(aloud()),
+            "Grace Hopper. Email: grace@example.com. Phone: 555 0100. \
+             Company: Analytical Engines. Favorite"
+        );
+    }
+
+    #[test]
+    fn test_an_empty_contact_field_is_left_out_rather_than_read_as_a_gap() {
+        assert_eq!(
+            contact().read_full(aloud()),
+            "Grace Hopper. Email: grace@example.com"
+        );
+    }
+
+    #[test]
+    fn test_the_short_note_reading_is_the_one_line_preview_and_not_the_whole_note() {
+        // The mirror of the full reading: full uses the body, short uses the
+        // preview, and with only one of the two pinned they could swap.
+        let mut note = note();
+        note.body = "Milk, bread, and the thing for the tap.".to_string();
+        note.body_preview = "Milk, bread, and the\u{2026}".to_string();
+
+        assert_eq!(
+            note.read_short(aloud()),
+            "Shopping. Milk, bread, and the\u{2026}"
+        );
+    }
+
+    #[test]
+    fn test_a_finished_task_is_called_done_the_same_word_the_column_uses() {
+        // One state, one word, wherever it is met. The column says "Done",
+        // so Space says "Done" too (WCAG 3.2.4).
+        let mut task = task();
+        task.is_completed = true;
+
+        assert_eq!(task.read_short(aloud()), "File the report. Done");
+        assert_eq!(task.read_full(aloud()), "File the report. Done");
+    }
+
+    #[test]
+    fn test_an_unfinished_task_says_so_in_full_rather_than_saying_nothing() {
+        // Silence cannot be told apart from a reading that failed. The short
+        // form stays quiet to keep it to a line; the full form says it.
+        assert_eq!(task().read_full(aloud()), "File the report. Not done");
+    }
+
+    #[test]
+    fn test_a_full_task_reading_carries_the_description_the_column_hides() {
+        let mut task = task();
+        task.description = Some("Numbers from the third quarter.".to_string());
+        task.due_date = Some("2026-07-30".to_string());
+        task.priority = "high".to_string();
+
+        assert_eq!(
+            task.read_full(aloud()),
+            "File the report. Not done. Priority: high. Due: July 30, 2026. \
+             Numbers from the third quarter."
+        );
+    }
+
+    #[test]
+    fn test_an_ordinary_priority_is_not_said_on_every_single_row() {
+        // Thirty tasks in a list, thirty times "Priority: normal", and none of
+        // them told anybody anything. Said only when it is not the ordinary
+        // one, which is how the unread and flagged wording already works.
+        assert!(!task().read_full(aloud()).contains("Priority"));
+
+        let mut urgent = task();
+        urgent.priority = "high".to_string();
+        assert!(urgent.read_full(aloud()).contains("Priority: high"));
+    }
+
+    #[test]
+    fn test_a_reminder_reads_its_own_due_field_in_the_short_form() {
+        // A reminder keeps its due date in a differently named field to a
+        // task's, and it carries a time where a task's often does not.
+        let mut reminder = reminder();
+        reminder.due_datetime = Some("2026-07-30 09:15".to_string());
+
+        assert_eq!(
+            reminder.read_short(aloud()),
+            "Call the dentist. Due: July 30, 2026 at 9:15 AM"
+        );
+    }
+
+    #[test]
+    fn test_a_full_reminder_reading_carries_the_description_the_column_hides() {
+        let mut reminder = reminder();
+        reminder.due_datetime = Some("2026-07-30 09:15".to_string());
+        reminder.description = Some("Ask about the evening appointment.".to_string());
+
+        assert_eq!(
+            reminder.read_full(aloud()),
+            "Call the dentist. Not done. Priority: high. \
+             Due: July 30, 2026 at 9:15 AM. Ask about the evening appointment."
+        );
+    }
+
+    #[test]
+    fn test_a_timed_event_says_when_it_starts_in_the_short_reading() {
+        assert_eq!(
+            event().read_short(aloud()),
+            "Standup. July 27, 2026 at 9:00 AM"
+        );
+    }
+
+    #[test]
+    fn test_an_all_day_event_says_so_in_the_short_reading_too() {
+        // The short form is what the first Space press gives, so an all day
+        // event that reads a start time it does not have is heard there first.
+        let mut holiday = event();
+        holiday.summary = "Public holiday".to_string();
+        holiday.start = "2026-08-31".to_string();
+        holiday.end = "2026-08-31".to_string();
+        holiday.is_all_day = true;
+
+        assert_eq!(
+            holiday.read_short(aloud()),
+            "Public holiday. August 31, 2026, all day"
+        );
+    }
+
+    #[test]
+    fn test_an_event_missing_one_of_its_times_does_not_trail_off_on_the_word_to() {
+        // "July 27, 2026 at 9:00 AM to" and then silence sounds like the
+        // reading was cut off.
+        let mut open_ended = event();
+        open_ended.end = String::new();
+
+        assert_eq!(
+            open_ended.read_full(aloud()),
+            "Standup. July 27, 2026 at 9:00 AM"
+        );
+
+        let mut no_start = event();
+        no_start.start = String::new();
+
+        assert_eq!(
+            no_start.read_full(aloud()),
+            "Standup. July 27, 2026 at 9:15 AM"
+        );
+    }
+
+    #[test]
+    fn test_only_an_unusual_status_is_said_about_an_event() {
+        // "Status: confirmed" on every event in the list carries nothing. A
+        // cancelled one is worth the words.
+        assert!(!event().read_full(aloud()).contains("Status"));
+
+        let mut called_off = event();
+        called_off.status = "cancelled".to_string();
+        assert!(called_off.read_full(aloud()).contains("Status: cancelled"));
     }
 
     #[test]

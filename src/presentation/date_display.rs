@@ -90,6 +90,62 @@ const MONTHS: [&str; 12] = [
     "December",
 ];
 
+/// Ask Windows one thing about the user's locale.
+///
+/// Answers how many characters were written and the first of them, which is
+/// all any of these settings turn on. Holds no decision of its own, so the
+/// decisions below can be read without a locale, a window or a machine set
+/// any particular way.
+#[cfg(target_os = "windows")]
+fn read_locale(lctype: u32) -> (i32, u16) {
+    const LOCALE_USER_DEFAULT: u32 = 0x0400;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetLocaleInfoW(locale: u32, lctype: u32, data: *mut u16, size: i32) -> i32;
+    }
+
+    let mut buffer = [0u16; 8];
+    let written = unsafe {
+        GetLocaleInfoW(
+            LOCALE_USER_DEFAULT,
+            lctype,
+            buffer.as_mut_ptr(),
+            buffer.len() as i32,
+        )
+    };
+    (written, buffer[0])
+}
+
+/// What the machine's answer about date order means.
+///
+/// A locale that cannot be read at all falls back to month first rather than
+/// to whatever the untouched buffer happens to hold.
+#[cfg(target_os = "windows")]
+fn order_from_locale(written: i32, first: u16) -> DateOrder {
+    if written > 0 && first == b'0' as u16 {
+        DateOrder::MonthFirst
+    } else if written > 0 {
+        DateOrder::DayFirst
+    } else {
+        DateOrder::MonthFirst
+    }
+}
+
+/// What the machine's answer about the clock means.
+///
+/// Anything unreadable falls to twelve, which is what this application did
+/// before there was a choice, so an unreadable locale changes nothing rather
+/// than changing every row.
+#[cfg(target_os = "windows")]
+fn clock_from_locale(written: i32, first: u16) -> Clock {
+    if written > 0 && first == b'1' as u16 {
+        Clock::TwentyFourHour
+    } else {
+        Clock::TwelveHour
+    }
+}
+
 impl DateStyle {
     /// Read the stored preference, defaulting to relative.
     pub fn from_setting(value: &str) -> Self {
@@ -106,41 +162,30 @@ impl DateOrder {
     /// "auto" follows the system's own date order rather than assuming one, so
     /// the application reads the way the rest of the machine does.
     pub fn from_setting(value: &str) -> Self {
+        Self::from_setting_or(value, Self::from_system())
+    }
+
+    /// The stored preference, with the machine's own order to fall back on.
+    ///
+    /// Split out from [`DateOrder::from_setting`] so the decision can be read
+    /// without asking the machine. With the two joined, a test of the stored
+    /// values passes on a machine whose locale happens to agree and says
+    /// nothing about whether the stored value was obeyed.
+    fn from_setting_or(value: &str, system: Self) -> Self {
         match value {
             "month_first" => DateOrder::MonthFirst,
             "day_first" => DateOrder::DayFirst,
-            _ => Self::from_system(),
+            _ => system,
         }
     }
 
     /// The order this machine uses.
     #[cfg(target_os = "windows")]
     pub fn from_system() -> Self {
-        // LOCALE_USER_DEFAULT, LOCALE_IDATE: 0 means month first.
-        const LOCALE_USER_DEFAULT: u32 = 0x0400;
+        // LOCALE_IDATE: 0 means month first.
         const LOCALE_IDATE: u32 = 0x00000021;
-
-        #[link(name = "kernel32")]
-        unsafe extern "system" {
-            fn GetLocaleInfoW(locale: u32, lctype: u32, data: *mut u16, size: i32) -> i32;
-        }
-
-        let mut buffer = [0u16; 8];
-        let written = unsafe {
-            GetLocaleInfoW(
-                LOCALE_USER_DEFAULT,
-                LOCALE_IDATE,
-                buffer.as_mut_ptr(),
-                buffer.len() as i32,
-            )
-        };
-        if written > 0 && buffer[0] == b'0' as u16 {
-            DateOrder::MonthFirst
-        } else if written > 0 {
-            DateOrder::DayFirst
-        } else {
-            DateOrder::MonthFirst
-        }
+        let (written, first) = read_locale(LOCALE_IDATE);
+        order_from_locale(written, first)
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -165,10 +210,19 @@ impl Clock {
     /// "auto" follows the machine, so nothing has to be set to get the clock
     /// the rest of the computer already keeps.
     pub fn from_setting(value: &str) -> Self {
+        Self::from_setting_or(value, Self::from_system())
+    }
+
+    /// The stored preference, with the machine's own clock to fall back on.
+    ///
+    /// Split out for the same reason as [`DateOrder::from_setting_or`]: joined
+    /// to the machine reading, a test of the stored values proves only that
+    /// this machine agrees with them.
+    fn from_setting_or(value: &str, system: Self) -> Self {
         match value {
             "12" => Clock::TwelveHour,
             "24" => Clock::TwentyFourHour,
-            _ => Self::from_system(),
+            _ => system,
         }
     }
 
@@ -176,31 +230,9 @@ impl Clock {
     #[cfg(target_os = "windows")]
     pub fn from_system() -> Self {
         // LOCALE_ITIME: 0 means the twelve hour clock.
-        const LOCALE_USER_DEFAULT: u32 = 0x0400;
         const LOCALE_ITIME: u32 = 0x00000023;
-
-        #[link(name = "kernel32")]
-        unsafe extern "system" {
-            fn GetLocaleInfoW(locale: u32, lctype: u32, data: *mut u16, size: i32) -> i32;
-        }
-
-        let mut buffer = [0u16; 8];
-        let written = unsafe {
-            GetLocaleInfoW(
-                LOCALE_USER_DEFAULT,
-                LOCALE_ITIME,
-                buffer.as_mut_ptr(),
-                buffer.len() as i32,
-            )
-        };
-        // Anything unreadable falls to twelve, which is what this application
-        // did before there was a choice, so an unreadable locale changes
-        // nothing rather than changing every row.
-        if written > 0 && buffer[0] == b'1' as u16 {
-            Clock::TwentyFourHour
-        } else {
-            Clock::TwelveHour
-        }
+        let (written, first) = read_locale(LOCALE_ITIME);
+        clock_from_locale(written, first)
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -637,6 +669,97 @@ mod tests {
         // Whatever the machine says, it has to be one of the two.
         let order = DateOrder::from_setting("auto");
         assert!(order == DateOrder::MonthFirst || order == DateOrder::DayFirst);
+    }
+
+    #[test]
+    fn test_a_stored_date_order_is_obeyed_even_when_the_machine_disagrees() {
+        // The machine's own order is passed in as the opposite of the stored
+        // one on purpose. Asking the machine for it, which is what the whole
+        // function used to do, makes the answer depend on the machine the
+        // test runs on: "month_first" would pass here and prove nothing on a
+        // computer that already writes the month first.
+        assert_eq!(
+            DateOrder::from_setting_or("month_first", DateOrder::DayFirst),
+            DateOrder::MonthFirst
+        );
+        assert_eq!(
+            DateOrder::from_setting_or("day_first", DateOrder::MonthFirst),
+            DateOrder::DayFirst
+        );
+        // Only "auto", and anything unrecognised, follows the machine.
+        assert_eq!(
+            DateOrder::from_setting_or("auto", DateOrder::DayFirst),
+            DateOrder::DayFirst
+        );
+        assert_eq!(
+            DateOrder::from_setting_or("nonsense", DateOrder::MonthFirst),
+            DateOrder::MonthFirst
+        );
+    }
+
+    #[test]
+    fn test_a_stored_clock_is_obeyed_even_when_the_machine_disagrees() {
+        assert_eq!(
+            Clock::from_setting_or("12", Clock::TwentyFourHour),
+            Clock::TwelveHour
+        );
+        assert_eq!(
+            Clock::from_setting_or("24", Clock::TwelveHour),
+            Clock::TwentyFourHour
+        );
+        assert_eq!(
+            Clock::from_setting_or("auto", Clock::TwentyFourHour),
+            Clock::TwentyFourHour
+        );
+        assert_eq!(
+            Clock::from_setting_or("nonsense", Clock::TwelveHour),
+            Clock::TwelveHour
+        );
+    }
+
+    /// Reads what the machine's locale answer means, not what this machine
+    /// answers. The call itself is the one part that still needs a real
+    /// Windows locale behind it.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_an_unreadable_locale_falls_back_rather_than_guessing_the_date_order() {
+        // Nothing written means the buffer was never touched, so reading a
+        // character out of it decides the date order by whatever was in
+        // memory. Month first instead, on purpose.
+        assert_eq!(order_from_locale(0, 0), DateOrder::MonthFirst);
+        assert_eq!(order_from_locale(0, b'0' as u16), DateOrder::MonthFirst);
+        // And a locale that does answer is obeyed both ways.
+        assert_eq!(order_from_locale(1, b'0' as u16), DateOrder::MonthFirst);
+        assert_eq!(order_from_locale(1, b'1' as u16), DateOrder::DayFirst);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_an_unreadable_locale_leaves_the_clock_where_it_was() {
+        // Twelve is what this application did before the setting existed, so
+        // a locale that cannot be read changes nothing rather than changing
+        // every row in every module.
+        assert_eq!(clock_from_locale(0, b'1' as u16), Clock::TwelveHour);
+        assert_eq!(clock_from_locale(1, b'1' as u16), Clock::TwentyFourHour);
+        assert_eq!(clock_from_locale(1, b'0' as u16), Clock::TwelveHour);
+    }
+
+    #[test]
+    fn test_a_moment_that_has_only_just_passed_is_just_now() {
+        // Nothing elapsed at all is a real case: a message that arrives in the
+        // second the list repaints. It is "just now", not the full date.
+        let now = at("2026-07-26 12:00");
+        assert_eq!(
+            format_for_list(
+                "2026-07-26 12:00",
+                now,
+                DateSettings {
+                    style: DateStyle::RelativeWithinWeek,
+                    ..settings()
+                }
+            ),
+            "just now"
+        );
     }
 
     #[test]

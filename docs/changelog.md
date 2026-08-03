@@ -151,6 +151,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **One word for a finished task, and only the words that tell you something.**
+  Pressing Space on a task said "done", pressing it again said "Completed", and
+  the column beside it said "Done": one state with three names. It is "Done"
+  everywhere now, and asking for the whole record on an unfinished one says
+  "Not done" rather than saying nothing, since silence cannot be told apart
+  from a reading that failed. A starred contact is read as "Favorite", the way
+  the menu, the folder tree and the detail pane already spell it.
+
+  Every task and reminder also said its priority, and every event its status,
+  when nearly all of them hold the ordinary value. Working down thirty tasks
+  meant hearing "Priority: normal" thirty times for nothing. A priority is now
+  said when it is not the ordinary one and a status when an event is not
+  confirmed, which is how "unread" and "flagged" already worked.
+
+- **An event missing one of its times no longer trails off on the word "to".**
+  The start and the end were joined before empty parts were dropped, so an
+  event with no end read as "July 27, 2026 at 9:00 AM to" and stopped, which
+  sounds like the reading was cut off. It now says the time it has. An event
+  whose two times read the same says it once.
+
 - **Jumping to the signature lands on it in a message that is not plain
   English.** The place to jump to was counted in bytes while the cursor counts
   characters, so every accented letter, smart quote or emoji above the
