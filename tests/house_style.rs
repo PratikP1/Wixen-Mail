@@ -231,6 +231,102 @@ fn test_the_documents_call_it_by_its_name() {
     );
 }
 
+/// Documents describing what the software is now, as opposed to what it was.
+///
+/// `docs/changelog.md` is left out on purpose. It is a dated record, and one of
+/// its own later entries is the correction saying the cache was never
+/// encrypted. Rewriting the entry that made the claim would hide that the claim
+/// was ever made, which is the opposite of what a changelog is for.
+fn documents_about_now() -> Vec<PathBuf> {
+    documents()
+        .into_iter()
+        .filter(|d| !d.ends_with("changelog.md"))
+        .collect()
+}
+
+/// Whether a sentence says something is encrypted rather than that it is not.
+fn claims_encryption(prose: &str) -> bool {
+    let lowered = prose.to_lowercase();
+    if !lowered.contains("encrypt") {
+        return false;
+    }
+    // Only the local store. A connection really is encrypted, a disk can be,
+    // and credentials really do go somewhere Windows protects.
+    let about_the_store = ["cache", "cached", "database", "sqlite"]
+        .iter()
+        .any(|word| lowered.contains(word));
+    let denied = ["not encrypt", "never encrypt", "no encrypt", "unencrypt"]
+        .iter()
+        .any(|phrase| lowered.contains(phrase));
+
+    about_the_store && !denied
+}
+
+#[test]
+fn test_no_document_says_the_cache_is_encrypted() {
+    // It is not, and saying it is tells somebody their mail is protected on a
+    // disk where it is sitting in the clear. That is worse than saying nothing:
+    // it is the claim a person would decide against turning on BitLocker.
+    //
+    // This has now been corrected twice. The first time it was found by reading
+    // and fixed by hand, which is how it came back: one document was missed and
+    // then contradicted itself two sentences later. So it is a failing build
+    // rather than something somebody has to keep noticing.
+    let mut claiming = Vec::new();
+
+    for document in documents_about_now() {
+        let Ok(text) = fs::read_to_string(&document) else {
+            continue;
+        };
+        let mut inside_a_fence = false;
+        for (number, line) in text.lines().enumerate() {
+            if line.trim_start().starts_with("```") {
+                inside_a_fence = !inside_a_fence;
+                continue;
+            }
+            if inside_a_fence {
+                continue;
+            }
+            if claims_encryption(&without_code_and_addresses(line)) {
+                claiming.push(format!(
+                    "{}:{}: {}",
+                    document.display(),
+                    number + 1,
+                    line.trim()
+                ));
+            }
+        }
+    }
+
+    assert!(
+        claiming.is_empty(),
+        "the cached mail is not encrypted, and these say it is:\n  {}",
+        claiming.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_encryption_check_can_tell_the_two_apart() {
+    // Without this the check above could pass by seeing nothing at all, which
+    // is exactly how the claim survived a pass that reported the docs clean.
+    assert!(claims_encryption(
+        "An encrypted SQLite cache holds messages"
+    ));
+    assert!(claims_encryption("the database is encrypted at rest"));
+
+    assert!(!claims_encryption("the cached mail is not encrypted"));
+    assert!(!claims_encryption("the cache is unencrypted"));
+    assert!(!claims_encryption("unless the disk itself is encrypted"));
+    assert!(!claims_encryption("connections use TLS encryption"));
+    assert!(!claims_encryption("passwords go to the credential store"));
+
+    assert!(
+        documents_about_now().len() > 5,
+        "only {} documents checked, so the walk is broken",
+        documents_about_now().len()
+    );
+}
+
 /// A line with its code spans and link addresses taken out.
 fn without_code_and_addresses(line: &str) -> String {
     let mut out = String::with_capacity(line.len());

@@ -27,10 +27,11 @@ message in a local outbox and flushes it, so a send that fails is retried rather
 than lost. Failures say whether the problem is the transport or the account's
 configuration.
 
-**Local storage.** An encrypted SQLite cache holds messages, contacts, contact
-groups, calendars, calendar events, reminders, task lists, tasks, note folders,
-and notes. Nothing sensitive is stored in it: passwords and tokens go to the
-Windows credential store, and the cached mail is not encrypted.
+**Local storage.** A SQLite cache holds messages, contacts, contact groups,
+calendars, calendar events, reminders, task lists, tasks, note folders, and
+notes. It is not encrypted, so anybody who can read the file can read the mail
+in it. It carries no credentials, though: passwords and tokens go to the Windows
+credential store instead.
 
 **The six modules.** Mail, contacts, calendar, reminders, tasks, and notes share
 one window, switched with `Ctrl+Shift+1` through `Ctrl+Shift+6`. Opening a module
