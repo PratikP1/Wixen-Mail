@@ -16,7 +16,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct MsGraphContact {
-    #[serde(default)]
+    /// Left out of a create, where there is no identifier yet to send. Graph
+    /// refuses a contact that carries one.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub id: String,
     #[serde(default)]
     pub display_name: String,
@@ -40,17 +42,26 @@ pub struct MsGraphContact {
     pub job_title: String,
     #[serde(default)]
     pub department: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub home_address: Option<MsPhysicalAddress>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub business_address: Option<MsPhysicalAddress>,
+    /// A whole day, written the way Graph writes a moment in time.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub birthday: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub personal_notes: Option<String>,
-    /// Last modified datetime (RFC 3339).
+    /// When Graph last changed it, RFC 3339. Not written back: it is the
+    /// server's to set.
+    #[serde(skip_serializing)]
     pub last_modified_date_time: Option<String>,
-    /// Change key: serves as an etag for concurrency.
-    #[serde(rename = "@odata.etag")]
+    /// Graph's version marker. An annotation rather than a property, and the
+    /// server's to set.
+    #[serde(rename = "@odata.etag", skip_serializing)]
     pub odata_etag: Option<String>,
-    /// Set to true when the contact was deleted (delta queries).
-    #[serde(rename = "@removed")]
+    /// Set when the contact was deleted. An annotation Graph adds to an answer,
+    /// never something to send.
+    #[serde(rename = "@removed", skip_serializing)]
     pub removed: Option<MsRemovedInfo>,
 }
 
@@ -466,6 +477,23 @@ impl MsGraphClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_a_new_contact_is_sent_without_the_fields_graph_fills_in() {
+        let contact = MsGraphContact {
+            display_name: "Grace Hopper".to_string(),
+            ..Default::default()
+        };
+
+        let sent = serde_json::to_value(&contact).expect("a contact to serialize");
+        let fields = sent.as_object().expect("an object");
+
+        assert!(!fields.contains_key("id"), "{sent}");
+        assert!(!fields.contains_key("@odata.etag"), "{sent}");
+        assert!(!fields.contains_key("@removed"), "{sent}");
+        assert!(!fields.contains_key("lastModifiedDateTime"), "{sent}");
+        assert!(!fields.contains_key("birthday"), "{sent}");
+    }
 
     #[test]
     fn test_deserialize_contacts_response() {

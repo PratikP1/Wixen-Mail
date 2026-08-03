@@ -12,33 +12,43 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct GooglePerson {
-    /// e.g. "people/c1234567890"
-    #[serde(default)]
+    /// e.g. "people/c1234567890".
+    ///
+    /// Left out of a create, where there is no name yet to send. It is the
+    /// server's to set.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub resource_name: String,
-    #[serde(default)]
+    /// Google's version marker, the server's to set.
+    ///
+    /// Left out when it is empty, so a create does not claim a version. If a
+    /// change to an existing contact is ever wired up, that one has to carry
+    /// the marker Google gave it, and this attribute keeps a real one.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub etag: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub names: Vec<GoogleName>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub email_addresses: Vec<GoogleEmail>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub phone_numbers: Vec<GooglePhone>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub organizations: Vec<GoogleOrganization>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub addresses: Vec<GoogleAddress>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub birthdays: Vec<GoogleBirthday>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub photos: Vec<GooglePhoto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub nicknames: Vec<GoogleNickname>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub urls: Vec<GoogleUrl>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub biographies: Vec<GoogleBiography>,
-    /// Metadata about the person (includes deleted flag for sync).
-    #[serde(default)]
+    /// Metadata about the person, including whether it was deleted.
+    ///
+    /// Not written back: it is the server's to set.
+    #[serde(default, skip_serializing)]
     pub metadata: Option<GooglePersonMetadata>,
 }
 
@@ -54,9 +64,9 @@ pub struct GooglePersonMetadata {
 pub struct GoogleName {
     #[serde(default)]
     pub display_name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub given_name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub family_name: String,
 }
 
@@ -65,9 +75,13 @@ pub struct GoogleName {
 pub struct GoogleEmail {
     #[serde(default)]
     pub value: String,
-    #[serde(default, rename = "type")]
+    /// The label, as Google writes its own: "home", "work", "workFax". Left out
+    /// when nobody chose one, rather than sent as a guess.
+    #[serde(default, rename = "type", skip_serializing_if = "String::is_empty")]
     pub email_type: String,
-    #[serde(default)]
+    /// Which of a contact's addresses Google treats as the main one. The
+    /// server's to set.
+    #[serde(default, skip_serializing)]
     pub metadata: Option<GoogleFieldMetadata>,
 }
 
@@ -76,7 +90,8 @@ pub struct GoogleEmail {
 pub struct GooglePhone {
     #[serde(default)]
     pub value: String,
-    #[serde(default, rename = "type")]
+    /// The label, as Google writes its own. Left out when nobody chose one.
+    #[serde(default, rename = "type", skip_serializing_if = "String::is_empty")]
     pub phone_type: String,
 }
 
@@ -261,6 +276,27 @@ const PEOPLE_API_BASE: &str = "https://people.googleapis.com/v1";
 const CALENDAR_API_BASE: &str = "https://www.googleapis.com/calendar/v3";
 const PERSON_FIELDS: &str = "names,emailAddresses,phoneNumbers,organizations,addresses,birthdays,photos,nicknames,urls,biographies,metadata";
 
+/// How many contacts to ask for at a time.
+const CONTACTS_PAGE_SIZE: u32 = 1000;
+
+/// Where to ask for the contacts in somebody's address book.
+///
+/// Asking for a sync token is what makes Google send back the marker saying
+/// where this sync finished. Without that request no marker ever arrives, so
+/// nothing is stored to ask from and every sync reads the whole address book.
+fn connections_url(sync_token: Option<&str>, page_token: Option<&str>) -> String {
+    let mut url = format!(
+        "{PEOPLE_API_BASE}/people/me/connections?personFields={PERSON_FIELDS}&pageSize={CONTACTS_PAGE_SIZE}&requestSyncToken=true"
+    );
+    if let Some(sync_token) = sync_token {
+        url.push_str(&format!("&syncToken={sync_token}"));
+    }
+    if let Some(page_token) = page_token {
+        url.push_str(&format!("&pageToken={page_token}"));
+    }
+    url
+}
+
 pub struct GoogleApiClient {
     http: crate::service::outward::Outward,
 }
@@ -327,16 +363,7 @@ impl GoogleApiClient {
         let mut final_sync_token: Option<String> = None;
 
         loop {
-            let mut url = format!(
-                "{}/people/me/connections?personFields={}&pageSize=1000",
-                PEOPLE_API_BASE, PERSON_FIELDS,
-            );
-            if let Some(ref st) = sync_token {
-                url.push_str(&format!("&syncToken={}", st));
-            }
-            if let Some(ref pt) = page_token {
-                url.push_str(&format!("&pageToken={}", pt));
-            }
+            let url = connections_url(sync_token, page_token.as_deref());
 
             let resp: GoogleConnectionsResponse =
                 with_retry(3, || self.api_get(&url, token)).await?;
@@ -627,6 +654,67 @@ fn is_retryable(err: &Error) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_a_contacts_request_asks_google_for_a_sync_token() {
+        let url = connections_url(None, None);
+
+        assert!(url.contains("requestSyncToken=true"), "{url}");
+    }
+
+    #[test]
+    fn test_a_contacts_request_carries_the_markers_it_was_given() {
+        let url = connections_url(Some("tok123"), Some("page9"));
+
+        assert!(url.contains("syncToken=tok123"), "{url}");
+        assert!(url.contains("pageToken=page9"), "{url}");
+        assert!(url.contains("requestSyncToken=true"), "{url}");
+    }
+
+    #[test]
+    fn test_a_new_contact_is_sent_without_the_fields_google_fills_in() {
+        let person = GooglePerson {
+            names: vec![GoogleName {
+                display_name: "Grace Hopper".to_string(),
+                given_name: "Grace".to_string(),
+                family_name: "Hopper".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        let sent = serde_json::to_value(&person).expect("a person to serialize");
+        let fields = sent.as_object().expect("an object");
+
+        assert!(!fields.contains_key("resourceName"), "{sent}");
+        assert!(!fields.contains_key("etag"), "{sent}");
+        assert!(!fields.contains_key("metadata"), "{sent}");
+        assert!(!fields.contains_key("phoneNumbers"), "{sent}");
+    }
+
+    #[test]
+    fn test_a_number_with_no_label_is_sent_to_google_without_one() {
+        let person = GooglePerson {
+            phone_numbers: vec![GooglePhone {
+                value: "+1-555-0101".to_string(),
+                phone_type: String::new(),
+            }],
+            email_addresses: vec![GoogleEmail {
+                value: "grace@example.com".to_string(),
+                email_type: String::new(),
+                metadata: None,
+            }],
+            ..Default::default()
+        };
+
+        let sent = serde_json::to_value(&person).expect("a person to serialize");
+
+        assert!(sent["phoneNumbers"][0].get("type").is_none(), "{sent}");
+        assert!(sent["emailAddresses"][0].get("type").is_none(), "{sent}");
+        assert!(
+            sent["emailAddresses"][0].get("metadata").is_none(),
+            "{sent}"
+        );
+    }
 
     #[test]
     fn test_deserialize_connections_response() {

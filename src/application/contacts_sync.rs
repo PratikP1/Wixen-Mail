@@ -8,11 +8,11 @@
 //! made here ever reaches a provider. None of this has run against a live
 //! account.
 
-use crate::common::Result;
-use crate::data::message_cache::{ContactEntry, MessageCache, SyncState};
+use crate::common::{Error, Result};
+use crate::data::message_cache::{ContactEntry, EmailEntry, MessageCache, PhoneEntry, SyncState};
 use crate::service::google_api::{
-    GoogleApiClient, GoogleEmail, GoogleName, GoogleNickname, GoogleOrganization, GooglePerson,
-    GooglePhone,
+    GoogleApiClient, GoogleDate, GoogleEmail, GoogleName, GoogleNickname, GoogleOrganization,
+    GooglePerson, GooglePhone,
 };
 use crate::service::microsoft_graph::{MsEmailAddress, MsGraphClient, MsGraphContact};
 
@@ -34,9 +34,6 @@ const GOOGLE_ADDRESS_BOOK: &str = "gmail";
 const MICROSOFT_ADDRESS_BOOK: &str = "outlook";
 const CONTACTS_SYNC: &str = "contacts";
 
-/// Shown for a contact that arrived with nothing to call it by.
-const UNNAMED_CONTACT: &str = "Unknown";
-
 /// What to call a contact whose address book gave no full name. A contact with
 /// no email address has to be findable in the list too, so this is never empty.
 fn a_name_to_show_instead(given_name: &str, family_name: &str, email: &str) -> String {
@@ -45,12 +42,233 @@ fn a_name_to_show_instead(given_name: &str, family_name: &str, email: &str) -> S
     if !both_parts.is_empty() {
         return both_parts.to_string();
     }
-    email
-        .split('@')
-        .next()
-        .filter(|before_the_at| !before_the_at.is_empty())
-        .unwrap_or(UNNAMED_CONTACT)
-        .to_string()
+    MessageCache::email_local_part_or_unknown(email)
+}
+
+// ── The label somebody chose ────────────────────────────────────────────────
+
+/// Shown for a phone number or an address whose address book recorded no label.
+const UNLABELLED: &str = "Other";
+
+/// A label in the words the contact editor uses: "Work Fax", "Home", "Other".
+///
+/// Providers write their own types in one run of lower camel case, so "workFax"
+/// arrives and has to be read back out as words. This and its opposite have to
+/// stay exact opposites, or a label drifts a little on every sync and a number
+/// is read out differently each time.
+fn label_for_provider_type(provider_type: &str) -> String {
+    let words = words_in_provider_type(provider_type);
+    if words.is_empty() {
+        return UNLABELLED.to_string();
+    }
+    words
+        .iter()
+        .map(|word| capitalised(word))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A label written the way a provider writes its own types: "workFax".
+///
+/// A label nobody chose goes as nothing at all rather than as a guess.
+fn provider_type_for_label(label: &str) -> String {
+    let mut words = label.split_whitespace();
+    let Some(first) = words.next() else {
+        return String::new();
+    };
+    let mut provider_type = first.to_lowercase();
+    for word in words {
+        provider_type.push_str(&capitalised(word));
+    }
+    provider_type
+}
+
+/// The words in a provider's type. A word starts where a small letter or a
+/// digit is followed by a capital one, so an all-capitals type somebody typed
+/// for themselves stays one word rather than becoming one word per letter.
+fn words_in_provider_type(provider_type: &str) -> Vec<String> {
+    let mut words: Vec<String> = Vec::new();
+    for run in provider_type.split_whitespace() {
+        let mut word = String::new();
+        let mut after_a_small_letter = false;
+        for letter in run.chars() {
+            if letter.is_uppercase() && after_a_small_letter && !word.is_empty() {
+                words.push(std::mem::take(&mut word));
+            }
+            after_a_small_letter = letter.is_lowercase() || letter.is_numeric();
+            word.push(letter);
+        }
+        if !word.is_empty() {
+            words.push(word);
+        }
+    }
+    words
+}
+
+fn capitalised(word: &str) -> String {
+    let lowered = word.to_lowercase();
+    let mut letters = lowered.chars();
+    match letters.next() {
+        None => String::new(),
+        Some(first) => first.to_uppercase().collect::<String>() + letters.as_str(),
+    }
+}
+
+/// A list a contact's row holds as JSON, or nothing when the row holds none or
+/// holds one nothing can read.
+///
+/// A row nothing can read must not take a contact's other details down with it,
+/// so it counts as no list at all and the caller falls back to what it has.
+fn stored_list<T: serde::de::DeserializeOwned>(json: Option<&String>) -> Vec<T> {
+    let Some(json) = json else {
+        return Vec::new();
+    };
+    match serde_json::from_str(json) {
+        Ok(list) => list,
+        Err(unreadable) => {
+            tracing::warn!("A contact's stored list could not be read: {}", unreadable);
+            Vec::new()
+        }
+    }
+}
+
+/// Every phone number recorded for a contact, with the label somebody chose.
+///
+/// Before there was a list to hold them, only the first number was recorded and
+/// no label was recorded with it. That one goes out with no label rather than
+/// with a guessed one.
+fn chosen_phones(contact: &ContactEntry) -> Vec<PhoneEntry> {
+    let recorded: Vec<PhoneEntry> = stored_list(contact.phones_json.as_ref())
+        .into_iter()
+        .filter(|entry: &PhoneEntry| !entry.number.trim().is_empty())
+        .collect();
+    if !recorded.is_empty() {
+        return recorded;
+    }
+    contact
+        .phone
+        .iter()
+        .filter(|number| !number.trim().is_empty())
+        .map(|number| PhoneEntry {
+            label: String::new(),
+            number: number.clone(),
+        })
+        .collect()
+}
+
+/// Every email address recorded for a contact, with the label somebody chose.
+/// Same rule as the phone numbers.
+fn chosen_emails(contact: &ContactEntry) -> Vec<EmailEntry> {
+    let recorded: Vec<EmailEntry> = stored_list(contact.emails_json.as_ref())
+        .into_iter()
+        .filter(|entry: &EmailEntry| !entry.address.trim().is_empty())
+        .collect();
+    if !recorded.is_empty() {
+        return recorded;
+    }
+    if contact.email.trim().is_empty() {
+        return Vec::new();
+    }
+    vec![EmailEntry {
+        label: String::new(),
+        address: contact.email.clone(),
+    }]
+}
+
+// ── Names ───────────────────────────────────────────────────────────────────
+
+/// A name split into the two parts a provider stores it in.
+///
+/// The last word is the family name and everything before it the given name,
+/// so a middle name stays where somebody typed it. A name of one word is all
+/// given name: there is nothing to put in a family name, and inventing one puts
+/// a word in somebody's record that they never wrote. A family name that
+/// carries a space, such as van der Berg, goes the other way, which no rule can
+/// get right from one line of text.
+fn given_and_family_name(name: &str) -> (String, String) {
+    let words: Vec<&str> = name.split_whitespace().collect();
+    match words.split_last() {
+        None => (String::new(), String::new()),
+        Some((only, [])) => ((*only).to_string(), String::new()),
+        Some((family, given)) => (given.join(" "), (*family).to_string()),
+    }
+}
+
+// ── Birthdays ───────────────────────────────────────────────────────────────
+
+/// The year Google sends for a birthday that was recorded without one.
+const BIRTHDAY_WITH_NO_YEAR: i32 = 0;
+
+/// How a date with the year left out is written.
+const YEAR_LEFT_OUT: &str = "--";
+
+/// The start of the day, which is how Microsoft stores a whole-day date.
+const START_OF_THE_DAY: &str = "T00:00:00Z";
+
+/// A birthday from Google as this application stores it, or nothing when the
+/// date names no day.
+///
+/// Google returns most birthdays with no year. Writing that as the year 0 puts
+/// a fact in somebody's record that nobody gave and reads out as a birth in the
+/// year nothing, so the year is left out instead.
+fn birthday_from_google(date: &GoogleDate) -> Option<String> {
+    if date.month == 0 || date.day == 0 {
+        return None;
+    }
+    if date.year == BIRTHDAY_WITH_NO_YEAR {
+        return Some(format!("{YEAR_LEFT_OUT}{:02}-{:02}", date.month, date.day));
+    }
+    Some(format!(
+        "{:04}-{:02}-{:02}",
+        date.year, date.month, date.day
+    ))
+}
+
+/// A birthday in the shape Microsoft takes, or nothing when it names no day.
+///
+/// Microsoft refuses a whole contact whose birthday it cannot read as a date,
+/// so a birthday with no year, or one somebody typed in words, is left out
+/// rather than sent. Losing one field beats losing the contact.
+fn birthday_for_microsoft(birthday: Option<&str>) -> Option<String> {
+    let birthday = birthday?;
+    let day = chrono::NaiveDate::parse_from_str(birthday, "%Y-%m-%d").ok()?;
+    if chrono::Datelike::year(&day) == BIRTHDAY_WITH_NO_YEAR {
+        return None;
+    }
+    Some(format!("{birthday}{START_OF_THE_DAY}"))
+}
+
+/// The day a birthday from Microsoft names.
+///
+/// Microsoft sends a whole timestamp. Storing that puts a time of day in the
+/// birthday box, where it is shown and read out as one. The offset is dropped
+/// with it, so a birthday sent with one can land a day out.
+fn birthday_from_microsoft(birthday: Option<&str>) -> Option<String> {
+    let birthday = birthday?;
+    Some(match birthday.split_once('T') {
+        Some((day, _)) => day.to_string(),
+        None => birthday.to_string(),
+    })
+}
+
+// ── When the whole address book has to be read again ────────────────────────
+
+/// Google's answer when the marker from the last sync is too old to use.
+const SYNC_TOKEN_EXPIRED: u16 = 410;
+
+/// Whether an error is Google saying that marker is too old.
+///
+/// Only that one answer means the whole address book has to be read again. A
+/// network blip must not, or a sync that could not connect would turn into a
+/// full download of everything somebody has.
+fn is_expired_sync_token(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Api {
+            status: SYNC_TOKEN_EXPIRED,
+            ..
+        }
+    )
 }
 
 // ── Matching a provider's copy of a person to a stored contact ──────────────
@@ -171,18 +389,22 @@ pub async fn sync_google_contacts(
     let state = cache.get_sync_state(account_id, CONTACTS_SYNC, GOOGLE_ADDRESS_BOOK)?;
     let sync_token = state.as_ref().and_then(|s| s.sync_token.as_deref());
 
-    // Fetch remote contacts (incremental if we have a sync token)
-    let (remote_contacts, new_sync_token) = match google.list_contacts(token, sync_token).await {
-        Ok(r) => r,
-        Err(e) => {
-            // If sync token is invalid (410 Gone), do a full sync
-            if sync_token.is_some() {
-                tracing::warn!("Sync token expired, performing full sync: {}", e);
-                google.list_contacts(token, None).await?
-            } else {
-                return Err(e);
-            }
+    // Ask only for what changed where there is a marker to ask from, and read
+    // the whole address book when there is not, or when Google says the marker
+    // it was given is too old.
+    let (remote_contacts, new_sync_token, read_the_whole_address_book) = match google
+        .list_contacts(token, sync_token)
+        .await
+    {
+        Ok((contacts, marker)) => (contacts, marker, sync_token.is_none()),
+        Err(too_old) if is_expired_sync_token(&too_old) => {
+            tracing::warn!(
+                "The marker from the last contacts sync was too old, so the whole address book is being read again"
+            );
+            let (contacts, marker) = google.list_contacts(token, None).await?;
+            (contacts, marker, true)
         }
+        Err(e) => return Err(e),
     };
 
     // Track which remote IDs we've seen
@@ -229,7 +451,7 @@ pub async fn sync_google_contacts(
     }
 
     // Push local-only contacts to Google (those without provider_contact_id)
-    if sync_token.is_none() {
+    if read_the_whole_address_book {
         // Only push on full sync to avoid duplicates
         let locals = cache.get_contacts_for_account(account_id)?;
         for local in &locals {
@@ -270,7 +492,7 @@ pub async fn sync_google_contacts(
         provider: GOOGLE_ADDRESS_BOOK.to_string(),
         sync_token: new_sync_token,
         delta_link: None,
-        last_full_sync: if sync_token.is_none() {
+        last_full_sync: if read_the_whole_address_book {
             Some(now.clone())
         } else {
             state.as_ref().and_then(|s| s.last_full_sync.clone())
@@ -412,22 +634,20 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
     let website = person.urls.first().map(|u| u.value.clone());
     let notes = person.biographies.first().map(|b| b.value.clone());
     let avatar_url = person.photos.first().map(|p| p.url.clone());
-    let birthday = person.birthdays.first().and_then(|b| {
-        b.date
-            .as_ref()
-            .map(|d| format!("{:04}-{:02}-{:02}", d.year, d.month, d.day))
-    });
+    let birthday = person
+        .birthdays
+        .first()
+        .and_then(|b| b.date.as_ref())
+        .and_then(birthday_from_google);
 
     // Multi-value emails
     let emails_json = if person.email_addresses.len() > 1 {
-        let entries: Vec<_> = person
+        let entries: Vec<EmailEntry> = person
             .email_addresses
             .iter()
-            .map(|e| {
-                serde_json::json!({
-                    "label": if e.email_type.is_empty() { "Other" } else { &e.email_type },
-                    "address": e.value,
-                })
+            .map(|e| EmailEntry {
+                label: label_for_provider_type(&e.email_type),
+                address: e.value.clone(),
             })
             .collect();
         serde_json::to_string(&entries).ok()
@@ -437,14 +657,12 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
 
     // Multi-value phones
     let phones_json = if person.phone_numbers.len() > 1 {
-        let entries: Vec<_> = person
+        let entries: Vec<PhoneEntry> = person
             .phone_numbers
             .iter()
-            .map(|p| {
-                serde_json::json!({
-                    "label": if p.phone_type.is_empty() { "Other" } else { &p.phone_type },
-                    "number": p.value,
-                })
+            .map(|p| PhoneEntry {
+                label: label_for_provider_type(&p.phone_type),
+                number: p.value.clone(),
             })
             .collect();
         serde_json::to_string(&entries).ok()
@@ -496,35 +714,30 @@ fn contact_to_google_person(contact: &ContactEntry) -> GooglePerson {
     let names = if contact.name.is_empty() {
         vec![]
     } else {
-        let parts: Vec<&str> = contact.name.splitn(2, ' ').collect();
+        let (given_name, family_name) = given_and_family_name(&contact.name);
         vec![GoogleName {
             display_name: contact.name.clone(),
-            given_name: parts.first().unwrap_or(&"").to_string(),
-            family_name: parts.get(1).unwrap_or(&"").to_string(),
+            given_name,
+            family_name,
         }]
     };
 
-    let email_addresses = if contact.email.is_empty() {
-        vec![]
-    } else {
-        vec![GoogleEmail {
-            value: contact.email.clone(),
-            email_type: "other".to_string(),
+    let email_addresses = chosen_emails(contact)
+        .into_iter()
+        .map(|entry| GoogleEmail {
+            value: entry.address,
+            email_type: provider_type_for_label(&entry.label),
             metadata: None,
-        }]
-    };
-
-    let phone_numbers = contact
-        .phone
-        .as_ref()
-        .filter(|p| !p.is_empty())
-        .map(|p| {
-            vec![GooglePhone {
-                value: p.clone(),
-                phone_type: "mobile".to_string(),
-            }]
         })
-        .unwrap_or_default();
+        .collect();
+
+    let phone_numbers = chosen_phones(contact)
+        .into_iter()
+        .map(|entry| GooglePhone {
+            value: entry.number,
+            phone_type: provider_type_for_label(&entry.label),
+        })
+        .collect();
 
     let has_work_details =
         contact.company.is_some() || contact.job_title.is_some() || contact.department.is_some();
@@ -557,6 +770,12 @@ fn contact_to_google_person(contact: &ContactEntry) -> GooglePerson {
 
 // ── Conversion: Microsoft ↔ Local ───────────────────────────────────────────
 
+/// Microsoft's copy of a person, as a stored contact.
+///
+/// Microsoft sends no label with a contact's email addresses: an address there
+/// is a name and an address and nothing else. So every one of them is labelled
+/// Other, and a card exported from one says so. That is what Microsoft gives
+/// rather than a label being dropped on the way in.
 fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry {
     let primary_email = ms
         .email_addresses
@@ -598,7 +817,10 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         let entries: Vec<_> = ms
             .email_addresses
             .iter()
-            .map(|e| serde_json::json!({"label": "Other", "address": e.address}))
+            .map(|e| EmailEntry {
+                label: UNLABELLED.to_string(),
+                address: e.address.clone(),
+            })
             .collect();
         serde_json::to_string(&entries).ok()
     } else {
@@ -621,7 +843,7 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         job_title,
         website: None,
         address: None,
-        birthday: ms.birthday.clone(),
+        birthday: birthday_from_microsoft(ms.birthday.as_deref()),
         avatar_url: None,
         avatar_data_base64: None,
         source_provider: Some(MICROSOFT_ADDRESS_BOOK.to_string()),
@@ -650,18 +872,19 @@ fn contact_to_ms_contact(contact: &ContactEntry) -> MsGraphContact {
         }]
     };
 
-    let parts: Vec<&str> = contact.name.splitn(2, ' ').collect();
+    let (given_name, surname) = given_and_family_name(&contact.name);
 
     MsGraphContact {
         display_name: contact.name.clone(),
-        given_name: parts.first().unwrap_or(&"").to_string(),
-        surname: parts.get(1).unwrap_or(&"").to_string(),
+        given_name,
+        surname,
         nick_name: contact.nickname.clone().unwrap_or_default(),
         email_addresses,
         mobile_phone: contact.phone.clone().unwrap_or_default(),
         company_name: contact.company.clone().unwrap_or_default(),
         job_title: contact.job_title.clone().unwrap_or_default(),
         department: contact.department.clone().unwrap_or_default(),
+        birthday: birthday_for_microsoft(contact.birthday.as_deref()),
         personal_notes: contact.notes.clone(),
         ..Default::default()
     }
@@ -673,6 +896,7 @@ fn contact_to_ms_contact(contact: &ContactEntry) -> MsGraphContact {
 mod tests {
     use super::*;
     use crate::data::message_cache::{EmailEntry, PhoneEntry};
+    use crate::service::google_api::{GoogleBirthday, GoogleDate};
 
     /// A local contact with every optional field empty. Each test sets only the
     /// one or two fields its behaviour is about.
@@ -929,7 +1153,7 @@ mod tests {
         let entries: Vec<EmailEntry> = serde_json::from_str(&stored).expect("valid JSON list");
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].address, "work@example.com");
-        assert_eq!(entries[0].label, "work");
+        assert_eq!(entries[0].label, "Work");
         assert_eq!(entries[1].address, "home@example.com");
         assert_eq!(entries[1].label, "Other");
     }
@@ -976,7 +1200,7 @@ mod tests {
         let entries: Vec<PhoneEntry> = serde_json::from_str(&stored).expect("valid JSON list");
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].number, "+1-555-0101");
-        assert_eq!(entries[0].label, "work");
+        assert_eq!(entries[0].label, "Work");
         assert_eq!(entries[1].number, "+1-555-0202");
         assert_eq!(entries[1].label, "Other");
     }
@@ -1450,5 +1674,326 @@ mod tests {
         assert!(two_books.contains("two address books"), "{two_books}");
         assert!(no_room.contains("no email address"), "{no_room}");
         assert!(no_room.contains("Phone Only Person"), "{no_room}");
+    }
+
+    // ── The label somebody chose ────────────────────────────────────────────
+
+    #[test]
+    fn test_a_phone_number_is_pushed_to_google_with_the_label_somebody_chose() {
+        let mut contact = a_local_contact("Grace Hopper", "grace@example.com");
+        contact.phone = Some("+1-555-0101".to_string());
+        contact.phones_json = Some(
+            r#"[{"label":"Home","number":"+1-555-0101"},{"label":"Work Fax","number":"+1-555-0202"}]"#
+                .to_string(),
+        );
+
+        let person = contact_to_google_person(&contact);
+
+        assert_eq!(person.phone_numbers.len(), 2);
+        assert_eq!(person.phone_numbers[0].phone_type, "home");
+        assert_eq!(person.phone_numbers[1].value, "+1-555-0202");
+        assert_eq!(person.phone_numbers[1].phone_type, "workFax");
+    }
+
+    #[test]
+    fn test_a_phone_number_with_no_label_recorded_is_pushed_to_google_without_one() {
+        let mut contact = a_local_contact("Grace Hopper", "grace@example.com");
+        contact.phone = Some("+1-555-0101".to_string());
+
+        let person = contact_to_google_person(&contact);
+
+        assert_eq!(person.phone_numbers.len(), 1);
+        assert!(
+            person.phone_numbers[0].phone_type.is_empty(),
+            "{}",
+            person.phone_numbers[0].phone_type
+        );
+    }
+
+    #[test]
+    fn test_a_contact_whose_stored_numbers_are_unreadable_still_sends_the_one_it_has() {
+        let mut contact = a_local_contact("Grace Hopper", "grace@example.com");
+        contact.phone = Some("+1-555-0101".to_string());
+        contact.phones_json = Some("not a list at all".to_string());
+
+        let person = contact_to_google_person(&contact);
+
+        assert_eq!(person.phone_numbers.len(), 1);
+        assert_eq!(person.phone_numbers[0].value, "+1-555-0101");
+    }
+
+    #[test]
+    fn test_an_email_address_is_pushed_to_google_with_the_label_somebody_chose() {
+        let mut contact = a_local_contact("Grace Hopper", "grace@navy.example");
+        contact.emails_json = Some(
+            r#"[{"label":"Work","address":"grace@navy.example"},{"label":"Personal","address":"grace@example.com"}]"#
+                .to_string(),
+        );
+
+        let person = contact_to_google_person(&contact);
+
+        assert_eq!(person.email_addresses.len(), 2);
+        assert_eq!(person.email_addresses[0].email_type, "work");
+        assert_eq!(person.email_addresses[1].value, "grace@example.com");
+        assert_eq!(person.email_addresses[1].email_type, "personal");
+    }
+
+    #[test]
+    fn test_an_email_address_with_no_label_recorded_is_pushed_to_google_without_one() {
+        let contact = a_local_contact("Grace Hopper", "grace@example.com");
+
+        let person = contact_to_google_person(&contact);
+
+        assert_eq!(person.email_addresses.len(), 1);
+        assert!(
+            person.email_addresses[0].email_type.is_empty(),
+            "{}",
+            person.email_addresses[0].email_type
+        );
+    }
+
+    #[test]
+    fn test_a_google_phone_type_of_several_words_is_read_as_several_words() {
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            phone_numbers: vec![
+                GooglePhone {
+                    value: "+1-555-0101".to_string(),
+                    phone_type: "workFax".to_string(),
+                },
+                GooglePhone {
+                    value: "+1-555-0202".to_string(),
+                    phone_type: "home".to_string(),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let contact = google_person_to_contact(&person, "acct");
+
+        let stored = contact.phones_json.expect("two numbers are kept as a list");
+        let entries: Vec<PhoneEntry> = serde_json::from_str(&stored).expect("valid JSON list");
+        assert_eq!(entries[0].label, "Work Fax");
+        assert_eq!(entries[1].label, "Home");
+    }
+
+    #[test]
+    fn test_a_label_survives_a_trip_to_a_provider_and_back() {
+        for chosen in [
+            "Mobile", "Home", "Work", "Work Fax", "Home Fax", "Pager", "Other", "Personal",
+        ] {
+            let sent = provider_type_for_label(chosen);
+            assert_eq!(
+                label_for_provider_type(&sent),
+                chosen,
+                "{chosen} was sent as {sent}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_provider_type_survives_a_trip_here_and_back() {
+        for given in [
+            "home",
+            "work",
+            "mobile",
+            "workFax",
+            "homeFax",
+            "googleVoice",
+            "otherFax",
+        ] {
+            let read = label_for_provider_type(given);
+            assert_eq!(
+                provider_type_for_label(&read),
+                given,
+                "{given} was read as {read}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_only_a_gone_answer_makes_the_address_book_be_read_again() {
+        let gone = Error::Api {
+            status: SYNC_TOKEN_EXPIRED,
+            provider: "google".to_string(),
+            message: "Sync token is expired".to_string(),
+        };
+        let server_fault = Error::Api {
+            status: 500,
+            provider: "google".to_string(),
+            message: "Backend error".to_string(),
+        };
+        let no_connection = Error::Network("connection refused".to_string());
+
+        assert!(is_expired_sync_token(&gone));
+        assert!(!is_expired_sync_token(&server_fault));
+        assert!(!is_expired_sync_token(&no_connection));
+    }
+
+    #[test]
+    fn test_a_birthday_stored_before_with_the_year_nothing_is_not_pushed_to_microsoft() {
+        let mut contact = a_local_contact("Grace Hopper", "grace@example.com");
+        contact.birthday = Some("0000-03-14".to_string());
+
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(ms.birthday, None);
+    }
+
+    // ── A middle name ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_a_middle_name_stays_with_the_given_name_when_pushed_to_google() {
+        let contact = a_local_contact("Grace Brewster Murray Hopper", "grace@example.com");
+
+        let person = contact_to_google_person(&contact);
+
+        assert_eq!(person.names[0].given_name, "Grace Brewster Murray");
+        assert_eq!(person.names[0].family_name, "Hopper");
+    }
+
+    #[test]
+    fn test_a_middle_name_stays_with_the_given_name_when_pushed_to_microsoft() {
+        let contact = a_local_contact("Grace Brewster Murray Hopper", "grace@example.com");
+
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(ms.given_name, "Grace Brewster Murray");
+        assert_eq!(ms.surname, "Hopper");
+    }
+
+    #[test]
+    fn test_a_one_word_name_is_pushed_as_a_given_name_with_no_family_name() {
+        let contact = a_local_contact("Prince", "prince@example.com");
+
+        let person = contact_to_google_person(&contact);
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(person.names[0].given_name, "Prince");
+        assert!(person.names[0].family_name.is_empty());
+        assert_eq!(ms.given_name, "Prince");
+        assert!(ms.surname.is_empty());
+    }
+
+    #[test]
+    fn test_a_name_typed_with_two_spaces_does_not_carry_one_into_the_family_name() {
+        let contact = a_local_contact("Grace  Hopper", "grace@example.com");
+
+        let person = contact_to_google_person(&contact);
+
+        assert_eq!(person.names[0].given_name, "Grace");
+        assert_eq!(person.names[0].family_name, "Hopper");
+    }
+
+    // ── A contact with nothing to call it by ────────────────────────────────
+
+    #[test]
+    fn test_a_google_contact_with_no_name_and_a_malformed_address_is_still_called_something() {
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            email_addresses: vec![GoogleEmail {
+                value: "   @example.com".to_string(),
+                email_type: String::new(),
+                metadata: None,
+            }],
+            ..Default::default()
+        };
+
+        let contact = google_person_to_contact(&person, "acct");
+
+        assert_eq!(contact.name, "Unknown");
+    }
+
+    #[test]
+    fn test_a_microsoft_contact_with_no_name_and_a_malformed_address_is_still_called_something() {
+        let ms = MsGraphContact {
+            id: "AAMk1".to_string(),
+            email_addresses: vec![MsEmailAddress {
+                name: String::new(),
+                address: "   @outlook.com".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        let contact = ms_contact_to_contact(&ms, "acct");
+
+        assert_eq!(contact.name, "Unknown");
+    }
+
+    // ── Birthdays ───────────────────────────────────────────────────────────
+
+    fn a_google_birthday(year: i32, month: i32, day: i32) -> GooglePerson {
+        GooglePerson {
+            resource_name: "people/c1".to_string(),
+            birthdays: vec![GoogleBirthday {
+                date: Some(GoogleDate { year, month, day }),
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_a_google_birthday_with_no_year_is_not_stored_as_the_year_nothing() {
+        let contact = google_person_to_contact(&a_google_birthday(0, 3, 14), "acct");
+
+        assert_eq!(contact.birthday.as_deref(), Some("--03-14"));
+    }
+
+    #[test]
+    fn test_a_google_birthday_with_a_year_keeps_it() {
+        let contact = google_person_to_contact(&a_google_birthday(1906, 12, 9), "acct");
+
+        assert_eq!(contact.birthday.as_deref(), Some("1906-12-09"));
+    }
+
+    #[test]
+    fn test_a_google_birthday_with_no_month_is_not_stored_at_all() {
+        let contact = google_person_to_contact(&a_google_birthday(1906, 0, 0), "acct");
+
+        assert_eq!(contact.birthday, None);
+    }
+
+    #[test]
+    fn test_a_birthday_goes_with_a_contact_pushed_to_microsoft() {
+        let mut contact = a_local_contact("Grace Hopper", "grace@example.com");
+        contact.birthday = Some("1906-12-09".to_string());
+
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(ms.birthday.as_deref(), Some("1906-12-09T00:00:00Z"));
+    }
+
+    #[test]
+    fn test_a_birthday_with_no_year_is_left_out_of_a_contact_pushed_to_microsoft() {
+        let mut contact = a_local_contact("Grace Hopper", "grace@example.com");
+        contact.birthday = Some("--12-09".to_string());
+
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(ms.birthday, None);
+    }
+
+    #[test]
+    fn test_a_birthday_nobody_can_read_as_a_date_is_left_out_rather_than_sent() {
+        let mut contact = a_local_contact("Grace Hopper", "grace@example.com");
+        contact.birthday = Some("her 40th".to_string());
+
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(ms.birthday, None);
+    }
+
+    #[test]
+    fn test_a_birthday_from_microsoft_is_stored_as_the_day_it_names() {
+        let ms = MsGraphContact {
+            id: "AAMk1".to_string(),
+            display_name: "Grace Hopper".to_string(),
+            birthday: Some("1906-12-09T00:00:00Z".to_string()),
+            ..Default::default()
+        };
+
+        let contact = ms_contact_to_contact(&ms, "acct");
+
+        assert_eq!(contact.birthday.as_deref(), Some("1906-12-09"));
     }
 }

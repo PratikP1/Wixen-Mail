@@ -873,7 +873,7 @@ impl MessageCache {
     /// these are read out of headers written by strangers, so it gets a word
     /// instead: a contact with an empty name is a row in the list that
     /// announces nothing at all when it is read out.
-    fn email_local_part_or_unknown(email: &str) -> String {
+    pub(crate) fn email_local_part_or_unknown(email: &str) -> String {
         let local = match email.split_once('@') {
             Some((local, _)) => local,
             None => email,

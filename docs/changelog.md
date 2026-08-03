@@ -151,6 +151,71 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The label you chose for a phone number or an address is the one that
+  travels.** Every number sent to Google went as a mobile and every address went
+  as an other, whatever you picked, and only the first of each was sent at all.
+  A home landline came back from the address book labelled mobile and was read
+  out that way. Labels now go out in the words you chose and come back in the
+  same words, so a contact no longer carries "work", "home" and "Other" side by
+  side for a screen reader to read out three different ways. A number recorded
+  before there was anywhere to keep a label goes out with none rather than with
+  a guessed one.
+
+  Contacts from Microsoft still show Other on every address. Microsoft sends no
+  label with them, so that is what it gave rather than something being dropped.
+
+  None of this has run against a real account.
+
+- **A middle name stays a middle name.** A contact called Grace Brewster Murray
+  Hopper was written to Google and to Outlook with the surname recorded as
+  "Brewster Murray Hopper". The last word is now the family name and everything
+  before it the given name. A family name that contains a space, such as van der
+  Berg, still goes the other way. No rule gets both right from one line of text,
+  and the whole name is sent as well, so the address book still has it.
+
+- **A birthday with no year no longer says you were born in the year nothing.**
+  Google returns most birthdays without a year, and that arrived here as the
+  year 0000, showed in the birthday box, and was written into an exported card
+  as a date in the year zero. A birthday with no year is now written with the
+  year left out. It is spelled the way the card standard spells it, which is not
+  a pleasant thing to hear read aloud; how it should sound is still open. A date
+  that names no day at all is not stored. A birthday already stored as the year
+  nothing keeps that value until the address book sends that contact again.
+
+- **A birthday now goes with a contact sent to Outlook.** The field was on both
+  sides and nothing ever filled it in, so a birthday was dropped on the way out
+  and nothing said so. A birthday Outlook cannot read as a date, including one
+  with no year and one typed in words, is left out rather than sent, because
+  Outlook refuses the whole contact over it and losing one field beats losing
+  the contact. A birthday coming the other way is now stored as the day it
+  names rather than as a timestamp, which does mean a birthday sent with a time
+  zone on it can land a day out. Unverified against a real account.
+
+- **A contact with no name and a broken address is still called something.**
+  There were two copies of the code that works out what to call somebody from
+  their address, and one of them was broken: a contact arriving with no name and
+  nothing but spaces before the @ was stored with a name of one blank space,
+  which is a row in the contacts list that announces nothing when you land on
+  it. There is now one copy and it is the one that works.
+
+- **A contacts sync no longer downloads your whole address book every time.**
+  The request never asked Google for the marker that says where the last sync
+  finished, so no marker ever came back, nothing was ever stored, and every sync
+  started from the beginning. It also meant contacts made here were offered to
+  Google on every sync rather than once, and that the recovery for a marker gone
+  stale could never run. That recovery now triggers only when Google says the
+  marker is too old, rather than on any error at all, so a dropped connection no
+  longer turns into a full download. Unverified against a real account: the
+  first sync after this still reads everything, and only the second can be
+  shorter.
+
+- **A new contact is no longer sent with the fields the address book fills in
+  itself.** Creating a contact sent an empty identifier and an empty version
+  marker to Google, and an empty identifier and two empty change markers to
+  Outlook. All of those belong to the provider, not to us. Nothing on this path
+  has ever run against a real account, so whether it was being refused for that
+  reason is unknown. It is at least no longer being sent.
+
 - **Mail collected over POP is now checked for spam and phishing the way mail
   from other accounts is.** Every message from a POP account was recorded as
   ordinary whatever it carried, so the safety word that other accounts get on a
