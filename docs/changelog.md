@@ -151,6 +151,30 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A task deletion refused on permission now says to sign in again.** Changing
+  a task and deleting one are refused by the task service in the same way, and
+  only one of them said so. An account signed in before this program could
+  change tasks was told it had one problem after every sync, with nothing saying
+  that signing in again was the fix. Both now say the same thing. Still untried
+  against a live account.
+
+- **The number of removed tasks is the number actually removed.** Google keeps
+  sending word of a deleted task for a while after it goes, and every one of
+  those was counted, so an account carrying old ones was told the same number
+  had been removed on every sync, about tasks that went months ago. Only a task
+  that was here and is now gone is counted. A removal the database refuses is
+  now reported rather than counted as done.
+
+- **A task moved to another list is not deleted and made again.** Microsoft To
+  Do does not say when a task has been deleted, so what is gone has to be worked
+  out from what came back. That was worked out one list at a time, so a task
+  moved out of a list looked deleted until the list it moved to was read, and if
+  that read failed the task disappeared from this computer until a later sync.
+  It is now worked out once every list has been read, and a sync that could not
+  read one of them removes nothing, because it cannot tell what is gone from
+  what it did not see. That means a task you deleted on your phone can linger
+  for one sync. None of this has run against a real account.
+
 - **Syncing a calendar no longer wipes what you typed onto an event.** A
   category, the people you added, and the alert you set are kept on this
   computer and a calendar server does not carry any of them. Every sync wrote

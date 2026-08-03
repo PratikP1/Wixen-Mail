@@ -29,15 +29,19 @@
 //! that only ever adds is a list that only ever grows, and a task somebody
 //! ticked off on their phone reappearing here is worse than not syncing at all.
 //!
-//! Microsoft's Graph does not tombstone in the plain task listing, so a task
-//! deleted there goes when the list is next read whole: anything under a list
-//! that is no longer in the response is removed with it.
+//! Microsoft's Graph does not tombstone in the plain task listing, so what is
+//! gone is what did not come back. That is only answerable from the whole
+//! account, because a task moved out of one list comes back in another, so it
+//! is worked out once every list has been read and not at all when one of them
+//! could not be. A list that disappears from the response altogether is not
+//! handled: its tasks stay here, which is a gap rather than a decision.
 
 use crate::common::{Error, Result};
 use crate::data::message_cache::{MessageCache, TaskEntry};
 use crate::service::tasks_api::{
-    TasksClient, entry_to_google_task, entry_to_ms_task, google_list_to_entry,
-    google_task_to_entry, ms_list_to_entry, ms_task_to_entry,
+    GoogleTask, GoogleTaskList, MsTodoList, MsTodoTask, TasksClient, entry_to_google_task,
+    entry_to_ms_task, google_list_to_entry, google_task_to_entry, ms_list_to_entry,
+    ms_task_to_entry,
 };
 
 /// What one sync did.
@@ -268,6 +272,113 @@ impl Provider {
     }
 }
 
+/// What a task sync asks of a service.
+///
+/// Named for what it is rather than for either provider's HTTP. Saying it in
+/// the type is what lets the deciding be tested: which task is gone, which copy
+/// wins and what the counts mean are all decisions, and none of them had ever
+/// been run in a test because running them meant having an account.
+///
+/// Ten methods because it is two services, and the sync already knows which one
+/// it is talking to.
+pub(crate) trait TaskService {
+    async fn google_lists(&self, token: &str) -> Result<Vec<GoogleTaskList>>;
+    async fn google_tasks(&self, token: &str, list_id: &str) -> Result<Vec<GoogleTask>>;
+    async fn google_create_task(
+        &self,
+        token: &str,
+        list_id: &str,
+        task: &GoogleTask,
+    ) -> Result<GoogleTask>;
+    async fn google_update_task(
+        &self,
+        token: &str,
+        list_id: &str,
+        task: &GoogleTask,
+    ) -> Result<GoogleTask>;
+    async fn google_delete_task(&self, token: &str, list_id: &str, task_id: &str) -> Result<()>;
+    async fn ms_lists(&self, token: &str) -> Result<Vec<MsTodoList>>;
+    async fn ms_tasks(&self, token: &str, list_id: &str) -> Result<Vec<MsTodoTask>>;
+    async fn ms_create_task(
+        &self,
+        token: &str,
+        list_id: &str,
+        task: &MsTodoTask,
+    ) -> Result<MsTodoTask>;
+    async fn ms_update_task(
+        &self,
+        token: &str,
+        list_id: &str,
+        task: &MsTodoTask,
+    ) -> Result<MsTodoTask>;
+    async fn ms_delete_task(&self, token: &str, list_id: &str, task_id: &str) -> Result<()>;
+}
+
+impl TaskService for TasksClient {
+    // Every body names the type rather than calling through `self`. The
+    // inherent methods have the same names, so the short form would resolve
+    // back to the trait method and recurse forever.
+    async fn google_lists(&self, token: &str) -> Result<Vec<GoogleTaskList>> {
+        TasksClient::google_lists(self, token).await
+    }
+
+    async fn google_tasks(&self, token: &str, list_id: &str) -> Result<Vec<GoogleTask>> {
+        TasksClient::google_tasks(self, token, list_id).await
+    }
+
+    async fn google_create_task(
+        &self,
+        token: &str,
+        list_id: &str,
+        task: &GoogleTask,
+    ) -> Result<GoogleTask> {
+        TasksClient::google_create_task(self, token, list_id, task).await
+    }
+
+    async fn google_update_task(
+        &self,
+        token: &str,
+        list_id: &str,
+        task: &GoogleTask,
+    ) -> Result<GoogleTask> {
+        TasksClient::google_update_task(self, token, list_id, task).await
+    }
+
+    async fn google_delete_task(&self, token: &str, list_id: &str, task_id: &str) -> Result<()> {
+        TasksClient::google_delete_task(self, token, list_id, task_id).await
+    }
+
+    async fn ms_lists(&self, token: &str) -> Result<Vec<MsTodoList>> {
+        TasksClient::ms_lists(self, token).await
+    }
+
+    async fn ms_tasks(&self, token: &str, list_id: &str) -> Result<Vec<MsTodoTask>> {
+        TasksClient::ms_tasks(self, token, list_id).await
+    }
+
+    async fn ms_create_task(
+        &self,
+        token: &str,
+        list_id: &str,
+        task: &MsTodoTask,
+    ) -> Result<MsTodoTask> {
+        TasksClient::ms_create_task(self, token, list_id, task).await
+    }
+
+    async fn ms_update_task(
+        &self,
+        token: &str,
+        list_id: &str,
+        task: &MsTodoTask,
+    ) -> Result<MsTodoTask> {
+        TasksClient::ms_update_task(self, token, list_id, task).await
+    }
+
+    async fn ms_delete_task(&self, token: &str, list_id: &str, task_id: &str) -> Result<()> {
+        TasksClient::ms_delete_task(self, token, list_id, task_id).await
+    }
+}
+
 /// Send everything changed here that the provider has not been told about.
 ///
 /// Runs before the pull. The other order would send a value the pull had just
@@ -275,9 +386,9 @@ impl Provider {
 ///
 /// A change that cannot be sent keeps its flag and is tried again next time.
 /// Failing once is not a reason to drop somebody's edit.
-async fn push_tasks(
+async fn push_tasks<S: TaskService>(
     cache: &MessageCache,
-    client: &TasksClient,
+    service: &S,
     token: &str,
     account_id: &str,
     provider: Provider,
@@ -307,8 +418,8 @@ async fn push_tasks(
             continue;
         };
         let sent = match provider {
-            Provider::Google => client.google_delete_task(token, list_id, &gone.id).await,
-            Provider::Microsoft => client.ms_delete_task(token, list_id, &gone.id).await,
+            Provider::Google => service.google_delete_task(token, list_id, &gone.id).await,
+            Provider::Microsoft => service.ms_delete_task(token, list_id, &gone.id).await,
         };
         match sent {
             Ok(()) => {
@@ -340,7 +451,7 @@ async fn push_tasks(
             result.local_only += 1;
             continue;
         }
-        match push_one(cache, client, token, provider, &list_id, &task).await {
+        match push_one(cache, service, token, provider, &list_id, &task).await {
             Ok(()) => result.sent += 1,
             Err(e) if refused_for_permission(&e) => result.needs_sign_in = true,
             // The task's id, not its title. These go to the log file, and a
@@ -368,9 +479,9 @@ fn refused_for_permission(error: &Error) -> bool {
 /// at the other end and is updated. Either way the answer carries the
 /// provider's modification stamp, and storing it is what stops the next pull
 /// deciding the provider changed the task and overwriting what was just sent.
-async fn push_one(
+async fn push_one<S: TaskService>(
     cache: &MessageCache,
-    client: &TasksClient,
+    service: &S,
     token: &str,
     provider: Provider,
     list_id: &str,
@@ -381,9 +492,9 @@ async fn push_one(
         Provider::Google => {
             let body = entry_to_google_task(task);
             let stored = if new_here {
-                client.google_create_task(token, list_id, &body).await?
+                service.google_create_task(token, list_id, &body).await?
             } else {
-                client.google_update_task(token, list_id, &body).await?
+                service.google_update_task(token, list_id, &body).await?
             };
             let entry = google_task_to_entry(&stored, &task.account_id, list_id);
             settle(cache, task, entry, new_here)
@@ -391,9 +502,9 @@ async fn push_one(
         Provider::Microsoft => {
             let body = entry_to_ms_task(task);
             let stored = if new_here {
-                client.ms_create_task(token, list_id, &body).await?
+                service.ms_create_task(token, list_id, &body).await?
             } else {
-                client.ms_update_task(token, list_id, &body).await?
+                service.ms_update_task(token, list_id, &body).await?
             };
             let entry = ms_task_to_entry(&stored, &task.account_id, list_id);
             settle(cache, task, entry, new_here)
@@ -414,16 +525,16 @@ fn settle(cache: &MessageCache, was: &TaskEntry, stored: TaskEntry, new_here: bo
 }
 
 /// Bring Google's task lists and their tasks into the cache.
-pub async fn sync_google_tasks(
+pub(crate) async fn sync_google_tasks<S: TaskService>(
     cache: &MessageCache,
-    client: &TasksClient,
+    service: &S,
     token: &str,
     account_id: &str,
 ) -> Result<TaskSyncResult> {
     let mut result = TaskSyncResult::default();
     push_tasks(
         cache,
-        client,
+        service,
         token,
         account_id,
         Provider::Google,
@@ -431,7 +542,7 @@ pub async fn sync_google_tasks(
     )
     .await;
 
-    let lists = client.google_lists(token).await?;
+    let lists = service.google_lists(token).await?;
     for (order, list) in lists.iter().enumerate() {
         if list.id.trim().is_empty() {
             continue;
@@ -443,7 +554,7 @@ pub async fn sync_google_tasks(
         }
         result.lists += 1;
 
-        let tasks = match client.google_tasks(token, &list.id).await {
+        let tasks = match service.google_tasks(token, &list.id).await {
             Ok(tasks) => tasks,
             Err(e) => {
                 result.errors.push(format!("List {}: {e}", entry.id));
@@ -457,10 +568,13 @@ pub async fn sync_google_tasks(
             }
             let stored = google_task_to_entry(task, account_id, &entry.id);
             if task.deleted {
-                // A tombstone. Removing it here is the whole reason
-                // showDeleted is asked for.
-                if cache.drop_synced_task(&stored.id).is_ok() {
-                    result.deleted += 1;
+                // A tombstone, which is the whole reason showDeleted is asked
+                // for. Google keeps sending one for a while after the task has
+                // gone, so a tombstone is not a removal: only one for a task
+                // that is here is. Counting them all reports the same number on
+                // every sync, about tasks nobody has seen in months.
+                if held.iter().any(|task| task.id == stored.id) {
+                    take_removal(cache, &stored.id, &mut result);
                 }
                 continue;
             }
@@ -499,6 +613,19 @@ fn take_or_skip(
     }
 }
 
+/// Remove a task the provider says is gone, and say so.
+///
+/// Paired with [`take_or_skip`], which is the other direction. The cache
+/// answers "done" whether or not there was a row to remove, so the counting has
+/// to happen where it is known that there was one. A database that refuses the
+/// removal is reported rather than counted, because the task is still there.
+fn take_removal(cache: &MessageCache, id: &str, result: &mut TaskSyncResult) {
+    match cache.drop_synced_task(id) {
+        Ok(()) => result.deleted += 1,
+        Err(e) => result.errors.push(format!("Task {id}: {e}")),
+    }
+}
+
 /// What to do with a task the provider just sent.
 ///
 fn resolution_for(held: &[TaskEntry], arriving: &TaskEntry) -> Resolution {
@@ -517,16 +644,16 @@ fn resolution_for(held: &[TaskEntry], arriving: &TaskEntry) -> Resolution {
 }
 
 /// Bring Microsoft's task lists and their tasks into the cache.
-pub async fn sync_microsoft_tasks(
+pub(crate) async fn sync_microsoft_tasks<S: TaskService>(
     cache: &MessageCache,
-    client: &TasksClient,
+    service: &S,
     token: &str,
     account_id: &str,
 ) -> Result<TaskSyncResult> {
     let mut result = TaskSyncResult::default();
     push_tasks(
         cache,
-        client,
+        service,
         token,
         account_id,
         Provider::Microsoft,
@@ -534,39 +661,47 @@ pub async fn sync_microsoft_tasks(
     )
     .await;
 
-    let lists = client.ms_lists(token).await?;
+    // Graph does not say when a task has gone, so what is gone is what did not
+    // come back. That is only answerable from the whole account: a task moved
+    // out of one list comes back in another, and reading one list at a time
+    // makes a move look like a deletion followed by a new task.
+    let mut held_everywhere: Vec<TaskEntry> = Vec::new();
+    let mut arrived_everywhere: Vec<String> = Vec::new();
+    // A list that could not be read is not evidence about anything. Removing on
+    // a partial picture takes tasks the sync simply did not see, and the one it
+    // did not see may be the list a task has just moved to.
+    let mut saw_every_list = true;
+
+    let lists = service.ms_lists(token).await?;
     for (order, list) in lists.iter().enumerate() {
         if list.id.trim().is_empty() {
+            saw_every_list = false;
             continue;
         }
         let entry = ms_list_to_entry(list, account_id, order as i32);
         if let Err(e) = cache.save_task_list(&entry) {
             result.errors.push(format!("List {}: {e}", entry.id));
+            saw_every_list = false;
             continue;
         }
         result.lists += 1;
 
-        let tasks = match client.ms_tasks(token, &list.id).await {
+        let tasks = match service.ms_tasks(token, &list.id).await {
             Ok(tasks) => tasks,
             Err(e) => {
                 result.errors.push(format!("List {}: {e}", entry.id));
+                saw_every_list = false;
                 continue;
             }
         };
 
-        // Graph does not tombstone here, so what is gone is what was held and
-        // did not come back. Worked out before anything is written, so a task
-        // that moved between lists is not deleted and re-added.
         let held = cache.get_tasks_for_list(&entry.id).unwrap_or_default();
         let arrived: Vec<String> = tasks
             .iter()
             .map(|task| ms_task_to_entry(task, account_id, &entry.id).id)
             .collect();
-        for gone in gone_from(&held, &arrived, Provider::Microsoft.prefix()) {
-            if cache.drop_synced_task(&gone).is_ok() {
-                result.deleted += 1;
-            }
-        }
+        held_everywhere.extend(held.iter().cloned());
+        arrived_everywhere.extend(arrived);
 
         for task in &tasks {
             if task.id.trim().is_empty() {
@@ -574,6 +709,16 @@ pub async fn sync_microsoft_tasks(
             }
             let stored = ms_task_to_entry(task, account_id, &entry.id);
             take_or_skip(cache, &held, stored, &mut result);
+        }
+    }
+
+    if saw_every_list {
+        for gone in gone_from(
+            &held_everywhere,
+            &arrived_everywhere,
+            Provider::Microsoft.prefix(),
+        ) {
+            take_removal(cache, &gone, &mut result);
         }
     }
     Ok(result)
@@ -597,14 +742,131 @@ mod tests {
         MessageCache::new(dir, None).expect("a cache")
     }
 
+    /// A task service that answers from a script rather than a socket.
+    ///
+    /// The deciding in both sync functions was untestable before the service
+    /// had a name: which task is gone, whose copy wins and what the counts mean
+    /// are all decisions, and running one meant having an account.
+    #[derive(Default)]
+    struct Scripted {
+        google_lists: Vec<GoogleTaskList>,
+        /// Keyed by the provider's own list id, unprefixed, because that is
+        /// what the sync passes.
+        google_tasks: std::collections::HashMap<String, Vec<GoogleTask>>,
+        ms_lists: Vec<MsTodoList>,
+        ms_tasks: std::collections::HashMap<String, Vec<MsTodoTask>>,
+        /// List ids this service refuses to read, so a test can be a sync that
+        /// could not see everything.
+        unreadable: Vec<String>,
+    }
+
+    impl Scripted {
+        /// What a list this service will not read answers with.
+        fn refuse(&self, list_id: &str) -> Option<Error> {
+            self.unreadable
+                .iter()
+                .any(|id| id == list_id)
+                .then(|| Error::Network("the list could not be read".to_string()))
+        }
+
+        /// What a test that never meant to send anything answers a write with.
+        ///
+        /// An error rather than a success, so a test that unexpectedly reaches
+        /// a write fails on the counts rather than passing quietly.
+        fn nothing_is_sent<T>() -> Result<T> {
+            Err(Error::Protocol(
+                "nothing in this test sends anything".to_string(),
+            ))
+        }
+    }
+
+    impl TaskService for Scripted {
+        async fn google_lists(&self, _token: &str) -> Result<Vec<GoogleTaskList>> {
+            Ok(self.google_lists.clone())
+        }
+
+        async fn google_tasks(&self, _token: &str, list_id: &str) -> Result<Vec<GoogleTask>> {
+            match self.refuse(list_id) {
+                Some(e) => Err(e),
+                None => Ok(self.google_tasks.get(list_id).cloned().unwrap_or_default()),
+            }
+        }
+
+        async fn google_create_task(
+            &self,
+            _token: &str,
+            _list_id: &str,
+            _task: &GoogleTask,
+        ) -> Result<GoogleTask> {
+            Self::nothing_is_sent()
+        }
+
+        async fn google_update_task(
+            &self,
+            _token: &str,
+            _list_id: &str,
+            _task: &GoogleTask,
+        ) -> Result<GoogleTask> {
+            Self::nothing_is_sent()
+        }
+
+        async fn google_delete_task(
+            &self,
+            _token: &str,
+            _list_id: &str,
+            _task_id: &str,
+        ) -> Result<()> {
+            Self::nothing_is_sent()
+        }
+
+        async fn ms_lists(&self, _token: &str) -> Result<Vec<MsTodoList>> {
+            Ok(self.ms_lists.clone())
+        }
+
+        async fn ms_tasks(&self, _token: &str, list_id: &str) -> Result<Vec<MsTodoTask>> {
+            match self.refuse(list_id) {
+                Some(e) => Err(e),
+                None => Ok(self.ms_tasks.get(list_id).cloned().unwrap_or_default()),
+            }
+        }
+
+        async fn ms_create_task(
+            &self,
+            _token: &str,
+            _list_id: &str,
+            _task: &MsTodoTask,
+        ) -> Result<MsTodoTask> {
+            Self::nothing_is_sent()
+        }
+
+        async fn ms_update_task(
+            &self,
+            _token: &str,
+            _list_id: &str,
+            _task: &MsTodoTask,
+        ) -> Result<MsTodoTask> {
+            Self::nothing_is_sent()
+        }
+
+        async fn ms_delete_task(&self, _token: &str, _list_id: &str, _task_id: &str) -> Result<()> {
+            Self::nothing_is_sent()
+        }
+    }
+
     /// A list for tasks to hang on. Saving a task in a list that is not there
     /// is refused, because the column is a foreign key.
     fn a_list(cache: &MessageCache, id: &str) {
+        a_list_named(cache, id, "My Tasks");
+    }
+
+    /// The same, where the name matters because two lists are wanted on one
+    /// account and the name is unique per account.
+    fn a_list_named(cache: &MessageCache, id: &str, name: &str) {
         cache
             .save_task_list(&TaskListEntry {
                 id: id.to_string(),
                 account_id: "acc-1".to_string(),
-                name: "My Tasks".to_string(),
+                name: name.to_string(),
                 color: String::new(),
                 display_order: 0,
                 created_at: String::new(),
@@ -1322,6 +1584,184 @@ mod tests {
             1,
             "the change stopped waiting without ever being sent"
         );
+    }
+
+    #[tokio::test]
+    async fn test_a_tombstone_for_a_task_this_computer_never_had_is_not_counted_as_a_removal() {
+        // Google keeps sending word of a deleted task for a while after it has
+        // gone. Counting every one of them reports the same number removed on
+        // every sync, about tasks nobody has seen in months.
+        let cache = a_cache("old_tombstone");
+        let service = Scripted {
+            google_lists: vec![GoogleTaskList {
+                id: "list".to_string(),
+                title: "My Tasks".to_string(),
+            }],
+            google_tasks: std::collections::HashMap::from([(
+                "list".to_string(),
+                vec![GoogleTask {
+                    id: "gone-last-year".to_string(),
+                    deleted: true,
+                    ..Default::default()
+                }],
+            )]),
+            ..Default::default()
+        };
+
+        let result = sync_google_tasks(&cache, &service, "token", "acc-1")
+            .await
+            .expect("the sync runs");
+
+        assert_eq!(result.lists, 1);
+        assert_eq!(
+            result.deleted, 0,
+            "a note about a task this computer never had was counted as a removal"
+        );
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+    }
+
+    #[tokio::test]
+    async fn test_a_tombstone_for_a_task_we_hold_removes_it_and_says_so() {
+        // The other half, so the counting cannot be fixed by never counting.
+        // Passes before the fix as well as after, by design.
+        let cache = a_cache("live_tombstone");
+        a_list_named(&cache, "google:list", "My Tasks");
+        cache
+            .save_task(&TaskEntry {
+                id: "google:t1".to_string(),
+                task_list_id: Some("google:list".to_string()),
+                ..task("x")
+            })
+            .expect("a task");
+        let service = Scripted {
+            google_lists: vec![GoogleTaskList {
+                id: "list".to_string(),
+                title: "My Tasks".to_string(),
+            }],
+            google_tasks: std::collections::HashMap::from([(
+                "list".to_string(),
+                vec![GoogleTask {
+                    id: "t1".to_string(),
+                    deleted: true,
+                    ..Default::default()
+                }],
+            )]),
+            ..Default::default()
+        };
+
+        let result = sync_google_tasks(&cache, &service, "token", "acc-1")
+            .await
+            .expect("the sync runs");
+
+        assert_eq!(result.deleted, 1, "a real removal stopped being counted");
+        assert!(
+            cache.find_task("google:t1").expect("a lookup").is_none(),
+            "the task the provider says is gone is still here"
+        );
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+    }
+
+    /// Two Microsoft lists on one account, with one task sitting in the first.
+    ///
+    /// Both item C tests start here, and the second differs only in which list
+    /// the service will read.
+    fn a_task_in_the_first_of_two_lists(cache: &MessageCache) {
+        a_list_named(cache, "ms:from", "Work");
+        a_list_named(cache, "ms:to", "Home");
+        cache
+            .save_task(&TaskEntry {
+                id: "ms:t1".to_string(),
+                task_list_id: Some("ms:from".to_string()),
+                remote_updated: Some("2026-07-01T10:00:00Z".to_string()),
+                ..task("x")
+            })
+            .expect("a task");
+    }
+
+    /// The two lists as Graph sends them, source first.
+    fn two_ms_lists() -> Vec<MsTodoList> {
+        vec![
+            MsTodoList {
+                id: "from".to_string(),
+                display_name: "Work".to_string(),
+            },
+            MsTodoList {
+                id: "to".to_string(),
+                display_name: "Home".to_string(),
+            },
+        ]
+    }
+
+    #[tokio::test]
+    async fn test_a_task_moved_to_another_list_is_not_deleted_and_made_again() {
+        // Graph does not say when a task has gone, so what is gone has to be
+        // worked out from what came back. Worked out one list at a time, a task
+        // moved out of a list looks deleted until the list it moved to is read.
+        let cache = a_cache("moved_between_lists");
+        a_task_in_the_first_of_two_lists(&cache);
+        let service = Scripted {
+            ms_lists: two_ms_lists(),
+            ms_tasks: std::collections::HashMap::from([
+                ("from".to_string(), Vec::new()),
+                (
+                    "to".to_string(),
+                    vec![MsTodoTask {
+                        id: "t1".to_string(),
+                        title: "A".to_string(),
+                        status: "notStarted".to_string(),
+                        last_modified_date_time: Some("2026-07-01T10:00:00Z".to_string()),
+                        ..Default::default()
+                    }],
+                ),
+            ]),
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_tasks(&cache, &service, "token", "acc-1")
+            .await
+            .expect("the sync runs");
+
+        assert_eq!(result.lists, 2, "the double answered with nothing");
+        assert_eq!(
+            result.deleted, 0,
+            "a task that moved list was reported as removed"
+        );
+        let now = cache
+            .find_task("ms:t1")
+            .expect("a lookup")
+            .expect("the row");
+        assert_eq!(
+            now.task_list_id.as_deref(),
+            Some("ms:to"),
+            "the task did not follow the move"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_list_that_could_not_be_read_does_not_take_its_tasks_with_it() {
+        // A list that could not be read is not evidence about anything.
+        // Removing on a partial picture takes tasks the sync simply did not
+        // see, and the one it did not see is the one the task moved to.
+        let cache = a_cache("unreadable_list");
+        a_task_in_the_first_of_two_lists(&cache);
+        let service = Scripted {
+            ms_lists: two_ms_lists(),
+            ms_tasks: std::collections::HashMap::from([("from".to_string(), Vec::new())]),
+            unreadable: vec!["to".to_string()],
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_tasks(&cache, &service, "token", "acc-1")
+            .await
+            .expect("the sync runs");
+
+        assert_eq!(result.lists, 2, "the double answered with nothing");
+        assert_eq!(result.deleted, 0, "a removal was decided on half a picture");
+        assert!(
+            cache.find_task("ms:t1").expect("a lookup").is_some(),
+            "a task went with a list the sync could not read"
+        );
+        assert_eq!(result.errors.len(), 1, "{:?}", result.errors);
     }
 
     #[test]

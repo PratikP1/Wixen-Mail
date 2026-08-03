@@ -409,6 +409,28 @@ pub fn strip_prefix(id: &str, prefix: &str) -> String {
 
 // ── The calls ───────────────────────────────────────────────────────────────
 
+/// What a status the provider refused a write with means here.
+///
+/// One function for both writes. They disagreed once, and it cost the thing the
+/// sign-in answer exists for: a deletion refused because this application is
+/// not allowed to change tasks was read as an ordinary failure, so it counted
+/// as a problem on the status line on every sync and nothing said that signing
+/// in again was the fix.
+fn refusal(status: reqwest::StatusCode) -> Error {
+    // Refused because of what this application is allowed to do rather than
+    // because of the change. Reading tasks and changing them are separate
+    // permissions, so an account signed in before this could change them holds
+    // a token that refreshes forever and is refused every time. Named as
+    // itself, because the person is the only one who can fix it and "403" does
+    // not tell them how.
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        return Error::Authentication(NEEDS_SIGN_IN.to_string());
+    }
+    // The status and nothing else. A body from a failed request can carry the
+    // token back, and this goes to a log file.
+    Error::Protocol(format!("The task service refused the change: {status}"))
+}
+
 /// A client for both services. Stateless: the token is passed per call.
 #[derive(Debug, Clone, Default)]
 pub struct TasksClient {
@@ -554,21 +576,7 @@ impl TasksClient {
             .await
             .map_err(|e| Error::Network(format!("Could not reach the task service: {e}")))?;
         if !response.status().is_success() {
-            // The status and nothing else. A body from a failed request can
-            // carry the token back, and this goes to a log file.
-            let status = response.status();
-            // Refused because of what this application is allowed to do rather
-            // than because of the change. Reading tasks and changing them are
-            // separate permissions, so an account signed in before this could
-            // change them holds a token that refreshes forever and is refused
-            // every single time. Named as itself, because the person is the
-            // only one who can fix it and "403" does not tell them how.
-            if status.as_u16() == 401 || status.as_u16() == 403 {
-                return Err(Error::Authentication(NEEDS_SIGN_IN.to_string()));
-            }
-            return Err(Error::Protocol(format!(
-                "The task service refused the change: {status}"
-            )));
+            return Err(refusal(response.status()));
         }
         response.json::<T>().await.map_err(|e| {
             Error::Protocol(format!("The task service sent something unreadable: {e}"))
@@ -591,10 +599,7 @@ impl TasksClient {
         if response.status().is_success() || response.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(());
         }
-        Err(Error::Protocol(format!(
-            "The task service refused the deletion: {}",
-            response.status()
-        )))
+        Err(refusal(response.status()))
     }
 
     /// Put a new task in a Google list, and read back what was stored.
@@ -978,6 +983,54 @@ mod tests {
         let ms: MsTasksResponse =
             serde_json::from_str(r#"{"value":[{"id":"b2"}]}"#).expect("a bare task");
         assert_eq!(ms.value[0].status, "");
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_refused_on_permission_says_to_sign_in_again() {
+        // Reading tasks and changing them are separate permissions. An account
+        // signed in before this application could change tasks refreshes its
+        // token happily and has every deletion refused, so without this it is
+        // "1 problem" on the status line on every sync forever and nothing
+        // says that signing in again is the fix.
+        let server = tiny_http::Server::http("127.0.0.1:0").expect("a server");
+        let port = server.server_addr().to_ip().expect("an address").port();
+        let answering = std::thread::spawn(move || {
+            if let Ok(request) = server.recv() {
+                let _ = request.respond(tiny_http::Response::empty(403));
+            }
+        });
+
+        let client = TasksClient {
+            http: crate::service::outward::Outward::may_change_things(reqwest::Client::new()),
+        };
+        let refused = client
+            .delete(&format!("http://127.0.0.1:{port}/tasks/1"), "token")
+            .await;
+        let _ = answering.join();
+
+        assert!(
+            matches!(refused, Err(Error::Authentication(ref said)) if said == NEEDS_SIGN_IN),
+            "a deletion refused on permission read as an ordinary failure: {refused:?}"
+        );
+    }
+
+    #[test]
+    fn test_both_writes_read_a_status_the_same_way() {
+        // One mapping for both writes. They disagreed once, and a deletion
+        // refused on permission was reported as an ordinary failure.
+        for status in [
+            reqwest::StatusCode::UNAUTHORIZED,
+            reqwest::StatusCode::FORBIDDEN,
+        ] {
+            assert!(
+                matches!(refusal(status), Error::Authentication(said) if said == NEEDS_SIGN_IN),
+                "{status} did not say to sign in again"
+            );
+        }
+        assert!(matches!(
+            refusal(reqwest::StatusCode::INTERNAL_SERVER_ERROR),
+            Error::Protocol(_)
+        ));
     }
 
     #[test]
