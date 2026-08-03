@@ -93,6 +93,16 @@ pub fn reply_recipients(
         };
     }
 
+    // What is already spoken for: the addresses this reply is going to, and
+    // our own. Note what is not here. The person who wrote the message is not
+    // added, so when they asked for replies to go somewhere else, a reply to
+    // all reaches that place and everyone copied and not the author, unless
+    // they happen to be in To or Cc themselves. On a mailing list that is
+    // exactly the common case.
+    //
+    // That is what the code does rather than what anybody decided. Some lists
+    // treat a personal copy as rude and some people want one, and nothing here
+    // or anywhere else states which this is meant to be.
     let mut seen: Vec<String> = to.iter().map(|a| key_of(a)).collect();
     seen.extend(own_addresses.iter().map(|a| key_of(a)));
 
@@ -221,6 +231,23 @@ mod tests {
             "the list crept back in"
         );
         assert!(reply.cc.is_empty());
+    }
+
+    #[test]
+    fn test_reply_to_all_on_a_list_reaches_the_list_and_not_the_author() {
+        // This records what happens today. It is not a decision anybody has
+        // taken: the author asked for replies to go to the list, so a reply to
+        // all goes there and to everyone copied, and never to the author
+        // personally. Whether it should is a question for a person.
+        let reply = reply_recipients(&list_message(), &mine(), ReplyMode::All);
+
+        assert_eq!(reply.to, "rust-users@lists.example.org");
+        assert!(reply.cc.contains("charles@example.com"), "{}", reply.cc);
+        assert!(
+            !reply.cc.to_lowercase().contains("ada@example.com"),
+            "the author is left out of a reply to all: {}",
+            reply.cc
+        );
     }
 
     #[test]

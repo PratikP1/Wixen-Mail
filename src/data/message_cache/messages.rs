@@ -2,6 +2,7 @@
 
 use super::{CachedAttachment, CachedMessage, MessageCache};
 use crate::common::{Error, Result};
+use crate::service::protocols::imap::flag;
 use rusqlite::{OptionalExtension, params};
 
 /// One row of a folder listing.
@@ -285,25 +286,38 @@ impl MessageCache {
     /// A flag the server did not send is off. That is the point: unread on the
     /// server has to be able to turn read back into unread here, and treating
     /// the absent flag as "leave it alone" would make every change one way.
-    pub fn set_message_flags(&self, folder_id: i64, uid: u32, flags: &[String]) -> Result<()> {
+    /// Hands back how many rows this actually rewrote, which is zero or one.
+    ///
+    /// A row whose five flags already say what the server just said is left
+    /// alone. That is what makes the number worth reading: a sync asks about
+    /// every message it holds, and most of the answers repeat what is already
+    /// stored, so counting the answers would say that hundreds of messages had
+    /// changed on another device every single time.
+    ///
+    /// `IS NOT` rather than `<>` in the comparison, because three of these
+    /// columns can hold nothing at all. With `<>` a row holding nothing would
+    /// match no comparison, and would then never take another update from the
+    /// server for as long as the account existed.
+    pub fn set_message_flags(&self, folder_id: i64, uid: u32, flags: &[String]) -> Result<usize> {
         let has = |wanted: &str| flags.iter().any(|flag| flag.eq_ignore_ascii_case(wanted));
         self.conn
             .execute(
                 "UPDATE messages
                  SET read = ?3, starred = ?4, answered = ?5, draft = ?6, deleted = ?7
-                 WHERE folder_id = ?1 AND uid = ?2",
+                 WHERE folder_id = ?1 AND uid = ?2
+                   AND (read IS NOT ?3 OR starred IS NOT ?4 OR answered IS NOT ?5
+                        OR draft IS NOT ?6 OR deleted IS NOT ?7)",
                 params![
                     folder_id,
                     uid,
-                    has("\\Seen"),
-                    has("\\Flagged"),
-                    has("\\Answered"),
-                    has("\\Draft"),
-                    has("\\Deleted"),
+                    has(flag::SEEN),
+                    has(flag::FLAGGED),
+                    has(flag::ANSWERED),
+                    has(flag::DRAFT),
+                    has(flag::DELETED),
                 ],
             )
-            .map_err(|e| Error::Other(format!("Failed to update the message flags: {}", e)))?;
-        Ok(())
+            .map_err(|e| Error::Other(format!("Failed to update the message flags: {}", e)))
     }
 
     /// Record what the message turned out to be, once its body has been read.
@@ -1372,13 +1386,48 @@ mod tests {
             .set_message_flags(
                 folder_id,
                 7,
-                &["\\Seen".to_string(), "\\Flagged".to_string()],
+                &[flag::SEEN.to_string(), flag::FLAGGED.to_string()],
             )
             .unwrap();
 
         let stored = cache.get_message(row_id).unwrap().expect("the message");
         assert!(stored.read, "read on the server is read here");
         assert!(stored.starred);
+    }
+
+    #[test]
+    fn test_flags_that_already_match_the_server_are_not_counted_as_a_change() {
+        // The count is what the sync announces as having changed somewhere
+        // else. Counting every message the server answered about would say
+        // "500 changed elsewhere" after a sync where nothing changed at all.
+        let (cache, folder_id) = listing_cache();
+        cache
+            .upsert_message(&incoming(folder_id, 7, "Report"))
+            .unwrap();
+
+        let first = cache
+            .set_message_flags(folder_id, 7, &[flag::SEEN.to_string()])
+            .unwrap();
+        let again = cache
+            .set_message_flags(folder_id, 7, &[flag::SEEN.to_string()])
+            .unwrap();
+
+        assert_eq!(first, 1, "a message going from unread to read is a change");
+        assert_eq!(again, 0, "the same flags a second time changed nothing");
+    }
+
+    #[test]
+    fn test_a_message_this_cache_does_not_hold_is_not_counted() {
+        // A server that answers about the whole mailbox names messages that
+        // were never downloaded here. There is no row to change, so there is
+        // nothing to tell anybody about.
+        let (cache, folder_id) = listing_cache();
+
+        let changed = cache
+            .set_message_flags(folder_id, 4242, &[flag::SEEN.to_string()])
+            .unwrap();
+
+        assert_eq!(changed, 0);
     }
 
     #[test]

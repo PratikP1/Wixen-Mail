@@ -56,6 +56,16 @@ pub struct FolderSync {
     /// Read as well as counted, because it is the number that says whether
     /// state set on another device is arriving. Zero on every sync of a mailbox
     /// somebody also reads on a phone means it is not.
+    ///
+    /// Counted from the rows that really changed, not from the size of the
+    /// server's reply. The reply covers messages this cache does not hold and
+    /// messages whose headers this same sync brought down, and on a server
+    /// that cannot say what changed it covers everything held whether it
+    /// changed or not.
+    ///
+    /// This is read, starred, answered, draft and deleted. A label put on or
+    /// taken off elsewhere travels in the same reply and is stored somewhere
+    /// else, so it does not appear in this number.
     pub flags_updated: usize,
     /// Whether the server had renumbered the mailbox since the last sync.
     pub renumbered: bool,
@@ -509,8 +519,15 @@ pub(crate) async fn sync_folder<M: Mailbox>(
             .fetch_flags(&folder.path, &already_held, since)
             .await?
     };
+    // Counted from what the cache actually rewrote rather than from the length
+    // of the reply. A server that can answer "what changed since" answers for
+    // the whole mailbox, so the reply names messages this cache does not hold
+    // and messages whose headers arrived a moment ago in this same sync, and a
+    // server that cannot answers about every message it was asked about
+    // whether anything changed or not.
+    let mut brought_up_to_date = 0usize;
     for (uid, flags) in &changed {
-        cache.set_message_flags(folder_id, *uid, flags)?;
+        brought_up_to_date += cache.set_message_flags(folder_id, *uid, flags)?;
         // The keywords among those flags are labels, put on elsewhere or taken
         // off elsewhere. Without this a label set on a phone never arrived and
         // one removed there stayed here for as long as the account existed,
@@ -542,7 +559,7 @@ pub(crate) async fn sync_folder<M: Mailbox>(
         forgotten: forgotten.len(),
         total_on_server: on_server.len(),
         unread,
-        flags_updated: changed.len(),
+        flags_updated: brought_up_to_date,
         // Counted after the write, so it includes what this round brought
         // down. Asking the cache rather than adding up, because a message
         // already held and re-fetched is not a new one.
@@ -986,6 +1003,10 @@ mod tests {
         flags: Vec<(u32, Vec<String>)>,
         counts: crate::service::protocols::imap::FolderCounts,
         uid_validity: Option<u32>,
+        /// The mailbox's modification sequence, which is what a server that
+        /// can answer "what changed since" reports. `None` is a server that
+        /// cannot, and the two take different paths through the flag fetch.
+        highest_modseq: Option<u64>,
         /// Which uids the header fetch was asked for, so a test can check that
         /// a sync asked for the right ones rather than only that it ended up
         /// with the right rows.
@@ -1003,6 +1024,7 @@ mod tests {
                     unread: 0,
                 },
                 uid_validity: Some(1),
+                highest_modseq: None,
                 asked_for: std::cell::RefCell::new(Vec::new()),
             }
         }
@@ -1022,7 +1044,7 @@ mod tests {
         ) -> Result<crate::service::protocols::imap::MailboxStatus> {
             Ok(crate::service::protocols::imap::MailboxStatus {
                 uid_validity: self.uid_validity,
-                highest_modseq: None,
+                highest_modseq: self.highest_modseq,
             })
         }
 
@@ -1044,8 +1066,15 @@ mod tests {
             &self,
             _folder: &str,
             held: &[u32],
-            _since: Option<u64>,
+            since: Option<u64>,
         ) -> Result<Vec<(u32, Vec<String>)>> {
+            // Asked "what changed since", a server answers for the whole
+            // mailbox and ignores the list of messages this cache holds. So
+            // the answer names messages that were never downloaded here, and
+            // messages whose headers this same sync has just brought down.
+            if since.is_some() {
+                return Ok(self.flags.clone());
+            }
             Ok(self
                 .flags
                 .iter()
@@ -1087,10 +1116,22 @@ mod tests {
         id: i64,
         folder: &ImapFolder,
     ) -> FolderSync {
+        run_limited(server, cache, id, folder, INITIAL_FETCH_LIMIT)
+    }
+
+    /// The same sync with a smaller first look, so a test can put a message on
+    /// the server that this round will not download.
+    fn run_limited<M: Mailbox>(
+        server: &M,
+        cache: &MessageCache,
+        id: i64,
+        folder: &ImapFolder,
+        limit: usize,
+    ) -> FolderSync {
         tokio::runtime::Builder::new_current_thread()
             .build()
             .expect("a runtime")
-            .block_on(sync_folder(server, cache, folder, id, 500, None))
+            .block_on(sync_folder(server, cache, folder, id, limit, None))
             .expect("the sync runs")
     }
 
@@ -1443,7 +1484,10 @@ mod tests {
             &Scripted {
                 on_server: vec![1],
                 headers: vec![message(1)],
-                flags: vec![(1, vec![String::from("\\Seen")])],
+                flags: vec![(
+                    1,
+                    vec![crate::service::protocols::imap::flag::SEEN.to_string()],
+                )],
                 ..Default::default()
             },
             &cache,
@@ -1452,6 +1496,53 @@ mod tests {
         );
 
         assert_eq!(done.flags_updated, 1);
+    }
+
+    #[test]
+    fn test_only_messages_this_cache_holds_count_as_changed_elsewhere() {
+        // The number is read out after every sync as the count of messages
+        // whose state was set somewhere else. A server that can answer "what
+        // changed since" answers for the whole mailbox, so the reply names
+        // messages that were never downloaded here and messages this same sync
+        // has only just brought down. Counting those says that mail changed on
+        // a phone when none of it did.
+        let (cache, id, folder) = a_cache();
+        let seen = vec![crate::service::protocols::imap::flag::SEEN.to_string()];
+        run(
+            &Scripted {
+                on_server: vec![1],
+                headers: vec![ImapMessage {
+                    flags: Vec::new(),
+                    ..message(1)
+                }],
+                highest_modseq: Some(10),
+                ..Default::default()
+            },
+            &cache,
+            id,
+            &folder,
+        );
+
+        let done = run_limited(
+            &Scripted {
+                on_server: vec![1, 2, 77],
+                // Only the newest missing one is downloaded this round, so 2
+                // stays a message the server has and this cache does not.
+                headers: vec![message(77)],
+                flags: vec![(1, seen.clone()), (2, seen.clone()), (77, seen.clone())],
+                highest_modseq: Some(11),
+                ..Default::default()
+            },
+            &cache,
+            id,
+            &folder,
+            1,
+        );
+
+        assert_eq!(
+            done.flags_updated, 1,
+            "only the message that was held and really changed counts"
+        );
     }
 
     #[test]
@@ -1520,7 +1611,7 @@ mod tests {
             date: Some("2026-07-20T10:00:00+00:00".to_string()),
             internal_date: Some("2026-07-20T10:00:05+00:00".to_string()),
             size: 2048,
-            flags: vec!["\\Seen".to_string()],
+            flags: vec![crate::service::protocols::imap::flag::SEEN.to_string()],
             message_id: Some("note-1@example.com".to_string()),
             ..Default::default()
         }

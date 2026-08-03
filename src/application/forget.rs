@@ -1,8 +1,8 @@
 //! Erasing the credentials this installation stored outside its own folder.
 //!
 //! Uninstalling deletes the data folder, and that is most of it. What it cannot
-//! reach is the operating system's credential store, where the OAuth tokens,
-//! the CalDAV sign-ins and the master key live. Left behind, they are an
+//! reach is the operating system's credential store, where the sign-in tokens,
+//! the account passwords and the master key live. Left behind, they are an
 //! unreadable set of secrets belonging to an application that is no longer on
 //! the machine, and nothing in the uninstaller can see them.
 //!
@@ -78,24 +78,94 @@ pub fn forget(entries: &[CredentialEntry]) -> ForgetOutcome {
     let mut outcome = ForgetOutcome::default();
 
     for entry in entries {
-        let store = match keyring::Entry::new(&entry.service, &entry.user) {
-            Ok(store) => store,
-            Err(e) => {
-                outcome.refused.push(format!("{}: {e}", entry.service));
-                continue;
-            }
-        };
-        match store.delete_credential() {
-            Ok(()) => outcome.removed += 1,
+        match store::delete(&entry.service, &entry.user) {
+            Removal::Gone => outcome.removed += 1,
             // An entry that was never stored is the normal case, not a
             // failure, and there is no way to tell the two apart without
             // reading the secret first.
-            Err(keyring::Error::NoEntry) => {}
-            Err(e) => outcome.refused.push(format!("{}: {e}", entry.service)),
+            Removal::WasNotThere => {}
+            Removal::Refused(why) => outcome.refused.push(format!("{}: {why}", entry.service)),
         }
     }
 
     outcome
+}
+
+/// What became of one entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Removal {
+    /// It was there and it is not now.
+    Gone,
+    /// There was nothing to remove, which is the ordinary case.
+    WasNotThere,
+    /// The store would not remove it, and said why.
+    ///
+    /// The reason and never the value: this text goes into a note that outlives
+    /// the uninstall.
+    Refused(String),
+}
+
+// ── The credential store itself ─────────────────────────────────────────────
+//
+// Behind a seam for the same reason the account passwords are: a test that ran
+// the real thing would delete out of the credential store of whoever ran the
+// suite, and one already left an account behind in a real one. Under test this
+// is a map that lives and dies with the thread, so the tests can run beside
+// each other.
+
+#[cfg(not(test))]
+mod store {
+    use super::Removal;
+
+    pub fn delete(service: &str, user: &str) -> Removal {
+        let entry = match keyring::Entry::new(service, user) {
+            Ok(entry) => entry,
+            Err(e) => return Removal::Refused(e.to_string()),
+        };
+        match entry.delete_credential() {
+            Ok(()) => Removal::Gone,
+            Err(keyring::Error::NoEntry) => Removal::WasNotThere,
+            Err(e) => Removal::Refused(e.to_string()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod store {
+    use super::Removal;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    thread_local! {
+        static ENTRIES: RefCell<HashMap<(String, String), Removal>> =
+            RefCell::new(HashMap::new());
+    }
+
+    /// Say that this entry is in the store and will come out.
+    pub fn pretend_stored(service: &str, user: &str) {
+        ENTRIES.with(|entries| {
+            entries
+                .borrow_mut()
+                .insert((service.to_string(), user.to_string()), Removal::Gone)
+        });
+    }
+
+    /// Say that the store will refuse this entry, with this reason.
+    pub fn pretend_refused(service: &str, user: &str, why: &str) {
+        ENTRIES.with(|entries| {
+            entries.borrow_mut().insert(
+                (service.to_string(), user.to_string()),
+                Removal::Refused(why.to_string()),
+            )
+        });
+    }
+
+    pub fn delete(service: &str, user: &str) -> Removal {
+        let key = (service.to_string(), user.to_string());
+        ENTRIES
+            .with(|entries| entries.borrow_mut().remove(&key))
+            .unwrap_or(Removal::WasNotThere)
+    }
 }
 
 /// Find this installation's credentials and erase them.
@@ -141,6 +211,9 @@ fn stored_identities() -> (Vec<Account>, Vec<String>) {
     };
     let accounts = cache.load_accounts().unwrap_or_default();
 
+    // No screen in this application can add a calendar held on a server, so
+    // this finds nothing today. It is here so that the sign-in is erased from
+    // the first day one can be added, rather than being remembered later.
     let calendar_ids = accounts
         .iter()
         .filter_map(|account| cache.get_calendars_for_account(&account.id).ok())
@@ -256,6 +329,75 @@ mod tests {
 
         assert!(said.contains("could not remove everything"), "{said}");
         assert!(said.contains("C:\\somewhere"), "{said}");
+    }
+
+    #[test]
+    fn test_every_entry_that_was_there_is_counted_as_gone() {
+        store::pretend_stored("wixen-mail", "master-key");
+        store::pretend_stored("wixen-mail-account", "a1");
+
+        let outcome = forget(&[
+            CredentialEntry {
+                service: "wixen-mail".to_string(),
+                user: "master-key".to_string(),
+            },
+            CredentialEntry {
+                service: "wixen-mail-account".to_string(),
+                user: "a1".to_string(),
+            },
+        ]);
+
+        assert_eq!(outcome.removed, 2);
+        assert!(outcome.refused.is_empty(), "{:?}", outcome.refused);
+    }
+
+    #[test]
+    fn test_an_entry_that_was_never_stored_is_not_a_failure_and_is_not_a_removal() {
+        // Every entry this installation could have written is tried, including
+        // the ones it never wrote. An installation that never signed in to
+        // anything is the ordinary case, and it must finish silently: the note
+        // decides the exit code, so listing entries that never existed would
+        // make every clean uninstall report a failure.
+        let outcome = forget(&[CredentialEntry {
+            service: "wixen-mail-gmail".to_string(),
+            user: "never-signed-in".to_string(),
+        }]);
+
+        assert_eq!(outcome.removed, 0);
+        assert!(outcome.refused.is_empty(), "{:?}", outcome.refused);
+    }
+
+    #[test]
+    fn test_an_entry_the_store_refuses_is_recorded_by_name() {
+        // Left behind and unnamed is the worst outcome: a secret still on the
+        // machine and nothing saying which one.
+        store::pretend_refused("wixen-mail-gmail", "a1", "access denied");
+
+        let outcome = forget(&[CredentialEntry {
+            service: "wixen-mail-gmail".to_string(),
+            user: "a1".to_string(),
+        }]);
+
+        assert_eq!(outcome.removed, 0);
+        assert_eq!(outcome.refused.len(), 1);
+        assert!(outcome.refused[0].contains("wixen-mail-gmail"));
+    }
+
+    #[test]
+    fn test_a_refusal_names_the_service_and_carries_no_secret() {
+        // The note is written to a file that survives the uninstall. A refusal
+        // that quoted the value would leave the secret in plain text on a
+        // machine the application is no longer on.
+        store::pretend_refused("wixen-mail-account", "a1", "the store is locked");
+
+        let outcome = forget(&[CredentialEntry {
+            service: "wixen-mail-account".to_string(),
+            user: "a1".to_string(),
+        }]);
+
+        let said = outcome.refused.join("\n");
+        assert!(said.contains("wixen-mail-account"), "{said}");
+        assert!(said.contains("the store is locked"), "{said}");
     }
 
     #[test]

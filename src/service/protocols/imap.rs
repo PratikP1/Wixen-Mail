@@ -11,6 +11,7 @@
 //! folder that never finishes loading and never says why.
 
 pub mod abilities;
+pub mod flag;
 pub mod mailbox_name;
 pub mod sequence_set;
 pub mod special_use;
@@ -301,27 +302,27 @@ pub struct ImapMessage {
 impl ImapMessage {
     /// Whether the message has been read.
     pub fn seen(&self) -> bool {
-        self.has_flag("\\Seen")
+        self.has_flag(flag::SEEN)
     }
 
     /// Whether the message is flagged for attention.
     pub fn flagged(&self) -> bool {
-        self.has_flag("\\Flagged")
+        self.has_flag(flag::FLAGGED)
     }
 
     /// Whether the message has been answered.
     pub fn answered(&self) -> bool {
-        self.has_flag("\\Answered")
+        self.has_flag(flag::ANSWERED)
     }
 
     /// Whether the message is a draft.
     pub fn draft(&self) -> bool {
-        self.has_flag("\\Draft")
+        self.has_flag(flag::DRAFT)
     }
 
     /// Whether the message is marked for removal.
     pub fn deleted(&self) -> bool {
-        self.has_flag("\\Deleted")
+        self.has_flag(flag::DELETED)
     }
 
     fn has_flag(&self, wanted: &str) -> bool {
@@ -943,7 +944,7 @@ impl ImapSession {
 
     /// Mark a message read.
     pub async fn mark_as_read(&mut self, uid: u32) -> Result<()> {
-        self.set_flag(uid, "\\Seen", true).await
+        self.set_flag(uid, flag::SEEN, true).await
     }
 
     /// Copy a message into another mailbox, leaving the original where it is.
@@ -989,7 +990,7 @@ impl ImapSession {
         }
 
         self.copy_message(uid, into).await?;
-        self.set_flag(uid, "\\Deleted", true).await?;
+        self.set_flag(uid, flag::DELETED, true).await?;
         if !self.abilities.uid_expunge {
             tracing::warn!(
                 "The mail server has neither MOVE nor UIDPLUS, so the copy was made and the original was flagged rather than removed"
@@ -1018,7 +1019,7 @@ impl ImapSession {
             .await?;
 
         for uid in &found {
-            self.set_flag(*uid, "\\Deleted", true).await?;
+            self.set_flag(*uid, flag::DELETED, true).await?;
             if self.abilities.uid_expunge {
                 self.expunge_one(*uid).await?;
             }
@@ -1078,7 +1079,7 @@ impl ImapSession {
             });
         }
 
-        self.set_flag(uid, "\\Deleted", true).await?;
+        self.set_flag(uid, flag::DELETED, true).await?;
         if !self.abilities.uid_expunge {
             // A server without UIDPLUS (RFC 4315) offers only the bare
             // EXPUNGE, which removes every message in the mailbox flagged
@@ -1442,11 +1443,11 @@ fn flags_from_fetch(fetch: &Fetch) -> Option<(u32, Vec<String>)> {
 /// A flag as IMAP spells it.
 fn flag_name(flag: &Flag<'_>) -> String {
     match flag {
-        Flag::Seen => "\\Seen".to_string(),
-        Flag::Answered => "\\Answered".to_string(),
-        Flag::Flagged => "\\Flagged".to_string(),
-        Flag::Deleted => "\\Deleted".to_string(),
-        Flag::Draft => "\\Draft".to_string(),
+        Flag::Seen => flag::SEEN.to_string(),
+        Flag::Answered => flag::ANSWERED.to_string(),
+        Flag::Flagged => flag::FLAGGED.to_string(),
+        Flag::Deleted => flag::DELETED.to_string(),
+        Flag::Draft => flag::DRAFT.to_string(),
         Flag::Recent => "\\Recent".to_string(),
         Flag::MayCreate => "\\*".to_string(),
         Flag::Custom(name) => name.to_string(),
@@ -1463,7 +1464,9 @@ fn attribute_name(attribute: &NameAttribute<'_>) -> String {
         NameAttribute::All => "\\All".to_string(),
         NameAttribute::Archive => "\\Archive".to_string(),
         NameAttribute::Drafts => "\\Drafts".to_string(),
-        NameAttribute::Flagged => "\\Flagged".to_string(),
+        // A mailbox somebody has singled out. Spelled the same way as the flag
+        // that stars a message, and a different thing.
+        NameAttribute::Flagged => "\\Flagged".to_string(), // not a message flag
         NameAttribute::Junk => "\\Junk".to_string(),
         NameAttribute::Sent => "\\Sent".to_string(),
         NameAttribute::Trash => "\\Trash".to_string(),
@@ -1548,17 +1551,17 @@ mod tests {
             ..Default::default()
         };
 
-        let read = with(&["\\Seen"]);
+        let read = with(&[flag::SEEN]);
         assert!(read.seen());
         assert!(!read.flagged());
         assert!(!read.answered());
         assert!(!read.draft());
         assert!(!read.deleted());
 
-        assert!(with(&["\\Flagged"]).flagged());
-        assert!(with(&["\\Answered"]).answered());
-        assert!(with(&["\\Draft"]).draft());
-        assert!(with(&["\\Deleted"]).deleted());
+        assert!(with(&[flag::FLAGGED]).flagged());
+        assert!(with(&[flag::ANSWERED]).answered());
+        assert!(with(&[flag::DRAFT]).draft());
+        assert!(with(&[flag::DELETED]).deleted());
 
         let none = with(&[]);
         assert!(!none.seen(), "a message with no flags read as already read");
@@ -1740,9 +1743,9 @@ mod tests {
 
     #[test]
     fn test_flags_are_spelled_the_way_imap_spells_them() {
-        assert_eq!(flag_name(&Flag::Seen), "\\Seen");
-        assert_eq!(flag_name(&Flag::Flagged), "\\Flagged");
-        assert_eq!(flag_name(&Flag::Deleted), "\\Deleted");
+        assert_eq!(flag_name(&Flag::Seen), flag::SEEN);
+        assert_eq!(flag_name(&Flag::Flagged), flag::FLAGGED);
+        assert_eq!(flag_name(&Flag::Deleted), flag::DELETED);
         assert_eq!(
             flag_name(&Flag::Custom(std::borrow::Cow::Borrowed("$Label1"))),
             "$Label1"
@@ -1753,7 +1756,7 @@ mod tests {
     fn test_a_message_reports_its_state_from_its_flags() {
         let message = ImapMessage {
             uid: 1,
-            flags: vec!["\\Seen".to_string(), "\\Flagged".to_string()],
+            flags: vec![flag::SEEN.to_string(), flag::FLAGGED.to_string()],
             ..Default::default()
         };
         assert!(message.seen());

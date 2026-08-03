@@ -151,6 +151,40 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Getting started is now written for the person using the program.** Pressing
+  F1 anywhere outside mail opened a page of build instructions: install Rust,
+  clone the repository, run the build. Somebody who is stuck in the middle of
+  reading their mail was told to clone a repository, and by ear that is several
+  minutes of listening before they find out the page cannot help them. It now
+  covers adding an account, where the six areas are and the key that reaches
+  each, how to move around a mailbox, and what is experimental. The build
+  instructions are in the contributing page, where they were already.
+
+  The full guide no longer claims to cover the calendar. It has no section about
+  the calendar, contacts, tasks, notes or reminders, so pressing F1 in the
+  calendar opened a document that never mentions it.
+
+  **Still missing:** five of the six areas have no page of their own, so F1 in
+  contacts, the calendar, reminders, tasks and notes lands on getting started.
+
+- **After a check for new mail, the count of messages changed elsewhere is the
+  real one.** It said how many messages the server had been asked about, not how
+  many had actually changed, so a mailbox holding five hundred messages
+  announced that five hundred had changed somewhere else after every single
+  check, whether or not anything had. The number exists to tell you that
+  something you read or starred on your phone has arrived, and it could not,
+  because it said the same thing either way.
+
+  Reading flags back from a server has never been run against a real account.
+
+- **Opening settings no longer throws away a mark as read delay it does not
+  offer.** A delay set by editing the settings file by hand, one second for
+  instance, showed as "Immediately" in the settings window, and saving wrote
+  that back. Somebody who had asked to wait ended up with no wait at all, which
+  is the worst end to fail towards: arrowing down a list then marks every
+  message you pass as read and empties the unread count. An unrecognised delay
+  now shows as the ordinary default of two seconds.
+
 - **The label you chose for a phone number or an address is the one that
   travels.** Every number sent to Google went as a mobile and every address went
   as an other, whatever you picked, and only the first of each was sent at all.

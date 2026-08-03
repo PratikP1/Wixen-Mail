@@ -8,9 +8,18 @@
 //! exists at the other end, so all of it has to exist here or the account is a
 //! list of incoming mail and nothing else.
 //!
-//! An IMAP account needs one. The outbox is a queue of mail that has not gone
-//! yet, which by definition is not on any server, and there is nowhere to put
-//! it but here.
+//! An IMAP account is listed as needing one, the outbox, and today it does not
+//! get it. The rows are only created while collecting mail over POP, so an
+//! account on a server never has any of these.
+//!
+//! # The outbox is a name here and nothing more
+//!
+//! Mail waiting to go out is not filed into this folder. It is kept in a table
+//! of its own, written when a message is queued and read by the loop that sends
+//! it, and nothing puts a row in the folder. So the Outbox a POP account gets
+//! is empty while a message is waiting in it, which is the opposite of what
+//! somebody looking at it would conclude. Whether it should be filled or should
+//! stop being shown is a decision nobody has taken.
 //!
 //! # Why they are ordinary folders
 //!
@@ -91,10 +100,13 @@ const FOR_POP: [LocalFolder; 6] = [
     },
 ];
 
-/// What an IMAP account keeps here, which is the queue and nothing else.
+/// What an IMAP account would keep here, which is the queue and nothing else.
 ///
 /// Everything else it has on the server, and a second local copy would be a
 /// second place for the same mail to be, with nothing to say which is right.
+///
+/// Nothing reads this list yet. The folders are only created while collecting
+/// mail over POP, so an IMAP account gets none of them.
 const FOR_IMAP: [LocalFolder; 1] = [LocalFolder {
     kind: FolderType::Outbox,
     name: "Outbox",
@@ -108,46 +120,12 @@ pub fn for_account(protocol: Protocol) -> &'static [LocalFolder] {
     }
 }
 
-/// Where a message goes when it is deleted, for an account with local folders.
-///
-/// The same rule as on a server: to the trash, unless it is already there.
-/// `None` for an account whose trash is the server's, which the IMAP path
-/// answers for itself.
-pub fn local_trash(protocol: Protocol, deleting_from: &str) -> Option<String> {
-    if protocol != Protocol::Pop3 {
-        return None;
-    }
-    let trash = FOR_POP
-        .iter()
-        .find(|folder| folder.kind == FolderType::Trash)?
-        .path();
-    if trash == deleting_from {
-        return None;
-    }
-    Some(trash)
-}
-
 /// Where an account's sent mail is filed, when it is filed here.
 pub fn local_sent(protocol: Protocol) -> Option<String> {
     for_account(protocol)
         .iter()
         .find(|folder| folder.kind == FolderType::Sent)
         .map(LocalFolder::path)
-}
-
-/// Where mail waits to go out. Every account has one.
-pub fn outbox(protocol: Protocol) -> String {
-    for_account(protocol)
-        .iter()
-        .find(|folder| folder.kind == FolderType::Outbox)
-        .map(LocalFolder::path)
-        .unwrap_or_else(|| {
-            // Unreachable while both lists carry an outbox, and the test below
-            // is what keeps that true. A path rather than a panic, because a
-            // queue with nowhere to live should degrade to one folder shared
-            // rather than take the application down.
-            format!("{LOCAL_PREFIX}/Outbox")
-        })
 }
 
 #[cfg(test)]
@@ -189,19 +167,6 @@ mod tests {
     }
 
     #[test]
-    fn test_every_account_has_somewhere_to_queue_mail() {
-        // Mail that has not gone yet is on no server by definition.
-        for protocol in [Protocol::Imap, Protocol::Pop3] {
-            assert!(
-                for_account(protocol)
-                    .iter()
-                    .any(|folder| folder.kind == FolderType::Outbox),
-                "{protocol:?} has no outbox"
-            );
-        }
-    }
-
-    #[test]
     fn test_no_two_local_folders_share_a_path() {
         // Two rows with one path is one folder in the database and two in the
         // tree, and messages filed into whichever the cache found first.
@@ -236,28 +201,6 @@ mod tests {
         assert!(!is_local("Local"));
         assert!(!is_local("Local/Outbox"));
         assert!(!is_local("[Gmail]/All Mail"));
-    }
-
-    #[test]
-    fn test_deleting_from_a_pop_account_goes_to_its_own_trash() {
-        let trash = local_trash(Protocol::Pop3, "\u{1}Local/Inbox").expect("a trash folder");
-
-        assert!(is_local(&trash));
-        assert!(trash.ends_with("Trash"));
-    }
-
-    #[test]
-    fn test_deleting_from_the_trash_deletes() {
-        let trash = local_trash(Protocol::Pop3, "\u{1}Local/Inbox").expect("a trash folder");
-
-        assert_eq!(local_trash(Protocol::Pop3, &trash), None);
-    }
-
-    #[test]
-    fn test_an_imap_account_uses_the_servers_trash_rather_than_a_local_one() {
-        // Otherwise deleting would move mail off the server into a copy on this
-        // computer, and it would vanish from every other device.
-        assert_eq!(local_trash(Protocol::Imap, "INBOX"), None);
     }
 
     #[test]

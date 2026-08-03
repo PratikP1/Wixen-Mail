@@ -192,6 +192,15 @@ pub fn read_all(paths: &[PathBuf]) -> Result<Vec<Ready>> {
                     .unwrap_or_default(),
             );
             Ok(Ready {
+                // The type is read from the cleaned name, not the name on
+                // disk, because the cleaned one is what goes into the part's
+                // header. A part named as a document and declared as a
+                // program, or the reverse, is what makes a receiving client
+                // open a file as something it is not.
+                //
+                // The cleaning cannot lose a type this knows: it keeps any
+                // extension shorter than sixteen characters, and every
+                // extension in the table is at most four.
                 content_type: content_type(&name),
                 name,
                 bytes,
@@ -206,10 +215,15 @@ pub fn read_all(paths: &[PathBuf]) -> Result<Vec<Ready>> {
 /// several files. A newline separates them because it is the one character a
 /// Windows path cannot contain, so nothing needs escaping and nothing can be
 /// split in the wrong place.
-pub fn joined(chosen: &[Chosen]) -> String {
-    chosen
+///
+/// Takes paths rather than picked files, because that is what the composer is
+/// holding by the time a message is queued. It took picked files before, which
+/// meant nothing could call it and the queue built the same string by hand: two
+/// copies of one convention, either of which could change without the other.
+pub fn joined(paths: &[PathBuf]) -> String {
+    paths
         .iter()
-        .map(|file| file.path.to_string_lossy().into_owned())
+        .map(|path| path.to_string_lossy().into_owned())
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -342,12 +356,18 @@ mod tests {
     }
 
     #[test]
-    fn test_the_paths_survive_the_trip_through_one_column() {
-        let files = vec![sized("a.pdf", 1), sized("b b.png", 2)];
+    fn test_the_paths_the_composer_hands_over_survive_one_column() {
+        // The paths, not the picked files. By the time a message is queued the
+        // composer holds paths and nothing else, so a round trip that starts
+        // from a picked file is a trip nothing ever makes.
+        let picked = vec![
+            PathBuf::from("C:\\files\\a.pdf"),
+            PathBuf::from("C:\\my files\\b b.png"),
+        ];
 
-        let back = split(&joined(&files));
+        let back = split(&joined(&picked));
 
-        assert_eq!(back, vec![files[0].path.clone(), files[1].path.clone()]);
+        assert_eq!(back, picked);
     }
 
     #[test]
@@ -402,6 +422,43 @@ mod tests {
         let said = format!("{refusal}");
         assert!(said.contains("report.pdf"), "{said}");
         assert!(said.contains("not sent"), "{said}");
+    }
+
+    #[test]
+    fn test_the_type_always_describes_the_name_that_goes_out() {
+        // The two are written onto the same part, so they have to agree. A
+        // long name is shortened on the way out, and if the shortening dropped
+        // the extension the file would arrive declared as no particular kind
+        // and the recipient would be offered a save box instead of the
+        // document.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let long = folder.path().join(format!("{}.pdf", "x".repeat(200)));
+        std::fs::write(&long, b"a report").expect("write");
+        let odd = folder.path().join("annexe\u{202E}cod.txt");
+        std::fs::write(&odd, b"notes").expect("write");
+
+        let ready = read_all(&[long, odd]).expect("real files");
+
+        for file in &ready {
+            assert_eq!(
+                content_type(&file.name),
+                file.content_type,
+                "the declared type disagrees with the declared name: {}",
+                file.name
+            );
+        }
+        assert_eq!(ready[0].content_type, "application/pdf");
+        assert_eq!(ready[1].content_type, "text/plain");
+    }
+
+    #[test]
+    fn test_cleaning_a_name_cannot_take_its_type_away() {
+        // The one way the type could be lost: a name so long that shortening
+        // it dropped the extension. It does not, and this is what says so.
+        let cleaned =
+            crate::service::attachment_name::safe_file_name(&format!("{}.pdf", "x".repeat(200)));
+
+        assert_eq!(content_type(&cleaned), "application/pdf");
     }
 
     #[test]

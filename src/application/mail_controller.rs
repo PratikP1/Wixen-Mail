@@ -275,6 +275,13 @@ impl MailController {
             // corporate server the two differ and the login is often not an
             // address at all.
             from: req.from_address.clone(),
+            // No display name, so recipients see a bare address where other
+            // mail programs show a name. Nothing here holds the sender's own
+            // name: an account's name is the label somebody gave the account,
+            // so it is often "Work" or the provider, and putting that in front
+            // of their address would be worse than leaving it off. Showing a
+            // name means asking for one, which is a field nobody has decided
+            // to add.
             from_name: None,
             to: req.to.clone(),
             cc: req.cc.clone(),
@@ -300,7 +307,13 @@ impl MailController {
     /// to know the current state, and the list already does; asking the server
     /// again would be a round trip to learn something we hold.
     pub async fn set_starred(&self, folder: &str, uid: u32, starred: bool) -> Result<()> {
-        self.set_flag(folder, uid, "\\Flagged", starred).await
+        self.set_flag(
+            folder,
+            uid,
+            crate::service::protocols::imap::flag::FLAGGED,
+            starred,
+        )
+        .await
     }
 
     /// Add or remove a flag on a message in a folder.

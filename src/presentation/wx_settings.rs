@@ -472,10 +472,7 @@ fn build_reading_tab(
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>(),
-        MarkRead::ALL
-            .iter()
-            .position(|c| *c == MarkRead::from_setting(&config.mark_read_after))
-            .unwrap_or(0) as u32,
+        crate::application::reading_habits::offered_index(&config.mark_read_after) as u32,
     );
 
     // How a message opens. First in this section, because it is the biggest

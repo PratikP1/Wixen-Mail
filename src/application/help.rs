@@ -70,8 +70,11 @@ pub const TOPICS: &[Topic] = &[
     Topic {
         title: "&Using Wixen Mail",
         file: "USER_GUIDE.md",
-        covers: "Mail, the calendar, contacts, tasks and notes in detail",
-        about: Some(PimModule::Calendar),
+        // What is in it, which is mail and nothing else. It claimed five more
+        // and holds a section on none of them, so pressing F1 in the calendar
+        // opened a document with not one mention of the calendar in it.
+        covers: "Reading, writing, searching, conversations and attachments",
+        about: None,
     },
     Topic {
         title: "Setting up a &provider",
@@ -145,6 +148,45 @@ mod tests {
     }
 
     #[test]
+    fn test_a_page_reachable_from_f1_is_written_for_the_person_using_the_program() {
+        // F1 is pressed by somebody who is stuck in the middle of doing
+        // something. Answering with instructions for building the program from
+        // source is no answer at all, and for somebody listening it is several
+        // minutes of reading before they find that out.
+        for topic in TOPICS.iter().filter(|topic| topic.about.is_some()) {
+            let path = std::path::Path::new("docs").join(topic.file);
+            let text = std::fs::read_to_string(&path).expect("the page ships");
+            for developer_instruction in ["cargo ", "git clone"] {
+                assert!(
+                    !text.contains(developer_instruction),
+                    "{} answers F1 with build instructions: it contains {developer_instruction:?}",
+                    topic.file
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_page_that_claims_a_module_talks_about_it() {
+        // A page claiming a module is the page F1 opens from it. Claiming one
+        // it never mentions sends somebody to read a document that cannot
+        // answer them.
+        for topic in TOPICS {
+            let Some(module) = topic.about else {
+                continue;
+            };
+            let path = std::path::Path::new("docs").join(topic.file);
+            let text = std::fs::read_to_string(&path).expect("the page ships");
+            let name = plain(module.label());
+            assert!(
+                text.to_lowercase().contains(&name.to_lowercase()),
+                "{} claims to answer questions about {name} and never mentions it",
+                topic.file
+            );
+        }
+    }
+
+    #[test]
     fn test_every_topic_has_a_mnemonic() {
         // Every other menu in this application has them, and a menu where
         // some entries answer a letter and others do not is worse than one
@@ -192,7 +234,23 @@ mod tests {
         // which is the difference between an answer and four minutes of
         // reading.
         assert_eq!(for_module(PimModule::Mail).file, "getting-started.md");
-        assert_eq!(for_module(PimModule::Calendar).file, "USER_GUIDE.md");
+    }
+
+    #[test]
+    fn test_the_areas_with_no_page_of_their_own_land_somewhere_that_helps() {
+        // Five of the six have no page written for them yet, so F1 lands on
+        // getting started, which at least says where each area is and which
+        // key reaches it. That is a gap in what has been written, not a
+        // decision that these areas do not need a page.
+        for module in [
+            PimModule::Contacts,
+            PimModule::Calendar,
+            PimModule::Reminders,
+            PimModule::Tasks,
+            PimModule::Notes,
+        ] {
+            assert_eq!(for_module(module).file, "getting-started.md", "{module:?}");
+        }
     }
 
     #[test]

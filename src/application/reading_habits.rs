@@ -89,6 +89,26 @@ impl MarkRead {
     }
 }
 
+/// Which entry of the offered list a stored choice selects.
+///
+/// A stored wait the list does not offer falls back to the default rather than
+/// to the first entry. The first entry is "Immediately", which is the most
+/// aggressive of the seven and the wrong one to fail towards: somebody who
+/// asked to wait would open settings, see no wait at all, and save that back
+/// without ever having chosen it.
+pub fn offered_index(stored: &str) -> usize {
+    let wanted = MarkRead::from_setting(stored);
+    MarkRead::ALL
+        .iter()
+        .position(|choice| *choice == wanted)
+        .or_else(|| {
+            MarkRead::ALL
+                .iter()
+                .position(|choice| *choice == MarkRead::default())
+        })
+        .unwrap_or(0)
+}
+
 impl Default for MarkRead {
     /// Two seconds, not instantly.
     ///
@@ -224,6 +244,26 @@ mod tests {
         for nonsense in ["", "   ", "soon", "-4", "0"] {
             assert_eq!(MarkRead::from_setting(nonsense), MarkRead::default());
         }
+    }
+
+    #[test]
+    fn test_a_stored_choice_the_list_does_not_offer_falls_back_to_the_safe_default() {
+        // A settings file can hold a wait the list does not offer. Landing on
+        // the first entry means somebody who asked to wait sees "Immediately",
+        // and saving writes that back, so every message they arrow past is
+        // marked read and the unread count empties itself.
+        assert_eq!(MarkRead::ALL[offered_index("1")], MarkRead::default());
+        assert_ne!(MarkRead::ALL[offered_index("1")], MarkRead::Immediately);
+    }
+
+    #[test]
+    fn test_a_stored_choice_the_list_does_offer_is_the_one_selected() {
+        assert_eq!(MarkRead::ALL[offered_index("30")], MarkRead::After(30));
+        assert_eq!(MarkRead::ALL[offered_index("never")], MarkRead::Never);
+        assert_eq!(
+            MarkRead::ALL[offered_index("immediately")],
+            MarkRead::Immediately
+        );
     }
 
     #[test]

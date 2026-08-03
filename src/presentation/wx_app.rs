@@ -5795,8 +5795,13 @@ fn spawn_draft_append(
         if let Err(e) = handle.block_on(controller.remove_by_message_id(&folder, &message_id)) {
             tracing::warn!("The previous copy of the draft was not removed: {e}");
         }
+        let as_a_read_draft = format!(
+            "({} {})",
+            crate::service::protocols::imap::flag::DRAFT,
+            crate::service::protocols::imap::flag::SEEN
+        );
         if let Err(e) =
-            handle.block_on(controller.append_message(&folder, Some(r"(\Draft \Seen)"), &raw))
+            handle.block_on(controller.append_message(&folder, Some(&as_a_read_draft), &raw))
         {
             tracing::warn!("The draft was saved but not filed on the server: {e}");
         }
@@ -5834,12 +5839,7 @@ fn queue_for_sending(
         // `body` has always meant.
         body: data.body_plain.clone(),
         body_html: Some(data.body.clone()).filter(|html| !html.trim().is_empty()),
-        attachments: data
-            .attachments
-            .iter()
-            .map(|path| path.to_string_lossy().into_owned())
-            .collect::<Vec<_>>()
-            .join("\n"),
+        attachments: crate::application::attaching::joined(&data.attachments),
         attempt_count: 0,
         last_error: None,
         created_at: chrono::Local::now().to_rfc3339(),
@@ -7573,8 +7573,9 @@ async fn file_sent_copy(
         )
         .await
         .map_err(|e| e.to_string())?;
+    let already_read = format!("({})", crate::service::protocols::imap::flag::SEEN);
     let filed = controller
-        .append_message(folder, Some("(\\Seen)"), raw)
+        .append_message(folder, Some(&already_read), raw)
         .await
         .map_err(|e| e.to_string());
     let _ = controller.disconnect_imap().await;
@@ -7947,7 +7948,12 @@ fn spawn_server_change(
 
         let outcome = match &change {
             ServerChange::Read(read) => handle
-                .block_on(controller.set_flag(&folder_path, uid, "\\Seen", *read))
+                .block_on(controller.set_flag(
+                    &folder_path,
+                    uid,
+                    crate::service::protocols::imap::flag::SEEN,
+                    *read,
+                ))
                 .map(|()| None),
             ServerChange::Flagged(flagged) => handle
                 .block_on(controller.set_starred(&folder_path, uid, *flagged))
