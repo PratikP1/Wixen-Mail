@@ -408,6 +408,12 @@ pub struct CalendarEventItem {
     pub calendar_id: Option<String>,
     pub calendar_name: Option<String>,
     pub calendar_color: Option<String>,
+    /// How many minutes before it starts the alert is set for, or none.
+    ///
+    /// The editor offers this, so it has to be able to show the one already
+    /// set. Without it, opening an event to change its name offered fifteen
+    /// minutes whatever the event had, and saving wrote that back.
+    pub reminder_minutes: Option<i32>,
 }
 
 /// Calendar container item for UI display (represents a whole calendar)
@@ -683,8 +689,19 @@ impl CalendarEventItem {
             calendar_id: entry.calendar_id.clone(),
             calendar_name: None,
             calendar_color: None,
+            reminder_minutes: first_reminder_minutes(entry.reminders_json.as_deref()),
         }
     }
+}
+
+/// The alert on an event, in minutes before it starts.
+///
+/// The first one, because the editor offers one alert and an event can carry
+/// several. Anything that will not read as a list of alerts is treated as no
+/// alert rather than guessed at: it came from a calendar server.
+fn first_reminder_minutes(stored: Option<&str>) -> Option<i32> {
+    let parsed: serde_json::Value = serde_json::from_str(stored?).ok()?;
+    parsed.get(0)?.get("minutes")?.as_i64().map(|m| m as i32)
 }
 
 impl ReminderItem {
@@ -809,6 +826,7 @@ mod tests {
             calendar_id: None,
             calendar_name: None,
             calendar_color: None,
+            reminder_minutes: None,
         }
     }
 
@@ -1115,6 +1133,38 @@ mod tests {
         let mut entry = calendar_container();
         entry.source_provider = None;
         assert_eq!(CalendarContainerItem::from_entry(&entry).provider, "local");
+    }
+
+    #[test]
+    fn test_an_event_carries_the_alert_it_was_saved_with() {
+        let mut entry = calendar_event();
+        entry.reminders_json = Some("[{\"minutes\":30}]".to_string());
+        assert_eq!(
+            CalendarEventItem::from_entry(&entry).reminder_minutes,
+            Some(30),
+            "the editor offers an alert, so it has to be able to show the one already set"
+        );
+    }
+
+    #[test]
+    fn test_an_event_with_no_alert_offers_none_rather_than_a_made_up_one() {
+        assert_eq!(
+            CalendarEventItem::from_entry(&calendar_event()).reminder_minutes,
+            None
+        );
+    }
+
+    #[test]
+    fn test_an_alert_nobody_can_read_is_treated_as_no_alert() {
+        let mut entry = calendar_event();
+        for stored in ["not json at all", "[]", "[{\"at\":\"noon\"}]"] {
+            entry.reminders_json = Some(stored.to_string());
+            assert_eq!(
+                CalendarEventItem::from_entry(&entry).reminder_minutes,
+                None,
+                "{stored} should not become an alert"
+            );
+        }
     }
 
     #[test]

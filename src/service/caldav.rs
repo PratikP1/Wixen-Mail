@@ -1,7 +1,11 @@
 //! CalDAV client for calendar synchronization.
 //!
-//! Implements CalDAV operations over HTTP (PROPFIND, REPORT, PUT, DELETE)
-//! with iCalendar payloads for bidirectional calendar sync.
+//! Calendar operations over HTTP with iCalendar payloads. Reading a calendar
+//! is wired up and used. Writing one is not: nothing in the application calls
+//! [`CalDavClient::create_event`], [`CalDavClient::update_event`],
+//! [`CalDavClient::delete_event`] or [`CalDavClient::discover_calendars`], so
+//! an event made or changed here stays on this computer and the next sync
+//! overwrites it. None of this has run against a live server.
 
 use crate::common::{Error, Result};
 
@@ -29,6 +33,13 @@ pub struct CalDavEvent {
     pub dtend: Option<String>,
     pub is_all_day: bool,
     pub status: String,
+    /// The zone the start time is named in, when the server names one.
+    pub time_zone: Option<String>,
+    /// How the event repeats, in the form the calendar standard writes it.
+    ///
+    /// Kept as it arrived. Nothing turns it into a list of occurrences yet, so
+    /// an event that repeats is still shown once.
+    pub recurrence_rule: Option<String>,
 }
 
 /// Credential store service name holding one calendar's sign-in details.
@@ -79,6 +90,9 @@ impl CalDavClient {
     }
 
     /// Discover calendars at a CalDAV server URL.
+    ///
+    /// Nothing calls this. There is no screen for adding a calendar by its
+    /// server address, so no calendar is ever discovered.
     pub async fn discover_calendars(
         &self,
         base_url: &str,
@@ -127,15 +141,15 @@ impl CalDavClient {
         calendar_url: &str,
         username: &str,
         password: &str,
-        start: Option<&str>,
-        end: Option<&str>,
+        start: Option<chrono::DateTime<chrono::Utc>>,
+        end: Option<chrono::DateTime<chrono::Utc>>,
         _ctag: Option<&str>,
     ) -> Result<(Vec<CalDavEvent>, Option<String>)> {
         let time_range = match (start, end) {
-            (Some(s), Some(e)) => format!(
+            (Some(from), Some(to)) => format!(
                 r#"<c:time-range start="{}" end="{}"/>"#,
-                s.replace(['-', ':'], ""),
-                e.replace(['-', ':'], "")
+                ical_utc_stamp(from),
+                ical_utc_stamp(to)
             ),
             _ => String::new(),
         };
@@ -188,6 +202,9 @@ impl CalDavClient {
     }
 
     /// Create a new event on a CalDAV calendar.
+    ///
+    /// Nothing calls this, so an event made here never reaches the server.
+    /// Never run against a live server.
     pub async fn create_event(
         &self,
         calendar_url: &str,
@@ -231,6 +248,9 @@ impl CalDavClient {
     }
 
     /// Update an existing event on a CalDAV calendar.
+    ///
+    /// Nothing calls this, so a change made here never reaches the server and
+    /// the next sync overwrites it. Never run against a live server.
     pub async fn update_event(
         &self,
         event_url: &str,
@@ -275,6 +295,9 @@ impl CalDavClient {
     }
 
     /// Delete an event from a CalDAV calendar.
+    ///
+    /// Nothing calls this, so an event deleted here comes back on the next
+    /// sync. Never run against a live server.
     pub async fn delete_event(
         &self,
         event_url: &str,
@@ -384,14 +407,20 @@ fn parse_report_events(xml: &str, _calendar_url: &str) -> Result<Vec<CalDavEvent
 
 /// Parse a single VEVENT from iCalendar data.
 pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Option<CalDavEvent> {
-    let uid = extract_ical_property(ical_data, "UID")?;
-    let summary = extract_ical_property(ical_data, "SUMMARY").unwrap_or_default();
-    let description = extract_ical_property(ical_data, "DESCRIPTION");
-    let location = extract_ical_property(ical_data, "LOCATION");
-    let dtstart_raw = extract_ical_property(ical_data, "DTSTART")?;
-    let dtend = extract_ical_property(ical_data, "DTEND");
-    let status =
-        extract_ical_property(ical_data, "STATUS").unwrap_or_else(|| "CONFIRMED".to_string());
+    // Only the event's own lines. A calendar server sends its timezone rules
+    // in the same document, and those rules carry a start date and a repeat
+    // rule of their own for when the clocks change, so reading the document
+    // whole gave every appointment on a calendar outside UTC the date the
+    // clocks last changed rather than the date it is on.
+    let block = vevent_block(ical_data);
+
+    let uid = extract_ical_property(block, "UID")?;
+    let summary = extract_ical_property(block, "SUMMARY").unwrap_or_default();
+    let description = extract_ical_property(block, "DESCRIPTION");
+    let location = extract_ical_property(block, "LOCATION");
+    let dtstart_raw = extract_ical_property(block, "DTSTART")?;
+    let dtend = extract_ical_property(block, "DTEND");
+    let status = extract_ical_property(block, "STATUS").unwrap_or_else(|| "CONFIRMED".to_string());
 
     // Detect all-day events (DATE vs DATE-TIME)
     let is_all_day = dtstart_raw.len() == 8; // YYYYMMDD vs YYYYMMDDTHHmmSSZ
@@ -411,7 +440,25 @@ pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Opti
         dtend: dtend.map(|d| normalize_ical_datetime(&d)),
         is_all_day,
         status,
+        time_zone: ical_parameter(block, "DTSTART", TIME_ZONE_PARAMETER),
+        recurrence_rule: extract_ical_property(block, "RRULE"),
     })
+}
+
+/// The part of a calendar document that describes the event itself.
+///
+/// Everything outside it belongs to something else, usually the timezone
+/// rules. A document with no event in it is handed back whole, so a fragment
+/// carrying bare property lines still reads.
+fn vevent_block(ical: &str) -> &str {
+    let Some(opening) = ical.find("BEGIN:VEVENT") else {
+        return ical;
+    };
+    let after = &ical[opening..];
+    match after.find("END:VEVENT") {
+        Some(closing) => &after[..closing],
+        None => after,
+    }
 }
 
 /// Extract a simple XML element value like <tag>value</tag>.
@@ -444,6 +491,55 @@ fn extract_ical_property(ical: &str, property: &str) -> Option<String> {
             let value = rest[colon + 1..].trim();
             if !value.is_empty() {
                 return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// An instant written the way a calendar server expects to read it.
+///
+/// A time range filter is dated in the calendar format, `20260305T090000Z`.
+/// A general purpose date and time string carries fractional seconds and a
+/// numeric offset instead, which a server that checks what it is sent answers
+/// with a refusal. The sync then does nothing at all and can only report that
+/// the server said no, so the bad date never reaches anybody who could see it.
+///
+/// The bounds are instants rather than strings for the same reason. Stripping
+/// the punctuation out of whatever string arrived turned an ordinary date into
+/// a date where a date and time was required, quietly, and only a server would
+/// have noticed.
+fn ical_utc_stamp(at: chrono::DateTime<chrono::Utc>) -> String {
+    at.format("%Y%m%dT%H%M%SZ").to_string()
+}
+
+/// The parameter naming the zone a date and time is written in.
+const TIME_ZONE_PARAMETER: &str = "TZID";
+
+/// Read one parameter off a property line, as in `DTSTART;TZID=Europe/London:`.
+///
+/// The parameters sit between the property name and the first colon, separated
+/// by semicolons, so only that stretch of the line is searched and the value
+/// itself is never mistaken for a parameter.
+fn ical_parameter(ical: &str, property: &str, parameter: &str) -> Option<String> {
+    let wanted = format!("{parameter}=");
+    for line in ical.lines() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix(property) else {
+            continue;
+        };
+        if !rest.starts_with(';') {
+            continue;
+        }
+        let Some(colon) = rest.find(':') else {
+            continue;
+        };
+        for part in rest[1..colon].split(';') {
+            if let Some(value) = part.strip_prefix(&wanted) {
+                let value = value.trim();
+                if !value.is_empty() {
+                    return Some(value.to_string());
+                }
             }
         }
     }
@@ -491,6 +587,10 @@ fn normalize_ical_datetime(dt: &str) -> String {
 }
 
 /// Build iCalendar VCALENDAR/VEVENT string from event properties.
+///
+/// The zone named on the event is not written out. A zone and a trailing Z on
+/// the same time are not valid together, and writing one properly means
+/// sending the timezone rules with it. Nothing sends this anywhere yet.
 pub fn build_ical_vevent(event: &CalDavEvent) -> String {
     let mut lines = vec![
         "BEGIN:VCALENDAR".to_string(),
@@ -613,6 +713,8 @@ mod tests {
             dtend: Some("2026-03-05T10:00:00Z".to_string()),
             is_all_day: false,
             status: "CONFIRMED".to_string(),
+            time_zone: None,
+            recurrence_rule: None,
         };
         let ical = build_ical_vevent(&event);
         assert!(ical.contains("BEGIN:VCALENDAR"));
@@ -621,6 +723,75 @@ mod tests {
         assert!(ical.contains("DESCRIPTION:A test"));
         assert!(ical.contains("LOCATION:Here"));
         assert!(ical.contains("END:VCALENDAR"));
+    }
+
+    /// A calendar server sends the timezone rules in the same document as the
+    /// event, and those rules carry their own start date and their own repeat
+    /// rule for when the clocks change.
+    fn with_timezone_rules(extra: &str) -> String {
+        format!(
+            "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:Europe/London\r\n\
+             BEGIN:DAYLIGHT\r\nDTSTART:19700329T010000\r\n\
+             RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\nEND:DAYLIGHT\r\n\
+             END:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:evt-1\r\nSUMMARY:Standup\r\n\
+             DTSTART;TZID=Europe/London:20260305T090000\r\n{extra}\
+             DTEND;TZID=Europe/London:20260305T093000\r\nSTATUS:CONFIRMED\r\n\
+             END:VEVENT\r\nEND:VCALENDAR"
+        )
+    }
+
+    #[test]
+    fn test_an_event_is_read_from_its_own_lines_and_not_from_the_timezone_rules() {
+        let event = parse_ical_vevent(
+            &with_timezone_rules(""),
+            "https://cal.example.com/1.ics",
+            None,
+        )
+        .expect("an event to be read");
+        assert_eq!(
+            event.dtstart, "2026-03-05T09:00:00",
+            "the appointment starts when the event says, not when the clocks changed in 1970"
+        );
+        assert_eq!(event.summary, "Standup");
+    }
+
+    #[test]
+    fn test_the_zone_a_server_names_is_read_off_the_start_time() {
+        let event = parse_ical_vevent(
+            &with_timezone_rules(""),
+            "https://cal.example.com/1.ics",
+            None,
+        )
+        .expect("an event to be read");
+        assert_eq!(
+            event.time_zone.as_deref(),
+            Some("Europe/London"),
+            "a time with no zone beside it is a time nobody can act on"
+        );
+    }
+
+    #[test]
+    fn test_an_event_with_no_zone_named_does_not_invent_one() {
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:evt-1\r\nSUMMARY:Lunch\r\n\
+                    DTSTART:20260305T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR";
+        let event =
+            parse_ical_vevent(ical, "https://cal.example.com/1.ics", None).expect("an event");
+        assert_eq!(event.time_zone, None);
+    }
+
+    #[test]
+    fn test_a_repeating_event_keeps_the_rule_the_server_sent() {
+        let event = parse_ical_vevent(
+            &with_timezone_rules("RRULE:FREQ=WEEKLY;BYDAY=TU\r\n"),
+            "https://cal.example.com/1.ics",
+            None,
+        )
+        .expect("an event to be read");
+        assert_eq!(
+            event.recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;BYDAY=TU"),
+            "the rule the event repeats by, not the one the clocks change by"
+        );
     }
 
     #[test]
@@ -763,6 +934,8 @@ mod tests {
             let data = fuzz_ical(seed);
             let _ = parse_ical_vevent(&data, "https://example.com/c/1.ics", None);
             let _ = extract_ical_property(&data, "SUMMARY");
+            let _ = ical_parameter(&data, "DTSTART", TIME_ZONE_PARAMETER);
+            let _ = vevent_block(&data);
             let _ = normalize_ical_datetime(&data);
         }
     }

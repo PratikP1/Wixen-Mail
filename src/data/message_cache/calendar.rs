@@ -47,7 +47,16 @@ fn map_event_row(row: &rusqlite::Row) -> rusqlite::Result<CalendarEventEntry> {
 }
 
 impl MessageCache {
-    /// Save or update a calendar event (UPSERT on account_id + provider_event_id).
+    /// Save an event, or update the one already stored under either identity.
+    ///
+    /// An event has two: the one it carries here, and the one the server that
+    /// sent it uses. A save matches on whichever one is there. Only matching on
+    /// the server's used to mean an event made on this computer, which has no
+    /// server identity, could be saved once and never edited again: the second
+    /// save collided on the identity here and was refused.
+    ///
+    /// A save that names no server identity leaves the stored one alone, so
+    /// editing an event here cannot cut it loose from the copy on the server.
     pub fn save_calendar_event(&self, event: &CalendarEventEntry) -> Result<()> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
@@ -61,6 +70,30 @@ impl MessageCache {
                      ?17, ?18, ?19, ?20, ?21, ?22, ?23,
                      COALESCE((SELECT created_at FROM calendar_events WHERE account_id = ?2 AND provider_event_id = ?3), ?24),
                      ?25, ?26)
+             ON CONFLICT(id) DO UPDATE SET
+                provider_event_id = COALESCE(excluded.provider_event_id, calendar_events.provider_event_id),
+                calendar_id = excluded.calendar_id,
+                summary = excluded.summary,
+                description = excluded.description,
+                location = excluded.location,
+                start_datetime = excluded.start_datetime,
+                end_datetime = excluded.end_datetime,
+                start_date = excluded.start_date,
+                end_date = excluded.end_date,
+                is_all_day = excluded.is_all_day,
+                time_zone = excluded.time_zone,
+                status = excluded.status,
+                recurrence_rule = excluded.recurrence_rule,
+                source_provider = excluded.source_provider,
+                etag = excluded.etag,
+                web_link = excluded.web_link,
+                show_as = excluded.show_as,
+                last_modified_remote = excluded.last_modified_remote,
+                last_synced_at = excluded.last_synced_at,
+                attendees_json = excluded.attendees_json,
+                reminders_json = excluded.reminders_json,
+                categories = excluded.categories,
+                updated_at = excluded.updated_at
              ON CONFLICT(account_id, provider_event_id) DO UPDATE SET
                 calendar_id = excluded.calendar_id,
                 summary = excluded.summary,
@@ -162,6 +195,25 @@ impl MessageCache {
 
         let mut rows = stmt
             .query_map(params![account_id, provider_event_id], map_event_row)
+            .map_err(|e| Error::Other(format!("Failed to query event: {}", e)))?;
+
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(Error::Other(format!("Failed to read event: {}", e))),
+            None => Ok(None),
+        }
+    }
+
+    /// Get a single event by the identity it carries on this computer.
+    pub fn get_event_by_id(&self, event_id: &str) -> Result<Option<CalendarEventEntry>> {
+        let sql = format!("SELECT {} FROM calendar_events WHERE id = ?1", EVENT_COLS);
+        let mut stmt = self
+            .conn
+            .prepare(&sql)
+            .map_err(|e| Error::Other(format!("Failed to prepare event lookup: {}", e)))?;
+
+        let mut rows = stmt
+            .query_map(params![event_id], map_event_row)
             .map_err(|e| Error::Other(format!("Failed to query event: {}", e)))?;
 
         match rows.next() {
@@ -472,6 +524,54 @@ mod tests {
             .get_event_by_provider_id("test@outlook.com", "ms_evt_xyz")
             .unwrap();
         assert!(found.is_none());
+    }
+
+    #[test]
+    fn test_an_event_with_no_provider_can_be_saved_again() {
+        let cache = temp_cache("cal_local_resave");
+        let mut event = make_event("evt-local", "acct", "unused", "First");
+        event.provider_event_id = None;
+        cache.save_calendar_event(&event).unwrap();
+
+        event.summary = "Second".to_string();
+        cache
+            .save_calendar_event(&event)
+            .expect("an event made on this computer to be editable");
+
+        let stored = cache.get_all_events_for_account("acct").unwrap();
+        assert_eq!(stored.len(), 1, "the same event, not a second one");
+        assert_eq!(stored[0].summary, "Second");
+    }
+
+    #[test]
+    fn test_a_save_by_local_id_never_clears_the_provider_identity() {
+        let cache = temp_cache("cal_keep_provider");
+        let mut event = make_event("evt-synced", "acct", "uid-1", "From the server");
+        cache.save_calendar_event(&event).unwrap();
+
+        event.provider_event_id = None;
+        event.summary = "Renamed here".to_string();
+        cache.save_calendar_event(&event).unwrap();
+
+        let stored = cache.get_all_events_for_account("acct").unwrap();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].summary, "Renamed here");
+        assert_eq!(
+            stored[0].provider_event_id.as_deref(),
+            Some("uid-1"),
+            "editing an event here must not cut it loose from the copy on the server"
+        );
+    }
+
+    #[test]
+    fn test_an_event_can_be_read_back_by_the_identity_it_has_here() {
+        let cache = temp_cache("cal_by_id");
+        let event = make_event("evt-1", "acct", "uid-1", "Standup");
+        cache.save_calendar_event(&event).unwrap();
+
+        let found = cache.get_event_by_id("evt-1").unwrap();
+        assert_eq!(found.map(|e| e.summary), Some("Standup".to_string()));
+        assert!(cache.get_event_by_id("no-such-event").unwrap().is_none());
     }
 
     #[test]

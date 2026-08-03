@@ -304,6 +304,7 @@ mod tests {
             calendar_id: None,
             calendar_name: Some("Work".to_string()),
             calendar_color: None,
+            reminder_minutes: None,
         }
     }
 

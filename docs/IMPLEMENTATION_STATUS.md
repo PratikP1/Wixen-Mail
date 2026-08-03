@@ -42,9 +42,9 @@ by topic, and bounded to four per second, with anything dropped reported rather
 than silently discarded. Message reading can be muted with `Ctrl+Shift+M`, and
 that preference persists. Check menu items report their real state.
 
-**Provider sync.** Google and Microsoft Graph clients for contacts and calendars,
-a CalDAV client, and read-only iCal subscriptions. These are reachable from the
-menus. They have not been exercised against live accounts.
+**Provider sync.** Google and Microsoft Graph clients for contacts and calendars.
+These are reachable from the menus. They have not been exercised against live
+accounts.
 
 ## What does not work
 
@@ -62,6 +62,16 @@ saying so.
 
 **Threaded view.** Present in the View menu and disabled. The data model carries
 thread identifiers; nothing groups by them.
+
+**Calendars by address.** There is a client for reading a calendar from a server
+by its address, and one for a subscription feed, and no way to enter either
+address. Nothing can create such a calendar, so neither client ever runs. Reading
+one is written and tested against canned replies; sending a change back is not
+written at all, so an event made or changed here would stay on this computer.
+
+**Repeating events.** A repeating event is stored with the rule it repeats by,
+and nothing turns that rule into the days it lands on, so it is shown once and
+nothing says it comes round again. This is true of every calendar provider.
 
 ## Quality gates
 

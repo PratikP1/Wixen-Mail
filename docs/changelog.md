@@ -151,6 +151,51 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Syncing a calendar no longer wipes what you typed onto an event.** A
+  category, the people you added, and the alert you set are kept on this
+  computer and a calendar server does not carry any of them. Every sync wrote
+  what the server sent and nothing else, so all three were erased each time the
+  calendar refreshed. Reading a calendar was enough to do it, so it happened
+  with changes to your accounts switched off. A sync now keeps them.
+
+  An alert kept this way still does not go off. Nothing reads an alert set on
+  an event yet, so this stops it being lost, it does not make it work.
+
+- **An event on a calendar that is not in your own time zone had the wrong
+  date.** A server sends the rules for when the clocks change alongside the
+  event, and those rules carry a date of their own. The reader took the first
+  date in the whole document, so a meeting next March was stored as the day the
+  clocks changed in 1970. Every event on such a calendar was affected. Events
+  already stored with the wrong date are corrected at the next sync.
+
+- **An event a calendar sent without an end can be opened and changed.** It was
+  stored with no end at all, and the editor refuses to save anything without an
+  end date, so the event could be seen and never corrected. An event with no end
+  now gets the end the calendar standard gives it: a whole-day event lasts one
+  day, and an appointment with a start time ends when it starts. Events already
+  stored without an end get one at the next sync.
+
+- **Editing an event no longer throws away everything the editor did not ask
+  about.** The editor asks about nine things and an event carries more: which
+  calendar it is filed in, its category, how it repeats, who is coming. Saving
+  an edit rebuilt the event out of those nine and dropped the rest. Worse, an
+  event made on this computer could not be edited at all: the second save was
+  refused and the message said a constraint failed, which told nobody anything.
+  Both are fixed, and the editor now shows the notes and the alert the event
+  already has instead of a blank and fifteen minutes.
+
+- **Refreshing a subscribed calendar stops announcing changes that did not
+  happen.** A feed that had not changed at all was reported as, for example,
+  "200 created, 200 deleted", because every event was deleted and put back on
+  every refresh. Read out, that is a minute of nothing. The refresh now says
+  what actually changed, and it writes the new copy down before removing
+  anything, so a feed that fails halfway through no longer leaves you with an
+  empty calendar.
+
+- **The zone a calendar names for an event is kept.** It was dropped, so a time
+  was stored with nothing saying which zone it was in. Nothing says the zone out
+  loud yet.
+
 - **Syncing an address book no longer wipes the parts of a contact only this
   application holds.** A postal address, a photo saved with a contact, the card
   a contact was imported from, a relationship such as "sister", and any custom
@@ -484,6 +529,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   where you are is the only thing telling you where you are, and that threw it
   away every time. Escape from the conversation is what takes you back to the
   message list now.
+
+### Known limitations
+
+- **An event that repeats is shown once.** The rule it repeats by is stored, and
+  nothing turns that rule into the occurrences it stands for, so a weekly
+  meeting appears on one day and nothing says it comes round again. This is true
+  of Google, Microsoft and CalDAV calendars alike.
+- **A calendar change made here is not sent to a CalDAV server.** Reading a
+  calendar is built; writing one back is not, so an event you make or change
+  stays on this computer and the next sync overwrites a change to an event the
+  server also holds.
+- **There is no way to add a calendar by its address.** Neither a CalDAV server
+  address nor a subscription feed can be entered anywhere, so the calendar sync
+  described above cannot currently run at all. None of it has been tried against
+  a live server.
 
 ### Added
 

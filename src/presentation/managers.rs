@@ -331,7 +331,13 @@ pub fn manage_calendar(
                 }
             }
             wx_calendar::CalendarAction::UpdateEvent(id, data) => {
-                let entry = event_entry(id.clone(), &account, &data);
+                // Onto the event as it stands, rather than a fresh one built
+                // from the editor: the editor asks about nine things and an
+                // event carries more than nine.
+                let entry = match cache.get_event_by_id(&id) {
+                    Ok(Some(stored)) => event_with_edits(stored, &data),
+                    _ => event_entry(id.clone(), &account, &data),
+                };
                 match cache.save_calendar_event(&entry) {
                     Ok(()) => {
                         changed = true;
@@ -365,6 +371,38 @@ pub fn manage_calendar(
         }
     }
     report(tx, rt, "calendar events", failures);
+}
+
+/// The stored event with what the editor changed folded into it.
+///
+/// The editor asks about the summary, the dates and times, whether it is all
+/// day, the place, the notes and the alert. An event carries more than that:
+/// which calendar it is filed in, its category, how it repeats, who is coming,
+/// and the identity the server that sent it knows it by. Rebuilding the event
+/// from the editor alone threw all of that away every time somebody corrected
+/// a spelling.
+fn event_with_edits(
+    stored: crate::data::message_cache::CalendarEventEntry,
+    data: &wx_calendar::CalendarEventData,
+) -> crate::data::message_cache::CalendarEventEntry {
+    let edited = event_entry(stored.id.clone(), &stored.account_id, data);
+    crate::data::message_cache::CalendarEventEntry {
+        provider_event_id: stored.provider_event_id,
+        calendar_id: stored.calendar_id,
+        time_zone: stored.time_zone,
+        status: stored.status,
+        recurrence_rule: stored.recurrence_rule,
+        categories: stored.categories,
+        source_provider: stored.source_provider,
+        etag: stored.etag,
+        web_link: stored.web_link,
+        show_as: stored.show_as,
+        last_modified_remote: stored.last_modified_remote,
+        last_synced_at: stored.last_synced_at,
+        attendees_json: stored.attendees_json,
+        created_at: stored.created_at,
+        ..edited
+    }
 }
 
 /// Turn what the editor captured into what the cache stores.
@@ -1639,6 +1677,32 @@ mod tests {
             description: String::new(),
             reminder_minutes: 15,
         }
+    }
+
+    #[test]
+    fn test_editing_an_event_keeps_what_the_dialog_never_asked_about() {
+        let mut stored = event_entry("e1".to_string(), "acct", &data(false));
+        stored.provider_event_id = Some("uid-1".to_string());
+        stored.calendar_id = Some("cal-1".to_string());
+        stored.categories = "Birthday".to_string();
+        stored.recurrence_rule = Some("FREQ=WEEKLY".to_string());
+        stored.attendees_json = Some("[{\"email\":\"sam@example.com\"}]".to_string());
+        stored.status = "tentative".to_string();
+
+        let mut renamed = data(false);
+        renamed.summary = "Renamed".to_string();
+        let edited = event_with_edits(stored, &renamed);
+
+        assert_eq!(edited.summary, "Renamed", "the change asked for happens");
+        assert_eq!(edited.provider_event_id.as_deref(), Some("uid-1"));
+        assert_eq!(edited.calendar_id.as_deref(), Some("cal-1"));
+        assert_eq!(edited.categories, "Birthday");
+        assert_eq!(edited.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+        assert_eq!(
+            edited.attendees_json.as_deref(),
+            Some("[{\"email\":\"sam@example.com\"}]")
+        );
+        assert_eq!(edited.status, "tentative");
     }
 
     #[test]

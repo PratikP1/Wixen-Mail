@@ -526,6 +526,7 @@ mod tests {
             calendar_id: None,
             calendar_name: None,
             calendar_color: None,
+            reminder_minutes: None,
         };
 
         let mail = message();
@@ -612,6 +613,7 @@ mod tests {
             calendar_id: None,
             calendar_name: None,
             calendar_color: None,
+            reminder_minutes: None,
         };
 
         assert!(
@@ -636,6 +638,7 @@ mod tests {
             calendar_id: None,
             calendar_name: None,
             calendar_color: None,
+            reminder_minutes: None,
         };
         assert!(event.read_full(aloud()).contains("all day"));
         assert!(

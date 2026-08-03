@@ -39,9 +39,10 @@ your default account are kept on this computer instead, which is the honest
 version of the same thing: filing them under an account that will never carry
 them anywhere would look like syncing until you opened a second device.
 
-You can also add a calendar on its own, without an account, through CalDAV or an
-iCalendar subscription. That is in the Calendar module rather than the account
-dialog.
+A calendar on its own, without an account, through a calendar server address or
+a subscription feed, is not something you can add yet. The code that would read
+such a calendar is written and there is no screen for entering the address, so
+there is currently no way to set one up.
 
 ### Tasks sync both ways
 

@@ -218,8 +218,12 @@ pub fn show_calendar_dialog(parent: &Frame, events: &[CalendarEventItem]) -> Vec
                             end_time: item.end.get(11..16).unwrap_or("").to_string(),
                             is_all_day: item.is_all_day,
                             location: item.location.clone(),
-                            description: String::new(),
-                            reminder_minutes: 15,
+                            // What the event actually says, rather than a blank
+                            // and a quarter of an hour. The editor writes back
+                            // what it shows, so showing the wrong thing here
+                            // wiped the notes and reset the alert on every edit.
+                            description: item.description.clone(),
+                            reminder_minutes: item.reminder_minutes.unwrap_or(0),
                         };
                         if let Some(data) = show_event_editor(&dialog, Some(&prefill)) {
                             actions.push(CalendarAction::UpdateEvent(item.id.clone(), data));
