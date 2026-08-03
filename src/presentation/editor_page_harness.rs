@@ -169,6 +169,68 @@ mod tests {
         }
     }
 
+    /// The index out of one of the page's own table entries.
+    fn index_in(answer: &str) -> usize {
+        let (_, rest) = answer
+            .split_once("\"index\":")
+            .unwrap_or_else(|| panic!("the page carried no index: {answer}"));
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        digits
+            .parse()
+            .unwrap_or_else(|_| panic!("the index was not a number: {answer}"))
+    }
+
+    #[test]
+    fn test_a_typed_markdown_marker_announces_the_block_it_made_and_not_another_one() {
+        // The index the page carries back is the only thing that finds the
+        // words again, so a marker has to come home as the block it applied.
+        // If every marker carried the same index, typing two hashes would
+        // apply a heading and announce something else, and the announcement is
+        // all somebody has to go on.
+        use crate::presentation::editor_document::{EditorMessage, parse_message};
+        use crate::presentation::markdown_input::BLOCK_RULES;
+
+        let mut page = page_rules();
+
+        for rule in BLOCK_RULES.iter() {
+            let answer = ask(
+                &mut page,
+                &format!("window.wixenRules.block({:?})", rule.marker),
+            );
+
+            assert_eq!(
+                parse_message(&format!(
+                    r#"{{"kind":"format","index":{}}}"#,
+                    index_in(&answer)
+                )),
+                Some(EditorMessage::Formatted(rule.format)),
+                "{:?} came back as the wrong block: {answer}",
+                rule.marker
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_typed_number_announces_a_numbered_list() {
+        // The numbered rule hangs off the table separately, because Markdown
+        // takes any number, so it carries its own index and can come apart on
+        // its own.
+        use crate::presentation::editor_document::{EditorMessage, Format, parse_message};
+
+        let mut page = page_rules();
+
+        let answer = ask(&mut page, r#"window.wixenRules.block("1.")"#);
+
+        assert_eq!(
+            parse_message(&format!(
+                r#"{{"kind":"format","index":{}}}"#,
+                index_in(&answer)
+            )),
+            Some(EditorMessage::Formatted(Format::NumberedList)),
+            "{answer}"
+        );
+    }
+
     #[test]
     fn test_a_marker_after_a_space_is_still_a_marker() {
         // Leading whitespace is trimmed, so an indented list still works.

@@ -527,6 +527,23 @@ mod tests {
     }
 
     #[test]
+    fn test_a_reply_the_heading_level_can_carry_is_not_also_given_a_number_out_loud() {
+        // The depth is spoken only once the markup has run out of levels. A
+        // reply at level three is already announced as a level three heading,
+        // so saying the number again in the words makes every heading in an
+        // ordinary thread carry the same fact twice.
+        let renderer = HtmlRenderer::new();
+
+        let html = renderer.render_thread(
+            "Quarterly report",
+            &[part("Ada", 0, "One"), part("Grace", 1, "Two")],
+        );
+
+        assert!(html.contains("Reply from Grace"), "{html}");
+        assert!(!html.contains("Reply, level 2"), "{html}");
+    }
+
+    #[test]
     fn test_a_thread_body_is_still_sanitized() {
         // Being part of a conversation does not make a stranger's HTML safer.
         let renderer = HtmlRenderer::new();
@@ -950,10 +967,30 @@ mod tests {
             "https://example.com/report",
             "http://example.com",
             "mailto:ada@example.com",
+            // Short ones too. A link shortener produces addresses of about a
+            // dozen characters, and they are the ones people are handed most.
+            "http://t.co",
+            "http://a.io",
+            "https://t.co/x",
         ] {
             assert!(
                 HtmlRenderer::safe_external_url(url).is_some(),
                 "{} should be openable",
+                url
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_address_with_no_host_is_not_something_this_will_open() {
+        // What gets handed to the platform's shell handler has to name
+        // somewhere to go. A scheme with nothing after it, or with only
+        // slashes, is not an address, and letting one through means the shell
+        // decides what it meant.
+        for url in ["https://", "http://", "https:///evil.example/x", "http:///"] {
+            assert!(
+                HtmlRenderer::safe_external_url(url).is_none(),
+                "{} names no host and must not reach the shell",
                 url
             );
         }

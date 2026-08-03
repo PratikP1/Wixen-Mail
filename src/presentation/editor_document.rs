@@ -1799,6 +1799,28 @@ mod tests {
     }
 
     #[test]
+    fn test_the_spelling_key_reaches_the_check() {
+        // F7 in the message body, and this is the only step between the key
+        // and the check running. Dropping it makes the key do nothing at all,
+        // silently, which is the worst way for a key to fail.
+        assert_eq!(
+            parse_message(r#"{"kind":"spelling"}"#),
+            Some(EditorMessage::CheckSpelling)
+        );
+    }
+
+    #[test]
+    fn test_the_toolbar_key_reaches_the_toolbar() {
+        // The formatting buttons are deliberately out of the tab order, so
+        // this message is the only way to them from inside the body. Without
+        // it the toolbar cannot be reached by keyboard at all.
+        assert_eq!(
+            parse_message(r#"{"kind":"toolbar"}"#),
+            Some(EditorMessage::ToToolbar)
+        );
+    }
+
+    #[test]
     fn test_a_letter_nothing_answers_to_does_nothing() {
         // The index comes back from the page, and a page and a list that have
         // come apart must not reach whichever command happens to sit there.
@@ -2012,6 +2034,37 @@ mod tests {
         assert!(script.contains("https://example.com/agenda"));
         assert!(script.contains(LINK_PLACEHOLDER_ID));
         assert!(spoken.contains("Link"), "{spoken}");
+    }
+
+    #[test]
+    fn test_the_address_a_person_typed_is_the_one_put_on_their_words() {
+        // The composer announces "Link added" whenever this hands a script
+        // back, so a script that does not carry the address is the failure
+        // this project calls worse than a refusal: the message is sent by
+        // somebody who believes there is a link in it.
+        let script = link_script("https://example.com/agenda").expect("an ordinary web address");
+
+        assert!(script.contains("createLink"), "{script}");
+        assert!(script.contains("https://example.com/agenda"), "{script}");
+        assert!(
+            script.contains("focus()"),
+            "the caret does not come back to the message body: {script}"
+        );
+    }
+
+    #[test]
+    fn test_an_address_the_composer_will_not_carry_is_refused_rather_than_inserted() {
+        // A message goes to another person, so an address typed into a
+        // composer is an address posted to them. The same guard the reader
+        // uses on a stranger's link applies on the way out.
+        for url in [
+            "javascript:alert(1)",
+            "vbscript:msgbox(1)",
+            "file:///C:/Windows/System32/calc.exe",
+            r"\\evil.example\share\x.exe",
+        ] {
+            assert_eq!(link_script(url), None, "{url} was turned into a link");
+        }
     }
 
     #[test]

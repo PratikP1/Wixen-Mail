@@ -142,7 +142,12 @@ fn signature_landmark(text: &str) -> Vec<Landmark> {
         return Vec::new();
     }
     vec![Landmark {
-        offset: message.len(),
+        // Characters, not bytes, like every other offset here and like the
+        // caret this is fed to. Counting bytes put the landing place further
+        // past the signature with every non-ASCII character above it, so an
+        // accented name or a smart quote was enough to move it, and the label
+        // still said "Signature".
+        offset: message.chars().count(),
         level: 6,
         label: "Signature".to_string(),
     }]
@@ -746,6 +751,68 @@ mod tests {
     }
 
     #[test]
+    fn test_every_attachment_type_this_knows_is_said_in_the_words_for_that_type() {
+        // Every row of the table, both halves of the ones that answer to two
+        // types. A type that falls off the table is not silent about it: it
+        // drops to the family below and a spreadsheet is announced as "file",
+        // which is the same row with the useful part taken out.
+        //
+        // The names avoid the extensions Windows runs, because the program
+        // check answers before the type is looked at.
+        for (mime_type, name, expected) in [
+            ("text/html", "a.html", "web page"),
+            ("text/csv", "a.csv", "CSV spreadsheet"),
+            ("image/png", "a.png", "PNG image"),
+            ("image/gif", "a.gif", "GIF image"),
+            ("image/svg+xml", "a.svg", "SVG image"),
+            ("image/webp", "a.webp", "WebP image"),
+            ("application/x-zip-compressed", "a.zip", "zip archive"),
+            ("application/msword", "a.doc", "Word document"),
+            (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "a.docx",
+                "Word document",
+            ),
+            ("application/vnd.ms-excel", "a.xls", "Excel spreadsheet"),
+            (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "a.xlsx",
+                "Excel spreadsheet",
+            ),
+            (
+                "application/vnd.ms-powerpoint",
+                "a.ppt",
+                "PowerPoint presentation",
+            ),
+            (
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "a.pptx",
+                "PowerPoint presentation",
+            ),
+        ] {
+            assert_eq!(describe_kind(mime_type, name), expected, "for {mime_type}");
+        }
+    }
+
+    #[test]
+    fn test_a_type_this_does_not_know_is_still_placed_by_its_family() {
+        // Four families, and each of them is the difference between "video"
+        // and "file" on a row somebody has to decide about from one sentence.
+        // The types here are deliberately absent from the table above, so the
+        // family is the only thing that can answer.
+        for (mime_type, name, expected) in [
+            ("image/x-something-new", "a.bin", "image"),
+            ("audio/x-something-new", "a.bin", "audio"),
+            ("video/x-matroska", "a.mkv", "video"),
+            ("text/x-diff", "a.diff", "text file"),
+            // Nothing known at all, and saying so beats guessing.
+            ("application/vnd.made-up", "a.bin", "file"),
+        ] {
+            assert_eq!(describe_kind(mime_type, name), expected, "for {mime_type}");
+        }
+    }
+
+    #[test]
     fn test_a_program_is_called_a_program_whatever_it_says_it_is() {
         // The type is written by whoever sent the message, so it is a claim
         // rather than a fact, and the claim on a malicious attachment is
@@ -791,6 +858,22 @@ mod tests {
             (245_760, "240 KB"),
             (5 * 1024 * 1024, "5 MB"),
             (3 * 1024 * 1024 * 1024, "3 GB"),
+        ] {
+            assert_eq!(human_size(bytes), expected, "for {bytes}");
+        }
+    }
+
+    #[test]
+    fn test_a_size_exactly_on_a_unit_boundary_is_said_in_the_larger_unit() {
+        // A file of exactly one megabyte is one megabyte, not 1024 KB. The
+        // boundary is the only place the choice of unit can go wrong, because
+        // anything past it reads the same either way.
+        for (bytes, expected) in [
+            (1023, "1023 bytes"),
+            (1024, "1 KB"),
+            (1_048_576, "1 MB"),
+            (1_073_741_824, "1 GB"),
+            (1_099_511_627_776, "1 TB"),
         ] {
             assert_eq!(human_size(bytes), expected, "for {bytes}");
         }
@@ -865,6 +948,32 @@ Analytical Engines",
             doc.landmarks.iter().any(|l| l.label == "Signature"),
             "no signature landmark in {:?}",
             doc.landmarks
+        );
+    }
+
+    #[test]
+    fn test_the_jump_to_a_signature_lands_on_it_when_the_message_is_not_all_ascii() {
+        // The caret counts characters, so the place to jump to has to be
+        // counted the same way. An accented name, a smart quote or a tick
+        // above the separator pushes the landing place further past the
+        // signature with every one of them, until it is inside the last word
+        // or off the end. Nothing says so, because the landmark is still
+        // labelled "Signature".
+        let doc = read(
+            &message(),
+            "Merci beaucoup \u{2713}\u{2713}\u{2713}\u{2713}\n\n-- \nAda",
+        );
+
+        let signature = doc
+            .landmarks
+            .iter()
+            .find(|l| l.label == "Signature")
+            .expect("a signature landmark");
+        let from: String = doc.text.chars().skip(signature.offset).collect();
+
+        assert!(
+            from.starts_with("\n\n-- "),
+            "jumping to the signature landed at {from:?}"
         );
     }
 
@@ -1104,6 +1213,77 @@ Analytical Engines",
                 (12, 102, 0, "c.pdf"),
             ]
         );
+    }
+
+    #[test]
+    fn test_the_formatted_conversation_lists_what_is_attached_to_every_message_in_it() {
+        // The page renders bodies and nothing else, so this list is the only
+        // sign that a file came with a message. An empty answer removes the
+        // list rather than emptying it, and reading a thread the formatted way
+        // then quietly costs somebody their attachments.
+        //
+        // The index restarts per message, because it is the position in that
+        // message's own parts and it is what fetches the file again.
+        let mut first = message();
+        first.message_id = 11;
+        first.uid = 101;
+        first.attachments = vec![AttachmentItem {
+            filename: "agenda.pdf".to_string(),
+            mime_type: "application/pdf".to_string(),
+            size: 1,
+        }];
+        let mut second = message();
+        second.message_id = 12;
+        second.uid = 102;
+        second.attachments = vec![AttachmentItem {
+            filename: "minutes.pdf".to_string(),
+            mime_type: "application/pdf".to_string(),
+            size: 2,
+        }];
+        let parts = vec![
+            ConversationPart {
+                message: first,
+                body: plain("Body"),
+                depth: 0,
+            },
+            ConversationPart {
+                message: second,
+                body: plain("Body"),
+                depth: 1,
+            },
+        ];
+
+        let hanging_off = attachments_in(&parts);
+        let found: Vec<(i64, u32, usize, &str)> = hanging_off
+            .iter()
+            .map(|a| (a.message_row_id, a.uid, a.index, a.name.as_str()))
+            .collect();
+
+        assert_eq!(
+            found,
+            vec![(11, 101, 0, "agenda.pdf"), (12, 102, 0, "minutes.pdf")]
+        );
+    }
+
+    #[test]
+    fn test_a_message_that_only_has_an_html_part_is_not_called_empty() {
+        // Stored mail arrives as both columns and the plain one is empty
+        // whenever the sender wrote only markup. Both have to be empty before
+        // a message counts as having nothing in it; asking for either replaces
+        // an ordinary message with the line saying it was never downloaded.
+        let part = ConversationPart {
+            message: message(),
+            body: MessageBody::Multipart {
+                plain: String::new(),
+                html: "<p>The numbers are in.</p>".to_string(),
+            },
+            depth: 0,
+        };
+
+        let html = conversation_html("Report", &[part]);
+
+        assert!(html.contains("The numbers are in."), "{html}");
+        assert!(!html.contains("not been downloaded"), "{html}");
     }
 
     #[test]
@@ -1411,6 +1591,32 @@ Analytical Engines",
     }
 
     #[test]
+    fn test_moving_backwards_finds_the_message_before_the_caret() {
+        // Backwards is a key of its own, and a key that only ever says "first
+        // message" is a thread that can be walked one way. Reaching the end of
+        // the document and finding nothing behind you is the failure this
+        // pins, and it is silent.
+        let doc = conversation(
+            "Report",
+            &[part("Ada", 0, "First"), part("Grace", 1, "Second")],
+        );
+
+        let last = doc.landmarks.last().expect("a landmark");
+        assert_eq!(
+            doc.previous_landmark(last.offset + 1).map(|l| l.offset),
+            Some(last.offset),
+            "nothing behind the caret at the end of the thread"
+        );
+        // From just inside the second message, the one before it is the first
+        // message rather than the document's own title.
+        let first_message = &doc.landmarks[1];
+        assert_eq!(
+            doc.previous_landmark(last.offset).map(|l| l.label.as_str()),
+            Some(first_message.label.as_str())
+        );
+    }
+
+    #[test]
     fn test_a_conversation_of_one_still_reads_as_a_document() {
         let doc = conversation("Report", &[part("Ada", 0, "Only")]);
         assert!(doc.text.contains("1 message in this conversation"));
@@ -1451,6 +1657,24 @@ mod warning_tests {
 
         assert!(spoken.contains("heading level 2, Pricing"), "{spoken}");
         assert!(spoken.contains("It went up."), "{spoken}");
+    }
+
+    #[test]
+    fn test_reading_a_message_aloud_says_who_it_is_from_before_it_reaches_the_first_heading() {
+        // The header block sits above the first heading, so everything before
+        // that heading is the subject, the sender, the recipients and the
+        // date. Losing it starts the passage partway into the body, and
+        // somebody listening has no way to tell whose message they are hearing.
+        let document = single_message(
+            &message(Safety::Ordinary),
+            &MessageBody::Html("<h1>Pricing</h1><p>It went up.</p>".into()),
+        );
+
+        let spoken = read_whole(&document);
+
+        assert!(spoken.contains("Subject: Quarterly report"), "{spoken}");
+        assert!(spoken.contains("From: Ada Lovelace"), "{spoken}");
+        assert!(spoken.contains("heading level 2, Pricing"), "{spoken}");
     }
 
     #[test]

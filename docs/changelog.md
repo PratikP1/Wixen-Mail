@@ -151,6 +151,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Jumping to the signature lands on it in a message that is not plain
+  English.** The place to jump to was counted in bytes while the cursor counts
+  characters, so every accented letter, smart quote or emoji above the
+  separator pushed the landing place further past the signature: on a short
+  sign-off it landed inside the last word, and on a longer one at the end of
+  the message. Nothing said so, because the place was still labelled
+  "Signature". Skipping five lines of job title and legal disclaimer is the
+  reason that mark exists, and it worked only for messages written entirely in
+  ASCII.
+
 - **Two things said one after the other no longer cancel each other out.**
   Anything the program says that is not about a job in progress was handed to
   the screen reader marked "keep only the newest of these", with nothing
