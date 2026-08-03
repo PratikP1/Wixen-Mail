@@ -105,9 +105,11 @@ pub fn thread_messages(messages: &[ThreadInput]) -> Vec<ThreadPlacement> {
         }
     }
 
-    // The conversation is named after its oldest member's Message-ID rather
-    // than a generated value, so the same mailbox threads the same way on
-    // every machine and after every restart.
+    // The conversation is named after the least Message-ID it holds, in plain
+    // string order, rather than a generated value. Least rather than oldest,
+    // because a date can be missing, wrong or in another timezone, and the
+    // point of the rule is that the same mailbox threads the same way on every
+    // machine and after every restart.
     let mut root_name: HashMap<i64, String> = HashMap::new();
     for message in messages {
         let root = union.find(message.id);
@@ -265,6 +267,24 @@ mod tests {
         assert_eq!(placement(&placements, 3).depth, 2);
         let thread = &placement(&placements, 1).thread_id;
         assert!(placements.iter().all(|p| &p.thread_id == thread));
+    }
+
+    #[test]
+    fn test_a_conversation_is_named_after_the_least_identifier_it_holds() {
+        // Which one is picked is the whole reason the name is stable. Any rule
+        // that depends on the order the rows came back names the conversation
+        // differently on another machine, and a saved search or an expanded
+        // thread stops matching after a restart.
+        let placements = thread_messages(&[
+            message(1, "<m@x>", &[]),
+            message(2, "<a@x>", &["<m@x>"]),
+            message(3, "<z@x>", &["<m@x>"]),
+        ]);
+
+        // Neither first nor last in the input, so taking either would fail here.
+        assert_eq!(placement(&placements, 1).thread_id, "<a@x>");
+        assert_eq!(placement(&placements, 2).thread_id, "<a@x>");
+        assert_eq!(placement(&placements, 3).thread_id, "<a@x>");
     }
 
     #[test]

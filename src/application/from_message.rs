@@ -156,6 +156,40 @@ mod tests {
     }
 
     #[test]
+    fn test_the_headers_and_the_message_are_separated_by_a_blank_line() {
+        // Without it a screen reader runs the date straight into the first
+        // sentence and "Date: 2026-07-30 Can you send them" is read as one
+        // line, which is where a reader stops trusting the layout.
+        assert_eq!(
+            body_from(&message()),
+            "From: hana@example.com\nDate: 2026-07-30\n\nCan you send them by Friday?"
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_no_headers_does_not_start_with_a_blank_line() {
+        // The separator belongs between two things. With nothing above it, it
+        // is a blank first line, and a task read aloud opens with silence.
+        let text_only = Source {
+            body: "Can you send them by Friday?".to_string(),
+            ..Source::default()
+        };
+
+        assert_eq!(body_from(&text_only), "Can you send them by Friday?");
+    }
+
+    #[test]
+    fn test_a_message_with_no_text_is_still_separated_from_its_headers() {
+        let mut empty = message();
+        empty.body = "\n  \n".to_string();
+
+        assert_eq!(
+            body_from(&empty),
+            "From: hana@example.com\nDate: 2026-07-30\n\nThe message had no text."
+        );
+    }
+
+    #[test]
     fn test_a_message_with_nothing_at_all_still_gives_a_body() {
         let body = body_from(&Source::default());
 

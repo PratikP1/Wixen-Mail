@@ -794,6 +794,92 @@ mod tests {
     }
 
     #[test]
+    fn test_a_rule_that_only_marks_read_still_runs_on_an_account_that_may_not_be_changed() {
+        // Only the rules that reach the server are held back. Marking read is
+        // written here and goes out later through the flag sync, which has its
+        // own gate, so holding it back too would mean nothing is ever filed on
+        // an account in the shipping default.
+        use crate::application::filters::FilterEngine;
+        use crate::data::message_cache::MessageFilterRule;
+
+        let dir = std::env::temp_dir().join(format!("wixen_filter_{}", uuid::Uuid::new_v4()));
+        let cache = MessageCache::new(dir, None).expect("a cache");
+        let folder_id = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Inbox".into(),
+                path: "INBOX".into(),
+                folder_type: "Inbox".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        let id = cache
+            .upsert_message(&IncomingMessage {
+                folder_id,
+                uid: 3,
+                message_id: "inv-3@example.com".into(),
+                subject: "Invoice #4023".into(),
+                from_addr: "billing@example.com".into(),
+                to_addr: "me@example.com".into(),
+                cc: None,
+                reply_to: None,
+                date: "2026-07-31T09:00:00+00:00".into(),
+                internal_date: None,
+                size_bytes: None,
+                refs_header: None,
+                read: false,
+                starred: false,
+                answered: false,
+                draft: false,
+                deleted: false,
+                has_attachments: false,
+                safety: crate::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                labels: None,
+                receipt_to: None,
+                pop_uidl: None,
+            })
+            .expect("a message");
+
+        let mut engine = FilterEngine::default();
+        engine.load_from_persisted(&[MessageFilterRule {
+            id: "r3".into(),
+            account_id: "acct".into(),
+            name: "Invoices".into(),
+            field: "subject".into(),
+            match_type: "contains".into(),
+            pattern: "Invoice".into(),
+            case_sensitive: false,
+            action_type: "mark_as_read".into(),
+            action_value: None,
+            enabled: true,
+            created_at: "2026-07-31T00:00:00Z".into(),
+        }]);
+
+        let done = apply_rules(
+            &cache,
+            &Filtering {
+                rules: &engine,
+                allowed: crate::application::allowed::Allowed::NOTHING,
+            },
+            &[id],
+        );
+
+        assert_eq!(done.changed, 1, "the rule was held back for nothing");
+        assert_eq!(done.held_back, 0);
+        assert!(
+            cache
+                .get_message(id)
+                .expect("read back")
+                .expect("there")
+                .read,
+            "the message is still unread"
+        );
+    }
+
+    #[test]
     fn test_a_rule_that_moves_is_held_back_when_mail_may_not_be_changed() {
         // And counted, so it can be said. A rule that files invoices into a
         // folder and does not is a rule somebody believes is working.
@@ -991,6 +1077,158 @@ mod tests {
             .expect("a runtime")
             .block_on(sync_folder(server, cache, folder, id, 500, None))
             .expect("the sync runs")
+    }
+
+    #[test]
+    fn test_the_folder_list_is_stored_with_the_facts_only_the_server_knows() {
+        // Storing the list is not just writing names. It hands back the id the
+        // cache gave each row, which is what every later sync of that folder is
+        // keyed on, and it keeps the two answers only the server has: whether a
+        // folder holds every message, and whether anybody subscribed to it.
+        // Losing either turns the window that asks which folders to sync into a
+        // window offering a different default from the one the sync uses.
+        let dir = std::env::temp_dir().join(format!("wixen_folders_{}", uuid::Uuid::new_v4()));
+        let cache = MessageCache::new(dir, None).expect("a cache");
+        let everything = ImapFolder {
+            holds_all_mail: true,
+            subscribed: false,
+            ..folder("All Mail", FolderType::Archive, true)
+        };
+        let folders = vec![folder("INBOX", FolderType::Inbox, true), everything];
+
+        let stored = store_folders(&cache, "acct", &folders).expect("the list is stored");
+
+        assert_eq!(stored.len(), 2);
+        assert!(
+            stored.iter().all(|(_, id)| *id != 0),
+            "a folder came back without the id the cache gave it"
+        );
+
+        let facts = cache.folder_server_facts("acct").expect("the facts");
+        assert_eq!(facts.get("INBOX").copied(), Some((false, true)));
+        assert_eq!(facts.get("All Mail").copied(), Some((true, false)));
+
+        let rows = cache.get_folders_for_account("acct").expect("the rows");
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn test_a_mailbox_with_no_connection_reports_the_failure_rather_than_an_empty_folder() {
+        // Every one of these five, because the sync believes what it is told.
+        // An empty uid list is read as "the server no longer has any of these"
+        // and deletes the whole cached folder; a made up flag list is read as
+        // "none of these are read" and marks a mailbox unread; a made up header
+        // writes a message with no subject into somebody's inbox. A failure
+        // reported as a failure does none of it.
+        let controller = MailController::new();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime");
+
+        let answered: Vec<&str> = runtime.block_on(async {
+            // Through the trait rather than the inherent methods of the same
+            // name, since it is the adapter between the two being tested. All
+            // five asked before anything is said, so one run names every one
+            // that made an answer up rather than stopping at the first.
+            let asked = [
+                (
+                    "how many the folder holds",
+                    Mailbox::folder_counts(&controller, "INBOX").await.is_err(),
+                ),
+                (
+                    "what state the folder is in",
+                    Mailbox::select_folder(&controller, "INBOX").await.is_err(),
+                ),
+                (
+                    "which messages the folder holds",
+                    Mailbox::list_uids(&controller, "INBOX").await.is_err(),
+                ),
+                (
+                    "the headers of a message",
+                    Mailbox::fetch_headers(&controller, "INBOX", &[1])
+                        .await
+                        .is_err(),
+                ),
+                (
+                    "the flags of a message",
+                    Mailbox::fetch_flags(&controller, "INBOX", &[1], None)
+                        .await
+                        .is_err(),
+                ),
+            ];
+            asked
+                .into_iter()
+                .filter(|(_, failed)| !failed)
+                .map(|(what, _)| what)
+                .collect()
+        });
+
+        assert!(
+            answered.is_empty(),
+            "answered without a connection: {answered:?}"
+        );
+    }
+
+    #[test]
+    fn test_mail_synced_out_of_the_junk_folder_is_marked_as_spam() {
+        // What Gmail decided, which is all Gmail tells an IMAP client. Read
+        // aloud it is the difference between a warning and none.
+        let (cache, id, mut folder) = a_cache();
+        folder.folder_type = FolderType::Spam;
+
+        let done = run(
+            &Scripted {
+                on_server: vec![1],
+                headers: vec![message(1)],
+                ..Default::default()
+            },
+            &cache,
+            id,
+            &folder,
+        );
+
+        assert_eq!(done.fetched, 1);
+        assert_eq!(
+            verdict_for(&cache, id, 1),
+            crate::service::safety::Safety::Spam
+        );
+    }
+
+    #[test]
+    fn test_mail_synced_out_of_an_ordinary_folder_is_not_marked_as_spam() {
+        // The other half. Announcing every message in the inbox as spam is the
+        // same defect wearing the opposite sign, and it is the one that makes
+        // the warning worth nothing.
+        let (cache, id, folder) = a_cache();
+
+        run(
+            &Scripted {
+                on_server: vec![1],
+                headers: vec![message(1)],
+                ..Default::default()
+            },
+            &cache,
+            id,
+            &folder,
+        );
+
+        assert_eq!(
+            verdict_for(&cache, id, 1),
+            crate::service::safety::Safety::Ordinary
+        );
+    }
+
+    /// How a stored message was judged, read back out of the cache.
+    fn verdict_for(
+        cache: &MessageCache,
+        folder_id: i64,
+        uid: u32,
+    ) -> crate::service::safety::Safety {
+        let row = cache
+            .message_row_for_uid(folder_id, uid)
+            .expect("read back")
+            .expect("the row");
+        cache.message_safety(row).expect("a verdict").level
     }
 
     #[test]

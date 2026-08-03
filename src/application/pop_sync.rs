@@ -218,6 +218,8 @@ fn reference_chain(parsed: &crate::service::mime::ParsedMessage) -> Option<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::types::EmailAddress;
+    use crate::data::message_cache::{CachedFolder, MessageCache};
     use chrono::{Duration, Utc};
     use std::collections::{HashMap, HashSet};
 
@@ -320,6 +322,133 @@ mod tests {
 
         assert_eq!(going.len(), 1);
         assert_eq!(going[0].1, "aaa", "only the one actually held");
+    }
+
+    /// A downloaded message with nothing optional set on it.
+    fn plain() -> crate::service::mime::ParsedMessage {
+        crate::service::mime::ParsedMessage {
+            subject: "Notes on the engine".to_string(),
+            from: vec![EmailAddress::new(
+                "ada@example.com".to_string(),
+                Some("Ada Lovelace".to_string()),
+            )],
+            to: vec![EmailAddress::new("me@example.com".to_string(), None)],
+            date: Some("2026-07-20T10:00:00+00:00".to_string()),
+            message_id: Some("note-1@example.com".to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_a_downloaded_message_with_no_copy_recipients_stores_nothing_rather_than_an_empty_one() {
+        // An empty string in the column is not the same as no column. It reads
+        // back as a recipient with no address, which a list announces as a
+        // person nobody can see and a reply addresses to nowhere.
+        let none = to_incoming(&plain(), 7, 1, "aaa", false);
+
+        assert_eq!(none.cc, None);
+        assert_eq!(none.reply_to, None);
+
+        let copied = crate::service::mime::ParsedMessage {
+            cc: vec![EmailAddress::new("bob@example.com".to_string(), None)],
+            reply_to: vec![EmailAddress::new("list@example.com".to_string(), None)],
+            ..plain()
+        };
+        let stored = to_incoming(&copied, 7, 1, "aaa", false);
+
+        assert_eq!(stored.cc.as_deref(), Some("bob@example.com"));
+        assert_eq!(stored.reply_to.as_deref(), Some("list@example.com"));
+    }
+
+    #[test]
+    fn test_a_downloaded_message_says_whether_it_carries_an_attachment() {
+        // Both ways round. A message announced as carrying a file that has
+        // none wastes the reader's time; one carrying a file and saying
+        // nothing hides it entirely.
+        assert!(!to_incoming(&plain(), 7, 1, "aaa", false).has_attachments);
+
+        let carrying = crate::service::mime::ParsedMessage {
+            attachments: vec![crate::service::mime::AttachmentInfo {
+                filename: Some("figures.pdf".to_string()),
+                mime_type: "application/pdf".to_string(),
+                size: 1024,
+            }],
+            ..plain()
+        };
+
+        assert!(to_incoming(&carrying, 7, 1, "aaa", false).has_attachments);
+    }
+
+    #[test]
+    fn test_a_downloaded_reply_keeps_the_whole_ancestry_it_names() {
+        // Threading reads this column and nothing else. A chain that loses a
+        // name makes the reply a conversation of one, sitting on its own away
+        // from the exchange it belongs to.
+        let reply = crate::service::mime::ParsedMessage {
+            references: vec!["first@example.com".to_string()],
+            in_reply_to: Some("second@example.com".to_string()),
+            ..plain()
+        };
+
+        assert_eq!(
+            reference_chain(&reply).as_deref(),
+            Some("first@example.com second@example.com")
+        );
+    }
+
+    #[test]
+    fn test_a_downloaded_message_starting_a_conversation_names_nobody() {
+        assert_eq!(reference_chain(&plain()), None);
+    }
+
+    #[test]
+    fn test_a_parent_already_named_in_the_chain_is_not_repeated() {
+        // Most senders write the parent in both headers. Writing it twice
+        // would put the same name in the ancestry of every reply in a long
+        // exchange, once per hop.
+        let reply = crate::service::mime::ParsedMessage {
+            references: vec!["first@example.com".to_string()],
+            in_reply_to: Some("first@example.com".to_string()),
+            ..plain()
+        };
+
+        assert_eq!(
+            reference_chain(&reply).as_deref(),
+            Some("first@example.com")
+        );
+    }
+
+    #[test]
+    fn test_a_sync_with_no_connection_says_so_rather_than_reporting_an_empty_mailbox() {
+        // "0 new, 0 on the server" reads as a mailbox with no mail in it. A
+        // reader who is told that stops checking, and the mail is still there.
+        let dir = std::env::temp_dir().join(format!("wixen_pop_{}", uuid::Uuid::new_v4()));
+        let cache = MessageCache::new(dir, None).expect("a cache");
+        let folder_id = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Inbox".into(),
+                path: "INBOX".into(),
+                folder_type: "Inbox".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        let controller = crate::application::mail_controller::MailController::new();
+
+        let outcome = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(sync(
+                &controller,
+                &cache,
+                folder_id,
+                Housekeeping::CAUTIOUS,
+                false,
+            ));
+
+        assert!(outcome.is_err(), "a failed sync reported as a done one");
     }
 
     fn downloaded_days_ago(
