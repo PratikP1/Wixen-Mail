@@ -53,7 +53,6 @@ pub use caldav_sync::{refresh_subscription, sync_caldav_calendar};
 pub use calendar::CalendarManager;
 pub use composition::CompositionManager;
 pub use contacts::ContactManager;
-pub use contacts_sync::{sync_google_contacts, sync_microsoft_contacts};
 pub use filters::FilterEngine;
 pub use mail_controller::{MailController, SendEmailRequest};
 pub use messages::MessageManager;

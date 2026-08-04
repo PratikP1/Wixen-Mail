@@ -161,7 +161,8 @@ pub struct GoogleNickname {
 pub struct GoogleUrl {
     #[serde(default)]
     pub value: String,
-    #[serde(default, rename = "type")]
+    /// The label, as Google writes its own. Left out when nobody chose one.
+    #[serde(default, rename = "type", skip_serializing_if = "String::is_empty")]
     pub url_type: String,
 }
 
@@ -703,6 +704,10 @@ mod tests {
                 email_type: String::new(),
                 metadata: None,
             }],
+            urls: vec![GoogleUrl {
+                value: "https://grace.example".to_string(),
+                url_type: String::new(),
+            }],
             ..Default::default()
         };
 
@@ -710,6 +715,7 @@ mod tests {
 
         assert!(sent["phoneNumbers"][0].get("type").is_none(), "{sent}");
         assert!(sent["emailAddresses"][0].get("type").is_none(), "{sent}");
+        assert!(sent["urls"][0].get("type").is_none(), "{sent}");
         assert!(
             sent["emailAddresses"][0].get("metadata").is_none(),
             "{sent}"

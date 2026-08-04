@@ -151,6 +151,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A contact sent to Google keeps its birthday, its website and its notes.**
+  A contact created here and sent to the Google address book arrived with its
+  name, its addresses, its phone numbers, its company and its nickname, and
+  with those three fields silently missing. Nothing said so, at either end. A
+  contact sent to Outlook already carried its birthday and its notes, so the
+  two address books disagreed about what a contact is.
+
+  A birthday recorded without a year goes as one, because Google is the one
+  address book that can hold a birthday that way. A birthday somebody typed in
+  words is still left out rather than sent, which is what the Outlook side does
+  too: losing one field beats an address book refusing the whole contact.
+
+  **Still not carried either way:** a postal address. Both address books hold
+  one, this application reads neither, and a contact sent to either one goes
+  without it.
+
 - **One word for a finished task, and only the words that tell you something.**
   Pressing Space on a task said "done", pressing it again said "Completed", and
   the column beside it said "Done": one state with three names. It is "Done"
