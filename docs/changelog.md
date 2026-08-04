@@ -151,6 +151,33 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A category typed onto a Google or Outlook calendar event survives the next
+  sync.** Neither service carries a category, so every sync wrote a blank one
+  over whatever had been typed here and the category was gone by the time
+  anybody looked. The calendar an event was filed under went the same way. Both
+  are kept from the copy already stored now, which is what the CalDAV sync
+  already did. The people invited and the alerts set are still taken from the
+  service, because unlike a CalDAV server both of these do send them.
+
+  **Still not right:** an event arriving from either service is stored with no
+  calendar at all the first time, because neither sync makes a calendar to file
+  it under. Hiding a calendar cannot hide those events, and the per-calendar
+  list never shows them.
+
+- **An event with no alert is no longer given a fifteen minute one on its way
+  to Outlook.** The alert was switched on for every event sent, with a lead
+  time invented for any event that had none, so somebody who deliberately took
+  the alert off would have been interrupted anyway. The Google side of the same
+  pair already handed an event with no alert back to the calendar's own
+  default; Outlook does that now too. An alert that could not be read is left to
+  the calendar default rather than sent to Google as "this event never alerts",
+  which switched the default off as well.
+
+  **Where this lands:** nowhere yet. Nothing in the running program sends a
+  calendar event to either service, so the calendar is read-only in practice.
+  These are corrections to the shape a change would take on the day something
+  sends one.
+
 - **A contact sent to Google keeps its birthday, its website and its notes.**
   A contact created here and sent to the Google address book arrived with its
   name, its addresses, its phone numbers, its company and its nickname, and

@@ -914,7 +914,16 @@ mod tests {
         .await
         .expect("the sync to finish");
 
-        let asked = heard.await.expect("the server to have been asked");
+        // Bounded on purpose. This is the only test here that waits on the
+        // server having been asked, and a change that stops the request being
+        // made at all leaves that wait pending for ever: the listener never
+        // accepts, so the channel never fires and nothing else is left to wake
+        // the runtime. An unbounded wait turns that into a hung run rather than
+        // a failure somebody can read.
+        let asked = tokio::time::timeout(std::time::Duration::from_secs(10), heard)
+            .await
+            .expect("the server to have been asked within ten seconds")
+            .expect("the server to have been asked");
         let range = &asked[asked
             .find("<c:time-range")
             .unwrap_or_else(|| panic!("no time range was asked for: {asked}"))..];

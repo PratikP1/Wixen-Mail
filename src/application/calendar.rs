@@ -226,7 +226,7 @@ pub async fn sync_google_calendar(
         match existing {
             Some(ex) => {
                 let mut merged = local_event;
-                merged.id = ex.id;
+                carry_over_local_only(&mut merged, &ex);
                 cache.save_calendar_event(&merged)?;
                 result.updated += 1;
             }
@@ -360,7 +360,7 @@ pub async fn sync_microsoft_calendar(
         match existing {
             Some(ex) => {
                 let mut merged = local_event;
-                merged.id = ex.id;
+                carry_over_local_only(&mut merged, &ex);
                 cache.save_calendar_event(&merged)?;
                 result.updated += 1;
             }
@@ -442,6 +442,25 @@ pub async fn delete_ms_event(
     }
     cache.delete_calendar_event(&event.id)?;
     Ok(())
+}
+
+/// The parts of an event Google and Microsoft do not carry, kept from the copy
+/// already stored.
+///
+/// A category was typed on this computer and no calendar reply brings it back,
+/// so a sync that wrote what the provider sent and nothing else erased it every
+/// time. Which calendar the event was filed under is kept for the same reason:
+/// neither provider says, and both converters leave it blank. The identity is
+/// kept because it is what the rest of the program already holds this event
+/// under.
+///
+/// Shorter than the CalDAV list on purpose. Google and Microsoft both send the
+/// people invited and the alerts set, so keeping the stored copy of those two
+/// would throw the provider's answer away.
+fn carry_over_local_only(merged: &mut CalendarEventEntry, held: &CalendarEventEntry) {
+    merged.id = held.id.clone();
+    merged.categories = held.categories.clone();
+    merged.calendar_id = held.calendar_id.clone();
 }
 
 // ── Conversion: Google ↔ Local ──────────────────────────────────────────────
@@ -588,22 +607,29 @@ pub fn local_to_google_event(event: &CalendarEventEntry) -> GoogleEvent {
         })
     };
 
-    let reminders = event.reminders_json.as_ref().and_then(|json| {
-        serde_json::from_str::<Vec<serde_json::Value>>(json)
-            .ok()
-            .map(|arr| GoogleReminders {
-                use_default: false,
-                overrides: arr
-                    .iter()
-                    .filter_map(|v| {
-                        Some(GoogleReminderOverride {
-                            method: v.get("method")?.as_str()?.to_string(),
-                            minutes: v.get("minutes")?.as_i64()? as i32,
-                        })
+    // An alert nobody could read is not an instruction to have none. Saying
+    // use_default false with nothing in the list tells Google this event alerts
+    // never, which also switches off the calendar's own default, so an unusable
+    // alert would silently become no alert at all.
+    let reminders = event
+        .reminders_json
+        .as_ref()
+        .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(json).ok())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| {
+                    Some(GoogleReminderOverride {
+                        method: v.get("method")?.as_str()?.to_string(),
+                        minutes: v.get("minutes")?.as_i64()? as i32,
                     })
-                    .collect(),
-            })
-    });
+                })
+                .collect::<Vec<_>>()
+        })
+        .filter(|overrides| !overrides.is_empty())
+        .map(|overrides| GoogleReminders {
+            use_default: false,
+            overrides,
+        });
 
     GoogleEvent {
         summary: event.summary.clone(),
@@ -747,18 +773,7 @@ pub fn local_to_ms_event(event: &CalendarEventEntry) -> MsGraphEvent {
         display_name: l.clone(),
     });
 
-    let reminder_minutes = event
-        .reminders_json
-        .as_ref()
-        .and_then(|json| {
-            serde_json::from_str::<Vec<serde_json::Value>>(json)
-                .ok()?
-                .first()?
-                .get("minutes")?
-                .as_i64()
-                .map(|m| m as i32)
-        })
-        .unwrap_or(15);
+    let lead = reminder_lead_minutes(event);
 
     MsGraphEvent {
         subject: event.summary.clone(),
@@ -768,10 +783,26 @@ pub fn local_to_ms_event(event: &CalendarEventEntry) -> MsGraphEvent {
         location,
         is_all_day: event.is_all_day,
         show_as: event.show_as.clone(),
-        is_reminder_on: true,
-        reminder_minutes_before_start: reminder_minutes,
+        is_reminder_on: lead.is_some(),
+        reminder_minutes_before_start: lead.unwrap_or(0),
         ..Default::default()
     }
+}
+
+/// How long before an event its alert goes off, or nothing when it has none.
+///
+/// An event with no alert used to be sent with the reminder switched on and a
+/// fifteen minute lead time invented for it, so somebody who deliberately took
+/// the alert off was interrupted anyway. The Google side of this pair already
+/// hands an event with no alert back to the calendar's own default; this now
+/// does the same.
+fn reminder_lead_minutes(event: &CalendarEventEntry) -> Option<i32> {
+    serde_json::from_str::<Vec<serde_json::Value>>(event.reminders_json.as_deref()?)
+        .ok()?
+        .first()?
+        .get("minutes")?
+        .as_i64()
+        .map(|minutes| minutes as i32)
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -1258,5 +1289,612 @@ mod tests {
         assert_eq!(mgr.all_events().len(), 1);
         assert_eq!(mgr.all_events()[0].summary, "Standalone");
         assert!(mgr.all_calendars().is_empty());
+    }
+
+    // ── What a provider sends, and what is stored ────────────────────────
+
+    /// A cache in a directory of its own, named after the test using it.
+    fn temp_cache(label: &str) -> MessageCache {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("a clock set later than 1970")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("wixen_calendar_{label}_{nanos}"));
+        MessageCache::new(dir, None).expect("a cache in a directory of its own")
+    }
+
+    #[test]
+    fn test_loading_from_the_cache_puts_the_calendars_and_events_into_the_manager() {
+        // Everything else in the manager is filled by hand in a test. This is
+        // the one path the running program uses, and if it quietly loads
+        // nothing somebody with a full diary opens an empty one while the sync
+        // count still reads as a success.
+        let cache = temp_cache("load");
+        cache
+            .save_calendar(&make_calendar("cal-stored", "Work", true))
+            .expect("the calendar to be stored");
+        cache
+            .save_calendar_event(&make_event("evt-stored", "Standup", Some("cal-stored")))
+            .expect("the event to be stored");
+
+        let mut mgr = CalendarManager::default();
+        mgr.load_calendars(&cache, "test")
+            .expect("the calendars to load");
+        mgr.load_events(&cache, "test").expect("the events to load");
+
+        // On identity rather than on a count, so an empty answer and a wrong
+        // row are told apart.
+        assert_eq!(
+            mgr.all_calendars()
+                .iter()
+                .map(|c| c.id.as_str())
+                .collect::<Vec<_>>(),
+            ["cal-stored"]
+        );
+        assert_eq!(
+            mgr.all_events()
+                .iter()
+                .map(|e| e.id.as_str())
+                .collect::<Vec<_>>(),
+            ["evt-stored"]
+        );
+    }
+
+    #[test]
+    fn test_a_google_event_marked_transparent_is_stored_as_free_and_anything_else_as_busy() {
+        // Transparent is Google's word for an event that does not block time.
+        // Read the wrong way round, every meeting somebody has looks like free
+        // time and every free block looks booked.
+        for (transparency, blocks_time) in [
+            ("transparent", "free"),
+            ("opaque", "busy"),
+            ("", "busy"),
+            ("TRANSPARENT", "busy"),
+        ] {
+            let event = GoogleEvent {
+                id: "evt".to_string(),
+                transparency: transparency.to_string(),
+                ..Default::default()
+            };
+
+            assert_eq!(
+                google_event_to_local(&event, "acct").show_as,
+                blocks_time,
+                "a Google event whose transparency is {transparency:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_microsoft_event_with_a_body_keeps_its_description_and_one_without_gets_none() {
+        let with_text = MsGraphEvent {
+            id: "ms-1".to_string(),
+            body: Some(MsEventBody {
+                content_type: "text".to_string(),
+                content: "Agenda and papers".to_string(),
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            ms_event_to_local(&with_text, "acct").description.as_deref(),
+            Some("Agenda and papers")
+        );
+
+        let empty = MsGraphEvent {
+            id: "ms-2".to_string(),
+            body: Some(MsEventBody {
+                content_type: "text".to_string(),
+                content: String::new(),
+            }),
+            ..Default::default()
+        };
+        assert!(
+            ms_event_to_local(&empty, "acct").description.is_none(),
+            "an event with no notes has no description, not an empty one"
+        );
+    }
+
+    #[test]
+    fn test_a_microsoft_event_body_written_as_html_is_cleaned_before_it_is_stored() {
+        // An event body is written by whoever sent the invitation, so it is a
+        // stranger's markup and gets the same treatment as a message body.
+        let event = MsGraphEvent {
+            id: "ms-3".to_string(),
+            body: Some(MsEventBody {
+                content_type: "HTML".to_string(),
+                content: "<p>Bring the papers</p><script>steal()</script>".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        let stored = ms_event_to_local(&event, "acct")
+            .description
+            .unwrap_or_default();
+
+        assert!(
+            stored.contains("Bring the papers"),
+            "the words in the body are what somebody reads: {stored}"
+        );
+        assert!(
+            !stored.contains("steal"),
+            "a script in an event body does not survive into the calendar: {stored}"
+        );
+    }
+
+    #[test]
+    fn test_an_alert_is_kept_only_when_microsoft_says_it_is_on_and_gives_a_lead_time() {
+        let alerting = MsGraphEvent {
+            id: "ms-1".to_string(),
+            is_reminder_on: true,
+            reminder_minutes_before_start: 15,
+            ..Default::default()
+        };
+        let stored = ms_event_to_local(&alerting, "acct")
+            .reminders_json
+            .unwrap_or_default();
+        assert!(
+            stored.contains("\"minutes\":15"),
+            "the lead time somebody chose is the lead time stored: {stored}"
+        );
+        assert!(
+            stored.contains("\"method\":\"popup\""),
+            "how they are alerted is stored too: {stored}"
+        );
+
+        // Switched off, or on with nothing to count down from, is no alert.
+        // Storing one anyway interrupts somebody for a meeting they silenced.
+        for (switched_on, minutes) in [(true, 0), (false, 15), (false, 0)] {
+            let event = MsGraphEvent {
+                id: "ms-2".to_string(),
+                is_reminder_on: switched_on,
+                reminder_minutes_before_start: minutes,
+                ..Default::default()
+            };
+
+            assert!(
+                ms_event_to_local(&event, "acct").reminders_json.is_none(),
+                "a reminder switched {switched_on} at {minutes} minutes is not an alert"
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_way_microsoft_says_an_event_blocks_time_is_carried_over_unchanged() {
+        // Microsoft has six words for this and the calendar keeps four of them.
+        // Dropping one sends it to the fallback, so time somebody marked free
+        // or out of office reads as booked solid.
+        for (sent, stored) in [
+            ("free", "free"),
+            ("tentative", "tentative"),
+            ("oof", "oof"),
+            ("busy", "busy"),
+            ("workingElsewhere", "busy"),
+            ("", "busy"),
+        ] {
+            let event = MsGraphEvent {
+                id: "ms-1".to_string(),
+                show_as: sent.to_string(),
+                ..Default::default()
+            };
+
+            assert_eq!(
+                ms_event_to_local(&event, "acct").show_as,
+                stored,
+                "a Microsoft event marked {sent:?}"
+            );
+        }
+    }
+
+    // ── What is sent to Google ───────────────────────────────────────────
+
+    #[test]
+    fn test_an_event_sent_to_google_carries_when_it_finishes() {
+        let mut timed = make_event("e1", "Lunch", None);
+        timed.start_datetime = "2026-03-05T12:00:00Z".to_string();
+        timed.end_datetime = "2026-03-05T13:00:00Z".to_string();
+        timed.time_zone = Some("America/New_York".to_string());
+
+        let ends = local_to_google_event(&timed)
+            .end
+            .expect("an appointment without an end is one Google refuses");
+        assert_eq!(ends.date_time.as_deref(), Some("2026-03-05T13:00:00Z"));
+        assert_eq!(
+            ends.date, None,
+            "a timed event ends at a time, not on a date"
+        );
+
+        // The whole-day branch is separate code, so a test on the timed one
+        // alone leaves half the field unpinned.
+        let mut whole_day = make_event("e2", "Holiday", None);
+        whole_day.is_all_day = true;
+        whole_day.start_date = Some("2026-03-06".to_string());
+        whole_day.end_date = Some("2026-03-07".to_string());
+
+        let ends = local_to_google_event(&whole_day)
+            .end
+            .expect("a whole-day event needs an end too");
+        assert_eq!(ends.date.as_deref(), Some("2026-03-07"));
+        assert_eq!(ends.date_time, None);
+    }
+
+    #[test]
+    fn test_an_event_sent_to_google_carries_the_status_it_was_given() {
+        // Sent as it stands: this is the field that tells Google an event is
+        // cancelled, so it is the one that has to say what was meant.
+        for status in ["confirmed", "tentative"] {
+            let mut event = make_event("e1", "Review", None);
+            event.status = status.to_string();
+
+            assert_eq!(
+                local_to_google_event(&event).status,
+                status,
+                "an event stored as {status}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_event_marked_free_goes_to_google_as_not_blocking_time() {
+        // Google has two words here and the calendar has four, so tentative and
+        // out of office both go up as blocking time. That is a loss on purpose:
+        // there is nowhere else to put them.
+        for (blocks_time, transparency) in [
+            ("free", "transparent"),
+            ("busy", "opaque"),
+            ("tentative", "opaque"),
+            ("oof", "opaque"),
+        ] {
+            let mut event = make_event("e1", "Review", None);
+            event.show_as = blocks_time.to_string();
+
+            assert_eq!(
+                local_to_google_event(&event).transparency,
+                transparency,
+                "an event marked {blocks_time}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_alert_set_on_an_event_is_the_alert_google_is_given() {
+        let mut with_alert = make_event("e1", "Review", None);
+        with_alert.reminders_json = Some("[{\"method\":\"popup\",\"minutes\":15}]".to_string());
+
+        let reminders = local_to_google_event(&with_alert)
+            .reminders
+            .expect("the alert somebody set has to reach Google");
+        assert!(
+            !reminders.use_default,
+            "an event with its own alert does not fall back to the calendar's"
+        );
+        assert_eq!(reminders.overrides.len(), 1);
+        assert_eq!(reminders.overrides[0].method, "popup");
+        assert_eq!(reminders.overrides[0].minutes, 15);
+
+        let silent = make_event("e2", "Quiet", None);
+        assert!(
+            local_to_google_event(&silent).reminders.is_none(),
+            "an event with no alert of its own is handed back to the calendar default"
+        );
+    }
+
+    #[test]
+    fn test_an_alert_google_could_not_read_is_not_sent_as_having_no_alert() {
+        // Saying use_default false with an empty list tells Google this event
+        // never alerts, which switches off the calendar default as well. An
+        // alert we failed to read is not somebody asking for silence.
+        let mut unreadable = make_event("e1", "Review", None);
+        unreadable.reminders_json = Some("[{\"method\":\"popup\"}]".to_string());
+
+        assert!(
+            local_to_google_event(&unreadable).reminders.is_none(),
+            "an alert with nothing usable in it is left to the calendar default"
+        );
+    }
+
+    // ── What is sent to Microsoft ────────────────────────────────────────
+
+    #[test]
+    fn test_an_event_sent_to_microsoft_carries_when_it_starts_and_finishes() {
+        let mut event = make_event("e1", "Sprint planning", None);
+        event.start_datetime = "2026-03-06T09:00:00Z".to_string();
+        event.end_datetime = "2026-03-06T10:00:00Z".to_string();
+        event.time_zone = Some("Europe/London".to_string());
+
+        let ms = local_to_ms_event(&event);
+        let starts = ms
+            .start
+            .expect("an event with no start is one Graph refuses");
+        assert_eq!(starts.date_time, "2026-03-06T09:00:00Z");
+        assert_eq!(starts.time_zone, "Europe/London");
+        let ends = ms.end.expect("an event with no end is one Graph refuses");
+        assert_eq!(ends.date_time, "2026-03-06T10:00:00Z");
+        assert_eq!(ends.time_zone, "Europe/London");
+
+        // An event stored without a zone is read as coordinated universal time
+        // rather than sent with the field blank.
+        event.time_zone = None;
+        let ms = local_to_ms_event(&event);
+        assert_eq!(ms.start.expect("a start").time_zone, "UTC");
+        assert_eq!(ms.end.expect("an end").time_zone, "UTC");
+    }
+
+    #[test]
+    fn test_a_whole_day_event_reaches_microsoft_as_a_whole_day_event() {
+        // Lost, a birthday goes into somebody's calendar as an appointment at
+        // midnight instead of a banner across the day.
+        for lasts_all_day in [true, false] {
+            let mut event = make_event("e1", "Birthday", None);
+            event.is_all_day = lasts_all_day;
+
+            assert_eq!(
+                local_to_ms_event(&event).is_all_day,
+                lasts_all_day,
+                "an event stored with is_all_day {lasts_all_day}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_whether_an_event_blocks_time_is_carried_to_microsoft_unchanged() {
+        // All four words the calendar holds are words Graph takes, so this is a
+        // straight pass-through and equality is the whole of it.
+        for blocks_time in ["free", "tentative", "oof", "busy"] {
+            let mut event = make_event("e1", "Review", None);
+            event.show_as = blocks_time.to_string();
+
+            assert_eq!(local_to_ms_event(&event).show_as, blocks_time);
+        }
+    }
+
+    #[test]
+    fn test_the_alert_set_on_an_event_is_the_alert_microsoft_is_given() {
+        let mut with_alert = make_event("e1", "Review", None);
+        with_alert.reminders_json = Some("[{\"method\":\"popup\",\"minutes\":30}]".to_string());
+
+        let ms = local_to_ms_event(&with_alert);
+        assert!(
+            ms.is_reminder_on,
+            "the alert somebody set has to reach Graph"
+        );
+        assert_eq!(ms.reminder_minutes_before_start, 30);
+
+        let silent = make_event("e2", "Quiet", None);
+        let ms = local_to_ms_event(&silent);
+        assert!(
+            !ms.is_reminder_on,
+            "an event with no alert must not have one invented for it"
+        );
+        assert_eq!(
+            ms.reminder_minutes_before_start, 0,
+            "and no lead time invented either"
+        );
+    }
+
+    #[test]
+    fn test_a_sync_keeps_the_category_and_the_calendar_a_person_chose_and_takes_the_rest() {
+        // The provider knows nothing about either, so the copy it sends has
+        // both blank. Writing that blank over the stored event is how a
+        // category somebody typed disappears on the next sync.
+        let mut held = make_event("held-1", "Held", Some("cal-work"));
+        held.categories = "Birthday".to_string();
+        held.attendees_json = Some("[{\"email\":\"old@example.com\"}]".to_string());
+        held.reminders_json = Some("[{\"minutes\":5}]".to_string());
+
+        let mut fresh = make_event("fresh-1", "What the provider sent", None);
+        fresh.attendees_json = Some("[{\"email\":\"new@example.com\"}]".to_string());
+        fresh.reminders_json = Some("[{\"minutes\":15}]".to_string());
+
+        carry_over_local_only(&mut fresh, &held);
+
+        assert_eq!(
+            fresh.id, "held-1",
+            "it is the same event, so it keeps its row"
+        );
+        assert_eq!(fresh.categories, "Birthday");
+        assert_eq!(fresh.calendar_id.as_deref(), Some("cal-work"));
+        assert_eq!(fresh.summary, "What the provider sent");
+        // Both providers send these two, so keeping the stored copy would
+        // throw the provider's answer away instead of saving it.
+        assert_eq!(
+            fresh.attendees_json.as_deref(),
+            Some("[{\"email\":\"new@example.com\"}]")
+        );
+        assert_eq!(fresh.reminders_json.as_deref(), Some("[{\"minutes\":15}]"));
+    }
+
+    // ── Reaching the Microsoft sync itself ───────────────────────────────
+    //
+    // The client builds every other address from a constant, but a stored
+    // sync marker is used as the address verbatim. Saving one that points at a
+    // loopback port is what reaches the sync itself rather than only the
+    // converters beneath it.
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// Answer one request on a loopback port with a canned reply.
+    async fn answering(reply: String) -> std::net::SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a loopback port");
+        let address = listener.local_addr().expect("the port that was taken");
+
+        tokio::spawn(async move {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let mut asked = Vec::new();
+            let mut chunk = [0_u8; 2048];
+            while let Ok(read) = stream.read(&mut chunk).await {
+                if read == 0 {
+                    break;
+                }
+                asked.extend_from_slice(&chunk[..read]);
+                if asked.windows(4).any(|four| four == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                 Content-Length: {}\r\nConnection: close\r\n\r\n",
+                reply.len()
+            );
+            let _ = stream.write_all(head.as_bytes()).await;
+            let _ = stream.write_all(reply.as_bytes()).await;
+            let _ = stream.shutdown().await;
+        });
+
+        address
+    }
+
+    /// Store the marker that sends the next Microsoft sync to a given address.
+    fn point_the_sync_at(cache: &MessageCache, address: &std::net::SocketAddr) {
+        cache
+            .save_sync_state(&SyncState {
+                id: "sync-1".to_string(),
+                account_id: "acct".to_string(),
+                sync_type: "calendar".to_string(),
+                provider: "outlook".to_string(),
+                sync_token: None,
+                delta_link: Some(format!("http://{address}/delta")),
+                last_full_sync: None,
+                last_incremental_sync: None,
+            })
+            .expect("the sync marker to be stored");
+    }
+
+    fn graph_event(id: &str, subject: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": id,
+            "subject": subject,
+            "start": {"dateTime": "2026-03-05T14:00:00.0000000", "timeZone": "UTC"},
+            "end": {"dateTime": "2026-03-05T15:00:00.0000000", "timeZone": "UTC"},
+            "showAs": "busy",
+        })
+    }
+
+    fn graph_removal(id: &str) -> serde_json::Value {
+        serde_json::json!({ "id": id, "@removed": {"reason": "deleted"} })
+    }
+
+    fn delta_reply(events: &[serde_json::Value]) -> String {
+        serde_json::json!({
+            "value": events,
+            "@odata.deltaLink": "https://example.invalid/delta/next",
+        })
+        .to_string()
+    }
+
+    /// An event the cache already holds under a provider's identity.
+    fn already_held(id: &str, provider_event_id: &str) -> CalendarEventEntry {
+        let mut event = make_event(id, &format!("Held {provider_event_id}"), None);
+        event.account_id = "acct".to_string();
+        event.provider_event_id = Some(provider_event_id.to_string());
+        event
+    }
+
+    #[tokio::test]
+    async fn test_a_microsoft_delta_reply_puts_its_events_into_the_calendar() {
+        let cache = temp_cache("ms_arrives");
+        let address = answering(delta_reply(&[graph_event("ms-1", "Budget review")])).await;
+        point_the_sync_at(&cache, &address);
+
+        let result = sync_microsoft_calendar(&cache, &MsGraphClient::new(), "token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        assert_eq!(result.created, 1);
+        let stored = cache
+            .get_event_by_provider_id("acct", "ms-1")
+            .expect("the calendar to be readable")
+            .expect("the event the reply carried to have been stored");
+        assert_eq!(
+            stored.summary, "Budget review",
+            "a sync that reports success and stores nothing is the worst answer of the three"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_microsoft_says_is_gone_is_removed_and_counted_once() {
+        let cache = temp_cache("ms_removed");
+        cache
+            .save_calendar_event(&already_held("local-1", "ms-1"))
+            .expect("the event the cache already holds");
+        let address = answering(delta_reply(&[graph_removal("ms-1")])).await;
+        point_the_sync_at(&cache, &address);
+
+        let result = sync_microsoft_calendar(&cache, &MsGraphClient::new(), "token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        assert_eq!(result.deleted, 1, "one event went, so the summary says one");
+        assert!(
+            cache
+                .get_event_by_provider_id("acct", "ms-1")
+                .expect("the calendar to be readable")
+                .is_none(),
+            "an event the server says is gone does not stay in the calendar"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_already_held_counts_as_changed_and_a_new_one_as_new() {
+        let cache = temp_cache("ms_counts");
+        cache
+            .save_calendar_event(&already_held("local-1", "already-here"))
+            .expect("the event the cache already holds");
+        let address = answering(delta_reply(&[
+            graph_event("already-here", "Budget review"),
+            graph_event("brand-new", "Sprint planning"),
+        ]))
+        .await;
+        point_the_sync_at(&cache, &address);
+
+        let result = sync_microsoft_calendar(&cache, &MsGraphClient::new(), "token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        assert_eq!(
+            result.updated, 1,
+            "an event we already held is a change, not an arrival"
+        );
+        assert_eq!(
+            result.created, 1,
+            "an event we did not hold is the only new one"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_category_typed_onto_a_microsoft_event_survives_the_next_sync() {
+        let cache = temp_cache("ms_categories");
+        let mut held = already_held("local-1", "ms-1");
+        held.categories = "Birthday".to_string();
+        held.calendar_id = Some("cal-work".to_string());
+        cache
+            .save_calendar_event(&held)
+            .expect("the event the cache already holds");
+        let address = answering(delta_reply(&[graph_event("ms-1", "Budget review")])).await;
+        point_the_sync_at(&cache, &address);
+
+        sync_microsoft_calendar(&cache, &MsGraphClient::new(), "token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        let stored = cache
+            .get_event_by_provider_id("acct", "ms-1")
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(
+            stored.categories, "Birthday",
+            "a category typed here is not something Microsoft carries, so a sync cannot take it away"
+        );
+        assert_eq!(
+            stored.calendar_id.as_deref(),
+            Some("cal-work"),
+            "nor is the calendar it was filed under"
+        );
+        // On the summary as well, so keeping the local fields cannot pass by
+        // skipping the write altogether.
+        assert_eq!(stored.summary, "Budget review");
     }
 }
