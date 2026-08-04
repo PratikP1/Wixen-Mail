@@ -75,6 +75,25 @@ impl Default for DateSettings {
     }
 }
 
+/// What these settings do not reach, said where somebody meets it.
+///
+/// The order of the day and month and the clock follow this machine, so the
+/// dates look as though they follow its language too. They do not: the month
+/// names and the relative wording below are English and only English. On a
+/// French machine that puts an English word in the middle of every date, read
+/// with French pronunciation rules, in every list in every module. It sounds
+/// like the screen reader misbehaving rather than like this application
+/// speaking one language.
+///
+/// This is a statement, not a fix. Localising dates means the month names, the
+/// relative wording, the examples in the settings screen and eventually every
+/// other string in the application, which is a piece of work with a build cost.
+/// Until then the limitation is written on the settings screen and in
+/// `docs/accessibility.md` rather than left to be discovered.
+pub const ENGLISH_ONLY: &str = "Dates are written in English. The order of the day and month \
+     and the clock follow this computer, but the month names and wording such as \"2 days ago\" \
+     stay in English whatever language this computer is set to.";
+
 const MONTHS: [&str; 12] = [
     "January",
     "February",
@@ -427,6 +446,25 @@ mod tests {
             wording: DateWording::Verbal,
             clock: Clock::TwelveHour,
         }
+    }
+
+    #[test]
+    fn test_the_month_is_spelled_in_english_whatever_the_order_says() {
+        // A pin, green from the first run, and it is here to go red one day.
+        // The settings screen and `docs/accessibility.md` now say out loud that
+        // dates are English only. When localisation lands this test fails, and
+        // that is the reminder to take those two statements back out rather
+        // than leave the application claiming a limitation it no longer has.
+        let day_first = DateSettings {
+            style: DateStyle::Absolute,
+            order: DateOrder::DayFirst,
+            wording: DateWording::Verbal,
+            clock: Clock::TwentyFourHour,
+        };
+
+        let written = date_part(at("2026-07-26 09:15:00"), day_first);
+
+        assert!(written.contains("July"), "{written}");
     }
 
     #[test]

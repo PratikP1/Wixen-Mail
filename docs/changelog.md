@@ -192,6 +192,58 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The folder list says which folder you are on.** Choosing which folders stay
+  up to date gives you a list of check boxes, and each row said whether it was
+  ticked but none of them said it was the one under the cursor. A screen reader
+  working out the current item from what the rows report found no current item
+  anywhere in the list, so on a server with sixty mailboxes there was no
+  reliable way to know where you were, and pressing Space was a guess about
+  which folder you had just changed. The row the cursor is on now reports
+  itself as the current one, and it keeps its tick while doing it.
+
+  The window also used to open with no row chosen at all, so there was nothing
+  to be current. It now opens on the first folder. Nothing is ticked or
+  unticked by that; it only decides where the cursor starts.
+
+  Still to be confirmed with a screen reader. What is settled is that the rows
+  answer with the right facts when Windows asks them. Whether NVDA then says
+  "selected" on each arrow key is a separate question, because saying a row
+  aloud depends on the list raising an event as well as on the row's answer.
+
+- **A message is no longer announced as English whatever language it is in.**
+  Every message you opened claimed to be English, so a German message on a
+  German machine was read with English pronunciation rules from the first word
+  to the last. That is worse than saying nothing, because a reader told nothing
+  carries on in the voice you chose. The message now carries the language
+  Windows is set to.
+
+  Read the honest limit with it: nothing here knows what language a message was
+  written in. No message arriving carries that information, and a sender's own
+  marking on the whole document is removed when the message is made safe to
+  display. So a message in a third language is still announced with your
+  pronunciation rules. A marking a sender put on part of a message, a French
+  quotation inside an English one, does survive and is used.
+
+  When Windows will not say what language it is set to, the message says nothing
+  about language rather than claiming English. That is a deliberate gap against
+  WCAG 3.1.1, written up in `docs/accessibility.md`. Still to be confirmed with
+  a screen reader: whether a reader acts on the language also depends on its
+  automatic language switching being on and on a voice for that language being
+  installed, and neither is ours to set.
+
+- **A label with a real ampersand in it keeps the word after it.** Turning a
+  visible label into a spoken name deleted every ampersand, but wxWidgets writes
+  one real ampersand as two, so "Go Back && Edit" would have been announced as
+  "Go Back  Edit": the word gone and a double space where a listener hears an
+  odd pause. Nothing was routed through it in a way anybody would have heard
+  yet, and the two buttons on the send confirmation now are, so this fixes it
+  before it shipped. A label ending in more than one colon also had the whole
+  run stripped; only the first is a visual convention, so only the first goes.
+
+  Still to be confirmed with a screen reader: naming those two buttons is a call
+  into Windows that cannot be read back, and the same kind of call once named
+  sixteen controls that nobody ever heard.
+
 - **A reminder going off now has its own sound instead of borrowing the one for
   new mail.** A reminder coming due played the exact tone that means a message
   arrived, so the sound sent people to an empty inbox while the reminder sat
@@ -1056,6 +1108,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   message list now.
 
 ### Known limitations
+
+- **Dates are written in English on every machine.** The order of the day and
+  month and the clock follow Windows, so the dates look as though they follow
+  its language too. They do not. Month names are English, and so is wording like
+  "2 days ago", which is most of what a mail list ever says. On a French machine
+  that puts an English word in the middle of every date, read with French
+  pronunciation rules, in every list in every module, and it sounds like the
+  screen reader misbehaving rather than like this application speaking one
+  language. Nothing is fixed here: the settings screen and
+  `docs/accessibility.md` now say it out loud, because a limitation nobody is
+  told about is worse than one they can plan around. Doing it properly means
+  translating the month names, the relative wording and eventually every other
+  string, which is a piece of work rather than a line change.
 
 - **An event that repeats is shown once.** The rule it repeats by is stored, and
   nothing turns that rule into the occurrences it stands for, so a weekly

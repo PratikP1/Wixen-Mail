@@ -243,8 +243,14 @@ pub fn language_of_this_machine() -> Option<String> {
 }
 
 /// The language tag Windows says this machine is set to.
+///
+/// Public because it answers a second question as well as the spelling one:
+/// what language a document should ask to be read in. Use it rather than
+/// [`language_of_this_machine`] for anything that is not about checking
+/// spelling, because that one answers only with languages a dictionary is
+/// installed for, which has nothing to do with how a document is pronounced.
 #[cfg(target_os = "windows")]
-fn system_language() -> Option<String> {
+pub fn system_language() -> Option<String> {
     const LOCALE_USER_DEFAULT: u32 = 0x0400;
     // LOCALE_SNAME: the full tag, "en-GB" rather than a number.
     const LOCALE_SNAME: u32 = 0x0000005c;
@@ -271,7 +277,7 @@ fn system_language() -> Option<String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn system_language() -> Option<String> {
+pub fn system_language() -> Option<String> {
     std::env::var("LANG")
         .ok()
         .and_then(|value| value.split('.').next().map(|tag| tag.replace('_', "-")))

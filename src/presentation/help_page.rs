@@ -180,6 +180,10 @@ pub fn to_html(markdown: &str, title: &str) -> String {
     html::push_html(&mut body, parser);
     let body = point_links_at_converted_pages(&body);
 
+    // English, and stated rather than worked out from the machine. A help page
+    // is English text this project wrote, so it is English whatever machine it
+    // is read on. A message document is the other case and asks a different
+    // question: see `language_attribute` in the HTML renderer.
     format!(
         r#"<!DOCTYPE html>
 <html lang="en">

@@ -27,11 +27,13 @@
 //!
 //! So each row reports itself, through
 //! [`set_accessible_checked_rows`](crate::presentation::accessibility::names::set_accessible_checked_rows),
-//! as a check box with a checked state. It is the same fix NVDA makes in its
-//! own settings, where the problem is identical and the answer is written in
+//! as a check box with a checked state, and the row the cursor is on reports
+//! that it is the current one. It is the same fix NVDA makes in its own
+//! settings, where the problem is identical and the answer is written in
 //! Python: answer for the rows and not only for the control.
 //!
-//! The snapshot is refreshed on every toggle. A state read once when the window
+//! The snapshot is refreshed on every tick and every move of the cursor, by the
+//! list itself rather than by anything here. A state read once when the window
 //! opened would announce confidently and be wrong from the first press of
 //! Space, which is worse than announcing nothing.
 //!
@@ -126,30 +128,17 @@ pub fn ask(parent: &Frame, account: &str, folders: &[FolderRow]) -> Option<Vec<(
         // the wrong row is a folder somebody did not ask for.
         list.check(index as u32, folder.syncing);
     }
-    // Each row reports itself as a check box with its ticked state, because
-    // Windows draws these check boxes rather than using a control that has
-    // them, so without this the state reaches nobody.
-    let ticked = set_accessible_checked_rows(
-        &list,
+    // Each row reports itself as a check box with its ticked state and says
+    // whether it is the one the cursor is on, because Windows draws these check
+    // boxes rather than using a control that has them, so without this neither
+    // fact reaches anybody. It selects the first row, reads the list, and keeps
+    // reading it as rows are ticked and the cursor moves, so nothing here has
+    // to remember to.
+    set_accessible_checked_rows(
+        list,
         "Folders to keep up to date",
         "Tick a folder to download its messages. Untick one to leave it on the server.",
-        folders.iter().map(|folder| folder.syncing).collect(),
     );
-
-    // Kept up to date as rows are toggled. A snapshot taken once would announce
-    // confidently and be wrong from the first press of Space, which is worse
-    // than announcing nothing.
-    list.on_toggled({
-        // `CheckListBox` is a handle rather than the control, so the closure
-        // takes a copy of it and the rows keep answering after `ask` returns.
-        let ticked = ticked.clone();
-        let rows = folders.len();
-        move |_event| {
-            if let Ok(mut ticked) = ticked.lock() {
-                *ticked = (0..rows).map(|at| list.is_checked(at as u32)).collect();
-            }
-        }
-    });
     sizer.add(&list, 1, SizerFlag::All | SizerFlag::Expand, 8);
 
     let buttons = BoxSizer::builder(Orientation::Horizontal).build();
@@ -169,7 +158,9 @@ pub fn ask(parent: &Frame, account: &str, folders: &[FolderRow]) -> Option<Vec<(
 
     dialog.set_sizer(sizer, true);
     // Focus starts in the list rather than on Save, so the first thing heard is
-    // a folder and its state rather than a button.
+    // a folder and its state rather than a button. The first row is already the
+    // current one, chosen when the rows were given their accessible state,
+    // because a list where nothing is selected has no folder to announce.
     list.set_focus();
 
     let answer = dialog.show_modal();

@@ -577,6 +577,25 @@ fn build_reading_tab(
     // date sounds like is not a detail to somebody who hears every one of them.
     let date_sec = section(panel, "Dates and Times");
 
+    // Two of the settings below say "Follow this computer", which makes the
+    // whole section look as though it follows the computer's language too. It
+    // does not, and somebody hearing an English month in the middle of an
+    // otherwise French date deserves to be told that rather than left thinking
+    // their screen reader is at fault.
+    let date_language_note = StaticText::builder(panel)
+        .with_label(crate::presentation::date_display::ENGLISH_ONLY)
+        .build();
+    set_accessible_name(
+        &date_language_note,
+        crate::presentation::date_display::ENGLISH_ONLY,
+    );
+    date_sec.add(
+        &date_language_note,
+        0,
+        SizerFlag::Expand | SizerFlag::All,
+        4,
+    );
+
     let date_style = labelled_choice(
         panel,
         &date_sec,

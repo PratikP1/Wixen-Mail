@@ -7,7 +7,7 @@
 use crate::application::reading_habits::CopyLines;
 use crate::common::types::MessageBody;
 use crate::presentation::accessibility::names::{
-    set_accessible_name, set_accessible_name_and_description,
+    name_from_label, set_accessible_name, set_accessible_name_and_description,
 };
 use crate::presentation::compose_toolbar;
 use crate::presentation::editor_document;
@@ -2082,6 +2082,11 @@ fn show_send_preview(
         .with_label("Confirm &Send")
         .with_id(ID_CONFIRM_SEND)
         .build();
+    // The last two controls between somebody and a message going out, and
+    // neither of them carried a name. Taken from the visible labels so what is
+    // spoken and what is drawn cannot drift apart.
+    set_accessible_name(&back_btn, &name_from_label("&Go Back && Edit"));
+    set_accessible_name(&send_btn, &name_from_label("Confirm &Send"));
     btn_sizer.add(&back_btn, 0, SizerFlag::All, 4);
     btn_sizer.add_spacer(16);
     btn_sizer.add(&send_btn, 0, SizerFlag::All, 4);

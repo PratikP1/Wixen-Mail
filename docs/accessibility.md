@@ -234,6 +234,38 @@ Wixen Mail is tested and optimized for the following screen readers:
 - Line spacing adjustments
 - Support for Windows display scaling
 
+### Language
+
+Wixen Mail speaks English, and this section says where that shows and where it
+is worse than it looks.
+
+The interface is English only. Labels, messages, errors and dates are all
+written in English, and nothing changes them when Windows is set to another
+language. Dates are the place this is easiest to miss, because the order of the
+day and month and the clock do follow Windows. So on a French machine the parts
+of the date come out in French order with an English month in the middle, and
+"2 days ago" stays in English too. That mixture sounds like the screen reader
+misbehaving rather than like the application speaking one language, so the
+settings screen says it under Dates and Times as well.
+
+A message you read carries the language Windows is set to, not the language the
+message was written in. Nothing in a message tells Wixen Mail what language it
+is in: no message reaching here carries a Content-Language header, and a
+sender's own marking on the whole document is removed when the message is made
+safe to display. So the document asks to be read in your language, which is
+right for most of your mail and wrong for the rest. A message in a third
+language is announced with your pronunciation rules.
+
+When Windows will not say what language it is set to, the document says nothing
+about language rather than claiming English. A screen reader then carries on in
+the voice you chose, which is the truthful answer. This is a known gap against
+WCAG 3.1.1 Language of Page, taken deliberately: a wrong claim is acted on, a
+missing one is not.
+
+A marking a sender put on part of a message does survive. A French quotation
+inside an English message keeps its `lang="fr"`, so a reader that switches
+voices switches for that part (WCAG 3.1.2 Language of Parts).
+
 ### Timing and Animations
 - No time-sensitive operations without alternatives
 - Option to disable animations

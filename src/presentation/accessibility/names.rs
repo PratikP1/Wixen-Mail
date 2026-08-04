@@ -132,13 +132,30 @@ impl AccessibleImpl for FixedName {
 struct CheckedRows {
     name: String,
     description: String,
-    /// Whether each row is ticked, in the order the rows were added.
+    /// What the rows are, last time anybody looked.
     ///
     /// A snapshot rather than a live look at the control, because an accessible
     /// object is called from the screen reader's thread and must not reach into
-    /// a widget. It is replaced whenever a tick changes, which is the only time
-    /// it can go stale.
-    ticked: std::sync::Arc<std::sync::Mutex<Vec<bool>>>,
+    /// a widget. It is replaced whenever a tick or the cursor moves, which is
+    /// the only time it can go stale.
+    rows: RowReports,
+}
+
+/// What the rows of a checked list are, at the moment somebody looked.
+///
+/// Two facts, kept together because they are read together and a row that
+/// answers one without the other is a row somebody cannot place.
+pub struct RowStates {
+    /// Whether each row is ticked, in the order the rows were added.
+    pub ticked: Vec<bool>,
+    /// Which row the cursor is on, if any.
+    ///
+    /// Counted from nought, as the control counts its rows, and turned into
+    /// MSAA's one-based child ids where they are answered. `None` before
+    /// anybody has arrowed into the list, and that is a real state rather than
+    /// a missing value: a list with nothing selected has no current row and
+    /// saying otherwise would point at a row nobody chose.
+    pub current: Option<usize>,
 }
 
 impl AccessibleImpl for CheckedRows {
@@ -190,71 +207,128 @@ impl AccessibleImpl for CheckedRows {
         )
     }
 
+    /// Every flag the row has, because an OK answer replaces the platform's.
+    ///
+    /// Answering OK here stops wxWidgets supplying its own state for the row,
+    /// so anything left out is a fact about the row that nothing else fills
+    /// in. That is how the row under the cursor came to report neither focus
+    /// nor selection: a reader working out which item is current from the
+    /// flags found no current item anywhere in the list.
+    ///
+    /// Focus is reported for the current row without checking whether the list
+    /// holds keyboard focus, which is what Windows' own list box proxy does.
+    /// It is one fewer thing to keep in step and one fewer order to get wrong.
+    /// If a screen reader pass finds a row calling itself focused while a
+    /// button holds focus, the answer is a third fact fed from the list's own
+    /// focus events, not a change here.
     fn get_state(&self, child_id: i32) -> (AccStatus, i64) {
         if child_id == 0 {
             return (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, 0);
         }
-        let Ok(ticked) = self.ticked.lock() else {
+        let Ok(rows) = self.rows.lock() else {
             // A poisoned lock is not a reason to claim a row is unticked, which
             // would be a wrong answer rather than no answer.
             return (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, 0);
         };
         // One-based, as MSAA counts children.
-        let Some(on) = ticked.get((child_id - 1) as usize) else {
+        let row = (child_id - 1) as usize;
+        let Some(on) = rows.ticked.get(row) else {
             return (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, 0);
         };
-        let state = if *on {
-            wxdragon::accessible::acc_state::CHECKED
-        } else {
-            0
-        };
-        (
-            ffi::wxd_AccStatus_WXD_ACC_OK,
-            state
-                | wxdragon::accessible::acc_state::FOCUSABLE
-                | wxdragon::accessible::acc_state::SELECTABLE,
-        )
+        let mut state = wxdragon::accessible::acc_state::FOCUSABLE
+            | wxdragon::accessible::acc_state::SELECTABLE;
+        if *on {
+            state |= wxdragon::accessible::acc_state::CHECKED;
+        }
+        if rows.current == Some(row) {
+            state |= wxdragon::accessible::acc_state::FOCUSED
+                | wxdragon::accessible::acc_state::SELECTED;
+        }
+        (ffi::wxd_AccStatus_WXD_ACC_OK, state)
     }
 }
 
-/// What a checked list's rows report, so the ticks can be kept up to date.
+/// What a checked list's rows report, kept in step with the control.
 ///
-/// Handed back from [`set_accessible_checked_rows`] so the caller can replace
-/// the snapshot when somebody ticks a row. Without that the state is whatever
-/// it was when the window opened, which is worse than none: it would announce
-/// confidently and be wrong the moment anybody pressed Space.
-pub type TickState = std::sync::Arc<std::sync::Mutex<Vec<bool>>>;
+/// Shared between the rows that answer with it and the handlers that refresh
+/// it. Nothing outside this file holds one: the list keeps its own snapshot up
+/// to date, so there is no handle for a caller to forget to write to.
+type RowReports = std::sync::Arc<std::sync::Mutex<RowStates>>;
 
-/// Give a checked list a name and rows that report whether they are ticked.
+/// Give a checked list a name and rows that say what they are.
 ///
-/// The returned handle holds the ticked state. Update it whenever a row is
-/// toggled, in the same order the rows were added.
+/// Each row answers as a check box, with its tick, and the row the cursor is
+/// on answers as the current one.
+///
+/// The snapshot is read from the list here and refreshed by the list itself,
+/// on a tick and on a move of the cursor. Those are two different wxWidgets
+/// events, and a caller asked to bind both is a caller that will one day bind
+/// one, which is how the tick came to be kept up to date while the cursor was
+/// not. The first reading is taken here rather than waiting for an event, so a
+/// selection made in code, which raises no event, cannot leave the rows
+/// describing a list nobody has touched.
+///
+/// A row is selected if none was, because a list of check boxes with no
+/// current row has nothing for a reader to call the current one. That is a
+/// change to the control and not only to what it says, and it is here rather
+/// than in the caller for the same reason as the two handlers.
+///
+/// **Still to be confirmed with a screen reader.** What is pinned by tests is
+/// that these objects answer with the right flags when the platform asks. That
+/// MSAA carries the answer, and that a reader speaks it, is a separate question
+/// and only a listening pass settles it.
 pub fn set_accessible_checked_rows(
-    window: &dyn WxWidget,
+    list: wxdragon::widgets::CheckListBox,
     name: &str,
     description: &str,
-    ticked: Vec<bool>,
-) -> TickState {
-    let (rows, state) = checked_rows(name, description, ticked);
-    window.set_accessible(Accessible::new(window, rows));
-    state
+) {
+    if list.get_selection().is_none() && list.get_count() > 0 {
+        list.set_selection(0, true);
+    }
+    let (rows, reports) = checked_rows(name, description, read_rows(&list));
+    list.set_accessible(Accessible::new(&list, rows));
+
+    // `CheckListBox` is a handle rather than the control, so each closure takes
+    // a copy of it and the rows keep answering after the caller has returned.
+    list.on_toggled({
+        let reports = reports.clone();
+        move |_event| refresh(&list, &reports)
+    });
+    list.on_selected(move |_event| refresh(&list, &reports));
+}
+
+/// Read the list as it is now.
+fn read_rows(list: &wxdragon::widgets::CheckListBox) -> RowStates {
+    RowStates {
+        ticked: (0..list.get_count())
+            .map(|at| list.is_checked(at))
+            .collect(),
+        current: list.get_selection().map(|at| at as usize),
+    }
+}
+
+/// Write what the list is now into what its rows answer.
+fn refresh(list: &wxdragon::widgets::CheckListBox, reports: &RowReports) {
+    if let Ok(mut held) = reports.lock() {
+        *held = read_rows(list);
+    }
 }
 
 /// Work out what the rows will report, and the handle that changes it.
 ///
 /// Kept apart from attaching them to a window so the contract the whole design
 /// rests on can be stated on its own: the handle handed back is the same
-/// snapshot the rows read, so writing a new set of ticks through it changes
-/// what a row answers. Attaching is a call into wxWidgets that cannot be read
-/// back, so it can only be checked with a screen reader.
-fn checked_rows(name: &str, description: &str, ticked: Vec<bool>) -> (CheckedRows, TickState) {
-    let state: TickState = std::sync::Arc::new(std::sync::Mutex::new(ticked));
+/// snapshot the rows read, so writing new rows through it changes what a row
+/// answers. Attaching is a call into wxWidgets that cannot be read back, so it
+/// can only be checked with a screen reader.
+fn checked_rows(name: &str, description: &str, states: RowStates) -> (CheckedRows, RowReports) {
+    let reports: RowReports = std::sync::Arc::new(std::sync::Mutex::new(states));
     let rows = CheckedRows {
         name: name.to_string(),
         description: description.to_string(),
-        ticked: state.clone(),
+        rows: reports.clone(),
     };
-    (rows, state)
+    (rows, reports)
 }
 
 /// Give `window` an accessible name that screen readers will announce.
@@ -298,35 +372,164 @@ pub fn set_accessible_name_and_description(window: &dyn WxWidget, name: &str, de
 
 /// Turn a visible label into the name a screen reader should announce.
 ///
-/// Drops the mnemonic ampersand and any trailing colon. Both are visual
+/// Drops the mnemonic ampersand and one trailing colon. Both are visual
 /// conventions: spoken, "and Subject colon" is worse than "Subject", and some
 /// screen readers read the ampersand aloud.
+///
+/// An ampersand means two different things in a wxWidgets label and they have
+/// to be told apart. A lone one marks the letter after it as the mnemonic and
+/// is not part of what the label says. Two in a row are how a label writes one
+/// real ampersand, as in the composer's "&Go Back && Edit". Deleting every one
+/// of them takes the word out of the label and leaves a double space where a
+/// listener hears an odd pause. The real ampersand is kept as a character
+/// rather than turned into the word "and", because a screen reader already
+/// reads it and rewriting it would put a word in the name that is not on the
+/// control.
+///
+/// One trailing colon is stripped, not a run of them. A single colon after a
+/// field label is the visual convention; a second is something the label says.
 pub fn name_from_label(label: &str) -> String {
-    label
-        .replace('&', "")
-        .trim()
-        .trim_end_matches(':')
+    let mut spoken = String::with_capacity(label.len());
+    let mut rest = label.chars().peekable();
+    while let Some(character) = rest.next() {
+        if character != '&' {
+            spoken.push(character);
+            continue;
+        }
+        if rest.peek() == Some(&'&') {
+            rest.next();
+            spoken.push('&');
+        }
+    }
+    let trimmed = spoken.trim();
+    trimmed
+        .strip_suffix(':')
+        .unwrap_or(trimmed)
         .trim()
         .to_string()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{AccessibleImpl, CheckedRows, FixedName, name_from_label};
-    use wxdragon::accessible::acc_state::{CHECKED, FOCUSABLE, SELECTABLE};
+    use super::{AccessibleImpl, CheckedRows, FixedName, RowStates, name_from_label};
+    use wxdragon::accessible::acc_state::{CHECKED, FOCUSABLE, FOCUSED, SELECTABLE, SELECTED};
     use wxdragon::ffi;
 
-    /// A checked list carrying the wording the folder chooser really uses.
+    /// A checked list nobody has arrowed into yet.
     ///
     /// Every test below pins what this code *answers* when the platform asks
     /// it. Whether a screen reader then speaks the answer is a separate
     /// question that only a screen reader pass settles.
+    ///
+    /// State flags are half the mechanism and it is worth knowing which half.
+    /// A reader says a row on arrowing because the control raises an event for
+    /// that child; the flags are what it reads once it has been told to look.
+    /// Nothing here raises an event, so no test here can be about a row being
+    /// announced.
     fn checked_list(ticked: Vec<bool>) -> CheckedRows {
+        checked_list_with_cursor(ticked, None)
+    }
+
+    /// The same list with the cursor sitting on a row, or on none.
+    fn checked_list_with_cursor(ticked: Vec<bool>, current: Option<usize>) -> CheckedRows {
         CheckedRows {
             name: "Folders to keep up to date".to_string(),
             description: "Tick a folder to download its messages.".to_string(),
-            ticked: std::sync::Arc::new(std::sync::Mutex::new(ticked)),
+            rows: std::sync::Arc::new(std::sync::Mutex::new(RowStates { ticked, current })),
         }
+    }
+
+    #[test]
+    fn test_the_row_the_cursor_is_on_answers_as_focused_and_selected() {
+        // An OK answer replaces the platform's own flags, so a row that says
+        // neither of these says there is no current item anywhere in the list.
+        // On a server with sixty mailboxes that leaves no way to tell which
+        // folder Space is about to change.
+        let list = checked_list_with_cursor(vec![true, false, false], Some(1));
+
+        // Child ids count from one, so the second row is child two.
+        let (status, state) = list.get_state(2);
+
+        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_OK);
+        assert!(
+            state & FOCUSED != 0,
+            "the current row does not report focus"
+        );
+        assert!(
+            state & SELECTED != 0,
+            "the current row does not report itself as selected"
+        );
+    }
+
+    #[test]
+    fn test_a_row_the_cursor_is_not_on_answers_without_focused_or_selected() {
+        // The opposite mistake, and it is worse: every row claiming to be
+        // current is a list where the cursor is everywhere at once.
+        let list = checked_list_with_cursor(vec![true, false, false], Some(1));
+
+        let (_status, state) = list.get_state(1);
+
+        assert!(
+            state & FOCUSED == 0,
+            "a row that is not current claims focus"
+        );
+        assert!(
+            state & SELECTED == 0,
+            "a row that is not current claims to be selected"
+        );
+    }
+
+    #[test]
+    fn test_a_list_nobody_has_arrowed_into_has_no_current_row() {
+        let list = checked_list_with_cursor(vec![true, false], None);
+
+        for child in 1..=2 {
+            let (status, state) = list.get_state(child);
+            assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_OK);
+            assert!(state & FOCUSED == 0, "row {child} claims focus");
+            assert!(state & SELECTED == 0, "row {child} claims to be selected");
+        }
+    }
+
+    #[test]
+    fn test_the_current_row_still_reports_its_tick() {
+        // The trap this class was written around: an OK answer replaces the
+        // platform's flags rather than adding to them, so saying which row is
+        // current must not cost the row its tick.
+        let list = checked_list_with_cursor(vec![true], Some(0));
+
+        let (_status, state) = list.get_state(1);
+
+        assert!(state & CHECKED != 0, "the tick is missing");
+        assert!(state & FOCUSED != 0, "the focus is missing");
+        assert!(state & SELECTED != 0, "the selection is missing");
+        assert!(state & FOCUSABLE != 0, "the row cannot be focused");
+        assert!(state & SELECTABLE != 0, "the row cannot be selected");
+    }
+
+    #[test]
+    fn test_moving_the_cursor_through_the_handle_changes_which_row_is_current() {
+        // The contract the whole design rests on. The handle handed back is
+        // the snapshot the rows read, so a list that arrows onto its second
+        // row has to be able to say so.
+        let (rows, handle) = super::checked_rows(
+            "Folders to keep up to date",
+            "Tick a folder to download its messages.",
+            RowStates {
+                ticked: vec![true, true],
+                current: Some(0),
+            },
+        );
+
+        handle
+            .lock()
+            .expect("a fresh mutex is not poisoned")
+            .current = Some(1);
+
+        let (_status, second) = rows.get_state(2);
+        assert!(second & FOCUSED != 0, "the row arrowed onto is not current");
+        let (_status, first) = rows.get_state(1);
+        assert!(first & FOCUSED == 0, "the row arrowed off is still current");
     }
 
     #[test]
@@ -486,8 +689,11 @@ mod tests {
 
     #[test]
     fn test_a_poisoned_snapshot_answers_nothing_rather_than_unticked() {
-        let ticked = std::sync::Arc::new(std::sync::Mutex::new(vec![true]));
-        let poison = ticked.clone();
+        let rows = std::sync::Arc::new(std::sync::Mutex::new(RowStates {
+            ticked: vec![true],
+            current: Some(0),
+        }));
+        let poison = rows.clone();
         let _ = std::thread::spawn(move || {
             let _held = poison.lock().expect("a fresh mutex is not poisoned");
             panic!("poison the snapshot");
@@ -496,7 +702,7 @@ mod tests {
         let list = CheckedRows {
             name: "Folders to keep up to date".to_string(),
             description: "Tick a folder to download its messages.".to_string(),
-            ticked,
+            rows,
         };
 
         let (status, state) = list.get_state(1);
@@ -528,10 +734,13 @@ mod tests {
         let (rows, handle) = super::checked_rows(
             "Folders to keep up to date",
             "Tick a folder to download its messages.",
-            vec![true],
+            RowStates {
+                ticked: vec![true],
+                current: None,
+            },
         );
 
-        *handle.lock().expect("a fresh mutex is not poisoned") = vec![false];
+        handle.lock().expect("a fresh mutex is not poisoned").ticked = vec![false];
 
         let (_status, state) = rows.get_state(1);
         assert!(
@@ -655,5 +864,28 @@ mod tests {
     fn test_handles_a_label_that_is_only_decoration() {
         assert_eq!(name_from_label(":"), "");
         assert_eq!(name_from_label("   "), "");
+    }
+
+    #[test]
+    fn test_a_doubled_ampersand_is_the_one_a_label_really_means() {
+        // wxWidgets writes a literal ampersand as two of them, so deleting
+        // every ampersand takes the word out of the label and leaves a double
+        // space behind it. This is the composer's own send confirmation, the
+        // button that goes back to a message nobody has sent yet.
+        assert_eq!(name_from_label("&Go Back && Edit"), "Go Back & Edit");
+        assert!(
+            !name_from_label("&Go Back && Edit").contains("  "),
+            "a double space is an odd pause in the middle of the button"
+        );
+        // The same shape on the notebook pages of the contact and settings
+        // windows.
+        assert_eq!(name_from_label("Email && Phone"), "Email & Phone");
+    }
+
+    #[test]
+    fn test_only_one_trailing_colon_is_a_visual_convention() {
+        // One colon after a field label is how a form is written. A second one
+        // is something the label says, and stripping the run takes it away.
+        assert_eq!(name_from_label("Ratio::"), "Ratio:");
     }
 }

@@ -12,6 +12,53 @@ use std::sync::OnceLock;
 
 const SAFE_URL_SCHEMES: [&str; 3] = ["http://", "https://", "mailto:"];
 
+/// The language a message document asks to be read in.
+///
+/// This is the language the person reading is likely to be reading in, not the
+/// language the message was written in. Nothing here knows the second one: no
+/// message carries a Content-Language header through this application, and a
+/// sender's own `<html lang="de">` is dropped on the way in because the
+/// sanitiser keeps no `html` element. So the honest source is the machine.
+///
+/// Read once. It is a call into the operating system and there is one of these
+/// per message opened.
+fn document_language() -> Option<String> {
+    static LANGUAGE: OnceLock<Option<String>> = OnceLock::new();
+    LANGUAGE
+        .get_or_init(crate::service::spellcheck::system_language)
+        .clone()
+}
+
+/// The `lang` attribute for the opening tag, or nothing at all.
+///
+/// `lang="en"` used to be written into every document, which told a reader that
+/// German mail on a German machine was English and had it pronounce a whole
+/// message with English rules. That is worse than saying nothing, because a
+/// reader given nothing carries on in the voice its owner chose.
+///
+/// So when the machine will not say, no attribute is written. That is a known
+/// gap against WCAG 3.1.1 Language of Page and it is a deliberate one: an
+/// absent attribute is "not known", and a wrong attribute is a claim a reader
+/// acts on. Do not fill it back in with a default.
+///
+/// The tag is cut down to what a language tag can contain before it goes near
+/// the document, because on Windows it comes from a locale name rather than
+/// from anything written here.
+fn language_attribute(machine: Option<&str>) -> String {
+    let Some(tag) = machine else {
+        return String::new();
+    };
+    let cleaned: String = tag
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .take(35)
+        .collect();
+    if cleaned.is_empty() {
+        return String::new();
+    }
+    format!(" lang=\"{cleaned}\"")
+}
+
 fn html_tag_re() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| regex::Regex::new(r"<[^>]*>").expect("valid html tag regex"))
@@ -222,9 +269,10 @@ impl HtmlRenderer {
     /// a window and closes. One label for both told half of everybody something
     /// that was not true about the button they were on.
     fn wrap_prepared(&self, content: &str, way_out: &str) -> String {
+        let language = language_attribute(document_language().as_deref());
         format!(
             r#"<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><style>
+<html{language}><head><meta charset="utf-8"><style>
 body {{
     font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
     font-size: 14px; line-height: 1.6;
@@ -428,16 +476,72 @@ mod tests {
     }
 
     #[test]
-    fn test_a_preview_document_declares_its_language() {
-        // Without a lang attribute a screen reader reads the message in
-        // whatever voice it was last using, which turns English mail read by a
-        // German voice into noise (WCAG 3.1.1).
+    fn test_a_preview_document_declares_the_language_worked_out_for_it() {
+        // Whether there is a lang attribute at all depends on whether this
+        // machine will say what language it is set to, so asserting one is
+        // present would be a test that reports on the build agent's locale
+        // while reading like a test of the code. What is this code's to get
+        // right is that the answer worked out is the answer that lands in the
+        // tag.
         let renderer = HtmlRenderer::new();
-        assert!(
-            renderer
-                .wrap_body(&MessageBody::Plain("Hello".into()))
-                .contains("<html lang=")
+        let html = renderer.wrap_body(&MessageBody::Plain("Hello".into()));
+        let expected = format!(
+            "<html{}>",
+            language_attribute(document_language().as_deref())
         );
+
+        assert!(
+            html.contains(&expected),
+            "{expected} is not in the document"
+        );
+    }
+
+    #[test]
+    fn test_a_document_asks_to_be_read_in_the_machines_language() {
+        // "Asks to be read in", not "is read in". Whether a reader acts on this
+        // depends on its automatic language switching being on and on a voice
+        // for that language being installed, and neither is this project's to
+        // decide (WCAG 3.1.1).
+        assert_eq!(language_attribute(Some("de-DE")), " lang=\"de-DE\"");
+    }
+
+    #[test]
+    fn test_a_machine_that_will_not_say_its_language_is_not_answered_with_english() {
+        // No attribute means "not known", and a reader carries on in the voice
+        // its owner chose. `lang="en"` is a different thing: a claim that the
+        // document is English, which a reader acts on by pronouncing every
+        // other language as though it were.
+        assert_eq!(language_attribute(None), "");
+    }
+
+    #[test]
+    fn test_a_language_tag_cannot_carry_an_attribute_into_the_tag() {
+        // The tag reaches a live browser engine, and on Windows it comes from
+        // a locale name rather than anything this code wrote.
+        let attribute = language_attribute(Some("en\" onload=\"alert(1)"));
+
+        assert_eq!(
+            attribute.matches('"').count(),
+            2,
+            "the tag broke out of its attribute: {attribute}"
+        );
+        assert!(!attribute.contains(' ') || attribute.starts_with(" lang=\""));
+        assert!(!attribute.trim_start().contains(' '), "{attribute}");
+    }
+
+    #[test]
+    fn test_the_sanitiser_keeps_a_senders_own_language_marking() {
+        // A pin, green from the first run. A sender who marked a quotation as
+        // French keeps that marking through the sanitiser, which is the whole
+        // of WCAG 3.1.2 Language of Parts here, and it works by inheritance
+        // from the sanitiser's defaults rather than by any decision made here.
+        // The next pass that narrows what attributes survive would take it away
+        // without anybody noticing.
+        let renderer = HtmlRenderer::new();
+
+        let cleaned = renderer.sanitize_html("<p lang=\"fr\">Bonjour</p>");
+
+        assert!(cleaned.contains("lang=\"fr\""), "{cleaned}");
     }
 
     #[test]
