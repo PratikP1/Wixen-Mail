@@ -192,6 +192,43 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Pressing Space twice on a message now tells you more than pressing it
+  once.** The second press is meant to add the recipients, when it arrived,
+  whether it is unread or flagged, and the labels on it. On any message whose
+  text had not been downloaded yet, which is most of an unread inbox, it
+  repeated the first press word for word. The key read as broken, or as a
+  message with nothing more in it.
+
+  Labels are the part that had nowhere else to go. There is no Labels column in
+  the message list and no label line in the reading window, so a label you put
+  on a message with Ctrl and a number was announced once and then could not be
+  found again without leaving the row. The second press now says it, on a
+  message that has been downloaded and on one that has not.
+
+  Along with that, a message with something attached used to be read as "1
+  attachments", whatever it carried: the wrong number and the wrong plural in
+  the same three words. A message list row knows that something is attached and
+  not what, so it now says "Has attachment", the same words the Attachment
+  column uses. A reading that was given the parts counts them, and then the
+  count is the real one.
+
+  **Still to be confirmed with a screen reader:** all of this is about the words
+  the application asks to have said. Whether NVDA speaks them, in a useful order
+  and at a useful length, and whether the longer second press is welcome or is
+  now too much to sit through, only a listening pass answers.
+
+- **The date at the top of a message is written out instead of read as digits.**
+  Opening a message, or hearing one read out with Space, started with the date
+  exactly as it was stored: a run of digits, dashes, a T, colons and a time zone
+  offset. It now follows the same date settings as every other date in the
+  application, so it reads as "July 26, 2026 at 2:30 PM", or numerically, or on
+  a twenty four hour clock, according to what you chose.
+
+  This covers the header block above a single message. The headings inside a
+  conversation still carry the stored date, and that is a separate fix.
+
+  **Still to be confirmed with a screen reader.**
+
 - **The first thing the application says now waits for a window that can carry
   it.** Wixen Mail opens by saying it is ready and saying where the cursor has
   landed. Both were said before the control that carries announcements existed,

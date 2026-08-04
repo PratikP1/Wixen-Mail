@@ -15,6 +15,7 @@
 //! text control, and navigate the text rather than a rendered page.
 
 use super::html_renderer::HtmlRenderer;
+use super::read_aloud::Reading;
 use super::ui_types::MessageItem;
 use crate::common::types::MessageBody;
 use crate::vendor::paperback::html_to_text::{HtmlSourceMode, HtmlToText};
@@ -57,7 +58,11 @@ pub struct ReaderDocument {
 /// Ordered by what someone needs first. Subject, then who it is from, then when,
 /// then the rest. Empty fields are dropped rather than read as a label with
 /// nothing after it.
-fn headers(message: &MessageItem) -> String {
+///
+/// The date is written the way the reader asked for it, the same as a date in
+/// a list column or in any other reading. It used to be the stored value: a run
+/// of digits, dashes, a T, colons and an offset, at the top of every message.
+fn headers(message: &MessageItem, out: Reading) -> String {
     let mut lines = Vec::new();
     lines.push(format!(
         "Subject: {}",
@@ -74,7 +79,10 @@ fn headers(message: &MessageItem) -> String {
     if !message.cc.trim().is_empty() {
         lines.push(format!("Cc: {}", message.cc.trim()));
     }
-    lines.push(format!("Date: {}", message.date.trim()));
+    let when = out.date(&message.date);
+    if !when.trim().is_empty() {
+        lines.push(format!("Date: {when}"));
+    }
     if message.has_attachments {
         let names: Vec<&str> = message
             .attachments
@@ -229,13 +237,17 @@ fn body_text(body: &MessageBody) -> (String, Vec<Landmark>) {
 }
 
 /// Compose one message for the reader.
-pub fn single_message(message: &MessageItem, body: &MessageBody) -> ReaderDocument {
+///
+/// The reading settings are asked for rather than defaulted, because a caller
+/// that forgot them would quietly get machine defaults and a date written a way
+/// nobody chose.
+pub fn single_message(message: &MessageItem, body: &MessageBody, out: Reading) -> ReaderDocument {
     let title = if message.subject.trim().is_empty() {
         "No subject".to_string()
     } else {
         message.subject.trim().to_string()
     };
-    let header_block = headers(message);
+    let header_block = headers(message, out);
     let (body, body_landmarks) = body_text(body);
     // Where the body starts, so the headings inside it land in the right place
     // now that the header block sits above them.
@@ -986,7 +998,28 @@ Analytical Engines",
 
     /// [`single_message`] for a test that has a bare string.
     fn read(message: &MessageItem, body: &str) -> ReaderDocument {
-        single_message(message, &as_guessed(body))
+        single_message(message, &as_guessed(body), aloud())
+    }
+
+    /// Fixed rather than read from the machine, so these read the same
+    /// wherever they run. The same shape the read-aloud tests use.
+    pub(super) fn aloud() -> Reading {
+        use crate::presentation::date_display::{
+            Clock, DateOrder, DateSettings, DateStyle, DateWording,
+        };
+        use chrono::TimeZone;
+        Reading {
+            dates: DateSettings {
+                style: DateStyle::Absolute,
+                order: DateOrder::MonthFirst,
+                wording: DateWording::Verbal,
+                clock: Clock::TwelveHour,
+            },
+            now: chrono::Local
+                .with_ymd_and_hms(2026, 7, 26, 12, 0, 0)
+                .single()
+                .expect("a real moment"),
+        }
     }
 
     fn thread_of(bodies: &[(&str, usize)]) -> Vec<ConversationPart> {
@@ -1486,6 +1519,53 @@ Analytical Engines",
     }
 
     #[test]
+    fn test_a_composed_message_carries_its_date_in_the_wording_the_reader_asked_for() {
+        // The stored value is a run of digits, dashes and colons, and it sits
+        // at the top of every message. This pins the words the composition
+        // asks for; whether they are heard is a screen reader's answer.
+        //
+        // Stored without an offset on purpose. A value with one is converted
+        // to local time, so an expected clock reading would pass or fail by
+        // the machine's timezone.
+        let mut m = message();
+        m.date = "2026-07-26 14:30:00".to_string();
+        let doc = read(&m, "Body");
+
+        assert!(
+            doc.text.contains("Date: July 26, 2026 at 2:30 PM"),
+            "{}",
+            doc.text
+        );
+        assert!(!doc.text.contains("2026-07-26 14:30"), "{}", doc.text);
+    }
+
+    #[test]
+    fn test_a_stored_date_with_a_zone_offset_is_not_read_back_as_it_was_stored() {
+        // What sync writes. The clock reading depends on where the machine is,
+        // so only the absence of the stored form is asserted here.
+        let mut m = message();
+        m.date = "2026-01-01T00:00:00+00:00".to_string();
+        let doc = read(&m, "Body");
+
+        let line = doc
+            .text
+            .lines()
+            .find(|line| line.starts_with("Date: "))
+            .expect("a date line")
+            .trim_start_matches("Date: ")
+            .to_string();
+
+        assert!(!line.contains("2026-01-01T00:00:00"), "{line}");
+        // Which day it lands on depends on where the machine is, so what is
+        // pinned is that the date is written in words rather than read back as
+        // the run of digits the database happens to hold.
+        assert!(
+            line.chars().any(|c| c.is_ascii_alphabetic()),
+            "the date is still a run of digits: {line}"
+        );
+    }
+
+    #[test]
     fn test_a_message_with_no_subject_is_titled_rather_than_left_blank() {
         // A blank tab label is a tab nobody can identify or return to.
         let mut m = message();
@@ -1651,6 +1731,7 @@ mod warning_tests {
         let document = single_message(
             &message(Safety::Ordinary),
             &MessageBody::Html("<h1>Pricing</h1><p>It went up.</p>".into()),
+            super::tests::aloud(),
         );
 
         let spoken = read_whole(&document);
@@ -1668,6 +1749,7 @@ mod warning_tests {
         let document = single_message(
             &message(Safety::Ordinary),
             &MessageBody::Html("<h1>Pricing</h1><p>It went up.</p>".into()),
+            super::tests::aloud(),
         );
 
         let spoken = read_whole(&document);
@@ -1684,6 +1766,7 @@ mod warning_tests {
         let document = single_message(
             &message(Safety::Ordinary),
             &MessageBody::Plain("Hello.\n\nSee you Tuesday.".into()),
+            super::tests::aloud(),
         );
 
         let spoken = read_whole(&document);
@@ -1700,6 +1783,7 @@ mod warning_tests {
         let document = single_message(
             &message(Safety::Ordinary),
             &MessageBody::Plain("Body".into()),
+            super::tests::aloud(),
         );
 
         assert!(
@@ -1716,6 +1800,7 @@ mod warning_tests {
         let document = single_message(
             &message(Safety::Phishing),
             &MessageBody::Plain("Click here".into()),
+            super::tests::aloud(),
         );
 
         assert!(
@@ -1733,6 +1818,7 @@ mod warning_tests {
         let document = single_message(
             &message(Safety::Ordinary),
             &MessageBody::Plain("Hello".into()),
+            super::tests::aloud(),
         );
 
         assert_eq!(document.warning, None);
@@ -1743,6 +1829,7 @@ mod warning_tests {
         let document = single_message(
             &message(Safety::Phishing),
             &MessageBody::Plain("Click here".into()),
+            super::tests::aloud(),
         );
 
         let warning = document.warning.expect("should warn");
@@ -1756,9 +1843,13 @@ mod warning_tests {
         let mut flagged = message(Safety::Spam);
         flagged.safety_reasons = vec!["Your mail provider put it in the junk folder.".to_string()];
 
-        let warning = single_message(&flagged, &MessageBody::Plain("Buy things".into()))
-            .warning
-            .expect("should warn");
+        let warning = single_message(
+            &flagged,
+            &MessageBody::Plain("Buy things".into()),
+            super::tests::aloud(),
+        )
+        .warning
+        .expect("should warn");
 
         assert!(warning.contains("junk folder"), "got {warning}");
     }
@@ -1768,6 +1859,7 @@ mod warning_tests {
         let document = single_message(
             &message(Safety::Spam),
             &MessageBody::Plain("Buy things".into()),
+            super::tests::aloud(),
         );
 
         let warning = document.warning.expect("should warn");

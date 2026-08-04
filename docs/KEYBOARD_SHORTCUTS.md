@@ -45,7 +45,7 @@ answer that without leaving the list.
 | Action | Shortcut | Description |
 |--------|----------|-------------|
 | Read the short form | `Space` | Subject, sender, and snippet in mail; the equivalent line in every other module |
-| Read the whole item | `Space` again | Adds recipients, dates, flags, attachments, and any description the record holds |
+| Read the whole item | `Space` again | Adds recipients, dates, flags, labels, attachments, and any description the record holds. In mail it reads the message itself once that has been downloaded |
 | Read the whole item outright | `Shift+Space` | The full reading without counting presses |
 
 Pressing `Space` a third time goes back to the short form. Moving to another

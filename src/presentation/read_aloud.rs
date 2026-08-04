@@ -134,7 +134,11 @@ pub struct Reading {
 
 impl Reading {
     /// One stored date, written the way this reader asked for it.
-    fn date(&self, stored: &str) -> String {
+    ///
+    /// Reachable by the reader window's composition too, so a date at the top
+    /// of a message and the same date in a list column are written one way
+    /// rather than two.
+    pub(super) fn date(&self, stored: &str) -> String {
         crate::presentation::date_display::spoken(stored, self.now, self.dates)
     }
 }
@@ -205,6 +209,57 @@ pub(super) fn status_worth_saying(status: &str) -> &str {
     }
 }
 
+/// What a reading can honestly say about what is attached.
+///
+/// A list row knows whether anything is attached and not what, because a folder
+/// listing that loaded the parts would do a query per row. So a row says the
+/// same three words the Attachment column says, and one fact is called one
+/// thing wherever it is met (WCAG 3.2.4). Only a reading that was given the
+/// parts counts them, and then the count is real.
+///
+/// This used to be `len().max(1)` on a list whose length is always zero, so
+/// every message with anything attached was read as "1 attachments": the wrong
+/// number and the wrong plural in the same three words.
+fn attachment_wording(has_attachments: bool, named: usize) -> String {
+    match named {
+        0 if has_attachments => "Has attachment".to_string(),
+        0 => String::new(),
+        1 => "1 attachment".to_string(),
+        many => format!("{many} attachments"),
+    }
+}
+
+/// What a message's state is worth saying, beyond what the reading already has.
+///
+/// Whether it is unread, whether it is flagged, and the labels somebody put on
+/// it. Shared so the two forms of the fuller reading describe one message the
+/// same way: a message read from the row and the same message read with its
+/// body must not be two different messages to anyone listening.
+///
+/// Labels are the reason this is separate rather than inline. They are on no
+/// column and in no header block, so this is the only place a label reaches
+/// anybody who cannot see the row it sits on.
+///
+/// Empty when there is nothing to say, so the join above drops it rather than
+/// leaving a gap.
+pub(super) fn state_worth_saying(message: &MessageItem) -> String {
+    let flags = [
+        (!message.read).then_some("unread"),
+        message.starred.then_some("flagged"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(", ");
+    spoken(&[
+        ("", &flags),
+        (
+            "Labels",
+            &crate::application::tagging::joined(&message.labels),
+        ),
+    ])
+}
+
 impl ReadAloud for MessageItem {
     fn read_id(&self) -> String {
         self.message_id.to_string()
@@ -220,19 +275,8 @@ impl ReadAloud for MessageItem {
     }
 
     fn read_full(&self, out: Reading) -> String {
-        let attachments = if self.has_attachments {
-            format!("{} attachments", self.attachments.len().max(1))
-        } else {
-            String::new()
-        };
-        let flags = [
-            (!self.read).then_some("unread"),
-            self.starred.then_some("flagged"),
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>()
-        .join(", ");
+        let attachments = attachment_wording(self.has_attachments, self.attachments.len());
+        let state = state_worth_saying(self);
 
         spoken(&[
             (
@@ -247,10 +291,9 @@ impl ReadAloud for MessageItem {
             ("To", &self.to),
             ("Cc", &self.cc),
             ("Received", &out.date(&self.date)),
-            ("", &flags),
             // Said, because a label is not visible from the row it is on and a
             // colour swatch is not a thing everybody can read.
-            ("Labels", &crate::application::tagging::joined(&self.labels)),
+            ("", &state),
             ("", &attachments),
             ("", &self.snippet),
         ])
@@ -449,6 +492,14 @@ mod tests {
         }
     }
 
+    fn attachment(filename: &str) -> crate::presentation::ui_types::AttachmentItem {
+        crate::presentation::ui_types::AttachmentItem {
+            filename: filename.to_string(),
+            mime_type: "application/octet-stream".to_string(),
+            size: 1024,
+        }
+    }
+
     fn contact() -> ContactItem {
         ContactItem {
             id: "c1".to_string(),
@@ -569,13 +620,58 @@ mod tests {
 
     #[test]
     fn test_a_full_message_reading_carries_what_the_columns_hide() {
-        let full = message().read_full(aloud());
+        // The words this reading asks to have said, not proof anybody hears
+        // them. This is the reading the mail list falls back to when a
+        // message's body has not been downloaded.
+        let mut m = message();
+        m.labels = vec!["Work".to_string()];
+        let full = m.read_full(aloud());
         assert!(full.contains("To: me@example.com"));
         assert!(full.contains("unread, flagged"));
-        assert!(full.contains("attachments"));
+        // Labels are on no column and in no header block, so this reading is
+        // the only place they reach somebody who cannot see the row.
+        assert!(full.contains("Labels: Work"), "{full}");
+        // What the row knows, and no count it does not have.
+        assert!(full.contains("Has attachment"), "{full}");
+        assert!(!full.contains("1 attachments"), "{full}");
         // And nothing empty leaks in as a stutter.
         assert!(!full.contains(". ."), "empty field left a gap: {}", full);
         assert!(!full.contains("Cc:"), "an empty cc was read: {}", full);
+    }
+
+    #[test]
+    fn test_a_row_that_only_knows_something_is_attached_does_not_claim_a_count() {
+        // A list row carries whether anything is attached, not what: a folder
+        // listing that loaded the parts would do a query per row. So the
+        // reading may only say that much, in the same words the Attachment
+        // column uses. This pins the words this code asks to have said; only a
+        // screen reader says whether they are heard.
+        let only_that_there_is_one = message().read_full(aloud());
+        assert!(
+            only_that_there_is_one.contains("Has attachment"),
+            "{only_that_there_is_one}"
+        );
+        assert!(
+            !only_that_there_is_one.contains("1 attachments"),
+            "a count the row does not have: {only_that_there_is_one}"
+        );
+
+        let mut one = message();
+        one.attachments = vec![attachment("invoice.pdf")];
+        let one = one.read_full(aloud());
+        assert!(one.contains("1 attachment"), "{one}");
+        assert!(!one.contains("1 attachments"), "wrong plural: {one}");
+
+        let mut two = message();
+        two.attachments = vec![attachment("invoice.pdf"), attachment("notes.txt")];
+        assert!(two.read_full(aloud()).contains("2 attachments"));
+    }
+
+    #[test]
+    fn test_a_message_with_nothing_attached_says_nothing_about_attachments() {
+        let mut bare = message();
+        bare.has_attachments = false;
+        assert!(!bare.read_full(aloud()).contains("attachment"));
     }
 
     #[test]

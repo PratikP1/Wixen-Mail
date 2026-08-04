@@ -677,15 +677,10 @@ impl WxMailApp {
             let stored_config = crate::data::config::ConfigManager::load_stored()
                 .map(|mgr| mgr.app_config().clone())
                 .ok();
-            let date_settings = match &stored_config {
-                Some(cfg) => date_display::DateSettings {
-                    style: date_display::DateStyle::from_setting(&cfg.date_style),
-                    order: date_display::DateOrder::from_setting(&cfg.date_order),
-                    wording: date_display::DateWording::from_setting(&cfg.date_wording),
-                    clock: date_display::Clock::from_setting(&cfg.clock_hours),
-                },
-                None => date_display::DateSettings::default(),
-            };
+            let date_settings = stored_config
+                .as_ref()
+                .map(date_settings_from)
+                .unwrap_or_default();
             // The hours somebody actually works, so an event outside them
             // says so. Read once here rather than per painted cell.
             let working_day = stored_config
@@ -4367,6 +4362,33 @@ fn raise_what_is_due(
     }
 }
 
+/// The stored date choices, as every reading wants them.
+///
+/// One mapping rather than one per place that needs it, so a date at the top of
+/// an opened message and the same date in a list column cannot come to disagree
+/// about which order the day and the month go in.
+fn date_settings_from(config: &crate::data::config::AppConfig) -> date_display::DateSettings {
+    date_display::DateSettings {
+        style: date_display::DateStyle::from_setting(&config.date_style),
+        order: date_display::DateOrder::from_setting(&config.date_order),
+        wording: date_display::DateWording::from_setting(&config.date_wording),
+        clock: date_display::Clock::from_setting(&config.clock_hours),
+    }
+}
+
+/// The reading settings for a surface that has to load them itself.
+///
+/// `now` is taken once here, because one reading is one utterance and every
+/// date in it should be measured from the same instant.
+fn reading_from_settings() -> read_aloud::Reading {
+    read_aloud::Reading {
+        dates: crate::data::config::ConfigManager::load_stored()
+            .map(|mgr| date_settings_from(mgr.app_config()))
+            .unwrap_or_default(),
+        now: chrono::Local::now(),
+    }
+}
+
 /// What Space says about the row under the cursor.
 ///
 /// The row and, when it is one, how big the conversation is. The count comes
@@ -4377,12 +4399,17 @@ fn read_the_row(
     in_conversation: Option<usize>,
     out: read_aloud::Reading,
 ) -> String {
+    with_conversation_count(in_conversation, &message.read_short(out))
+}
+
+/// How big the conversation is, said before the reading it belongs to.
+///
+/// First because it changes what the rest means, and in one place because the
+/// three readings that carry it must say it the same way.
+fn with_conversation_count(in_conversation: Option<usize>, reading: &str) -> String {
     match in_conversation {
-        Some(count) => format!(
-            "Conversation, {count} messages. {}",
-            message.read_short(out)
-        ),
-        None => message.read_short(out),
+        Some(count) => format!("Conversation, {count} messages. {reading}"),
+        None => reading.to_string(),
     }
 }
 
@@ -4394,8 +4421,11 @@ fn read_the_row(
 /// which for a key whose whole purpose is reading without opening is the wrong
 /// side of the line.
 ///
-/// Falls back to the row when the body is not cached, because the alternative
-/// is silence on a key that just worked, and the row is what it used to say.
+/// When the body is not cached it reads the row in full instead: recipients,
+/// when it arrived, whether it is unread or flagged, and its labels. That is
+/// less than the message and it is more than the first press said, which is the
+/// point. It used to fall back to the short reading, so on any message that had
+/// not been downloaded the second press repeated the first word for word.
 fn read_the_whole_message(
     cache: &Option<Arc<MessageCache>>,
     message: &MessageItem,
@@ -4406,16 +4436,36 @@ fn read_the_whole_message(
         .as_ref()
         .and_then(|c| c.get_message_body(message.message_id).ok().flatten())
     else {
-        return read_the_row(message, in_conversation, out);
+        return with_conversation_count(in_conversation, &message.read_full(out));
     };
-    let document = reader_text::single_message(message, &body_as_written(Some(body)));
-    match in_conversation {
-        Some(count) => format!(
-            "Conversation, {count} messages. {}",
-            reader_text::read_whole(&document)
-        ),
-        None => reader_text::read_whole(&document),
-    }
+    whole_message_reading(message, &body_as_written(Some(body)), in_conversation, out)
+}
+
+/// The message itself, with the part of the row the message does not carry.
+///
+/// Pulled out of the lookup above so the composition can be tested without a
+/// database.
+///
+/// The state goes before the message rather than after it, because a reading
+/// somebody stops partway through has still said it. It sits after the
+/// conversation count and before anything a warning would lead with, which
+/// costs a warning about four words and keeps one message described the same
+/// way whether or not its body has been downloaded.
+fn whole_message_reading(
+    message: &MessageItem,
+    body: &MessageBody,
+    in_conversation: Option<usize>,
+    out: read_aloud::Reading,
+) -> String {
+    let document = reader_text::single_message(message, body, out);
+    let state = read_aloud::state_worth_saying(message);
+    let reading = reader_text::read_whole(&document);
+    let reading = if state.is_empty() {
+        reading
+    } else {
+        format!("{state}. {reading}")
+    };
+    with_conversation_count(in_conversation, &reading)
 }
 
 /// Read a module's records out of the cache and send them to the UI.
@@ -4938,9 +4988,18 @@ fn open_single_message(
     // has had its headings, links and tables taken out of it, and the person
     // most affected by that is the one who cannot see the layout those things
     // would otherwise stand in for.
-    let style = crate::data::config::ConfigManager::load_stored()
+    let stored = crate::data::config::ConfigManager::load_stored().ok();
+    let style = stored
+        .as_ref()
         .map(|mgr| Style::from_stored(&mgr.app_config().read_messages_as))
         .unwrap_or_default();
+    let out = read_aloud::Reading {
+        dates: stored
+            .as_ref()
+            .map(|mgr| date_settings_from(mgr.app_config()))
+            .unwrap_or_default(),
+        now: chrono::Local::now(),
+    };
 
     if style == Style::Formatted {
         let body = cache
@@ -4964,7 +5023,7 @@ fn open_single_message(
         return;
     }
     reader.on_closed(closed);
-    open_in_the_text_reader(reader, cache, message);
+    open_in_the_text_reader(reader, cache, message, out);
 }
 
 /// Open one message in the text control, whatever the setting says.
@@ -4974,6 +5033,7 @@ fn open_in_the_text_reader(
     reader: &Rc<wx_reader::ReaderWindow>,
     cache: &Option<Arc<MessageCache>>,
     message: &MessageItem,
+    out: read_aloud::Reading,
 ) {
     let body = cache
         .as_ref()
@@ -4984,7 +5044,7 @@ fn open_in_the_text_reader(
     // reader is the one place that needs them.
     let mut message = message.clone();
     message.attachments = attachments_of(cache, message.message_id);
-    reader.open(reader_text::single_message(&message, &body));
+    reader.open(reader_text::single_message(&message, &body, out));
 }
 
 /// The attachments recorded for one message, as the reader wants them.
@@ -5935,6 +5995,7 @@ fn open_for_scanning(
                      <a href=\"https://example.com/\">a link</a>.</p>"
                         .to_string(),
                 ),
+                reading_from_settings(),
             ));
             // Leaked on purpose: the window has to outlive this function or it
             // closes before the scan reaches it, and the process is about to be
@@ -9655,6 +9716,99 @@ mod tests {
             account_id: String::new(),
             labels: Vec::new(),
         }
+    }
+
+    /// Fixed rather than read from the machine, so these read the same
+    /// wherever they run.
+    fn aloud() -> crate::presentation::read_aloud::Reading {
+        use crate::presentation::date_display::{
+            Clock, DateOrder, DateSettings, DateStyle, DateWording,
+        };
+        use chrono::TimeZone;
+        crate::presentation::read_aloud::Reading {
+            dates: DateSettings {
+                style: DateStyle::Absolute,
+                order: DateOrder::MonthFirst,
+                wording: DateWording::Verbal,
+                clock: Clock::TwelveHour,
+            },
+            now: chrono::Local
+                .with_ymd_and_hms(2026, 7, 26, 12, 0, 0)
+                .single()
+                .expect("a real moment"),
+        }
+    }
+
+    #[test]
+    fn test_a_message_with_no_cached_body_still_has_more_to_carry_on_the_second_press() {
+        // Bodies are only stored once a message has been opened or synced, so
+        // on anything not yet downloaded the fuller reading used to return the
+        // short reading word for word: a key that did the same thing twice.
+        //
+        // WHAT THIS DOES NOT PIN: that pressing Space twice reaches this
+        // function at all. That binding is made while the window is being
+        // built, it needs a display and a running application, and no test
+        // here touches it. Nor does it say a screen reader utters any of it.
+        let mut m = a_message();
+        m.starred = true;
+        m.labels = vec!["Work".to_string()];
+
+        let short = super::read_the_row(&m, None, aloud());
+        // No cache at all, which is the branch a message with no stored body
+        // takes, and it needs no database to reach.
+        let fuller = super::read_the_whole_message(&None, &m, None, aloud());
+
+        assert_ne!(short, fuller, "the second press repeats the first: {short}");
+        assert!(fuller.contains("To: me@example.com"), "{fuller}");
+        assert!(fuller.contains("Labels: Work"), "{fuller}");
+        assert!(fuller.contains("unread, flagged"), "{fuller}");
+    }
+
+    #[test]
+    fn test_a_downloaded_message_is_described_the_same_way_as_one_that_is_not() {
+        // The two halves of the second press. A message whose body is stored
+        // reads the message; one whose body is not reads the row in full. If
+        // only the second carried the labels and the flags, the same message
+        // would be two different messages depending on whether it happened to
+        // have been downloaded. Words asked for, not words heard.
+        let mut m = a_message();
+        m.starred = true;
+        m.labels = vec!["Work".to_string()];
+
+        let downloaded = super::whole_message_reading(
+            &m,
+            &crate::common::types::MessageBody::Plain("The numbers are attached.".to_string()),
+            None,
+            aloud(),
+        );
+
+        assert!(downloaded.contains("Labels: Work"), "{downloaded}");
+        assert!(downloaded.contains("unread, flagged"), "{downloaded}");
+        assert!(
+            downloaded.contains("The numbers are attached."),
+            "{downloaded}"
+        );
+    }
+
+    #[test]
+    fn test_the_stored_date_choices_are_carried_into_a_reading() {
+        // Explicit stored values only, never "auto": the automatic settings
+        // fall through to the machine's locale, and a test that read those
+        // would pass or fail by which machine ran it.
+        let config = crate::data::config::AppConfig {
+            date_style: "absolute".to_string(),
+            date_order: "day_first".to_string(),
+            date_wording: "numeric".to_string(),
+            clock_hours: "24".to_string(),
+            ..Default::default()
+        };
+
+        let dates = super::date_settings_from(&config);
+
+        assert_eq!(
+            crate::presentation::date_display::spoken("2026-07-26 14:30:00", aloud().now, dates),
+            "26/07/2026 at 14:30"
+        );
     }
 
     #[test]
