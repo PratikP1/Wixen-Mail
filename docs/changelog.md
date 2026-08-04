@@ -192,6 +192,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A reminder going off now has its own sound instead of borrowing the one for
+  new mail.** A reminder coming due played the exact tone that means a message
+  arrived, so the sound sent people to an empty inbox while the reminder sat
+  behind whatever they were working in. The two are different facts and they
+  now sound different: the reminder tone is higher than anything else in the
+  set and more than twice as long as either arrival sound.
+
+  It also had no settings of its own. Because it borrowed the new mail sound,
+  it followed the new mail settings, so anyone who had switched that sound off
+  had silently switched reminders off too, with nothing named "reminder"
+  anywhere to look at and work out why. Reminders are now their own event and
+  are switched on and off on their own.
+
+  The window itself has not changed. It still opens, still says what is due and
+  when, and is still not switchable, because the window is the thing the sound
+  is only announcing.
+
+  **Still to be confirmed by listening:** the two tones are far apart as
+  numbers. Whether an ear separates them, at the volume and on the speakers
+  somebody actually has, and whether the reminder tone is comfortable rather
+  than piercing, is a listening pass and nothing here has settled it.
+
 - **Pressing Space twice on a message now tells you more than pressing it
   once.** The second press is meant to add the recipients, when it arrived,
   whether it is unread or flagged, and the labels on it. On any message whose

@@ -176,13 +176,19 @@ impl Accessibility {
     /// nobody who cannot hear it, and [`Self::signal`] adds a text channel
     /// rather than let one go out as a noise with no meaning.
     ///
-    /// This is the one exception and it is narrow. It is for events whose
-    /// written equivalent is already in the document, put there by something
-    /// better placed to say it. So far that is one event: a misspelled word,
-    /// which the browser engine marks with a real spelling annotation that
-    /// every screen reader reads as the caret crosses it. Routing that through
-    /// the announcement queue as well would speak a word over the top of the
-    /// screen reader echoing what was just typed.
+    /// This is the exception and it is narrow. It is for events whose written
+    /// equivalent is already there, put there by something better placed to
+    /// say it. So far that is two events. A misspelled word, which the browser
+    /// engine marks with a real spelling annotation that every screen reader
+    /// reads as the caret crosses it; routing that through the announcement
+    /// queue as well would speak a word over the top of the screen reader
+    /// echoing what was just typed. And a reminder coming due, where the
+    /// window that opens names what is due and when, and announces the same
+    /// sentence itself; adding this event's own words would put "Reminder"
+    /// in front of "Reminder: call the bank".
+    ///
+    /// A third one has to earn it the same way. An event whose written form
+    /// exists only here belongs in [`Self::signal`].
     ///
     /// Obeys the earcon channel setting like every other sound, so somebody who
     /// has sounds off never hears it.

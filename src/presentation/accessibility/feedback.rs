@@ -64,11 +64,23 @@ pub enum Event {
     /// because it names the word in place. What the sound adds is the moment:
     /// knowing at the end of the word rather than on the way back past it.
     MisspelledWord,
+    /// A reminder came due.
+    ///
+    /// The second event whose written equivalent is not this module's. The
+    /// reminder window says what is due and when, in the same sentence it
+    /// announces, and that names the reminder where "Reminder" alone would
+    /// not. So this goes out through `earcon` rather than `signal`, and the
+    /// window is the visible equivalent the sound needs.
+    ///
+    /// It has its own tone because it is its own fact. It used to borrow the
+    /// one for new mail, which meant a reminder sent people to an empty inbox,
+    /// and meant switching the new mail sound off switched reminders off too.
+    Reminder,
 }
 
 impl Event {
     /// Every event, so settings and tests can cover the whole set.
-    pub const ALL: [Event; 11] = [
+    pub const ALL: [Event; 12] = [
         Event::ThreadLanded,
         Event::EdgeOfList,
         Event::NewMail,
@@ -80,6 +92,7 @@ impl Event {
         Event::ActionRefused,
         Event::UnsafeMessage,
         Event::MisspelledWord,
+        Event::Reminder,
     ];
 
     /// The identifier used when preferences are stored.
@@ -96,6 +109,7 @@ impl Event {
             Event::ActionRefused => "action_refused",
             Event::UnsafeMessage => "unsafe_message",
             Event::MisspelledWord => "misspelled_word",
+            Event::Reminder => "reminder",
         }
     }
 
@@ -121,6 +135,7 @@ impl Event {
             Event::ActionRefused => "Not available",
             Event::UnsafeMessage => "Unsafe message",
             Event::MisspelledWord => "Misspelled word",
+            Event::Reminder => "Reminder",
         }
     }
 
@@ -153,7 +168,9 @@ impl Event {
             // message that is trying to deceive them, and an announcement that
             // waits its turn behind a sync notice arrives after they have
             // started reading it.
-            Event::SendFailed | Event::ConnectionLost | Event::UnsafeMessage => Priority::Urgent,
+            Event::SendFailed | Event::ConnectionLost | Event::UnsafeMessage | Event::Reminder => {
+                Priority::Urgent
+            }
             Event::ActionRefused | Event::ConnectionRestored => Priority::High,
             Event::NewMail | Event::MessageSent | Event::SyncComplete => Priority::Normal,
             Event::ThreadLanded | Event::EdgeOfList | Event::MisspelledWord => Priority::Low,
@@ -188,6 +205,21 @@ impl Event {
             // enough not to be mistaken for the two navigation ticks, which are
             // the only other sounds this brief.
             Event::MisspelledWord => Tone::new(380, 35),
+            // The highest in the set and more than twice the length of the two
+            // arrival sounds, which is what keeps it off new mail: a fourth
+            // above the higher of them, and 200 ms against their 90.
+            //
+            // Not lower: everything from 220 to 330 Hz is the failure family,
+            // and a reminder must not sound like a send that failed. Not
+            // higher: age-related hearing loss takes the top of the range
+            // first, and a reminder is the wrong event to put up there. Not
+            // longer: the sound is played on the thread that then builds the
+            // window, so its length is time the window is not appearing in.
+            //
+            // These are proposed numbers. Whether the two are tellable apart
+            // by ear is a listening pass, and the test beside this one is
+            // written as separation so that pass can move them.
+            Event::Reminder => Tone::new(1320, 200),
         }
     }
 }
@@ -246,6 +278,27 @@ impl Channel {
 
     fn from_key(key: &str) -> Option<Self> {
         Channel::ALL.into_iter().find(|c| c.key() == key)
+    }
+
+    /// The wording beside this channel's checkbox in Settings.
+    ///
+    /// Here rather than in the dialog so that a label and the channel it
+    /// switches cannot come apart. They used to be two arrays paired by
+    /// position, and the cost of them drifting is specific: somebody ticks
+    /// "Play a short sound for each event", the application switches their
+    /// speech off instead, and nothing says so, because the thing that would
+    /// say so is what was just switched off.
+    ///
+    /// The ampersand marks the keyboard accelerator, as everywhere else in the
+    /// dialog. The accessible name is derived from this by dropping it, rather
+    /// than written out a second time by hand.
+    pub fn setting_label(&self) -> &'static str {
+        match self {
+            Channel::Speech => "&Speak events through the screen reader",
+            Channel::Braille => "Send events to a &braille display",
+            Channel::Earcon => "Play a short &sound for each event",
+            Channel::Visual => "Show events in the s&tatus bar",
+        }
     }
 }
 
@@ -779,6 +832,83 @@ mod tests {
                 event
             );
             seen.push(tone);
+        }
+    }
+
+    #[test]
+    fn test_the_reminder_tone_is_separated_from_new_mail_in_both_pitch_and_length() {
+        // A reminder used to borrow the new mail tone, so the two facts made
+        // one sound. Written as separation rather than as fixed numbers, so a
+        // listening pass can move the reminder inside the envelope without
+        // fighting a test.
+        //
+        // What this checks is that the numbers are far apart. Whether an ear
+        // separates them, at the volume and on the speakers somebody actually
+        // has, is a listening question and no test here settles it.
+        let reminder = Event::Reminder.tone();
+        for arrival in [Event::NewMail, Event::MessageSent] {
+            let other = arrival.tone();
+            let (high, low) = if reminder.hertz > other.hertz {
+                (reminder.hertz, other.hertz)
+            } else {
+                (other.hertz, reminder.hertz)
+            };
+            assert!(
+                high * 10 >= low * 13,
+                "{:?} at {} Hz sits too close to the reminder at {} Hz",
+                arrival,
+                other.hertz,
+                reminder.hertz
+            );
+            assert!(
+                reminder.millis.abs_diff(other.millis) >= 80,
+                "{:?} at {} ms is too near the reminder's {} ms",
+                arrival,
+                other.millis,
+                reminder.millis
+            );
+        }
+    }
+
+    #[test]
+    fn test_each_channel_carries_its_own_wording() {
+        // The wording lives on the channel so that the tick somebody puts on a
+        // line cannot land on a different channel. Before this, the labels sat
+        // in one array in the settings dialog and the channels in another, and
+        // the only thing pairing them was that both happened to be written in
+        // the same order.
+        //
+        // The answers are written out rather than asked of the code, because a
+        // test that asks the code under test for its own expected answer
+        // passes whatever that answer is. That mistake is already recorded
+        // higher up this file.
+        //
+        // The marker is taken out here with a plain replace rather than by
+        // calling the code that strips it, so this test does not depend on
+        // that code being right. It sits in the middle of a word for the
+        // status line, which is why it has to come out at all.
+        let wording = |channel: Channel| channel.setting_label().replace('&', "");
+        assert!(wording(Channel::Speech).contains("Speak events"));
+        assert!(wording(Channel::Braille).contains("braille display"));
+        assert!(wording(Channel::Earcon).contains("short sound"));
+        assert!(wording(Channel::Visual).contains("status bar"));
+    }
+
+    #[test]
+    fn test_the_name_passed_for_a_channel_checkbox_drops_the_accelerator_marker() {
+        // "Passed", not "announced". `set_accessible_name` writes MSAA, and
+        // this project has already shipped sixteen names that were set and
+        // never heard, so nothing here claims anything downstream of that
+        // call. What this checks is the string handed to it.
+        for channel in Channel::ALL {
+            let name =
+                crate::presentation::accessibility::names::name_from_label(channel.setting_label());
+            assert!(!name.is_empty(), "{:?} has no name to pass", channel);
+            assert!(
+                !name.contains('&'),
+                "{:?} would be named with the accelerator marker still in it",
+                channel
+            );
         }
     }
 

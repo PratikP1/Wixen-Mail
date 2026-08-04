@@ -11,7 +11,7 @@ use crate::application::receipts::Policy;
 use crate::data::config::AppConfig;
 use crate::presentation::accessibility::feedback::{Channel, FeedbackSettings};
 use crate::presentation::accessibility::names::{
-    set_accessible_name, set_accessible_name_and_description,
+    name_from_label, set_accessible_name, set_accessible_name_and_description,
 };
 use crate::service::spellcheck::available_languages;
 use wxdragon::prelude::*;
@@ -70,8 +70,9 @@ struct SettingsWidgets {
     log_level: Choice,
     download_folder: TextCtrl,
     check_links_with_google: CheckBox,
-    // Feedback channels, one checkbox per channel in Channel::ALL order.
-    feedback: Vec<CheckBox>,
+    // Feedback channels: each box carries the channel it switches, so a tick
+    // cannot be read back against a different one.
+    feedback: Vec<(Channel, CheckBox)>,
 }
 
 /// Helper: unwrap get_selection() returning 0 if None.
@@ -1188,7 +1189,7 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, C
 /// Nothing here can produce a sound-only application by accident: the routing
 /// adds a written equivalent unless every text channel is off, and the wording
 /// says so rather than leaving it to be discovered.
-fn build_feedback_tab(panel: &Panel, config: &AppConfig) -> Vec<CheckBox> {
+fn build_feedback_tab(panel: &Panel, config: &AppConfig) -> Vec<(Channel, CheckBox)> {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
     let settings = FeedbackSettings::from_stored(&config.feedback_channels);
 
@@ -1202,36 +1203,17 @@ fn build_feedback_tab(panel: &Panel, config: &AppConfig) -> Vec<CheckBox> {
     sizer.add(&intro, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     let sec = section(panel, "Channels");
-    let descriptions = [
-        (
-            Channel::Speech,
-            "&Speak events through the screen reader",
-            "Speak events through the screen reader",
-        ),
-        (
-            Channel::Braille,
-            "Send events to a &braille display",
-            "Send events to a braille display",
-        ),
-        (
-            Channel::Earcon,
-            "Play a short &sound for each event",
-            "Play a short sound for each event",
-        ),
-        (
-            Channel::Visual,
-            "Show events in the s&tatus bar",
-            "Show events in the status bar",
-        ),
-    ];
-
+    // Each box carries the channel it switches. The wording comes off the
+    // channel too, so there is no second list to fall out of step with this
+    // one and no position to pair by.
     let mut boxes = Vec::new();
-    for (channel, label, name) in descriptions {
+    for channel in Channel::ALL {
+        let label = channel.setting_label();
         let cb = CheckBox::builder(panel).with_label(label).build();
-        set_accessible_name(&cb, name);
+        set_accessible_name(&cb, &name_from_label(label));
         cb.set_value(settings.is_channel_enabled(channel));
         sec.add(&cb, 0, SizerFlag::All, 4);
-        boxes.push(cb);
+        boxes.push((channel, cb));
     }
     sizer.add_sizer(&sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
@@ -1256,8 +1238,8 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     // Feedback channels. The per-event overrides in the stored value are
     // preserved: this tab only decides which channels are on at all.
     let mut feedback = FeedbackSettings::from_stored(&base.feedback_channels);
-    for (channel, cb) in Channel::ALL.into_iter().zip(w.feedback.iter()) {
-        feedback.set_channel_enabled(channel, cb.get_value());
+    for (channel, cb) in &w.feedback {
+        feedback.set_channel_enabled(*channel, cb.get_value());
     }
     cfg.feedback_channels = feedback.to_stored();
 

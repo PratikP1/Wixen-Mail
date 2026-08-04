@@ -25,6 +25,14 @@ pub enum Answer {
     Done,
 }
 
+/// The event this window sounds when a reminder goes off.
+///
+/// Pulled out of `raise` so a test can read it. `raise` needs a display and a
+/// running application, so which event it asks for was a decision nothing
+/// could check, and it was wrong: it asked for the one that means new mail.
+pub(crate) const ALERT_EVENT: crate::presentation::accessibility::feedback::Event =
+    crate::presentation::accessibility::feedback::Event::Reminder;
+
 const ID_SNOOZE: Id = ID_HIGHEST + 401;
 const ID_DONE: Id = ID_HIGHEST + 402;
 const ID_DISMISS: Id = ID_HIGHEST + 403;
@@ -49,7 +57,7 @@ pub fn raise(
 
     // Before the window, so it arrives with the window rather than after
     // somebody has already started reading it.
-    let _ = a11y.earcon(crate::presentation::accessibility::feedback::Event::NewMail);
+    let _ = a11y.earcon(ALERT_EVENT);
     let _ = a11y.announce(
         said,
         crate::presentation::accessibility::announcements::Priority::Urgent,
@@ -138,5 +146,25 @@ pub fn raise(
         // session. Treating a closed window as a snooze would bring it back at
         // somebody who had just decided they were finished with it.
         _ => Answer::Dismissed,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::presentation::accessibility::feedback::Event;
+
+    #[test]
+    fn test_the_reminder_window_asks_for_the_reminder_event_not_new_mail() {
+        // This pins which event the window ASKS for, and nothing beyond that.
+        // No test here plays a tone, hears one, or can tell you whether the
+        // two are tellable apart at somebody's speakers. That is a listening
+        // pass, not an assertion.
+        //
+        // The decision is pulled out of `raise` into a constant precisely so a
+        // test can read it: `raise` needs a display and a running application,
+        // so nothing inside it is reachable from here.
+        assert_eq!(ALERT_EVENT, Event::Reminder);
+        assert_ne!(ALERT_EVENT.tone(), Event::NewMail.tone());
     }
 }
