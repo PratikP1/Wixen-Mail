@@ -1,24 +1,35 @@
 //! Contact, contact group, and vCard persistence operations
 
-use super::{ContactEntry, ContactGroup, MessageCache};
+use super::{AddressBook, ContactEntry, ContactGroup, MessageCache, ProviderIdentity};
 use crate::common::{Error, Result};
 use rusqlite::params;
+use std::collections::HashMap;
 
 impl MessageCache {
-    /// Save or update a contact
+    /// Save or update a contact.
+    ///
+    /// Keyed by the contact's own identifier, because nothing else about a
+    /// contact is stable: an address changes, an address is absent, and one
+    /// person can hold several. The address books that know the contact are
+    /// written in the same transaction, so a contact and what each address
+    /// book calls it never disagree.
     pub fn save_contact(&self, contact: &ContactEntry) -> Result<()> {
         let now = chrono::Utc::now().to_rfc3339();
-        self.conn.execute(
+        let saving = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
+        saving.execute(
             "INSERT INTO contacts
-             (id, account_id, name, email, provider_contact_id, phone, company, job_title, website, address, birthday,
+             (id, account_id, name, email, phone, company, job_title, website, address, birthday,
               avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at, updated_at,
               nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json)
-             VALUES (COALESCE((SELECT id FROM contacts WHERE account_id = ?2 AND email = ?4), ?1), ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
-                    COALESCE((SELECT created_at FROM contacts WHERE account_id = ?2 AND email = ?4), ?19), ?20,
-                    ?21, ?22, ?23, ?24, ?25, ?26, ?27)
-             ON CONFLICT(account_id, email) DO UPDATE SET
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19,
+                    ?20, ?21, ?22, ?23, ?24, ?25, ?26)
+             ON CONFLICT(id) DO UPDATE SET
+                account_id = excluded.account_id,
                 name = excluded.name,
-                provider_contact_id = excluded.provider_contact_id,
+                email = excluded.email,
                 phone = excluded.phone,
                 company = excluded.company,
                 job_title = excluded.job_title,
@@ -42,7 +53,7 @@ impl MessageCache {
                 custom_fields_json = excluded.custom_fields_json",
             params![
                 &contact.id, &contact.account_id, &contact.name, &contact.email,
-                &contact.provider_contact_id, &contact.phone, &contact.company,
+                &contact.phone, &contact.company,
                 &contact.job_title, &contact.website, &contact.address, &contact.birthday,
                 &contact.avatar_url, &contact.avatar_data_base64, &contact.source_provider,
                 &contact.last_synced_at, &contact.vcard_raw, &contact.notes,
@@ -52,13 +63,120 @@ impl MessageCache {
                 &contact.custom_fields_json,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
+
+        saving
+            .execute(
+                "DELETE FROM contact_identities WHERE contact_id = ?1",
+                params![&contact.id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
+        for identity in &contact.known_to {
+            saving
+                .execute(
+                    "INSERT INTO contact_identities
+                     (contact_id, account_id, address_book, provider_contact_id)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        &contact.id,
+                        &contact.account_id,
+                        identity.address_book.as_stored(),
+                        &identity.provider_contact_id
+                    ],
+                )
+                .map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
+        }
+        saving
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
         Ok(())
+    }
+
+    /// Which contact an account already holds at this address, if any.
+    ///
+    /// Nothing for an empty address, so two contacts with only a phone number
+    /// never merge into one another.
+    fn contact_id_holding(&self, account_id: &str, email: &str) -> Result<Option<String>> {
+        if email.is_empty() {
+            return Ok(None);
+        }
+        self.conn
+            .query_row(
+                "SELECT id FROM contacts WHERE account_id = ?1 AND email = ?2 LIMIT 1",
+                params![account_id, email],
+                |row| row.get::<_, String>(0),
+            )
+            .map(Some)
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                other => Err(Error::Other(format!(
+                    "Failed to look a contact up by address: {}",
+                    other
+                ))),
+            })
+    }
+
+    /// Every address book identity in an account, by contact.
+    ///
+    /// One query for the whole account rather than one per contact: a sync
+    /// reads the contacts once per remote contact already, and a query per
+    /// contact inside that would make a sync of a large address book crawl.
+    fn identities_for_account(
+        &self,
+        account_id: &str,
+    ) -> Result<HashMap<String, Vec<ProviderIdentity>>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT contact_id, address_book, provider_contact_id
+                 FROM contact_identities WHERE account_id = ?1 ORDER BY address_book",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare identity query: {}", e)))?;
+
+        let rows = stmt
+            .query_map(params![account_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|e| Error::Other(format!("Failed to query contact identities: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect contact identities: {}", e)))?;
+
+        let mut by_contact: HashMap<String, Vec<ProviderIdentity>> = HashMap::new();
+        for (contact_id, address_book, provider_contact_id) in rows {
+            by_contact
+                .entry(contact_id)
+                .or_default()
+                .push(ProviderIdentity {
+                    address_book: AddressBook::from_stored(&address_book),
+                    provider_contact_id,
+                });
+        }
+        Ok(by_contact)
+    }
+
+    /// Hand each contact the address books that know it.
+    fn with_their_address_books(
+        &self,
+        account_id: &str,
+        contacts: Vec<ContactEntry>,
+    ) -> Result<Vec<ContactEntry>> {
+        let mut identities = self.identities_for_account(account_id)?;
+        Ok(contacts
+            .into_iter()
+            .map(|mut contact| {
+                contact.known_to = identities.remove(&contact.id).unwrap_or_default();
+                contact
+            })
+            .collect())
     }
 
     /// Load all contacts for an account
     pub fn get_contacts_for_account(&self, account_id: &str) -> Result<Vec<ContactEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, name, email, provider_contact_id, phone, company, job_title, website, address, birthday,
+            "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
                     avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
                     nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json
              FROM contacts
@@ -67,40 +185,43 @@ impl MessageCache {
         ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
 
         let contacts = stmt
-            .query_map(params![account_id], |row| {
-                Ok(ContactEntry {
-                    id: row.get(0)?,
-                    account_id: row.get(1)?,
-                    name: row.get(2)?,
-                    email: row.get(3)?,
-                    provider_contact_id: row.get(4)?,
-                    phone: row.get(5)?,
-                    company: row.get(6)?,
-                    job_title: row.get(7)?,
-                    website: row.get(8)?,
-                    address: row.get(9)?,
-                    birthday: row.get(10)?,
-                    avatar_url: row.get(11)?,
-                    avatar_data_base64: row.get(12)?,
-                    source_provider: row.get(13)?,
-                    last_synced_at: row.get(14)?,
-                    vcard_raw: row.get(15)?,
-                    notes: row.get(16)?,
-                    favorite: row.get(17)?,
-                    created_at: row.get(18)?,
-                    nickname: row.get(19)?,
-                    department: row.get(20)?,
-                    relationship: row.get(21)?,
-                    emails_json: row.get(22)?,
-                    phones_json: row.get(23)?,
-                    addresses_json: row.get(24)?,
-                    custom_fields_json: row.get(25)?,
-                })
-            })
+            .query_map(params![account_id], Self::contact_from_row)
             .map_err(|e| Error::Other(format!("Failed to query contacts: {}", e)))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect contacts: {}", e)))?;
-        Ok(contacts)
+        self.with_their_address_books(account_id, contacts)
+    }
+
+    /// A contact's own details, in the column order both reads select.
+    fn contact_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContactEntry> {
+        Ok(ContactEntry {
+            id: row.get(0)?,
+            account_id: row.get(1)?,
+            name: row.get(2)?,
+            email: row.get(3)?,
+            phone: row.get(4)?,
+            company: row.get(5)?,
+            job_title: row.get(6)?,
+            website: row.get(7)?,
+            address: row.get(8)?,
+            birthday: row.get(9)?,
+            avatar_url: row.get(10)?,
+            avatar_data_base64: row.get(11)?,
+            source_provider: row.get(12)?,
+            last_synced_at: row.get(13)?,
+            vcard_raw: row.get(14)?,
+            notes: row.get(15)?,
+            favorite: row.get(16)?,
+            created_at: row.get(17)?,
+            nickname: row.get(18)?,
+            department: row.get(19)?,
+            relationship: row.get(20)?,
+            emails_json: row.get(21)?,
+            phones_json: row.get(22)?,
+            addresses_json: row.get(23)?,
+            custom_fields_json: row.get(24)?,
+            known_to: Vec::new(),
+        })
     }
 
     /// Search contacts for autocomplete
@@ -112,7 +233,7 @@ impl MessageCache {
     ) -> Result<Vec<ContactEntry>> {
         let pattern = super::like_pattern(query);
         let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, name, email, provider_contact_id, phone, company, job_title, website, address, birthday,
+            "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
                     avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
                     nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json
              FROM contacts
@@ -129,40 +250,14 @@ impl MessageCache {
         ).map_err(|e| Error::Other(format!("Failed to prepare search statement: {}", e)))?;
 
         let contacts = stmt
-            .query_map(params![account_id, pattern, limit as i64], |row| {
-                Ok(ContactEntry {
-                    id: row.get(0)?,
-                    account_id: row.get(1)?,
-                    name: row.get(2)?,
-                    email: row.get(3)?,
-                    provider_contact_id: row.get(4)?,
-                    phone: row.get(5)?,
-                    company: row.get(6)?,
-                    job_title: row.get(7)?,
-                    website: row.get(8)?,
-                    address: row.get(9)?,
-                    birthday: row.get(10)?,
-                    avatar_url: row.get(11)?,
-                    avatar_data_base64: row.get(12)?,
-                    source_provider: row.get(13)?,
-                    last_synced_at: row.get(14)?,
-                    vcard_raw: row.get(15)?,
-                    notes: row.get(16)?,
-                    favorite: row.get(17)?,
-                    created_at: row.get(18)?,
-                    nickname: row.get(19)?,
-                    department: row.get(20)?,
-                    relationship: row.get(21)?,
-                    emails_json: row.get(22)?,
-                    phones_json: row.get(23)?,
-                    addresses_json: row.get(24)?,
-                    custom_fields_json: row.get(25)?,
-                })
-            })
+            .query_map(
+                params![account_id, pattern, limit as i64],
+                Self::contact_from_row,
+            )
             .map_err(|e| Error::Other(format!("Failed to search contacts: {}", e)))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect contacts: {}", e)))?;
-        Ok(contacts)
+        self.with_their_address_books(account_id, contacts)
     }
 
     /// Auto-import contacts from cached messages (senders/recipients).
@@ -203,8 +298,13 @@ impl MessageCache {
             for candidate_line in candidates {
                 for token in candidate_line.split(',') {
                     if let Some((name, email)) = Self::parse_name_email(token.trim()) {
+                        // The address is what says this is somebody already
+                        // here. Without the lookup every message would add a
+                        // row per address, since the contact is keyed by its
+                        // own identifier now and a fresh one is minted here.
+                        let already_here = self.contact_id_holding(account_id, &email)?;
                         let contact = ContactEntry {
-                            id: uuid::Uuid::new_v4().to_string(),
+                            id: already_here.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                             account_id: account_id.to_string(),
                             name: if name.is_empty() {
                                 Self::email_local_part_or_unknown(&email)
@@ -212,7 +312,6 @@ impl MessageCache {
                                 name
                             },
                             email,
-                            provider_contact_id: None,
                             phone: None,
                             company: None,
                             job_title: None,
@@ -234,6 +333,7 @@ impl MessageCache {
                             phones_json: None,
                             addresses_json: None,
                             custom_fields_json: None,
+                            known_to: Vec::new(),
                         };
                         match self.save_contact(&contact) {
                             Ok(_) => imported_count += 1,
@@ -255,7 +355,12 @@ impl MessageCache {
         let mut imported = 0usize;
         for block in vcard_data.split("BEGIN:VCARD").skip(1) {
             let entry = format!("BEGIN:VCARD{}", block);
-            if let Some(contact) = Self::contact_from_vcard_block(account_id, &entry) {
+            if let Some(mut contact) = Self::contact_from_vcard_block(account_id, &entry) {
+                // A card carries no identifier this application keeps, so the
+                // address is what says the same card read twice is one person.
+                if let Some(already_here) = self.contact_id_holding(account_id, &contact.email)? {
+                    contact.id = already_here;
+                }
                 match self.save_contact(&contact) {
                     Ok(_) => imported += 1,
                     Err(e) => {
@@ -424,10 +529,27 @@ impl MessageCache {
         Ok(output)
     }
 
-    /// Delete a contact
+    /// Delete a contact, and forget the address books that knew it.
+    ///
+    /// Both in one transaction. An identity left behind would refuse the next
+    /// contact the same address book hands over, because one address book's
+    /// identifier can point at one contact.
     pub fn delete_contact(&self, contact_id: &str) -> Result<()> {
-        self.conn
+        let deleting = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to delete contact: {}", e)))?;
+        deleting
+            .execute(
+                "DELETE FROM contact_identities WHERE contact_id = ?1",
+                params![contact_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to delete contact: {}", e)))?;
+        deleting
             .execute("DELETE FROM contacts WHERE id = ?1", params![contact_id])
+            .map_err(|e| Error::Other(format!("Failed to delete contact: {}", e)))?;
+        deleting
+            .commit()
             .map_err(|e| Error::Other(format!("Failed to delete contact: {}", e)))?;
         Ok(())
     }
@@ -543,14 +665,18 @@ impl MessageCache {
         Ok(ids)
     }
 
-    /// Resolve a contact group to email addresses
+    /// Resolve a contact group to email addresses.
+    ///
+    /// A member with no address contributes nothing. Somebody with only a
+    /// phone number can be in a group, and putting an empty address on the To
+    /// line would make the message fail to send or go out malformed.
     pub fn resolve_group_emails(&self, group_id: &str) -> Result<Vec<String>> {
         let mut stmt = self
             .conn
             .prepare(
                 "SELECT c.email FROM contacts c
              INNER JOIN contact_group_members m ON c.id = m.contact_id
-             WHERE m.group_id = ?1
+             WHERE m.group_id = ?1 AND c.email <> ''
              ORDER BY c.name",
             )
             .map_err(|e| Error::Other(format!("Failed to resolve group emails: {}", e)))?;
@@ -712,7 +838,6 @@ impl MessageCache {
             account_id: account_id.to_string(),
             name,
             email: primary_email,
-            provider_contact_id: None,
             phone,
             company,
             job_title,
@@ -734,6 +859,7 @@ impl MessageCache {
             phones_json,
             addresses_json,
             custom_fields_json: None,
+            known_to: Vec::new(),
         })
     }
 
@@ -903,6 +1029,39 @@ mod tests {
             None,
         )
         .expect("a cache to open")
+    }
+
+    /// A contact with nothing filled in but a name, so a test says only what
+    /// it is about.
+    fn a_contact(id: &str, name: &str) -> ContactEntry {
+        ContactEntry {
+            id: id.to_string(),
+            account_id: "test@example.com".to_string(),
+            name: name.to_string(),
+            email: String::new(),
+            phone: None,
+            company: None,
+            job_title: None,
+            website: None,
+            address: None,
+            birthday: None,
+            avatar_url: None,
+            avatar_data_base64: None,
+            source_provider: None,
+            last_synced_at: None,
+            vcard_raw: None,
+            notes: None,
+            favorite: false,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            nickname: None,
+            department: None,
+            relationship: None,
+            emails_json: None,
+            phones_json: None,
+            addresses_json: None,
+            custom_fields_json: None,
+            known_to: Vec::new(),
+        }
     }
 
     // ── Fuzzing the vCard reader ────────────────────────────────────────
@@ -1331,7 +1490,6 @@ mod tests {
         let contact = ContactEntry {
             id: "contact-1".to_string(), account_id: "test@example.com".to_string(),
             name: "Ada Lovelace".to_string(), email: "ada@example.com".to_string(),
-            provider_contact_id: Some("gmail-contact-1".to_string()),
             phone: Some("+1-555-0101".to_string()), company: Some("Analytical Engines".to_string()),
             job_title: Some("Mathematician".to_string()), website: Some("https://example.com".to_string()),
             address: Some("London".to_string()), birthday: Some("1815-12-10".to_string()),
@@ -1346,6 +1504,10 @@ mod tests {
             phones_json: Some(r#"[{"label":"Mobile","number":"+1-555-0101"},{"label":"Home","number":"+1-555-0102"}]"#.to_string()),
             addresses_json: Some(r#"[{"label":"Home","street":"123 Math St","city":"London","state":"","zip":"EC1A","country":"UK"}]"#.to_string()),
             custom_fields_json: Some(r#"[{"label":"GitHub","value":"adalovelace"}]"#.to_string()),
+            known_to: vec![ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: "gmail-contact-1".to_string(),
+            }],
         };
 
         cache.save_contact(&contact).unwrap();
@@ -1368,45 +1530,10 @@ mod tests {
         assert!(empty.is_empty());
     }
 
-    /// A record of a limit, not a regression test: this passes today and it
-    /// passed before anything was fixed. An account can hold one contact with
-    /// no email address, because the address is what tells two stored contacts
-    /// apart. The second one saved takes the first one's row. What changed is
-    /// that a sync no longer walks into this: it leaves the later contact
-    /// alone and says so, instead of overwriting the earlier one.
+    /// A contact with only a phone number is an ordinary thing in an address
+    /// book, and an account can hold as many of them as it has.
     #[test]
-    fn test_an_account_can_hold_only_one_contact_with_no_email_address() {
-        fn a_contact(id: &str, name: &str) -> ContactEntry {
-            ContactEntry {
-                id: id.to_string(),
-                account_id: "test@example.com".to_string(),
-                name: name.to_string(),
-                email: String::new(),
-                provider_contact_id: None,
-                phone: None,
-                company: None,
-                job_title: None,
-                website: None,
-                address: None,
-                birthday: None,
-                avatar_url: None,
-                avatar_data_base64: None,
-                source_provider: None,
-                last_synced_at: None,
-                vcard_raw: None,
-                notes: None,
-                favorite: false,
-                created_at: chrono::Utc::now().to_rfc3339(),
-                nickname: None,
-                department: None,
-                relationship: None,
-                emails_json: None,
-                phones_json: None,
-                addresses_json: None,
-                custom_fields_json: None,
-            }
-        }
-
+    fn test_an_account_can_hold_two_contacts_with_no_email_address() {
         let cache = a_cache("two_contacts_with_no_address");
         cache
             .save_contact(&a_contact("phone-only-1", "Phone Only Person"))
@@ -1419,8 +1546,329 @@ mod tests {
             .get_contacts_for_account("test@example.com")
             .expect("the contacts to read back");
 
+        let names: Vec<&str> = stored.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(stored.len(), 2, "stored {names:?}");
+        assert!(names.contains(&"Phone Only Person"), "{names:?}");
+        assert!(names.contains(&"Another Phone Only Person"), "{names:?}");
+    }
+
+    #[test]
+    fn test_changing_a_contacts_primary_email_address_saves() {
+        let cache = a_cache("changing_an_address");
+        let mut grace = a_contact("grace-1", "Grace Hopper");
+        grace.email = "grace@navy.example".to_string();
+        cache.save_contact(&grace).expect("the contact to save");
+
+        grace.email = "grace@example.com".to_string();
+        cache
+            .save_contact(&grace)
+            .expect("the changed address to save");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
         assert_eq!(stored.len(), 1);
-        assert_eq!(stored[0].name, "Another Phone Only Person");
+        assert_eq!(stored[0].email, "grace@example.com");
+    }
+
+    #[test]
+    fn test_a_group_of_contacts_resolves_to_addresses_and_not_to_blanks() {
+        let cache = a_cache("group_without_addresses");
+        let mut ada = a_contact("ada-1", "Ada Lovelace");
+        ada.email = "ada@example.com".to_string();
+        cache.save_contact(&ada).expect("Ada to save");
+        cache
+            .save_contact(&a_contact("phone-only-1", "Phone Only Person"))
+            .expect("the phone-only contact to save");
+        cache
+            .create_contact_group(&ContactGroup {
+                id: "group-1".to_string(),
+                account_id: "test@example.com".to_string(),
+                name: "Team".to_string(),
+                description: None,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                member_ids: Vec::new(),
+            })
+            .expect("the group to be created");
+        cache
+            .add_contact_to_group("group-1", "ada-1")
+            .expect("Ada to join");
+        cache
+            .add_contact_to_group("group-1", "phone-only-1")
+            .expect("the phone-only contact to join");
+
+        let addresses = cache
+            .resolve_group_emails("group-1")
+            .expect("the group to resolve");
+
+        assert_eq!(addresses, vec!["ada@example.com".to_string()]);
+    }
+
+    // ── Opening a database written before contacts were rebuilt ─────────────
+
+    /// The contacts table exactly as it stood before this work, so a test can
+    /// build a database at that shape and open it with the code that replaced
+    /// it. Copied rather than referenced: the point is that it does not change
+    /// when the real one does.
+    const THE_CONTACTS_TABLE_AS_IT_WAS: &str = "CREATE TABLE IF NOT EXISTS contacts (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                provider_contact_id TEXT,
+                phone TEXT,
+                company TEXT,
+                job_title TEXT,
+                website TEXT,
+                address TEXT,
+                birthday TEXT,
+                avatar_url TEXT,
+                avatar_data_base64 TEXT,
+                source_provider TEXT,
+                last_synced_at TEXT,
+                vcard_raw TEXT,
+                notes TEXT,
+                favorite BOOLEAN DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(account_id, email)
+            )";
+
+    /// A directory holding a database at the old shape, with three contacts in
+    /// it: one Google gave, one Microsoft gave, and one somebody typed here.
+    fn a_directory_holding_an_older_database(what_for: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock that has passed 1970")
+            .as_nanos();
+        let dir = env::temp_dir().join(format!("wixen_mail_older_{what_for}_{nanos}"));
+        std::fs::create_dir_all(&dir).expect("a directory to write into");
+
+        let conn =
+            rusqlite::Connection::open(dir.join("message_cache.db")).expect("a database to open");
+        conn.execute(THE_CONTACTS_TABLE_AS_IT_WAS, [])
+            .expect("the older contacts table to be created");
+        let add = |id: &str,
+                   name: &str,
+                   email: &str,
+                   provider_contact_id: Option<&str>,
+                   source_provider: Option<&str>,
+                   favorite: bool| {
+            conn.execute(
+                "INSERT INTO contacts
+                 (id, account_id, name, email, provider_contact_id, phone, company, job_title,
+                  website, address, birthday, avatar_url, avatar_data_base64, source_provider,
+                  last_synced_at, vcard_raw, notes, favorite, created_at, updated_at)
+                 VALUES (?1, 'test@example.com', ?2, ?3, ?4, '+44 113 496 0000', 'Analytical Engines',
+                         'Mathematician', 'https://example.com', 'London', '1815-12-10',
+                         'https://example.com/a.png', NULL, ?5, '2026-01-01T00:00:00Z',
+                         'BEGIN:VCARD', 'A note', ?6, '2020-01-01T00:00:00Z', '2020-01-01T00:00:00Z')",
+                params![id, name, email, provider_contact_id, source_provider, favorite],
+            )
+            .expect("a contact to be inserted");
+        };
+        add(
+            "alice-1",
+            "Alice Smith",
+            "alice@example.com",
+            Some("people/c1"),
+            Some("gmail"),
+            true,
+        );
+        add(
+            "carol-1",
+            "Carol White",
+            "carol@outlook.com",
+            Some("AAMkAGI2"),
+            Some("outlook"),
+            false,
+        );
+        add("bob-1", "Bob Jones", "bob@example.com", None, None, false);
+        drop(conn);
+        dir
+    }
+
+    #[test]
+    fn test_an_existing_database_of_contacts_still_has_every_contact_after_it_is_opened() {
+        let dir = a_directory_holding_an_older_database("every_contact");
+
+        let cache = MessageCache::new(dir, None).expect("the older database to open");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+        let names: Vec<&str> = stored.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(stored.len(), 3, "stored {names:?}");
+        let alice = stored
+            .iter()
+            .find(|c| c.id == "alice-1")
+            .expect("Alice to still be there");
+        assert_eq!(alice.name, "Alice Smith");
+        assert_eq!(alice.email, "alice@example.com");
+        assert_eq!(alice.phone.as_deref(), Some("+44 113 496 0000"));
+        assert_eq!(alice.company.as_deref(), Some("Analytical Engines"));
+        assert_eq!(alice.job_title.as_deref(), Some("Mathematician"));
+        assert_eq!(alice.website.as_deref(), Some("https://example.com"));
+        assert_eq!(alice.address.as_deref(), Some("London"));
+        assert_eq!(alice.birthday.as_deref(), Some("1815-12-10"));
+        assert_eq!(
+            alice.avatar_url.as_deref(),
+            Some("https://example.com/a.png")
+        );
+        assert_eq!(alice.source_provider.as_deref(), Some("gmail"));
+        assert_eq!(
+            alice.last_synced_at.as_deref(),
+            Some("2026-01-01T00:00:00Z")
+        );
+        assert_eq!(alice.vcard_raw.as_deref(), Some("BEGIN:VCARD"));
+        assert_eq!(alice.notes.as_deref(), Some("A note"));
+        assert!(alice.favorite);
+        assert_eq!(alice.created_at, "2020-01-01T00:00:00Z");
+        assert!(names.contains(&"Carol White"), "{names:?}");
+        assert!(names.contains(&"Bob Jones"), "{names:?}");
+    }
+
+    #[test]
+    fn test_an_older_database_can_take_a_second_contact_with_no_email_address() {
+        let dir = a_directory_holding_an_older_database("no_address");
+        let cache = MessageCache::new(dir, None).expect("the older database to open");
+
+        cache
+            .save_contact(&a_contact("phone-only-1", "Phone Only Person"))
+            .expect("the first contact with no address to save");
+        cache
+            .save_contact(&a_contact("phone-only-2", "Another Phone Only Person"))
+            .expect("the second contact with no address to save");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+        assert_eq!(stored.len(), 5);
+    }
+
+    #[test]
+    fn test_a_contact_stored_before_keeps_the_address_book_that_gave_it() {
+        let dir = a_directory_holding_an_older_database("address_books");
+
+        let cache = MessageCache::new(dir, None).expect("the older database to open");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+        let alice = stored.iter().find(|c| c.id == "alice-1").expect("Alice");
+        let carol = stored.iter().find(|c| c.id == "carol-1").expect("Carol");
+        let bob = stored.iter().find(|c| c.id == "bob-1").expect("Bob");
+        assert_eq!(alice.id_in(&AddressBook::Google), Some("people/c1"));
+        assert_eq!(alice.id_in(&AddressBook::Microsoft), None);
+        assert_eq!(carol.id_in(&AddressBook::Microsoft), Some("AAMkAGI2"));
+        assert!(bob.known_to.is_empty(), "{:?}", bob.known_to);
+    }
+
+    #[test]
+    fn test_a_contact_can_be_known_to_two_address_books_at_once() {
+        let cache = a_cache("two_address_books");
+        let mut alice = a_contact("alice-1", "Alice Smith");
+        alice.email = "alice@example.com".to_string();
+        alice.known_to = vec![
+            ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: "people/c1".to_string(),
+            },
+            ProviderIdentity {
+                address_book: AddressBook::Microsoft,
+                provider_contact_id: "AAMkAGI2".to_string(),
+            },
+        ];
+
+        cache.save_contact(&alice).expect("the contact to save");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].id_in(&AddressBook::Google), Some("people/c1"));
+        assert_eq!(stored[0].id_in(&AddressBook::Microsoft), Some("AAMkAGI2"));
+    }
+
+    #[test]
+    fn test_an_address_book_this_build_does_not_know_survives_being_stored() {
+        let cache = a_cache("unknown_address_book");
+        let mut someone = a_contact("someone-1", "Someone");
+        someone.known_to = vec![ProviderIdentity {
+            address_book: AddressBook::Other("carddav".to_string()),
+            provider_contact_id: "urn:uuid:1".to_string(),
+        }];
+
+        cache.save_contact(&someone).expect("the contact to save");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+        assert_eq!(
+            stored[0].id_in(&AddressBook::Other("carddav".to_string())),
+            Some("urn:uuid:1")
+        );
+    }
+
+    #[test]
+    fn test_searching_finds_a_contact_with_the_address_books_that_know_it() {
+        let cache = a_cache("search_address_books");
+        let mut alice = a_contact("alice-1", "Alice Smith");
+        alice.email = "alice@example.com".to_string();
+        alice.known_to = vec![ProviderIdentity {
+            address_book: AddressBook::Google,
+            provider_contact_id: "people/c1".to_string(),
+        }];
+        cache.save_contact(&alice).expect("the contact to save");
+
+        let found = cache
+            .search_contacts_for_account("test@example.com", "alice", 5)
+            .expect("the search to run");
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id_in(&AddressBook::Google), Some("people/c1"));
+    }
+
+    #[test]
+    fn test_deleting_a_contact_forgets_the_address_books_that_knew_it() {
+        let cache = a_cache("deleting_forgets_identities");
+        let mut alice = a_contact("alice-1", "Alice Smith");
+        alice.known_to = vec![ProviderIdentity {
+            address_book: AddressBook::Google,
+            provider_contact_id: "people/c1".to_string(),
+        }];
+        cache.save_contact(&alice).expect("the contact to save");
+        cache
+            .delete_contact("alice-1")
+            .expect("the contact to be deleted");
+
+        let mut someone_else = a_contact("someone-1", "Someone Else");
+        someone_else.known_to = alice.known_to.clone();
+        cache
+            .save_contact(&someone_else)
+            .expect("the identifier to be free to give to somebody else");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].id_in(&AddressBook::Google), Some("people/c1"));
+    }
+
+    #[test]
+    fn test_opening_an_older_database_twice_keeps_its_contacts() {
+        let dir = a_directory_holding_an_older_database("opened_twice");
+        drop(MessageCache::new(dir.clone(), None).expect("the older database to open"));
+
+        let cache = MessageCache::new(dir, None).expect("the database to open again");
+
+        assert_eq!(
+            cache
+                .get_contacts_for_account("test@example.com")
+                .expect("the contacts to read back")
+                .len(),
+            3
+        );
     }
 
     #[test]
@@ -1508,5 +1956,31 @@ END:VCARD";
         assert!(contacts.iter().any(|c| c.email == "grace@example.com"));
         assert!(contacts.iter().any(|c| c.email == "ada@example.com"));
         assert!(contacts.iter().any(|c| c.email == "katherine@example.com"));
+        // One row per address, not one per time an address was seen. The
+        // message names four people and one of them twice.
+        let addresses: Vec<&str> = contacts.iter().map(|c| c.email.as_str()).collect();
+        assert_eq!(contacts.len(), 4, "stored {addresses:?}");
+    }
+
+    /// The same card read twice is the same person, not two of them. The
+    /// address is what says so, since a card carries no identifier this
+    /// application keeps.
+    #[test]
+    fn test_importing_the_same_card_twice_does_not_make_two_contacts() {
+        let cache = a_cache("vcard_twice");
+        let card = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Grace Hopper\r\nEMAIL:grace@example.com\r\nEND:VCARD\r\n";
+
+        cache
+            .import_contacts_from_vcard("test@example.com", card)
+            .expect("the first import");
+        cache
+            .import_contacts_from_vcard("test@example.com", card)
+            .expect("the second import");
+
+        let contacts = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+        let names: Vec<&str> = contacts.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(contacts.len(), 1, "stored {names:?}");
     }
 }

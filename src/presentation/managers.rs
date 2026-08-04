@@ -596,13 +596,13 @@ pub fn manage_contacts(
                 if edited.id.trim().is_empty() {
                     edited.id = new_id("contact");
                 }
-                // Keep the date the contact was added rather than resetting it
-                // on every edit.
-                let created = stored
-                    .iter()
-                    .find(|c| c.id == edited.id)
-                    .map(|c| c.created_at.clone());
-                let contact = contact_convert::to_stored(&edited, &account, created.as_deref());
+                // The record being replaced carries what the editor does not:
+                // the date the contact was added, and the address books that
+                // know it. Every row comes back through here on an edit, not
+                // just the changed one, so losing it would cut the whole
+                // account off from its address books.
+                let replacing = stored.iter().find(|c| c.id == edited.id);
+                let contact = contact_convert::to_stored(&edited, &account, replacing);
                 if let Err(e) = cache.save_contact(&contact) {
                     failures.push(format!("{}: {}", contact.name, e));
                 }

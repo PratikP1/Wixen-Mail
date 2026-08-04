@@ -9,7 +9,9 @@
 //! account.
 
 use crate::common::{Error, Result};
-use crate::data::message_cache::{ContactEntry, EmailEntry, MessageCache, PhoneEntry, SyncState};
+use crate::data::message_cache::{
+    AddressBook, ContactEntry, EmailEntry, MessageCache, PhoneEntry, ProviderIdentity, SyncState,
+};
 use crate::service::google_api::{
     GoogleApiClient, GoogleBiography, GoogleBirthday, GoogleDate, GoogleEmail, GoogleName,
     GoogleNickname, GoogleOrganization, GooglePerson, GooglePhone, GoogleUrl,
@@ -309,51 +311,35 @@ fn is_expired_sync_token(error: &Error) -> bool {
 
 // ── Matching a provider's copy of a person to a stored contact ──────────────
 
-/// Which stored contact, if any, a provider's copy of a person is.
-enum LocalContactMatch<'a> {
-    /// This stored contact is that person; fold the provider's copy into it.
-    Stored(&'a ContactEntry),
-    /// Nobody stored here is that person; store them.
-    NotStoredYet,
-    /// Another contact already holds that address, and an address can only
-    /// belong to one, so this one is left as it is rather than taken.
-    AddressBelongsToAnother(&'a ContactEntry),
-}
-
-fn find_local_contact<'a>(
+/// Which stored contact, if any, this address book's copy of a person is.
+///
+/// The address book doing the asking is part of the question. It is answered
+/// in two steps: a contact this address book already knows by this identifier,
+/// or failing that a contact at the same address that this address book does
+/// not know yet, which is how a person in two address books becomes one
+/// contact instead of two taking each other's row.
+///
+/// An empty address matches nothing, so a contact with only a phone number is
+/// never mistaken for another one. There is no third answer: a contact this
+/// address book cannot claim is simply new here.
+fn the_stored_contact_this_is<'a>(
     locals: &'a [ContactEntry],
+    address_book: &AddressBook,
     provider_contact_id: &str,
     email: &str,
-) -> LocalContactMatch<'a> {
+) -> Option<&'a ContactEntry> {
     if let Some(same_person) = locals
         .iter()
-        .find(|c| c.provider_contact_id.as_deref() == Some(provider_contact_id))
+        .find(|c| c.id_in(address_book) == Some(provider_contact_id))
     {
-        return LocalContactMatch::Stored(same_person);
+        return Some(same_person);
     }
-    match locals.iter().find(|c| c.email == email) {
-        Some(typed_here) if typed_here.provider_contact_id.is_none() => {
-            LocalContactMatch::Stored(typed_here)
-        }
-        Some(someone_elses) => LocalContactMatch::AddressBelongsToAnother(someone_elses),
-        None => LocalContactMatch::NotStoredYet,
+    if email.is_empty() {
+        return None;
     }
-}
-
-/// What to tell somebody about a contact a sync could not store, in the two
-/// ways that can happen. They need different answers, so they read differently.
-fn contact_not_stored_message(stored: &ContactEntry, incoming: &ContactEntry) -> String {
-    if incoming.email.is_empty() {
-        format!(
-            "'{}' has no email address, and an address book here can hold only one contact without one, so this contact was not stored.",
-            incoming.name
-        )
-    } else {
-        format!(
-            "'{}' is in two address books under this account. Only one of them can be kept here, so this copy was left as it is.",
-            stored.name
-        )
-    }
+    locals
+        .iter()
+        .find(|c| c.email == email && c.id_in(address_book).is_none())
 }
 
 // ── Folding a provider's copy into the stored contact ───────────────────────
@@ -367,11 +353,16 @@ fn contact_not_stored_message(stored: &ContactEntry, incoming: &ContactEntry) ->
 /// address is different: Google holds one and this application does not read
 /// it yet, so the stored one is the only one there is to keep. A field added
 /// to a contact later is kept unless somebody adds it to this list.
+///
+/// The address books that know the contact are deliberately not named here.
+/// Google can only speak for itself, so naming the list would take the contact
+/// off every other address book on every sync, which is the whole thing this
+/// was built to stop. The syncing address book adds itself afterwards, through
+/// `also_known_to`, where the call site can be seen.
 fn google_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> ContactEntry {
     ContactEntry {
         name: remote.name.clone(),
         email: remote.email.clone(),
-        provider_contact_id: remote.provider_contact_id.clone(),
         phone: remote.phone.clone(),
         company: remote.company.clone(),
         job_title: remote.job_title.clone(),
@@ -396,11 +387,15 @@ fn google_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> Cont
 /// numbers than one, but only the first is read in, so there is no second
 /// number arriving here to fold and the stored list is left alone too.
 /// Reading the rest of them is work not done.
+///
+/// The address books that know the contact are deliberately not named here,
+/// for the same reason as on the Google side: Microsoft can only speak for
+/// itself, and naming the list would take the contact off the other address
+/// book on every sync.
 fn microsoft_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> ContactEntry {
     ContactEntry {
         name: remote.name.clone(),
         email: remote.email.clone(),
-        provider_contact_id: remote.provider_contact_id.clone(),
         phone: remote.phone.clone(),
         company: remote.company.clone(),
         job_title: remote.job_title.clone(),
@@ -514,14 +509,10 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
         Err(e) => return Err(e),
     };
 
-    // Track which remote IDs we've seen
-    let mut seen_remote_ids: Vec<String> = Vec::new();
-
     for person in &remote_contacts {
         if person.resource_name.is_empty() {
             continue;
         }
-        seen_remote_ids.push(person.resource_name.clone());
 
         // Check if deleted
         if person.metadata.as_ref().is_some_and(|m| m.deleted) {
@@ -529,7 +520,7 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
             let locals = cache.get_contacts_for_account(account_id)?;
             if let Some(local) = locals
                 .iter()
-                .find(|c| c.provider_contact_id.as_deref() == Some(&person.resource_name))
+                .find(|c| c.id_in(&AddressBook::Google) == Some(person.resource_name.as_str()))
             {
                 cache.delete_contact(&local.id)?;
                 result.deleted_local += 1;
@@ -540,37 +531,40 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
         let remote_contact = google_person_to_contact(person, account_id);
 
         let locals = cache.get_contacts_for_account(account_id)?;
-        match find_local_contact(&locals, &person.resource_name, &remote_contact.email) {
-            LocalContactMatch::Stored(local) => {
-                cache.save_contact(&google_fields_over_local(local, &remote_contact))?;
+        match the_stored_contact_this_is(
+            &locals,
+            &AddressBook::Google,
+            &person.resource_name,
+            &remote_contact.email,
+        ) {
+            Some(local) => {
+                // Google adds itself to the address books that know this
+                // contact and leaves the others as they were.
+                let merged = google_fields_over_local(local, &remote_contact)
+                    .also_known_to(AddressBook::Google, &person.resource_name);
+                cache.save_contact(&merged)?;
                 result.updated_local += 1;
             }
-            LocalContactMatch::NotStoredYet => {
+            None => {
                 cache.save_contact(&remote_contact)?;
                 result.created_local += 1;
-            }
-            LocalContactMatch::AddressBelongsToAnother(stored) => {
-                result
-                    .errors
-                    .push(contact_not_stored_message(stored, &remote_contact));
             }
         }
     }
 
-    // Push local-only contacts to Google (those without provider_contact_id)
+    // Push contacts no address book knows to Google
     if read_the_whole_address_book {
         // Only push on full sync to avoid duplicates
         let locals = cache.get_contacts_for_account(account_id)?;
         for local in &locals {
-            if local.provider_contact_id.is_none()
+            if local.known_to.is_empty()
                 && local.source_provider.as_deref() != Some(GOOGLE_ADDRESS_BOOK)
             {
                 let person = contact_to_google_person(local);
                 match google.create_contact(token, &person).await {
                     Ok(created) => {
-                        // Update local with provider ID
-                        let mut updated = local.clone();
-                        updated.provider_contact_id = Some(created.resource_name);
+                        let mut updated =
+                            local.also_known_to(AddressBook::Google, &created.resource_name);
                         updated.source_provider = Some(GOOGLE_ADDRESS_BOOK.to_string());
                         updated.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
                         cache.save_contact(&updated)?;
@@ -639,7 +633,7 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
             let locals = cache.get_contacts_for_account(account_id)?;
             if let Some(local) = locals
                 .iter()
-                .find(|c| c.provider_contact_id.as_deref() == Some(&ms_contact.id))
+                .find(|c| c.id_in(&AddressBook::Microsoft) == Some(ms_contact.id.as_str()))
             {
                 cache.delete_contact(&local.id)?;
                 result.deleted_local += 1;
@@ -650,19 +644,21 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
         let remote_contact = ms_contact_to_contact(ms_contact, account_id);
 
         let locals = cache.get_contacts_for_account(account_id)?;
-        match find_local_contact(&locals, &ms_contact.id, &remote_contact.email) {
-            LocalContactMatch::Stored(local) => {
-                cache.save_contact(&microsoft_fields_over_local(local, &remote_contact))?;
+        match the_stored_contact_this_is(
+            &locals,
+            &AddressBook::Microsoft,
+            &ms_contact.id,
+            &remote_contact.email,
+        ) {
+            Some(local) => {
+                let merged = microsoft_fields_over_local(local, &remote_contact)
+                    .also_known_to(AddressBook::Microsoft, &ms_contact.id);
+                cache.save_contact(&merged)?;
                 result.updated_local += 1;
             }
-            LocalContactMatch::NotStoredYet => {
+            None => {
                 cache.save_contact(&remote_contact)?;
                 result.created_local += 1;
-            }
-            LocalContactMatch::AddressBelongsToAnother(stored) => {
-                result
-                    .errors
-                    .push(contact_not_stored_message(stored, &remote_contact));
             }
         }
     }
@@ -671,14 +667,13 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
     if delta_link.is_none() {
         let locals = cache.get_contacts_for_account(account_id)?;
         for local in &locals {
-            if local.provider_contact_id.is_none()
+            if local.known_to.is_empty()
                 && local.source_provider.as_deref() != Some(MICROSOFT_ADDRESS_BOOK)
             {
                 let ms_contact = contact_to_ms_contact(local);
                 match ms_client.create_contact(token, &ms_contact).await {
                     Ok(created) => {
-                        let mut updated = local.clone();
-                        updated.provider_contact_id = Some(created.id);
+                        let mut updated = local.also_known_to(AddressBook::Microsoft, &created.id);
                         updated.source_provider = Some(MICROSOFT_ADDRESS_BOOK.to_string());
                         updated.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
                         cache.save_contact(&updated)?;
@@ -792,7 +787,6 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
             name
         },
         email: primary_email,
-        provider_contact_id: Some(person.resource_name.clone()),
         phone,
         company,
         job_title,
@@ -814,6 +808,10 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
         phones_json,
         addresses_json: None,
         custom_fields_json: None,
+        known_to: vec![ProviderIdentity {
+            address_book: AddressBook::Google,
+            provider_contact_id: person.resource_name.clone(),
+        }],
     }
 }
 
@@ -970,7 +968,6 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
             ms.display_name.clone()
         },
         email: primary_email,
-        provider_contact_id: Some(ms.id.clone()),
         phone,
         company,
         job_title,
@@ -992,6 +989,10 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         phones_json: None,
         addresses_json: None,
         custom_fields_json: None,
+        known_to: vec![ProviderIdentity {
+            address_book: AddressBook::Microsoft,
+            provider_contact_id: ms.id.clone(),
+        }],
     }
 }
 
@@ -1038,7 +1039,6 @@ mod tests {
             account_id: "test@example.com".to_string(),
             name: name.to_string(),
             email: email.to_string(),
-            provider_contact_id: None,
             phone: None,
             company: None,
             job_title: None,
@@ -1060,6 +1060,7 @@ mod tests {
             phones_json: None,
             addresses_json: None,
             custom_fields_json: None,
+            known_to: Vec::new(),
         }
     }
 
@@ -1096,7 +1097,7 @@ mod tests {
         let contact = google_person_to_contact(&person, "test@gmail.com");
         assert_eq!(contact.name, "Alice Smith");
         assert_eq!(contact.email, "alice@example.com");
-        assert_eq!(contact.provider_contact_id.as_deref(), Some("people/c123"));
+        assert_eq!(contact.id_in(&AddressBook::Google), Some("people/c123"));
         assert_eq!(contact.phone.as_deref(), Some("+1-555-0101"));
         assert_eq!(contact.company.as_deref(), Some("Acme"));
         assert_eq!(contact.job_title.as_deref(), Some("Engineer"));
@@ -1112,7 +1113,6 @@ mod tests {
             account_id: "test@gmail.com".to_string(),
             name: "Bob Jones".to_string(),
             email: "bob@example.com".to_string(),
-            provider_contact_id: None,
             phone: Some("+1-555-0202".to_string()),
             company: Some("Corp".to_string()),
             job_title: Some("Manager".to_string()),
@@ -1134,6 +1134,7 @@ mod tests {
             phones_json: None,
             addresses_json: None,
             custom_fields_json: None,
+            known_to: Vec::new(),
         };
 
         let person = contact_to_google_person(&contact);
@@ -1169,7 +1170,7 @@ mod tests {
         let contact = ms_contact_to_contact(&ms, "test@outlook.com");
         assert_eq!(contact.name, "Carol White");
         assert_eq!(contact.email, "carol@outlook.com");
-        assert_eq!(contact.provider_contact_id.as_deref(), Some("AAMkAGI2"));
+        assert_eq!(contact.id_in(&AddressBook::Microsoft), Some("AAMkAGI2"));
         assert_eq!(contact.phone.as_deref(), Some("+1-555-0303"));
         assert_eq!(contact.company.as_deref(), Some("Contoso"));
         assert_eq!(contact.nickname.as_deref(), Some("Care"));
@@ -1183,7 +1184,6 @@ mod tests {
             account_id: "test@outlook.com".to_string(),
             name: "Dave Lee".to_string(),
             email: "dave@example.com".to_string(),
-            provider_contact_id: None,
             phone: Some("+1-555-0404".to_string()),
             company: Some("Fabrikam".to_string()),
             job_title: Some("Dev".to_string()),
@@ -1205,6 +1205,7 @@ mod tests {
             phones_json: None,
             addresses_json: None,
             custom_fields_json: None,
+            known_to: Vec::new(),
         };
 
         let ms = contact_to_ms_contact(&contact);
@@ -1224,7 +1225,6 @@ mod tests {
             account_id: "test@gmail.com".to_string(),
             name: "Test Person".to_string(),
             email: "test@example.com".to_string(),
-            provider_contact_id: None,
             phone: Some("+1-555-9999".to_string()),
             company: Some("TestCo".to_string()),
             job_title: Some("Tester".to_string()),
@@ -1246,6 +1246,7 @@ mod tests {
             phones_json: None,
             addresses_json: None,
             custom_fields_json: None,
+            known_to: Vec::new(),
         };
 
         let google = contact_to_google_person(&original);
@@ -1649,16 +1650,81 @@ mod tests {
     }
 
     #[test]
-    fn test_a_google_sync_takes_the_address_book_identity_from_the_provider() {
+    fn test_a_google_sync_takes_the_address_and_where_it_came_from_from_the_provider() {
         let local = a_local_contact("Old Name", "old@example.com");
         let remote = alice_from_google();
 
         let merged = google_fields_over_local(&local, &remote);
 
         assert_eq!(merged.email, "alice@example.com");
-        assert_eq!(merged.provider_contact_id.as_deref(), Some("people/c1"));
         assert_eq!(merged.source_provider.as_deref(), Some("gmail"));
         assert_eq!(merged.last_synced_at, remote.last_synced_at);
+    }
+
+    /// The merge must never name the address books that know a contact. If
+    /// somebody adds `known_to` to it for symmetry with the other fields, the
+    /// other address book is wiped on every sync and a person in two of them
+    /// stops being one contact again. This is the test that says so.
+    #[test]
+    fn test_a_google_sync_keeps_the_identity_the_other_address_book_gave_a_contact() {
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.known_to = vec![ProviderIdentity {
+            address_book: AddressBook::Microsoft,
+            provider_contact_id: "AAMkAGI2".to_string(),
+        }];
+
+        let merged = google_fields_over_local(&local, &alice_from_google())
+            .also_known_to(AddressBook::Google, "people/c1");
+
+        assert_eq!(merged.id_in(&AddressBook::Microsoft), Some("AAMkAGI2"));
+        assert_eq!(merged.id_in(&AddressBook::Google), Some("people/c1"));
+    }
+
+    #[test]
+    fn test_a_microsoft_sync_keeps_the_identity_the_other_address_book_gave_a_contact() {
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.known_to = vec![ProviderIdentity {
+            address_book: AddressBook::Google,
+            provider_contact_id: "people/c1".to_string(),
+        }];
+
+        let merged = microsoft_fields_over_local(&local, &alice_from_microsoft())
+            .also_known_to(AddressBook::Microsoft, "AAMkAGI2");
+
+        assert_eq!(merged.id_in(&AddressBook::Google), Some("people/c1"));
+        assert_eq!(merged.id_in(&AddressBook::Microsoft), Some("AAMkAGI2"));
+    }
+
+    #[test]
+    fn test_an_address_book_naming_a_contact_again_replaces_what_it_said_before() {
+        let alice = alice_from_google();
+
+        let moved = alice.also_known_to(AddressBook::Google, "people/c9");
+
+        assert_eq!(moved.id_in(&AddressBook::Google), Some("people/c9"));
+        assert_eq!(moved.known_to.len(), 1);
+    }
+
+    #[test]
+    fn test_an_address_book_is_stored_under_the_word_existing_databases_carry() {
+        assert_eq!(AddressBook::Google.as_stored(), GOOGLE_ADDRESS_BOOK);
+        assert_eq!(AddressBook::Microsoft.as_stored(), MICROSOFT_ADDRESS_BOOK);
+        assert_eq!(
+            AddressBook::from_stored(GOOGLE_ADDRESS_BOOK),
+            AddressBook::Google
+        );
+        assert_eq!(
+            AddressBook::from_stored(MICROSOFT_ADDRESS_BOOK),
+            AddressBook::Microsoft
+        );
+    }
+
+    #[test]
+    fn test_an_address_book_this_build_does_not_know_keeps_its_name() {
+        let carddav = AddressBook::from_stored("carddav");
+
+        assert_eq!(carddav.as_stored(), "carddav");
+        assert_eq!(carddav, AddressBook::Other("carddav".to_string()));
     }
 
     #[test]
@@ -1710,14 +1776,13 @@ mod tests {
     }
 
     #[test]
-    fn test_a_microsoft_sync_takes_the_address_book_identity_from_the_provider() {
+    fn test_a_microsoft_sync_takes_the_address_and_where_it_came_from_from_the_provider() {
         let local = a_local_contact("Old Name", "old@example.com");
         let remote = alice_from_microsoft();
 
         let merged = microsoft_fields_over_local(&local, &remote);
 
         assert_eq!(merged.email, "alice@example.com");
-        assert_eq!(merged.provider_contact_id.as_deref(), Some("AAMkAGI2"));
         assert_eq!(merged.source_provider.as_deref(), Some("outlook"));
         assert_eq!(merged.last_synced_at, remote.last_synced_at);
     }
@@ -1788,84 +1853,147 @@ mod tests {
 
     // ── Which stored contact a provider's copy of a person is ───────────────
 
+    /// A contact one address book already knows, under the name it gave it.
+    fn a_contact_known_to(
+        address_book: AddressBook,
+        provider_contact_id: &str,
+        name: &str,
+        email: &str,
+    ) -> ContactEntry {
+        let mut stored = a_local_contact(name, email);
+        stored.source_provider = Some(address_book.as_stored().to_string());
+        stored.known_to = vec![ProviderIdentity {
+            address_book,
+            provider_contact_id: provider_contact_id.to_string(),
+        }];
+        stored
+    }
+
+    /// The decision-8 test: a person in both address books is one contact.
     #[test]
-    fn test_a_contact_the_other_address_book_already_holds_is_left_alone() {
-        let mut stored = a_local_contact("Alice Smith", "alice@example.com");
-        stored.provider_contact_id = Some("AAMkAGI2".to_string());
-        stored.source_provider = Some("outlook".to_string());
-        let locals = vec![stored];
+    fn test_a_contact_the_other_address_book_holds_is_adopted_rather_than_skipped() {
+        let locals = vec![a_contact_known_to(
+            AddressBook::Microsoft,
+            "AAMkAGI2",
+            "Alice Smith",
+            "alice@example.com",
+        )];
 
-        let found = find_local_contact(&locals, "people/c1", "alice@example.com");
+        let found = the_stored_contact_this_is(
+            &locals,
+            &AddressBook::Google,
+            "people/c1",
+            "alice@example.com",
+        );
 
-        assert!(matches!(
-            found,
-            LocalContactMatch::AddressBelongsToAnother(_)
-        ));
+        assert_eq!(found.map(|c| c.name.as_str()), Some("Alice Smith"));
+    }
+
+    /// A contact is never found by an identifier another address book handed
+    /// out. Two providers can hand out the same string and nothing says they
+    /// cannot.
+    #[test]
+    fn test_a_contact_is_not_found_by_another_address_books_id() {
+        let locals = vec![a_contact_known_to(
+            AddressBook::Microsoft,
+            "AAMkAGI2",
+            "Alice Smith",
+            "alice@example.com",
+        )];
+
+        let found = the_stored_contact_this_is(
+            &locals,
+            &AddressBook::Google,
+            "AAMkAGI2",
+            "someone-else@example.com",
+        );
+
+        assert!(found.is_none());
     }
 
     #[test]
     fn test_a_contact_that_moved_to_a_new_id_does_not_overwrite_the_old_row() {
-        let mut stored = a_local_contact("Alice Smith", "alice@example.com");
-        stored.provider_contact_id = Some("people/c1".to_string());
-        stored.source_provider = Some("gmail".to_string());
-        let locals = vec![stored];
+        let locals = vec![a_contact_known_to(
+            AddressBook::Google,
+            "people/c1",
+            "Alice Smith",
+            "alice@example.com",
+        )];
 
-        let found = find_local_contact(&locals, "people/c9", "alice@example.com");
+        let found = the_stored_contact_this_is(
+            &locals,
+            &AddressBook::Google,
+            "people/c9",
+            "alice@example.com",
+        );
 
-        assert!(matches!(
-            found,
-            LocalContactMatch::AddressBelongsToAnother(_)
-        ));
+        assert!(found.is_none());
     }
 
     #[test]
     fn test_a_contact_is_found_by_the_id_its_address_book_gave_it() {
-        let mut stored = a_local_contact("Alice Smith", "alice@example.com");
-        stored.provider_contact_id = Some("people/c1".to_string());
-        let locals = vec![stored];
+        let locals = vec![a_contact_known_to(
+            AddressBook::Google,
+            "people/c1",
+            "Alice Smith",
+            "alice@example.com",
+        )];
 
-        let found = find_local_contact(&locals, "people/c1", "moved@example.com");
+        let found = the_stored_contact_this_is(
+            &locals,
+            &AddressBook::Google,
+            "people/c1",
+            "moved@example.com",
+        );
 
-        assert!(matches!(found, LocalContactMatch::Stored(_)));
+        assert_eq!(found.map(|c| c.name.as_str()), Some("Alice Smith"));
     }
 
     #[test]
     fn test_a_contact_typed_here_is_adopted_by_the_address_book_with_the_same_address() {
         let locals = vec![a_local_contact("Alice Smith", "alice@example.com")];
 
-        let found = find_local_contact(&locals, "people/c1", "alice@example.com");
+        let found = the_stored_contact_this_is(
+            &locals,
+            &AddressBook::Google,
+            "people/c1",
+            "alice@example.com",
+        );
 
-        assert!(matches!(found, LocalContactMatch::Stored(_)));
+        assert_eq!(found.map(|c| c.name.as_str()), Some("Alice Smith"));
     }
 
     #[test]
     fn test_a_person_nobody_has_stored_yet_is_new() {
-        let found = find_local_contact(&[], "people/c1", "alice@example.com");
+        let found =
+            the_stored_contact_this_is(&[], &AddressBook::Google, "people/c1", "alice@example.com");
 
-        assert!(matches!(found, LocalContactMatch::NotStoredYet));
+        assert!(found.is_none());
     }
 
     // ── Contacts with no email address ──────────────────────────────────────
 
+    /// The decision-9 test: an empty address matches nothing, so every contact
+    /// without one is its own contact instead of taking the last one's place.
     #[test]
-    fn test_a_second_contact_with_no_email_address_does_not_take_the_first_ones_place() {
-        let mut stored = a_local_contact("Phone Only Person", "");
-        stored.provider_contact_id = Some("people/c1".to_string());
-        let locals = vec![stored];
+    fn test_a_second_contact_with_no_email_address_is_stored_rather_than_refused() {
+        let locals = vec![a_contact_known_to(
+            AddressBook::Google,
+            "people/c1",
+            "Phone Only Person",
+            "",
+        )];
 
-        let found = find_local_contact(&locals, "people/c2", "");
+        let found = the_stored_contact_this_is(&locals, &AddressBook::Google, "people/c2", "");
 
-        assert!(matches!(
-            found,
-            LocalContactMatch::AddressBelongsToAnother(_)
-        ));
+        assert!(found.is_none());
     }
 
     #[test]
     fn test_the_first_contact_with_no_email_address_is_still_stored() {
-        let found = find_local_contact(&[], "people/c1", "");
+        let found = the_stored_contact_this_is(&[], &AddressBook::Google, "people/c1", "");
 
-        assert!(matches!(found, LocalContactMatch::NotStoredYet));
+        assert!(found.is_none());
     }
 
     #[test]
@@ -1921,20 +2049,6 @@ mod tests {
         let contact = ms_contact_to_contact(&ms, "acct");
 
         assert_eq!(contact.name, "Phone Only");
-    }
-
-    #[test]
-    fn test_a_contact_left_alone_is_explained_differently_from_one_with_no_address() {
-        let stored = a_local_contact("Alice Smith", "alice@example.com");
-        let in_both_books = a_local_contact("Alice Smith", "alice@example.com");
-        let no_address = a_local_contact("Phone Only Person", "");
-
-        let two_books = contact_not_stored_message(&stored, &in_both_books);
-        let no_room = contact_not_stored_message(&stored, &no_address);
-
-        assert!(two_books.contains("two address books"), "{two_books}");
-        assert!(no_room.contains("no email address"), "{no_room}");
-        assert!(no_room.contains("Phone Only Person"), "{no_room}");
     }
 
     // ── The label somebody chose ────────────────────────────────────────────
@@ -2422,7 +2536,10 @@ mod tests {
     ) {
         let mut contact = a_local_contact(name, email);
         contact.id = format!("local-{provider_contact_id}");
-        contact.provider_contact_id = Some(provider_contact_id.to_string());
+        contact.known_to = vec![ProviderIdentity {
+            address_book: AddressBook::from_stored(provider),
+            provider_contact_id: provider_contact_id.to_string(),
+        }];
         contact.source_provider = Some(provider.to_string());
         cache
             .save_contact(&contact)
@@ -2850,5 +2967,181 @@ mod tests {
             "a contact the Google address book holds was sent to Microsoft as well"
         );
         assert_eq!(result.created_remote, 0);
+    }
+
+    // ── A person in two address books, and a person with no address ─────────
+
+    fn the_contact_stored(cache: &MessageCache, name: &str) -> ContactEntry {
+        cache
+            .get_contacts_for_account(AN_ACCOUNT)
+            .expect("the stored contacts")
+            .into_iter()
+            .find(|c| c.name == name)
+            .unwrap_or_else(|| panic!("no contact called {name} is stored"))
+    }
+
+    #[tokio::test]
+    async fn test_a_person_in_both_address_books_ends_up_as_one_contact_that_both_know() {
+        let cache = a_cache("google_adopts");
+        a_marker_from_the_last_run(&cache, GOOGLE_ADDRESS_BOOK);
+        a_stored_contact(
+            &cache,
+            "Alice Smith",
+            "alice@example.com",
+            "AAMkAGI2",
+            MICROSOFT_ADDRESS_BOOK,
+        );
+        let google = ScriptedGoogle {
+            people: vec![a_google_person(
+                "people/c1",
+                "Alice Smith",
+                "alice@example.com",
+            )],
+            ..Default::default()
+        };
+
+        let result = sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT)
+            .await
+            .expect("a sync");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(result.updated_local, 1);
+        assert_eq!(result.created_local, 0);
+        assert_eq!(the_names_stored(&cache), vec!["Alice Smith".to_string()]);
+        let alice = the_contact_stored(&cache, "Alice Smith");
+        assert_eq!(alice.id_in(&AddressBook::Google), Some("people/c1"));
+        assert_eq!(alice.id_in(&AddressBook::Microsoft), Some("AAMkAGI2"));
+    }
+
+    #[tokio::test]
+    async fn test_a_person_in_both_address_books_ends_up_as_one_contact_microsoft_also_knows() {
+        let cache = a_cache("microsoft_adopts");
+        a_marker_from_the_last_run(&cache, MICROSOFT_ADDRESS_BOOK);
+        a_stored_contact(
+            &cache,
+            "Alice Smith",
+            "alice@example.com",
+            "people/c1",
+            GOOGLE_ADDRESS_BOOK,
+        );
+        let microsoft = ScriptedMicrosoft {
+            contacts: vec![a_microsoft_contact(
+                "AAMkAGI2",
+                "Alice Smith",
+                "alice@example.com",
+            )],
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_contacts(&cache, &microsoft, "a token", AN_ACCOUNT)
+            .await
+            .expect("a sync");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(result.updated_local, 1);
+        assert_eq!(the_names_stored(&cache), vec!["Alice Smith".to_string()]);
+        let alice = the_contact_stored(&cache, "Alice Smith");
+        assert_eq!(alice.id_in(&AddressBook::Google), Some("people/c1"));
+        assert_eq!(alice.id_in(&AddressBook::Microsoft), Some("AAMkAGI2"));
+    }
+
+    #[tokio::test]
+    async fn test_two_contacts_with_no_email_address_both_arrive_from_google() {
+        let cache = a_cache("google_no_addresses");
+        a_marker_from_the_last_run(&cache, GOOGLE_ADDRESS_BOOK);
+        let google = ScriptedGoogle {
+            people: vec![
+                a_google_person("people/c1", "Phone Only Person", ""),
+                a_google_person("people/c2", "Another Phone Only Person", ""),
+            ],
+            ..Default::default()
+        };
+
+        let result = sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT)
+            .await
+            .expect("a sync");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(result.created_local, 2);
+        let mut names = the_names_stored(&cache);
+        names.sort();
+        assert_eq!(
+            names,
+            vec![
+                "Another Phone Only Person".to_string(),
+                "Phone Only Person".to_string()
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_two_contacts_with_no_email_address_both_arrive_from_microsoft() {
+        let cache = a_cache("microsoft_no_addresses");
+        a_marker_from_the_last_run(&cache, MICROSOFT_ADDRESS_BOOK);
+        let microsoft = ScriptedMicrosoft {
+            contacts: vec![
+                a_microsoft_contact("AAMkAGI2", "Phone Only Person", ""),
+                a_microsoft_contact("AAMkAGI3", "Another Phone Only Person", ""),
+            ],
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_contacts(&cache, &microsoft, "a token", AN_ACCOUNT)
+            .await
+            .expect("a sync");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(result.created_local, 2);
+        assert_eq!(the_names_stored(&cache).len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_deleted_at_google_is_not_matched_by_an_outlook_identifier() {
+        let cache = a_cache("google_deletion_wrong_book");
+        a_marker_from_the_last_run(&cache, GOOGLE_ADDRESS_BOOK);
+        a_stored_contact(
+            &cache,
+            "Alice Smith",
+            "alice@example.com",
+            "AAMkAGI2",
+            MICROSOFT_ADDRESS_BOOK,
+        );
+        let google = ScriptedGoogle {
+            people: vec![a_person_google_deleted("AAMkAGI2")],
+            ..Default::default()
+        };
+
+        let result = sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT)
+            .await
+            .expect("a sync");
+
+        assert_eq!(result.deleted_local, 0);
+        assert_eq!(the_names_stored(&cache), vec!["Alice Smith".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_deleting_a_contact_forgets_the_address_books_that_knew_it() {
+        let cache = a_cache("deletion_forgets_identities");
+        a_stored_contact(
+            &cache,
+            "Alice Smith",
+            "alice@example.com",
+            "people/c1",
+            GOOGLE_ADDRESS_BOOK,
+        );
+        cache
+            .delete_contact("local-people/c1")
+            .expect("the contact to be deleted");
+
+        a_stored_contact(
+            &cache,
+            "Someone Else",
+            "someone@example.com",
+            "people/c1",
+            GOOGLE_ADDRESS_BOOK,
+        );
+
+        let stored = the_contact_stored(&cache, "Someone Else");
+        assert_eq!(stored.id_in(&AddressBook::Google), Some("people/c1"));
     }
 }

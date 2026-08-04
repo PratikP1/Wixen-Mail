@@ -1033,7 +1033,6 @@ mod tests {
             account_id: "test".to_string(),
             name: "Alice Smith".to_string(),
             email: "alice@example.com".to_string(),
-            provider_contact_id: None,
             phone: Some("555-1234".to_string()),
             company: Some("Acme Corp".to_string()),
             job_title: None,
@@ -1055,6 +1054,7 @@ mod tests {
             phones_json: None,
             addresses_json: None,
             custom_fields_json: None,
+            known_to: Vec::new(),
         };
         let item = ContactItem::from_entry(&entry);
         assert_eq!(item.name, "Alice Smith");
@@ -1071,7 +1071,6 @@ mod tests {
             account_id: "test".to_string(),
             name: "Bob".to_string(),
             email: "bob@example.com".to_string(),
-            provider_contact_id: None,
             phone: None,
             company: None,
             job_title: None,
@@ -1093,6 +1092,7 @@ mod tests {
             phones_json: None,
             addresses_json: None,
             custom_fields_json: None,
+            known_to: Vec::new(),
         };
         let item = ContactItem::from_entry(&entry);
         assert_eq!(item.phone, "");

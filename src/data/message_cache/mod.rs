@@ -193,14 +193,56 @@ pub struct CustomFieldEntry {
     pub value: String,
 }
 
+/// An address book that hands out its own identifiers for the contacts in it.
+///
+/// `Other` exists so a word this code does not recognise survives being read
+/// and written back. An address book named by a build that came later, or by a
+/// provider added since, is still an address book, and forgetting its name
+/// would silently join two of its contacts together.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AddressBook {
+    Google,
+    Microsoft,
+    Other(String),
+}
+
+impl AddressBook {
+    /// The word rows carry. Existing databases hold these exact words, so a
+    /// test pins each one against the constant the sync writes.
+    pub fn as_stored(&self) -> &str {
+        match self {
+            AddressBook::Google => "gmail",
+            AddressBook::Microsoft => "outlook",
+            AddressBook::Other(word) => word,
+        }
+    }
+
+    pub fn from_stored(value: &str) -> Self {
+        match value {
+            "gmail" => AddressBook::Google,
+            "outlook" => AddressBook::Microsoft,
+            other => AddressBook::Other(other.to_string()),
+        }
+    }
+}
+
+/// What one address book calls a contact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderIdentity {
+    pub address_book: AddressBook,
+    pub provider_contact_id: String,
+}
+
 /// Contact entry for account address book
 #[derive(Debug, Clone)]
 pub struct ContactEntry {
     pub id: String,
     pub account_id: String,
     pub name: String,
+    /// The address to write to, or empty. A contact with only a phone number
+    /// is an ordinary contact, so this being empty is a real answer and not a
+    /// missing one.
     pub email: String,
-    pub provider_contact_id: Option<String>,
     /// Primary phone (legacy single-value field)
     pub phone: Option<String>,
     pub company: Option<String>,
@@ -229,6 +271,48 @@ pub struct ContactEntry {
     pub addresses_json: Option<String>,
     /// JSON array of `CustomFieldEntry`
     pub custom_fields_json: Option<String>,
+    /// Every address book that knows this contact, and what each one calls it.
+    ///
+    /// A list rather than one identifier, because the same person is
+    /// ordinarily in more than one address book. With room for one, each sync
+    /// took the contact off the other and neither ever settled.
+    pub known_to: Vec<ProviderIdentity>,
+}
+
+impl ContactEntry {
+    /// What this address book calls the contact, when it knows it at all.
+    pub fn id_in(&self, address_book: &AddressBook) -> Option<&str> {
+        self.known_to
+            .iter()
+            .find(|identity| &identity.address_book == address_book)
+            .map(|identity| identity.provider_contact_id.as_str())
+    }
+
+    /// The contact, with this address book knowing it under this identifier.
+    ///
+    /// An address book knows a contact by one identifier, so naming the same
+    /// address book again replaces what it said before rather than adding to
+    /// it. The other address books are left alone, which is the whole point.
+    pub fn also_known_to(
+        &self,
+        address_book: AddressBook,
+        provider_contact_id: &str,
+    ) -> ContactEntry {
+        let mut known_to: Vec<ProviderIdentity> = self
+            .known_to
+            .iter()
+            .filter(|identity| identity.address_book != address_book)
+            .cloned()
+            .collect();
+        known_to.push(ProviderIdentity {
+            address_book,
+            provider_contact_id: provider_contact_id.to_string(),
+        });
+        ContactEntry {
+            known_to,
+            ..self.clone()
+        }
+    }
 }
 
 /// Queued outbound message for offline send
@@ -700,8 +784,7 @@ impl MessageCache {
                 id TEXT PRIMARY KEY,
                 account_id TEXT NOT NULL,
                 name TEXT NOT NULL,
-                email TEXT NOT NULL,
-                provider_contact_id TEXT,
+                email TEXT NOT NULL DEFAULT '',
                 phone TEXT,
                 company TEXT,
                 job_title TEXT,
@@ -716,12 +799,32 @@ impl MessageCache {
                 notes TEXT,
                 favorite BOOLEAN DEFAULT 0,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                UNIQUE(account_id, email)
+                updated_at TEXT NOT NULL
             )",
                 [],
             )
             .map_err(|e| Error::Other(format!("Failed to create contacts table: {}", e)))?;
+
+        // Which address books know a contact, one row per address book. The
+        // primary key says an address book gives one identifier to one
+        // contact; the unique index below says one address book's identifier
+        // points at one contact. Those two are what stop two address books
+        // taking a contact off each other on every sync, and neither can be
+        // said in a column holding a list.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS contact_identities (
+                contact_id TEXT NOT NULL,
+                account_id TEXT NOT NULL,
+                address_book TEXT NOT NULL,
+                provider_contact_id TEXT NOT NULL,
+                PRIMARY KEY (contact_id, address_book)
+            )",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!("Failed to create contact_identities table: {}", e))
+            })?;
 
         self.conn
             .execute(
@@ -1147,7 +1250,6 @@ impl MessageCache {
             "case_sensitive",
             "BOOLEAN DEFAULT 0",
         )?;
-        self.ensure_column_exists("contacts", "provider_contact_id", "TEXT")?;
         self.ensure_column_exists("contacts", "phone", "TEXT")?;
         self.ensure_column_exists("contacts", "company", "TEXT")?;
         self.ensure_column_exists("contacts", "job_title", "TEXT")?;
@@ -1167,6 +1269,11 @@ impl MessageCache {
         self.ensure_column_exists("contacts", "phones_json", "TEXT")?;
         self.ensure_column_exists("contacts", "addresses_json", "TEXT")?;
         self.ensure_column_exists("contacts", "custom_fields_json", "TEXT")?;
+        // After the columns above, and never before them: the rebuild copies
+        // every column by name, so a table written by an older build has to
+        // have them all first or the copy names one that is not there and the
+        // application cannot open the database at all.
+        self.rebuild_contacts_keyed_by_the_contact()?;
 
         // Dropped rather than left alone, which is the exception to the rule
         // that schema changes only ever add. This table held access and refresh
@@ -1185,7 +1292,12 @@ impl MessageCache {
             "CREATE INDEX IF NOT EXISTS idx_messages_uid ON messages(uid)",
             "CREATE INDEX IF NOT EXISTS idx_message_tags_tag_id ON message_tags(tag_id)",
             "CREATE INDEX IF NOT EXISTS idx_message_tags_message_id ON message_tags(message_id)",
+            // Not unique any more: an address is no longer what tells two
+            // contacts apart. Still here, because looking a contact up by
+            // address is how an import finds the one it already has and how an
+            // address book adopts a contact somebody typed in.
             "CREATE INDEX IF NOT EXISTS idx_contacts_account_email ON contacts(account_id, email)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_contact_identities_provider ON contact_identities(account_id, address_book, provider_contact_id)",
             "CREATE INDEX IF NOT EXISTS idx_outbox_queue_account_created ON outbox_queue(account_id, created_at)",
             "CREATE INDEX IF NOT EXISTS idx_calendar_events_account_dates ON calendar_events(account_id, start_datetime, end_datetime)",
             "CREATE INDEX IF NOT EXISTS idx_calendar_events_provider_id ON calendar_events(account_id, provider_event_id)",
@@ -1203,6 +1315,196 @@ impl MessageCache {
                 .map_err(|e| Error::Other(format!("Failed to create index: {}", e)))?;
         }
 
+        Ok(())
+    }
+
+    /// The columns a contact's row holds, in the order the rebuild copies
+    /// them. Named one by one and never `*`, so a column added later cannot
+    /// quietly line up against the wrong one.
+    const CONTACT_COLUMNS: &'static str = "id, account_id, name, email, phone, company, job_title, \
+         website, address, birthday, avatar_url, avatar_data_base64, source_provider, \
+         last_synced_at, vcard_raw, notes, favorite, created_at, updated_at, nickname, \
+         department, relationship, emails_json, phones_json, addresses_json, custom_fields_json";
+
+    /// The column names of a table, as SQLite holds them.
+    fn columns_of(&self, table: &str) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare(&format!("PRAGMA table_info({})", table))
+            .map_err(|e| Error::Other(format!("Failed to inspect schema for {}: {}", table, e)))?;
+
+        stmt.query_map([], |row| row.get::<_, String>(1))
+            .map_err(|e| Error::Other(format!("Failed to read schema for {}: {}", table, e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to collect schema info for {}: {}",
+                    table, e
+                ))
+            })
+    }
+
+    /// Whether this database still tells two contacts apart by their email
+    /// address.
+    ///
+    /// Asked of the unique index over exactly (account_id, email), which is
+    /// the thing being removed, rather than of any column. A database old
+    /// enough to predate a column would read as already rebuilt and keep the
+    /// constraint for ever.
+    fn contacts_are_keyed_by_email(&self) -> Result<bool> {
+        let mut indexes = self
+            .conn
+            .prepare("PRAGMA index_list(contacts)")
+            .map_err(|e| Error::Other(format!("Failed to list contact indexes: {}", e)))?;
+        let from_a_constraint = indexes
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(1)?, row.get::<_, String>(3)?))
+            })
+            .map_err(|e| Error::Other(format!("Failed to read contact indexes: {}", e)))?
+            .collect::<std::result::Result<Vec<(String, String)>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect contact indexes: {}", e)))?;
+
+        for (name, origin) in from_a_constraint {
+            if origin != "u" {
+                continue;
+            }
+            let mut over = self
+                .conn
+                .prepare(&format!(
+                    "PRAGMA index_info('{}')",
+                    name.replace('\'', "''")
+                ))
+                .map_err(|e| Error::Other(format!("Failed to inspect index {}: {}", name, e)))?;
+            let columns = over
+                .query_map([], |row| row.get::<_, Option<String>>(2))
+                .map_err(|e| Error::Other(format!("Failed to read index {}: {}", name, e)))?
+                .collect::<std::result::Result<Vec<Option<String>>, _>>()
+                .map_err(|e| Error::Other(format!("Failed to collect index {}: {}", name, e)))?;
+            let named: Vec<&str> = columns.iter().filter_map(|c| c.as_deref()).collect();
+            if named == ["account_id", "email"] {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Key a contact by the contact rather than by its email address, and move
+    /// what each address book calls it into a table that can hold more than
+    /// one.
+    ///
+    /// The one place in this schema where a table is rebuilt rather than added
+    /// to. What the old shape made impossible was ordinary: a person with only
+    /// a phone number could be stored once per account and no more, and a
+    /// person in both a Google and a Microsoft address book could not be
+    /// represented at all, because there was room for one identifier. The
+    /// window to do this exists only because no build has shipped; every other
+    /// table stays additive.
+    ///
+    /// Every step is inside one transaction, so a failure part way leaves the
+    /// old table exactly as it was and the next open tries again.
+    fn rebuild_contacts_keyed_by_the_contact(&self) -> Result<()> {
+        if !self.contacts_are_keyed_by_email()? {
+            return Ok(());
+        }
+        let carries_an_identity = self
+            .columns_of("contacts")?
+            .iter()
+            .any(|c| c == "provider_contact_id");
+
+        let rebuilding = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to begin the contacts rebuild: {}", e)))?;
+
+        rebuilding
+            .execute(
+                "CREATE TABLE contacts_rebuilt (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL DEFAULT '',
+                phone TEXT,
+                company TEXT,
+                job_title TEXT,
+                website TEXT,
+                address TEXT,
+                birthday TEXT,
+                avatar_url TEXT,
+                avatar_data_base64 TEXT,
+                source_provider TEXT,
+                last_synced_at TEXT,
+                vcard_raw TEXT,
+                notes TEXT,
+                favorite BOOLEAN DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                nickname TEXT,
+                department TEXT,
+                relationship TEXT,
+                emails_json TEXT,
+                phones_json TEXT,
+                addresses_json TEXT,
+                custom_fields_json TEXT
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to build the new contacts table: {}", e)))?;
+
+        let moved = rebuilding
+            .execute(
+                &format!(
+                    "INSERT INTO contacts_rebuilt ({columns}) SELECT {columns} FROM contacts",
+                    columns = Self::CONTACT_COLUMNS
+                ),
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to move the contacts across: {}", e)))?;
+
+        if carries_an_identity {
+            // A row with an identifier but no address book named is left with
+            // no identity and keeps its contact row. An identity under an
+            // address book nobody can name is a value no sync could ever match,
+            // so inventing one would be worse than saying it is not there.
+            let nameless = rebuilding
+                .query_row(
+                    "SELECT COUNT(*) FROM contacts
+                     WHERE provider_contact_id IS NOT NULL AND provider_contact_id <> ''
+                       AND (source_provider IS NULL OR source_provider = '')",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(|e| Error::Other(format!("Failed to count contact identities: {}", e)))?;
+            if nameless > 0 {
+                tracing::warn!(
+                    "{} contacts carry an address book identifier without naming the address book, so it could not be kept",
+                    nameless
+                );
+            }
+            rebuilding
+                .execute(
+                    "INSERT OR IGNORE INTO contact_identities
+                     (contact_id, account_id, address_book, provider_contact_id)
+                     SELECT id, account_id, source_provider, provider_contact_id FROM contacts
+                     WHERE provider_contact_id IS NOT NULL AND provider_contact_id <> ''
+                       AND source_provider IS NOT NULL AND source_provider <> ''",
+                    [],
+                )
+                .map_err(|e| {
+                    Error::Other(format!("Failed to keep the contact identities: {}", e))
+                })?;
+        }
+
+        rebuilding
+            .execute("DROP TABLE contacts", [])
+            .map_err(|e| Error::Other(format!("Failed to remove the old contacts table: {}", e)))?;
+        rebuilding
+            .execute("ALTER TABLE contacts_rebuilt RENAME TO contacts", [])
+            .map_err(|e| Error::Other(format!("Failed to put the contacts table back: {}", e)))?;
+        rebuilding
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to finish the contacts rebuild: {}", e)))?;
+
+        tracing::info!("{} contacts are now keyed by the contact", moved);
         Ok(())
     }
 
@@ -1224,21 +1526,7 @@ impl MessageCache {
             ));
         }
 
-        let mut stmt = self
-            .conn
-            .prepare(&format!("PRAGMA table_info({})", table))
-            .map_err(|e| Error::Other(format!("Failed to inspect schema for {}: {}", table, e)))?;
-
-        let columns = stmt
-            .query_map([], |row| row.get::<_, String>(1))
-            .map_err(|e| Error::Other(format!("Failed to read schema for {}: {}", table, e)))?
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|e| {
-                Error::Other(format!(
-                    "Failed to collect schema info for {}: {}",
-                    table, e
-                ))
-            })?;
+        let columns = self.columns_of(table)?;
 
         if !columns.iter().any(|c| c == column) {
             self.conn

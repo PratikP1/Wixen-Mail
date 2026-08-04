@@ -683,7 +683,6 @@ fn test_contact_item_display_conversion() {
         account_id: "test".to_string(),
         name: "Jane Doe".to_string(),
         email: "jane@example.com".to_string(),
-        provider_contact_id: None,
         phone: Some("555-9999".to_string()),
         company: Some("Widgets Inc".to_string()),
         job_title: Some("CEO".to_string()),
@@ -705,6 +704,7 @@ fn test_contact_item_display_conversion() {
         phones_json: None,
         addresses_json: None,
         custom_fields_json: None,
+        known_to: Vec::new(),
     };
 
     let item = ContactItem::from_entry(&entry);

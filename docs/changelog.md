@@ -8,6 +8,47 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The same person in two address books is now one contact that both know.**
+  Where an account is signed in to both Google and Microsoft and a person is in
+  both, there was room here for one address book only. Each sync used to take
+  the contact off the other and report it as new, and it never settled. The
+  previous answer, released earlier, was to let whichever address book reached
+  the contact first keep it and to say the other copy had been skipped, which
+  meant the order the syncs happened to run in decided what you saw.
+
+  A contact now carries a list of the address books that know it, and each one
+  says what it calls the contact. A sync matches on its own name for the person
+  and leaves what the other address book said alone, so Alice in Gmail and Alice
+  in Outlook are one Alice with two entries behind her. Nothing is reported as
+  skipped any more, because nothing is.
+
+  Where the two disagree about a detail, whichever synced last still wins. That
+  has not changed.
+
+- **A contact with no email address is an ordinary contact, and an account can
+  hold as many as it has.** Somebody with only a phone number is normal in an
+  address book. This used to tell two contacts apart by their email address, so
+  every contact without one collapsed into a single row: the second one saved
+  took the first one's place, and both were counted as new. Contacts are now
+  told apart by the contact, so a name and a phone number is enough.
+
+  Two things follow from the same change. Changing a contact's main email
+  address now saves, where before the contact manager refused it with a message
+  about a failed constraint. And a group with a member who has no email address
+  now leaves that member off the To line rather than putting an empty address on
+  it.
+
+- **Editing a contact no longer cuts every contact in the account off from the
+  address book it came from.** Saving one edit rewrote every contact in the
+  account as one nobody had synced. The next sync then treated the whole address
+  book as new.
+
+  **Known limitations:** a contact the provider no longer lists is still kept
+  here after a full re-read. Deciding to delete somebody's contacts because a
+  read came back short is a write decision, and it waits for the work on sending
+  changes outward. None of the address book syncing has run against a live
+  Google or Microsoft account.
+
 - **F1 opens help for whatever you are looking at, and the Help menu lists
   every page.** The guides were written and they ship beside the program, and
   there was no way in: no contents, no F1, and the only button that opened one
@@ -556,6 +597,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   contact is now left alone once one address book holds it, and the sync says
   one contact was skipped.
 
+  Superseded in an unreleased change: a contact now belongs to both address
+  books at once and nothing is skipped.
+
 - **A contact with no email address no longer destroys the one stored before
   it.** A contact with only a phone number is ordinary, and this stores contacts
   by their email address, so the second one saved took the first one's place
@@ -568,6 +612,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
   The count of skipped contacts appears after a sync, but there is still no way
   to read which contacts they were. That gap is not fixed here.
+
+  Superseded in an unreleased change: an account can now hold as many contacts
+  without an email address as it has, and none of them are skipped.
 
   None of this has run against a live Google or Microsoft account.
 

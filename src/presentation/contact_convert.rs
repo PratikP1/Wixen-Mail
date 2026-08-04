@@ -116,12 +116,17 @@ pub fn to_editor(stored: &StoredContact) -> EditorContact {
 
 /// What to store, from what the editor holds.
 ///
-/// `created_at` comes from the record being replaced where there is one, so
-/// editing a contact does not reset the date it was added.
+/// The record being replaced is passed in whole, and everything the editor
+/// does not hold is taken from it: the date the contact was added, and the
+/// address books that know it. The editor knows about neither, so building a
+/// contact without them would quietly cut every edited contact off from the
+/// address book it came from. Nothing but an edit reaches this, and the panel
+/// rewrites every row on an edit rather than only the changed one, so one edit
+/// to one contact would have emptied the account.
 pub fn to_stored(
     editor: &EditorContact,
     account_id: &str,
-    created_at: Option<&str>,
+    replacing: Option<&StoredContact>,
 ) -> StoredContact {
     let now = chrono::Utc::now().to_rfc3339();
     let emails: Vec<EmailEntry> = editor
@@ -176,7 +181,6 @@ pub fn to_stored(
             .first()
             .map(|e| e.address.clone())
             .unwrap_or_default(),
-        provider_contact_id: None,
         phone: phones.first().map(|p| p.number.clone()),
         company: blank_to_none(&editor.company),
         job_title: blank_to_none(&editor.job_title),
@@ -203,7 +207,9 @@ pub fn to_stored(
         vcard_raw: None,
         notes: blank_to_none(&editor.notes),
         favorite: editor.favorite,
-        created_at: created_at.unwrap_or(&now).to_string(),
+        created_at: replacing
+            .map(|existing| existing.created_at.clone())
+            .unwrap_or(now),
         nickname: blank_to_none(&editor.nickname),
         department: blank_to_none(&editor.department),
         relationship: blank_to_none(&editor.relationship),
@@ -211,6 +217,9 @@ pub fn to_stored(
         phones_json: store_list(&phones),
         addresses_json: store_list(&addresses),
         custom_fields_json: store_list(&custom),
+        known_to: replacing
+            .map(|existing| existing.known_to.clone())
+            .unwrap_or_default(),
     }
 }
 
@@ -353,10 +362,36 @@ mod tests {
         assert_eq!(restored.phones.len(), 2);
     }
 
+    /// A contact as it was before the editor was opened on it.
+    fn a_contact_being_edited() -> StoredContact {
+        let mut stored = to_stored(&editor_contact(), "acct", None);
+        stored.created_at = "2020-01-01T00:00:00Z".to_string();
+        stored.known_to = vec![crate::data::message_cache::ProviderIdentity {
+            address_book: crate::data::message_cache::AddressBook::Google,
+            provider_contact_id: "people/c1".to_string(),
+        }];
+        stored
+    }
+
     #[test]
     fn test_editing_a_contact_keeps_the_date_it_was_added() {
-        let stored = to_stored(&editor_contact(), "acct", Some("2020-01-01T00:00:00Z"));
+        let stored = to_stored(&editor_contact(), "acct", Some(&a_contact_being_edited()));
         assert_eq!(stored.created_at, "2020-01-01T00:00:00Z");
+    }
+
+    /// The editor knows nothing about address books, so everything it does not
+    /// hold has to come from the record being replaced. Without this, editing
+    /// one contact rewrites every contact in the account as one nobody synced.
+    #[test]
+    fn test_editing_a_contact_keeps_the_address_books_that_know_it() {
+        let before = a_contact_being_edited();
+
+        let after = to_stored(&to_editor(&before), "acct", Some(&before));
+
+        assert_eq!(
+            after.id_in(&crate::data::message_cache::AddressBook::Google),
+            Some("people/c1")
+        );
     }
 
     #[test]
