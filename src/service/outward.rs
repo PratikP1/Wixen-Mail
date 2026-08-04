@@ -110,6 +110,21 @@ impl Outward {
     }
 }
 
+/// One value, ready to be dropped into a query string.
+///
+/// A marker, a page number or a timestamp is the provider's to choose, and this
+/// application's job is to hand it back unchanged. Interpolated raw, a value
+/// holding an `&` splits into two parameters and one holding a `+` arrives as a
+/// space, which is how every first calendar sync sent a broken timestamp.
+///
+/// For a query value only. It writes a space as `+`, which is right after a `?`
+/// and wrong in a path segment, where a space has to be `%20`. It is also wrong
+/// for a whole URL a provider handed back: those carry their own separators and
+/// are used as they came.
+pub fn in_a_query(value: &str) -> String {
+    url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
+}
+
 /// What somebody is told when a change was refused.
 ///
 /// Says what was refused and why, because "operation not permitted" sends

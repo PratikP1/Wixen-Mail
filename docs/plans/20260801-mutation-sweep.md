@@ -240,13 +240,25 @@ Twelve are left, and each for a stated reason:
 1,296 mutants, 629 caught, 483 missed, 183 that will not compile, one timeout.
 The large miss count is expected here and most of it is not work.
 
-**Roughly half is the network, and stays that way.** `protocols`, the provider
-clients, `oauth` and the Safe Browsing client are sockets and round trips. A
-mutant in one survives because nothing short of a real server exercises it, and
-a test that pretended otherwise would be a test of the pretence. Their
-verification is the live account run, which is tracked separately. The rule
-from the protocols pass holds: sort the report into those two piles before
-touching anything.
+**Roughly half is the network, and stays that way.** `protocols`, `oauth` and
+the Safe Browsing client are sockets and round trips. A mutant in one survives
+because nothing short of a real server exercises it, and a test that pretended
+otherwise would be a test of the pretence. Their verification is the live
+account run, which is tracked separately. The rule from the protocols pass
+holds: sort the report into those two piles before touching anything.
+
+**The provider clients were in that list and no longer belong there.** They
+were filed under the network because every address came from a private
+constant, so nothing could reach them short of Google or Microsoft. They now
+hold the address they ask as a field, and a test can stand one up on a loopback
+port and read the request that actually went out. Two things follow. The URL
+decisions have moved out of round-trip method bodies into small functions that
+build a string and nothing else, which is a shape mutation testing can see.
+And this area is worth a scoped run again rather than being skipped on the
+strength of the paragraph above, which is what would have happened otherwise.
+
+What has not changed is that no request here has met a live server. The seam
+proves what this code sends, not what a provider accepts.
 
 **A second group could not be tested at all, and that was the finding.** Every
 path into `oauth_credentials` runs through an environment variable or through a

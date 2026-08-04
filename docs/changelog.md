@@ -151,6 +151,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The dates and markers sent to Google and Outlook survive the trip.** The
+  first calendar sync on an account asks for a window of six months back to a
+  year forward, and it wrote the two ends of that window straight into the web
+  address it asked. Both end in `+00:00`, and a plus sign in that position of a
+  web address means a space, so both services were being asked about a time
+  neither could read. The same fault applied to the markers each service hands
+  back to say where the last sync finished: one containing an `&` split into two
+  and asked a different question than the one intended. Every value this program
+  puts into an address is now encoded first.
+
+  This has never been seen happening, because no part of this program has yet
+  run against a real Google or Outlook account. What is proved is that the
+  program now sends the value it means to send. Whether each service is happy
+  with it is still for the first live run to say.
+
 - **Uninstalling takes the sign-in token of an account whose address was changed
   after it signed in.** Which token belongs to an account was worked out from
   the address the account has now, and the token was filed under the address it

@@ -4,6 +4,7 @@
 //! All methods take an OAuth access token and return deserialized results.
 
 use crate::common::{Error, Result};
+use crate::service::outward::in_a_query;
 use serde::{Deserialize, Serialize};
 
 // ── Google People API Types ─────────────────────────────────────────────────
@@ -285,21 +286,59 @@ const CONTACTS_PAGE_SIZE: u32 = 1000;
 /// Asking for a sync token is what makes Google send back the marker saying
 /// where this sync finished. Without that request no marker ever arrives, so
 /// nothing is stored to ask from and every sync reads the whole address book.
-fn connections_url(sync_token: Option<&str>, page_token: Option<&str>) -> String {
+fn connections_url(base: &str, sync_token: Option<&str>, page_token: Option<&str>) -> String {
     let mut url = format!(
-        "{PEOPLE_API_BASE}/people/me/connections?personFields={PERSON_FIELDS}&pageSize={CONTACTS_PAGE_SIZE}&requestSyncToken=true"
+        "{base}/people/me/connections?personFields={PERSON_FIELDS}&pageSize={CONTACTS_PAGE_SIZE}&requestSyncToken=true"
     );
     if let Some(sync_token) = sync_token {
-        url.push_str(&format!("&syncToken={sync_token}"));
+        url.push_str(&format!("&syncToken={}", in_a_query(sync_token)));
     }
     if let Some(page_token) = page_token {
-        url.push_str(&format!("&pageToken={page_token}"));
+        url.push_str(&format!("&pageToken={}", in_a_query(page_token)));
+    }
+    url
+}
+
+/// Where to ask for the events on somebody's own calendar.
+///
+/// A sync marker and a time window are alternatives, not companions: Google
+/// refuses a request carrying both, and a marker already stands for the window
+/// the first sync asked about.
+fn events_url(
+    base: &str,
+    time_min: Option<&str>,
+    time_max: Option<&str>,
+    sync_token: Option<&str>,
+    page_token: Option<&str>,
+) -> String {
+    let mut url = format!(
+        "{base}/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=2500"
+    );
+    if let Some(sync_token) = sync_token {
+        url.push_str(&format!("&syncToken={}", in_a_query(sync_token)));
+    } else {
+        if let Some(time_min) = time_min {
+            url.push_str(&format!("&timeMin={}", in_a_query(time_min)));
+        }
+        if let Some(time_max) = time_max {
+            url.push_str(&format!("&timeMax={}", in_a_query(time_max)));
+        }
+    }
+    if let Some(page_token) = page_token {
+        url.push_str(&format!("&pageToken={}", in_a_query(page_token)));
     }
     url
 }
 
 pub struct GoogleApiClient {
     http: crate::service::outward::Outward,
+    /// Where the contacts are asked for.
+    people_base: String,
+    /// Where the calendar is asked for.
+    ///
+    /// Separate from the contacts one because Google puts them on different
+    /// hosts under different path prefixes, so one address cannot produce both.
+    calendar_base: String,
 }
 
 impl Default for GoogleApiClient {
@@ -313,6 +352,22 @@ impl GoogleApiClient {
     pub fn new() -> Self {
         Self {
             http: crate::service::outward::Outward::read_only(Self::http()),
+            people_base: PEOPLE_API_BASE.to_string(),
+            calendar_base: CALENDAR_API_BASE.to_string(),
+        }
+    }
+
+    /// The same client, asking a named address instead of Google.
+    ///
+    /// What lets a test stand up a server on a loopback port and read the
+    /// request this code actually sends, rather than only the parsing on either
+    /// side of it. Takes and returns the client so that what it may change stays
+    /// a separate decision from where it is pointed.
+    pub fn pointed_at(self, address: &str) -> Self {
+        Self {
+            people_base: address.to_string(),
+            calendar_base: address.to_string(),
+            ..self
         }
     }
 
@@ -330,6 +385,8 @@ impl GoogleApiClient {
             } else {
                 crate::service::outward::Outward::read_only(http)
             },
+            people_base: PEOPLE_API_BASE.to_string(),
+            calendar_base: CALENDAR_API_BASE.to_string(),
         }
     }
 
@@ -364,7 +421,7 @@ impl GoogleApiClient {
         let mut final_sync_token: Option<String> = None;
 
         loop {
-            let url = connections_url(sync_token, page_token.as_deref());
+            let url = connections_url(&self.people_base, sync_token, page_token.as_deref());
 
             let resp: GoogleConnectionsResponse =
                 with_retry(3, || self.api_get(&url, token)).await?;
@@ -383,7 +440,7 @@ impl GoogleApiClient {
 
     /// Create a new contact.
     pub async fn create_contact(&self, token: &str, person: &GooglePerson) -> Result<GooglePerson> {
-        let url = format!("{}/people:createContact", PEOPLE_API_BASE);
+        let url = format!("{}/people:createContact", self.people_base);
         with_retry(3, || self.api_post(&url, token, person)).await
     }
 
@@ -398,14 +455,14 @@ impl GoogleApiClient {
     ) -> Result<GooglePerson> {
         let url = format!(
             "{}/{}:updateContact?updatePersonFields={}",
-            PEOPLE_API_BASE, resource_name, PERSON_FIELDS,
+            self.people_base, resource_name, PERSON_FIELDS,
         );
         with_retry(3, || self.api_patch(&url, token, person)).await
     }
 
     /// Delete a contact by resource name.
     pub async fn delete_contact(&self, token: &str, resource_name: &str) -> Result<()> {
-        let url = format!("{}/{}:deleteContact", PEOPLE_API_BASE, resource_name);
+        let url = format!("{}/{}:deleteContact", self.people_base, resource_name);
         with_retry(3, || self.api_delete(&url, token)).await
     }
 
@@ -426,24 +483,13 @@ impl GoogleApiClient {
         let mut final_sync_token: Option<String> = None;
 
         loop {
-            let mut url = format!(
-                "{}/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=2500",
-                CALENDAR_API_BASE,
+            let url = events_url(
+                &self.calendar_base,
+                time_min,
+                time_max,
+                sync_token,
+                page_token.as_deref(),
             );
-            if let Some(st) = sync_token {
-                url.push_str(&format!("&syncToken={}", st));
-            } else {
-                // Only use time bounds when not doing incremental sync
-                if let Some(tmin) = time_min {
-                    url.push_str(&format!("&timeMin={}", tmin));
-                }
-                if let Some(tmax) = time_max {
-                    url.push_str(&format!("&timeMax={}", tmax));
-                }
-            }
-            if let Some(ref pt) = page_token {
-                url.push_str(&format!("&pageToken={}", pt));
-            }
 
             let resp: GoogleEventsResponse = with_retry(3, || self.api_get(&url, token)).await?;
 
@@ -461,7 +507,7 @@ impl GoogleApiClient {
 
     /// Create a calendar event.
     pub async fn create_event(&self, token: &str, event: &GoogleEvent) -> Result<GoogleEvent> {
-        let url = format!("{}/calendars/primary/events", CALENDAR_API_BASE);
+        let url = format!("{}/calendars/primary/events", self.calendar_base);
         with_retry(3, || self.api_post(&url, token, event)).await
     }
 
@@ -474,7 +520,7 @@ impl GoogleApiClient {
     ) -> Result<GoogleEvent> {
         let url = format!(
             "{}/calendars/primary/events/{}",
-            CALENDAR_API_BASE, event_id
+            self.calendar_base, event_id
         );
         with_retry(3, || self.api_put(&url, token, event)).await
     }
@@ -483,7 +529,7 @@ impl GoogleApiClient {
     pub async fn delete_event(&self, token: &str, event_id: &str) -> Result<()> {
         let url = format!(
             "{}/calendars/primary/events/{}",
-            CALENDAR_API_BASE, event_id
+            self.calendar_base, event_id
         );
         with_retry(3, || self.api_delete(&url, token)).await
     }
@@ -658,14 +704,79 @@ mod tests {
 
     #[test]
     fn test_a_contacts_request_asks_google_for_a_sync_token() {
-        let url = connections_url(None, None);
+        let url = connections_url(PEOPLE_API_BASE, None, None);
 
         assert!(url.contains("requestSyncToken=true"), "{url}");
     }
 
+    use crate::common::answering::{answering, asked_for, heard};
+
+    /// A server that answers one read, and the client aimed at it.
+    async fn a_google_client_talking_to_itself()
+    -> (GoogleApiClient, tokio::sync::oneshot::Receiver<String>) {
+        // An empty object satisfies every response shape here, and carries no
+        // paging fields, so exactly one request goes out. That matters: the
+        // server answers once, and a second request would sit through three
+        // rounds of retry backoff before failing.
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        (
+            GoogleApiClient::new().pointed_at(&format!("http://{address}")),
+            listening,
+        )
+    }
+
+    #[tokio::test]
+    async fn test_a_client_pointed_at_an_address_asks_that_address() {
+        let (google, listening) = a_google_client_talking_to_itself().await;
+
+        google
+            .list_contacts("a-token", None)
+            .await
+            .expect("the contact list to be read");
+
+        let request = heard(listening, "the contact list")
+            .await
+            .expect("a request");
+        assert!(
+            asked_for(&request).starts_with("GET /people/me/connections?"),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_window_google_is_asked_for_survives_its_plus_sign() {
+        // The first calendar sync on every account asks for a window built by
+        // chrono, which writes the UTC offset as "+00:00". A bare plus in a
+        // query string is a space, so sent raw the timestamp arrives broken.
+        let (google, listening) = a_google_client_talking_to_itself().await;
+
+        google
+            .list_events("a-token", Some("2026-03-05T00:00:00+00:00"), None, None)
+            .await
+            .expect("the event list to be read");
+
+        let request = heard(listening, "the event list").await.expect("a request");
+        assert!(
+            request.contains("timeMin=2026-03-05T00%3A00%3A00%2B00%3A00"),
+            "{request}"
+        );
+        assert!(!request.contains("+00:00"), "{request}");
+    }
+
+    #[test]
+    fn test_a_marker_google_sent_back_goes_back_as_one_value() {
+        // A marker is Google's to choose and this code has to send it back
+        // unchanged. Interpolated raw, a marker holding an ampersand splits
+        // into two parameters and Google reads a different request than the
+        // one this code meant.
+        let url = connections_url(PEOPLE_API_BASE, Some("a&pageToken=b"), None);
+
+        assert!(url.contains("syncToken=a%26pageToken%3Db"), "{url}");
+    }
+
     #[test]
     fn test_a_contacts_request_carries_the_markers_it_was_given() {
-        let url = connections_url(Some("tok123"), Some("page9"));
+        let url = connections_url(PEOPLE_API_BASE, Some("tok123"), Some("page9"));
 
         assert!(url.contains("syncToken=tok123"), "{url}");
         assert!(url.contains("pageToken=page9"), "{url}");

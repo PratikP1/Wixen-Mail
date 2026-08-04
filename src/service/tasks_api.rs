@@ -29,6 +29,7 @@
 
 use crate::common::{Error, Result};
 use crate::data::message_cache::{TaskEntry, TaskListEntry};
+use crate::service::outward::in_a_query;
 use serde::{Deserialize, Serialize};
 
 /// Where Google keeps tasks.
@@ -431,16 +432,73 @@ fn refusal(status: reqwest::StatusCode) -> Error {
     Error::Protocol(format!("The task service refused the change: {status}"))
 }
 
+/// Where to ask for somebody's Google task lists.
+fn google_lists_url(base: &str, page: Option<&str>) -> String {
+    let mut url = format!("{base}/users/@me/lists?maxResults=100");
+    if let Some(page) = page {
+        url.push_str(&format!("&pageToken={}", in_a_query(page)));
+    }
+    url
+}
+
+/// Where to ask for the tasks in one Google list, deleted ones included.
+///
+/// `showDeleted`, because a task deleted on the phone has to be deleted here
+/// too, and a sync that only ever adds is a list that only ever grows.
+fn google_tasks_url(base: &str, list_id: &str, page: Option<&str>) -> String {
+    let mut url = format!(
+        "{base}/lists/{list_id}/tasks\
+         ?maxResults=100&showCompleted=true&showHidden=true&showDeleted=true"
+    );
+    if let Some(page) = page {
+        url.push_str(&format!("&pageToken={}", in_a_query(page)));
+    }
+    url
+}
+
 /// A client for both services. Stateless: the token is passed per call.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct TasksClient {
     http: crate::service::outward::Outward,
+    /// Where Google's tasks are asked for.
+    google_base: String,
+    /// Where Microsoft's are.
+    microsoft_base: String,
+}
+
+impl Default for TasksClient {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TasksClient {
     /// A client that reads and does not change anything.
+    ///
+    /// Written out rather than derived. A derived one would give each address
+    /// the empty string, so the shipped client would ask nothing at all, and no
+    /// test here makes a real request to either service, so nothing would say
+    /// so.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            http: crate::service::outward::Outward::default(),
+            google_base: GOOGLE_TASKS_BASE.to_string(),
+            microsoft_base: GRAPH_BASE.to_string(),
+        }
+    }
+
+    /// The same client, asking a named address instead of the real services.
+    ///
+    /// Both services at once: a test stands up one server and the client it
+    /// gets back reaches it whichever provider a call is for. Takes and returns
+    /// the client so that what it may change stays a separate decision from
+    /// where it is pointed.
+    pub fn pointed_at(self, address: &str) -> Self {
+        Self {
+            google_base: address.to_string(),
+            microsoft_base: address.to_string(),
+            ..self
+        }
     }
 
     /// A client for one account, allowed whatever that account is allowed.
@@ -456,6 +514,8 @@ impl TasksClient {
             } else {
                 crate::service::outward::Outward::default()
             },
+            google_base: GOOGLE_TASKS_BASE.to_string(),
+            microsoft_base: GRAPH_BASE.to_string(),
         }
     }
 
@@ -485,10 +545,7 @@ impl TasksClient {
         let mut all = Vec::new();
         let mut page: Option<String> = None;
         loop {
-            let mut url = format!("{GOOGLE_TASKS_BASE}/users/@me/lists?maxResults=100");
-            if let Some(ref token) = page {
-                url.push_str(&format!("&pageToken={token}"));
-            }
+            let url = google_lists_url(&self.google_base, page.as_deref());
             let response: GoogleTaskListsResponse = self.get(&url, token).await?;
             all.extend(response.items);
             if all.len() >= MAX_ITEMS {
@@ -510,13 +567,7 @@ impl TasksClient {
         let mut all = Vec::new();
         let mut page: Option<String> = None;
         loop {
-            let mut url = format!(
-                "{GOOGLE_TASKS_BASE}/lists/{list_id}/tasks\
-                 ?maxResults=100&showCompleted=true&showHidden=true&showDeleted=true"
-            );
-            if let Some(ref token) = page {
-                url.push_str(&format!("&pageToken={token}"));
-            }
+            let url = google_tasks_url(&self.google_base, list_id, page.as_deref());
             let response: GoogleTasksResponse = self.get(&url, token).await?;
             all.extend(response.items);
             if all.len() >= MAX_ITEMS {
@@ -533,7 +584,8 @@ impl TasksClient {
     /// Every Microsoft To Do list on the account.
     pub async fn ms_lists(&self, token: &str) -> Result<Vec<MsTodoList>> {
         let mut all = Vec::new();
-        let mut url = format!("{GRAPH_BASE}/me/todo/lists");
+        let base = &self.microsoft_base;
+        let mut url = format!("{base}/me/todo/lists");
         loop {
             let response: MsListsResponse = self.get(&url, token).await?;
             all.extend(response.value);
@@ -609,6 +661,7 @@ impl TasksClient {
         list_id: &str,
         task: &GoogleTask,
     ) -> Result<GoogleTask> {
+        let base = &self.google_base;
         let list = strip_prefix(list_id, "google:");
         let body = GoogleTask {
             id: String::new(),
@@ -616,7 +669,7 @@ impl TasksClient {
         };
         self.send(
             reqwest::Method::POST,
-            &format!("{GOOGLE_TASKS_BASE}/lists/{list}/tasks"),
+            &format!("{base}/lists/{list}/tasks"),
             token,
             &body,
         )
@@ -630,11 +683,12 @@ impl TasksClient {
         list_id: &str,
         task: &GoogleTask,
     ) -> Result<GoogleTask> {
+        let base = &self.google_base;
         let list = strip_prefix(list_id, "google:");
         let id = strip_prefix(&task.id, "google:");
         self.send(
             reqwest::Method::PATCH,
-            &format!("{GOOGLE_TASKS_BASE}/lists/{list}/tasks/{id}"),
+            &format!("{base}/lists/{list}/tasks/{id}"),
             token,
             task,
         )
@@ -648,13 +702,11 @@ impl TasksClient {
         list_id: &str,
         task_id: &str,
     ) -> Result<()> {
+        let base = &self.google_base;
         let list = strip_prefix(list_id, "google:");
         let id = strip_prefix(task_id, "google:");
-        self.delete(
-            &format!("{GOOGLE_TASKS_BASE}/lists/{list}/tasks/{id}"),
-            token,
-        )
-        .await
+        self.delete(&format!("{base}/lists/{list}/tasks/{id}"), token)
+            .await
     }
 
     /// Put a new task in a Microsoft list, and read back what was stored.
@@ -664,6 +716,7 @@ impl TasksClient {
         list_id: &str,
         task: &MsTodoTask,
     ) -> Result<MsTodoTask> {
+        let base = &self.microsoft_base;
         let list = strip_prefix(list_id, "ms:");
         let body = MsTodoTask {
             id: String::new(),
@@ -671,7 +724,7 @@ impl TasksClient {
         };
         self.send(
             reqwest::Method::POST,
-            &format!("{GRAPH_BASE}/me/todo/lists/{list}/tasks"),
+            &format!("{base}/me/todo/lists/{list}/tasks"),
             token,
             &body,
         )
@@ -685,11 +738,12 @@ impl TasksClient {
         list_id: &str,
         task: &MsTodoTask,
     ) -> Result<MsTodoTask> {
+        let base = &self.microsoft_base;
         let list = strip_prefix(list_id, "ms:");
         let id = strip_prefix(&task.id, "ms:");
         self.send(
             reqwest::Method::PATCH,
-            &format!("{GRAPH_BASE}/me/todo/lists/{list}/tasks/{id}"),
+            &format!("{base}/me/todo/lists/{list}/tasks/{id}"),
             token,
             task,
         )
@@ -698,19 +752,18 @@ impl TasksClient {
 
     /// Remove a task from a Microsoft list.
     pub async fn ms_delete_task(&self, token: &str, list_id: &str, task_id: &str) -> Result<()> {
+        let base = &self.microsoft_base;
         let list = strip_prefix(list_id, "ms:");
         let id = strip_prefix(task_id, "ms:");
-        self.delete(
-            &format!("{GRAPH_BASE}/me/todo/lists/{list}/tasks/{id}"),
-            token,
-        )
-        .await
+        self.delete(&format!("{base}/me/todo/lists/{list}/tasks/{id}"), token)
+            .await
     }
 
     /// Every task in one Microsoft list.
     pub async fn ms_tasks(&self, token: &str, list_id: &str) -> Result<Vec<MsTodoTask>> {
         let mut all = Vec::new();
-        let mut url = format!("{GRAPH_BASE}/me/todo/lists/{list_id}/tasks");
+        let base = &self.microsoft_base;
+        let mut url = format!("{base}/me/todo/lists/{list_id}/tasks");
         loop {
             let response: MsTasksResponse = self.get(&url, token).await?;
             all.extend(response.value);
@@ -729,6 +782,45 @@ impl TasksClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::answering::{answering, asked_for, heard};
+
+    #[tokio::test]
+    async fn test_a_task_client_pointed_at_an_address_asks_that_address() {
+        // No items and no next page, so exactly one request goes out.
+        let (address, listening) =
+            answering("200 OK", "application/json", r#"{"items":[]}"#.to_string()).await;
+
+        TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .google_lists("a-token")
+            .await
+            .expect("the task lists to be read");
+
+        let request = heard(listening, "the task lists").await.expect("a request");
+        assert!(
+            asked_for(&request).starts_with("GET /users/@me/lists?"),
+            "{request}"
+        );
+    }
+
+    #[test]
+    fn test_a_client_nobody_pointed_anywhere_still_asks_the_real_service() {
+        // The client every sync builds. Nothing in this suite makes a real
+        // request to Google, so a client left pointing at an empty address
+        // would keep the whole suite green and reach nothing in the world.
+        let asks = google_lists_url(&TasksClient::new().google_base, None);
+
+        assert!(asks.starts_with("https://tasks.googleapis.com"), "{asks}");
+    }
+
+    #[test]
+    fn test_a_page_marker_google_sent_back_goes_back_as_one_value() {
+        // A page marker is Google's to choose. Interpolated raw, one holding an
+        // ampersand splits into two parameters and asks a different question.
+        let asks = google_lists_url(GOOGLE_TASKS_BASE, Some("a&maxResults=1"));
+
+        assert!(asks.contains("pageToken=a%26maxResults%3D1"), "{asks}");
+    }
 
     fn google(title: &str) -> GoogleTask {
         GoogleTask {
@@ -1000,8 +1092,13 @@ mod tests {
             }
         });
 
+        // Built by hand because this one has to be allowed to change things,
+        // and the constructor that decides that reads the real stored settings.
+        // The address is passed in full, so neither base is consulted.
         let client = TasksClient {
             http: crate::service::outward::Outward::may_change_things(reqwest::Client::new()),
+            google_base: GOOGLE_TASKS_BASE.to_string(),
+            microsoft_base: GRAPH_BASE.to_string(),
         };
         let refused = client
             .delete(&format!("http://127.0.0.1:{port}/tasks/1"), "token")

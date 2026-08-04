@@ -353,7 +353,7 @@ mod tests {
     // reply on a loopback port is the smallest thing that reaches the two
     // sync functions rather than only the converters beneath them.
 
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use crate::common::answering::answering;
 
     fn temp_cache(label: &str) -> MessageCache {
         let nanos = std::time::SystemTime::now()
@@ -416,66 +416,6 @@ mod tests {
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
         }
-    }
-
-    /// Answer one request on a loopback port, and hand back what was asked.
-    async fn answering(
-        status: &'static str,
-        content_type: &'static str,
-        reply: String,
-    ) -> (std::net::SocketAddr, tokio::sync::oneshot::Receiver<String>) {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("a loopback port");
-        let address = listener.local_addr().expect("the port that was taken");
-        let (asked, heard) = tokio::sync::oneshot::channel();
-
-        tokio::spawn(async move {
-            let Ok((mut stream, _)) = listener.accept().await else {
-                return;
-            };
-            let request = read_request(&mut stream).await;
-            let head = format!(
-                "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\n\
-                 Content-Length: {}\r\nConnection: close\r\n\r\n",
-                reply.len()
-            );
-            let _ = stream.write_all(head.as_bytes()).await;
-            let _ = stream.write_all(reply.as_bytes()).await;
-            let _ = stream.shutdown().await;
-            let _ = asked.send(request);
-        });
-
-        (address, heard)
-    }
-
-    async fn read_request(stream: &mut tokio::net::TcpStream) -> String {
-        let mut raw = Vec::new();
-        let mut chunk = [0_u8; 2048];
-        while let Ok(read) = stream.read(&mut chunk).await {
-            if read == 0 {
-                break;
-            }
-            raw.extend_from_slice(&chunk[..read]);
-            let so_far = String::from_utf8_lossy(&raw).into_owned();
-            let Some(head_end) = so_far.find("\r\n\r\n") else {
-                continue;
-            };
-            if raw.len() >= head_end + 4 + content_length(&so_far[..head_end]) {
-                break;
-            }
-        }
-        String::from_utf8_lossy(&raw).into_owned()
-    }
-
-    fn content_length(head: &str) -> usize {
-        for line in head.lines() {
-            let lowered = line.to_ascii_lowercase();
-            if let Some(value) = lowered.strip_prefix("content-length:") {
-                return value.trim().parse().unwrap_or(0);
-            }
-        }
-        0
     }
 
     /// A CalDAV multistatus carrying one event per identifier.

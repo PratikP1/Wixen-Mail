@@ -8,6 +8,7 @@
 
 use crate::common::{Error, Result};
 use crate::service::google_api::with_retry;
+use crate::service::outward::in_a_query;
 use serde::{Deserialize, Serialize};
 
 // ── Microsoft Graph Contact Types ───────────────────────────────────────────
@@ -196,8 +197,35 @@ struct MsEventsResponse {
 
 const GRAPH_BASE: &str = "https://graph.microsoft.com/v1.0";
 
+/// Where to ask for the first page of somebody's contacts.
+///
+/// Only the first: every page after it is a whole address Graph handed back.
+fn contacts_delta_url(base: &str) -> String {
+    format!("{base}/me/contacts/delta?$top=100")
+}
+
+/// Where to ask for the events in a window on somebody's own calendar.
+///
+/// Only the first request of a sync. Once Graph has sent a delta link back,
+/// that link is the address and carries the window inside it.
+fn calendar_view_url(base: &str, start: Option<&str>, end: Option<&str>) -> String {
+    let mut url = format!("{base}/me/calendarView/delta?");
+    if let Some(start) = start {
+        url.push_str(&format!("startDateTime={}&", in_a_query(start)));
+    }
+    if let Some(end) = end {
+        url.push_str(&format!("endDateTime={}&", in_a_query(end)));
+    }
+    url.push_str("$top=100");
+    url
+}
+
 pub struct MsGraphClient {
     http: crate::service::outward::Outward,
+    /// Where contacts, the calendar and everything else are asked for.
+    ///
+    /// One address, unlike Google: Graph puts all of it on one host.
+    base: String,
 }
 
 impl Default for MsGraphClient {
@@ -211,6 +239,23 @@ impl MsGraphClient {
     pub fn new() -> Self {
         Self {
             http: crate::service::outward::Outward::read_only(Self::http()),
+            base: GRAPH_BASE.to_string(),
+        }
+    }
+
+    /// The same client, asking a named address instead of Microsoft.
+    ///
+    /// What lets a test stand up a server on a loopback port and read the
+    /// request this code actually sends, rather than only the parsing on either
+    /// side of it. Takes and returns the client so that what it may change stays
+    /// a separate decision from where it is pointed.
+    ///
+    /// Only the requests this code builds move. A stored delta link is a whole
+    /// address Graph handed back and is followed as it came.
+    pub fn pointed_at(self, address: &str) -> Self {
+        Self {
+            base: address.to_string(),
+            ..self
         }
     }
 
@@ -228,6 +273,7 @@ impl MsGraphClient {
             } else {
                 crate::service::outward::Outward::read_only(http)
             },
+            base: GRAPH_BASE.to_string(),
         }
     }
 
@@ -261,7 +307,7 @@ impl MsGraphClient {
         let mut next_url: Option<String> = Some(
             delta_link
                 .map(|s| s.to_string())
-                .unwrap_or_else(|| format!("{}/me/contacts/delta?$top=100", GRAPH_BASE)),
+                .unwrap_or_else(|| contacts_delta_url(&self.base)),
         );
         let mut final_delta_link: Option<String> = None;
 
@@ -282,7 +328,7 @@ impl MsGraphClient {
         token: &str,
         contact: &MsGraphContact,
     ) -> Result<MsGraphContact> {
-        let url = format!("{}/me/contacts", GRAPH_BASE);
+        let url = format!("{}/me/contacts", self.base);
         with_retry(3, || self.api_post(&url, token, contact)).await
     }
 
@@ -293,13 +339,13 @@ impl MsGraphClient {
         contact_id: &str,
         contact: &MsGraphContact,
     ) -> Result<MsGraphContact> {
-        let url = format!("{}/me/contacts/{}", GRAPH_BASE, contact_id);
+        let url = format!("{}/me/contacts/{}", self.base, contact_id);
         with_retry(3, || self.api_patch(&url, token, contact)).await
     }
 
     /// Delete a contact.
     pub async fn delete_contact(&self, token: &str, contact_id: &str) -> Result<()> {
-        let url = format!("{}/me/contacts/{}", GRAPH_BASE, contact_id);
+        let url = format!("{}/me/contacts/{}", self.base, contact_id);
         with_retry(3, || self.api_delete(&url, token)).await
     }
 
@@ -317,18 +363,9 @@ impl MsGraphClient {
         delta_link: Option<&str>,
     ) -> Result<(Vec<MsGraphEvent>, Option<String>)> {
         let mut all_events = Vec::new();
-        let initial_url = if let Some(dl) = delta_link {
-            dl.to_string()
-        } else {
-            let mut url = format!("{}/me/calendarView/delta?", GRAPH_BASE);
-            if let Some(s) = start {
-                url.push_str(&format!("startDateTime={}&", s));
-            }
-            if let Some(e) = end {
-                url.push_str(&format!("endDateTime={}&", e));
-            }
-            url.push_str("$top=100");
-            url
+        let initial_url = match delta_link {
+            Some(delta_link) => delta_link.to_string(),
+            None => calendar_view_url(&self.base, start, end),
         };
 
         let mut next_url: Option<String> = Some(initial_url);
@@ -347,7 +384,7 @@ impl MsGraphClient {
 
     /// Create a calendar event.
     pub async fn create_event(&self, token: &str, event: &MsGraphEvent) -> Result<MsGraphEvent> {
-        let url = format!("{}/me/events", GRAPH_BASE);
+        let url = format!("{}/me/events", self.base);
         with_retry(3, || self.api_post(&url, token, event)).await
     }
 
@@ -358,13 +395,13 @@ impl MsGraphClient {
         event_id: &str,
         event: &MsGraphEvent,
     ) -> Result<MsGraphEvent> {
-        let url = format!("{}/me/events/{}", GRAPH_BASE, event_id);
+        let url = format!("{}/me/events/{}", self.base, event_id);
         with_retry(3, || self.api_patch(&url, token, event)).await
     }
 
     /// Delete a calendar event.
     pub async fn delete_event(&self, token: &str, event_id: &str) -> Result<()> {
-        let url = format!("{}/me/events/{}", GRAPH_BASE, event_id);
+        let url = format!("{}/me/events/{}", self.base, event_id);
         with_retry(3, || self.api_delete(&url, token)).await
     }
 
@@ -477,6 +514,59 @@ impl MsGraphClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::answering::{answering, asked_for, heard};
+
+    /// A server that answers one read, and the client aimed at it.
+    async fn a_graph_client_talking_to_itself()
+    -> (MsGraphClient, tokio::sync::oneshot::Receiver<String>) {
+        // An empty object satisfies every response shape here and carries no
+        // next link, so exactly one request goes out. The server answers once,
+        // and a second request would sit through three rounds of retry backoff
+        // before failing.
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        (
+            MsGraphClient::new().pointed_at(&format!("http://{address}")),
+            listening,
+        )
+    }
+
+    #[tokio::test]
+    async fn test_a_client_pointed_at_an_address_asks_that_address() {
+        let (graph, listening) = a_graph_client_talking_to_itself().await;
+
+        graph
+            .list_contacts("a-token", None)
+            .await
+            .expect("the contact list to be read");
+
+        let request = heard(listening, "the contact list")
+            .await
+            .expect("a request");
+        assert!(
+            asked_for(&request).starts_with("GET /me/contacts/delta?"),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_window_microsoft_is_asked_for_survives_its_plus_sign() {
+        // The first calendar sync on every account asks for a window built by
+        // chrono, which writes the UTC offset as "+00:00". A bare plus in a
+        // query string is a space, so sent raw the timestamp arrives broken.
+        let (graph, listening) = a_graph_client_talking_to_itself().await;
+
+        graph
+            .list_events("a-token", Some("2026-03-05T00:00:00+00:00"), None, None)
+            .await
+            .expect("the event list to be read");
+
+        let request = heard(listening, "the event list").await.expect("a request");
+        assert!(
+            request.contains("startDateTime=2026-03-05T00%3A00%3A00%2B00%3A00"),
+            "{request}"
+        );
+        assert!(!request.contains("+00:00"), "{request}");
+    }
 
     #[test]
     fn test_a_new_contact_is_sent_without_the_fields_graph_fills_in() {

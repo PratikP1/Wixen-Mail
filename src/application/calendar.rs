@@ -1705,45 +1705,21 @@ mod tests {
 
     // ── Reaching the Microsoft sync itself ───────────────────────────────
     //
-    // The client builds every other address from a constant, but a stored
-    // sync marker is used as the address verbatim. Saving one that points at a
-    // loopback port is what reaches the sync itself rather than only the
-    // converters beneath it.
+    // A stored sync marker is used as the address verbatim, so saving one that
+    // points at a loopback port reaches the sync itself rather than only the
+    // converters beneath it. These tests take that route because it is the
+    // account state they are about. A sync with no marker yet can be reached
+    // instead by pointing the client itself, which is what the tests beside the
+    // client do.
 
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use crate::common::answering::answering;
 
-    /// Answer one request on a loopback port with a canned reply.
-    async fn answering(reply: String) -> std::net::SocketAddr {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("a loopback port");
-        let address = listener.local_addr().expect("the port that was taken");
-
-        tokio::spawn(async move {
-            let Ok((mut stream, _)) = listener.accept().await else {
-                return;
-            };
-            let mut asked = Vec::new();
-            let mut chunk = [0_u8; 2048];
-            while let Ok(read) = stream.read(&mut chunk).await {
-                if read == 0 {
-                    break;
-                }
-                asked.extend_from_slice(&chunk[..read]);
-                if asked.windows(4).any(|four| four == b"\r\n\r\n") {
-                    break;
-                }
-            }
-            let head = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
-                 Content-Length: {}\r\nConnection: close\r\n\r\n",
-                reply.len()
-            );
-            let _ = stream.write_all(head.as_bytes()).await;
-            let _ = stream.write_all(reply.as_bytes()).await;
-            let _ = stream.shutdown().await;
-        });
-
+    /// Answer one Graph request with a canned reply, ignoring what was asked.
+    ///
+    /// These tests are about what the sync does with a reply, not about what
+    /// went out, so they drop the captured request.
+    async fn replying(reply: String) -> std::net::SocketAddr {
+        let (address, _heard) = answering("200 OK", "application/json", reply).await;
         address
     }
 
@@ -1796,7 +1772,7 @@ mod tests {
     #[tokio::test]
     async fn test_a_microsoft_delta_reply_puts_its_events_into_the_calendar() {
         let cache = temp_cache("ms_arrives");
-        let address = answering(delta_reply(&[graph_event("ms-1", "Budget review")])).await;
+        let address = replying(delta_reply(&[graph_event("ms-1", "Budget review")])).await;
         point_the_sync_at(&cache, &address);
 
         let result = sync_microsoft_calendar(&cache, &MsGraphClient::new(), "token", "acct")
@@ -1820,7 +1796,7 @@ mod tests {
         cache
             .save_calendar_event(&already_held("local-1", "ms-1"))
             .expect("the event the cache already holds");
-        let address = answering(delta_reply(&[graph_removal("ms-1")])).await;
+        let address = replying(delta_reply(&[graph_removal("ms-1")])).await;
         point_the_sync_at(&cache, &address);
 
         let result = sync_microsoft_calendar(&cache, &MsGraphClient::new(), "token", "acct")
@@ -1843,7 +1819,7 @@ mod tests {
         cache
             .save_calendar_event(&already_held("local-1", "already-here"))
             .expect("the event the cache already holds");
-        let address = answering(delta_reply(&[
+        let address = replying(delta_reply(&[
             graph_event("already-here", "Budget review"),
             graph_event("brand-new", "Sprint planning"),
         ]))
@@ -1873,7 +1849,7 @@ mod tests {
         cache
             .save_calendar_event(&held)
             .expect("the event the cache already holds");
-        let address = answering(delta_reply(&[graph_event("ms-1", "Budget review")])).await;
+        let address = replying(delta_reply(&[graph_event("ms-1", "Budget review")])).await;
         point_the_sync_at(&cache, &address);
 
         sync_microsoft_calendar(&cache, &MsGraphClient::new(), "token", "acct")
