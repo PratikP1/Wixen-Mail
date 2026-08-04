@@ -1,8 +1,23 @@
 //! Reading a calendar from a server, and refreshing a subscribed feed.
 //!
-//! The calendar is read and nothing is sent back. An event made or changed
-//! here stays on this computer, and the next sync overwrites a change made
-//! here to an event the server also holds. Sending changes up is not built.
+//! The calendar is read and nothing is sent back. An event made or changed here
+//! stays on this computer, and the next sync overwrites a change made here to an
+//! event the server also holds. Google and Outlook calendars do now send changes
+//! up; a calendar server does not, and the reason is worth writing down rather
+//! than leaving as an omission.
+//!
+//! A change to one of these is a PUT of the whole calendar document, so
+//! everything the builder does not write is destroyed. `build_ical_vevent`
+//! writes no repeat rule, no guests and no alerts, and nothing here keeps the
+//! server's own document to write back into. Wiring a change on top of that
+//! would flatten every repeating event and uninvite every guest, which is worse
+//! than not building it. The unit that stores the server's document is what
+//! makes it safe.
+//!
+//! An event deleted here in a calendar from a server does leave a note saying
+//! the server has not been told. Those notes are kept rather than cleared, so
+//! that the deletion is still there to send when a write path exists.
+//!
 //! None of this has run against a live server.
 
 use crate::application::calendar::CalendarSyncResult;
@@ -78,12 +93,14 @@ pub async fn sync_caldav_calendar(
         }
     }
 
-    // Delete local events not seen in remote
+    // Delete local events not seen in remote. Silently: the server is the one
+    // that dropped them, so leaving a note to delete them there would ask it on
+    // every sync from now on to delete something it has already deleted.
     for local in &local_events {
         if let Some(uid) = local.provider_event_id.as_deref()
             && !seen_uids.contains(uid)
         {
-            cache.delete_calendar_event(&local.id)?;
+            cache.drop_synced_calendar_event(&local.id)?;
             result.deleted += 1;
         }
     }
@@ -147,12 +164,13 @@ pub async fn refresh_subscription(
     }
 
     // Only what the feed has stopped carrying goes. An event filed here by
-    // hand has no identity from the feed and is left alone.
+    // hand has no identity from the feed and is left alone. Silently, for the
+    // same reason: a feed is read and never written to.
     for event in &held {
         if let Some(uid) = event.provider_event_id.as_deref()
             && !in_feed.contains(uid)
         {
-            cache.delete_calendar_event(&event.id)?;
+            cache.drop_synced_calendar_event(&event.id)?;
             result.deleted += 1;
         }
     }
@@ -240,6 +258,7 @@ fn caldav_event_to_local(
         reminders_json: None,
         created_at: now.clone(),
         updated_at: now,
+        pending: false,
     }
 }
 
@@ -336,6 +355,7 @@ mod tests {
             reminders_json: None,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
+            pending: false,
         };
 
         let caldav = local_to_caldav_event(&local);
@@ -415,6 +435,7 @@ mod tests {
             reminders_json: None,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
+            pending: false,
         }
     }
 
@@ -605,6 +626,16 @@ mod tests {
             "the event the server still has is the one that survives"
         );
         assert_eq!(result.deleted, 1);
+        // The server is the one that dropped it, so it already knows. A note
+        // asking it to delete the event would be sent back on every sync from
+        // now on, asking it to delete something it has already deleted.
+        assert!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the deletions waiting to be sent")
+                .is_empty(),
+            "an event the server dropped left a note to delete it at the server"
+        );
     }
 
     #[tokio::test]

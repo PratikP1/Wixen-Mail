@@ -8,7 +8,7 @@
 
 use crate::common::{Error, Result};
 use crate::service::google_api::with_retry;
-use crate::service::outward::in_a_query;
+use crate::service::outward::{in_a_path, in_a_query};
 use serde::{Deserialize, Serialize};
 
 // ── Microsoft Graph Contact Types ───────────────────────────────────────────
@@ -129,8 +129,11 @@ pub struct MsGraphEvent {
     /// is sent to rather than part of its body.
     #[serde(default, skip_serializing)]
     pub id: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub subject: String,
+    /// `None` leaves the title alone, `Some("")` clears it. A plain `String`
+    /// skipped when empty could only say the first, so emptying a title here
+    /// left the old one at Graph and looked as though nothing had been typed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<MsEventBody>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -234,12 +237,36 @@ fn contacts_delta_url(base: &str) -> String {
     format!("{base}/me/contacts/delta?$top=100")
 }
 
-/// Where to ask for the events in a window on somebody's own calendar.
+/// The calendar Outlook treats as somebody's main one.
+///
+/// Graph has no word of its own for it: the default calendar is addressed by
+/// leaving the calendar out of the address altogether, so this is empty rather
+/// than a name. Kept as a constant so the two places that branch on it say what
+/// they mean, and so nothing has to remember that "" is special.
+pub const THE_MAIN_CALENDAR: &str = "";
+
+/// Where one calendar's own endpoints live.
+///
+/// The main calendar keeps the short address it always had, so nothing that
+/// works today moves.
+fn calendar_base(base: &str, calendar_id: &str) -> String {
+    if calendar_id == THE_MAIN_CALENDAR {
+        return format!("{base}/me");
+    }
+    format!("{base}/me/calendars/{}", in_a_path(calendar_id))
+}
+
+/// Where to ask for the events in a window on one of somebody's calendars.
 ///
 /// Only the first request of a sync. Once Graph has sent a delta link back,
 /// that link is the address and carries the window inside it.
-fn calendar_view_url(base: &str, start: Option<&str>, end: Option<&str>) -> String {
-    let mut url = format!("{base}/me/calendarView/delta?");
+fn calendar_view_url(
+    base: &str,
+    calendar_id: &str,
+    start: Option<&str>,
+    end: Option<&str>,
+) -> String {
+    let mut url = format!("{}/calendarView/delta?", calendar_base(base, calendar_id));
     if let Some(start) = start {
         url.push_str(&format!("startDateTime={}&", in_a_query(start)));
     }
@@ -304,6 +331,20 @@ impl MsGraphClient {
                 crate::service::outward::Outward::read_only(http)
             },
             base: GRAPH_BASE.to_string(),
+        }
+    }
+
+    /// A client that may change things, asking a named address.
+    ///
+    /// Test-only, and the only way to build one apart from [`Self::for_account`].
+    /// It exists because `for_account` reads the settings really stored on the
+    /// machine it runs on, so a test that used it would pass or fail depending
+    /// on whose computer ran it.
+    #[cfg(test)]
+    pub fn allowed_to_change_things_at(address: &str) -> Self {
+        Self {
+            http: crate::service::outward::Outward::may_change_things(reqwest::Client::new()),
+            base: address.to_string(),
         }
     }
 
@@ -391,11 +432,12 @@ impl MsGraphClient {
         start: Option<&str>,
         end: Option<&str>,
         delta_link: Option<&str>,
+        calendar_id: &str,
     ) -> Result<(Vec<MsGraphEvent>, Option<String>)> {
         let mut all_events = Vec::new();
         let initial_url = match delta_link {
             Some(delta_link) => delta_link.to_string(),
-            None => calendar_view_url(&self.base, start, end),
+            None => calendar_view_url(&self.base, calendar_id, start, end),
         };
 
         let mut next_url: Option<String> = Some(initial_url);
@@ -412,26 +454,40 @@ impl MsGraphClient {
         Ok((all_events, final_delta_link))
     }
 
-    /// Create a calendar event.
-    pub async fn create_event(&self, token: &str, event: &MsGraphEvent) -> Result<MsGraphEvent> {
-        let url = format!("{}/me/events", self.base);
+    /// Create a calendar event in a named calendar.
+    pub async fn create_event(
+        &self,
+        token: &str,
+        calendar_id: &str,
+        event: &MsGraphEvent,
+    ) -> Result<MsGraphEvent> {
+        let url = format!("{}/events", calendar_base(&self.base, calendar_id));
         with_retry(3, || self.api_post(&url, token, event)).await
     }
 
-    /// Update a calendar event.
+    /// Update a calendar event in a named calendar.
     pub async fn update_event(
         &self,
         token: &str,
+        calendar_id: &str,
         event_id: &str,
         event: &MsGraphEvent,
     ) -> Result<MsGraphEvent> {
-        let url = format!("{}/me/events/{}", self.base, event_id);
+        let url = format!(
+            "{}/events/{}",
+            calendar_base(&self.base, calendar_id),
+            in_a_path(event_id)
+        );
         with_retry(3, || self.api_patch(&url, token, event)).await
     }
 
-    /// Delete a calendar event.
-    pub async fn delete_event(&self, token: &str, event_id: &str) -> Result<()> {
-        let url = format!("{}/me/events/{}", self.base, event_id);
+    /// Delete a calendar event from a named calendar.
+    pub async fn delete_event(&self, token: &str, calendar_id: &str, event_id: &str) -> Result<()> {
+        let url = format!(
+            "{}/events/{}",
+            calendar_base(&self.base, calendar_id),
+            in_a_path(event_id)
+        );
         with_retry(3, || self.api_delete(&url, token)).await
     }
 
@@ -586,7 +642,13 @@ mod tests {
         let (graph, listening) = a_graph_client_talking_to_itself().await;
 
         graph
-            .list_events("a-token", Some("2026-03-05T00:00:00+00:00"), None, None)
+            .list_events(
+                "a-token",
+                Some("2026-03-05T00:00:00+00:00"),
+                None,
+                None,
+                THE_MAIN_CALENDAR,
+            )
             .await
             .expect("the event list to be read");
 
@@ -596,6 +658,44 @@ mod tests {
             "{request}"
         );
         assert!(!request.contains("+00:00"), "{request}");
+    }
+
+    #[tokio::test]
+    async fn test_a_named_calendar_is_asked_for_by_its_own_address() {
+        // Every calendar address here was "/me/...", which is whichever
+        // calendar Outlook treats as the main one. An account with a second
+        // calendar could not be asked about it, and a change to one could not
+        // be addressed at all.
+        let (graph, listening) = a_graph_client_talking_to_itself().await;
+
+        graph
+            .list_events("a-token", None, None, None, "AAMk123")
+            .await
+            .expect("the event list to be read");
+
+        let request = heard(listening, "the event list").await.expect("a request");
+        assert!(
+            asked_for(&request).starts_with("GET /me/calendars/AAMk123/calendarView/delta?"),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_main_calendar_is_still_asked_for_the_short_way() {
+        // Every account this has ever run against has one calendar and it is
+        // this one, so the address it produces must not move.
+        let (graph, listening) = a_graph_client_talking_to_itself().await;
+
+        graph
+            .list_events("a-token", None, None, None, THE_MAIN_CALENDAR)
+            .await
+            .expect("the event list to be read");
+
+        let request = heard(listening, "the event list").await.expect("a request");
+        assert!(
+            asked_for(&request).starts_with("GET /me/calendarView/delta?"),
+            "{request}"
+        );
     }
 
     #[test]
@@ -631,7 +731,7 @@ mod tests {
         // instruction to uninvite everybody and a null repeat rule is an
         // instruction to flatten the series.
         let moved = MsGraphEvent {
-            subject: "Moved to Thursday".to_string(),
+            subject: Some("Moved to Thursday".to_string()),
             ..Default::default()
         };
 
@@ -651,7 +751,7 @@ mod tests {
     #[test]
     fn test_an_event_sent_to_microsoft_leaves_out_what_graph_owns() {
         let event = MsGraphEvent {
-            subject: "Budget review".to_string(),
+            subject: Some("Budget review".to_string()),
             start: Some(MsDateTimeTimeZone {
                 date_time: "2026-03-05T12:00:00".to_string(),
                 time_zone: "UTC".to_string(),
@@ -730,7 +830,7 @@ mod tests {
         }"#;
         let resp: MsEventsResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.value.len(), 1);
-        assert_eq!(resp.value[0].subject, "Budget Review");
+        assert_eq!(resp.value[0].subject.as_deref(), Some("Budget Review"));
         assert_eq!(
             resp.value[0].location.as_ref().unwrap().display_name,
             "Conference Room A"
@@ -751,7 +851,7 @@ mod tests {
             "showAs": "oof"
         }"#;
         let event: MsGraphEvent = serde_json::from_str(json).unwrap();
-        assert_eq!(event.subject, "Vacation");
+        assert_eq!(event.subject.as_deref(), Some("Vacation"));
         assert_eq!(event.is_all_day, Some(true));
         assert_eq!(event.show_as.as_deref(), Some("oof"));
     }
@@ -799,7 +899,7 @@ mod tests {
     #[test]
     fn test_serialize_event_for_create() {
         let event = MsGraphEvent {
-            subject: "Lunch".to_string(),
+            subject: Some("Lunch".to_string()),
             start: Some(MsDateTimeTimeZone {
                 date_time: "2026-03-05T12:00:00.0000000".to_string(),
                 time_zone: "Eastern Standard Time".to_string(),

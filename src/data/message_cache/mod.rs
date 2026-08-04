@@ -12,6 +12,7 @@ mod drafts;
 mod filters;
 mod folders;
 mod messages;
+pub use calendar::DeletedCalendarEvent;
 pub use messages::{IncomingMessage, MessageListRow};
 pub mod notes;
 mod outbox;
@@ -433,6 +434,14 @@ pub struct CalendarEventEntry {
     pub reminders_json: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// Whether this copy has a change the provider has not been told about.
+    ///
+    /// Set by every path that changes an event on this computer and cleared by
+    /// the push, which is why it is a field rather than something worked out:
+    /// the compiler names each of those paths, and a change that never sets it
+    /// is a change that never leaves. A sync writing the provider's own copy
+    /// back leaves it false, or the push would send the provider its own value.
+    pub pending: bool,
 }
 
 /// Reminder entry
@@ -925,6 +934,7 @@ impl MessageCache {
                 -- today then hold the same columns in the same places.
                 categories TEXT NOT NULL DEFAULT '',
                 calendar_id TEXT,
+                pending INTEGER NOT NULL DEFAULT 0,
                 -- The server's identity for an event only means anything inside
                 -- the calendar it came from. Keyed across the whole account, the
                 -- same identity in two calendars was one row that moved to
@@ -1087,6 +1097,32 @@ impl MessageCache {
                 [],
             )
             .map_err(|e| Error::Other(format!("Failed to create deleted_tasks table: {}", e)))?;
+
+        // ── Deleted calendar events ─────────────────────────────────────
+        //
+        // The same reason as deleted_tasks: a deleted row cannot carry a flag
+        // saying it has not been sent yet, so the fact of the deletion has to
+        // outlive the row. Without this an event deleted here comes back on the
+        // next sync, which reads as the deletion having silently failed.
+        //
+        // The row goes when the provider has been told.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS deleted_calendar_events (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                provider_event_id TEXT,
+                calendar_id TEXT,
+                deleted_at TEXT NOT NULL
+            )",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to create deleted_calendar_events table: {}",
+                    e
+                ))
+            })?;
 
         // ── Note folders ────────────────────────────────────────────────
         self.conn
@@ -1274,6 +1310,11 @@ impl MessageCache {
         // there were categories, which is the right answer for all of them.
         self.ensure_column_exists("calendar_events", "categories", "TEXT NOT NULL DEFAULT ''")?;
         self.ensure_column_exists("calendar_events", "calendar_id", "TEXT")?;
+        // Whether a change here is waiting to go to the provider. Nought for
+        // every event already in an existing database, which is the right
+        // answer for all of them: until this shipped, nothing here could change
+        // a provider's copy of anything.
+        self.ensure_column_exists("calendar_events", "pending", "INTEGER NOT NULL DEFAULT 0")?;
         self.ensure_column_exists(
             "message_filter_rules",
             "match_type",
@@ -1740,6 +1781,11 @@ impl MessageCache {
                 updated_at TEXT NOT NULL,
                 categories TEXT NOT NULL DEFAULT '',
                 calendar_id TEXT,
+                -- Left out of EVENT_COLUMNS on purpose, so the copy below
+                -- leaves it at nought. Every event in a database old enough to
+                -- need this rebuild predates anything here being able to change
+                -- a provider's copy, so none of them is waiting to be sent.
+                pending INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(account_id, calendar_id, provider_event_id)
             )",
                 [],

@@ -54,6 +54,53 @@ pub async fn answering(
     (address, heard)
 }
 
+/// Answer several requests on a loopback port, and hand back all of them in the
+/// order they arrived.
+///
+/// One connection per reply, so a test that expects a change to be sent before
+/// the calendar is read can assert on the order rather than on one request in
+/// isolation.
+///
+/// Nothing is handed back until the last reply has been served, so a run that
+/// makes fewer requests than there are replies reports a missing request rather
+/// than a short list that looks like success. Wait on the receiver with a
+/// timeout for the same reason [`answering`] says to.
+pub async fn answering_several(
+    status: &'static str,
+    content_type: &'static str,
+    replies: Vec<String>,
+) -> (
+    std::net::SocketAddr,
+    tokio::sync::oneshot::Receiver<Vec<String>>,
+) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("a loopback port");
+    let address = listener.local_addr().expect("the port that was taken");
+    let (asked, heard) = tokio::sync::oneshot::channel();
+
+    tokio::spawn(async move {
+        let mut requests = Vec::with_capacity(replies.len());
+        for reply in replies {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            requests.push(read_request(&mut stream).await);
+            let head = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\n\
+                 Content-Length: {}\r\nConnection: close\r\n\r\n",
+                reply.len()
+            );
+            let _ = stream.write_all(head.as_bytes()).await;
+            let _ = stream.write_all(reply.as_bytes()).await;
+            let _ = stream.shutdown().await;
+        }
+        let _ = asked.send(requests);
+    });
+
+    (address, heard)
+}
+
 /// How long a test waits for the request it expects.
 ///
 /// Long enough that a loaded machine does not fail a passing test, short enough
@@ -61,11 +108,15 @@ pub async fn answering(
 /// the run.
 pub const LONG_ENOUGH: std::time::Duration = std::time::Duration::from_secs(10);
 
-/// The request a loopback server heard, or a failure naming what was expected.
-pub async fn heard(
-    receiver: tokio::sync::oneshot::Receiver<String>,
+/// What a loopback server heard, or a failure naming what was expected.
+///
+/// Written once for one request and for several, because the discipline is the
+/// same either way: a wait with no timeout on a request that never came is a
+/// hung run rather than a failure somebody can read.
+pub async fn heard<T>(
+    receiver: tokio::sync::oneshot::Receiver<T>,
     expected: &str,
-) -> Result<String, String> {
+) -> Result<T, String> {
     match tokio::time::timeout(LONG_ENOUGH, receiver).await {
         Ok(Ok(request)) => Ok(request),
         Ok(Err(_)) => Err(format!(
@@ -122,6 +173,62 @@ mod tests {
         let request = "GET /me/contacts?x=1 HTTP/1.1\r\nHost: localhost\r\n\r\n";
 
         assert_eq!(asked_for(request), "GET /me/contacts?x=1");
+    }
+
+    #[tokio::test]
+    async fn test_several_requests_come_back_in_the_order_they_were_made() {
+        // A push that sends a change and then reads the calendar has to be
+        // provable in that order: the other way round sends a value the read
+        // has just overwritten, and one request captured on its own cannot
+        // tell the two apart.
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{}".to_string(), "{}".to_string()],
+        )
+        .await;
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!("http://{address}/first"))
+            .send()
+            .await
+            .expect("the first to be answered");
+        client
+            .get(format!("http://{address}/second"))
+            .send()
+            .await
+            .expect("the second to be answered");
+
+        let requests = heard(listening, "two requests").await.expect("both");
+        assert_eq!(requests.len(), 2);
+        assert_eq!(asked_for(&requests[0]), "POST /first");
+        assert_eq!(asked_for(&requests[1]), "GET /second");
+    }
+
+    #[tokio::test]
+    async fn test_fewer_requests_than_replies_is_a_failure_rather_than_a_hang() {
+        // The same discipline `heard` already has. A test that expected two
+        // requests and got one has to be able to say so.
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{}".to_string(), "{}".to_string()],
+        )
+        .await;
+        reqwest::Client::new()
+            .get(format!("http://{address}/only-one"))
+            .send()
+            .await
+            .expect("the first to be answered");
+
+        let waited = tokio::time::timeout(
+            std::time::Duration::from_millis(300),
+            heard(listening, "two requests when only one was made"),
+        )
+        .await;
+
+        assert!(waited.is_err(), "a missing request was reported as arrived");
     }
 
     #[tokio::test]

@@ -1,7 +1,32 @@
 //! Calendar manager and sync engine for Google Calendar and Microsoft Graph.
 //!
-//! Provides an in-memory event store with range queries, plus bidirectional
-//! sync using incremental tokens (Google sync tokens, Microsoft delta links).
+//! An in-memory event store with range queries, and a sync that goes both ways:
+//! the calendar is read using incremental markers (Google sync tokens, Microsoft
+//! delta links), and a change made here is sent up before anything is read.
+//!
+//! # What is sent, and what is deliberately never sent
+//!
+//! An event made, changed or deleted here is marked as waiting and goes up on
+//! the next sync of the account it belongs to, if that account's owner has
+//! turned on Allow Changes. Nothing here builds its own HTTP client: every
+//! request goes out through the client the caller was given, which is built by
+//! `for_account` and refuses a change before the network when the setting is
+//! off. A test in this file reads the source and fails if that stops being true.
+//!
+//! Two fields are never built into a change, and that is what keeps a change to
+//! one thing from destroying two others. `recurrence` is never sent, so moving
+//! a weekly meeting cannot flatten the series into one appointment. `attendees`
+//! is never sent, so changing the room cannot uninvite everybody. Google's
+//! update is a merge rather than a replace, which is the other half of the same
+//! guarantee.
+//!
+//! What that costs, said plainly: a field somebody empties here is sent as
+//! empty, and clears at the provider. That is deliberate, because after a sync
+//! the copy here mirrors the provider, so sending an empty value back is a
+//! no-op. If that ever stops being true, this is the thing that turns the
+//! difference into lost data.
+//!
+//! None of this has run against a live calendar.
 
 use crate::common::Result;
 use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache, SyncState};
@@ -28,12 +53,31 @@ const GOOGLE_CALENDAR_NAME: &str = "Google Calendar";
 /// What the calendar holding a Microsoft account's events is called in the list.
 const MICROSOFT_CALENDAR_NAME: &str = "Outlook Calendar";
 
+/// How a calendar read from a calendar server is named in what is stored.
+const CALDAV: &str = "caldav";
+
+/// The providers a change made here can eventually reach.
+///
+/// A calendar whose events come from one of these belongs to somebody else's
+/// pass, so this one leaves both the change and the note of a deletion alone.
+/// Anything else is a calendar this computer made, and a change to it has
+/// nowhere at any provider to go.
+const PROVIDERS_A_CHANGE_CAN_REACH: [&str; 3] = [GOOGLE, MICROSOFT, CALDAV];
+
 /// Result of a calendar sync operation.
 #[derive(Debug, Default)]
 pub struct CalendarSyncResult {
     pub created: usize,
     pub updated: usize,
     pub deleted: usize,
+    /// Changes made here that the provider has now been told about.
+    pub sent: usize,
+    /// Changes still waiting because the account is open for reading only.
+    ///
+    /// Counted rather than reported as a failure. Nothing went wrong: the
+    /// change is waiting on a setting, and one error per waiting event on every
+    /// sync from now on is how a warning somebody needs stops being read.
+    pub waiting_on_the_setting: usize,
     pub errors: Vec<String>,
 }
 
@@ -175,6 +219,279 @@ impl CalendarManager {
     }
 }
 
+/// What a calendar sync did, in the words the status line and a screen reader
+/// both use.
+///
+/// Named here rather than built where it is spoken, so that it can be argued
+/// about in a test. It counts what went up as well as what came down, because
+/// somebody who has just moved an appointment needs to hear that the change
+/// reached their calendar rather than only that three events arrived.
+///
+/// A change held back by the setting is not a failure and is not counted as
+/// one. It names the setting, because "nothing happened" sends somebody looking
+/// for a broken account.
+pub fn what_the_calendar_sync_did(result: &CalendarSyncResult) -> String {
+    let mut said = format!(
+        "Calendar sync: {} created, {} updated, {} deleted",
+        result.created, result.updated, result.deleted
+    );
+    if result.sent > 0 {
+        said.push_str(&format!(", {} sent", result.sent));
+    }
+    if result.waiting_on_the_setting > 0 {
+        said.push_str(&format!(
+            ". {} changes are waiting here: turn on Allow Changes for this \
+             account to send them.",
+            result.waiting_on_the_setting
+        ));
+    }
+    if !result.errors.is_empty() {
+        said.push_str(&format!(", {} errors", result.errors.len()));
+    }
+    said
+}
+
+// ── Sending what was changed here ───────────────────────────────────────────
+
+/// Whose job it is to send a change to one calendar.
+enum WhoseChange {
+    /// This provider's, and this is the calendar at it to send to.
+    Ours(String),
+    /// Another provider's, on an account signed in to both. Its own pass sends
+    /// this moments later, so touching it here would send it twice or, worse,
+    /// clear the note and leave nobody to send it.
+    Theirs,
+    /// Nobody's. The calendar was made on this computer, or the event is in no
+    /// calendar at all, so there is nothing at any provider to change.
+    StaysHere,
+}
+
+/// Whose job it is to send a change to the calendar named.
+fn whose_change(
+    cache: &MessageCache,
+    calendar_id: Option<&str>,
+    provider: &str,
+    the_main_one: &str,
+) -> WhoseChange {
+    let Some(container) = calendar_id.and_then(|id| cache.get_calendar(id).ok().flatten()) else {
+        return WhoseChange::StaysHere;
+    };
+    match container.source_provider.as_deref() {
+        Some(named) if named == provider => {
+            if container.is_read_only {
+                // A calendar this account may only read, such as a feed
+                // somebody subscribed to. Sending a change to it would be
+                // refused every time.
+                return WhoseChange::StaysHere;
+            }
+            WhoseChange::Ours(
+                which_calendar_at_the_provider(&container)
+                    .unwrap_or_else(|| the_main_one.to_string()),
+            )
+        }
+        Some(named) if PROVIDERS_A_CHANGE_CAN_REACH.contains(&named) => WhoseChange::Theirs,
+        _ => WhoseChange::StaysHere,
+    }
+}
+
+/// Whether the provider refused because of the setting rather than the change.
+///
+/// Matched on the error the gate raises, which is the one thing every refused
+/// write has in common: [`crate::service::outward::Outward::changing`] returns
+/// it before the request is built, so nothing left the machine.
+fn refused_because_this_account_is_read_only(error: &crate::common::Error) -> bool {
+    matches!(error, crate::common::Error::Security(_))
+}
+
+/// Everything waiting to go to one provider, with the calendar at it to send to.
+fn waiting_for(
+    cache: &MessageCache,
+    account_id: &str,
+    provider: &str,
+    the_main_one: &str,
+    result: &mut CalendarSyncResult,
+) -> Vec<(CalendarEventEntry, String)> {
+    let waiting = match cache.pending_calendar_events(account_id) {
+        Ok(waiting) => waiting,
+        Err(e) => {
+            result.errors.push(format!(
+                "The changes waiting to be sent could not be read: {e}"
+            ));
+            return Vec::new();
+        }
+    };
+    waiting
+        .into_iter()
+        .filter_map(|event| {
+            match whose_change(cache, event.calendar_id.as_deref(), provider, the_main_one) {
+                // The flag stays set rather than being cleared, because moving
+                // the event into a calendar the provider holds should send it.
+                WhoseChange::Theirs | WhoseChange::StaysHere => None,
+                WhoseChange::Ours(at_the_provider) => Some((event, at_the_provider)),
+            }
+        })
+        .collect()
+}
+
+/// Every deletion the provider has not been told about.
+fn deletions_for(
+    cache: &MessageCache,
+    account_id: &str,
+    provider: &str,
+    the_main_one: &str,
+    result: &mut CalendarSyncResult,
+) -> Vec<(crate::data::message_cache::DeletedCalendarEvent, String)> {
+    let notes = match cache.deleted_calendar_events(account_id) {
+        Ok(notes) => notes,
+        Err(e) => {
+            result.errors.push(format!(
+                "The deletions waiting to be sent could not be read: {e}"
+            ));
+            return Vec::new();
+        }
+    };
+    notes
+        .into_iter()
+        .filter_map(|note| {
+            match whose_change(cache, note.calendar_id.as_deref(), provider, the_main_one) {
+                WhoseChange::Ours(at_the_provider) => Some((note, at_the_provider)),
+                WhoseChange::Theirs => None,
+                WhoseChange::StaysHere => {
+                    // Nothing at any provider ever held it, so the note is
+                    // cleared rather than carried for ever.
+                    let _ = cache.forget_deleted_calendar_event(&note.id);
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+/// Count one attempt to send, whichever way it went.
+fn record(sent: Result<()>, doing: &str, result: &mut CalendarSyncResult) {
+    match sent {
+        Ok(()) => result.sent += 1,
+        Err(e) if refused_because_this_account_is_read_only(&e) => {
+            result.waiting_on_the_setting += 1;
+        }
+        Err(e) => result.errors.push(format!("{doing}: {e}")),
+    }
+}
+
+/// Write down that the provider now holds this event.
+///
+/// The provider's answer is not read back over the stored copy. A create and a
+/// change both hand back the provider's own copy of the event, which knows
+/// nothing about the category somebody typed here, and a server that answers
+/// sparsely would blank the row. The identity and the stamp are all the push
+/// needs: the identity is how the event is found again, and the stamp is what
+/// stops the next pull deciding the provider changed it and overwriting what
+/// was just sent.
+fn settled(
+    cache: &MessageCache,
+    event: &CalendarEventEntry,
+    filed_under: &str,
+    provider_event_id: &str,
+    stamp: Option<String>,
+) -> Result<CalendarEventEntry> {
+    let mut settled = event.clone();
+    settled.calendar_id = Some(filed_under.to_string());
+    if !provider_event_id.is_empty() {
+        settled.provider_event_id = Some(provider_event_id.to_string());
+    }
+    settled.last_modified_remote = stamp;
+    settled.pending = false;
+    cache.save_calendar_event(&settled)?;
+    Ok(settled)
+}
+
+/// Send Google everything changed here that it has not been told about.
+///
+/// Runs before the pull. The other order would send a value the pull had just
+/// overwritten, so the push would undo the thing it was told to accept.
+///
+/// A change that cannot be sent keeps its flag and is tried again next time.
+/// Failing once is not a reason to drop somebody's edit.
+async fn push_to_google(
+    cache: &MessageCache,
+    google: &GoogleApiClient,
+    token: &str,
+    account_id: &str,
+    result: &mut CalendarSyncResult,
+) {
+    let the_main_one = crate::service::google_api::THE_MAIN_CALENDAR;
+
+    // Deletions first. An event deleted here that was also changed here would
+    // otherwise be sent and then deleted, which is two calls to reach the same
+    // place, and the second would fail if the first had not landed.
+    for (note, at_google) in deletions_for(cache, account_id, GOOGLE, the_main_one, result) {
+        let Some(provider_event_id) = note.provider_event_id.as_deref() else {
+            // Made here and never sent, so Google never held it.
+            let _ = cache.forget_deleted_calendar_event(&note.id);
+            continue;
+        };
+        let sent = delete_google_event(google, token, &at_google, provider_event_id).await;
+        if sent.is_ok() {
+            let _ = cache.forget_deleted_calendar_event(&note.id);
+        }
+        record(sent, "Deleting an event from Google Calendar", result);
+    }
+
+    for (event, _at_google) in waiting_for(cache, account_id, GOOGLE, the_main_one, result) {
+        let sent = if event.provider_event_id.is_some() {
+            update_google_event(cache, google, token, &event).await
+        } else {
+            create_google_event(cache, google, token, &event).await
+        };
+        // The event's own identity here, never its title. These go to a log
+        // file, and a title is the person's own words in the same way a message
+        // body is.
+        record(
+            sent.map(|_| ()),
+            &format!("Event {} at Google Calendar", event.id),
+            result,
+        );
+    }
+}
+
+/// Send Microsoft Graph everything changed here that it has not been told about.
+///
+/// The same shape and the same order as the Google one, for the same reasons.
+async fn push_to_microsoft(
+    cache: &MessageCache,
+    ms_client: &MsGraphClient,
+    token: &str,
+    account_id: &str,
+    result: &mut CalendarSyncResult,
+) {
+    let the_main_one = crate::service::microsoft_graph::THE_MAIN_CALENDAR;
+
+    for (note, at_microsoft) in deletions_for(cache, account_id, MICROSOFT, the_main_one, result) {
+        let Some(provider_event_id) = note.provider_event_id.as_deref() else {
+            let _ = cache.forget_deleted_calendar_event(&note.id);
+            continue;
+        };
+        let sent = delete_ms_event(ms_client, token, &at_microsoft, provider_event_id).await;
+        if sent.is_ok() {
+            let _ = cache.forget_deleted_calendar_event(&note.id);
+        }
+        record(sent, "Deleting an event from Outlook Calendar", result);
+    }
+
+    for (event, _at_microsoft) in waiting_for(cache, account_id, MICROSOFT, the_main_one, result) {
+        let sent = if event.provider_event_id.is_some() {
+            update_ms_event(cache, ms_client, token, &event).await
+        } else {
+            create_ms_event(cache, ms_client, token, &event).await
+        };
+        record(
+            sent.map(|_| ()),
+            &format!("Event {} at Outlook Calendar", event.id),
+            result,
+        );
+    }
+}
+
 // ── Google Calendar Sync ────────────────────────────────────────────────────
 
 /// Sync calendar events with Google Calendar API.
@@ -185,6 +502,7 @@ pub async fn sync_google_calendar(
     account_id: &str,
 ) -> Result<CalendarSyncResult> {
     let mut result = CalendarSyncResult::default();
+    push_to_google(cache, google, token, account_id, &mut result).await;
 
     let state = cache.get_sync_state(account_id, "calendar", GOOGLE)?;
     let sync_token = state.as_ref().and_then(|s| s.sync_token.as_deref());
@@ -200,8 +518,16 @@ pub async fn sync_google_calendar(
         (None, None)
     };
 
+    let at_google = calendar_at_google(cache, &filed_under.id)?;
+
     let (remote_events, new_sync_token) = match google
-        .list_events(token, time_min.as_deref(), time_max.as_deref(), sync_token)
+        .list_events(
+            token,
+            time_min.as_deref(),
+            time_max.as_deref(),
+            sync_token,
+            &at_google,
+        )
         .await
     {
         Ok(r) => r,
@@ -212,7 +538,7 @@ pub async fn sync_google_calendar(
                 let min = (now - chrono::Duration::days(180)).to_rfc3339();
                 let max = (now + chrono::Duration::days(365)).to_rfc3339();
                 google
-                    .list_events(token, Some(&min), Some(&max), None)
+                    .list_events(token, Some(&min), Some(&max), None, &at_google)
                     .await?
             } else {
                 return Err(e);
@@ -226,7 +552,7 @@ pub async fn sync_google_calendar(
         }
 
         // Cancelled events = deleted
-        if event.status == "cancelled" {
+        if event.status.as_deref() == Some("cancelled") {
             if cache
                 .get_event_by_provider_id(account_id, &event.id)?
                 .is_some()
@@ -286,12 +612,12 @@ pub async fn create_google_event(
     event: &CalendarEventEntry,
 ) -> Result<CalendarEventEntry> {
     let filed_under = where_to_file(cache, event, GOOGLE, GOOGLE_CALENDAR_NAME)?;
-    let google_event = local_to_google_event(event);
-    let created = google.create_event(token, &google_event).await?;
-    let mut local = google_event_to_local(&created, &event.account_id, &filed_under);
-    local.id = event.id.clone();
-    cache.save_calendar_event(&local)?;
-    Ok(local)
+    let at_google = calendar_at_google(cache, &filed_under)?;
+    let google_event = local_to_google_event(event)?;
+    let created = google
+        .create_event(token, &at_google, &google_event)
+        .await?;
+    settled(cache, event, &filed_under, &created.id, created.updated)
 }
 
 /// Update a calendar event on Google and save locally.
@@ -306,28 +632,28 @@ pub async fn update_google_event(
         .as_deref()
         .ok_or_else(|| crate::common::Error::Other("No provider event ID".to_string()))?;
     let filed_under = where_to_file(cache, event, GOOGLE, GOOGLE_CALENDAR_NAME)?;
-    let google_event = local_to_google_event(event);
+    let at_google = calendar_at_google(cache, &filed_under)?;
+    let google_event = local_to_google_event(event)?;
     let updated = google
-        .update_event(token, provider_id, &google_event)
+        .update_event(token, &at_google, provider_id, &google_event)
         .await?;
-    let mut local = google_event_to_local(&updated, &event.account_id, &filed_under);
-    local.id = event.id.clone();
-    cache.save_calendar_event(&local)?;
-    Ok(local)
+    settled(cache, event, &filed_under, &updated.id, updated.updated)
 }
 
-/// Delete a calendar event from Google and locally.
+/// Delete a calendar event at Google.
+///
+/// Takes the provider's own identifier rather than a stored event, because by
+/// the time a deletion is sent the row here is already gone and a note of the
+/// deletion stands in its place.
 pub async fn delete_google_event(
-    cache: &MessageCache,
     google: &GoogleApiClient,
     token: &str,
-    event: &CalendarEventEntry,
+    calendar_id: &str,
+    provider_event_id: &str,
 ) -> Result<()> {
-    if let Some(ref provider_id) = event.provider_event_id {
-        google.delete_event(token, provider_id).await?;
-    }
-    cache.delete_calendar_event(&event.id)?;
-    Ok(())
+    google
+        .delete_event(token, calendar_id, provider_event_id)
+        .await
 }
 
 // ── Microsoft Calendar Sync ─────────────────────────────────────────────────
@@ -340,6 +666,7 @@ pub async fn sync_microsoft_calendar(
     account_id: &str,
 ) -> Result<CalendarSyncResult> {
     let mut result = CalendarSyncResult::default();
+    push_to_microsoft(cache, ms_client, token, account_id, &mut result).await;
 
     let state = cache.get_sync_state(account_id, "calendar", MICROSOFT)?;
     let delta_link = state.as_ref().and_then(|s| s.delta_link.as_deref());
@@ -355,8 +682,16 @@ pub async fn sync_microsoft_calendar(
         (None, None)
     };
 
+    let at_microsoft = calendar_at_microsoft(cache, &filed_under.id)?;
+
     let (remote_events, new_delta_link) = ms_client
-        .list_events(token, start.as_deref(), end.as_deref(), delta_link)
+        .list_events(
+            token,
+            start.as_deref(),
+            end.as_deref(),
+            delta_link,
+            &at_microsoft,
+        )
         .await?;
 
     for event in &remote_events {
@@ -423,12 +758,18 @@ pub async fn create_ms_event(
     event: &CalendarEventEntry,
 ) -> Result<CalendarEventEntry> {
     let filed_under = where_to_file(cache, event, MICROSOFT, MICROSOFT_CALENDAR_NAME)?;
+    let at_microsoft = calendar_at_microsoft(cache, &filed_under)?;
     let ms_event = local_to_ms_event(event)?;
-    let created = ms_client.create_event(token, &ms_event).await?;
-    let mut local = ms_event_to_local(&created, &event.account_id, &filed_under);
-    local.id = event.id.clone();
-    cache.save_calendar_event(&local)?;
-    Ok(local)
+    let created = ms_client
+        .create_event(token, &at_microsoft, &ms_event)
+        .await?;
+    settled(
+        cache,
+        event,
+        &filed_under,
+        &created.id,
+        created.last_modified_date_time,
+    )
 }
 
 /// Update a calendar event on Microsoft Graph and save locally.
@@ -443,28 +784,68 @@ pub async fn update_ms_event(
         .as_deref()
         .ok_or_else(|| crate::common::Error::Other("No provider event ID".to_string()))?;
     let filed_under = where_to_file(cache, event, MICROSOFT, MICROSOFT_CALENDAR_NAME)?;
+    let at_microsoft = calendar_at_microsoft(cache, &filed_under)?;
     let ms_event = local_to_ms_event(event)?;
     let updated = ms_client
-        .update_event(token, provider_id, &ms_event)
+        .update_event(token, &at_microsoft, provider_id, &ms_event)
         .await?;
-    let mut local = ms_event_to_local(&updated, &event.account_id, &filed_under);
-    local.id = event.id.clone();
-    cache.save_calendar_event(&local)?;
-    Ok(local)
+    settled(
+        cache,
+        event,
+        &filed_under,
+        &updated.id,
+        updated.last_modified_date_time,
+    )
 }
 
-/// Delete a calendar event from Microsoft Graph and locally.
+/// Delete a calendar event at Microsoft Graph.
+///
+/// Takes the provider's own identifier rather than a stored event, for the same
+/// reason as the Google one.
 pub async fn delete_ms_event(
-    cache: &MessageCache,
     ms_client: &MsGraphClient,
     token: &str,
-    event: &CalendarEventEntry,
+    calendar_id: &str,
+    provider_event_id: &str,
 ) -> Result<()> {
-    if let Some(ref provider_id) = event.provider_event_id {
-        ms_client.delete_event(token, provider_id).await?;
-    }
-    cache.delete_calendar_event(&event.id)?;
-    Ok(())
+    ms_client
+        .delete_event(token, calendar_id, provider_event_id)
+        .await
+}
+
+/// Which calendar at the provider a container of this account stands for.
+///
+/// Nothing yet stores a provider's own identifier for a calendar: the calendars
+/// table has no column for one, and `ensure_provider_calendar` makes exactly one
+/// container per provider per account. So the answer today is always "whichever
+/// the provider treats as the main one", which is a correct answer rather than a
+/// stub, and the underscore says plainly that nothing here reads the container
+/// yet.
+///
+/// When a second calendar at a provider becomes reachable, this body is the only
+/// thing that changes. Everything from here to the address is already threaded.
+fn which_calendar_at_the_provider(_container: &CalendarContainer) -> Option<String> {
+    None
+}
+
+/// The identifier a container of this account has at the provider, if any.
+fn at_the_provider(cache: &MessageCache, container_id: &str) -> Result<Option<String>> {
+    Ok(cache
+        .get_calendar(container_id)?
+        .as_ref()
+        .and_then(which_calendar_at_the_provider))
+}
+
+/// Which Google calendar to address, for a container of this account.
+fn calendar_at_google(cache: &MessageCache, container_id: &str) -> Result<String> {
+    Ok(at_the_provider(cache, container_id)?
+        .unwrap_or_else(|| crate::service::google_api::THE_MAIN_CALENDAR.to_string()))
+}
+
+/// Which Outlook calendar to address, for a container of this account.
+fn calendar_at_microsoft(cache: &MessageCache, container_id: &str) -> Result<String> {
+    Ok(at_the_provider(cache, container_id)?
+        .unwrap_or_else(|| crate::service::microsoft_graph::THE_MAIN_CALENDAR.to_string()))
 }
 
 /// Which calendar an event goes back into once a provider has answered.
@@ -590,7 +971,7 @@ pub fn google_event_to_local(
         }
     });
 
-    let show_as = if event.transparency == "transparent" {
+    let show_as = if event.transparency.as_deref() == Some("transparent") {
         "free"
     } else {
         "busy"
@@ -602,28 +983,20 @@ pub fn google_event_to_local(
         account_id: account_id.to_string(),
         provider_event_id: Some(event.id.clone()),
         calendar_id: Some(calendar_id.to_string()),
-        summary: event.summary.clone(),
-        description: if event.description.is_empty() {
-            None
-        } else {
-            Some(event.description.clone())
-        },
-        location: if event.location.is_empty() {
-            None
-        } else {
-            Some(event.location.clone())
-        },
+        summary: event.summary.clone().unwrap_or_default(),
+        description: event.description.clone().filter(|d| !d.is_empty()),
+        location: event.location.clone().filter(|l| !l.is_empty()),
         start_datetime,
         end_datetime,
         start_date,
         end_date,
         is_all_day,
         time_zone,
-        status: if event.status.is_empty() {
-            "confirmed".to_string()
-        } else {
-            event.status.clone()
-        },
+        status: event
+            .status
+            .clone()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "confirmed".to_string()),
         recurrence_rule: event.recurrence.first().cloned(),
         categories: String::new(),
         source_provider: Some("gmail".to_string()),
@@ -636,36 +1009,160 @@ pub fn google_event_to_local(
         reminders_json,
         created_at: now.clone(),
         updated_at: now,
+        pending: false,
     }
 }
 
-pub fn local_to_google_event(event: &CalendarEventEntry) -> GoogleEvent {
-    let start = if event.is_all_day {
-        Some(GoogleEventDateTime {
-            date: event.start_date.clone(),
-            date_time: None,
-            time_zone: event.time_zone.clone(),
-        })
-    } else {
-        Some(GoogleEventDateTime {
-            date_time: Some(event.start_datetime.clone()),
+/// How a bare date is written everywhere this program stores one.
+const WHOLE_DAY: &str = "%Y-%m-%d";
+
+/// How somebody is alerted when what is stored does not say.
+///
+/// Every alert this program has ever written is stored as a lead time and
+/// nothing else, so this is required rather than optional: without it, an alert
+/// set here is an entry neither provider can read and it is dropped on the way
+/// out. A notice on the screen is the only kind this program can raise.
+const HOW_AN_ALERT_IS_GIVEN: &str = "popup";
+
+/// The first day a whole-day event is no longer on.
+///
+/// Both providers read the end of a whole-day event as the day it is over
+/// rather than its last day. The form here stores a one-day event with the same
+/// date at both ends, so sent as it stands the event lasts no time at all:
+/// Google refuses it, and Outlook draws nothing where a birthday should be.
+///
+/// An end that is already after the start is left alone, because an event that
+/// came down from a provider already carries the day it is over.
+fn day_a_whole_day_event_is_over(starts: &str, ends: &str) -> String {
+    if ends > starts {
+        return ends.to_string();
+    }
+    chrono::NaiveDate::parse_from_str(starts, WHOLE_DAY)
+        .ok()
+        .and_then(|day| day.succ_opt())
+        .map(|day| day.format(WHOLE_DAY).to_string())
+        .unwrap_or_else(|| ends.to_string())
+}
+
+/// The two dates a whole-day event is sent with.
+///
+/// Read from whichever pair of fields holds them. An event made here stores a
+/// bare date in both pairs; one that came down from Google stores the dates in
+/// one pair and midnight in universal time in the other. Taking the date fields
+/// first and falling back to the first ten characters of the other reads both.
+fn whole_day_bounds(event: &CalendarEventEntry) -> (String, String) {
+    let day_of = |date: &Option<String>, moment: &str| {
+        date.clone()
+            .filter(|d| !d.is_empty())
+            .unwrap_or_else(|| moment.get(..10).unwrap_or(moment).to_string())
+    };
+    let starts = day_of(&event.start_date, &event.start_datetime);
+    let ends = day_of(&event.end_date, &event.end_datetime);
+    let over = day_a_whole_day_event_is_over(&starts, &ends);
+    (starts, over)
+}
+
+/// How Google writes a clock face when a zone is named beside it.
+///
+/// The same shape Graph wants, and reached by a different route on purpose.
+/// Graph wants a clock face and a zone name and refuses an offset; Google wants
+/// an instant, which means either an offset or a zone name beside the clock
+/// face. Making the two symmetrical breaks one of them.
+const GOOGLE_WALL_CLOCK: &str = "%Y-%m-%dT%H:%M:%S";
+
+/// A stored time, written the way Google reads one.
+///
+/// Three sources write the times this program stores and only one of them is
+/// already RFC 3339. Google's own events arrive with an offset and go back
+/// unchanged. Graph's arrive as a clock face with a zone name, which Google
+/// accepts as long as the name goes beside it. This program's own editor writes
+/// a clock face with no zone at all, which is the one that has nothing to say
+/// which moment it means, so it is read as a time on this computer and sent with
+/// the offset that gives it.
+///
+/// Nothing is returned for a value that is none of these shapes, so an
+/// unreadable time is refused rather than sent as an hour nobody meant.
+fn moment_for_google(stored: &str, zone: Option<&str>) -> Option<GoogleEventDateTime> {
+    use chrono::TimeZone;
+
+    if chrono::DateTime::parse_from_rfc3339(stored).is_ok() {
+        return Some(GoogleEventDateTime {
+            date_time: Some(stored.to_string()),
             date: None,
-            time_zone: event.time_zone.clone(),
-        })
+            time_zone: zone.map(str::to_string),
+        });
+    }
+
+    let clock = CLOCK_FACES
+        .iter()
+        .find_map(|shape| chrono::NaiveDateTime::parse_from_str(stored, shape).ok())
+        .or_else(|| {
+            // A timed event whose time was left blank is stored as a bare date,
+            // which the editor here really does write. Midnight is what the
+            // Graph side already makes of it.
+            chrono::NaiveDate::parse_from_str(stored, "%Y-%m-%d")
+                .ok()
+                .and_then(|day| day.and_hms_opt(0, 0, 0))
+        })?;
+
+    if let Some(named) = zone.filter(|named| !named.is_empty()) {
+        return Some(GoogleEventDateTime {
+            date_time: Some(clock.format(GOOGLE_WALL_CLOCK).to_string()),
+            date: None,
+            time_zone: Some(named.to_string()),
+        });
+    }
+
+    // Nothing said which zone this clock face was meant in, so it is read as a
+    // time on the computer it was typed on. `earliest` rather than a single
+    // answer because the hour a clock skips forward over does not exist, and an
+    // event refused for being an hour that never happens helps nobody.
+    let here = chrono::Local.from_local_datetime(&clock).earliest()?;
+    Some(GoogleEventDateTime {
+        date_time: Some(here.to_rfc3339()),
+        date: None,
+        time_zone: None,
+    })
+}
+
+/// What a stored event becomes on its way to Google.
+///
+/// Fails rather than sending a time nobody could read, for the same reason the
+/// Graph converter does.
+pub fn local_to_google_event(event: &CalendarEventEntry) -> Result<GoogleEvent> {
+    let zone = event.time_zone.as_deref();
+    let unreadable = |what: &str, value: &str| {
+        crate::common::Error::Other(format!(
+            "This event cannot be sent to Google Calendar: its {what} is stored as \
+             {value:?}, which is not a date and time."
+        ))
     };
 
-    let end = if event.is_all_day {
-        Some(GoogleEventDateTime {
-            date: event.end_date.clone(),
-            date_time: None,
-            time_zone: event.time_zone.clone(),
-        })
+    let (start, end) = if event.is_all_day {
+        let (first_day, over) = whole_day_bounds(event);
+        (
+            Some(GoogleEventDateTime {
+                date: Some(first_day),
+                date_time: None,
+                time_zone: event.time_zone.clone(),
+            }),
+            Some(GoogleEventDateTime {
+                date: Some(over),
+                date_time: None,
+                time_zone: event.time_zone.clone(),
+            }),
+        )
     } else {
-        Some(GoogleEventDateTime {
-            date_time: Some(event.end_datetime.clone()),
-            date: None,
-            time_zone: event.time_zone.clone(),
-        })
+        (
+            Some(
+                moment_for_google(&event.start_datetime, zone)
+                    .ok_or_else(|| unreadable("start", &event.start_datetime))?,
+            ),
+            Some(
+                moment_for_google(&event.end_datetime, zone)
+                    .ok_or_else(|| unreadable("end", &event.end_datetime))?,
+            ),
+        )
     };
 
     // An alert nobody could read is not an instruction to have none. Saying
@@ -680,8 +1177,17 @@ pub fn local_to_google_event(event: &CalendarEventEntry) -> GoogleEvent {
             arr.iter()
                 .filter_map(|v| {
                     Some(GoogleReminderOverride {
-                        method: v.get("method")?.as_str()?.to_string(),
+                        // The lead time is what somebody chose and an entry
+                        // without one cannot be sent. How they are alerted is
+                        // not something this program has ever asked, and every
+                        // alert already stored here leaves it out, so the one
+                        // kind this program can raise is filled in.
                         minutes: v.get("minutes")?.as_i64()? as i32,
+                        method: v
+                            .get("method")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or(HOW_AN_ALERT_IS_GIVEN)
+                            .to_string(),
                     })
                 })
                 .collect::<Vec<_>>()
@@ -692,21 +1198,28 @@ pub fn local_to_google_event(event: &CalendarEventEntry) -> GoogleEvent {
             overrides,
         });
 
-    GoogleEvent {
-        summary: event.summary.clone(),
-        description: event.description.clone().unwrap_or_default(),
-        location: event.location.clone().unwrap_or_default(),
+    // Every one of these is always sent, and an empty value means clear it.
+    // That is the whole point of them being `Option`: a field left out would be
+    // an instruction to keep whatever Google already holds, so somebody who
+    // deleted a description would keep the old one for ever.
+    Ok(GoogleEvent {
+        summary: Some(event.summary.clone()),
+        description: Some(event.description.clone().unwrap_or_default()),
+        location: Some(event.location.clone().unwrap_or_default()),
         start,
         end,
-        status: event.status.clone(),
-        transparency: if event.show_as == "free" {
-            "transparent".to_string()
-        } else {
-            "opaque".to_string()
-        },
+        status: Some(event.status.clone()),
+        transparency: Some(
+            if event.show_as == "free" {
+                "transparent"
+            } else {
+                "opaque"
+            }
+            .to_string(),
+        ),
         reminders,
         ..Default::default()
-    }
+    })
 }
 
 // ── Conversion: Microsoft ↔ Local ───────────────────────────────────────────
@@ -804,7 +1317,7 @@ pub fn ms_event_to_local(
         account_id: account_id.to_string(),
         provider_event_id: Some(event.id.clone()),
         calendar_id: Some(calendar_id.to_string()),
-        summary: event.subject.clone(),
+        summary: event.subject.clone().unwrap_or_default(),
         description,
         location,
         start_datetime,
@@ -826,6 +1339,7 @@ pub fn ms_event_to_local(
         reminders_json,
         created_at: now.clone(),
         updated_at: now,
+        pending: false,
     }
 }
 
@@ -910,28 +1424,36 @@ pub fn local_to_ms_event(event: &CalendarEventEntry) -> Result<MsGraphEvent> {
              which is not a date and time."
         ))
     };
+    let (starts_at, ends_at) = if event.is_all_day {
+        whole_day_bounds(event)
+    } else {
+        (event.start_datetime.clone(), event.end_datetime.clone())
+    };
     let start = Some(
-        wall_clock_for_graph(&event.start_datetime, zone)
+        wall_clock_for_graph(&starts_at, zone)
             .ok_or_else(|| unreadable("start", &event.start_datetime))?,
     );
     let end = Some(
-        wall_clock_for_graph(&event.end_datetime, zone)
+        wall_clock_for_graph(&ends_at, zone)
             .ok_or_else(|| unreadable("end", &event.end_datetime))?,
     );
 
-    let body = event.description.as_ref().map(|d| MsEventBody {
+    // Always sent, and empty means clear, for the same reason as on the Google
+    // side. Returned as `None` when the local value was `None`, these left the
+    // key out, so emptying the notes on an event kept the old notes at Graph.
+    let body = Some(MsEventBody {
         content_type: "text".to_string(),
-        content: d.clone(),
+        content: event.description.clone().unwrap_or_default(),
     });
 
-    let location = event.location.as_ref().map(|l| MsLocation {
-        display_name: l.clone(),
+    let location = Some(MsLocation {
+        display_name: event.location.clone().unwrap_or_default(),
     });
 
     let lead = reminder_lead_minutes(event);
 
     Ok(MsGraphEvent {
-        subject: event.summary.clone(),
+        subject: Some(event.summary.clone()),
         body,
         start,
         end,
@@ -971,10 +1493,10 @@ mod tests {
         let event = GoogleEvent {
             id: "evt1".to_string(),
             etag: "\"abc\"".to_string(),
-            status: "confirmed".to_string(),
-            summary: "Team Meeting".to_string(),
-            description: "Weekly standup".to_string(),
-            location: "Room 42".to_string(),
+            status: Some("confirmed".to_string()),
+            summary: Some("Team Meeting".to_string()),
+            description: Some("Weekly standup".to_string()),
+            location: Some("Room 42".to_string()),
             start: Some(GoogleEventDateTime {
                 date_time: Some("2026-03-05T10:00:00-05:00".to_string()),
                 date: None,
@@ -1001,7 +1523,7 @@ mod tests {
     fn test_google_all_day_event_to_local() {
         let event = GoogleEvent {
             id: "allday1".to_string(),
-            summary: "Holiday".to_string(),
+            summary: Some("Holiday".to_string()),
             start: Some(GoogleEventDateTime {
                 date: Some("2026-03-06".to_string()),
                 date_time: None,
@@ -1050,12 +1572,13 @@ mod tests {
             reminders_json: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            pending: false,
         };
 
-        let google = local_to_google_event(&local);
-        assert_eq!(google.summary, "Lunch");
-        assert_eq!(google.description, "With team");
-        assert_eq!(google.location, "Cafe");
+        let google = local_to_google_event(&local).expect("a time Google could read");
+        assert_eq!(google.summary.as_deref(), Some("Lunch"));
+        assert_eq!(google.description.as_deref(), Some("With team"));
+        assert_eq!(google.location.as_deref(), Some("Cafe"));
         let start = google.start.unwrap();
         assert_eq!(start.date_time.as_deref(), Some("2026-03-05T12:00:00Z"));
     }
@@ -1064,7 +1587,7 @@ mod tests {
     fn test_ms_event_to_local() {
         let event = MsGraphEvent {
             id: "ms_evt1".to_string(),
-            subject: "Budget Review".to_string(),
+            subject: Some("Budget Review".to_string()),
             start: Some(MsDateTimeTimeZone {
                 date_time: "2026-03-05T14:00:00.0000000".to_string(),
                 time_zone: "Eastern Standard Time".to_string(),
@@ -1117,10 +1640,11 @@ mod tests {
             calendar_id: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            pending: false,
         };
 
         let ms = local_to_ms_event(&local).expect("a time Graph could read");
-        assert_eq!(ms.subject, "Sprint Planning");
+        assert_eq!(ms.subject.as_deref(), Some("Sprint Planning"));
         assert_eq!(ms.location.unwrap().display_name, "Teams");
         assert_eq!(ms.body.unwrap().content, "Q2 sprint");
     }
@@ -1155,6 +1679,7 @@ mod tests {
             calendar_id: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            pending: false,
         });
         mgr.add_event(CalendarEventEntry {
             id: "e2".to_string(),
@@ -1183,6 +1708,7 @@ mod tests {
             calendar_id: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            pending: false,
         });
 
         let day_events = mgr.events_for_day("2026-03-05");
@@ -1243,6 +1769,7 @@ mod tests {
             reminders_json: None,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
+            pending: false,
         }
     }
 
@@ -1448,6 +1975,44 @@ mod tests {
 
     // ── What a provider sends, and what is stored ────────────────────────
 
+    /// One event in exactly the shape the editor in this program stores one.
+    ///
+    /// Built by hand rather than taken from `make_event` so that every
+    /// assertion about what goes out to a provider is arguing about a value the
+    /// running application really writes: a clock face with a space in it and
+    /// no zone, and an alert that names no method.
+    fn an_event_stored_here() -> CalendarEventEntry {
+        CalendarEventEntry {
+            id: "event-1".to_string(),
+            account_id: "acct".to_string(),
+            provider_event_id: None,
+            calendar_id: None,
+            summary: "Sprint planning".to_string(),
+            description: Some("Bring the papers".to_string()),
+            location: Some("Room 42".to_string()),
+            start_datetime: "2026-03-06 09:00".to_string(),
+            end_datetime: "2026-03-06 10:00".to_string(),
+            start_date: None,
+            end_date: None,
+            is_all_day: false,
+            time_zone: None,
+            status: "confirmed".to_string(),
+            recurrence_rule: None,
+            categories: String::new(),
+            source_provider: Some("local".to_string()),
+            etag: None,
+            web_link: None,
+            show_as: "busy".to_string(),
+            last_modified_remote: None,
+            last_synced_at: None,
+            attendees_json: None,
+            reminders_json: Some("[{\"minutes\":15}]".to_string()),
+            created_at: "2026-03-01T00:00:00Z".to_string(),
+            updated_at: "2026-03-01T00:00:00Z".to_string(),
+            pending: false,
+        }
+    }
+
     /// A cache in a directory of its own, named after the test using it.
     fn temp_cache(label: &str) -> MessageCache {
         let nanos = std::time::SystemTime::now()
@@ -1561,7 +2126,7 @@ mod tests {
         ] {
             let event = GoogleEvent {
                 id: "evt".to_string(),
-                transparency: transparency.to_string(),
+                transparency: Some(transparency.to_string()),
                 ..Default::default()
             };
 
@@ -1709,6 +2274,7 @@ mod tests {
         timed.time_zone = Some("America/New_York".to_string());
 
         let ends = local_to_google_event(&timed)
+            .expect("a time Google could read")
             .end
             .expect("an appointment without an end is one Google refuses");
         assert_eq!(ends.date_time.as_deref(), Some("2026-03-05T13:00:00Z"));
@@ -1725,6 +2291,7 @@ mod tests {
         whole_day.end_date = Some("2026-03-07".to_string());
 
         let ends = local_to_google_event(&whole_day)
+            .expect("a time Google could read")
             .end
             .expect("a whole-day event needs an end too");
         assert_eq!(ends.date.as_deref(), Some("2026-03-07"));
@@ -1740,8 +2307,11 @@ mod tests {
             event.status = status.to_string();
 
             assert_eq!(
-                local_to_google_event(&event).status,
-                status,
+                local_to_google_event(&event)
+                    .expect("a time Google could read")
+                    .status
+                    .as_deref(),
+                Some(status),
                 "an event stored as {status}"
             );
         }
@@ -1762,8 +2332,11 @@ mod tests {
             event.show_as = blocks_time.to_string();
 
             assert_eq!(
-                local_to_google_event(&event).transparency,
-                transparency,
+                local_to_google_event(&event)
+                    .expect("a time Google could read")
+                    .transparency
+                    .as_deref(),
+                Some(transparency),
                 "an event marked {blocks_time}"
             );
         }
@@ -1775,6 +2348,7 @@ mod tests {
         with_alert.reminders_json = Some("[{\"method\":\"popup\",\"minutes\":15}]".to_string());
 
         let reminders = local_to_google_event(&with_alert)
+            .expect("a time Google could read")
             .reminders
             .expect("the alert somebody set has to reach Google");
         assert!(
@@ -1787,7 +2361,10 @@ mod tests {
 
         let silent = make_event("e2", "Quiet", None);
         assert!(
-            local_to_google_event(&silent).reminders.is_none(),
+            local_to_google_event(&silent)
+                .expect("a time Google could read")
+                .reminders
+                .is_none(),
             "an event with no alert of its own is handed back to the calendar default"
         );
     }
@@ -1801,7 +2378,10 @@ mod tests {
         unreadable.reminders_json = Some("[{\"method\":\"popup\"}]".to_string());
 
         assert!(
-            local_to_google_event(&unreadable).reminders.is_none(),
+            local_to_google_event(&unreadable)
+                .expect("a time Google could read")
+                .reminders
+                .is_none(),
             "an alert with nothing usable in it is left to the calendar default"
         );
     }
@@ -2009,7 +2589,7 @@ mod tests {
     // instead by pointing the client itself, which is what the tests beside the
     // client do.
 
-    use crate::common::answering::answering;
+    use crate::common::answering::{answering, asked_for, heard};
 
     /// Answer one Graph request with a canned reply, ignoring what was asked.
     ///
@@ -2228,5 +2808,851 @@ mod tests {
         // On the summary as well, so keeping the local fields cannot pass by
         // skipping the write altogether.
         assert_eq!(stored.summary, "Budget review");
+    }
+
+    // ── The gate ─────────────────────────────────────────────────────────
+
+    /// How long a test waits to be sure a request is not coming.
+    ///
+    /// Short, because the answer wanted here is "nothing arrived" and the
+    /// full wait would be spent on every run proving it.
+    const LONG_ENOUGH_TO_BE_SURE_NOTHING_CAME: std::time::Duration =
+        std::time::Duration::from_millis(300);
+
+    /// Whether a loopback server heard anything at all.
+    async fn anything_arrived(listening: tokio::sync::oneshot::Receiver<String>) -> bool {
+        tokio::time::timeout(
+            LONG_ENOUGH_TO_BE_SURE_NOTHING_CAME,
+            heard(listening, "a change nobody allowed"),
+        )
+        .await
+        .is_ok_and(|caught| caught.is_ok())
+    }
+
+    #[tokio::test]
+    async fn test_a_calendar_change_on_a_read_only_account_never_leaves_this_computer() {
+        // The one test in this file worth more than the others. Every write
+        // below it is only safe because this holds, and it has to be checked
+        // by listening rather than by reading the error: an error raised after
+        // the request went out is a change that already happened.
+        let cache = temp_cache("gate_google");
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        // Read-only by construction, which is what `for_account` builds for an
+        // account whose owner has not turned Allow Changes on.
+        let google = GoogleApiClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused =
+            create_google_event(&cache, &google, "a-token", &an_event_stored_here()).await;
+
+        let Err(said) = refused else {
+            panic!("a change went out on an account that is open for reading only");
+        };
+        assert!(
+            matches!(said, crate::common::Error::Security(_)),
+            "refused for the wrong reason: {said}"
+        );
+        assert!(said.to_string().contains("Allow Changes"), "{said}");
+        assert!(
+            !anything_arrived(listening).await,
+            "the change reached the network before it was refused"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_check_above_can_tell_a_change_that_did_go_out() {
+        // Before believing "nothing arrived", the check has to be able to see
+        // something arrive. The same helper, the same wait, the same call: the
+        // only difference is what the account allows.
+        let cache = temp_cache("gate_proof");
+        let (address, listening) = answering(
+            "200 OK",
+            "application/json",
+            "{\"id\":\"evt1\"}".to_string(),
+        )
+        .await;
+        let google = GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        create_google_event(&cache, &google, "a-token", &an_event_stored_here())
+            .await
+            .expect("the change to be answered");
+
+        assert!(
+            anything_arrived(listening).await,
+            "the check cannot see a change that really went out, so it proves \
+             nothing about one that did not"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_microsoft_calendar_change_on_a_read_only_account_stays_here_too() {
+        let cache = temp_cache("gate_ms");
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        let outlook = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = create_ms_event(&cache, &outlook, "a-token", &an_event_stored_here()).await;
+
+        let Err(said) = refused else {
+            panic!("a change went out on an account that is open for reading only");
+        };
+        assert!(
+            matches!(said, crate::common::Error::Security(_)),
+            "refused for the wrong reason: {said}"
+        );
+        assert!(
+            !anything_arrived(listening).await,
+            "the change reached the network before it was refused"
+        );
+    }
+
+    // ── The shape a time reaches each provider in ────────────────────────
+
+    #[test]
+    fn test_a_time_this_program_stored_reaches_google_readable() {
+        // The editor here writes "2026-03-06 09:00": a space instead of a T, no
+        // seconds and no zone. Sent verbatim that is not RFC 3339, so Google
+        // either refuses the event or puts it at an hour nobody meant.
+        let sent = local_to_google_event(&an_event_stored_here())
+            .expect("a time Google could read")
+            .start
+            .expect("an event with no start is one Google refuses");
+
+        let moment = sent.date_time.expect("a timed event carries a time");
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(&moment).is_ok()
+                || sent.time_zone.is_some_and(|named| !named.is_empty()),
+            "Google reads a date and time as RFC 3339, or as a clock face with a \
+             zone named beside it, and {moment:?} is neither"
+        );
+    }
+
+    #[test]
+    fn test_the_two_providers_are_given_the_same_hour_in_the_shape_each_one_reads() {
+        // Written down so that nobody later tidies the two converters into one
+        // shape. Graph reads its dateTime as a clock face and is contradicted
+        // by an offset on the end of it. Google reads its dateTime as an
+        // instant, so it needs either an offset or a zone name beside it.
+        // Whichever way the two are made to agree, one of them breaks.
+        let event = an_event_stored_here();
+
+        let graph = local_to_ms_event(&event)
+            .expect("a time Graph could read")
+            .start
+            .expect("a start");
+        assert!(
+            !graph.date_time.contains('+') && !graph.date_time.ends_with('Z'),
+            "Graph is contradicted by an offset: {:?}",
+            graph.date_time
+        );
+        assert!(
+            !graph.time_zone.is_empty(),
+            "a Graph clock face with no zone beside it is an hour nobody named"
+        );
+
+        let google = local_to_google_event(&event)
+            .expect("a time Google could read")
+            .start
+            .expect("a start");
+        let moment = google.date_time.expect("a timed event carries a time");
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(&moment).is_ok()
+                || google.time_zone.is_some_and(|named| !named.is_empty()),
+            "Google needs to know which moment {moment:?} is"
+        );
+    }
+
+    // ── Emptying a field, and what the provider makes of it ──────────────
+
+    /// What one converter would put on the wire.
+    fn what_google_is_sent(event: &CalendarEventEntry) -> serde_json::Value {
+        serde_json::to_value(local_to_google_event(event).expect("a time Google could read"))
+            .expect("an event to serialize")
+    }
+
+    /// The same for Graph.
+    fn what_outlook_is_sent(event: &CalendarEventEntry) -> serde_json::Value {
+        serde_json::to_value(local_to_ms_event(event).expect("a time Graph could read"))
+            .expect("an event to serialize")
+    }
+
+    #[test]
+    fn test_an_event_whose_description_and_place_were_deleted_clears_them_at_google() {
+        // Left out of the body, an emptied field reads to Google as "leave this
+        // alone", so somebody who deletes the address of a meeting keeps the
+        // old address in their calendar forever and has no way to tell.
+        let mut emptied = an_event_stored_here();
+        emptied.description = None;
+        emptied.location = None;
+
+        let sent = what_google_is_sent(&emptied);
+
+        assert_eq!(sent["description"], "", "{sent}");
+        assert_eq!(sent["location"], "", "{sent}");
+    }
+
+    #[test]
+    fn test_an_event_whose_title_was_emptied_reaches_google_as_an_empty_title() {
+        let mut untitled = an_event_stored_here();
+        untitled.summary = String::new();
+
+        assert_eq!(what_google_is_sent(&untitled)["summary"], "");
+    }
+
+    #[test]
+    fn test_an_event_whose_notes_and_place_were_deleted_clear_them_at_outlook() {
+        let mut emptied = an_event_stored_here();
+        emptied.description = None;
+        emptied.location = None;
+
+        let sent = what_outlook_is_sent(&emptied);
+
+        assert_eq!(sent["body"]["content"], "", "{sent}");
+        assert_eq!(sent["location"]["displayName"], "", "{sent}");
+    }
+
+    #[test]
+    fn test_an_event_whose_title_was_emptied_reaches_outlook_as_an_empty_title() {
+        let mut untitled = an_event_stored_here();
+        untitled.summary = String::new();
+
+        assert_eq!(what_outlook_is_sent(&untitled)["subject"], "");
+    }
+
+    // ── A whole day is a whole day at both ends ──────────────────────────
+
+    #[test]
+    fn test_a_whole_day_event_created_here_ends_after_it_starts() {
+        // What the New Item form stores for a one-day all-day event: the same
+        // date at both ends. Google's end date and Graph's all-day end are both
+        // the first day the event is over, so sent as they stand the event
+        // lasts no time at all and is refused or drawn as nothing.
+        let mut birthday = an_event_stored_here();
+        birthday.is_all_day = true;
+        birthday.start_date = Some("2026-03-06".to_string());
+        birthday.end_date = Some("2026-03-06".to_string());
+        birthday.start_datetime = "2026-03-06".to_string();
+        birthday.end_datetime = "2026-03-06".to_string();
+
+        assert_eq!(
+            local_to_google_event(&birthday)
+                .expect("a time Google could read")
+                .end
+                .expect("an end")
+                .date
+                .as_deref(),
+            Some("2026-03-07")
+        );
+        assert_eq!(
+            local_to_ms_event(&birthday)
+                .expect("a time Graph could read")
+                .end
+                .expect("an end")
+                .date_time,
+            "2026-03-07T00:00:00"
+        );
+
+        // The other half, so the rule does not go too far: a whole-day event
+        // that already ends after it starts keeps the end it was given.
+        let mut fortnight = birthday.clone();
+        fortnight.end_date = Some("2026-03-20".to_string());
+        fortnight.end_datetime = "2026-03-20".to_string();
+        assert_eq!(
+            local_to_google_event(&fortnight)
+                .expect("a time Google could read")
+                .end
+                .expect("an end")
+                .date
+                .as_deref(),
+            Some("2026-03-20")
+        );
+    }
+
+    // ── An alert set here ────────────────────────────────────────────────
+
+    #[test]
+    fn test_an_alert_set_in_this_program_reaches_google() {
+        // The editor here writes an alert with a lead time and no method, and
+        // the converter dropped every entry that named none. So an alert set on
+        // this computer went to Google as no alert at all, which is the same
+        // family of defect as the birthday that never reached Outlook.
+        let reminders = local_to_google_event(&an_event_stored_here())
+            .expect("a time Google could read")
+            .reminders
+            .expect("the alert somebody set has to reach Google");
+
+        assert_eq!(reminders.overrides.len(), 1);
+        assert_eq!(reminders.overrides[0].minutes, 15);
+        assert_eq!(
+            reminders.overrides[0].method, "popup",
+            "Google needs to be told how to alert somebody, and this program \
+             only has one way to"
+        );
+    }
+
+    // ── Sending what is waiting here ─────────────────────────────────────
+
+    use crate::common::answering::answering_several;
+
+    /// Ensure a provider's calendar and put one waiting change in it.
+    fn a_pending_event_in(
+        cache: &MessageCache,
+        provider: &str,
+        name: &str,
+        provider_event_id: Option<&str>,
+    ) -> CalendarEventEntry {
+        let container = cache
+            .ensure_provider_calendar("acct", provider, name)
+            .expect("the provider's calendar");
+        let mut event = an_event_stored_here();
+        event.calendar_id = Some(container.id);
+        event.provider_event_id = provider_event_id.map(str::to_string);
+        event.pending = true;
+        cache.save_calendar_event(&event).expect("the change");
+        event
+    }
+
+    /// The keys a captured request's body carries, in a settled order.
+    fn body_keys(request: &str) -> Vec<String> {
+        let body = request
+            .split_once("\r\n\r\n")
+            .map(|(_, body)| body)
+            .unwrap_or_default();
+        let sent: serde_json::Value =
+            serde_json::from_str(body).unwrap_or_else(|e| panic!("{body:?}: {e}"));
+        let mut named: Vec<String> = sent
+            .as_object()
+            .unwrap_or_else(|| panic!("an object, not {sent}"))
+            .keys()
+            .cloned()
+            .collect();
+        named.sort();
+        named
+    }
+
+    /// The whole body of a captured request.
+    fn body_of(request: &str) -> serde_json::Value {
+        let body = request
+            .split_once("\r\n\r\n")
+            .map(|(_, body)| body)
+            .unwrap_or_default();
+        serde_json::from_str(body).unwrap_or_else(|e| panic!("{body:?}: {e}"))
+    }
+
+    #[tokio::test]
+    async fn test_a_change_waiting_here_is_sent_to_google_before_the_calendar_is_read() {
+        // Before, because the other order sends a value the read has just
+        // overwritten, so the change undoes the thing it was told to accept.
+        let cache = temp_cache("push_google");
+        a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, Some("evt1"));
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{\"id\":\"evt1\"}".to_string(), "{}".to_string()],
+        )
+        .await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a change and then a read")
+            .await
+            .expect("two requests");
+        assert_eq!(
+            asked_for(&requests[0]),
+            "PATCH /calendars/primary/events/evt1",
+            "{}",
+            requests[0]
+        );
+        assert!(
+            asked_for(&requests[1]).starts_with("GET /calendars/primary/events?"),
+            "{}",
+            requests[1]
+        );
+        // On the whole key list rather than on two absences, so a field added
+        // to the converter later is caught here rather than by somebody's
+        // guest list.
+        assert_eq!(
+            body_keys(&requests[0]),
+            [
+                "description",
+                "end",
+                "location",
+                "reminders",
+                "start",
+                "status",
+                "summary",
+                "transparency",
+            ],
+            "{}",
+            requests[0]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_waiting_here_is_sent_to_outlook_before_the_calendar_is_read() {
+        let cache = temp_cache("push_ms");
+        a_pending_event_in(&cache, MICROSOFT, MICROSOFT_CALENDAR_NAME, Some("evt1"));
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{\"id\":\"evt1\"}".to_string(), "{}".to_string()],
+        )
+        .await;
+
+        sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a change and then a read")
+            .await
+            .expect("two requests");
+        assert_eq!(
+            asked_for(&requests[0]),
+            "PATCH /me/events/evt1",
+            "{}",
+            requests[0]
+        );
+        assert!(
+            asked_for(&requests[1]).starts_with("GET /me/calendarView/delta?"),
+            "{}",
+            requests[1]
+        );
+        assert_eq!(
+            body_keys(&requests[0]),
+            [
+                "body",
+                "end",
+                "isAllDay",
+                "isReminderOn",
+                "location",
+                "reminderMinutesBeforeStart",
+                "showAs",
+                "start",
+                "subject",
+            ],
+            "{}",
+            requests[0]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_changing_an_event_leaves_its_repeat_rule_and_its_guests_alone() {
+        // The two guarantees this whole unit rests on. Google merges a change
+        // rather than replacing the event, and the converters never build
+        // either field, so a change to the time of a weekly meeting cannot
+        // flatten the series or uninvite the people on it.
+        for (provider, name, google) in [
+            (GOOGLE, GOOGLE_CALENDAR_NAME, true),
+            (MICROSOFT, MICROSOFT_CALENDAR_NAME, false),
+        ] {
+            let cache = temp_cache(&format!("push_series_{provider}"));
+            let mut repeating = a_pending_event_in(&cache, provider, name, Some("evt1"));
+            repeating.recurrence_rule = Some("RRULE:FREQ=WEEKLY;BYDAY=TU".to_string());
+            repeating.attendees_json =
+                Some("[{\"email\":\"sam@example.com\",\"name\":\"Sam\"}]".to_string());
+            cache.save_calendar_event(&repeating).expect("the change");
+
+            let (address, listening) = answering_several(
+                "200 OK",
+                "application/json",
+                vec!["{\"id\":\"evt1\"}".to_string(), "{}".to_string()],
+            )
+            .await;
+            let at = format!("http://{address}");
+            if google {
+                sync_google_calendar(
+                    &cache,
+                    &GoogleApiClient::allowed_to_change_things_at(&at),
+                    "a-token",
+                    "acct",
+                )
+                .await
+                .expect("the sync to finish");
+            } else {
+                sync_microsoft_calendar(
+                    &cache,
+                    &MsGraphClient::allowed_to_change_things_at(&at),
+                    "a-token",
+                    "acct",
+                )
+                .await
+                .expect("the sync to finish");
+            }
+
+            let requests = heard(listening, "a change").await.expect("two requests");
+            let named = body_keys(&requests[0]);
+            assert!(
+                !named.contains(&"recurrence".to_string()),
+                "a change to {provider} named the repeat rule: {}",
+                requests[0]
+            );
+            assert!(
+                !named.contains(&"attendees".to_string()),
+                "a change to {provider} named the guest list: {}",
+                requests[0]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_an_event_made_here_in_a_google_calendar_is_added_there() {
+        let cache = temp_cache("push_google_new");
+        let made_here = a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, None);
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                "{\"id\":\"from-google\",\"updated\":\"2026-03-06T09:00:00Z\"}".to_string(),
+                "{}".to_string(),
+            ],
+        )
+        .await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a new event").await.expect("two requests");
+        assert_eq!(
+            asked_for(&requests[0]),
+            "POST /calendars/primary/events",
+            "{}",
+            requests[0]
+        );
+
+        let stored = cache
+            .get_event_by_id(&made_here.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(
+            stored.provider_event_id.as_deref(),
+            Some("from-google"),
+            "the identity Google gave it back is what it is held under now"
+        );
+        assert!(
+            !stored.pending,
+            "an event the provider has taken is not still waiting to be sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_made_here_in_an_outlook_calendar_is_added_there() {
+        let cache = temp_cache("push_ms_new");
+        let made_here = a_pending_event_in(&cache, MICROSOFT, MICROSOFT_CALENDAR_NAME, None);
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{\"id\":\"from-graph\"}".to_string(), "{}".to_string()],
+        )
+        .await;
+
+        sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a new event").await.expect("two requests");
+        assert_eq!(
+            asked_for(&requests[0]),
+            "POST /me/events",
+            "{}",
+            requests[0]
+        );
+
+        let stored = cache
+            .get_event_by_id(&made_here.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(stored.provider_event_id.as_deref(), Some("from-graph"));
+        assert!(!stored.pending);
+    }
+
+    #[tokio::test]
+    async fn test_an_event_deleted_here_is_deleted_at_the_provider_and_the_note_is_forgotten() {
+        let cache = temp_cache("push_google_gone");
+        let going = a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, Some("evt1"));
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the event to be deleted here");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{}".to_string(), "{}".to_string()],
+        )
+        .await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a deletion").await.expect("two requests");
+        assert_eq!(
+            asked_for(&requests[0]),
+            "DELETE /calendars/primary/events/evt1",
+            "{}",
+            requests[0]
+        );
+        assert!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the deletions")
+                .is_empty(),
+            "a deletion the provider carried out is still being asked for"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_that_never_reached_the_provider_leaves_no_request() {
+        // Made here and deleted again before any sync, so there is nothing at
+        // the other end to delete. The note is cleared rather than carried for
+        // ever, and nothing goes out.
+        let cache = temp_cache("push_google_never_sent");
+        let going = a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, None);
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the event to be deleted here");
+        let (address, listening) =
+            answering_several("200 OK", "application/json", vec!["{}".to_string()]).await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "only the read")
+            .await
+            .expect("one request");
+        assert_eq!(requests.len(), 1);
+        assert!(
+            asked_for(&requests[0]).starts_with("GET /calendars/primary/events?"),
+            "something was sent for an event the provider never had: {}",
+            requests[0]
+        );
+        assert!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the deletions")
+                .is_empty(),
+            "a note nobody can act on was kept for ever"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_the_account_does_not_allow_stays_here_and_keeps_waiting() {
+        // With the gate closed every sync would otherwise log one failure per
+        // waiting event for ever, which is how a real warning gets ignored.
+        // Nothing went wrong: the change is waiting on a setting.
+        let cache = temp_cache("push_google_refused");
+        let waiting = a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, Some("evt1"));
+        let (address, listening) =
+            answering_several("200 OK", "application/json", vec!["{}".to_string()]).await;
+
+        let result = sync_google_calendar(
+            &cache,
+            &GoogleApiClient::new().pointed_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "only the read")
+            .await
+            .expect("one request");
+        assert_eq!(
+            requests.len(),
+            1,
+            "a change went out on an account open for reading only"
+        );
+        assert!(
+            asked_for(&requests[0]).starts_with("GET "),
+            "{}",
+            requests[0]
+        );
+        assert!(
+            result.errors.is_empty(),
+            "waiting on a setting was reported as a failure: {:?}",
+            result.errors
+        );
+        assert_eq!(result.waiting_on_the_setting, 1);
+        assert_eq!(result.sent, 0);
+        assert!(
+            cache
+                .get_event_by_id(&waiting.id)
+                .expect("the calendar to be readable")
+                .expect("the event to still be there")
+                .pending,
+            "a change that could not be sent was forgotten rather than kept"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_in_the_other_providers_calendar_is_left_to_that_provider() {
+        // An account signed in to both. Sending an Outlook event to Google
+        // would ask Google for an event it has never heard of, be refused, and
+        // be tried again on every sync from now on.
+        let cache = temp_cache("push_wrong_provider");
+        a_pending_event_in(&cache, MICROSOFT, MICROSOFT_CALENDAR_NAME, Some("evt1"));
+        let (address, listening) =
+            answering_several("200 OK", "application/json", vec!["{}".to_string()]).await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "only the read")
+            .await
+            .expect("one request");
+        assert_eq!(requests.len(), 1);
+        assert!(
+            asked_for(&requests[0]).starts_with("GET "),
+            "{}",
+            requests[0]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_what_is_sent_to_google_carries_the_values_that_were_typed_here() {
+        // The field-by-field half. A key list says nothing about what is in
+        // each key, and the defect that costs most here is a field built into
+        // a request that nothing checks.
+        let cache = temp_cache("push_google_values");
+        a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, Some("evt1"));
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{\"id\":\"evt1\"}".to_string(), "{}".to_string()],
+        )
+        .await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a change").await.expect("two requests");
+        let sent = body_of(&requests[0]);
+        assert_eq!(sent["summary"], "Sprint planning", "{sent}");
+        assert_eq!(sent["description"], "Bring the papers", "{sent}");
+        assert_eq!(sent["location"], "Room 42", "{sent}");
+        assert_eq!(sent["status"], "confirmed", "{sent}");
+        assert_eq!(sent["transparency"], "opaque", "{sent}");
+        assert_eq!(sent["reminders"]["overrides"][0]["minutes"], 15, "{sent}");
+        assert_eq!(
+            sent["reminders"]["overrides"][0]["method"], "popup",
+            "{sent}"
+        );
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(
+                sent["start"]["dateTime"].as_str().unwrap_or_default()
+            )
+            .is_ok(),
+            "{sent}"
+        );
+    }
+
+    #[test]
+    fn test_nothing_in_the_calendar_write_path_builds_its_own_client() {
+        // The gate is only worth having if nothing goes round it. A module
+        // that builds its own client can send whatever it likes, and no test
+        // of what goes out would notice.
+        for path in [
+            "src/application/calendar.rs",
+            "src/application/caldav_sync.rs",
+        ] {
+            let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let before_the_tests = source
+                .split_once("#[cfg(test)]")
+                .map(|(before, _)| before)
+                .unwrap_or(&source);
+            assert!(
+                !before_the_tests.contains("may_change_things"),
+                "{path} builds a client that may change things, going round the gate"
+            );
+            assert!(
+                !before_the_tests.contains("reqwest::Client"),
+                "{path} holds a raw client, so nothing can tell a read from a delete"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_sync_summary_says_what_went_up_as_well_as_what_came_down() {
+        // Until now a sync could only bring things down, so the sentence only
+        // counted arrivals. Somebody who has just changed an appointment needs
+        // to hear that the change reached their calendar.
+        let mut result = CalendarSyncResult {
+            created: 2,
+            updated: 1,
+            deleted: 0,
+            sent: 3,
+            waiting_on_the_setting: 0,
+            errors: Vec::new(),
+        };
+
+        let said = what_the_calendar_sync_did(&result);
+        assert!(said.contains("3 sent"), "{said}");
+        assert!(said.contains("2 created"), "{said}");
+        assert!(
+            !said.contains("Allow Changes"),
+            "a setting nothing is waiting on was named anyway: {said}"
+        );
+
+        // And when nothing could go, the reason is the setting rather than a
+        // failure, so the sentence has to name the setting rather than a count
+        // of errors somebody cannot act on.
+        result.sent = 0;
+        result.waiting_on_the_setting = 2;
+        let said = what_the_calendar_sync_did(&result);
+        assert!(said.contains("Allow Changes"), "{said}");
+        assert!(said.contains('2'), "{said}");
+    }
+
+    #[test]
+    fn test_a_provider_calendar_with_no_identifier_of_its_own_is_the_main_one() {
+        // A pin rather than a red: this is the answer today because nothing
+        // stores a provider's own identifier for a calendar yet. It is here so
+        // that the unit which starts storing one has a test to change.
+        assert_eq!(
+            which_calendar_at_the_provider(&make_calendar("cal-1", "Google Calendar", true)),
+            None
+        );
     }
 }

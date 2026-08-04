@@ -389,6 +389,10 @@ pub enum UIUpdate {
         created: usize,
         updated: usize,
         deleted: usize,
+        /// Changes made here that reached a provider.
+        sent: usize,
+        /// Changes still here because the account is open for reading only.
+        waiting_on_the_setting: usize,
         errors: Vec<String>,
     },
     /// A calendar event was saved successfully
@@ -1274,6 +1278,7 @@ mod tests {
             reminders_json: None,
             created_at: "2026-01-01".into(),
             updated_at: "2026-01-01".into(),
+            pending: false,
         }
     }
 

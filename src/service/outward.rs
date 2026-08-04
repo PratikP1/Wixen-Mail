@@ -125,6 +125,34 @@ pub fn in_a_query(value: &str) -> String {
     url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
 }
 
+/// One value, ready to be dropped into a path segment.
+///
+/// A calendar's own identifier is the provider's to choose and this
+/// application's job is to put it into an address unchanged. Two of them cannot
+/// go in raw: a Google calendar identifier that begins with `#`, which the
+/// holidays and contacts calendars do, truncates the address at the fragment, so
+/// the request asks about a calendar nobody named; and an identifier holding a
+/// space breaks the request line in two.
+///
+/// Separate from [`in_a_query`] rather than shared with it, because that one
+/// writes a space as `+`, which is right after a `?` and is a literal plus
+/// inside a path. Written out here rather than taken from a crate, because it is
+/// a dozen lines and the alternative is a dependency for them.
+pub fn in_a_path(value: &str) -> String {
+    let mut written = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        // The unreserved set from RFC 3986. Everything else is escaped, which
+        // is safe even where it was not strictly required.
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                written.push(char::from(byte));
+            }
+            _ => written.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    written
+}
+
 /// What somebody is told when a change was refused.
 ///
 /// Says what was refused and why, because "operation not permitted" sends
@@ -152,6 +180,24 @@ mod tests {
 
     fn allowed() -> Outward {
         Outward::may_change_things(reqwest::Client::new())
+    }
+
+    #[test]
+    fn test_a_value_going_into_a_path_keeps_a_space_out_and_a_hash_in() {
+        // A Google calendar's own identifier can begin with a hash: the
+        // holidays and the contacts calendars both do. Left raw, everything
+        // from the hash on is a fragment the server never sees, so the request
+        // asks about a calendar nobody named. A space written the way a query
+        // wants it, as a plus, is a literal plus inside a path segment.
+        assert_eq!(in_a_path("a b#c"), "a%20b%23c");
+        assert!(!in_a_path("a b").contains('+'));
+        assert_eq!(
+            in_a_path("team@group.calendar.google.com"),
+            "team%40group.calendar.google.com"
+        );
+        // An ordinary identifier goes through unchanged, so a log line stays
+        // readable and an address that worked before still works.
+        assert_eq!(in_a_path("primary-1_2.3~4"), "primary-1_2.3~4");
     }
 
     #[test]

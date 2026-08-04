@@ -4,7 +4,7 @@
 //! All methods take an OAuth access token and return deserialized results.
 
 use crate::common::{Error, Result};
-use crate::service::outward::in_a_query;
+use crate::service::outward::{in_a_path, in_a_query};
 use serde::{Deserialize, Serialize};
 
 // ── Google People API Types ─────────────────────────────────────────────────
@@ -208,11 +208,15 @@ pub struct GoogleConnectionsResponse {
 /// through this same type, so a separate write type would be a second field list
 /// somebody has to keep in step by remembering.
 ///
-/// What that costs, said plainly: a field kept as a `String` and skipped when
-/// empty cannot say "clear this". Emptying a description reads the same as not
-/// touching it. That is the right way round for now, because the failure it
-/// prevents is destroying somebody's data and the failure it causes is declining
-/// to change it.
+/// The five fields somebody can empty are `Option<String>` rather than `String`
+/// for one reason: a `String` skipped when empty cannot say "clear this".
+/// Emptying a description read the same as not touching it, so deleting the
+/// address of a meeting left the old address at Google with nothing here able to
+/// say why. `None` leaves the field alone and `Some("")` clears it, which are
+/// two different instructions and now go out as two different bodies. What that
+/// costs is named in the module the converter lives in: after a sync the copy
+/// here mirrors the provider, so sending an empty value back is a no-op, and it
+/// is only if that stops being true that this turns into lost data.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleEvent {
@@ -223,14 +227,14 @@ pub struct GoogleEvent {
     /// Google's version marker, the server's to set.
     #[serde(default, skip_serializing)]
     pub etag: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub status: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub summary: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub description: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub location: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start: Option<GoogleEventDateTime>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -251,8 +255,8 @@ pub struct GoogleEvent {
     /// When Google last changed it. The server's to set.
     #[serde(skip_serializing)]
     pub updated: Option<String>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub transparency: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transparency: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -337,20 +341,34 @@ fn connections_url(base: &str, sync_token: Option<&str>, page_token: Option<&str
     url
 }
 
-/// Where to ask for the events on somebody's own calendar.
+/// Google's own name for whichever calendar an account treats as its main one.
+///
+/// A real identifier rather than a stand-in: Google accepts this word wherever a
+/// calendar identifier goes, so an account with one calendar addresses it the
+/// same way it always did.
+pub const THE_MAIN_CALENDAR: &str = "primary";
+
+/// The address of one calendar's events.
+fn calendar_events_url(base: &str, calendar_id: &str) -> String {
+    format!("{base}/calendars/{}/events", in_a_path(calendar_id))
+}
+
+/// Where to ask for the events on one of somebody's calendars.
 ///
 /// A sync marker and a time window are alternatives, not companions: Google
 /// refuses a request carrying both, and a marker already stands for the window
 /// the first sync asked about.
 fn events_url(
     base: &str,
+    calendar_id: &str,
     time_min: Option<&str>,
     time_max: Option<&str>,
     sync_token: Option<&str>,
     page_token: Option<&str>,
 ) -> String {
     let mut url = format!(
-        "{base}/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=2500"
+        "{}?singleEvents=true&orderBy=startTime&maxResults=2500",
+        calendar_events_url(base, calendar_id)
     );
     if let Some(sync_token) = sync_token {
         url.push_str(&format!("&syncToken={}", in_a_query(sync_token)));
@@ -425,6 +443,21 @@ impl GoogleApiClient {
             },
             people_base: PEOPLE_API_BASE.to_string(),
             calendar_base: CALENDAR_API_BASE.to_string(),
+        }
+    }
+
+    /// A client that may change things, asking a named address.
+    ///
+    /// Test-only, and the only way to build one apart from [`Self::for_account`].
+    /// It exists because `for_account` reads the settings really stored on the
+    /// machine it runs on, so a test that used it would pass or fail depending
+    /// on whose computer ran it.
+    #[cfg(test)]
+    pub fn allowed_to_change_things_at(address: &str) -> Self {
+        Self {
+            http: crate::service::outward::Outward::may_change_things(reqwest::Client::new()),
+            people_base: address.to_string(),
+            calendar_base: address.to_string(),
         }
     }
 
@@ -515,6 +548,7 @@ impl GoogleApiClient {
         time_min: Option<&str>,
         time_max: Option<&str>,
         sync_token: Option<&str>,
+        calendar_id: &str,
     ) -> Result<(Vec<GoogleEvent>, Option<String>)> {
         let mut all_events = Vec::new();
         let mut page_token: Option<String> = None;
@@ -523,6 +557,7 @@ impl GoogleApiClient {
         loop {
             let url = events_url(
                 &self.calendar_base,
+                calendar_id,
                 time_min,
                 time_max,
                 sync_token,
@@ -543,9 +578,14 @@ impl GoogleApiClient {
         Ok((all_events, final_sync_token))
     }
 
-    /// Create a calendar event.
-    pub async fn create_event(&self, token: &str, event: &GoogleEvent) -> Result<GoogleEvent> {
-        let url = format!("{}/calendars/primary/events", self.calendar_base);
+    /// Create a calendar event in a named calendar.
+    pub async fn create_event(
+        &self,
+        token: &str,
+        calendar_id: &str,
+        event: &GoogleEvent,
+    ) -> Result<GoogleEvent> {
+        let url = calendar_events_url(&self.calendar_base, calendar_id);
         with_retry(3, || self.api_post(&url, token, event)).await
     }
 
@@ -560,21 +600,24 @@ impl GoogleApiClient {
     pub async fn update_event(
         &self,
         token: &str,
+        calendar_id: &str,
         event_id: &str,
         event: &GoogleEvent,
     ) -> Result<GoogleEvent> {
         let url = format!(
-            "{}/calendars/primary/events/{}",
-            self.calendar_base, event_id
+            "{}/{}",
+            calendar_events_url(&self.calendar_base, calendar_id),
+            in_a_path(event_id)
         );
         with_retry(3, || self.api_patch(&url, token, event)).await
     }
 
-    /// Delete a calendar event.
-    pub async fn delete_event(&self, token: &str, event_id: &str) -> Result<()> {
+    /// Delete a calendar event from a named calendar.
+    pub async fn delete_event(&self, token: &str, calendar_id: &str, event_id: &str) -> Result<()> {
         let url = format!(
-            "{}/calendars/primary/events/{}",
-            self.calendar_base, event_id
+            "{}/{}",
+            calendar_events_url(&self.calendar_base, calendar_id),
+            in_a_path(event_id)
         );
         with_retry(3, || self.api_delete(&url, token)).await
     }
@@ -775,7 +818,13 @@ mod tests {
         let (google, listening) = a_google_client_talking_to_itself().await;
 
         google
-            .list_events("a-token", Some("2026-03-05T00:00:00+00:00"), None, None)
+            .list_events(
+                "a-token",
+                Some("2026-03-05T00:00:00+00:00"),
+                None,
+                None,
+                THE_MAIN_CALENDAR,
+            )
             .await
             .expect("the event list to be read");
 
@@ -785,6 +834,73 @@ mod tests {
             "{request}"
         );
         assert!(!request.contains("+00:00"), "{request}");
+    }
+
+    #[tokio::test]
+    async fn test_a_read_asks_the_calendar_it_was_given_rather_than_the_default() {
+        // Every calendar address here named "primary", so an account with a
+        // second Google calendar could not be asked about it at all, and a
+        // change to one could not even be addressed.
+        let (google, listening) = a_google_client_talking_to_itself().await;
+
+        google
+            .list_events(
+                "a-token",
+                None,
+                None,
+                None,
+                "team@group.calendar.google.com",
+            )
+            .await
+            .expect("the event list to be read");
+
+        let request = heard(listening, "the event list").await.expect("a request");
+        assert!(
+            asked_for(&request)
+                .starts_with("GET /calendars/team%40group.calendar.google.com/events?"),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_calendar_named_with_a_hash_is_still_one_address() {
+        // Google's own holidays and contacts calendars are named with a leading
+        // hash. Put into an address raw, everything from the hash on is a
+        // fragment the server never sees.
+        let (google, listening) = a_google_client_talking_to_itself().await;
+
+        google
+            .list_events(
+                "a-token",
+                None,
+                None,
+                None,
+                "#contacts@group.v.calendar.google.com",
+            )
+            .await
+            .expect("the event list to be read");
+
+        let request = heard(listening, "the event list").await.expect("a request");
+        assert!(request.contains("%23contacts"), "{request}");
+        assert!(!asked_for(&request).contains('#'), "{request}");
+    }
+
+    #[tokio::test]
+    async fn test_the_main_calendar_is_still_asked_for_by_the_name_google_gives_it() {
+        // Every account this has ever run against has one calendar and it is
+        // this one, so the address it produces must not move.
+        let (google, listening) = a_google_client_talking_to_itself().await;
+
+        google
+            .list_events("a-token", None, None, None, THE_MAIN_CALENDAR)
+            .await
+            .expect("the event list to be read");
+
+        let request = heard(listening, "the event list").await.expect("a request");
+        assert!(
+            asked_for(&request).starts_with("GET /calendars/primary/events?"),
+            "{request}"
+        );
     }
 
     #[test]
@@ -879,7 +995,12 @@ mod tests {
         };
 
         google
-            .update_event("a-token", "evt1", &GoogleEvent::default())
+            .update_event(
+                "a-token",
+                THE_MAIN_CALENDAR,
+                "evt1",
+                &GoogleEvent::default(),
+            )
             .await
             .expect("the change to be answered");
 
@@ -908,7 +1029,7 @@ mod tests {
         // sets it. Sent with an empty guest list, moving an event to Thursday
         // uninvites everybody on it.
         let moved = GoogleEvent {
-            summary: "Moved to Thursday".to_string(),
+            summary: Some("Moved to Thursday".to_string()),
             ..Default::default()
         };
 
@@ -994,8 +1115,8 @@ mod tests {
         let resp: GoogleEventsResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.items.len(), 1);
         assert_eq!(resp.items[0].id, "evt1");
-        assert_eq!(resp.items[0].summary, "Team Meeting");
-        assert_eq!(resp.items[0].location, "Room 42");
+        assert_eq!(resp.items[0].summary.as_deref(), Some("Team Meeting"));
+        assert_eq!(resp.items[0].location.as_deref(), Some("Room 42"));
         let start = resp.items[0].start.as_ref().unwrap();
         assert!(start.date_time.as_ref().unwrap().contains("10:00:00"));
         assert_eq!(resp.items[0].attendees[0].email, "bob@example.com");
@@ -1012,7 +1133,7 @@ mod tests {
             "end": {"date": "2026-03-07"}
         }"#;
         let event: GoogleEvent = serde_json::from_str(json).unwrap();
-        assert_eq!(event.summary, "Company Holiday");
+        assert_eq!(event.summary.as_deref(), Some("Company Holiday"));
         let start = event.start.as_ref().unwrap();
         assert_eq!(start.date.as_deref(), Some("2026-03-06"));
         assert!(start.date_time.is_none());
@@ -1041,7 +1162,7 @@ mod tests {
     #[test]
     fn test_serialize_event_for_create() {
         let event = GoogleEvent {
-            summary: "Lunch".to_string(),
+            summary: Some("Lunch".to_string()),
             start: Some(GoogleEventDateTime {
                 date_time: Some("2026-03-05T12:00:00-05:00".to_string()),
                 date: None,

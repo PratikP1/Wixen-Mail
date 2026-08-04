@@ -405,6 +405,14 @@ fn event_with_edits(
     }
 }
 
+/// One alert, written the way both providers read one.
+///
+/// Named here rather than formatted at each of the two places that store an
+/// alert, because the two drifted apart the moment one of them was corrected.
+fn an_alert(minutes: i64) -> String {
+    format!("[{{\"minutes\":{minutes},\"method\":\"popup\"}}]")
+}
+
 /// Turn what the editor captured into what the cache stores.
 ///
 /// An all-day event keeps its dates and drops its times rather than storing
@@ -450,11 +458,16 @@ fn event_entry(
         last_synced_at: None,
         attendees_json: None,
         // Stored as the JSON the cache expects rather than a bare number, so a
-        // reminder the user set actually survives a round trip.
+        // reminder the user set actually survives a round trip. How somebody is
+        // alerted is named as well as when: Google drops an alert that does not
+        // say, so leaving it out meant the alert never left this computer.
         reminders_json: (data.reminder_minutes > 0)
-            .then(|| format!("[{{\"minutes\":{}}}]", data.reminder_minutes)),
+            .then(|| an_alert(i64::from(data.reminder_minutes))),
         created_at: now_stamp(),
         updated_at: now_stamp(),
+        // Anything the editor here produces is a change the provider has not
+        // been told about, whether it is a new event or a correction to one.
+        pending: true,
     }
 }
 
@@ -1143,9 +1156,11 @@ fn store_new_item(
                 last_modified_remote: None,
                 last_synced_at: None,
                 attendees_json: None,
-                reminders_json: (alert > 0).then(|| format!("[{{\"minutes\":{alert}}}]")),
+                reminders_json: (alert > 0).then(|| an_alert(i64::from(alert))),
                 created_at: stamp.clone(),
                 updated_at: stamp,
+                // Made here, so the provider has not been told about it.
+                pending: true,
             })
         }
         ItemKind::Reminder => cache.save_reminder(&ReminderEntry {
@@ -1731,6 +1746,22 @@ mod tests {
         let json = entry.reminders_json.expect("a reminder was set");
         let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
         assert_eq!(parsed[0]["minutes"], 15);
+    }
+
+    #[test]
+    fn test_an_alert_is_stored_in_the_shape_both_providers_read() {
+        // Stored as a lead time and nothing else, the alert reached Outlook and
+        // was dropped on the way to Google, which reads the method as well.
+        // Both halves of that are fixed: the converter fills in the one kind
+        // this program can raise for every alert already on disk, and new ones
+        // are written whole.
+        let json = event_entry("e1".to_string(), "acct", &data(false))
+            .reminders_json
+            .expect("a reminder was set");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+
+        assert_eq!(parsed[0]["minutes"], 15);
+        assert_eq!(parsed[0]["method"], "popup", "{json}");
     }
 
     #[test]

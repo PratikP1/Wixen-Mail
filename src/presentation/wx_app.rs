@@ -6368,17 +6368,18 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             created,
             updated,
             deleted,
+            sent,
+            waiting_on_the_setting,
             errors,
         } => {
-            let msg = format!(
-                "Calendar sync: {} created, {} updated, {} deleted{}",
-                created,
-                updated,
-                deleted,
-                if errors.is_empty() {
-                    String::new()
-                } else {
-                    format!(", {} errors", errors.len())
+            let msg = crate::application::calendar::what_the_calendar_sync_did(
+                &crate::application::calendar::CalendarSyncResult {
+                    created: *created,
+                    updated: *updated,
+                    deleted: *deleted,
+                    sent: *sent,
+                    waiting_on_the_setting: *waiting_on_the_setting,
+                    errors: errors.clone(),
                 },
             );
             frame.set_status_text(&msg, 0);
@@ -9287,6 +9288,8 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
         let mut total_created = 0usize;
         let mut total_updated = 0usize;
         let mut total_deleted = 0usize;
+        let mut total_sent = 0usize;
+        let mut total_waiting = 0usize;
         let mut total_errors = Vec::new();
 
         // Try Google calendar sync
@@ -9310,6 +9313,8 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
                             total_created += result.created;
                             total_updated += result.updated;
                             total_deleted += result.deleted;
+                            total_sent += result.sent;
+                            total_waiting += result.waiting_on_the_setting;
                             total_errors.extend(result.errors);
                         }
                         Err(e) => total_errors.push(format!("Google calendar: {}", e)),
@@ -9337,6 +9342,8 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
                             total_created += result.created;
                             total_updated += result.updated;
                             total_deleted += result.deleted;
+                            total_sent += result.sent;
+                            total_waiting += result.waiting_on_the_setting;
                             total_errors.extend(result.errors);
                         }
                         Err(e) => total_errors.push(format!("Microsoft calendar: {}", e)),
@@ -9413,6 +9420,8 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
                     created: total_created,
                     updated: total_updated,
                     deleted: total_deleted,
+                    sent: total_sent,
+                    waiting_on_the_setting: total_waiting,
                     errors: total_errors,
                 })
                 .await;

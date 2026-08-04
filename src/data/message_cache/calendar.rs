@@ -4,13 +4,26 @@ use super::{CalendarEventEntry, MessageCache, SyncState};
 use crate::common::{Error, Result};
 use rusqlite::params;
 
+/// An event somebody deleted here that the provider has not been told about.
+///
+/// Carries the calendar as well as the event, because the address a deletion is
+/// sent to names both, and by the time it is sent the row that knew is gone.
+#[derive(Debug, Clone)]
+pub struct DeletedCalendarEvent {
+    pub id: String,
+    pub account_id: String,
+    pub provider_event_id: Option<String>,
+    pub calendar_id: Option<String>,
+    pub deleted_at: String,
+}
+
 /// SQL column list for calendar events (used in all SELECT queries).
 const EVENT_COLS: &str =
     "id, account_id, provider_event_id, calendar_id, summary, description, location,
      start_datetime, end_datetime, start_date, end_date, is_all_day, time_zone,
      status, recurrence_rule, source_provider, etag, web_link, show_as,
      last_modified_remote, last_synced_at, attendees_json, reminders_json,
-     created_at, updated_at, categories";
+     created_at, updated_at, categories, pending";
 
 /// Map a rusqlite row to a `CalendarEventEntry` (columns must match `EVENT_COLS` order).
 fn map_event_row(row: &rusqlite::Row) -> rusqlite::Result<CalendarEventEntry> {
@@ -40,9 +53,10 @@ fn map_event_row(row: &rusqlite::Row) -> rusqlite::Result<CalendarEventEntry> {
         reminders_json: row.get(22)?,
         created_at: row.get(23)?,
         updated_at: row.get(24)?,
-        // Last, because it was added last: the column list above puts it
-        // there so every position before it stays where it was.
+        // Last two, because they were added last: the column list above puts
+        // them there so every position before them stays where it was.
         categories: row.get(25)?,
+        pending: row.get(26)?,
     })
 }
 
@@ -72,12 +86,12 @@ impl MessageCache {
               start_datetime, end_datetime, start_date, end_date, is_all_day, time_zone,
               status, recurrence_rule, source_provider, etag, web_link, show_as,
               last_modified_remote, last_synced_at, attendees_json, reminders_json,
-              created_at, updated_at, categories)
+              created_at, updated_at, categories, pending)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
                      ?17, ?18, ?19, ?20, ?21, ?22, ?23,
                      COALESCE((SELECT created_at FROM calendar_events
                                WHERE account_id = ?2 AND calendar_id IS ?4 AND provider_event_id = ?3), ?24),
-                     ?25, ?26)
+                     ?25, ?26, ?27)
              ON CONFLICT(id) DO UPDATE SET
                 provider_event_id = COALESCE(excluded.provider_event_id, calendar_events.provider_event_id),
                 calendar_id = excluded.calendar_id,
@@ -101,6 +115,7 @@ impl MessageCache {
                 attendees_json = excluded.attendees_json,
                 reminders_json = excluded.reminders_json,
                 categories = excluded.categories,
+                pending = excluded.pending,
                 updated_at = excluded.updated_at
              ON CONFLICT(account_id, calendar_id, provider_event_id) DO UPDATE SET
                 summary = excluded.summary,
@@ -123,6 +138,7 @@ impl MessageCache {
                 attendees_json = excluded.attendees_json,
                 reminders_json = excluded.reminders_json,
                 categories = excluded.categories,
+                pending = excluded.pending,
                 updated_at = excluded.updated_at",
             params![
                 &event.id, &event.account_id, &event.provider_event_id, &event.calendar_id,
@@ -134,7 +150,7 @@ impl MessageCache {
                 &event.source_provider, &event.etag, &event.web_link, &event.show_as,
                 &event.last_modified_remote, &event.last_synced_at,
                 &event.attendees_json, &event.reminders_json,
-                &now, &now, &event.categories,
+                &now, &now, &event.categories, &event.pending,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save calendar event: {}", e)))?;
         Ok(())
@@ -249,14 +265,120 @@ impl MessageCache {
         Ok(events)
     }
 
-    /// Delete a calendar event by local ID.
+    /// Every change waiting to go to the provider, oldest first.
+    pub fn pending_calendar_events(&self, account_id: &str) -> Result<Vec<CalendarEventEntry>> {
+        let sql = format!(
+            "SELECT {EVENT_COLS} FROM calendar_events
+             WHERE account_id = ?1 AND pending = 1
+             ORDER BY updated_at"
+        );
+        let mut stmt = self
+            .conn
+            .prepare(&sql)
+            .map_err(|e| Error::Other(format!("Failed to prepare the pending query: {}", e)))?;
+
+        let events = stmt
+            .query_map(params![account_id], map_event_row)
+            .map_err(|e| Error::Other(format!("Failed to query pending events: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect pending events: {}", e)))?;
+        Ok(events)
+    }
+
+    /// This copy now agrees with the provider.
+    ///
+    /// Called after a change has been sent, with the stamp the provider gave
+    /// back, so the next pull compares against what the provider holds now
+    /// rather than against what it held before the change went up.
+    pub fn mark_calendar_event_sent(
+        &self,
+        event_id: &str,
+        last_modified_remote: Option<&str>,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE calendar_events SET pending = 0, last_modified_remote = ?1
+                 WHERE id = ?2",
+                params![last_modified_remote, event_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to clear the pending flag: {}", e)))?;
+        Ok(())
+    }
+
+    /// Delete an event somebody deleted here, and note that the provider still
+    /// has it.
+    ///
+    /// The note is what carries the deletion across to the provider on the next
+    /// sync. Without it the event comes straight back, which reads as the
+    /// deletion having quietly failed.
     pub fn delete_calendar_event(&self, event_id: &str) -> Result<()> {
+        if let Some(going) = self.get_event_by_id(event_id)? {
+            self.conn
+                .execute(
+                    "INSERT OR REPLACE INTO deleted_calendar_events
+                        (id, account_id, provider_event_id, calendar_id, deleted_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        going.id,
+                        going.account_id,
+                        going.provider_event_id,
+                        going.calendar_id,
+                        chrono::Utc::now().to_rfc3339(),
+                    ],
+                )
+                .map_err(|e| Error::Other(format!("Failed to record a deleted event: {}", e)))?;
+        }
+        self.drop_synced_calendar_event(event_id)
+    }
+
+    /// Remove an event because the provider says it is gone.
+    ///
+    /// No note: the provider already knows, and telling it again would mean
+    /// asking it to delete something it has already deleted, on every sync from
+    /// now on.
+    pub fn drop_synced_calendar_event(&self, event_id: &str) -> Result<()> {
         self.conn
             .execute(
                 "DELETE FROM calendar_events WHERE id = ?1",
                 params![event_id],
             )
             .map_err(|e| Error::Other(format!("Failed to delete calendar event: {}", e)))?;
+        Ok(())
+    }
+
+    /// Every deletion the provider has not been told about, oldest first.
+    pub fn deleted_calendar_events(&self, account_id: &str) -> Result<Vec<DeletedCalendarEvent>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, account_id, provider_event_id, calendar_id, deleted_at
+                 FROM deleted_calendar_events WHERE account_id = ?1 ORDER BY deleted_at",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare deletions query: {}", e)))?;
+        let gone = stmt
+            .query_map(params![account_id], |row| {
+                Ok(DeletedCalendarEvent {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    provider_event_id: row.get(2)?,
+                    calendar_id: row.get(3)?,
+                    deleted_at: row.get(4)?,
+                })
+            })
+            .map_err(|e| Error::Other(format!("Failed to query deletions: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read a deletion: {}", e)))?;
+        Ok(gone)
+    }
+
+    /// The provider has been told about this deletion.
+    pub fn forget_deleted_calendar_event(&self, event_id: &str) -> Result<()> {
+        self.conn
+            .execute(
+                "DELETE FROM deleted_calendar_events WHERE id = ?1",
+                params![event_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to clear a deletion: {}", e)))?;
         Ok(())
     }
 
@@ -389,6 +511,7 @@ mod tests {
             reminders_json: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            pending: false,
         }
     }
 
@@ -472,6 +595,7 @@ mod tests {
             reminders_json: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            pending: false,
         };
 
         cache.save_calendar_event(&event).unwrap();
@@ -746,6 +870,103 @@ mod tests {
                 UNIQUE(account_id, provider_event_id)
             )";
 
+    /// The events table exactly as the last release wrote it: an event knows
+    /// its calendar and its categories, and nothing yet knows whether a change
+    /// to it is waiting to be sent.
+    ///
+    /// This is the shape every database in use is in, so it is the one the new
+    /// column has to be added to without disturbing a row.
+    const THE_EVENTS_TABLE_AS_THE_LAST_RELEASE_WROTE_IT: &str = "CREATE TABLE calendar_events (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                provider_event_id TEXT,
+                summary TEXT NOT NULL,
+                description TEXT,
+                location TEXT,
+                start_datetime TEXT NOT NULL,
+                end_datetime TEXT NOT NULL,
+                start_date TEXT,
+                end_date TEXT,
+                is_all_day BOOLEAN DEFAULT 0,
+                time_zone TEXT,
+                status TEXT DEFAULT 'confirmed',
+                recurrence_rule TEXT,
+                source_provider TEXT,
+                etag TEXT,
+                web_link TEXT,
+                show_as TEXT DEFAULT 'busy',
+                last_modified_remote TEXT,
+                last_synced_at TEXT,
+                attendees_json TEXT,
+                reminders_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                categories TEXT NOT NULL DEFAULT '',
+                calendar_id TEXT,
+                UNIQUE(account_id, calendar_id, provider_event_id)
+            )";
+
+    #[test]
+    fn test_a_calendar_written_by_the_last_release_opens_with_every_event_intact() {
+        // The case every existing database is in, and the one a rebuild does
+        // not cover: the table is already keyed the right way, so only the new
+        // column is added. A row lost here is somebody's diary.
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock that has passed 1970")
+            .as_nanos();
+        let dir = env::temp_dir().join(format!("wixen_mail_last_release_{nanos}"));
+        std::fs::create_dir_all(&dir).expect("a directory to write into");
+        let conn =
+            rusqlite::Connection::open(dir.join("message_cache.db")).expect("a database to open");
+        conn.execute(THE_EVENTS_TABLE_AS_THE_LAST_RELEASE_WROTE_IT, [])
+            .expect("the events table as it was");
+        conn.execute(
+            "INSERT INTO calendar_events
+             (id, account_id, provider_event_id, summary, description, location,
+              start_datetime, end_datetime, is_all_day, status, source_provider,
+              show_as, reminders_json, created_at, updated_at, categories, calendar_id)
+             VALUES ('evt-1', 'acct', 'uid-1', 'Sprint planning', 'Bring the papers',
+                     'Room 42', '2026-03-06 09:00', '2026-03-06 10:00', 0, 'confirmed',
+                     'gmail', 'busy', '[{\"minutes\":15}]', '2026-01-01T00:00:00Z',
+                     '2026-01-02T00:00:00Z', 'Work', 'cal-1')",
+            params![],
+        )
+        .expect("an event written by the last release");
+        drop(conn);
+
+        let cache = MessageCache::new(dir, None).expect("the older database to open");
+
+        let stored = cache
+            .get_event_by_id("evt-1")
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(stored.summary, "Sprint planning");
+        assert_eq!(stored.description.as_deref(), Some("Bring the papers"));
+        assert_eq!(stored.location.as_deref(), Some("Room 42"));
+        assert_eq!(stored.start_datetime, "2026-03-06 09:00");
+        assert_eq!(stored.end_datetime, "2026-03-06 10:00");
+        assert_eq!(stored.status, "confirmed");
+        assert_eq!(stored.show_as, "busy");
+        assert_eq!(stored.categories, "Work");
+        assert_eq!(stored.calendar_id.as_deref(), Some("cal-1"));
+        assert_eq!(stored.provider_event_id.as_deref(), Some("uid-1"));
+        assert_eq!(stored.reminders_json.as_deref(), Some("[{\"minutes\":15}]"));
+        assert_eq!(stored.created_at, "2026-01-01T00:00:00Z");
+        assert!(
+            !stored.pending,
+            "an event stored before this program could change a provider's copy \
+             is not a change waiting to be sent"
+        );
+        assert!(
+            cache
+                .pending_calendar_events("acct")
+                .expect("what is waiting")
+                .is_empty(),
+            "opening an older database queued its whole calendar to be sent"
+        );
+    }
+
     /// A directory holding a database written before an event could say which
     /// calendar it was in: three events, and calendars for one of the two
     /// accounts they belong to.
@@ -829,6 +1050,15 @@ mod tests {
             .expect("the third event to still be there");
         assert_eq!(nowhere.calendar_id, None);
         assert_eq!(nowhere.summary, "Standup");
+        assert!(
+            !nowhere.pending,
+            "an event stored before anything here could change a provider's copy \
+             is not a change waiting to be sent",
+        );
+        assert!(
+            !synced[0].pending,
+            "nor is one that came down from a provider in the first place",
+        );
 
         // Opening it a second time is the ordinary case: this runs on every
         // open, and it has to leave a database it has already dealt with
@@ -857,6 +1087,143 @@ mod tests {
                 .and_then(|e| e.calendar_id),
             None,
             "an event with nowhere to go was given a home on the second open",
+        );
+    }
+
+    // ── What is waiting to be sent ───────────────────────────────────────
+
+    #[test]
+    fn test_an_event_changed_here_is_waiting_to_be_sent() {
+        let cache = temp_cache("cal_pending");
+        let mut changed = make_event("evt-1", "acct", "uid-1", "Standup");
+        changed.pending = true;
+        cache.save_calendar_event(&changed).expect("the change");
+        let settled = make_event("evt-2", "acct", "uid-2", "Already agreed");
+        cache.save_calendar_event(&settled).expect("the other one");
+        let elsewhere = make_event("evt-3", "another", "uid-3", "Somebody else");
+        cache
+            .save_calendar_event(&elsewhere)
+            .expect("another account");
+
+        assert_eq!(
+            cache
+                .pending_calendar_events("acct")
+                .expect("what is waiting")
+                .iter()
+                .map(|e| e.id.as_str())
+                .collect::<Vec<_>>(),
+            ["evt-1"],
+        );
+    }
+
+    #[test]
+    fn test_an_event_the_provider_answered_for_stops_waiting() {
+        // Left waiting, it is sent again on every sync for ever. Left without
+        // the stamp the provider gave back, the next pull decides the provider
+        // changed it and overwrites what was just sent.
+        let cache = temp_cache("cal_settled");
+        let mut changed = make_event("evt-1", "acct", "uid-1", "Standup");
+        changed.pending = true;
+        cache.save_calendar_event(&changed).expect("the change");
+
+        cache
+            .mark_calendar_event_sent("evt-1", Some("2026-03-06T09:00:00Z"))
+            .expect("the provider to have answered");
+
+        let stored = cache
+            .get_event_by_id("evt-1")
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert!(!stored.pending);
+        assert_eq!(
+            stored.last_modified_remote.as_deref(),
+            Some("2026-03-06T09:00:00Z")
+        );
+        assert!(
+            cache
+                .pending_calendar_events("acct")
+                .expect("what is waiting")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_deleting_an_event_here_leaves_a_note_to_delete_it_at_the_provider() {
+        // A deleted row cannot carry a flag saying it has not been sent, so the
+        // fact that it was deleted has to outlive it. Without this, an event
+        // deleted here comes back on the next sync, which reads as the deletion
+        // having silently failed.
+        let cache = temp_cache("cal_tombstone");
+        let mut event = make_event("evt-1", "acct", "uid-1", "Cancelled");
+        event.calendar_id = Some("cal-1".to_string());
+        cache.save_calendar_event(&event).expect("the event");
+
+        cache
+            .delete_calendar_event("evt-1")
+            .expect("the event to be deleted");
+
+        let notes = cache
+            .deleted_calendar_events("acct")
+            .expect("the deletions waiting to be sent");
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].id, "evt-1");
+        assert_eq!(notes[0].provider_event_id.as_deref(), Some("uid-1"));
+        assert_eq!(notes[0].calendar_id.as_deref(), Some("cal-1"));
+
+        cache
+            .forget_deleted_calendar_event("evt-1")
+            .expect("the provider to have been told");
+        assert!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the deletions")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_an_event_the_provider_removed_leaves_no_note() {
+        // The provider already knows. A note here would ask it to delete
+        // something it has already deleted, on every sync from now on.
+        let cache = temp_cache("cal_no_tombstone");
+        cache
+            .save_calendar_event(&make_event("evt-1", "acct", "uid-1", "Gone"))
+            .expect("the event");
+
+        cache
+            .drop_synced_calendar_event("evt-1")
+            .expect("the event to be removed");
+
+        assert!(
+            cache
+                .get_event_by_id("evt-1")
+                .expect("the calendar to be readable")
+                .is_none()
+        );
+        assert!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the deletions")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_an_event_a_provider_says_is_gone_leaves_no_note_either() {
+        let cache = temp_cache("cal_no_tombstone_by_provider");
+        cache
+            .save_calendar_event(&make_event("evt-1", "acct", "uid-1", "Gone"))
+            .expect("the event");
+
+        cache
+            .delete_calendar_event_by_provider_id("acct", "uid-1")
+            .expect("the event to be removed");
+
+        assert!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the deletions")
+                .is_empty()
         );
     }
 

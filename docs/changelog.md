@@ -8,6 +8,44 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A change you make to an appointment now reaches your calendar.** Adding,
+  editing or deleting an event in a Google or Outlook calendar used to stay on
+  this computer, and the next sync quietly put the old version back. The change
+  is now sent up the next time that account syncs, and the status line says how
+  many changes went.
+
+  It only happens for an account whose owner has turned on Allow Changes, in
+  Settings. With that setting off nothing leaves the computer, the change waits
+  rather than being lost, and the status line says so and names the setting
+  instead of reporting an error you cannot act on.
+
+  A change is sent as a change rather than as a replacement, so moving a weekly
+  meeting does not turn it into a single appointment and changing the room does
+  not uninvite anybody.
+
+- **Emptying a field now empties it at your provider.** Deleting the notes, the
+  place or the title of an event left the old text in your calendar, because an
+  empty value and an untouched one went up as the same thing. They are now told
+  apart, so clearing something here clears it there.
+
+- **An alert you set now reaches Google.** The alert was stored without saying
+  how you should be alerted, and Google drops an alert that does not say, so
+  every reminder set in this program was silently discarded on the way. Outlook
+  was never affected.
+
+- **A whole-day event is a whole day at both providers.** A one-day event was
+  sent starting and ending on the same date, which both providers read as no
+  time at all, so it was refused or drawn as nothing. It is now sent ending the
+  following day, which is how both of them write a whole day.
+
+  **Known limitations:** none of this has met a live Google or Outlook calendar.
+  A calendar from a calendar server, such as Fastmail or Nextcloud, still does
+  not accept changes: a change there replaces the whole appointment, and this
+  program does not yet keep enough of the server's own copy to put back what it
+  would otherwise destroy, so an edit to one of those stays on this computer.
+  An event marked tentative or out of office reaches Google as busy, because
+  Google has only two words where this program has four.
+
 - **One account can hold two calendars with the same name.** A Work calendar of
   your own and a Work calendar shared to you, on the same account, used to be
   one calendar too many: the second was refused with a database message nobody
