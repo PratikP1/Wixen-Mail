@@ -1689,6 +1689,39 @@ mod tests {
     }
 
     #[test]
+    fn test_an_older_database_opens_when_two_contacts_share_one_address_books_identifier() {
+        // The old shape kept one address book identifier in a plain column with
+        // nothing unique about it, and the ping-pong between two syncs rewrote
+        // that column across rows. So two contacts carrying the same identifier
+        // is not a corrupt database, it is one this application produced.
+        //
+        // The rebuild has to survive it. If it does not, the failure is the
+        // worst kind: the database never opens again, and there is no way back
+        // to the version that could open it.
+        let dir = a_directory_holding_an_older_database("shared_identifier");
+        let conn =
+            rusqlite::Connection::open(dir.join("message_cache.db")).expect("a database to open");
+        conn.execute(
+            "INSERT INTO contacts
+             (id, account_id, name, email, provider_contact_id, source_provider,
+              favorite, created_at, updated_at)
+             VALUES ('alice-2', 'test@example.com', 'Alice Smith', 'alice.smith@example.com',
+                     'people/c1', 'gmail', 0, '2020-01-01T00:00:00Z', '2020-01-01T00:00:00Z')",
+            [],
+        )
+        .expect("a second row carrying the same identifier");
+        drop(conn);
+
+        let cache = MessageCache::new(dir, None).expect("the older database to open");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+        let names: Vec<&str> = stored.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(stored.len(), 4, "every contact is kept, stored {names:?}");
+    }
+
+    #[test]
     fn test_an_existing_database_of_contacts_still_has_every_contact_after_it_is_opened() {
         let dir = a_directory_holding_an_older_database("every_contact");
 

@@ -826,6 +826,25 @@ impl MessageCache {
                 Error::Other(format!("Failed to create contact_identities table: {}", e))
             })?;
 
+        // Here rather than with the other indexes, because the rebuild below
+        // fills this table with `INSERT OR IGNORE` and that has nothing to
+        // ignore against until the index exists. Built afterwards it would meet
+        // the duplicates instead of preventing them, and fail. The database
+        // would then never open again, with no earlier version left that could
+        // open it either.
+        self.conn
+            .execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_contact_identities_provider
+                 ON contact_identities(account_id, address_book, provider_contact_id)",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to say that one address book identifier points at one contact: {}",
+                    e
+                ))
+            })?;
+
         self.conn
             .execute(
                 "CREATE TABLE IF NOT EXISTS outbox_queue (
@@ -1480,13 +1499,37 @@ impl MessageCache {
                     nameless
                 );
             }
+            // Two contacts can carry one address book's identifier, because the
+            // old shape kept it in a plain column and two syncs took the
+            // identifier off each other on every run. Only one contact can keep
+            // it, so the most recently changed one does, matching the rule
+            // everywhere else that the last word wins. The id breaks a tie so
+            // the same database always rebuilds the same way.
+            let shared = rebuilding
+                .query_row(
+                    "SELECT COUNT(*) - COUNT(DISTINCT account_id || char(31) ||
+                            source_provider || char(31) || provider_contact_id)
+                     FROM contacts
+                     WHERE provider_contact_id IS NOT NULL AND provider_contact_id <> ''
+                       AND source_provider IS NOT NULL AND source_provider <> ''",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(|e| Error::Other(format!("Failed to count shared identifiers: {}", e)))?;
+            if shared > 0 {
+                tracing::warn!(
+                    "{} contacts shared an address book identifier with another contact, so the most recently changed one kept it",
+                    shared
+                );
+            }
             rebuilding
                 .execute(
                     "INSERT OR IGNORE INTO contact_identities
                      (contact_id, account_id, address_book, provider_contact_id)
                      SELECT id, account_id, source_provider, provider_contact_id FROM contacts
                      WHERE provider_contact_id IS NOT NULL AND provider_contact_id <> ''
-                       AND source_provider IS NOT NULL AND source_provider <> ''",
+                       AND source_provider IS NOT NULL AND source_provider <> ''
+                     ORDER BY updated_at DESC, id",
                     [],
                 )
                 .map_err(|e| {
