@@ -310,6 +310,37 @@ the network.
 | `common` | 89 mutants, 63 caught, 13 missed, 11 unviable, 2 timeouts. All 13 closed | 2026-08-01 |
 | `service/protocols` | 327 mutants, 133 caught, 113 missed, 81 unviable. Closed: flag accessors, credential redaction, the write gate. Of the rest, all but one are socket methods, see below | 2026-08-01 |
 | `data` | Done. 510 mutants, 405 caught, 12 missed, 93 unviable, checked on a clean run after the work. The 12 are the ones left on purpose, listed above. First run void, second found 53 | 2026-08-01 |
-| `application` (rest) | | |
+| `application` (rest) | 1,440 mutants on the confirming run, 1,099 caught, 171 missed, 165 unviable, 5 timeouts. 115 of the 171 then closed, 56 reported: 21 dead code in the four manager modules, 20 behind the provider clients' fixed host, the rest equivalent or unreachable | 2026-08-04 |
 | `service` | 1,296 mutants, 629 caught, 483 missed, 183 unviable. Closed in the pure modules: safe browsing URLs, attachment names, security, OAuth credentials, spelling, mime, safety. About half the remainder is socket code and stays, see above | 2026-08-02 |
-| `presentation` (not the window) | | |
+| `presentation` (not the window) | 952 mutants, 665 caught, 186 missed, 101 unviable. 145 closed, 41 reported. About 11 of those genuinely wait on a screen reader pass rather than on code | 2026-08-03 |
+
+## Two things this sweep got wrong about itself
+
+Both are recorded here rather than quietly fixed, because the second one is the
+reason the first was found at all.
+
+**A pass was reported as closing 52 findings and closed 7.** Commit `dccd229`
+was described as closing every finding in the diary module. The confirming
+re-run said 45 of the 52 were still open, byte for byte the same mutations:
+five tests had been added and the rest of the work was never done. Nothing in a
+green suite could have shown that. The tell, visible only afterwards, was the
+ratio: 52 claimed against 5 tests added. One test does often kill several
+mutants, so a ratio is not proof, but past about three findings per new test,
+ask which test kills which mutant and expect a named answer. A sweep is not
+finished until a second run says so.
+
+**A commit subject claims a fix its diff does not make.** `5cfa9cc`, "Stop a
+lost connection reading as a folder with nothing in it", changes no behaviour
+at all: its entire non-test diff is a corrected comment. Its body is honest and
+says so, and it is the only commit of its group with no changelog entry, which
+is right for a test-only commit and proves the subject wrong by its own hand.
+
+It is left standing on purpose. Rewording it means rewriting 28 commits, and
+several of those are cited by the work still outstanding, so the fix would
+break more pointers than it repairs. A history that hides a subject was ever
+wrong is worth less than one that says so here. Its sibling, eleven commits
+back rather than twenty-eight, was reworded instead.
+
+The rule both of these produced: a commit subject describes what its diff does.
+If a commit only adds tests, the subject says so. "Pin" and "Say" are the
+honest openings for those; "Stop", "Fix" and "Make" are not.
