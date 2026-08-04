@@ -1,6 +1,25 @@
 //! Contact management
 //!
 //! Manages contacts, address book, and contact groups (distribution lists).
+//!
+//! # Nothing in the running program reaches this
+//!
+//! The contacts screen works from the stored contact type directly.
+//! `load_pim_module` in `presentation::wx_app` calls `get_contacts_for_account`
+//! and `load_contact_groups` and builds its own rows, and the contact dialogs
+//! use a separate type of their own whose name merely collides with the one
+//! here.
+//!
+//! That is checked, not assumed: gating this module behind `cfg(test)` still
+//! compiles the library and every binary. Anything below is exercised by its
+//! own tests and by nothing else, so a test added here would say what the
+//! program does only once somebody wires it up.
+//!
+//! Addressing a message to a group is missing rather than merely unwired.
+//! There is a `resolve_group_emails` here and a second one on the cache, and
+//! neither has a caller, so a group can be made, stored and listed and then
+//! cannot be written to. That gap is worth closing whatever happens to this
+//! module, and closing it means the one on the cache.
 
 use crate::common::{Result, types::EmailAddress};
 use crate::data::message_cache::ContactEntry;
@@ -29,6 +48,21 @@ impl Contact {
     }
 }
 
+/// Keeps four of the twenty-six fields a stored contact has, and drops the rest
+/// without saying so.
+///
+/// Gone are the birthday, the phone, the company, the job title, the website,
+/// the address, the picture, the nickname, the department, the relationship,
+/// the several emails, phones, addresses and custom fields held as JSON, and
+/// everything recording where the contact came from. `group_ids` is set empty
+/// whatever the membership table holds, so a contact converted here belongs to
+/// no group by construction.
+///
+/// None of that is lost today, because nothing calls this. It is written down
+/// because this is the obvious thing to reach for and it looks finished. A
+/// birthday dropped on the way to a provider is a mistake this project has
+/// already made once. Rewrite it field by field before using it, or delete it
+/// alongside the rest of this module.
 impl From<ContactEntry> for Contact {
     fn from(ce: ContactEntry) -> Self {
         Self {

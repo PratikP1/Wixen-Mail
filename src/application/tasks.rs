@@ -3,6 +3,24 @@
 //! Provides an in-memory task store with filtering by list, due date,
 //! completion status, and priority. Supports subtask hierarchies via
 //! `parent_task_id`.
+//!
+//! # Nothing in the running program reaches this
+//!
+//! The tasks screen reads the cache itself. `load_pim_module` in
+//! `presentation::wx_app` calls `ensure_default_task_list`,
+//! `get_all_tasks_for_account` and `get_task_lists_for_account`, and counts the
+//! tasks in each list where it builds the rows. The screen's own file builds
+//! widgets and holds no data at all.
+//!
+//! That is checked, not assumed: gating this module behind `cfg(test)` still
+//! compiles the library and every binary. Anything below is exercised by its
+//! own tests and by nothing else, so a test added here would say what the
+//! program does only once somebody wires it up.
+//!
+//! `sort_tasks` is the stored order, incomplete first and then by the order
+//! somebody arranged them in and then by due date, key for key. `remove_task`
+//! is the one thing here that answers a question differently from the code
+//! that runs, and it carries two warnings of its own.
 
 use crate::common::Result;
 use crate::data::message_cache::{MessageCache, TaskEntry, TaskListEntry};
@@ -114,6 +132,21 @@ impl TaskManager {
     }
 
     /// Remove a task by ID (also removes subtasks).
+    ///
+    /// Two things to settle before this is wired to anything.
+    ///
+    /// It does not finish if a task is its own ancestor. The walk below has no
+    /// memory of what it has already seen, so a task whose parent is itself, or
+    /// any longer loop, makes `to_remove` grow by an id every pass and the loop
+    /// never ends. Nothing prevents such a loop: `parent_task_id` is whatever
+    /// the provider sent, and the column has no constraint against one. A
+    /// worklist that skips ids already seen would bound the work at the number
+    /// of tasks held.
+    ///
+    /// It also disagrees with the code that runs about what deleting a task
+    /// does to its subtasks. This deletes them with the parent.
+    /// `MessageCache::drop_synced_task` clears their `parent_task_id` and keeps
+    /// them, which is what somebody deleting one task would expect.
     pub fn remove_task(&mut self, task_id: &str) {
         // Collect subtask IDs recursively
         let mut to_remove = vec![task_id.to_string()];

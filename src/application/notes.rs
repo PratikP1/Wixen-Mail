@@ -2,6 +2,22 @@
 //!
 //! Provides an in-memory note store with filtering by folder, pin status,
 //! and search. Notes are plain-text or markdown.
+//!
+//! # Nothing in the running program reaches this
+//!
+//! The notes screen reads the cache itself. `load_pim_module` in
+//! `presentation::wx_app` calls `ensure_default_note_folder`,
+//! `get_all_notes_for_account` and `get_note_folders_for_account`, and counts
+//! the notes in each folder where it builds the rows. The screen's own file
+//! builds widgets and holds no data at all.
+//!
+//! That is checked, not assumed: gating this module behind `cfg(test)` still
+//! compiles the library and every binary. Anything below is exercised by its
+//! own tests and by nothing else, so a test added here would say what the
+//! program does only once somebody wires it up.
+//!
+//! Everything here already exists in SQL that runs. `sort_notes` is the
+//! stored order, pinned first and then most recently changed, key for key.
 
 use crate::common::Result;
 use crate::data::message_cache::{MessageCache, NoteEntry, NoteFolderEntry};

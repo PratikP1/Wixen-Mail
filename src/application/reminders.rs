@@ -2,6 +2,24 @@
 //!
 //! Provides an in-memory reminder store with filtering by due date,
 //! completion status, and priority.
+//!
+//! # Nothing in the running program reaches this
+//!
+//! The reminders screen reads the cache itself. `load_pim_module` in
+//! `presentation::wx_app` calls `get_reminders_for_account` and maps the rows
+//! to a `ReminderItem`, and the alert scan at startup does the same. The
+//! screen's own file builds widgets and holds no data at all.
+//!
+//! That is checked, not assumed: gating this module behind `cfg(test)` still
+//! compiles the library and every binary. Anything below is exercised by its
+//! own tests and by nothing else, so a test added here would say what the
+//! program does only once somebody wires it up.
+//!
+//! One behaviour here has no equivalent in the shipped path. `priority_rank`
+//! breaks a tie by priority; the stored order is `is_completed` then
+//! `due_datetime` and stops there. Whether two reminders due at the same
+//! minute should sort by priority is a product question rather than a gap in
+//! the tests, and answering it belongs in that `ORDER BY`, not here.
 
 use crate::common::Result;
 use crate::data::message_cache::{MessageCache, ReminderEntry};

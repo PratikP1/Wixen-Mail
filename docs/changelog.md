@@ -830,6 +830,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   address nor a subscription feed can be entered anywhere, so the calendar sync
   described above cannot currently run at all. None of it has been tried against
   a live server.
+- **A category on an event is never read out.** You can type one, it is kept
+  through an edit and through a sync, and it is offered back the next time you
+  file an event, so the writing half works. Nothing says it: an event read
+  aloud gives its title, its time and where it is, and never its category. So
+  telling a birthday from a dentist appointment by ear, which is what a
+  category is for here, still means opening each one.
 
 ### Added
 
