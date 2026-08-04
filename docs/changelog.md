@@ -151,6 +151,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Uninstalling takes the sign-in token of an account whose address was changed
+  after it signed in.** Which token belongs to an account was worked out from
+  the address the account has now, and the token was filed under the address it
+  had when it signed in. So somebody who authorised a Google account and later
+  corrected the address to their own domain was left with a token in the Windows
+  credential store after the program was gone, and the uninstall reported that
+  everything had been removed. Every account now gives up an entry for every
+  provider the program can sign in to. Asking for one that was never there costs
+  nothing, which is already how the master key is handled.
+
 - **A category typed onto a Google or Outlook calendar event survives the next
   sync.** Neither service carries a category, so every sync wrote a blank one
   over whatever had been typed here and the category was gone by the time

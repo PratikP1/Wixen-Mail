@@ -162,7 +162,11 @@ fn erase_all_data() -> i32 {
 
 /// Erase, now that it has been established that nothing else is running.
 fn finish_erasing(mut left_behind: Vec<String>) -> i32 {
-    let outcome = wixen_mail::application::forget::run();
+    // Resolved once and used for both halves: the credentials named by what is
+    // in the database, and then the folder the database is in.
+    let resolved = AppPaths::resolve();
+
+    let outcome = wixen_mail::application::forget::run(resolved.as_ref().ok());
     left_behind.extend(
         outcome
             .refused
@@ -170,7 +174,7 @@ fn finish_erasing(mut left_behind: Vec<String>) -> i32 {
             .map(|refusal| format!("Credential left in the store, {refusal}")),
     );
 
-    match AppPaths::resolve() {
+    match resolved {
         Ok(paths) => {
             if paths.root().exists()
                 && let Err(e) = std::fs::remove_dir_all(paths.root())

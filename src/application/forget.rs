@@ -9,7 +9,6 @@
 //! So the uninstaller runs the program once with `--erase-all-data` before it
 //! removes any files.
 
-use crate::application::mail_auth::provider_of;
 use crate::data::account::Account;
 use crate::service::{caldav, credentials, oauth, security};
 
@@ -47,12 +46,15 @@ fn entries_for(accounts: &[Account], caldav_calendar_ids: &[String]) -> Vec<Cred
             service: credentials::KEYRING_SERVICE.to_string(),
             user: account.id.clone(),
         });
-        // Not filtered on `use_oauth`: an account switched back to a password
-        // keeps whatever token it was given, and that is exactly the one
-        // nobody would think to remove.
-        if let Some(provider) = provider_of(account) {
+        // Every provider, rather than the one this account's address names
+        // today. Two ways an account ends up holding a token nobody can point
+        // at: it was switched back to a password, which keeps whatever token
+        // it was given, and its address was edited after it signed in, which
+        // is what the entry was named after. Both leave a secret on the
+        // machine after the application has gone.
+        for provider in oauth::OAuthService::providers() {
             entries.push(CredentialEntry {
-                service: oauth::keyring_service(&provider),
+                service: oauth::keyring_service(&provider.name),
                 user: account.id.clone(),
             });
         }
@@ -168,12 +170,6 @@ mod store {
     }
 }
 
-/// Find this installation's credentials and erase them.
-///
-/// Reads the accounts and calendars from the cache database, which is where
-/// they are kept, and does nothing if it cannot be opened: an installation with
-/// no database never signed in to anything except possibly the master key,
-/// which is erased either way.
 /// What the uninstall leaves behind as a record of what it did.
 ///
 /// Written every time, including when everything went, which is the change from
@@ -197,13 +193,25 @@ pub fn note(version: &str, left_behind: &[String]) -> String {
     )
 }
 
-pub fn run() -> ForgetOutcome {
-    let (accounts, calendar_ids) = stored_identities();
+/// Find this installation's credentials and erase them.
+///
+/// The data folder is passed in rather than resolved here, so this can be run
+/// against a folder a test made. `None` is a folder that could not be found at
+/// all, which still erases the master key: that one is stored on first run,
+/// before any account exists, so nothing has to be readable for it to be there.
+///
+/// The accounts and calendars come from the cache database, which is where they
+/// are kept. A database that cannot be opened is the same case: an installation
+/// with no database never signed in to anything.
+pub fn run(paths: Option<&crate::common::paths::AppPaths>) -> ForgetOutcome {
+    let (accounts, calendar_ids) = stored_identities(paths);
     forget(&entries_for(&accounts, &calendar_ids))
 }
 
-fn stored_identities() -> (Vec<Account>, Vec<String>) {
-    let Ok(paths) = crate::common::paths::AppPaths::resolve() else {
+fn stored_identities(
+    paths: Option<&crate::common::paths::AppPaths>,
+) -> (Vec<Account>, Vec<String>) {
+    let Some(paths) = paths else {
         return (Vec::new(), Vec::new());
     };
     let Ok(cache) = crate::data::MessageCache::new(paths.cache_dir(), None) else {
@@ -228,11 +236,124 @@ fn stored_identities() -> (Vec<Account>, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::paths::AppPaths;
+    use crate::data::MessageCache;
+    use crate::data::message_cache::CalendarContainer;
 
     fn account(id: &str, email: &str) -> Account {
         let mut account = Account::new("Test".to_string(), email.to_string());
         account.id = id.to_string();
         account
+    }
+
+    /// A data folder of this test's own, named so no two tests share one.
+    fn paths_for(label: &str) -> AppPaths {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("a clock set later than 1970")
+            .as_nanos();
+        AppPaths::under(std::env::temp_dir().join(format!("wixen_forget_{label}_{nanos}")))
+    }
+
+    fn calendar(id: &str, account_id: &str, source_provider: &str) -> CalendarContainer {
+        CalendarContainer {
+            id: id.to_string(),
+            account_id: account_id.to_string(),
+            name: "Work".to_string(),
+            color: "#336699".to_string(),
+            source_provider: Some(source_provider.to_string()),
+            caldav_url: None,
+            subscription_url: None,
+            is_default: false,
+            is_visible: true,
+            is_read_only: false,
+            display_order: 0,
+            etag: None,
+            ctag: None,
+            sync_token: None,
+            refresh_interval_minutes: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_the_accounts_and_calendars_on_this_computer_are_the_ones_looked_for() {
+        // What is erased is decided by what the database says is here. Reading
+        // the wrong database, or none, leaves every password and token on the
+        // machine and still reports a clean uninstall, because an entry that
+        // was never stored is deliberately not a failure.
+        let paths = paths_for("identities");
+        let cache = MessageCache::new(paths.cache_dir(), None).expect("a cache of its own");
+        cache
+            .save_account(&account("a1", "me@gmail.com"))
+            .expect("the account saves");
+        cache
+            .save_calendar(&calendar("cal-7", "a1", "caldav"))
+            .expect("the calendar saves");
+
+        let (accounts, calendar_ids) = stored_identities(Some(&paths));
+
+        assert_eq!(
+            accounts.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
+            vec!["a1"]
+        );
+        assert_eq!(calendar_ids, vec!["cal-7".to_string()]);
+    }
+
+    #[test]
+    fn test_only_a_calendar_signed_into_over_caldav_has_a_sign_in_to_erase() {
+        // A subscribed feed is a URL and nothing else, so there is no sign-in
+        // filed under its name. Reading the test the other way round leaves the
+        // real sign-in in the credential store and lists a name nothing ever
+        // wrote, and the uninstall reports success either way.
+        let paths = paths_for("caldav_only");
+        let cache = MessageCache::new(paths.cache_dir(), None).expect("a cache of its own");
+        cache
+            .save_account(&account("a1", "me@example.com"))
+            .expect("the account saves");
+        cache
+            .save_calendar(&calendar("cal-7", "a1", "caldav"))
+            .expect("the calendar saves");
+        cache
+            .save_calendar(&calendar("sub-1", "a1", "subscription"))
+            .expect("the subscription saves");
+
+        let (_, calendar_ids) = stored_identities(Some(&paths));
+
+        assert_eq!(calendar_ids, vec!["cal-7".to_string()]);
+    }
+
+    #[test]
+    fn test_erasing_removes_the_master_key_and_every_account_password_it_finds() {
+        // The whole of it end to end: read what is here, name the entries, take
+        // them out. Nothing joined those three steps to each other before.
+        let paths = paths_for("erasing");
+        let cache = MessageCache::new(paths.cache_dir(), None).expect("a cache of its own");
+        cache
+            .save_account(&account("a1", "me@example.com"))
+            .expect("the account saves");
+        store::pretend_stored("wixen-mail", "master-key");
+        store::pretend_stored("wixen-mail-account", "a1");
+
+        let outcome = run(Some(&paths));
+
+        assert_eq!(outcome.removed, 2);
+        assert!(outcome.refused.is_empty(), "{:?}", outcome.refused);
+    }
+
+    #[test]
+    fn test_a_data_folder_that_cannot_be_found_still_gives_up_the_master_key() {
+        // The master key is stored on first run, before any account exists, so
+        // it is there whether or not anything else can be read. An uninstall
+        // that gave up on it would leave a secret behind on a machine the
+        // application is no longer on.
+        store::pretend_stored("wixen-mail", "master-key");
+
+        let outcome = run(None);
+
+        assert_eq!(outcome.removed, 1);
+        assert!(outcome.refused.is_empty(), "{:?}", outcome.refused);
     }
 
     #[test]
@@ -282,17 +403,30 @@ mod tests {
     }
 
     #[test]
-    fn test_an_address_belonging_to_no_provider_has_no_token_to_forget() {
-        // Its password still counts, so this checks for the token entry rather
-        // than for the account contributing nothing at all.
-        let entries = entries_for(&[account("a1", "me@example.com")], &[]);
+    fn test_an_account_whose_address_changed_after_it_signed_in_still_gives_up_its_token() {
+        // Which entry holds an account's token is worked out from the address
+        // the account has now, and the entry was named when it signed in.
+        // Somebody who authorised as me@gmail.com and later corrected the
+        // address to a domain of their own leaves a token behind under a
+        // provider nothing can name any more, and the uninstall reports
+        // success. So every provider is listed for every account, which is the
+        // argument this file already makes about the master key: deleting an
+        // entry that is not there costs nothing.
+        let entries = entries_for(&[account("a1", "me@mycompany.example")], &[]);
 
         assert!(
-            !entries
-                .iter()
-                .any(|entry| entry.service.starts_with("wixen-mail-")
-                    && entry.service != "wixen-mail-account"),
-            "an account with no OAuth provider listed a token entry: {entries:?}"
+            entries.contains(&CredentialEntry {
+                service: "wixen-mail-gmail".to_string(),
+                user: "a1".to_string(),
+            }),
+            "{entries:?}"
+        );
+        assert!(
+            entries.contains(&CredentialEntry {
+                service: "wixen-mail-outlook".to_string(),
+                user: "a1".to_string(),
+            }),
+            "{entries:?}"
         );
     }
 

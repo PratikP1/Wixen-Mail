@@ -380,6 +380,18 @@ mod tests {
     }
 
     #[test]
+    fn test_a_weekday_seven_days_before_the_month_ends_is_not_the_last_one() {
+        // The boundary the other cases step over. July 2026 has 31 days and
+        // the 1st is a Wednesday, so the 24th is the fourth Friday and the
+        // 31st is the last one. Seven days later is still inside the month, so
+        // the 24th keeps its ordinal. Calling it the last Friday would move a
+        // monthly series onto a different date for good, and in a short month
+        // onto a week that is not there.
+        assert_eq!(weekday_of_month("2026-07-24"), Some("4FR".to_string()));
+        assert_eq!(weekday_of_month("2026-07-31"), Some("-1FR".to_string()));
+    }
+
+    #[test]
     fn test_how_many_days_a_month_has() {
         // The last week is worked out from this, so a month the wrong length
         // makes the last Tuesday the second to last, or the other way round.

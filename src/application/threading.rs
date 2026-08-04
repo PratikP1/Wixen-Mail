@@ -66,7 +66,6 @@ pub fn thread_messages(messages: &[ThreadInput]) -> Vec<ThreadPlacement> {
     let mut parents: HashMap<i64, Option<i64>> = HashMap::new();
 
     for message in messages {
-        union.add(message.id);
         // The nearest reference that is actually present is the parent. The
         // list runs oldest first, so the last match is the closest ancestor.
         let parent = message
@@ -172,10 +171,6 @@ impl DisjointSet {
         Self::default()
     }
 
-    fn add(&mut self, id: i64) {
-        self.parent.entry(id).or_insert(id);
-    }
-
     fn find(&mut self, id: i64) -> i64 {
         let mut root = id;
         while let Some(&parent) = self.parent.get(&root) {
@@ -198,12 +193,15 @@ impl DisjointSet {
     }
 
     fn union(&mut self, a: i64, b: i64) {
-        self.add(a);
-        self.add(b);
         let (root_a, root_b) = (self.find(a), self.find(b));
         if root_a != root_b {
-            // Smaller id wins, so the result does not depend on the order the
-            // messages happened to arrive in.
+            // Smaller id wins. This is a choice of representative and nothing
+            // more: the grouping is the same set of conversations whichever of
+            // the two survives, and what makes the answer independent of
+            // arrival order is that the name comes from the least Message-ID
+            // in the group rather than from the representative. The rule is
+            // here so that `find` gives the same answer twice running, which
+            // is worth having while anything debugs against it.
             let (keep, merge) = if root_a < root_b {
                 (root_a, root_b)
             } else {
@@ -427,6 +425,23 @@ mod tests {
                 assert!(level - heading_level(depth - 1) <= 1, "skipped a level");
             }
         }
+    }
+
+    #[test]
+    fn test_merging_two_conversations_keeps_the_smaller_row_as_the_root() {
+        // Which of the two representatives survives is not visible in what
+        // `thread_messages` returns, so this asks the set directly. Both
+        // orders, because a rule that only holds when the larger id is named
+        // first is not a rule.
+        let mut set = DisjointSet::new();
+
+        set.union(5, 3);
+        assert_eq!(set.find(5), 3);
+        assert_eq!(set.find(3), 3);
+
+        set.union(2, 9);
+        assert_eq!(set.find(9), 2);
+        assert_eq!(set.find(2), 2);
     }
 
     #[test]

@@ -137,6 +137,30 @@ mod tests {
     }
 
     #[test]
+    fn test_either_half_on_its_own_counts_as_something_being_allowed() {
+        // Half allowed is not nothing allowed. The default answering no is the
+        // only thing recorded about this question so far, and "no to
+        // everything" and "no unless both halves are on" agree on the default
+        // and disagree everywhere else.
+        assert!(
+            Allowed {
+                mail: true,
+                personal_information: false,
+            }
+            .anything()
+        );
+        assert!(
+            Allowed {
+                mail: false,
+                personal_information: true,
+            }
+            .anything()
+        );
+        assert!(Allowed::EVERYTHING.anything());
+        assert!(!Allowed::NOTHING.anything());
+    }
+
+    #[test]
     fn test_an_alpha_tester_can_change_their_tasks_and_not_their_mail() {
         // Somebody can point this at their real account, use it all day, and
         // the worst that happens is a task in the wrong place.

@@ -331,6 +331,38 @@ mod tests {
     }
 
     #[test]
+    fn test_the_first_word_is_never_a_repeat_even_when_nothing_marks_it_as_starting_a_sentence() {
+        // Built by hand rather than through `words_in`, which always marks the
+        // first word as coming after a break. That means every other test here
+        // stops at the break before the index is ever worked out, and the
+        // guard that keeps the index inside the list is never the thing doing
+        // the work. A page that reported its words another way, or a caller
+        // handing in a slice that starts mid-message, would reach it.
+        let words = vec![
+            Word {
+                text: "the".to_string(),
+                node: 0,
+                start: 0,
+                end: 3,
+                after_break: false,
+            },
+            Word {
+                text: "the".to_string(),
+                node: 0,
+                start: 4,
+                end: 7,
+                after_break: false,
+            },
+        ];
+
+        let found = findings(&words, nothing_wrong, no_suggestions);
+
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].problem, Problem::Repeated);
+        assert_eq!(found[0].at, place(4));
+    }
+
+    #[test]
     fn test_a_word_says_what_is_wrong_and_what_to_try() {
         let finding = finding_at("wrold", 0, vec!["world".to_string(), "wold".to_string()]);
         let said = finding.spoken();

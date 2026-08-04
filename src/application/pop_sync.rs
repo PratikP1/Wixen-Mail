@@ -902,6 +902,105 @@ mod tests {
         });
     }
 
+    /// A POP3 server on the loopback interface that answers everything with
+    /// `+OK` and says afterwards which commands it was given.
+    ///
+    /// Only the verbs are kept. One of the lines it reads is the PASS command,
+    /// and a recording that held the whole line would put a password into a
+    /// test failure.
+    async fn scripted_pop_server() -> (u16, tokio::sync::oneshot::Receiver<Vec<String>>) {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a loopback port");
+        let port = listener.local_addr().expect("the port it was given").port();
+        let (heard, was_heard) = tokio::sync::oneshot::channel();
+
+        tokio::spawn(async move {
+            let Ok((socket, _)) = listener.accept().await else {
+                return;
+            };
+            let mut stream = tokio::io::BufReader::new(socket);
+            // Every POP3 connection opens with a greeting, and the client reads
+            // it before sending anything.
+            if stream.get_mut().write_all(b"+OK ready\r\n").await.is_err() {
+                return;
+            }
+
+            let mut verbs: Vec<String> = Vec::new();
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match stream.read_line(&mut line).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+                let verb = line
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or_default()
+                    .to_ascii_uppercase();
+                let ending = verb == "QUIT";
+                verbs.push(verb);
+                if stream.get_mut().write_all(b"+OK\r\n").await.is_err() {
+                    break;
+                }
+                if ending {
+                    break;
+                }
+            }
+            let _ = heard.send(verbs);
+        });
+
+        (port, was_heard)
+    }
+
+    #[test]
+    fn test_ending_a_pop_session_sends_quit_and_leaves_nothing_connected() {
+        // The one method of the four that has to reach a real server to mean
+        // anything. POP3 has no other kind of delete: DELE marks and QUIT
+        // commits, so every deletion this module ordered happens here or not at
+        // all. The test above it only asks what ending an unopened session
+        // does, and answering "fine" to that is also what doing nothing looks
+        // like.
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("a runtime");
+
+        runtime.block_on(async {
+            let (port, was_heard) = scripted_pop_server().await;
+            let controller = crate::application::mail_controller::MailController::new();
+            controller
+                .connect_pop3(
+                    "127.0.0.1".to_string(),
+                    port,
+                    "someone".to_string(),
+                    "the-loopback-server-accepts-anything".to_string(),
+                    false,
+                )
+                .await
+                .expect("the loopback server signs anybody in");
+            assert!(
+                controller.is_pop3_connected().await,
+                "nothing was connected, so ending it proves nothing"
+            );
+
+            controller.finish().await.expect("the session ends");
+
+            assert!(
+                !controller.is_pop3_connected().await,
+                "the session is still open after being ended"
+            );
+            let verbs = tokio::time::timeout(std::time::Duration::from_secs(5), was_heard)
+                .await
+                .expect("the server said what it heard inside five seconds")
+                .expect("the server task finished");
+            assert!(verbs.contains(&"QUIT".to_string()), "{verbs:?}");
+        });
+    }
+
     #[test]
     fn test_a_downloaded_message_records_how_big_it_is() {
         // The size column is read by the list and sorted on. Left blank, every
