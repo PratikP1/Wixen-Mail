@@ -758,6 +758,27 @@ mod tests {
         /// List ids this service refuses to read, so a test can be a sync that
         /// could not see everything.
         unreadable: Vec<String>,
+        /// What this service makes of a change sent to it.
+        writes: Writes,
+    }
+
+    /// What a provider does with a change this computer sends it.
+    ///
+    /// The three answers the push has to tell apart. Refusing everything was
+    /// the only one for a long time, which left the whole success half of the
+    /// push unexercised: the counting, the clearing of the tombstone and the
+    /// new id from the provider had never run as one piece.
+    #[derive(Default, Clone, Copy)]
+    enum Writes {
+        /// Refused, for an ordinary reason. What a test that never meant to
+        /// send anything gets, so reaching a write by accident fails loudly.
+        #[default]
+        NothingIsSent,
+        /// Taken.
+        Accepted,
+        /// Refused because of what this application is allowed to do, which is
+        /// the one refusal somebody can act on.
+        RefusedOnPermission,
     }
 
     impl Scripted {
@@ -777,6 +798,21 @@ mod tests {
             Err(Error::Protocol(
                 "nothing in this test sends anything".to_string(),
             ))
+        }
+
+        /// What one change sent to this service comes back as.
+        ///
+        /// The stored answer is built only when it is wanted, so a test that
+        /// scripts a refusal does not have to name a task the provider never
+        /// made.
+        fn answer<T>(&self, stored: impl FnOnce() -> T) -> Result<T> {
+            match self.writes {
+                Writes::NothingIsSent => Self::nothing_is_sent(),
+                Writes::Accepted => Ok(stored()),
+                Writes::RefusedOnPermission => Err(Error::Authentication(
+                    crate::service::tasks_api::NEEDS_SIGN_IN.to_string(),
+                )),
+            }
         }
     }
 
@@ -798,16 +834,25 @@ mod tests {
             _list_id: &str,
             _task: &GoogleTask,
         ) -> Result<GoogleTask> {
-            Self::nothing_is_sent()
+            self.answer(|| GoogleTask {
+                // A task created at the provider comes back under the
+                // provider's own id, not the one this computer gave it.
+                id: "new".to_string(),
+                updated: Some(PROVIDER_STAMP.to_string()),
+                ..GoogleTask::default()
+            })
         }
 
         async fn google_update_task(
             &self,
             _token: &str,
             _list_id: &str,
-            _task: &GoogleTask,
+            task: &GoogleTask,
         ) -> Result<GoogleTask> {
-            Self::nothing_is_sent()
+            self.answer(|| GoogleTask {
+                updated: Some(PROVIDER_STAMP.to_string()),
+                ..task.clone()
+            })
         }
 
         async fn google_delete_task(
@@ -816,7 +861,7 @@ mod tests {
             _list_id: &str,
             _task_id: &str,
         ) -> Result<()> {
-            Self::nothing_is_sent()
+            self.answer(|| ())
         }
 
         async fn ms_lists(&self, _token: &str) -> Result<Vec<MsTodoList>> {
@@ -836,22 +881,35 @@ mod tests {
             _list_id: &str,
             _task: &MsTodoTask,
         ) -> Result<MsTodoTask> {
-            Self::nothing_is_sent()
+            self.answer(|| MsTodoTask {
+                id: "new".to_string(),
+                last_modified_date_time: Some(PROVIDER_STAMP.to_string()),
+                ..MsTodoTask::default()
+            })
         }
 
         async fn ms_update_task(
             &self,
             _token: &str,
             _list_id: &str,
-            _task: &MsTodoTask,
+            task: &MsTodoTask,
         ) -> Result<MsTodoTask> {
-            Self::nothing_is_sent()
+            self.answer(|| MsTodoTask {
+                last_modified_date_time: Some(PROVIDER_STAMP.to_string()),
+                ..task.clone()
+            })
         }
 
         async fn ms_delete_task(&self, _token: &str, _list_id: &str, _task_id: &str) -> Result<()> {
-            Self::nothing_is_sent()
+            self.answer(|| ())
         }
     }
+
+    /// When the scripted provider says it last touched a task.
+    ///
+    /// Later than every stamp the tests hold, so a task that comes back from a
+    /// write reads as newer than the copy here rather than as a tie.
+    const PROVIDER_STAMP: &str = "2026-07-02T09:00:00Z";
 
     /// A list for tasks to hang on. Saving a task in a list that is not there
     /// is refused, because the column is a foreign key.
@@ -1981,5 +2039,255 @@ mod tests {
         let now = cache.find_task("ms:a").expect("a lookup").expect("the row");
         assert_eq!(now.title, "Ring the surgery");
         assert!(!now.pending);
+    }
+
+    /// A service that takes whatever it is sent.
+    fn a_provider_that_accepts() -> Scripted {
+        Scripted {
+            writes: Writes::Accepted,
+            ..Scripted::default()
+        }
+    }
+
+    /// A service that refuses a change because of what this application is
+    /// allowed to do, which is the refusal somebody can act on.
+    fn a_provider_that_wants_signing_in_again() -> Scripted {
+        Scripted {
+            writes: Writes::RefusedOnPermission,
+            ..Scripted::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_the_trait_the_sync_talks_through_still_asks_the_read_only_client() {
+        // The sync never holds the client itself, it holds something that
+        // implements the trait, and the four forwarders below are the only
+        // thing joining the two. A forwarder that answered out of its own head
+        // would report every change as accepted at the provider with nothing
+        // having left this computer, and the push would then clear the flag or
+        // the tombstone for a change nobody was ever told about.
+        //
+        // A client built with `new` may read and may not change anything, so
+        // the refusal below happens before any request is made and this stays
+        // offline. It is also the proof that the call reached the client: a
+        // forwarder that made the answer up could not produce it.
+        let client = TasksClient::new();
+        let refused_to_change = crate::service::outward::refusal("change a task");
+        let refused_to_delete = crate::service::outward::refusal("delete a task");
+
+        // Written as `TaskService::method(&client, ..)` on purpose. The
+        // client's own methods have the same names, so `client.method(..)`
+        // would call those and pin the wrong function.
+        let changes = [
+            TaskService::google_update_task(
+                &client,
+                "token",
+                "google:list",
+                &GoogleTask::default(),
+            )
+            .await
+            .err()
+            .map(|e| e.to_string()),
+            TaskService::ms_create_task(&client, "token", "ms:list", &MsTodoTask::default())
+                .await
+                .err()
+                .map(|e| e.to_string()),
+            TaskService::ms_update_task(&client, "token", "ms:list", &MsTodoTask::default())
+                .await
+                .err()
+                .map(|e| e.to_string()),
+        ];
+        for refusal in changes {
+            let said = refusal.expect("a read-only client sent a change");
+            assert!(said.contains(&refused_to_change), "got {said}");
+        }
+
+        let deletion = TaskService::ms_delete_task(&client, "token", "ms:list", "ms:t1")
+            .await
+            .expect_err("a read-only client sent a deletion")
+            .to_string();
+        assert!(deletion.contains(&refused_to_delete), "got {deletion}");
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_the_provider_accepted_is_counted_once_and_stops_being_carried() {
+        // The success half of a deletion, which nothing had ever run: the
+        // count, and the tombstone being forgotten so the same deletion is not
+        // sent again on every sync for the life of the account.
+        let cache = a_cache("accepted_deletion");
+        a_list(&cache, "google:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "google:t1".to_string(),
+                task_list_id: Some("google:list".to_string()),
+                ..task("x")
+            })
+            .expect("a task");
+        cache.delete_task("google:t1").expect("a deletion");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &a_provider_that_accepts(),
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+
+        assert_eq!(result.sent, 1, "a deletion that landed was not counted");
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert!(
+            !result.needs_sign_in,
+            "an accepted deletion asked somebody to sign in"
+        );
+        assert!(
+            cache
+                .deleted_tasks("acc-1")
+                .expect("the deletions")
+                .is_empty(),
+            "a deletion the provider took is still being carried"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_local_change_the_provider_took_is_counted_and_stops_waiting() {
+        // The other half. A task made here is created at the provider, comes
+        // back under the provider's id, and the row is renamed rather than
+        // kept twice. "1 of yours sent" on the status line has to mean one
+        // change actually landed.
+        let cache = a_cache("accepted_push");
+        a_list(&cache, "google:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "task-local-9".to_string(),
+                task_list_id: Some("google:list".to_string()),
+                pending: true,
+                ..task("x")
+            })
+            .expect("a task");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &a_provider_that_accepts(),
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+
+        assert_eq!(result.sent, 1, "a change that landed was not counted");
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert!(
+            cache
+                .pending_tasks("acc-1")
+                .expect("the pending tasks")
+                .is_empty(),
+            "a change that was sent is still waiting to be sent"
+        );
+        assert!(
+            cache.find_task("task-local-9").expect("a lookup").is_none(),
+            "the row under the id this computer made is still there"
+        );
+        let now = cache
+            .find_task("google:new")
+            .expect("a lookup")
+            .expect("the row under the provider's id");
+        assert_eq!(now.remote_updated.as_deref(), Some(PROVIDER_STAMP));
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_refused_on_permission_asks_the_person_to_sign_in() {
+        // The one refusal somebody can act on. Counted as a problem instead,
+        // it becomes "1 problem" on the status line after every sync, forever,
+        // with nothing saying what would fix it. The tombstone stays, so the
+        // deletion is still there to send once they have signed in.
+        let cache = a_cache("deletion_needs_sign_in");
+        a_list(&cache, "google:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "google:t1".to_string(),
+                task_list_id: Some("google:list".to_string()),
+                ..task("x")
+            })
+            .expect("a task");
+        cache.delete_task("google:t1").expect("a deletion");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &a_provider_that_wants_signing_in_again(),
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+
+        assert!(
+            result.needs_sign_in,
+            "the one refusal somebody can act on was not said"
+        );
+        assert!(
+            result.errors.is_empty(),
+            "it was counted as a problem as well: {:?}",
+            result.errors
+        );
+        assert_eq!(result.sent, 0, "a refused deletion was counted as sent");
+        assert_eq!(
+            cache.deleted_tasks("acc-1").expect("the deletions").len(),
+            1,
+            "a deletion was dropped for having been refused once"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_task_change_refused_on_permission_asks_the_person_to_sign_in() {
+        // The same rule for a change as for a deletion, and the task's id does
+        // not go into the problem list either. The change keeps waiting, so
+        // signing in again is all it takes to send it.
+        let cache = a_cache("change_needs_sign_in");
+        a_list(&cache, "google:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "task-local-10".to_string(),
+                task_list_id: Some("google:list".to_string()),
+                pending: true,
+                ..task("x")
+            })
+            .expect("a task");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &a_provider_that_wants_signing_in_again(),
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+
+        assert!(
+            result.needs_sign_in,
+            "the one refusal somebody can act on was not said"
+        );
+        assert!(
+            result.errors.is_empty(),
+            "it was counted as a problem as well: {:?}",
+            result.errors
+        );
+        assert_eq!(result.sent, 0, "a refused change was counted as sent");
+        assert_eq!(
+            cache
+                .pending_tasks("acc-1")
+                .expect("the pending tasks")
+                .len(),
+            1,
+            "a change was dropped for having been refused once"
+        );
     }
 }

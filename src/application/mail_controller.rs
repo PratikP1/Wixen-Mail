@@ -701,6 +701,379 @@ mod tests {
     }
 }
 
+/// What the controller does against a mail server that answers.
+///
+/// Everything here used to be out of reach, on the reading that the controller
+/// holds a real client rather than something a test can stand in for. The
+/// client was never the obstacle: a socket was, and a socket on the loopback
+/// costs nothing. Both protocols run unencrypted when the account says no TLS,
+/// so a few lines of script are a mail server for as long as one test needs
+/// one.
+///
+/// Nothing here goes near a network. Each test takes its own port from the
+/// operating system, which is the socket equivalent of a temporary directory
+/// with a name nothing else can guess.
+#[cfg(test)]
+mod against_a_server_that_answers {
+    use super::*;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+
+    /// A mail server on a loopback port, and every command it was sent.
+    struct FakeServer {
+        port: u16,
+        heard: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl FakeServer {
+        /// Every command the server was sent, in the order it arrived.
+        async fn transcript(&self) -> Vec<String> {
+            self.heard.lock().await.clone()
+        }
+
+        /// Where in the transcript a command naming this folder is, if at all.
+        ///
+        /// Position rather than presence, because the question these tests ask
+        /// is what the server was told *before* it was asked for a message.
+        async fn when_asked_to(&self, verb: &str, folder: &str) -> Option<usize> {
+            let wanted = verb.to_uppercase();
+            self.transcript().await.iter().position(|line| {
+                let said = line.to_uppercase();
+                said.contains(&wanted) && said.contains(&folder.to_uppercase())
+            })
+        }
+    }
+
+    /// What an IMAP server answers one command with.
+    ///
+    /// Only the floor of IMAP4rev1 is advertised, deliberately: a server that
+    /// offers neither ID nor CONDSTORE keeps the introduction and the
+    /// modification-sequence select out of the way, so what reaches the
+    /// transcript is what the controller decided to send and nothing else.
+    fn imap_answer(tag: &str, line: &str) -> String {
+        let asked = line.to_uppercase();
+        match asked.split_whitespace().nth(1).unwrap_or_default() {
+            "CAPABILITY" => format!("* CAPABILITY IMAP4rev1\r\n{tag} OK ready\r\n"),
+            "SELECT" | "EXAMINE" => format!(
+                "* 0 EXISTS\r\n* 0 RECENT\r\n* OK [UIDVALIDITY 1] valid\r\n\
+                 {tag} OK [READ-WRITE] open\r\n"
+            ),
+            "LOGOUT" => format!("* BYE signing off\r\n{tag} OK done\r\n"),
+            // A search with nothing to report still has to report it.
+            _ if asked.contains("SEARCH") => format!("* SEARCH\r\n{tag} OK done\r\n"),
+            _ => format!("{tag} OK done\r\n"),
+        }
+    }
+
+    /// One command with anything credential-shaped taken off the end.
+    ///
+    /// The transcript is read by the assertions and printed when one fails, so
+    /// it is held to the same rule as a log file: a password does not go in it.
+    fn without_the_credential(line: &str) -> String {
+        let mut words = line.split_whitespace();
+        let first = words.next().unwrap_or_default();
+        let second = words.next().unwrap_or_default();
+        match second.to_uppercase().as_str() {
+            "LOGIN" | "AUTHENTICATE" => format!("{first} {second}"),
+            _ if first.eq_ignore_ascii_case("PASS") => first.to_string(),
+            _ => line.to_string(),
+        }
+    }
+
+    /// An IMAP server on a port of its own, ready for one connection.
+    async fn an_imap_server() -> FakeServer {
+        serving("* OK ready\r\n", |line| {
+            let tag = line.split_whitespace().next().unwrap_or("*").to_string();
+            imap_answer(&tag, line)
+        })
+        .await
+    }
+
+    /// A POP3 server on a port of its own. The protocol is one line each way,
+    /// so agreeing with everything is a whole server.
+    async fn a_pop3_server() -> FakeServer {
+        serving("+OK ready\r\n", |_| "+OK done\r\n".to_string()).await
+    }
+
+    /// Take a loopback port, and answer one connection from the script given.
+    async fn serving(
+        greeting: &'static str,
+        answer: impl Fn(&str) -> String + Send + 'static,
+    ) -> FakeServer {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a loopback port");
+        let port = listener
+            .local_addr()
+            .expect("the port that was taken")
+            .port();
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let recording = heard.clone();
+
+        tokio::spawn(async move {
+            let Ok((stream, _)) = listener.accept().await else {
+                return;
+            };
+            let (reading, mut writing) = stream.into_split();
+            if writing.write_all(greeting.as_bytes()).await.is_err() {
+                return;
+            }
+            let mut lines = tokio::io::BufReader::new(reading).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                // Recorded before the answer goes out, so a client that has
+                // heard its answer can rely on the line being in the
+                // transcript already.
+                recording.lock().await.push(without_the_credential(&line));
+                if writing.write_all(answer(&line).as_bytes()).await.is_err() {
+                    return;
+                }
+            }
+        });
+
+        FakeServer { port, heard }
+    }
+
+    /// A controller signed in to the server given.
+    async fn signed_in_to(server: &FakeServer) -> MailController {
+        let controller = MailController::new();
+        controller
+            .connect_imap(
+                "127.0.0.1".to_string(),
+                server.port,
+                "someone".to_string(),
+                MailAuth::Password("hunter2".to_string()),
+                false,
+                "a1",
+            )
+            .await
+            .expect("the server answered, so signing in should work");
+        controller
+    }
+
+    #[tokio::test]
+    async fn test_the_first_command_after_signing_in_opens_the_folder_it_names() {
+        // Nothing is open on a fresh session, so the folder the command names
+        // has to be opened before anything can be read out of it. A controller
+        // that skips it asks a server with no mailbox open, which is refused,
+        // and every message list on a new session comes back empty.
+        let server = an_imap_server().await;
+        let controller = signed_in_to(&server).await;
+
+        let headers = controller.fetch_headers("INBOX", &[]).await;
+
+        assert!(
+            headers.is_ok(),
+            "no folder was opened first: {:?}",
+            headers.err()
+        );
+        assert!(
+            server.when_asked_to("SELECT", "INBOX").await.is_some(),
+            "the folder was never opened: {:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_command_that_names_a_different_folder_opens_that_one_first() {
+        // A UID belongs to one mailbox and means a different message in
+        // another, so reading a message out of whichever folder happened to be
+        // open hands somebody else's mail back under the right subject line.
+        let server = an_imap_server().await;
+        let controller = signed_in_to(&server).await;
+        controller
+            .select_folder("INBOX")
+            .await
+            .expect("the first folder should open");
+
+        let _ = controller.fetch_message_body("Archive", 1).await;
+
+        let transcript = server.transcript().await;
+        let opened = server.when_asked_to("SELECT", "Archive").await;
+        let fetched = server.when_asked_to("FETCH", "1").await;
+        let opened = opened.unwrap_or_else(|| {
+            panic!("the message was read without opening its folder: {transcript:?}")
+        });
+        let fetched = fetched.expect("the message should have been asked for");
+        assert!(
+            opened < fetched,
+            "the message was asked for before its folder was opened: {:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_re_reading_flags_opens_the_folder_those_messages_are_in() {
+        // Read and starred state belongs to the mailbox the UIDs came from.
+        // Applied to another one it marks unread mail read in the cache, and
+        // nothing says it happened.
+        let server = an_imap_server().await;
+        let controller = signed_in_to(&server).await;
+
+        let flags = controller.fetch_flags("INBOX", &[], None).await;
+
+        assert!(
+            flags.is_ok(),
+            "no folder was opened first: {:?}",
+            flags.err()
+        );
+        assert!(
+            server.when_asked_to("SELECT", "INBOX").await.is_some(),
+            "the folder was never opened: {:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_changing_a_message_opens_the_folder_it_names_before_asking() {
+        // The dangerous half. A delete or a move applied to whatever mailbox
+        // was already open removes the wrong message, and sweeping a draft's
+        // identifier through the wrong folder deletes its twin somewhere else.
+        // The caller passes a folder name for exactly this reason.
+        //
+        // Each command below names a folder other than the one left open by
+        // the command before it, so every one of them has to open a folder.
+        // This asserts on what reached the server rather than on what came
+        // back, because a session that may not change anything refuses these
+        // after opening the folder, and whether it may is a setting on the
+        // machine running the tests.
+        let server = an_imap_server().await;
+        let controller = signed_in_to(&server).await;
+
+        let _ = controller
+            .set_flag(
+                "INBOX",
+                1,
+                crate::service::protocols::imap::flag::SEEN,
+                true,
+            )
+            .await;
+        let _ = controller.delete_message("Archive", 1, None).await;
+        let _ = controller.move_message("INBOX", 1, "Archive").await;
+        let _ = controller.copy_message("Archive", 1, "INBOX").await;
+        let _ = controller
+            .remove_by_message_id("Drafts", "<abc@example.com>")
+            .await;
+
+        let opened: Vec<String> = server
+            .transcript()
+            .await
+            .iter()
+            .filter(|line| line.to_uppercase().contains("SELECT"))
+            .map(|line| line.replace('"', ""))
+            .collect();
+        let named: Vec<&str> = opened
+            .iter()
+            .filter_map(|line| line.split_whitespace().nth(2))
+            .collect();
+        assert_eq!(
+            named,
+            ["INBOX", "Archive", "INBOX", "Archive", "Drafts"],
+            "a command changed a message without opening the folder it named: {:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_controller_that_has_signed_in_says_it_is_connected() {
+        // Everything above this asks before it offers to fetch anything, so a
+        // controller that always says no is a connection nobody uses.
+        let server = an_imap_server().await;
+        let controller = signed_in_to(&server).await;
+
+        assert!(
+            controller.is_connected().await,
+            "a controller that signed in says it did not"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_signing_out_leaves_nothing_connected() {
+        // Leaving the session in place keeps the socket open and the mailbox
+        // locked at the server, and the next sign-in makes a second session
+        // while the first is never closed.
+        let server = an_imap_server().await;
+        let controller = signed_in_to(&server).await;
+        assert!(controller.is_connected().await);
+
+        controller
+            .disconnect_imap()
+            .await
+            .expect("signing out should work");
+
+        assert!(
+            !controller.is_connected().await,
+            "the session is still there after signing out"
+        );
+        assert!(
+            server
+                .transcript()
+                .await
+                .iter()
+                .any(|line| line.to_uppercase().contains("LOGOUT")),
+            "the server was never told: {:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_pop3_controller_that_has_signed_in_says_it_is_connected() {
+        let server = a_pop3_server().await;
+        let controller = MailController::new();
+        controller
+            .connect_pop3(
+                "127.0.0.1".to_string(),
+                server.port,
+                "someone".to_string(),
+                "hunter2".to_string(),
+                false,
+            )
+            .await
+            .expect("the server answered, so signing in should work");
+
+        assert!(
+            controller.is_pop3_connected().await,
+            "a controller that signed in says it did not"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ending_a_pop3_session_sends_quit_and_leaves_nothing_connected() {
+        // POP3 has no other kind of delete: DELE only marks and QUIT commits.
+        // A finish that never sends QUIT means every message the person
+        // deleted is back on the next check.
+        let server = a_pop3_server().await;
+        let controller = MailController::new();
+        controller
+            .connect_pop3(
+                "127.0.0.1".to_string(),
+                server.port,
+                "someone".to_string(),
+                "hunter2".to_string(),
+                false,
+            )
+            .await
+            .expect("the server answered, so signing in should work");
+
+        controller
+            .finish_pop3()
+            .await
+            .expect("ending the session should work");
+
+        assert!(
+            !controller.is_pop3_connected().await,
+            "the session is still there after it was ended"
+        );
+        assert!(
+            server
+                .transcript()
+                .await
+                .iter()
+                .any(|line| line.to_uppercase().starts_with("QUIT")),
+            "the deletions were never committed: {:?}",
+            server.transcript().await
+        );
+    }
+}
+
 #[cfg(test)]
 mod send_request_tests {
     use super::*;
