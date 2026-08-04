@@ -251,9 +251,14 @@ impl Theme {
 
 /// Spacing, in device-independent pixels.
 ///
-/// A four step scale. Anything not on it is a number somebody picked because it
-/// looked right on their monitor, which is how a layout ends up with seven
-/// different gaps that are all nearly the same.
+/// A four step scale, and nothing lays out to it yet: the window passes its own
+/// literals to every sizer. This is the scale a layout pass would adopt, not a
+/// description of the one on the screen.
+///
+/// The point of the scale, when something does adopt it, is that anything off
+/// it is a number somebody picked because it looked right on their monitor,
+/// which is how a layout ends up with seven different gaps that are all nearly
+/// the same.
 pub mod space {
     /// Between a label and its control.
     pub const TIGHT: i32 = 4;
@@ -267,11 +272,18 @@ pub mod space {
 
 /// The smallest a control may be, in device-independent pixels.
 ///
+/// NOTHING IS SIZED TO THIS. No control in the window asks for it, so what is
+/// on the screen is whatever wxWidgets chose, and whether it clears 24 by 24 is
+/// unmeasured. This is the floor a sizing pass would work to, written down so
+/// the number is not invented twice.
+///
 /// WCAG 2.5.8 asks for 24 by 24 and 2.5.5 asks for 44. Windows convention is
-/// smaller than either, so this is the floor rather than the target: a toolbar
-/// button gets the target, an inline control gets at least the floor.
+/// smaller than either, so this is a floor rather than a target: the intent is
+/// that a toolbar button gets the target and an inline control gets at least
+/// the floor.
 pub const MIN_TARGET: i32 = 24;
-/// What a control that is a primary action should be.
+/// What a control that is a primary action should be. Also unused, for the same
+/// reason.
 pub const COMFORTABLE_TARGET: i32 = 44;
 
 // ── Putting it on the screen ────────────────────────────────────────────────
@@ -848,8 +860,13 @@ mod tests {
         );
     }
 
-    /// The floors WCAG 2.5.8 and 2.5.5 ask for.
-    const _TARGETS_MEET_WCAG: () = {
+    /// The two numbers are the ones WCAG 2.5.8 and 2.5.5 name.
+    ///
+    /// Named for what it checks and no more. Nothing is sized to either
+    /// constant, so this says the numbers written down are the right numbers.
+    /// It says nothing about any control on the screen, and a name like
+    /// "targets meet WCAG" would have claimed exactly that.
+    const _THE_TARGET_NUMBERS_ARE_THE_ONES_WCAG_NAMES: () = {
         assert!(MIN_TARGET >= 24);
         assert!(COMFORTABLE_TARGET >= 44);
     };

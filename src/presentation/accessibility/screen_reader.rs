@@ -364,6 +364,44 @@ fn notification_processing(urgency: Urgency, topic: &str) -> native::Processing 
     }
 }
 
+/// Everything that was waiting, as the one announcement it has to become.
+///
+/// The waiting lines all go to the same control, and carrying one means writing
+/// its text there. Handed over one after another they would overwrite each
+/// other in the time it takes to run a loop, so only the last would still be
+/// there to be read: two lines held would deliver one, which is the failure the
+/// holding exists to prevent.
+///
+/// The most urgent of them decides how the whole is treated, because the
+/// handover cannot be less urgent than the most urgent thing in it. The topic
+/// is dropped: a topic says which earlier line this one replaces, and no single
+/// topic is true of a joined line. Keeping one would let a later announcement
+/// on that topic silence the whole opening of the session.
+fn handed_over_together(waiting: &[Held]) -> Option<Held> {
+    let text = waiting
+        .iter()
+        .map(|line| line.text.trim_end_matches(['.', ' ']))
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join(". ");
+    if text.is_empty() {
+        return None;
+    }
+    Some(Held {
+        text,
+        urgency: waiting
+            .iter()
+            .map(|line| line.urgency)
+            .min_by_key(|urgency| match urgency {
+                Urgency::Urgent => 0,
+                Urgency::Important => 1,
+                Urgency::Routine => 2,
+            })
+            .unwrap_or(Urgency::Routine),
+        topic: String::new(),
+    })
+}
+
 // ── Public bridge ───────────────────────────────────────────────────────────
 
 /// Native bridge status.
@@ -441,10 +479,10 @@ impl ScreenReaderBridge {
             // A count, never the words: a waiting line can be message content.
             tracing::info!("{} announcements were waiting for a window", waiting.len());
         }
-        for line in waiting {
-            if let Err(why) = self.deliver(&line.text, line.urgency, &line.topic) {
-                tracing::warn!("A waiting announcement could not be handed over: {why}");
-            }
+        if let Some(handover) = handed_over_together(&waiting)
+            && let Err(why) = self.deliver(&handover.text, handover.urgency, &handover.topic)
+        {
+            tracing::warn!("The waiting announcements could not be handed over: {why}");
         }
     }
 
@@ -649,6 +687,45 @@ mod tests {
     /// "strengthen" this into a call to `announce_via_live_region`: that would
     /// set the window text of whatever owns 0x1234 on the machine running the
     /// tests, and it would look like proof of delivery while proving nothing.
+    #[test]
+    fn test_everything_waiting_is_handed_over_as_one_line_rather_than_overwriting_itself() {
+        // The waiting lines go to one control, and carrying one writes its text
+        // there. Handed over separately the second lands on top of the first in
+        // the time it takes to run a loop, so a session that held two lines
+        // would say one. That is the failure holding them exists to prevent, so
+        // it would have been a fix that fixed nothing.
+        //
+        // This says what the code builds. Whether a reader speaks it is a
+        // separate question and only a screen reader answers it.
+        let waiting = vec![
+            Held {
+                text: "Focus moved to Folders".to_string(),
+                urgency: Urgency::Routine,
+                topic: "focus".to_string(),
+            },
+            Held {
+                text: "Wixen Mail is ready.".to_string(),
+                urgency: Urgency::Important,
+                topic: String::new(),
+            },
+        ];
+
+        let handover = handed_over_together(&waiting).expect("something to hand over");
+
+        assert_eq!(handover.text, "Focus moved to Folders. Wixen Mail is ready");
+        assert_eq!(
+            handover.urgency,
+            Urgency::Important,
+            "the handover cannot be less urgent than the most urgent thing in it"
+        );
+        assert!(
+            handover.topic.is_empty(),
+            "no one topic is true of a joined line, and keeping one would let a \
+             later announcement on it silence the whole opening of the session"
+        );
+        assert!(handed_over_together(&[]).is_none());
+    }
+
     #[test]
     fn test_a_line_said_before_a_window_exists_is_held_rather_than_sent_where_nothing_is_delivered()
     {

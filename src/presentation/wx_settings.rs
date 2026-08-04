@@ -1238,8 +1238,10 @@ fn build_feedback_tab(panel: &Panel, config: &AppConfig) -> Vec<(Channel, CheckB
 
     let note = StaticText::builder(panel)
         .with_label(
-            "Each event has its own tone, so they can be told apart. Sounds are spaced \
-             out so a busy mailbox does not run them together.",
+            "Each event is given its own tone, and sounds are spaced out so a busy \
+             mailbox does not run them together. Whether every pair really is easy \
+             to tell apart by ear has not been tested yet, so please say if two of \
+             them sound alike.",
         )
         .build();
     sizer.add(&note, 0, SizerFlag::Expand | SizerFlag::All, 8);
