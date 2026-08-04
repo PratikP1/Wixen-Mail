@@ -208,6 +208,8 @@ pub struct WxUIState {
     pub selected_message_index: Option<usize>,
     pub message_preview: MessageBody,
     pub connection_status: ConnectionStatus,
+    /// What the person has already been told about the connection.
+    pub connection_voice: ConnectionVoice,
     pub status_message: String,
     pub error_message: Option<String>,
     pub accounts: Vec<Account>,
@@ -247,6 +249,7 @@ impl Default for WxUIState {
             selected_message_index: None,
             message_preview: MessageBody::default(),
             connection_status: ConnectionStatus::Disconnected,
+            connection_voice: ConnectionVoice::default(),
             status_message: "Ready".into(),
             error_message: None,
             accounts: Vec::new(),
@@ -6164,24 +6167,27 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             preview.set_page(&html, "about:blank");
         }
         UIUpdate::ConnectionStatusChanged(status) => {
-            let previous = {
+            let report = {
                 let mut s = lock_state(state);
-                std::mem::replace(&mut s.connection_status, status.clone())
+                s.connection_status = status.clone();
+                s.connection_voice.report(status)
             };
             frame.set_status_text(&status.to_string(), 1);
             // Losing the connection is signalled rather than announced, so
             // someone running on earcons alone still learns about it and
             // someone reading braille still gets the words.
-            if previous != *status {
-                match status {
-                    ConnectionStatus::Connected => {
-                        let _ = a11y.signal(FeedbackEvent::ConnectionRestored, "");
-                    }
-                    ConnectionStatus::Disconnected | ConnectionStatus::Error(_) => {
-                        let _ = a11y.signal(FeedbackEvent::ConnectionLost, "");
-                    }
-                    ConnectionStatus::Connecting => {}
+            //
+            // Whether it is worth saying at all is decided in one place rather
+            // than here, so no future sender of a status can bring back the
+            // false alarm at the end of every successful check.
+            match report {
+                Some(ConnectionReport::Lost) => {
+                    let _ = a11y.signal(FeedbackEvent::ConnectionLost, "");
                 }
+                Some(ConnectionReport::Restored) => {
+                    let _ = a11y.signal(FeedbackEvent::ConnectionRestored, "");
+                }
+                None => {}
             }
         }
         UIUpdate::ErrorOccurred(error) => {
@@ -6513,7 +6519,11 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // Signalled rather than spoken, so somebody who wants a tone for
             // new mail gets a tone and somebody who wants the words gets the
             // words. The routing is a setting, not a decision made here.
-            let _ = a11y.signal(FeedbackEvent::NewMail, "New mail");
+            //
+            // No detail: the event's own words are the whole fact. The folder
+            // that changed is a server path, so saying which one would read out
+            // something like "[Gmail]/All Mail".
+            let _ = a11y.signal(FeedbackEvent::NewMail, "");
             // Only the folder that changed. Re-reading the whole account
             // because one message arrived is work nobody asked for.
             spawn_mail_sync(state, tx, rt, Some(folder.clone()));
@@ -7370,11 +7380,14 @@ fn check_pop_mail(
     };
     let fail = |reason: String| {
         handle.block_on(async {
-            let _ = tx.send(UIUpdate::ErrorOccurred(reason)).await;
+            let _ = tx.send(UIUpdate::ErrorOccurred(reason.clone())).await;
+            // A failure, not the ordinary end of a check. Sending the same
+            // value for both left the two indistinguishable, which is why a
+            // check that worked used to report a lost connection.
             let _ = tx
-                .send(UIUpdate::ConnectionStatusChanged(
-                    ConnectionStatus::Disconnected,
-                ))
+                .send(UIUpdate::ConnectionStatusChanged(ConnectionStatus::Error(
+                    reason,
+                )))
                 .await;
         });
     };
@@ -8732,11 +8745,14 @@ fn spawn_mail_sync(
         };
         let fail = |reason: String| {
             handle.block_on(async {
-                let _ = tx.send(UIUpdate::ErrorOccurred(reason)).await;
+                let _ = tx.send(UIUpdate::ErrorOccurred(reason.clone())).await;
+                // A failure, not the ordinary end of a check. Sending the same
+                // value for both left the two indistinguishable, which is why
+                // a check that worked used to report a lost connection.
                 let _ = tx
-                    .send(UIUpdate::ConnectionStatusChanged(
-                        ConnectionStatus::Disconnected,
-                    ))
+                    .send(UIUpdate::ConnectionStatusChanged(ConnectionStatus::Error(
+                        reason,
+                    )))
                     .await;
             });
         };

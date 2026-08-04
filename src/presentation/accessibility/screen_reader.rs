@@ -15,6 +15,7 @@
 
 use crate::common::Result;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 
 use super::automation::AutomationEvent;
 
@@ -302,15 +303,50 @@ mod native {
 
 // ── Working out how to say it ────────────────────────────────────────────────
 
-/// The window an announcement can be carried on, if one was registered.
-///
-/// Zero is the value the handle holds before the main window exists, and it is
-/// also what a failed registration leaves behind, so it means "nowhere to say
-/// this" rather than a window.
-#[cfg(target_os = "windows")]
-fn live_region_target(handle: isize) -> Option<isize> {
-    (handle != 0).then_some(handle)
+/// Where an announcement can go at the moment it is made.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Carrier {
+    /// Nothing has been registered yet, so keep the line until something is.
+    Hold,
+    /// Carry it on the control that was registered.
+    LiveRegion(isize),
+    /// Registration happened and produced no usable window, so all that is
+    /// left is the notification call, which this application is not delivered
+    /// through. Better than dropping the line, and not much.
+    Notification,
 }
+
+/// Where a line goes, given whether a window has been offered yet and what it
+/// was.
+///
+/// The two questions are separate on purpose. Before this, "no window yet" and
+/// "a window was offered and it was useless" were the same value, zero, so the
+/// code could not hold a line safely: holding would have meant holding for
+/// ever whenever registration failed. Splitting them keeps a failed
+/// registration on exactly the path it took before, and holds only in the one
+/// case that is genuinely early.
+fn carrier(registered: bool, handle: isize) -> Carrier {
+    match (registered, handle) {
+        (false, _) => Carrier::Hold,
+        (true, 0) => Carrier::Notification,
+        (true, handle) => Carrier::LiveRegion(handle),
+    }
+}
+
+/// A line said before there was anywhere to carry it.
+#[derive(Debug, Clone)]
+struct Held {
+    text: String,
+    urgency: Urgency,
+    topic: String,
+}
+
+/// How many waiting lines to keep.
+///
+/// The real case is the two a session opens with. The cap is what stops a run
+/// that never registers a window from growing without limit, and stops
+/// registration from releasing a wall of speech if one ever did.
+const MAX_HELD: usize = 8;
 
 /// How hard the screen reader should hold on to an announcement.
 ///
@@ -345,7 +381,11 @@ pub struct ScreenReaderBridge {
     event_log: Mutex<Vec<AutomationEvent>>,
     status: NativeBridgeStatus,
     /// Native handle of the control used to carry announcements, or zero.
-    live_region: std::sync::atomic::AtomicIsize,
+    live_region: AtomicIsize,
+    /// Whether a window has been offered at all, which zero cannot say.
+    registered: AtomicBool,
+    /// Lines said before there was anywhere to carry them, oldest first.
+    held: Mutex<Vec<Held>>,
 }
 
 impl ScreenReaderBridge {
@@ -359,27 +399,28 @@ impl ScreenReaderBridge {
             native::clients_are_listening()
         );
 
-        Ok(Self {
-            last_announcement: Mutex::new(None),
-            event_log: Mutex::new(Vec::new()),
-            status: if cfg!(target_os = "windows") {
-                NativeBridgeStatus::Active
-            } else {
-                NativeBridgeStatus::Fallback
-            },
-            live_region: std::sync::atomic::AtomicIsize::new(0),
-        })
+        Ok(Self::default())
     }
 
-    /// Register the control announcements are carried on.
+    /// Register the control announcements are carried on, and release anything
+    /// that has been waiting for one.
     ///
-    /// Must be called once the main window exists. Without it announcements
-    /// fall back to the UI Automation notification, which returns success on
-    /// this application and is not delivered, because wxWidgets implements
-    /// MSAA rather than being a native UI Automation provider.
+    /// Called once the main window exists. Everything the application says
+    /// before that point, which includes the first thing it ever says, is held
+    /// rather than sent: without a live region the only path left is the UI
+    /// Automation notification, which returns success on this application and
+    /// is not delivered, because wxWidgets implements MSAA rather than being a
+    /// native UI Automation provider.
+    ///
+    /// Holding rather than requiring this to be called first is deliberate.
+    /// The call sits in the window setup and the announcements it rescues are
+    /// made before the event loop starts, in a different function; an order
+    /// that has to be right is an order somebody can get wrong again.
     pub fn set_live_region(&self, handle: isize) {
-        self.live_region
-            .store(handle, std::sync::atomic::Ordering::Relaxed);
+        self.live_region.store(handle, Ordering::Relaxed);
+        // Released after the handle, so any thread that sees the registration
+        // sees the window that came with it.
+        self.registered.store(true, Ordering::Release);
         // Zero is the one value that means the registration failed, and a
         // report of "nothing was spoken" is read against this line, so it must
         // not say that all is well.
@@ -387,6 +428,100 @@ impl ScreenReaderBridge {
             tracing::warn!("No window to carry announcements, so none will be spoken");
         } else {
             tracing::info!("Announcements will be carried on window 0x{:x}", handle);
+        }
+
+        // Taken out, and the lock dropped, before any of it is delivered.
+        // Delivering takes this same lock, so replaying while still holding it
+        // would deadlock the bridge against itself.
+        let waiting = match self.held.lock() {
+            Ok(mut held) => std::mem::take(&mut *held),
+            Err(_) => return,
+        };
+        if !waiting.is_empty() {
+            // A count, never the words: a waiting line can be message content.
+            tracing::info!("{} announcements were waiting for a window", waiting.len());
+        }
+        for line in waiting {
+            if let Err(why) = self.deliver(&line.text, line.urgency, &line.topic) {
+                tracing::warn!("A waiting announcement could not be handed over: {why}");
+            }
+        }
+    }
+
+    /// Keep a line until there is somewhere to carry it.
+    fn hold(&self, text: &str, urgency: Urgency, topic: &str) -> Result<()> {
+        let mut held = self
+            .held
+            .lock()
+            .map_err(|_| crate::common::Error::Other("Screen reader hold poisoned".to_string()))?;
+        if held.len() >= MAX_HELD {
+            held.remove(0);
+        }
+        held.push(Held {
+            text: text.to_string(),
+            urgency,
+            topic: topic.to_string(),
+        });
+        // The count only. A held line can be message content, and a body read
+        // aloud must not be written to a file on disk.
+        tracing::debug!(
+            "No window to carry announcements yet, so {} are waiting",
+            held.len()
+        );
+        Ok(())
+    }
+
+    /// Send a line wherever it can go now, or keep it until somewhere exists.
+    fn deliver(&self, text: &str, urgency: Urgency, topic: &str) -> Result<()> {
+        let carrier = carrier(
+            self.registered.load(Ordering::Acquire),
+            self.live_region.load(Ordering::Relaxed),
+        );
+        if carrier == Carrier::Hold {
+            return self.hold(text, urgency, topic);
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            // The live region is the path that works here. The notification
+            // call reports success and is never delivered, so it is only tried
+            // when there is no live region to use.
+            if let Carrier::LiveRegion(hwnd) = carrier
+                && native::announce_via_live_region(hwnd, text)
+            {
+                tracing::debug!(
+                    "Announced through the live region: {} characters",
+                    text.len()
+                );
+                return Ok(());
+            }
+
+            let processing = notification_processing(urgency, topic);
+            if !native::raise_notification(text, processing, topic) {
+                // No assistive technology listening, or a Windows build without
+                // the notification API. The fallback cannot carry our text, so
+                // it is only worth firing at all for the latter.
+                native::notify_name_change();
+            }
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = (urgency, topic);
+        }
+
+        Ok(())
+    }
+
+    /// The lines still waiting for a window, oldest first.
+    ///
+    /// For tests and diagnostics. Says what the code kept, and nothing about
+    /// anybody hearing it. Never log what this returns: a waiting line can be
+    /// the text of a message.
+    pub fn held(&self) -> Vec<String> {
+        match self.held.lock() {
+            Ok(held) => held.iter().map(|line| line.text.clone()).collect(),
+            Err(_) => Vec::new(),
         }
     }
 
@@ -412,42 +547,14 @@ impl ScreenReaderBridge {
             })?;
             *last = Some(text.to_string());
         }
+        // Logged as asked for whether or not it can go anywhere yet, so the
+        // record of what the code tried to say stays complete.
         self.push_event(AutomationEvent::LiveRegion(
             "global".to_string(),
             text.to_string(),
         ))?;
 
-        #[cfg(target_os = "windows")]
-        {
-            // The live region is the path that works here. The notification
-            // call reports success and is never delivered, so it is only tried
-            // when there is no live region to use.
-            let registered = self.live_region.load(std::sync::atomic::Ordering::Relaxed);
-            if let Some(hwnd) = live_region_target(registered)
-                && native::announce_via_live_region(hwnd, text)
-            {
-                tracing::debug!(
-                    "Announced through the live region: {} characters",
-                    text.len()
-                );
-                return Ok(());
-            }
-
-            let processing = notification_processing(urgency, topic);
-            if !native::raise_notification(text, processing, topic) {
-                // No assistive technology listening, or a Windows build without
-                // the notification API. The fallback cannot carry our text, so
-                // it is only worth firing at all for the latter.
-                native::notify_name_change();
-            }
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            let _ = (urgency, topic);
-        }
-
-        Ok(())
+        self.deliver(text, urgency, topic)
     }
 
     /// Notify native bridge of automation event.
@@ -496,7 +603,9 @@ impl Default for ScreenReaderBridge {
             } else {
                 NativeBridgeStatus::Fallback
             },
-            live_region: std::sync::atomic::AtomicIsize::new(0),
+            live_region: AtomicIsize::new(0),
+            registered: AtomicBool::new(false),
+            held: Mutex::new(Vec::new()),
         }
     }
 }
@@ -532,11 +641,36 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "windows")]
+    /// Says where the code decides to send a line, and nothing about that line
+    /// arriving. Delivery is a screen reader question in every one of these
+    /// three cases.
+    ///
+    /// The made-up handle is safe only because this function is pure. Do not
+    /// "strengthen" this into a call to `announce_via_live_region`: that would
+    /// set the window text of whatever owns 0x1234 on the machine running the
+    /// tests, and it would look like proof of delivery while proving nothing.
     #[test]
-    fn test_a_handle_of_zero_means_nowhere_to_carry_an_announcement() {
-        assert_eq!(live_region_target(0), None);
-        assert_eq!(live_region_target(0x1234), Some(0x1234));
+    fn test_a_line_said_before_a_window_exists_is_held_rather_than_sent_where_nothing_is_delivered()
+    {
+        assert_eq!(carrier(false, 0), Carrier::Hold);
+        assert_eq!(carrier(true, 0x1234), Carrier::LiveRegion(0x1234));
+        assert_eq!(carrier(true, 0), Carrier::Notification);
+    }
+
+    /// A start that never gets a window must not grow without limit, and must
+    /// not release a burst of speech if one ever arrives. The oldest goes
+    /// first, because the newest lines are the ones still worth hearing.
+    #[test]
+    fn test_only_the_most_recent_waiting_lines_are_kept() {
+        let bridge = ScreenReaderBridge::default();
+        for n in 0..MAX_HELD + 3 {
+            bridge
+                .announce(&format!("waiting line {n}"))
+                .expect("announce");
+        }
+        let held = bridge.held();
+        assert_eq!(held.len(), MAX_HELD);
+        assert_eq!(held.first().map(String::as_str), Some("waiting line 3"));
     }
 
     /// Proves the code refuses a handle it cannot use, so the caller goes on to

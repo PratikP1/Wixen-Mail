@@ -221,11 +221,7 @@ impl Accessibility {
             return Ok(());
         }
 
-        let text = if detail.trim().is_empty() {
-            event.text().to_string()
-        } else {
-            format!("{}, {}", event.text(), detail.trim())
-        };
+        let text = event.text_with(detail);
 
         if channels.contains(&feedback::Channel::Earcon) {
             self.earcons.play(event.tone());
@@ -591,6 +587,45 @@ mod tests {
     }
 
     #[test]
+    fn test_the_first_lines_of_a_session_are_still_waiting_when_the_window_arrives() {
+        // The window that carries announcements does not exist until the event
+        // loop starts, and this runs before that. Every line the application
+        // opened with was going out on a path this codebase records as
+        // reporting success and delivering nothing, so the first thing it ever
+        // said reached nobody.
+        //
+        // This pins that the lines are kept until there is somewhere to put
+        // them, and that handing over a window empties the queue of them. It
+        // does not pin that they are then spoken: whether a live region raised
+        // before the frame is shown reaches NVDA is exactly the sort of thing
+        // only a screen reader run answers.
+        let a11y = Accessibility::new().expect("accessibility");
+        a11y.initialize().expect("initialize");
+
+        let waiting = a11y.screen_reader.held();
+        assert!(
+            waiting.iter().any(|line| line == "Wixen Mail is ready"),
+            "the startup line was not waiting for a window: {:?}",
+            waiting
+        );
+        assert!(
+            waiting.iter().any(|line| line == "Focus moved to Folders"),
+            "where the cursor landed was not waiting for a window: {:?}",
+            waiting
+        );
+
+        // Zero, deliberately: a real handle would poke whatever window owns it
+        // on the machine running the tests. Zero takes the same path these
+        // lines take today, so nothing new happens to them here.
+        a11y.register_live_region(0);
+        assert!(
+            a11y.screen_reader.held().is_empty(),
+            "lines were still waiting after a window was handed over: {:?}",
+            a11y.screen_reader.held()
+        );
+    }
+
+    #[test]
     fn test_signalling_an_event_reaches_the_visual_channel() {
         // The status line is what someone sees when speech is off, and it is
         // the only channel that survives both mute and a missing screen
@@ -613,6 +648,22 @@ mod tests {
             .expect("signal");
         assert!(a11y.take_visual_feedback().is_some());
         assert!(a11y.take_visual_feedback().is_none());
+    }
+
+    #[test]
+    fn test_a_detail_that_only_repeats_the_events_own_words_is_not_added_twice() {
+        // Every arrival of mail read as "New mail, New mail", because the call
+        // site passed the event's own words as the detail. Repetition like that
+        // reads as a fault in the program, costs twice the braille cells, and
+        // is what teaches somebody to switch announcements off, after which
+        // they miss the ones that matter.
+        //
+        // This pins the text the code built. Whether anybody hears it is a
+        // separate question that only a screen reader run answers.
+        let a11y = Accessibility::new().expect("accessibility");
+        a11y.signal(feedback::Event::NewMail, "New mail")
+            .expect("signal");
+        assert_eq!(a11y.take_visual_feedback().as_deref(), Some("New mail"));
     }
 
     #[test]

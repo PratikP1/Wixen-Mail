@@ -251,6 +251,57 @@ pub enum ConnectionStatus {
     Error(String),
 }
 
+/// What a change in the connection is worth telling somebody.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ConnectionReport {
+    /// The connection has gone, so mail has stopped arriving.
+    Lost,
+    /// The connection is back after having gone.
+    Restored,
+}
+
+/// Decides when the connection is worth mentioning and when it is not.
+///
+/// Three things went wrong without this. An ordinary mail check ends by
+/// dropping the connection, which is not a fault and must not be announced as
+/// one. A connection that keeps failing has to say so once rather than on
+/// every retry, because urgent announcements are exempt from the pace limit
+/// and a flapping connection would otherwise flood. And a reconnection passes
+/// through "connecting", so whether the connection coming back is news cannot
+/// be read off the state just before it: it depends on whether anybody was
+/// ever told it had gone, which is the one thing kept here.
+///
+/// Deliberately says nothing about why a connection failed. Every state that
+/// carries a reason is already announced with that reason somewhere better: a
+/// failed send says "Message not sent" and names the fault, and a failed sync
+/// says "Error" and names it. Repeating it here would be a third sentence for
+/// one event.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ConnectionVoice {
+    said_it_had_gone: bool,
+}
+
+impl ConnectionVoice {
+    /// What to say, if anything, now that the connection is in state `now`.
+    pub fn report(&mut self, now: &ConnectionStatus) -> Option<ConnectionReport> {
+        match now {
+            // Where an ordinary check ends, and where the application starts.
+            // Neither is a fault, and neither is worth interrupting anybody for.
+            ConnectionStatus::Disconnected | ConnectionStatus::Connecting => None,
+            ConnectionStatus::Error(_) if self.said_it_had_gone => None,
+            ConnectionStatus::Error(_) => {
+                self.said_it_had_gone = true;
+                Some(ConnectionReport::Lost)
+            }
+            ConnectionStatus::Connected if self.said_it_had_gone => {
+                self.said_it_had_gone = false;
+                Some(ConnectionReport::Restored)
+            }
+            ConnectionStatus::Connected => None,
+        }
+    }
+}
+
 /// Account configuration data
 #[derive(Clone, Debug, Default)]
 pub struct AccountConfig {
@@ -991,6 +1042,69 @@ mod tests {
             ConnectionStatus::Error("Sending failed".to_string()).to_string(),
             "Error: Sending failed"
         );
+    }
+
+    #[test]
+    fn test_a_check_that_finished_normally_reports_no_connection_problem() {
+        // Every ordinary mail check ends by dropping the connection, and that
+        // was reported as a loss: the one word that should mean "your mail has
+        // stopped arriving" was spent several times an hour on mail arriving
+        // normally, at a priority the pace limit does not apply to.
+        //
+        // None means the code will not ask for those words. It does not mean
+        // the person hears nothing at the end of a check: the status line says
+        // "Mail check finished", on a channel this does not touch.
+        let mut voice = ConnectionVoice::default();
+        assert_eq!(voice.report(&ConnectionStatus::Connecting), None);
+        assert_eq!(voice.report(&ConnectionStatus::Connected), None);
+        assert_eq!(voice.report(&ConnectionStatus::Disconnected), None);
+    }
+
+    #[test]
+    fn test_a_connection_that_keeps_failing_is_reported_once_not_on_every_retry() {
+        // A flapping connection must not flood. Saying it once is the whole
+        // point; the second and third attempts add nothing a person can act on.
+        let mut voice = ConnectionVoice::default();
+        assert_eq!(
+            voice.report(&ConnectionStatus::Error(
+                "the server refused the sign-in".into()
+            )),
+            Some(ConnectionReport::Lost)
+        );
+        assert_eq!(
+            voice.report(&ConnectionStatus::Error(
+                "the server refused the sign-in".into()
+            )),
+            None
+        );
+        assert_eq!(voice.report(&ConnectionStatus::Connecting), None);
+        assert_eq!(
+            voice.report(&ConnectionStatus::Error("no answer from the server".into())),
+            None
+        );
+    }
+
+    #[test]
+    fn test_the_connection_coming_back_is_reported_only_when_it_had_gone() {
+        // Reconnecting passes through "connecting", so whether this is news
+        // cannot be worked out from the state just before it. It depends on
+        // whether anybody was told the connection had gone, which is the one
+        // thing this remembers.
+        let mut fresh = ConnectionVoice::default();
+        assert_eq!(fresh.report(&ConnectionStatus::Connected), None);
+
+        let mut after_a_failure = ConnectionVoice::default();
+        assert_eq!(
+            after_a_failure.report(&ConnectionStatus::Error("no answer from the server".into())),
+            Some(ConnectionReport::Lost)
+        );
+        assert_eq!(after_a_failure.report(&ConnectionStatus::Connecting), None);
+        assert_eq!(
+            after_a_failure.report(&ConnectionStatus::Connected),
+            Some(ConnectionReport::Restored)
+        );
+        // Said once, like the loss it answers.
+        assert_eq!(after_a_failure.report(&ConnectionStatus::Connected), None);
     }
 
     #[test]

@@ -124,6 +124,25 @@ impl Event {
         }
     }
 
+    /// The written form with `detail` added, where the detail adds anything.
+    ///
+    /// A detail that only repeats the event's own words is dropped rather than
+    /// said twice. Every arrival of mail was announced as "New mail, New mail",
+    /// because the call site passed the event's own wording as the detail, and
+    /// the rule lives here so that no other call site can make the same
+    /// mistake again.
+    ///
+    /// Comparison ignores case, because a detail is written by a person and
+    /// "new mail" is the same repetition as "New mail".
+    pub fn text_with(&self, detail: &str) -> String {
+        let detail = detail.trim();
+        if detail.is_empty() || detail.eq_ignore_ascii_case(self.text()) {
+            self.text().to_string()
+        } else {
+            format!("{}, {}", self.text(), detail)
+        }
+    }
+
     /// How hard the announcement queue should hold on to this.
     ///
     /// Failures outrank arrivals: missing "new mail" costs a moment, missing
@@ -446,6 +465,24 @@ mod tests {
 
     fn set(channels: &[Channel]) -> BTreeSet<Channel> {
         channels.iter().copied().collect()
+    }
+
+    #[test]
+    fn test_an_event_asked_to_repeat_itself_produces_its_words_once() {
+        // Pins the string this builds, and nothing about it being spoken.
+        //
+        // The last case is the one worth keeping: a detail that genuinely adds
+        // something is still added, so the rule that drops repetition cannot
+        // quietly start dropping information.
+        assert_eq!(Event::NewMail.text_with("New mail"), "New mail");
+        assert_eq!(Event::NewMail.text_with("new mail"), "New mail");
+        assert_eq!(Event::NewMail.text_with("   New mail  "), "New mail");
+        assert_eq!(Event::NewMail.text_with(""), "New mail");
+        assert_eq!(Event::NewMail.text_with("   "), "New mail");
+        assert_eq!(
+            Event::NewMail.text_with("3 messages"),
+            "New mail, 3 messages"
+        );
     }
 
     #[test]

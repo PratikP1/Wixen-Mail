@@ -192,6 +192,51 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The first thing the application says now waits for a window that can carry
+  it.** Wixen Mail opens by saying it is ready and saying where the cursor has
+  landed. Both were said before the control that carries announcements existed,
+  so both went out on a path that reports success and delivers nothing here. The
+  opening lines of every session reached nobody.
+
+  Anything said before there is somewhere to put it is now kept, and handed over
+  as soon as there is. Up to eight lines are kept, oldest dropped first, so a
+  start that never gets a window cannot grow without limit or release a wall of
+  speech later.
+
+  **Still to be confirmed with a screen reader:** this fixes lines being thrown
+  away, and that much is certain. Whether NVDA speaks them at that point in
+  startup, before the window is on screen, is a separate question that only a
+  listening pass answers.
+
+- **New mail is announced once instead of twice.** Every arrival was announced
+  as "New mail, New mail", because the detail passed alongside the event
+  repeated the event's own wording. It read as a fault in the program and took
+  twice the braille cells. A detail that only repeats what the event already
+  says is now dropped, wherever it comes from, so no other announcement can pick
+  up the same stutter.
+
+- **A mail check that worked no longer announces that the connection was lost.**
+  Every ordinary check ended by dropping its connection, and that was announced
+  as a loss, at a priority the pace limit does not apply to. Several times an
+  hour, the one announcement that should mean "your mail has stopped arriving"
+  was spent on mail arriving normally. A busy mailbox rang it over and over.
+
+  The connection is now reported only when something has actually gone wrong,
+  once rather than on every retry, and it says so once more when the connection
+  comes back. A check that finishes normally says nothing about the connection,
+  and the status line still reports the check itself.
+
+  Two smaller changes come with it. A sync that fails now sets the connection to
+  the failure and its reason, where it used to set the same value a successful
+  check ends with, so the status field reads "Error" and what went wrong rather
+  than "Disconnected". And the announcement no longer repeats that reason,
+  because a failed send already says "Message not sent" and names the fault, and
+  a failed sync already says "Error" and names it.
+
+  **Still to be confirmed with a screen reader:** what is announced, and how
+  often, has been checked in tests. How it sounds in use over a long session is
+  a listening question.
+
 - **A task list you delete on your phone now goes from here too.** A list that
   stopped coming back from Google Tasks or Microsoft To Do stayed on this
   computer forever, with its tasks in it and no way to reach any of it from your
