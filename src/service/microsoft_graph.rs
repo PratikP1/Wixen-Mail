@@ -109,35 +109,65 @@ struct MsContactsResponse {
 // ── Microsoft Graph Calendar Types ──────────────────────────────────────────
 
 /// A calendar event from Microsoft Graph API.
+///
+/// One type for what is read and what is written, and every field left out of
+/// what is written unless something set it. Graph honours whatever a change
+/// carries, so a field sent empty is an instruction rather than a silence: an
+/// empty guest list uninvites everybody, and a null repeat rule turns a weekly
+/// meeting into a single appointment. An event with nothing set therefore has to
+/// serialize to nothing, which a test pins rather than trusts.
+///
+/// Four fields are `Option` where the read side would be happy with a plain
+/// value, because for those four "false", "empty", "zero" and "leave it alone"
+/// are different instructions and only an `Option` can tell them apart. Sending
+/// `isAllDay` as false on a change would turn a birthday into a midnight
+/// appointment.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct MsGraphEvent {
-    #[serde(default)]
+    /// Graph's identifier. The server's to set, and part of the address a change
+    /// is sent to rather than part of its body.
+    #[serde(default, skip_serializing)]
     pub id: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub subject: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<MsEventBody>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub start: Option<MsDateTimeTimeZone>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub end: Option<MsDateTimeTimeZone>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<MsLocation>,
-    #[serde(default)]
-    pub is_all_day: bool,
-    #[serde(default)]
-    pub show_as: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_all_day: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_as: Option<String>,
+    /// Who is invited. An empty list sent to Graph uninvites all of them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attendees: Vec<MsAttendee>,
+    /// What makes this a repeating series. Sent as null, the series is flattened
+    /// into the one appointment the change was about.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub recurrence: Option<serde_json::Value>,
+    /// Where to open the event in a browser. The server's to set.
+    #[serde(skip_serializing)]
     pub web_link: Option<String>,
+    /// When Graph last changed it. The server's to set.
+    #[serde(skip_serializing)]
     pub last_modified_date_time: Option<String>,
-    /// Set to true when the event was deleted (delta queries).
-    #[serde(rename = "@removed")]
+    /// Set when the event was deleted. An annotation Graph adds to an answer,
+    /// never something to send.
+    #[serde(rename = "@removed", skip_serializing)]
     pub removed: Option<MsRemovedInfo>,
-    #[serde(rename = "@odata.etag")]
+    /// Graph's version marker. An annotation rather than a property, and the
+    /// server's to set.
+    #[serde(rename = "@odata.etag", skip_serializing)]
     pub odata_etag: Option<String>,
-    #[serde(default)]
-    pub is_reminder_on: bool,
-    #[serde(default)]
-    pub reminder_minutes_before_start: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_reminder_on: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reminder_minutes_before_start: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -586,6 +616,64 @@ mod tests {
     }
 
     #[test]
+    fn test_an_event_with_nothing_set_is_sent_to_microsoft_as_nothing() {
+        // What every other assertion here rests on. Once an event with nothing
+        // set serializes to nothing, an event built from Default with one field
+        // filled in is already a change naming only that field.
+        let sent = serde_json::to_value(MsGraphEvent::default()).expect("an event to serialize");
+
+        assert_eq!(sent, serde_json::json!({}), "{sent}");
+    }
+
+    #[test]
+    fn test_changing_one_thing_about_a_microsoft_event_names_only_that_thing() {
+        // Graph honours a value that is present, so an empty guest list is an
+        // instruction to uninvite everybody and a null repeat rule is an
+        // instruction to flatten the series.
+        let moved = MsGraphEvent {
+            subject: "Moved to Thursday".to_string(),
+            ..Default::default()
+        };
+
+        let sent = serde_json::to_value(&moved).expect("an event to serialize");
+        let named: Vec<&str> = sent
+            .as_object()
+            .expect("an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+
+        // On the whole key list rather than on the absence of two names, so a
+        // field added later is caught by this test rather than by a guest list.
+        assert_eq!(named, ["subject"], "{sent}");
+    }
+
+    #[test]
+    fn test_an_event_sent_to_microsoft_leaves_out_what_graph_owns() {
+        let event = MsGraphEvent {
+            subject: "Budget review".to_string(),
+            start: Some(MsDateTimeTimeZone {
+                date_time: "2026-03-05T12:00:00".to_string(),
+                time_zone: "UTC".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        let sent = serde_json::to_value(&event).expect("an event to serialize");
+        let fields = sent.as_object().expect("an object");
+
+        for graphs_own in [
+            "id",
+            "@odata.etag",
+            "@removed",
+            "webLink",
+            "lastModifiedDateTime",
+        ] {
+            assert!(!fields.contains_key(graphs_own), "{graphs_own} in {sent}");
+        }
+    }
+
+    #[test]
     fn test_deserialize_contacts_response() {
         let json = r#"{
             "value": [
@@ -647,7 +735,7 @@ mod tests {
             resp.value[0].location.as_ref().unwrap().display_name,
             "Conference Room A"
         );
-        assert!(!resp.value[0].is_all_day);
+        assert_eq!(resp.value[0].is_all_day, Some(false));
         assert_eq!(resp.value[0].attendees[0].attendee_type, "required");
         assert!(resp.delta_link.is_some());
     }
@@ -664,8 +752,8 @@ mod tests {
         }"#;
         let event: MsGraphEvent = serde_json::from_str(json).unwrap();
         assert_eq!(event.subject, "Vacation");
-        assert!(event.is_all_day);
-        assert_eq!(event.show_as, "oof");
+        assert_eq!(event.is_all_day, Some(true));
+        assert_eq!(event.show_as.as_deref(), Some("oof"));
     }
 
     #[test]

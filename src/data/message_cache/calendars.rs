@@ -6,6 +6,13 @@ use crate::common::{Error, Result};
 use crate::data::message_cache::{CalendarContainer, MessageCache};
 use rusqlite::OptionalExtension;
 
+/// What a calendar this program made for somebody is coloured.
+///
+/// Nobody picked it, so it is one value in one place rather than a literal at
+/// each site that makes a calendar. Somebody who changes a calendar's colour
+/// changes their own copy and this is not consulted again.
+const A_CALENDAR_NOBODY_CHOSE_A_COLOUR_FOR: &str = "#4285F4";
+
 impl MessageCache {
     /// Save (upsert) a calendar container.
     pub fn save_calendar(&self, cal: &CalendarContainer) -> Result<()> {
@@ -174,11 +181,61 @@ impl MessageCache {
             id: uuid::Uuid::new_v4().to_string(),
             account_id: account_id.to_string(),
             name: "My Calendar".to_string(),
-            color: "#4285F4".to_string(),
+            color: A_CALENDAR_NOBODY_CHOSE_A_COLOUR_FOR.to_string(),
             source_provider: Some("local".to_string()),
             caldav_url: None,
             subscription_url: None,
             is_default: true,
+            is_visible: true,
+            is_read_only: false,
+            display_order: 0,
+            etag: None,
+            ctag: None,
+            sync_token: None,
+            refresh_interval_minutes: None,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+        self.save_calendar(&cal)?;
+        Ok(cal)
+    }
+
+    /// The calendar a provider's events are filed under, made if it is not there.
+    ///
+    /// An event a sync brought down has to belong somewhere, or the list for
+    /// each calendar can never show it and the only way to see it is the
+    /// combined view. Matched on the provider, so a sync that runs every few
+    /// minutes finds the container it made last time instead of adding another.
+    ///
+    /// One container per provider per account. That is enough while this client
+    /// asks each provider only for the calendar it treats as the main one; a
+    /// second Google calendar would need the container to hold the provider's
+    /// own identity for it, and asking for a second calendar at all is a change
+    /// to the client rather than to this.
+    pub fn ensure_provider_calendar(
+        &self,
+        account_id: &str,
+        provider: &str,
+        name: &str,
+    ) -> Result<CalendarContainer> {
+        let existing = self.get_calendars_for_account(account_id)?;
+        if let Some(theirs) = existing
+            .iter()
+            .find(|c| c.source_provider.as_deref() == Some(provider))
+        {
+            return Ok(theirs.clone());
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let cal = CalendarContainer {
+            id: uuid::Uuid::new_v4().to_string(),
+            account_id: account_id.to_string(),
+            name: name.to_string(),
+            color: A_CALENDAR_NOBODY_CHOSE_A_COLOUR_FOR.to_string(),
+            source_provider: Some(provider.to_string()),
+            caldav_url: None,
+            subscription_url: None,
+            is_default: false,
             is_visible: true,
             is_read_only: false,
             display_order: 0,
@@ -226,6 +283,44 @@ mod tests {
         // Calling again returns the same calendar
         let cal2 = cache.ensure_default_calendar("test_account").unwrap();
         assert_eq!(cal.id, cal2.id);
+    }
+
+    #[test]
+    fn test_the_calendar_a_provider_syncs_into_is_made_once_and_found_again() {
+        // A sync runs on a timer. Making a fresh container every run would give
+        // somebody a calendar list that grows by one every few minutes.
+        let cache = test_cache();
+
+        let first = cache
+            .ensure_provider_calendar("acct-1", "gmail", "Google Calendar")
+            .expect("a calendar for the account");
+        assert_eq!(first.name, "Google Calendar");
+        assert_eq!(first.source_provider.as_deref(), Some("gmail"));
+        assert!(first.is_visible, "a calendar nobody can see is not one");
+
+        let again = cache
+            .ensure_provider_calendar("acct-1", "gmail", "Google Calendar")
+            .expect("the same calendar");
+        assert_eq!(first.id, again.id, "the second sync made a second calendar");
+
+        // A different provider on the same account is a different calendar, and
+        // so is the same provider on a different account.
+        let outlook = cache
+            .ensure_provider_calendar("acct-1", "outlook", "Outlook Calendar")
+            .expect("a calendar for the other provider");
+        assert_ne!(first.id, outlook.id);
+        let other_account = cache
+            .ensure_provider_calendar("acct-2", "gmail", "Google Calendar")
+            .expect("a calendar for the other account");
+        assert_ne!(first.id, other_account.id);
+
+        assert_eq!(
+            cache
+                .get_calendars_for_account("acct-1")
+                .expect("the calendar list")
+                .len(),
+            2,
+        );
     }
 
     #[test]

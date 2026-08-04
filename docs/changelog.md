@@ -151,6 +151,33 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **An event brought down from Google or Outlook belongs to a calendar you can
+  open.** Every one of them was filed under no calendar at all, so picking a
+  calendar in the list showed nothing and the only place they turned up was the
+  combined view. Each account now gets one calendar per service, called Google
+  Calendar or Outlook Calendar, and the events go into it. Events already on
+  this computer are filed the next time the sync sees them.
+
+  Two things went in alongside it that nobody can see yet, and this is the
+  honest reason they went in first. Sending a calendar change is not built. The
+  code that would have sent one was written to send the whole event every time,
+  with every field it had nothing to say about left blank, and both services
+  read a blank field as an instruction rather than as silence. So the first
+  change to any event would have removed every guest from it and turned a
+  repeating series into a single appointment. A change now names only what it
+  changes, and the request Google is sent asks it to merge rather than to
+  replace.
+
+  The time an event starts is also now written the way Outlook reads one: a
+  clock face with the zone named separately, rather than a time carrying its own
+  offset next to the name of a different zone, which would have put a noon
+  meeting at five in the afternoon. An event whose stored time cannot be read at
+  all is refused, and says which value was the problem, rather than being sent
+  at a guessed hour.
+
+  None of this has met a live server. What is proved is what goes out, not what
+  either service does with it.
+
 - **The dates and markers sent to Google and Outlook survive the trip.** The
   first calendar sync on an account asks for a window of six months back to a
   year forward, and it wrote the two ends of that window straight into the web
@@ -851,6 +878,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   calendar is built; writing one back is not, so an event you make or change
   stays on this computer and the next sync overwrites a change to an event the
   server also holds.
+- **A calendar change made here is not sent to Google or Outlook either.** The
+  same is true of both: an event you make or change stays on this computer. The
+  groundwork so that sending one will not destroy anything is in, and nothing
+  calls it yet. Nothing here has ever run against a live calendar account.
+- **Emptying a description or a location cannot be sent.** Once sending a
+  calendar change is built, clearing one of those fields will read the same as
+  leaving it alone, so the old text will stay at the service. Setting new text
+  works. This is deliberate for now: the way to tell the two apart is the same
+  way a field is sent by accident, and destroying what somebody wrote is the
+  worse of the two failures.
 - **There is no way to add a calendar by its address.** Neither a CalDAV server
   address nor a subscription feed can be entered anywhere, so the calendar sync
   described above cannot currently run at all. None of it has been tried against

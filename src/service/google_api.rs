@@ -195,31 +195,63 @@ pub struct GoogleConnectionsResponse {
 // ── Google Calendar API Types ───────────────────────────────────────────────
 
 /// A calendar event from Google Calendar API v3.
+///
+/// One type for what is read and what is written, and every field left out of
+/// what is written unless something set it. A change to an event is sent as this
+/// type built from [`Default`] with the changed fields filled in, so an event
+/// with nothing set serializes to nothing and a change names only what it
+/// changes. That property is pinned by a test rather than trusted, because a
+/// field added without its attribute would quietly go out empty on every change.
+///
+/// The reason it is one type rather than a read type and a write type: a create
+/// and an update both hand back Google's own copy of the event, which is read
+/// through this same type, so a separate write type would be a second field list
+/// somebody has to keep in step by remembering.
+///
+/// What that costs, said plainly: a field kept as a `String` and skipped when
+/// empty cannot say "clear this". Emptying a description reads the same as not
+/// touching it. That is the right way round for now, because the failure it
+/// prevents is destroying somebody's data and the failure it causes is declining
+/// to change it.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleEvent {
-    #[serde(default)]
+    /// Google's identifier for the event. The server's to set, and part of the
+    /// address a change is sent to rather than part of its body.
+    #[serde(default, skip_serializing)]
     pub id: String,
-    #[serde(default)]
+    /// Google's version marker, the server's to set.
+    #[serde(default, skip_serializing)]
     pub etag: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub status: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub summary: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub location: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub start: Option<GoogleEventDateTime>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub end: Option<GoogleEventDateTime>,
-    #[serde(default)]
+    /// The rules that make this a repeating series. An empty list sent to Google
+    /// is an instruction to stop repeating, which turns a weekly meeting into a
+    /// single appointment, so nothing is the only safe way to say nothing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recurrence: Vec<String>,
-    #[serde(default)]
+    /// Who is invited. An empty list sent to Google uninvites all of them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attendees: Vec<GoogleAttendee>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reminders: Option<GoogleReminders>,
+    /// Where to open the event in a browser. The server's to set.
+    #[serde(skip_serializing)]
     pub html_link: Option<String>,
+    /// When Google last changed it. The server's to set.
+    #[serde(skip_serializing)]
     pub updated: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub transparency: String,
 }
 
@@ -227,9 +259,15 @@ pub struct GoogleEvent {
 #[serde(rename_all = "camelCase")]
 pub struct GoogleEventDateTime {
     /// RFC 3339 datetime (for timed events).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub date_time: Option<String>,
     /// Date string "YYYY-MM-DD" (for all-day events).
+    ///
+    /// A start carrying both this and a time is contradictory, so whichever one
+    /// is not set is left out rather than sent as null.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub time_zone: Option<String>,
 }
 
@@ -511,7 +549,14 @@ impl GoogleApiClient {
         with_retry(3, || self.api_post(&url, token, event)).await
     }
 
-    /// Update a calendar event.
+    /// Change a calendar event, leaving alone whatever the change does not name.
+    ///
+    /// Google offers two updates on this one address. `PUT` replaces the event
+    /// with the body, so every field the body leaves out is cleared: the guests
+    /// go and a repeating series becomes a single appointment. `PATCH` merges,
+    /// so a body naming a new start time changes the start time and nothing
+    /// else. The whole difference is the verb, which is why this said `PUT` for
+    /// as long as it did without anything looking wrong.
     pub async fn update_event(
         &self,
         token: &str,
@@ -522,7 +567,7 @@ impl GoogleApiClient {
             "{}/calendars/primary/events/{}",
             self.calendar_base, event_id
         );
-        with_retry(3, || self.api_put(&url, token, event)).await
+        with_retry(3, || self.api_patch(&url, token, event)).await
     }
 
     /// Delete a calendar event.
@@ -582,27 +627,6 @@ impl GoogleApiClient {
             .send()
             .await
             .map_err(|e| Error::Network(format!("Google API PATCH failed: {}", e)))?;
-        Self::parse_response(resp, "google").await
-    }
-
-    async fn api_put<T: serde::de::DeserializeOwned>(
-        &self,
-        url: &str,
-        token: &str,
-        body: &impl Serialize,
-    ) -> Result<T> {
-        let resp = self
-            .http
-            .changing(
-                reqwest::Method::PUT,
-                url,
-                "replace something in this account",
-            )?
-            .bearer_auth(token)
-            .json(body)
-            .send()
-            .await
-            .map_err(|e| Error::Network(format!("Google API PUT failed: {}", e)))?;
         Self::parse_response(resp, "google").await
     }
 
@@ -831,6 +855,89 @@ mod tests {
             sent["emailAddresses"][0].get("metadata").is_none(),
             "{sent}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_changing_an_event_asks_google_to_merge_rather_than_replace() {
+        // Leaving a field out only protects it if Google keeps what was left
+        // out. Its full-replace update clears anything the body does not carry,
+        // so on that verb an event's guests and its repeat rule go whatever the
+        // body says. The merging one is on the same address under a different
+        // method, so the whole difference is the verb.
+        let (address, listening) = answering(
+            "200 OK",
+            "application/json",
+            "{\"id\":\"evt1\"}".to_string(),
+        )
+        .await;
+        // Built by hand because this one has to be allowed to change things, and
+        // the constructor that decides that reads the real stored settings.
+        let google = GoogleApiClient {
+            http: crate::service::outward::Outward::may_change_things(reqwest::Client::new()),
+            people_base: PEOPLE_API_BASE.to_string(),
+            calendar_base: format!("http://{address}"),
+        };
+
+        google
+            .update_event("a-token", "evt1", &GoogleEvent::default())
+            .await
+            .expect("the change to be answered");
+
+        let request = heard(listening, "the change").await.expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "PATCH /calendars/primary/events/evt1",
+            "{request}"
+        );
+    }
+
+    #[test]
+    fn test_an_event_with_nothing_set_is_sent_to_google_as_nothing() {
+        // What every other assertion here rests on. Once an event with nothing
+        // set serializes to nothing, an event built from Default with one field
+        // filled in is already a change naming only that field, and no separate
+        // builder type is needed to say so.
+        let sent = serde_json::to_value(GoogleEvent::default()).expect("an event to serialize");
+
+        assert_eq!(sent, serde_json::json!({}), "{sent}");
+    }
+
+    #[test]
+    fn test_changing_one_thing_about_a_google_event_names_only_that_thing() {
+        // A change that names a field Google is to leave alone is a change that
+        // sets it. Sent with an empty guest list, moving an event to Thursday
+        // uninvites everybody on it.
+        let moved = GoogleEvent {
+            summary: "Moved to Thursday".to_string(),
+            ..Default::default()
+        };
+
+        let sent = serde_json::to_value(&moved).expect("an event to serialize");
+        let named: Vec<&str> = sent
+            .as_object()
+            .expect("an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+
+        // On the whole key list rather than on the absence of two names, so a
+        // field added later is caught by this test rather than by a guest list.
+        assert_eq!(named, ["summary"], "{sent}");
+    }
+
+    #[test]
+    fn test_an_event_sent_to_google_at_a_time_does_not_also_claim_a_date() {
+        // A start carrying both a time and a null date is a start Google reads
+        // as contradictory.
+        let starts = GoogleEventDateTime {
+            date_time: Some("2026-03-05T12:00:00-05:00".to_string()),
+            date: None,
+            time_zone: Some("America/New_York".to_string()),
+        };
+
+        let sent = serde_json::to_value(&starts).expect("a start to serialize");
+
+        assert!(sent.as_object().expect("an object").get("date").is_none());
     }
 
     #[test]
