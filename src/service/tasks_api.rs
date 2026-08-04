@@ -50,6 +50,48 @@ pub const NEEDS_SIGN_IN: &str = "Sign in to this account again to send task chan
 /// A bound on a hostile or broken response rather than a limit anybody meets.
 const MAX_ITEMS: usize = 10_000;
 
+/// What a paged read brought back, and whether that was all of it.
+///
+/// The second half is the point. A read that stopped at [`MAX_ITEMS`] looks
+/// exactly like a list that ended, and a sync that decides what has been
+/// deleted from what did not come back reads the one as the other and removes
+/// tasks it merely did not see. Saying it in the type is what stops a caller
+/// deciding from absence without having asked whether absence meant anything.
+///
+/// No `Default`, on purpose: an empty read that claims to be whole is a lie,
+/// and one that claims to be cut short is a trap. Every construction says
+/// which it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PagedRead<T> {
+    pub items: Vec<T>,
+    /// Whether the provider ran out of items rather than this program running
+    /// out of room for them.
+    pub complete: bool,
+}
+
+impl<T> PagedRead<T> {
+    /// Everything the provider had.
+    pub const fn whole(items: Vec<T>) -> Self {
+        Self {
+            items,
+            complete: true,
+        }
+    }
+
+    /// As much as one read will take, with more left behind.
+    pub const fn cut_short(items: Vec<T>) -> Self {
+        Self {
+            items,
+            complete: false,
+        }
+    }
+}
+
+/// Whether a read has taken as much as it is allowed to.
+const fn cut_short_at_the_limit(taken: usize) -> bool {
+    taken >= MAX_ITEMS
+}
+
 // ── Google Tasks ────────────────────────────────────────────────────────────
 
 /// One of Google's task lists.
@@ -541,56 +583,56 @@ impl TasksClient {
     }
 
     /// Every Google task list on the account.
-    pub async fn google_lists(&self, token: &str) -> Result<Vec<GoogleTaskList>> {
+    pub async fn google_lists(&self, token: &str) -> Result<PagedRead<GoogleTaskList>> {
         let mut all = Vec::new();
         let mut page: Option<String> = None;
         loop {
             let url = google_lists_url(&self.google_base, page.as_deref());
             let response: GoogleTaskListsResponse = self.get(&url, token).await?;
             all.extend(response.items);
-            if all.len() >= MAX_ITEMS {
-                break;
+            if cut_short_at_the_limit(all.len()) {
+                return Ok(PagedRead::cut_short(all));
             }
             match response.next_page_token {
                 Some(next) => page = Some(next),
                 None => break,
             }
         }
-        Ok(all)
+        Ok(PagedRead::whole(all))
     }
 
     /// Every task in one Google list, deleted ones included.
     ///
     /// `showDeleted`, because a task deleted on the phone has to be deleted
     /// here too, and a sync that only ever adds is a list that only ever grows.
-    pub async fn google_tasks(&self, token: &str, list_id: &str) -> Result<Vec<GoogleTask>> {
+    pub async fn google_tasks(&self, token: &str, list_id: &str) -> Result<PagedRead<GoogleTask>> {
         let mut all = Vec::new();
         let mut page: Option<String> = None;
         loop {
             let url = google_tasks_url(&self.google_base, list_id, page.as_deref());
             let response: GoogleTasksResponse = self.get(&url, token).await?;
             all.extend(response.items);
-            if all.len() >= MAX_ITEMS {
-                break;
+            if cut_short_at_the_limit(all.len()) {
+                return Ok(PagedRead::cut_short(all));
             }
             match response.next_page_token {
                 Some(next) => page = Some(next),
                 None => break,
             }
         }
-        Ok(all)
+        Ok(PagedRead::whole(all))
     }
 
     /// Every Microsoft To Do list on the account.
-    pub async fn ms_lists(&self, token: &str) -> Result<Vec<MsTodoList>> {
+    pub async fn ms_lists(&self, token: &str) -> Result<PagedRead<MsTodoList>> {
         let mut all = Vec::new();
         let base = &self.microsoft_base;
         let mut url = format!("{base}/me/todo/lists");
         loop {
             let response: MsListsResponse = self.get(&url, token).await?;
             all.extend(response.value);
-            if all.len() >= MAX_ITEMS {
-                break;
+            if cut_short_at_the_limit(all.len()) {
+                return Ok(PagedRead::cut_short(all));
             }
             match response.next_link {
                 // Graph gives an absolute URL for the next page, so it is
@@ -599,7 +641,7 @@ impl TasksClient {
                 None => break,
             }
         }
-        Ok(all)
+        Ok(PagedRead::whole(all))
     }
 
     /// Send a body and read the answer back.
@@ -760,22 +802,22 @@ impl TasksClient {
     }
 
     /// Every task in one Microsoft list.
-    pub async fn ms_tasks(&self, token: &str, list_id: &str) -> Result<Vec<MsTodoTask>> {
+    pub async fn ms_tasks(&self, token: &str, list_id: &str) -> Result<PagedRead<MsTodoTask>> {
         let mut all = Vec::new();
         let base = &self.microsoft_base;
         let mut url = format!("{base}/me/todo/lists/{list_id}/tasks");
         loop {
             let response: MsTasksResponse = self.get(&url, token).await?;
             all.extend(response.value);
-            if all.len() >= MAX_ITEMS {
-                break;
+            if cut_short_at_the_limit(all.len()) {
+                return Ok(PagedRead::cut_short(all));
             }
             match response.next_link {
                 Some(next) => url = next,
                 None => break,
             }
         }
-        Ok(all)
+        Ok(PagedRead::whole(all))
     }
 }
 
@@ -1138,5 +1180,177 @@ mod tests {
             serde_json::from_str(r#"{"items":[{"id":"a1","deleted":true}]}"#).expect("a tombstone");
 
         assert!(google.items[0].deleted);
+    }
+
+    /// A reply holding as many items as one read will ever take, and a marker
+    /// saying there are more.
+    ///
+    /// The limit is reached inside the loop, so the marker is never followed
+    /// and one request is all that goes out. A loop that followed it anyway
+    /// would find the loopback server already stopped and the read would fail,
+    /// which is what makes these tests say something rather than pass whatever
+    /// the loop does.
+    fn as_many_as_will_be_taken(field: &str, marker: &str) -> String {
+        let items = vec!["{}"; MAX_ITEMS].join(",");
+        format!("{{\"{field}\":[{items}],{marker}}}")
+    }
+
+    /// A reply the provider ended itself: one item and no marker.
+    fn all_there_is(field: &str) -> String {
+        format!("{{\"{field}\":[{{}}]}}")
+    }
+
+    /// Google's way of saying there is another page.
+    const GOOGLE_HAS_MORE: &str = "\"nextPageToken\":\"another\"";
+    /// Microsoft's, pointed at a port nothing listens on so that following it
+    /// fails at once rather than hanging the run.
+    const MICROSOFT_HAS_MORE: &str = "\"@odata.nextLink\":\"http://127.0.0.1:1/next\"";
+
+    #[test]
+    fn test_a_read_the_provider_ended_is_whole_and_one_this_program_stopped_is_not() {
+        // The whole guard on removing anything rests on this one boolean. A
+        // read cut short at the limit looks exactly like a list that ended,
+        // and reading it as an ending is how a sync deletes what it merely did
+        // not see.
+        assert!(PagedRead::whole(vec![1]).complete);
+        assert!(!PagedRead::cut_short(vec![1]).complete);
+        assert!(!cut_short_at_the_limit(MAX_ITEMS - 1));
+        assert!(cut_short_at_the_limit(MAX_ITEMS));
+    }
+
+    #[tokio::test]
+    async fn test_a_google_list_read_stopped_at_the_limit_says_it_was_cut_short() {
+        let (address, _listening) = answering(
+            "200 OK",
+            "application/json",
+            as_many_as_will_be_taken("items", GOOGLE_HAS_MORE),
+        )
+        .await;
+
+        let read = TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .google_lists("a-token")
+            .await
+            .expect("the task lists to be read");
+
+        assert!(!read.complete, "a read stopped at the limit looked whole");
+        assert_eq!(read.items.len(), MAX_ITEMS);
+    }
+
+    #[tokio::test]
+    async fn test_a_google_list_read_the_provider_ended_is_whole() {
+        let (address, _listening) =
+            answering("200 OK", "application/json", all_there_is("items")).await;
+
+        let read = TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .google_lists("a-token")
+            .await
+            .expect("the task lists to be read");
+
+        assert!(read.complete, "a whole read looked cut short");
+        assert_eq!(read.items.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_a_google_task_read_stopped_at_the_limit_says_it_was_cut_short() {
+        let (address, _listening) = answering(
+            "200 OK",
+            "application/json",
+            as_many_as_will_be_taken("items", GOOGLE_HAS_MORE),
+        )
+        .await;
+
+        let read = TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .google_tasks("a-token", "a-list")
+            .await
+            .expect("the tasks to be read");
+
+        assert!(!read.complete, "a read stopped at the limit looked whole");
+        assert_eq!(read.items.len(), MAX_ITEMS);
+    }
+
+    #[tokio::test]
+    async fn test_a_google_task_read_the_provider_ended_is_whole() {
+        let (address, _listening) =
+            answering("200 OK", "application/json", all_there_is("items")).await;
+
+        let read = TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .google_tasks("a-token", "a-list")
+            .await
+            .expect("the tasks to be read");
+
+        assert!(read.complete, "a whole read looked cut short");
+    }
+
+    #[tokio::test]
+    async fn test_a_microsoft_list_read_stopped_at_the_limit_says_it_was_cut_short() {
+        let (address, _listening) = answering(
+            "200 OK",
+            "application/json",
+            as_many_as_will_be_taken("value", MICROSOFT_HAS_MORE),
+        )
+        .await;
+
+        let read = TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .ms_lists("a-token")
+            .await
+            .expect("the lists to be read");
+
+        assert!(!read.complete, "a read stopped at the limit looked whole");
+        assert_eq!(read.items.len(), MAX_ITEMS);
+    }
+
+    #[tokio::test]
+    async fn test_a_microsoft_list_read_the_provider_ended_is_whole() {
+        let (address, _listening) =
+            answering("200 OK", "application/json", all_there_is("value")).await;
+
+        let read = TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .ms_lists("a-token")
+            .await
+            .expect("the lists to be read");
+
+        assert!(read.complete, "a whole read looked cut short");
+    }
+
+    #[tokio::test]
+    async fn test_a_microsoft_task_read_stopped_at_the_limit_says_it_was_cut_short() {
+        // The one that is a live loss of data today: a Microsoft list of more
+        // than this many tasks comes back cut short, and everything past the
+        // cap is deleted from this computer as though it had not come back.
+        let (address, _listening) = answering(
+            "200 OK",
+            "application/json",
+            as_many_as_will_be_taken("value", MICROSOFT_HAS_MORE),
+        )
+        .await;
+
+        let read = TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .ms_tasks("a-token", "a-list")
+            .await
+            .expect("the tasks to be read");
+
+        assert!(!read.complete, "a read stopped at the limit looked whole");
+        assert_eq!(read.items.len(), MAX_ITEMS);
+    }
+
+    #[tokio::test]
+    async fn test_a_microsoft_task_read_the_provider_ended_is_whole() {
+        let (address, _listening) =
+            answering("200 OK", "application/json", all_there_is("value")).await;
+
+        let read = TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .ms_tasks("a-token", "a-list")
+            .await
+            .expect("the tasks to be read");
+
+        assert!(read.complete, "a whole read looked cut short");
     }
 }

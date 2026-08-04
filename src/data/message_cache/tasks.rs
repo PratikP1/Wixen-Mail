@@ -421,6 +421,23 @@ impl MessageCache {
             pending: row.get(14)?,
         })
     }
+
+    /// Take a table out from under a read, so a test can be a database that
+    /// answers with a failure.
+    ///
+    /// Here because `conn` is private to this module and its children, so
+    /// nothing outside can make a query fail on purpose. It exists because a
+    /// `Result` that a caller throws away is invisible from outside: a read
+    /// that failed and a read that found nothing are the same value afterwards,
+    /// and the only way to tell the two apart in a test is to break the read.
+    ///
+    /// Test-only. Prefer a real fixture wherever one can say the same thing.
+    #[cfg(test)]
+    pub(crate) fn take_away_the_table(&self, table: &str) -> Result<()> {
+        self.conn
+            .execute_batch(&format!("DROP TABLE {table}"))
+            .map_err(|e| Error::Other(format!("Failed to take away {table}: {e}")))
+    }
 }
 
 #[cfg(test)]

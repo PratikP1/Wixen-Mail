@@ -192,6 +192,42 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A task list you delete on your phone now goes from here too.** A list that
+  stopped coming back from Google Tasks or Microsoft To Do stayed on this
+  computer forever, with its tasks in it and no way to reach any of it from your
+  provider. A sync now removes it, along with the tasks the provider had put in
+  it.
+
+  Anything you made yourself is kept. A task you wrote here and have not sent
+  yet moves to another of your lists rather than being deleted, and the sync
+  says how many were moved so it is not a surprise. Where there is no other list
+  to move it to, the list stays where it is and the sync says why. A list you
+  made on this computer is never removed by a sync, because your provider never
+  had it to stop sending.
+
+  A sync that could not see the whole picture removes nothing at all: one list
+  that could not be read, or a response that arrived incomplete, and the removal
+  waits for the next sync. So a list you delete elsewhere can take one extra sync
+  to go from here.
+
+  **Known limitations:** a list holding more than ten thousand tasks still comes
+  back cut short, and the tasks past that number are still missed on the way
+  down. The sync now knows the read was cut short, so it removes nothing on the
+  strength of it and says so as a problem, but it does not go back for the rest.
+  None of this has run against a live Google or Microsoft account.
+
+- **A very long Microsoft task list no longer loses everything past its first
+  ten thousand tasks.** A read that stopped at that limit looked exactly like a
+  list that had ended, so every task past the cap counted as one the provider no
+  longer had and was deleted from this computer. A read that was cut short now
+  says so, and nothing is removed on the strength of it.
+
+- **A sync that cannot read its own database says so instead of reporting a
+  clean run.** Where the changes or the deletions waiting to be sent could not
+  be read, the failure looked identical to having nothing to send: the sync
+  reported no problems and sent nothing, on every sync, for as long as the
+  fault lasted. It is now counted as a problem on the status line.
+
 - **An event brought down from Google or Outlook belongs to a calendar you can
   open.** Every one of them was filed under no calendar at all, so picking a
   calendar in the list showed nothing and the only place they turned up was the
