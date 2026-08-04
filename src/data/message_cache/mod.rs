@@ -919,7 +919,18 @@ impl MessageCache {
                 reminders_json TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                UNIQUE(account_id, provider_event_id)
+                -- Last two, and in this order, because this is the order the
+                -- two `ensure_column_exists` calls below add them to a table an
+                -- older build wrote. A database made today and one migrated to
+                -- today then hold the same columns in the same places.
+                categories TEXT NOT NULL DEFAULT '',
+                calendar_id TEXT,
+                -- The server's identity for an event only means anything inside
+                -- the calendar it came from. Keyed across the whole account, the
+                -- same identity in two calendars was one row that moved to
+                -- whichever calendar synced last, so a holiday feed subscribed
+                -- to twice took the row off itself on every refresh.
+                UNIQUE(account_id, calendar_id, provider_event_id)
             )",
                 [],
             )
@@ -969,6 +980,11 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to create accounts table: {}", e)))?;
 
         // ── Calendar containers ──────────────────────────────────────
+        // A calendar is told apart by its own id and by nothing else. The name
+        // used to be part of it, which meant one server could hold only one
+        // calendar called Work: the second was refused with a database sentence
+        // nobody could act on. Two calendars of one name on one account is
+        // ordinary, so the name buys nothing here.
         self.conn
             .execute(
                 "CREATE TABLE IF NOT EXISTS calendars (
@@ -988,8 +1004,7 @@ impl MessageCache {
                 sync_token TEXT,
                 refresh_interval_minutes INTEGER,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                UNIQUE(account_id, name, source_provider)
+                updated_at TEXT NOT NULL
             )",
                 [],
             )
@@ -1293,6 +1308,15 @@ impl MessageCache {
         // have them all first or the copy names one that is not there and the
         // application cannot open the database at all.
         self.rebuild_contacts_keyed_by_the_contact()?;
+        // Before the indexes below and not after them: each rebuild drops its
+        // table and the indexes over it go with it, and the index list at the
+        // end of this function is what puts those back.
+        self.rebuild_calendars_keyed_by_the_calendar()?;
+        self.rebuild_calendar_events_keyed_by_the_calendar()?;
+        // After both rebuilds and never before them: this reads the calendars
+        // table and writes the events one, so both have to be at their final
+        // shape first.
+        self.file_events_that_belong_to_no_calendar()?;
 
         // Dropped rather than left alone, which is the exception to the rule
         // that schema changes only ever add. This table held access and refresh
@@ -1345,6 +1369,21 @@ impl MessageCache {
          last_synced_at, vcard_raw, notes, favorite, created_at, updated_at, nickname, \
          department, relationship, emails_json, phones_json, addresses_json, custom_fields_json";
 
+    /// The columns a calendar's row holds, in the order the rebuild copies
+    /// them. Named one by one and never `*`, for the same reason the contacts
+    /// list is: a column added later cannot then line up against the wrong one.
+    const CALENDAR_COLUMNS: &'static str = "id, account_id, name, color, source_provider, caldav_url, subscription_url, \
+         is_default, is_visible, is_read_only, display_order, etag, ctag, sync_token, \
+         refresh_interval_minutes, created_at, updated_at";
+
+    /// The columns an event's row holds, in the order the rebuild copies them.
+    /// The last two are the last two of the table for the reason written
+    /// beside it.
+    const EVENT_COLUMNS: &'static str = "id, account_id, provider_event_id, summary, description, location, start_datetime, \
+         end_datetime, start_date, end_date, is_all_day, time_zone, status, recurrence_rule, \
+         source_provider, etag, web_link, show_as, last_modified_remote, last_synced_at, \
+         attendees_json, reminders_json, created_at, updated_at, categories, calendar_id";
+
     /// The column names of a table, as SQLite holds them.
     fn columns_of(&self, table: &str) -> Result<Vec<String>> {
         let mut stmt = self
@@ -1363,27 +1402,27 @@ impl MessageCache {
             })
     }
 
-    /// Whether this database still tells two contacts apart by their email
-    /// address.
+    /// Whether a table still refuses two rows that agree on exactly these
+    /// columns, because a UNIQUE clause in its definition says so.
     ///
-    /// Asked of the unique index over exactly (account_id, email), which is
-    /// the thing being removed, rather than of any column. A database old
-    /// enough to predate a column would read as already rebuilt and keep the
-    /// constraint for ever.
-    fn contacts_are_keyed_by_email(&self) -> Result<bool> {
+    /// Asked of the unique index the clause produced, never of a column: a
+    /// database old enough to predate a column would read as already rebuilt
+    /// and keep the clause for ever. An index this file asks for separately is
+    /// not a constraint and does not count, which is what the origin says.
+    fn is_kept_apart_by(&self, table: &str, columns: &[&str]) -> Result<bool> {
         let mut indexes = self
             .conn
-            .prepare("PRAGMA index_list(contacts)")
-            .map_err(|e| Error::Other(format!("Failed to list contact indexes: {}", e)))?;
-        let from_a_constraint = indexes
+            .prepare(&format!("PRAGMA index_list({})", table))
+            .map_err(|e| Error::Other(format!("Failed to list {} indexes: {}", table, e)))?;
+        let each_index = indexes
             .query_map([], |row| {
                 Ok((row.get::<_, String>(1)?, row.get::<_, String>(3)?))
             })
-            .map_err(|e| Error::Other(format!("Failed to read contact indexes: {}", e)))?
+            .map_err(|e| Error::Other(format!("Failed to read {} indexes: {}", table, e)))?
             .collect::<std::result::Result<Vec<(String, String)>, _>>()
-            .map_err(|e| Error::Other(format!("Failed to collect contact indexes: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to collect {} indexes: {}", table, e)))?;
 
-        for (name, origin) in from_a_constraint {
+        for (name, origin) in each_index {
             if origin != "u" {
                 continue;
             }
@@ -1394,17 +1433,23 @@ impl MessageCache {
                     name.replace('\'', "''")
                 ))
                 .map_err(|e| Error::Other(format!("Failed to inspect index {}: {}", name, e)))?;
-            let columns = over
+            let held = over
                 .query_map([], |row| row.get::<_, Option<String>>(2))
                 .map_err(|e| Error::Other(format!("Failed to read index {}: {}", name, e)))?
                 .collect::<std::result::Result<Vec<Option<String>>, _>>()
                 .map_err(|e| Error::Other(format!("Failed to collect index {}: {}", name, e)))?;
-            let named: Vec<&str> = columns.iter().filter_map(|c| c.as_deref()).collect();
-            if named == ["account_id", "email"] {
+            let named: Vec<&str> = held.iter().filter_map(|c| c.as_deref()).collect();
+            if named == columns {
                 return Ok(true);
             }
         }
         Ok(false)
+    }
+
+    /// Whether this database still tells two contacts apart by their email
+    /// address.
+    fn contacts_are_keyed_by_email(&self) -> Result<bool> {
+        self.is_kept_apart_by("contacts", &["account_id", "email"])
     }
 
     /// Key a contact by the contact rather than by its email address, and move
@@ -1548,6 +1593,237 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to finish the contacts rebuild: {}", e)))?;
 
         tracing::info!("{} contacts are now keyed by the contact", moved);
+        Ok(())
+    }
+
+    /// Key a calendar by the calendar rather than by what it is called.
+    ///
+    /// The old shape refused a second calendar whose name, account and server
+    /// matched one already there, so somebody with a Work calendar of their own
+    /// and a Work calendar shared to them could keep one of the two. The second
+    /// was not merged into the first, it was turned away with a database
+    /// sentence, which is the state the add-a-calendar screen would have met.
+    ///
+    /// The second table rebuilt rather than added to, on the same terms the
+    /// contacts one was: the window exists only because no build has shipped,
+    /// and every other table stays additive.
+    ///
+    /// Nothing can be lost here, and that is by construction rather than by
+    /// care. The new table's only unique rule is the primary key the old table
+    /// already enforced, so the copy cannot meet a duplicate: there is no row to
+    /// drop, no choice about which one survives, and no index left to be built
+    /// over rows that contradict it. Every step is inside one transaction, so a
+    /// failure part way leaves the old table exactly as it was and the next open
+    /// tries again. No id changes, because a CalDAV sign-in lives in the
+    /// credential store under the calendar's own id and every event points at
+    /// its calendar by that id.
+    fn rebuild_calendars_keyed_by_the_calendar(&self) -> Result<()> {
+        if !self.is_kept_apart_by("calendars", &["account_id", "name", "source_provider"])? {
+            return Ok(());
+        }
+
+        let rebuilding = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to begin the calendars rebuild: {}", e)))?;
+
+        rebuilding
+            .execute(
+                "CREATE TABLE calendars_rebuilt (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                color TEXT DEFAULT '#4285F4',
+                source_provider TEXT,
+                caldav_url TEXT,
+                subscription_url TEXT,
+                is_default BOOLEAN DEFAULT 0,
+                is_visible BOOLEAN DEFAULT 1,
+                is_read_only BOOLEAN DEFAULT 0,
+                display_order INTEGER DEFAULT 0,
+                etag TEXT,
+                ctag TEXT,
+                sync_token TEXT,
+                refresh_interval_minutes INTEGER,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to build the new calendars table: {}", e)))?;
+
+        let moved = rebuilding
+            .execute(
+                &format!(
+                    "INSERT INTO calendars_rebuilt ({columns}) SELECT {columns} FROM calendars",
+                    columns = Self::CALENDAR_COLUMNS
+                ),
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to move the calendars across: {}", e)))?;
+
+        rebuilding
+            .execute("DROP TABLE calendars", [])
+            .map_err(|e| {
+                Error::Other(format!("Failed to remove the old calendars table: {}", e))
+            })?;
+        rebuilding
+            .execute("ALTER TABLE calendars_rebuilt RENAME TO calendars", [])
+            .map_err(|e| Error::Other(format!("Failed to put the calendars table back: {}", e)))?;
+        rebuilding
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to finish the calendars rebuild: {}", e)))?;
+
+        tracing::info!("{} calendars are now keyed by the calendar", moved);
+        Ok(())
+    }
+
+    /// Recognise an event by the calendar it is in as well as by the account
+    /// and the identity the server gave it.
+    ///
+    /// Keyed across the whole account, the same identity in two calendars was
+    /// one row rather than two, and it moved to whichever calendar was written
+    /// last. Two subscriptions to one holiday feed, or two shared calendars
+    /// carrying one meeting, took the single row off each other on every
+    /// refresh.
+    ///
+    /// The third table rebuilt rather than added to, and it is named here
+    /// rather than left to look as though it rode in on the calendars one. It
+    /// cannot be done by adding: the rule being replaced is a clause in the
+    /// table's own definition, and while it stands there is no way to key an
+    /// event per calendar. Same window as the other two, same reason, and every
+    /// other table stays additive.
+    ///
+    /// The copy is a plain INSERT and deliberately not `INSERT OR IGNORE`. The
+    /// new rule is the old rule with a column added, so it cannot refuse two
+    /// rows the old one allowed. If that reasoning is ever wrong, the right
+    /// outcome is a transaction that fails and rolls back with the old table
+    /// still there, not an event quietly eaten on the way past.
+    fn rebuild_calendar_events_keyed_by_the_calendar(&self) -> Result<()> {
+        if !self.is_kept_apart_by("calendar_events", &["account_id", "provider_event_id"])? {
+            return Ok(());
+        }
+
+        let rebuilding = self.conn.unchecked_transaction().map_err(|e| {
+            Error::Other(format!(
+                "Failed to begin the calendar events rebuild: {}",
+                e
+            ))
+        })?;
+
+        rebuilding
+            .execute(
+                "CREATE TABLE calendar_events_rebuilt (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                provider_event_id TEXT,
+                summary TEXT NOT NULL,
+                description TEXT,
+                location TEXT,
+                start_datetime TEXT NOT NULL,
+                end_datetime TEXT NOT NULL,
+                start_date TEXT,
+                end_date TEXT,
+                is_all_day BOOLEAN DEFAULT 0,
+                time_zone TEXT,
+                status TEXT DEFAULT 'confirmed',
+                recurrence_rule TEXT,
+                source_provider TEXT,
+                etag TEXT,
+                web_link TEXT,
+                show_as TEXT DEFAULT 'busy',
+                last_modified_remote TEXT,
+                last_synced_at TEXT,
+                attendees_json TEXT,
+                reminders_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                categories TEXT NOT NULL DEFAULT '',
+                calendar_id TEXT,
+                UNIQUE(account_id, calendar_id, provider_event_id)
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to build the new events table: {}", e)))?;
+
+        let moved = rebuilding
+            .execute(
+                &format!(
+                    "INSERT INTO calendar_events_rebuilt ({columns}) \
+                     SELECT {columns} FROM calendar_events",
+                    columns = Self::EVENT_COLUMNS
+                ),
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to move the events across: {}", e)))?;
+
+        rebuilding
+            .execute("DROP TABLE calendar_events", [])
+            .map_err(|e| Error::Other(format!("Failed to remove the old events table: {}", e)))?;
+        rebuilding
+            .execute(
+                "ALTER TABLE calendar_events_rebuilt RENAME TO calendar_events",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to put the events table back: {}", e)))?;
+        rebuilding.commit().map_err(|e| {
+            Error::Other(format!(
+                "Failed to finish the calendar events rebuild: {}",
+                e
+            ))
+        })?;
+
+        tracing::info!("{} events are now recognised by their calendar", moved);
+        Ok(())
+    }
+
+    /// Give an event that belongs to no calendar the one its own server syncs
+    /// into.
+    ///
+    /// Every event stored before an event could name a calendar belongs to
+    /// none, so no calendar's own list can show it and the combined view is the
+    /// only place it appears. Now that an event is recognised per calendar,
+    /// leaving them there would also make the next refresh store each of them a
+    /// second time.
+    ///
+    /// Which calendar is decided the same way on every machine, so the same
+    /// database always fills in the same way: the default one first, then the
+    /// oldest, then the id to break a tie. An account with no calendar of that
+    /// kind has nowhere to file to, and the event is left alone rather than
+    /// invented a home.
+    ///
+    /// Run on every open rather than once with the rebuild. On the first open
+    /// after an upgrade an account may have no calendar yet, and a migration
+    /// that fired once would never get another chance at exactly the databases
+    /// that need it. It only ever turns nothing into a calendar, so running it
+    /// again costs a scan and changes nothing.
+    fn file_events_that_belong_to_no_calendar(&self) -> Result<()> {
+        let filed = self
+            .conn
+            .execute(
+                "UPDATE calendar_events SET calendar_id = (
+                     SELECT c.id FROM calendars c
+                     WHERE c.account_id = calendar_events.account_id
+                       AND c.source_provider = calendar_events.source_provider
+                     ORDER BY c.is_default DESC, c.created_at, c.id
+                     LIMIT 1
+                 )
+                 WHERE calendar_id IS NULL
+                   AND EXISTS (
+                     SELECT 1 FROM calendars c
+                     WHERE c.account_id = calendar_events.account_id
+                       AND c.source_provider = calendar_events.source_provider
+                 )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to file events under a calendar: {}", e)))?;
+
+        if filed > 0 {
+            tracing::warn!(
+                "{} events belonged to no calendar and have been filed under the one their own server syncs into",
+                filed
+            );
+        }
         Ok(())
     }
 

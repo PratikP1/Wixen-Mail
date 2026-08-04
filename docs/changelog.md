@@ -8,6 +8,37 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **One account can hold two calendars with the same name.** A Work calendar of
+  your own and a Work calendar shared to you, on the same account, used to be
+  one calendar too many: the second was refused with a database message nobody
+  could act on, and it was never saved. Calendars are now told apart by the
+  calendar, not by what it is called, so both are kept and both are yours to
+  rename.
+
+  Nothing about the calendars you already have changes. Every one of them keeps
+  its own row, its own name and its own settings, and none of them is given a
+  new identity, so a CalDAV sign-in still belongs to the calendar it was saved
+  for.
+
+- **An event stays in the calendar it belongs to.** The same event in two
+  calendars, which is what you get from subscribing to one holiday feed twice or
+  from a meeting that is in a shared calendar and in your own, was stored once
+  rather than twice, and it moved to whichever calendar was refreshed last. One
+  of the two calendars was always missing it, and which one changed every time
+  anything synced.
+
+- **Events that belonged to no calendar are now filed under one.** Events stored
+  before this program had calendars to put them in appeared only in the combined
+  view, and no single calendar's list could show them. Each is now filed under
+  the calendar its own server syncs into, chosen the same way every time. An
+  account with no calendar of that kind is left alone rather than having one
+  guessed for it.
+
+  **Known limitations:** where an account already has two calendars from one
+  server, an event that belonged to none of them goes to one of the two and it
+  may not be the one it came from. You can move it. None of the calendar syncing
+  has run against a live Google, Microsoft or CalDAV account.
+
 - **The same person in two address books is now one contact that both know.**
   Where an account is signed in to both Google and Microsoft and a person is in
   both, there was room here for one address book only. Each sync used to take

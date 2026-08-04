@@ -55,6 +55,13 @@ impl MessageCache {
     /// server identity, could be saved once and never edited again: the second
     /// save collided on the identity here and was refused.
     ///
+    /// The server's identity counts inside one calendar, not across the whole
+    /// account. It is the server's name for the event in the calendar it sent
+    /// it from, and two calendars can carry the same one: a holiday feed
+    /// subscribed to twice, or a meeting in a shared calendar and in your own.
+    /// Matched across the account, those were one row that moved to whichever
+    /// calendar was written last, so each refresh took it off the other.
+    ///
     /// A save that names no server identity leaves the stored one alone, so
     /// editing an event here cannot cut it loose from the copy on the server.
     pub fn save_calendar_event(&self, event: &CalendarEventEntry) -> Result<()> {
@@ -68,7 +75,8 @@ impl MessageCache {
               created_at, updated_at, categories)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
                      ?17, ?18, ?19, ?20, ?21, ?22, ?23,
-                     COALESCE((SELECT created_at FROM calendar_events WHERE account_id = ?2 AND provider_event_id = ?3), ?24),
+                     COALESCE((SELECT created_at FROM calendar_events
+                               WHERE account_id = ?2 AND calendar_id IS ?4 AND provider_event_id = ?3), ?24),
                      ?25, ?26)
              ON CONFLICT(id) DO UPDATE SET
                 provider_event_id = COALESCE(excluded.provider_event_id, calendar_events.provider_event_id),
@@ -94,8 +102,7 @@ impl MessageCache {
                 reminders_json = excluded.reminders_json,
                 categories = excluded.categories,
                 updated_at = excluded.updated_at
-             ON CONFLICT(account_id, provider_event_id) DO UPDATE SET
-                calendar_id = excluded.calendar_id,
+             ON CONFLICT(account_id, calendar_id, provider_event_id) DO UPDATE SET
                 summary = excluded.summary,
                 description = excluded.description,
                 location = excluded.location,
@@ -587,5 +594,344 @@ mod tests {
         let cal1_events = cache.get_events_for_calendar("cal-1").unwrap();
         assert_eq!(cal1_events.len(), 1);
         assert_eq!(cal1_events[0].summary, "Event A");
+    }
+
+    #[test]
+    fn test_the_same_identity_in_two_calendars_is_two_events() {
+        // One holiday feed subscribed to twice, or two shared calendars
+        // carrying one meeting. The server's identity for an event only means
+        // anything inside the calendar it came from, so the same one in two
+        // calendars is two events and each stays where it is.
+        let cache = temp_cache("two_calendars");
+
+        let mut in_one = make_event("evt-a", "acct", "uid-1", "Team lunch");
+        in_one.calendar_id = Some("cal-1".to_string());
+        let mut in_the_other = make_event("evt-b", "acct", "uid-1", "Team lunch");
+        in_the_other.calendar_id = Some("cal-2".to_string());
+
+        cache.save_calendar_event(&in_one).expect("the first event");
+        // The day the first copy was first seen, so a leak of it into the
+        // second copy has something to show.
+        cache
+            .conn
+            .execute(
+                "UPDATE calendar_events SET created_at = '2020-01-01T00:00:00Z' WHERE id = 'evt-a'",
+                params![],
+            )
+            .expect("a day to be set on the first event");
+        cache
+            .save_calendar_event(&in_the_other)
+            .expect("the same identity in another calendar");
+
+        assert_eq!(
+            cache.get_events_for_calendar("cal-1").expect("cal-1").len(),
+            1,
+            "the event moved out of the calendar it was in",
+        );
+        assert_eq!(
+            cache.get_events_for_calendar("cal-2").expect("cal-2").len(),
+            1,
+        );
+        assert_eq!(
+            cache
+                .get_all_events_for_account("acct")
+                .expect("the account's events")
+                .len(),
+            2,
+            "one of the two events was written over the other",
+        );
+
+        let second = cache
+            .get_event_by_id("evt-b")
+            .expect("the second event")
+            .expect("the second event to be there");
+        assert_ne!(
+            second.created_at, "2020-01-01T00:00:00Z",
+            "the second event took the day the first one was seen",
+        );
+
+        // What the next refresh of the first feed does. The pair has to stay a
+        // pair rather than taking the row off each other on every run.
+        cache
+            .save_calendar_event(&in_one)
+            .expect("the first feed again");
+        assert_eq!(
+            cache.get_events_for_calendar("cal-1").expect("cal-1").len(),
+            1,
+        );
+        assert_eq!(
+            cache.get_events_for_calendar("cal-2").expect("cal-2").len(),
+            1,
+            "refreshing one calendar emptied the other",
+        );
+    }
+
+    #[test]
+    fn test_a_second_sync_of_one_calendar_updates_the_event_it_already_has() {
+        // Green before the key moved and green after it. CalDAV mints a fresh
+        // identity of its own for an event on every single refresh, so the only
+        // thing that can recognise the event it already holds is the server's
+        // identity. If that stopped matching, every refresh would add a copy.
+        let cache = temp_cache("second_sync");
+
+        let mut first_time = make_event("evt-a", "acct", "uid-1", "Standup");
+        first_time.calendar_id = Some("cal-1".to_string());
+        cache.save_calendar_event(&first_time).expect("the event");
+
+        let mut next_time = make_event("evt-b", "acct", "uid-1", "Standup, moved");
+        next_time.calendar_id = Some("cal-1".to_string());
+        cache
+            .save_calendar_event(&next_time)
+            .expect("the same event again");
+
+        let held = cache.get_events_for_calendar("cal-1").expect("cal-1");
+        assert_eq!(held.len(), 1, "the refresh added a second copy");
+        assert_eq!(held[0].id, "evt-a", "the event was given a new identity");
+        assert_eq!(held[0].summary, "Standup, moved");
+    }
+
+    /// The calendars table as every database written before this change holds
+    /// it, so opening this fixture goes through both rebuilds in the order a
+    /// real database would.
+    const THE_CALENDARS_TABLE_AS_IT_WAS: &str = "CREATE TABLE calendars (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                color TEXT DEFAULT '#4285F4',
+                source_provider TEXT,
+                caldav_url TEXT,
+                subscription_url TEXT,
+                is_default BOOLEAN DEFAULT 0,
+                is_visible BOOLEAN DEFAULT 1,
+                is_read_only BOOLEAN DEFAULT 0,
+                display_order INTEGER DEFAULT 0,
+                etag TEXT,
+                ctag TEXT,
+                sync_token TEXT,
+                refresh_interval_minutes INTEGER,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(account_id, name, source_provider)
+            )";
+
+    /// The events table as it was before an event could name the calendar it
+    /// belongs to, and before it could carry categories. Both columns are added
+    /// on the way in, so a rebuild that reads them before they are there has
+    /// somewhere to fail.
+    const THE_EVENTS_TABLE_AS_IT_WAS: &str = "CREATE TABLE calendar_events (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                provider_event_id TEXT,
+                summary TEXT NOT NULL,
+                description TEXT,
+                location TEXT,
+                start_datetime TEXT NOT NULL,
+                end_datetime TEXT NOT NULL,
+                start_date TEXT,
+                end_date TEXT,
+                is_all_day BOOLEAN DEFAULT 0,
+                time_zone TEXT,
+                status TEXT DEFAULT 'confirmed',
+                recurrence_rule TEXT,
+                source_provider TEXT,
+                etag TEXT,
+                web_link TEXT,
+                show_as TEXT DEFAULT 'busy',
+                last_modified_remote TEXT,
+                last_synced_at TEXT,
+                attendees_json TEXT,
+                reminders_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(account_id, provider_event_id)
+            )";
+
+    /// A directory holding a database written before an event could say which
+    /// calendar it was in: three events, and calendars for one of the two
+    /// accounts they belong to.
+    fn a_directory_holding_events_before_calendars_existed(what_for: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock that has passed 1970")
+            .as_nanos();
+        let dir = env::temp_dir().join(format!("wixen_mail_before_calendars_{what_for}_{nanos}"));
+        std::fs::create_dir_all(&dir).expect("a directory to write into");
+        let conn =
+            rusqlite::Connection::open(dir.join("message_cache.db")).expect("a database to open");
+        conn.execute(THE_CALENDARS_TABLE_AS_IT_WAS, [])
+            .expect("the older calendars table");
+        conn.execute(THE_EVENTS_TABLE_AS_IT_WAS, [])
+            .expect("the older events table");
+        conn.execute(
+            "INSERT INTO calendars
+             (id, account_id, name, color, source_provider, is_default, is_visible,
+              is_read_only, display_order, created_at, updated_at)
+             VALUES
+             ('cal-gmail', 'acct-1', 'Google Calendar', '#4285F4', 'gmail', 0, 1, 0, 0,
+              '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+             ('cal-mine', 'acct-1', 'My Calendar', '#4285F4', 'local', 1, 1, 0, 0,
+              '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            params![],
+        )
+        .expect("two calendars for the first account");
+        let add_event = |id: &str, account: &str, provider_id: Option<&str>, provider: &str| {
+            conn.execute(
+                "INSERT INTO calendar_events
+                 (id, account_id, provider_event_id, summary, start_datetime, end_datetime,
+                  status, source_provider, show_as, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, 'Standup', '2026-03-05T10:00:00Z', '2026-03-05T11:00:00Z',
+                         'confirmed', ?4, 'busy', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                params![id, account, provider_id, provider],
+            )
+            .expect("an event to be inserted");
+        };
+        add_event("evt-synced", "acct-1", Some("uid-1"), "gmail");
+        add_event("evt-typed", "acct-1", None, "local");
+        add_event("evt-nowhere", "acct-2", Some("uid-2"), "outlook");
+        drop(conn);
+        dir
+    }
+
+    #[test]
+    fn test_an_event_that_belongs_to_no_calendar_is_filed_under_its_providers_one() {
+        // Every event stored before calendars had containers belongs to none of
+        // them, which means no calendar's own list can show it: the combined
+        // view is the only place it appears. Now that an event is recognised
+        // per calendar rather than per account, leaving them there would also
+        // make the next refresh store each of them a second time.
+        let dir = a_directory_holding_events_before_calendars_existed("filed");
+        let cache = MessageCache::new(dir.clone(), None).expect("the older database to open");
+
+        let synced = cache
+            .get_events_for_calendar("cal-gmail")
+            .expect("cal-gmail");
+        assert_eq!(synced.len(), 1, "the synced event was not filed anywhere");
+        assert_eq!(synced[0].id, "evt-synced");
+        assert_eq!(
+            cache
+                .get_event_by_provider_id("acct-1", "uid-1")
+                .expect("the event by its server identity")
+                .and_then(|e| e.calendar_id)
+                .as_deref(),
+            Some("cal-gmail"),
+        );
+
+        let typed = cache.get_events_for_calendar("cal-mine").expect("cal-mine");
+        assert_eq!(typed.len(), 1, "the typed event was not filed anywhere");
+        assert_eq!(typed[0].id, "evt-typed");
+
+        // An account with no calendar of that kind has nowhere to file to. The
+        // event stays where it is rather than being invented a home, and
+        // opening the database still works.
+        let nowhere = cache
+            .get_event_by_id("evt-nowhere")
+            .expect("the third event")
+            .expect("the third event to still be there");
+        assert_eq!(nowhere.calendar_id, None);
+        assert_eq!(nowhere.summary, "Standup");
+
+        // Opening it a second time is the ordinary case: this runs on every
+        // open, and it has to leave a database it has already dealt with
+        // exactly as it found it.
+        drop(cache);
+        let again = MessageCache::new(dir, None).expect("the same database a second time");
+        assert_eq!(
+            again
+                .get_all_events_for_account("acct-1")
+                .expect("the account's events")
+                .len(),
+            2,
+            "opening the database again changed what was in it",
+        );
+        assert_eq!(
+            again
+                .get_events_for_calendar("cal-gmail")
+                .expect("cal-gmail")
+                .len(),
+            1,
+        );
+        assert_eq!(
+            again
+                .get_event_by_id("evt-nowhere")
+                .expect("the third event")
+                .and_then(|e| e.calendar_id),
+            None,
+            "an event with nowhere to go was given a home on the second open",
+        );
+    }
+
+    #[test]
+    fn test_a_rebuilt_events_table_matches_a_new_one() {
+        // The rebuild names its columns one by one in two places and the table
+        // it fills is written out a third time. All three have to agree, and
+        // they can drift. This is what notices.
+        let was_there = a_directory_holding_events_before_calendars_existed("shape");
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock that has passed 1970")
+            .as_nanos();
+        let brand_new = env::temp_dir().join(format!("wixen_mail_events_new_{nanos}"));
+        drop(MessageCache::new(was_there.clone(), None).expect("the older database to open"));
+        drop(MessageCache::new(brand_new.clone(), None).expect("a new database"));
+
+        let read_back = |dir: &std::path::Path| -> (Vec<String>, Vec<Vec<String>>) {
+            let conn = rusqlite::Connection::open(dir.join("message_cache.db"))
+                .expect("the database to read back");
+            let columns = conn
+                .prepare("PRAGMA table_info(calendar_events)")
+                .expect("the column list")
+                .query_map([], |row| row.get::<_, String>(1))
+                .expect("the column names")
+                .collect::<std::result::Result<Vec<String>, _>>()
+                .expect("every column name");
+            let constraints: Vec<String> = conn
+                .prepare("PRAGMA index_list(calendar_events)")
+                .expect("the index list")
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(1)?, row.get::<_, String>(3)?))
+                })
+                .expect("where each index came from")
+                .collect::<std::result::Result<Vec<(String, String)>, _>>()
+                .expect("every index")
+                .into_iter()
+                .filter(|(_, origin)| origin == "u")
+                .map(|(name, _)| name)
+                .collect();
+            let kept_apart_by = constraints
+                .iter()
+                .map(|name| {
+                    conn.prepare(&format!("PRAGMA index_info('{name}')"))
+                        .expect("the index columns")
+                        .query_map([], |row| row.get::<_, Option<String>>(2))
+                        .expect("the column names")
+                        .collect::<std::result::Result<Vec<Option<String>>, _>>()
+                        .expect("every column")
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<String>>()
+                })
+                .collect();
+            (columns, kept_apart_by)
+        };
+
+        let (rebuilt_columns, rebuilt_keys) = read_back(&was_there);
+        let (fresh_columns, fresh_keys) = read_back(&brand_new);
+        assert_eq!(
+            rebuilt_columns, fresh_columns,
+            "the rebuilt events table is not shaped like a new one",
+        );
+        assert_eq!(
+            rebuilt_keys, fresh_keys,
+            "the rebuilt events table is not kept apart the same way a new one is",
+        );
+        assert_eq!(
+            fresh_keys,
+            vec![vec![
+                "account_id".to_string(),
+                "calendar_id".to_string(),
+                "provider_event_id".to_string(),
+            ]],
+            "an event is not recognised by the calendar it is in",
+        );
     }
 }
