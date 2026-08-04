@@ -543,7 +543,7 @@ impl WxMailApp {
                     .unwrap_or_default(),
             );
             if let Some(palette) = palette {
-                theme::paint(&left_panel, palette.surface_alt);
+                theme::paint(&left_panel, palette.second_surface());
             }
             let left_sizer = BoxSizer::builder(Orientation::Vertical).build();
 
@@ -585,7 +585,7 @@ impl WxMailApp {
             let folder_tree = TreeCtrl::builder(&mail_sidebar).build();
             set_accessible_name(&folder_tree, "Mail folders");
             if let Some(palette) = palette {
-                theme::paint(&folder_tree, palette.surface_alt);
+                theme::paint(&folder_tree, palette.second_surface());
             }
             // A tree without its root is a degraded folder pane, not a
             // reason to refuse to start.
@@ -658,6 +658,13 @@ impl WxMailApp {
                 )
                 .build();
             set_accessible_name(&msg_list, "Messages");
+            // The message list is where most of the reading happens, so it is
+            // the third and last place the palette is applied. The column
+            // header is a control of its own with its own system colours and
+            // does not follow this.
+            if let Some(palette) = palette {
+                theme::paint(&msg_list, palette.main_surface());
+            }
             if let Some(list_font) = Font::new_with_details(
                 10,
                 FontFamily::Swiss.as_i32(),

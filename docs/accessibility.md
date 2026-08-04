@@ -213,9 +213,13 @@ Wixen Mail is tested and optimized for the following screen readers:
 - Error and warning messages
 
 ### High Contrast Support
-- Full support for Windows High Contrast themes
-- Custom high contrast mode within application
-- Adjustable color schemes for different visual needs
+- When Windows high contrast is on, Wixen Mail paints no colours of its own.
+  That is deliberate: you chose those colours, and an application that paints
+  over them has taken away the reason you set them.
+- There is no separate high contrast palette inside Wixen Mail, and there is no
+  plan for one. Windows already has the setting and it applies everywhere.
+- The Theme setting offers light and dark palettes. They reach the folder list,
+  the message list and the side panel; the rest of the window follows Windows.
 
 ### Keyboard Focus Management
 - Clear visual focus indicators

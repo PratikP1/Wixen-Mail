@@ -147,6 +147,36 @@ impl Palette {
     }
 }
 
+/// A background and the text colour that has been tested against it.
+///
+/// The two travel together because separating them is how the folder list came
+/// to be painted a near-black grey while its text stayed the near-black
+/// Windows had given it. Setting a background on a control and leaving its text
+/// alone is a colour choice about text, made by not making one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Surface {
+    pub background: Rgb,
+    pub text: Rgb,
+}
+
+impl Palette {
+    /// The main reading surface: message lists, panels, dialogs.
+    pub fn main_surface(self) -> Surface {
+        Surface {
+            background: self.surface,
+            text: self.text,
+        }
+    }
+
+    /// The second surface: sidebars, the folder tree, headers.
+    pub fn second_surface(self) -> Surface {
+        Surface {
+            background: self.surface_alt,
+            text: self.text,
+        }
+    }
+}
+
 /// The colours of the mark, which are not the colours of the interface.
 ///
 /// Wixen Mail is one of a family, so the mark belongs to the family and not to
@@ -253,6 +283,21 @@ impl Rgb {
     }
 }
 
+/// How far the theme reaches, in the words a person reads.
+///
+/// The setting used to be described as though picking Dark made the
+/// application dark. It applies the palette to three places, and a note that
+/// does not say so leaves somebody hunting for the reason the rest of the
+/// window did not change.
+///
+/// It lives here rather than in the settings dialog so the sentence and the
+/// code it describes sit together, and so a test can read it. What no test
+/// here can say is whether anybody sees or hears it.
+pub const REACH: &str = "Colour is applied to the folder list, the message list and the side panel. \
+     Everything else follows Windows. A change takes effect the next time \
+     Wixen Mail starts. Default means light for now, because Wixen Mail has \
+     not yet asked Windows for its dark mode.";
+
 /// The palette to draw with right now.
 ///
 /// `None` means draw nothing of our own and let Windows decide, which is the
@@ -261,6 +306,18 @@ impl Rgb {
 pub fn current(setting: &str) -> Option<Palette> {
     palette_for(
         setting,
+        // This answers no in Wixen Mail whatever Windows is set to, so Default
+        // means light. wxWidgets reports dark either when the application has
+        // switched itself into the Windows dark mode, through
+        // `AppAppearance::set_appearance`, or when the window background it is
+        // already being given is dark. Nothing here calls `set_appearance`, and
+        // a Windows dark theme leaves an application that has not asked for it
+        // on the light system colours, so neither half is ever true.
+        //
+        // Calling `set_appearance` recolours every native control in the
+        // application at once, which is a change only eyes on a running build
+        // can accept or reject, so it is not made here. `REACH` says Default
+        // means light so that nobody is left guessing why.
         wxdragon::is_system_dark_mode(),
         windows_high_contrast(),
     )
@@ -352,14 +409,24 @@ const fn high_contrast_from(ok: i32, flags: u32) -> bool {
     ok != 0 && flags & HCF_HIGHCONTRASTON != 0
 }
 
-/// Paint a container, and only a container.
+/// Give a window a background and the text colour tested against it.
 ///
-/// Colours go on panels rather than on the controls inside them. A control
-/// given explicit colours stops following Windows high contrast, which is the
-/// one setting that must always win, and stops following whatever else the
-/// user has done to their system theme.
-pub fn paint(window: &impl wxdragon::prelude::WxWidget, colour: Rgb) {
-    window.set_background_color(colour.wx());
+/// Both, always, which is what taking a [`Surface`] rather than two colours is
+/// for. A control handed only a background keeps whatever text colour Windows
+/// gave it, and the two were chosen by different people for different
+/// backgrounds.
+///
+/// This is only ever reached with a palette in hand, and [`current`] returns
+/// none under Windows high contrast, so a person running high contrast gets
+/// their own colours and no call is made here at all. That is the one setting
+/// that must always win.
+///
+/// Whether a given control obeys either colour is a question about the native
+/// control underneath it. wxWidgets forwards both to Windows and some controls
+/// ignore one or the other, so a call here is a request and not a result.
+pub fn paint(window: &impl wxdragon::prelude::WxWidget, surface: Surface) {
+    window.set_background_color(surface.background.wx());
+    window.set_foreground_color(surface.text.wx());
 }
 
 #[cfg(test)]
@@ -450,9 +517,14 @@ mod tests {
     }
 
     #[test]
-    fn test_every_readable_colour_meets_four_and_a_half_to_one() {
+    fn test_every_readable_colour_in_the_palette_meets_four_and_a_half_to_one() {
         // 1.4.3. This is the test that stops the palette drifting towards
         // whatever looked nice in a screenshot.
+        //
+        // It checks the palette. What reaches the screen is a separate
+        // question and only looking at a running build answers it. The palette
+        // is applied to three places, listed in `REACH`; everywhere else in
+        // the application these colours are arithmetic and nothing more.
         for (name, palette) in [("light", Palette::LIGHT), ("dark", Palette::DARK)] {
             for (role, colour) in palette.text_roles() {
                 for (surface_name, surface) in [
@@ -470,11 +542,89 @@ mod tests {
     }
 
     #[test]
-    fn test_borders_meet_three_to_one() {
+    fn test_the_theme_note_names_how_far_the_colour_reaches_and_when_it_arrives() {
+        // The sentence shown under the Theme setting. It has to name the three
+        // places the palette is applied, say the rest is left to Windows, and
+        // say a change waits for the next start, because somebody who is told
+        // none of that reads the setting as broken and changes it again.
+        //
+        // This checks the sentence. Whether it is displayed, whether it is in
+        // the accessibility tree, and whether a screen reader reaches it when
+        // focus lands on the Theme choice are three separate questions, and
+        // none of them is answered here.
+        for place in ["folder list", "message list", "side panel"] {
+            assert!(
+                REACH.contains(place),
+                "the note does not name the {place}: {REACH}"
+            );
+        }
+        assert!(REACH.contains("follows Windows"), "{REACH}");
+        assert!(REACH.contains("starts"), "{REACH}");
+        // A wrapped string literal that loses its continuations keeps every
+        // space of the indenting, and this one is read aloud. Runs of stray
+        // spaces are silence in the middle of a sentence.
+        assert!(!REACH.contains("  "), "{REACH}");
+    }
+
+    #[test]
+    fn test_a_palette_surface_is_only_handed_out_with_the_text_colour_tested_against_it() {
+        // A background without its text colour is how the folder list came to
+        // be dark grey with near-black text on it. The pair is a type here so
+        // that nobody can ask for half of it, and this holds the pair to the
+        // floor for reading text.
+        //
+        // It checks the palette: the two colours the code asks for are a legal
+        // pair. Whether the control underneath honours either of them is a
+        // question about wxWidgets and Windows that only a running build
+        // answers.
+        for (name, palette) in [("light", Palette::LIGHT), ("dark", Palette::DARK)] {
+            for (which, surface) in [
+                ("main", palette.main_surface()),
+                ("second", palette.second_surface()),
+            ] {
+                let ratio = contrast(surface.background, surface.text);
+                assert!(
+                    ratio >= 4.5,
+                    "{name}: the {which} surface reads at {ratio:.2}:1, needs 4.5"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_dark_palette_surface_under_the_windows_text_colour_would_be_unreadable() {
+        // Why the pair has to travel together. This is not a regression test:
+        // it is arithmetic on two constants, it was true before the pair
+        // existed and it is true after, and it never touches a control.
+        //
+        // Wixen Mail has never asked Windows to give it dark mode, so a
+        // control's inherited text colour is the light theme's near-black.
+        // Hand such a control the dark second surface and nothing else, and
+        // its text is near-black on a near-black ground.
+        const WINDOWS_TEXT_UNTIL_WE_ASK_FOR_DARK_MODE: Rgb = Rgb::new(0, 0, 0);
+        let ratio = contrast(
+            Palette::DARK.surface_alt,
+            WINDOWS_TEXT_UNTIL_WE_ASK_FOR_DARK_MODE,
+        );
+        assert!(
+            ratio < 3.0,
+            "the dark second surface reads at {ratio:.2}:1 against the text \
+             colour Windows supplies, which is above the floor this test \
+             exists to record it falling below"
+        );
+    }
+
+    #[test]
+    fn test_the_palette_borders_meet_three_to_one() {
         // 1.4.11. A text field's border is the only thing saying there is a
         // text field there, so it is a user interface component and not
         // decoration. Most design systems get this wrong and look better for
         // it; we do not get to.
+        //
+        // It checks the palette, and `border` is painted on nothing at all:
+        // every border on the screen is drawn by Windows. So this keeps a
+        // colour ready for the day something uses it, and says nothing about
+        // any border a person can see today.
         for (name, palette) in [("light", Palette::LIGHT), ("dark", Palette::DARK)] {
             for (surface_name, surface) in [
                 ("surface", palette.surface),
@@ -490,9 +640,14 @@ mod tests {
     }
 
     #[test]
-    fn test_the_focus_ring_is_visible_against_both_surfaces() {
+    fn test_the_palette_focus_colour_clears_three_to_one_on_both_surfaces() {
         // 2.4.11 and 2.4.13. A focus indicator nobody can see is the single
         // fastest way to make a keyboard-only interface unusable.
+        //
+        // It checks the palette, and nothing draws a focus ring from `accent`:
+        // the ring on the screen is the one Windows draws. This is the colour
+        // we would use, held to the floor, and not a measurement of the ring
+        // anybody currently sees.
         for (name, palette) in [("light", Palette::LIGHT), ("dark", Palette::DARK)] {
             for surface in [palette.surface, palette.surface_alt] {
                 let ratio = contrast(palette.accent, surface);
@@ -505,10 +660,14 @@ mod tests {
     }
 
     #[test]
-    fn test_the_two_surfaces_can_be_told_apart() {
+    fn test_the_two_palette_surfaces_can_be_told_apart() {
         // Not an accessibility floor, since nothing is identified by the
         // difference, but a sidebar indistinguishable from the list beside it
         // is a design that failed at its own job.
+        //
+        // It checks the palette. Both surfaces are painted somewhere, so this
+        // one is closer to the screen than its neighbours here, and still only
+        // a running build shows whether the two read as different.
         for (name, palette) in [("light", Palette::LIGHT), ("dark", Palette::DARK)] {
             let ratio = contrast(palette.surface, palette.surface_alt);
             assert!(ratio > 1.05, "{name}: the surfaces are the same colour");
@@ -546,16 +705,19 @@ mod tests {
     }
 
     #[test]
-    fn test_the_blindfold_can_be_told_from_the_coat() {
+    fn test_the_marks_blindfold_can_be_told_from_its_coat() {
         // The band is the one piece of the mark carried by colour rather than
         // by outline, because it sits inside the silhouette. If it does not
         // separate from the coat it is not a blindfold, it is a smudge.
+        //
+        // These constants are a second copy of the colours in the artwork
+        // under assets/brand, kept in step by hand. So this checks the copy.
         let ratio = contrast(brand::INK, brand::FOX);
         assert!(ratio >= 3.0, "the band on the coat is {ratio:.2}:1");
     }
 
     #[test]
-    fn test_the_knocked_out_form_holds_up_too() {
+    fn test_the_knocked_out_form_of_the_mark_holds_up_too() {
         // On a badge the mark inverts: a coloured field, the fox in cream, the
         // band still in ink. That is the form a favicon, an avatar and a
         // taskbar button all use, so it is the one most people see, and each
@@ -649,6 +811,42 @@ mod tests {
         assert!(space::SNUG < space::ROOMY);
         assert!(space::ROOMY < space::OPEN);
     };
+
+    #[test]
+    fn test_every_palette_contrast_check_is_named_after_the_palette() {
+        // The mistake this file is one rename away from making. A test called
+        // "the focus ring is visible against both surfaces" reads aloud as a
+        // claim about the running window, and every assertion in this file is
+        // arithmetic on two constants. So any contrast check on a palette or
+        // brand colour has to say "palette" or "mark" in its name, and this
+        // fails the build when one does not.
+        //
+        // What it checks is the names in this file. It cannot check what any
+        // of them prove, and neither this test nor any of the ones it guards
+        // says anything about what reaches a screen.
+        const SOURCE: &str = include_str!("theme.rs");
+        // Joined at compile time so the needle does not appear whole in the
+        // file it searches. Written as one literal, this test finds itself and
+        // reports a fragment of its own body as a test name.
+        const START_OF_A_TEST: &str = concat!("    fn ", "test_");
+        let mut misnamed: Vec<&str> = Vec::new();
+        for chunk in SOURCE.split(START_OF_A_TEST).skip(1) {
+            let Some((name, body)) = chunk.split_once('(') else {
+                continue;
+            };
+            let checks_a_designed_colour = body.contains("Palette::") || body.contains("brand::");
+            if !checks_a_designed_colour || !body.contains("contrast(") {
+                continue;
+            }
+            if !name.contains("palette") && !name.contains("mark") {
+                misnamed.push(name);
+            }
+        }
+        assert!(
+            misnamed.is_empty(),
+            "these check a designed colour and are not named after the palette: {misnamed:?}"
+        );
+    }
 
     /// The floors WCAG 2.5.8 and 2.5.5 ask for.
     const _TARGETS_MEET_WCAG: () = {

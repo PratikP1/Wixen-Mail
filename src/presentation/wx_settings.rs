@@ -263,6 +263,16 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, Ch
     theme_row.add(&theme_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     app_sec.add_sizer(&theme_row, 0, SizerFlag::Expand, 0);
 
+    // One sentence, said once, and it comes from the code it describes rather
+    // than being retyped here where it can drift away from what the theme
+    // actually does. A setting that changes less than it looks like it should
+    // is a setting somebody reads as broken.
+    let theme_note = StaticText::builder(panel)
+        .with_label(crate::presentation::theme::REACH)
+        .build();
+    set_accessible_name(&theme_note, crate::presentation::theme::REACH);
+    app_sec.add(&theme_note, 0, SizerFlag::Expand | SizerFlag::All, 4);
+
     let font_row = BoxSizer::builder(Orientation::Horizontal).build();
     let font_label = StaticText::builder(panel).with_label("Font size:").build();
     let font_field = TextCtrl::builder(panel).build();

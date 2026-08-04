@@ -242,9 +242,15 @@
 ## Theme Support
 
 ### Available Themes
-1. **Default** - Standard light theme
-2. **Dark** - Dark mode
-3. **High Contrast** - Accessibility-enhanced
+1. **Default** - Light, for now. It is meant to follow Windows and cannot yet.
+2. **Light** - The light palette.
+3. **Dark** - The dark palette.
+4. **High Contrast** - Hands the colours back to Windows. Wixen Mail paints
+   nothing of its own, so your high contrast scheme is what you get.
+
+A theme colours the folder list, the message list and the side panel. Every
+other part of the window uses the Windows colours. A change takes effect the
+next time Wixen Mail starts.
 
 ### Color Indicators
 - **Unread**: Bold text
