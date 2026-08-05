@@ -487,6 +487,15 @@ fn google_lists_url(base: &str, page: Option<&str>) -> String {
 ///
 /// `showDeleted`, because a task deleted on the phone has to be deleted here
 /// too, and a sync that only ever adds is a list that only ever grows.
+///
+/// All three of `showCompleted`, `showHidden` and `showDeleted` are now
+/// load-bearing, and so is the absence of anything that narrows the answer. The
+/// task sync removes a task Google did not mention, which is only sound because
+/// every read here is a full read of the list. Dropping `showHidden` would
+/// delete every hidden task on the next sync, and adding a delta parameter such
+/// as `updatedMin` would delete everything Google had not touched since the
+/// last one. Neither would fail anywhere but on somebody's real account, which
+/// is why the query is pinned by a test.
 fn google_tasks_url(base: &str, list_id: &str, page: Option<&str>) -> String {
     let mut url = format!(
         "{base}/lists/{list_id}/tasks\
@@ -842,6 +851,39 @@ mod tests {
         assert!(
             asked_for(&request).starts_with("GET /users/@me/lists?"),
             "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_google_task_read_asks_for_completed_hidden_and_deleted_tasks() {
+        // Honest note: this one was never red. It pins a query that is already
+        // right and that the task sync has just come to depend on. Absence is
+        // read as deletion there, so dropping showHidden would delete every
+        // hidden task on the next sync, and nothing else in this suite would
+        // notice a one-word edit. Mutation testing cannot see a parameter that
+        // was never there.
+        //
+        // No items and no next page, so exactly one request goes out.
+        let (address, listening) =
+            answering("200 OK", "application/json", r#"{"items":[]}"#.to_string()).await;
+
+        TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .google_tasks("a-token", "list-1")
+            .await
+            .expect("the tasks in a list to be read");
+
+        let request = heard(listening, "the tasks in a list")
+            .await
+            .expect("a request");
+        let asked = asked_for(&request);
+        assert!(asked.starts_with("GET /lists/list-1/tasks?"), "{request}");
+        for wanted in ["showCompleted=true", "showHidden=true", "showDeleted=true"] {
+            assert!(asked.contains(wanted), "{wanted} is not asked for: {asked}");
+        }
+        assert!(
+            !asked.contains("updatedMin"),
+            "the read was narrowed, so what it does not carry is no longer a deletion: {asked}"
         );
     }
 

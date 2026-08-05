@@ -167,6 +167,44 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   somebody's contacts because a read came back short needs to know the read was
   complete, which is separate work.
 
+- **A task deleted somewhere else now goes from here too, however long ago it
+  was deleted.** Google says a task has gone by sending it back marked as
+  deleted, and it only does that for a while. A task you deleted on your phone
+  while this program was shut for longer than that was never removed here. It
+  stayed on the list forever, with no way to reach it from Google. Google tasks
+  are now compared against what Google sent back, the same way Outlook tasks
+  already were, so a task that is no longer there is no longer here.
+
+  A removal is only decided from a complete answer. If the list of task lists
+  stopped at the limit on how much one sync reads, if a list could not be read
+  or saved, if a list held more tasks than one sync will take, or if a task came
+  back with nothing to identify it by, then nothing is removed and the sync says
+  what it could not see. A task Google names as deleted still goes in all of
+  those cases, because that is Google naming the task rather than a gap in what
+  came back.
+
+  Tasks you made here are never removed by a sync. They have never been sent
+  anywhere, so a provider saying nothing about them means nothing.
+
+- **Outlook tasks are no longer removed on a partial answer.** There were two
+  ways a sync could delete a task that was still there. When the list of task
+  lists stopped at the limit there were lists nobody read, and a task that had
+  moved into one of them looked deleted. When Outlook sent back a task with
+  nothing to identify it by, the task it stood for looked absent. Both now stop
+  the sync removing anything, and the second is said rather than passed over.
+
+- **One deletion is counted once.** Where a provider sent the same task list
+  twice in one answer, a single task removed from it was reported as two
+  removals.
+
+  **Known limitations:** none of this has run against a live Google or Outlook
+  account. On the first sync after this update, tasks that were deleted
+  elsewhere long ago and left behind here all go at once, so an account that has
+  been running for a while may see several disappear together. What a sync
+  removed is a number on the status line; the reasons a sync could not see
+  everything reach the status line as a count of problems, and the words for
+  them are in the log file.
+
 - **F1 opens help for whatever you are looking at, and the Help menu lists
   every page.** The guides were written and they ship beside the program, and
   there was no way in: no contents, no F1, and the only button that opened one
