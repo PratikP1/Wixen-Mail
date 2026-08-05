@@ -8,15 +8,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
-- **A category you typed on an event now goes to Outlook with it.** Outlook has
-  categories and shows them by name and colour, and this was filling one in and
-  then not sending it, so an event arrived filed under nothing. Google Calendar
-  has no equivalent, which is why this is the Outlook half only.
+- **A category you typed on an event now goes to Outlook with it, and one set in
+  Outlook now comes back.** Outlook has categories and shows them by name and
+  colour, and this was filling one in and then not sending it, so an event
+  arrived filed under nothing. It now goes both ways, so refiling an event in
+  Outlook refiles it here on the next sync.
 
-  Known limitation: it goes out and does not come back. A category changed in
-  Outlook is not read here, and the copy stored on this computer is the one
-  that gets sent on the next change. Nothing has met a live account, so whether
-  Outlook accepts the list as sent is unconfirmed.
+  Outlook's copy is the one that wins, the same as for the title, the time and
+  everywhere else the two disagree. That is a change from before: a category
+  taken off in Outlook now comes off here as well, instead of the copy on this
+  computer being put back. Google Calendar has no category of its own, so
+  nothing changes there and a category you typed on a Google event still stays
+  where you put it.
+
+  Not confirmed against a live account, so whether Outlook accepts the list as
+  sent is still unknown.
 
 - **A repeating event now shows on every day it falls on.** A weekly meeting
   used to appear once, on the day it was first set up, and nothing told you why
@@ -118,6 +124,18 @@ live account or a live calendar server:
   network. A feed carries no sign-in, so an ordinary address is accepted for
   one.
 
+  **The window stays awake while the server is asked.** Asking a calendar
+  server what it has can take up to thirty seconds, and the window used to sit
+  frozen for all of it: nothing on screen moved, nothing answered a key, and a
+  screen reader said nothing at all, so there was no way to tell whether it was
+  working, had finished, or had died. The asking now happens away from the
+  window. A small window says that it is looking and how long it may take, and
+  offers Stop looking, which leaves everything exactly as it was. When the
+  answer comes back you are told how many calendars were found before the list
+  appears, because a list filling up in silence tells you one row and nothing
+  about how many there are. A server that never answers now says so and says
+  what to try.
+
   **Known limitations:** none of this has been tried against a real calendar
   server. A calendar you add this way is read, not written: events you change in
   it stay on this computer and are not sent back, which the window says before
@@ -128,6 +146,24 @@ live account or a live calendar server:
   up to date while it is the one on screen.
 
 ### Fixed
+
+- **A change to an Outlook contact is now addressed at the right contact.**
+  Outlook's own name for a contact was dropped into the address as it came, so
+  one containing a slash or a question mark, which its names can, pointed the
+  change at some other contact or at none. A deletion sent to the wrong contact
+  cannot be taken back. Event and calendar names were already handled this way
+  and contact names now are too. Not seen happening: no account has run against
+  a live Outlook address book yet.
+
+- **A contact's phone numbers, email addresses and postal addresses can no
+  longer disappear as a set.** Each is kept as a list in one field, and a list
+  that was missing any part of any entry could not be read back at all, which
+  counted as having none. Because a change sent to Google says which parts of a
+  contact it may alter, and all three are named, an unreadable list would have
+  told Google to remove every number, every address, or every email that person
+  has. A missing part is now simply blank. Nothing in the program writes a list
+  in that shape today, so this closes a hole rather than fixing something seen
+  happening.
 
 - **Two buttons in the calendar sidebar now do what they say.** New and Delete
   both said to use File, then New, then Calendar, and that menu item does not

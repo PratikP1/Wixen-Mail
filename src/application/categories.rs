@@ -10,12 +10,13 @@
 //! almost everybody has, and anything else somebody types is kept and offered
 //! back, because a fixed list is a list that is wrong for everybody eventually.
 //!
-//! # Only the writing half is wired
+//! # What is wired, and what is not
 //!
-//! `tidy`, `on` and `offered` run: a category is cleaned up when an item is
-//! saved, kept through an edit and through a sync, and offered back in the
-//! picker next time. `spoken`, `stored` and `NONE` have no caller outside the
-//! tests, which the compiler confirms once they are made private.
+//! `tidy`, `on`, `offered` and `stored` run: a category is cleaned up when an
+//! item is saved, kept through an edit and through a sync, offered back in the
+//! picker next time, and joined back into one column when it comes off an
+//! Outlook event, which can carry several. `spoken` and `NONE` have no caller
+//! outside the tests, which the compiler confirms once they are made private.
 //!
 //! `spoken` has nothing to read from. The item the calendar rows and the
 //! read-aloud are built out of carries no category field at all, so there is
@@ -24,11 +25,6 @@
 //! delivered. Adding the field to that item, filling it where the item is made
 //! from a stored event, and calling `spoken` where an event is announced is
 //! what would deliver it.
-//!
-//! `stored` has nothing to write. The editor tidies one typed value and stores
-//! it, so an item carries at most one category, while `on` splits on commas as
-//! though it could carry several. Whether an item should carry more than one
-//! is undecided; until it is, the join `stored` performs has no occasion.
 
 /// The categories offered before anybody has added their own.
 ///

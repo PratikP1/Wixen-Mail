@@ -2121,6 +2121,97 @@ fn show_sig_edit(parent: &Dialog, existing: Option<&SignatureEntry>) -> Option<S
     }
 }
 
+/// How often the waiting window looks to see whether the answer has arrived.
+///
+/// The same interval the main window polls its own updates on. Often enough
+/// that nobody notices the gap between the answer arriving and the window
+/// saying so, rare enough to cost nothing while it waits.
+const HOW_OFTEN_TO_LOOK_FOR_THE_ANSWER: i32 = 50;
+
+/// Wait for an answer being worked out somewhere else, with the window alive.
+///
+/// The alternative, waiting on this thread, is a window that cannot repaint,
+/// cannot answer a key and cannot speak for as long as the wait lasts. A window
+/// that cannot repaint also cannot speak, so anybody working by ear gets
+/// silence and no way to tell whether it is working, has finished, or has died.
+///
+/// This shows a small window that says what is happening and offers a way to
+/// stop. It is modal, so it runs an event loop of its own: everything else
+/// carries on, announcements are still spoken, and the wait is somebody's to
+/// end at any point. `None` is somebody stopping it or closing it, which must
+/// leave everything as it was.
+///
+/// Whatever produces the answer sends it down `coming`. It may keep running
+/// after this returns: the answer then has nowhere to go and is dropped, which
+/// is what makes stopping safe rather than only apparent.
+///
+/// **Not confirmed with a screen reader.** The window is named and its one
+/// control is focused, which is what reaches NVDA, and whether it is usable is
+/// a thing only a screen reader run answers.
+pub fn wait_for_an_answer<T: 'static>(
+    parent: &Frame,
+    title: &str,
+    what_is_happening: &str,
+    stop: &str,
+    coming: async_channel::Receiver<T>,
+) -> Option<T> {
+    let dialog = Dialog::builder(parent, title).with_size(520, 200).build();
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    // Named as well as shown. A static text with no name of its own is read
+    // from its label on most builds and from nothing on some, and this is the
+    // only sentence in the window.
+    let saying = StaticText::builder(&dialog)
+        .with_label(what_is_happening)
+        .build();
+    set_accessible_name(&saying, what_is_happening);
+    sizer.add(&saying, 1, SizerFlag::Expand | SizerFlag::All, 12);
+
+    // The one control, and it carries the cancel id, so Escape and the window's
+    // own close button both mean the same thing as pressing it.
+    let stop_button = Button::builder(&dialog)
+        .with_label(stop)
+        .with_id(ID_CANCEL)
+        .build();
+    set_accessible_name(&stop_button, &name_from_label(stop));
+    sizer.add(&stop_button, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
+    dialog.set_sizer(sizer, true);
+
+    let arrived: Rc<RefCell<Option<T>>> = Rc::new(RefCell::new(None));
+    // Held until this function returns: dropping a timer stops it, so one that
+    // fell out of scope here would never tick and the wait would never end.
+    let watching = Timer::new(&dialog);
+    watching.on_tick({
+        let arrived = arrived.clone();
+        move |_| {
+            if let Ok(answer) = coming.try_recv() {
+                *arrived.borrow_mut() = Some(answer);
+                dialog.end_modal(ID_OK);
+            }
+        }
+    });
+    if !watching.start(HOW_OFTEN_TO_LOOK_FOR_THE_ANSWER, false) {
+        tracing::error!("The waiting window's timer refused to start; nothing would end the wait");
+        dialog.destroy();
+        return None;
+    }
+    stop_button.on_click(move |_| dialog.end_modal(ID_CANCEL));
+    // On the only control there is, so the window opens with something focused
+    // and the way out is where the focus already is.
+    stop_button.set_focus();
+
+    let closed_with = dialog.show_modal();
+    drop(watching);
+    dialog.destroy();
+    // Only when the wait ended because the answer arrived. Somebody who pressed
+    // Stop is told nothing was done even if the answer landed in the same
+    // instant, because what they asked for was to stop.
+    if closed_with != ID_OK {
+        return None;
+    }
+    arrived.borrow_mut().take()
+}
+
 /// Pick one item from a list, or nothing.
 ///
 /// A single-selection list box with OK and Cancel. Deliberately plain: it is

@@ -9,7 +9,9 @@
 //! # Two windows rather than one that changes under somebody
 //!
 //! This one asks. If it is a calendar server, the caller then asks the server
-//! what it has and opens the ordinary list-picking window for the answer. The
+//! what it has, away from the thread that draws the window, with a small window
+//! saying so and offering a way to stop, and opens the ordinary list-picking
+//! window for the answer with the count in its label. The
 //! alternative, one window with a Find button that fills a list in place, moves
 //! focus into a list that appeared, announces a count that arrived, and enables
 //! a button that was disabled, all of which is new behaviour on exactly the

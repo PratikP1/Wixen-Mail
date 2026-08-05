@@ -1959,6 +1959,53 @@ mod tests {
     }
 
     #[test]
+    fn test_a_stored_list_missing_a_field_is_still_read_rather_than_read_as_nothing() {
+        // A change sent to Google names the fields it may alter, and every one
+        // of these three is named, so Google reads a list this program leaves
+        // out as an instruction to remove all of them. A stored list that lost
+        // one field of one entry read as no list at all, which is how a whole
+        // category of somebody's contact details would be cleared at the
+        // provider by a change to something else entirely.
+        //
+        // Nothing writes a partial shape today. It is one field added to an
+        // editor away from being written, and the cost of being wrong is
+        // somebody's address book.
+        let mut contact = a_local_contact("Carol White", "carol@outlook.com");
+        contact.phones_json = Some(r#"[{"number":"+44 113 496 0001"}]"#.to_string());
+        contact.emails_json = Some(r#"[{"address":"carol@contoso.com"}]"#.to_string());
+        contact.addresses_json =
+            Some(r#"[{"street":"1 Navy Yard","city":"Arlington"}]"#.to_string());
+
+        let person = contact_to_google_person(&contact);
+
+        assert_eq!(
+            person
+                .phone_numbers
+                .iter()
+                .map(|p| p.value.as_str())
+                .collect::<Vec<_>>(),
+            vec!["+44 113 496 0001"],
+            "a number with no label on it must still reach Google"
+        );
+        assert_eq!(
+            person
+                .email_addresses
+                .iter()
+                .map(|e| e.value.as_str())
+                .collect::<Vec<_>>(),
+            vec!["carol@contoso.com"]
+        );
+        assert_eq!(
+            person
+                .addresses
+                .iter()
+                .map(|a| a.street_address.as_str())
+                .collect::<Vec<_>>(),
+            vec!["1 Navy Yard"]
+        );
+    }
+
+    #[test]
     fn test_a_second_email_address_goes_with_a_contact_pushed_to_microsoft() {
         let mut contact = a_local_contact("Carol White", "carol@outlook.com");
         contact.emails_json = serde_json::to_string(&vec![

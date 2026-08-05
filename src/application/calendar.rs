@@ -560,7 +560,7 @@ pub async fn sync_google_calendar(
         match existing {
             Some(ex) => {
                 let mut merged = local_event;
-                carry_over_local_only(&mut merged, &ex);
+                carry_over_local_only(&mut merged, &ex, TheCategory::OnlyHere);
                 cache.save_calendar_event(&merged)?;
                 result.updated += 1;
             }
@@ -707,7 +707,7 @@ pub async fn sync_microsoft_calendar(
         match existing {
             Some(ex) => {
                 let mut merged = local_event;
-                carry_over_local_only(&mut merged, &ex);
+                carry_over_local_only(&mut merged, &ex, TheCategory::AlsoAtTheProvider);
                 cache.save_calendar_event(&merged)?;
                 result.updated += 1;
             }
@@ -878,12 +878,37 @@ fn where_to_file(
 /// Shorter than the CalDAV list on purpose. Google and Microsoft both send the
 /// people invited and the alerts set, so keeping the stored copy of those two
 /// would throw the provider's answer away.
-fn carry_over_local_only(merged: &mut CalendarEventEntry, held: &CalendarEventEntry) {
+fn carry_over_local_only(
+    merged: &mut CalendarEventEntry,
+    held: &CalendarEventEntry,
+    category: TheCategory,
+) {
     merged.id = held.id.clone();
-    merged.categories = held.categories.clone();
+    if category == TheCategory::OnlyHere {
+        merged.categories = held.categories.clone();
+    }
     if held.calendar_id.is_some() {
         merged.calendar_id = held.calendar_id.clone();
     }
+}
+
+/// Whether the provider this event came from holds the category too.
+///
+/// It decides whose copy of that one field survives a sync, so it is a name
+/// rather than a flag. The two providers genuinely differ, and getting it the
+/// wrong way round either erases a category somebody typed or ignores one they
+/// changed at the provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TheCategory {
+    /// Only this computer has it. Google Calendar has no equivalent field, so
+    /// the stored copy is the only one there is and a sync must keep it.
+    OnlyHere,
+    /// Outlook has it as well. This program sends a category to Outlook, so
+    /// there are two copies of one field and the provider's is the one that
+    /// wins, exactly as it does for every other field on the event. Keeping
+    /// the local copy instead would mean a category changed in Outlook never
+    /// arrived and the next change made here wrote over theirs.
+    AlsoAtTheProvider,
 }
 
 // ── Changing one day of a series, or all of them ────────────────────────────
@@ -1418,7 +1443,11 @@ pub fn ms_event_to_local(
         // series itself, and the calendar view this asks for hands back the
         // days rather than the series, so no series ever arrives.
         exception_dates: None,
-        categories: String::new(),
+        // Read back, because this program sends one. A field written out and
+        // never read in is a field where the provider's copy can never win: a
+        // category changed in Outlook would never arrive, and the next change
+        // made here would put the old one back without anybody being asked.
+        categories: crate::application::categories::stored(&event.categories),
         source_provider: Some("outlook".to_string()),
         etag: event.odata_etag.clone(),
         web_link: event.web_link.clone(),
@@ -2711,6 +2740,53 @@ mod tests {
     }
 
     #[test]
+    fn test_a_category_outlook_holds_is_read_back_off_an_event() {
+        // The other half of sending one. A field this program writes to a
+        // provider and never reads back is a field where a change made in
+        // Outlook never arrives here and the next change made here writes over
+        // theirs without anybody being asked.
+        let filed = MsGraphEvent {
+            id: "ms-1".to_string(),
+            categories: vec!["Health".to_string()],
+            ..Default::default()
+        };
+
+        let local = ms_event_to_local(&filed, "acct", "cal-outlook");
+
+        assert_eq!(local.categories, "Health");
+    }
+
+    #[test]
+    fn test_an_outlook_event_filed_under_nothing_comes_back_filed_under_nothing() {
+        let unfiled = MsGraphEvent {
+            id: "ms-2".to_string(),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            ms_event_to_local(&unfiled, "acct", "cal-outlook").categories,
+            ""
+        );
+    }
+
+    #[test]
+    fn test_an_event_filed_under_several_categories_in_outlook_keeps_all_of_them() {
+        // Outlook lets an event carry several. Storing only the first would
+        // lose the rest on arrival and then send the loss straight back on the
+        // next change made here.
+        let filed = MsGraphEvent {
+            id: "ms-3".to_string(),
+            categories: vec!["Health".to_string(), "Personal".to_string()],
+            ..Default::default()
+        };
+
+        let stored = ms_event_to_local(&filed, "acct", "cal-outlook").categories;
+
+        assert!(stored.contains("Health"), "{stored}");
+        assert!(stored.contains("Personal"), "{stored}");
+    }
+
+    #[test]
     fn test_the_alert_set_on_an_event_is_the_alert_microsoft_is_given() {
         let mut with_alert = make_event("e1", "Review", None);
         with_alert.reminders_json = Some("[{\"method\":\"popup\",\"minutes\":30}]".to_string());
@@ -2738,10 +2814,10 @@ mod tests {
     }
 
     #[test]
-    fn test_a_sync_keeps_the_category_and_the_calendar_a_person_chose_and_takes_the_rest() {
-        // The provider knows nothing about either, so the copy it sends has
-        // both blank. Writing that blank over the stored event is how a
-        // category somebody typed disappears on the next sync.
+    fn test_a_google_sync_keeps_the_category_and_the_calendar_a_person_chose_and_takes_the_rest() {
+        // Google Calendar has no category of its own, so the copy it sends has
+        // that blank. Writing the blank over the stored event is how a category
+        // somebody typed disappears on the next sync.
         let mut held = make_event("held-1", "Held", Some("cal-work"));
         held.categories = "Birthday".to_string();
         held.attendees_json = Some("[{\"email\":\"old@example.com\"}]".to_string());
@@ -2751,7 +2827,7 @@ mod tests {
         fresh.attendees_json = Some("[{\"email\":\"new@example.com\"}]".to_string());
         fresh.reminders_json = Some("[{\"minutes\":15}]".to_string());
 
-        carry_over_local_only(&mut fresh, &held);
+        carry_over_local_only(&mut fresh, &held, TheCategory::OnlyHere);
 
         assert_eq!(
             fresh.id, "held-1",
@@ -2770,6 +2846,42 @@ mod tests {
     }
 
     #[test]
+    fn test_an_outlook_sync_takes_outlooks_category_because_outlook_is_sent_ours() {
+        // The reverse of the Google case above, and deliberately so. This
+        // program now sends a category to Outlook, which means Outlook holds a
+        // copy of the same field. Keeping the local one would mean a category
+        // changed in Outlook never arrived here and the next change made here
+        // wrote over theirs. Two copies of one field need one owner, and for
+        // every other field on this event the provider is it.
+        let mut held = make_event("held-1", "Held", Some("cal-work"));
+        held.categories = "Birthday".to_string();
+
+        let mut fresh = make_event("fresh-1", "What the provider sent", None);
+        fresh.categories = "Health".to_string();
+
+        carry_over_local_only(&mut fresh, &held, TheCategory::AlsoAtTheProvider);
+
+        assert_eq!(fresh.categories, "Health");
+        // Everything else the carry-over is for is untouched by the choice.
+        assert_eq!(fresh.id, "held-1");
+        assert_eq!(fresh.calendar_id.as_deref(), Some("cal-work"));
+    }
+
+    #[test]
+    fn test_an_outlook_event_with_no_category_takes_the_blank_rather_than_the_stored_one() {
+        // The half that costs something, and the reason it is a decision. A
+        // category taken off in Outlook has to come off here too, and it
+        // arrives as an event with nothing filed on it.
+        let mut held = make_event("held-1", "Held", Some("cal-work"));
+        held.categories = "Birthday".to_string();
+        let mut fresh = make_event("fresh-1", "What the provider sent", None);
+
+        carry_over_local_only(&mut fresh, &held, TheCategory::AlsoAtTheProvider);
+
+        assert_eq!(fresh.categories, "");
+    }
+
+    #[test]
     fn test_a_sync_files_an_event_that_was_never_filed_and_leaves_a_moved_one_alone() {
         // Every event already in somebody's calendar was stored belonging to no
         // calendar. Writing that blank back over the container the sync just
@@ -2778,7 +2890,7 @@ mod tests {
         let held = make_event("held-1", "Held", None);
         let mut fresh = make_event("fresh-1", "What the provider sent", Some("cal-outlook"));
 
-        carry_over_local_only(&mut fresh, &held);
+        carry_over_local_only(&mut fresh, &held, TheCategory::OnlyHere);
 
         assert_eq!(
             fresh.calendar_id.as_deref(),
@@ -2791,7 +2903,7 @@ mod tests {
         let moved = make_event("held-2", "Held", Some("cal-work"));
         let mut fresh = make_event("fresh-2", "What the provider sent", Some("cal-outlook"));
 
-        carry_over_local_only(&mut fresh, &moved);
+        carry_over_local_only(&mut fresh, &moved, TheCategory::OnlyHere);
 
         assert_eq!(fresh.calendar_id.as_deref(), Some("cal-work"));
     }
@@ -2993,7 +3105,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_a_category_typed_onto_a_microsoft_event_survives_the_next_sync() {
+    async fn test_a_category_changed_in_outlook_reaches_this_computer() {
+        // A field this program sends and never reads back is a field where
+        // Outlook's copy can never win, so somebody who refiles an event in
+        // Outlook has it silently refiled back on the next change made here.
         let cache = temp_cache("ms_categories");
         let mut held = already_held("local-1", "ms-1");
         held.categories = "Birthday".to_string();
@@ -3001,7 +3116,9 @@ mod tests {
         cache
             .save_calendar_event(&held)
             .expect("the event the cache already holds");
-        let address = replying(delta_reply(&[graph_event("ms-1", "Budget review")])).await;
+        let mut refiled = graph_event("ms-1", "Budget review");
+        refiled["categories"] = serde_json::json!(["Health"]);
+        let address = replying(delta_reply(&[refiled])).await;
         point_the_sync_at(&cache, &address);
 
         sync_microsoft_calendar(&cache, &MsGraphClient::new(), "token", "acct")
@@ -3013,14 +3130,13 @@ mod tests {
             .expect("the calendar to be readable")
             .expect("the event to still be there");
         assert_eq!(
-            stored.categories, "Birthday",
-            "Microsoft does carry categories, and this sync does not read them back, \
-             so the copy stored here is the only one there is and a sync cannot take it away"
+            stored.categories, "Health",
+            "Outlook holds this field too now, so its answer is the one that arrives"
         );
         assert_eq!(
             stored.calendar_id.as_deref(),
             Some("cal-work"),
-            "nor is the calendar it was filed under"
+            "the calendar it was filed under here is still not the provider's to move"
         );
         // On the summary as well, so keeping the local fields cannot pass by
         // skipping the write altogether.

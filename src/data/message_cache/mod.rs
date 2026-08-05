@@ -160,7 +160,22 @@ pub struct MessageFilterRule {
 }
 
 /// Typed phone number entry (stored as JSON array)
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+///
+/// # Why a missing field is a blank rather than a failure
+///
+/// This and the two below are stored as JSON in one column and read back with
+/// every field required. A stored list that lost one field of one entry could
+/// not be read at all, and a list that cannot be read counts as no list, so the
+/// contact's whole set of numbers went missing at once. That matters beyond
+/// this computer: a change sent to Google names the fields it may alter and
+/// these three are all named, so a list this program leaves out is an
+/// instruction to remove every one of them from somebody's address book.
+///
+/// Nothing writes a partial shape today, which makes it a hazard rather than a
+/// defect. It is one field added to an editor away from being one, and the cost
+/// of being wrong is somebody else's data.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct PhoneEntry {
     /// Label: "Mobile", "Home", "Work", "Work Fax", "Home Fax", "Pager", "Other"
     pub label: String,
@@ -168,7 +183,10 @@ pub struct PhoneEntry {
 }
 
 /// Typed email address entry (stored as JSON array)
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+///
+/// A missing field is a blank, for the reason set out on [`PhoneEntry`].
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct EmailEntry {
     /// Label: "Personal", "Work", "Other"
     pub label: String,
@@ -176,7 +194,10 @@ pub struct EmailEntry {
 }
 
 /// Structured physical address entry (stored as JSON array)
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+///
+/// A missing field is a blank, for the reason set out on [`PhoneEntry`].
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct AddressEntry {
     /// Label: "Home", "Work", "Other"
     pub label: String,

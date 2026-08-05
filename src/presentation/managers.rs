@@ -295,14 +295,17 @@ pub fn manage_filters(
     report(tx, rt, "rules", failures);
 }
 
-/// How long a calendar server is given to answer before somebody is told it
-/// did not.
+/// What the window that waits for a calendar server is called.
+const WAITING_FOR_THE_SERVER: &str = "Adding a calendar";
+
+/// What the button that gives up on a slow server says.
 ///
-/// The window cannot repaint or speak while this is waited on, so it is bounded
-/// rather than left to whatever the network decides. Long enough for a server
-/// on the other side of the world on a bad line, short enough that nobody
-/// thinks the application has died.
-const HOW_LONG_A_SERVER_IS_GIVEN: std::time::Duration = std::time::Duration::from_secs(30);
+/// Says what it stops rather than "Cancel", which in a window that appeared on
+/// its own is a word with no object. No mnemonic, which is the rule for a
+/// button carrying the cancel identifier everywhere in this application: Escape
+/// reaches it from anywhere in the window, and it is the only control there is,
+/// so it already has the focus.
+const STOP_LOOKING: &str = "Stop looking";
 
 /// Add a calendar by the address it lives at.
 ///
@@ -311,8 +314,18 @@ const HOW_LONG_A_SERVER_IS_GIVEN: std::time::Duration = std::time::Duration::fro
 /// credential store and never to the database.
 ///
 /// Everything decided here is decided in `application::calendar_source`, which
-/// can be tested. This is the wiring: two windows, a bounded wait, and a
-/// sentence for whatever comes back.
+/// can be tested. This is the wiring: the windows, and where the waiting
+/// happens.
+///
+/// # The asking happens somewhere else
+///
+/// A calendar server has half a minute to answer. Waiting for that on this
+/// thread, which is the one that draws the window, is half a minute in which
+/// the window cannot repaint, cannot answer a key and cannot speak. That is
+/// what this used to do. Every sync in this program already runs off this
+/// thread and this now does too: the request goes to the runtime, a small
+/// window says what is happening and offers a way to stop, and the answer comes
+/// back down a channel.
 pub fn add_calendar_by_address(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
@@ -326,6 +339,11 @@ pub fn add_calendar_by_address(
         Ok(pair) => pair,
         Err(reason) => return send_refusal(tx, rt, reason),
     };
+    // Before the window opens, so nobody types an address and a password for a
+    // calendar that could never have been kept.
+    if let Err(refused) = calendar_source::can_be_filed_under(&account) {
+        return send_refusal(tx, rt, &refused);
+    }
     let Some(asked) = crate::presentation::wx_add_calendar::ask_for_a_calendar(frame) else {
         return;
     };
@@ -336,34 +354,7 @@ pub fn add_calendar_by_address(
                 .map(Some)
         }
         Source::Server => {
-            // On this thread, the way signing in to an account already is. A
-            // wait with no bound is a window that never comes back, so the
-            // whole act is given a limit and a server that says nothing is
-            // reported as one that said nothing.
-            let asking = calendar_source::add_from_a_server(
-                &cache,
-                &account,
-                &asked.address,
-                &asked.user_name,
-                &asked.password,
-                |offers| {
-                    let lines: Vec<String> =
-                        offers.iter().map(|offer| offer.name.clone()).collect();
-                    wx_managers::choose_from_list(
-                        frame,
-                        "Choose a calendar",
-                        "&Calendars on that server:",
-                        "&Add",
-                        &lines,
-                    )
-                },
-            );
-            match rt.block_on(tokio::time::timeout(HOW_LONG_A_SERVER_IS_GIVEN, asking)) {
-                Ok(answer) => answer,
-                Err(_) => Err("That server did not answer in time. Check the address and \
-                               your connection, then try again."
-                    .to_string()),
-            }
+            ask_a_server_and_add_what_was_chosen(&cache, &account, &asked, frame, tx, rt)
         }
     };
 
@@ -389,6 +380,74 @@ pub fn add_calendar_by_address(
             let _ = tx.try_send(UIUpdate::ErrorOccurred(said));
         }
     }
+}
+
+/// Ask a calendar server what it has, let somebody choose one, and add it.
+///
+/// The asking goes to the runtime and the answer comes back down a channel, so
+/// the thread that draws the window is never the thread that waits. While it
+/// waits, a window says so and offers a way to stop; stopping leaves everything
+/// as it was, because nothing is written on this computer until something has
+/// been chosen.
+///
+/// The count is said as well as shown. A list that fills in silence tells a
+/// listener one row and nothing about how many rows there are, and knowing
+/// whether the server offered one calendar or forty is the difference between
+/// arrowing through a list and looking for the one that is missing.
+fn ask_a_server_and_add_what_was_chosen(
+    cache: &Arc<MessageCache>,
+    account: &str,
+    asked: &crate::presentation::wx_add_calendar::Asked,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) -> Result<Option<crate::data::message_cache::CalendarContainer>, String> {
+    use crate::application::calendar_source;
+
+    // One answer, and the sender goes with the request. Nothing else can put
+    // anything in here, so what the waiting window takes out is this server's
+    // answer or nothing at all.
+    let (answered, coming) = async_channel::bounded(1);
+    let address = asked.address.clone();
+    let user_name = asked.user_name.clone();
+    let password = asked.password.clone();
+    rt.spawn(async move {
+        let asking = calendar_source::what_a_server_has(&address, &user_name, &password);
+        let answer =
+            match tokio::time::timeout(calendar_source::HOW_LONG_A_SERVER_IS_GIVEN, asking).await {
+                Ok(answer) => answer,
+                Err(_) => Err(calendar_source::NO_ANSWER_IN_TIME.to_string()),
+            };
+        // A closed channel is somebody who stopped waiting, which is not a
+        // failure and has nothing to report.
+        let _ = answered.send(answer).await;
+    });
+
+    let waited = wx_managers::wait_for_an_answer(
+        frame,
+        WAITING_FOR_THE_SERVER,
+        &calendar_source::looking_for_calendars(),
+        STOP_LOOKING,
+        coming,
+    );
+    let Some(answer) = waited else {
+        send_status(tx, rt, calendar_source::LOOKING_WAS_STOPPED);
+        return Ok(None);
+    };
+    let offers = answer?;
+
+    // In the status line as well as in the window below, so it is still there
+    // to be read back after the choosing is over.
+    let count = calendar_source::how_many_were_found(offers.len());
+    send_status(tx, rt, &count.replace('&', ""));
+    let lines: Vec<String> = offers.iter().map(|offer| offer.name.clone()).collect();
+    let chosen = wx_managers::choose_from_list(frame, "Choose a calendar", &count, "&Add", &lines);
+    let Some(chosen) = chosen.and_then(|which| offers.get(which)) else {
+        return Ok(None);
+    };
+
+    calendar_source::add_the_chosen(cache, account, chosen, &asked.user_name, &asked.password)
+        .map(Some)
 }
 
 /// What a refusal names when the calendar the event came from is not to hand.

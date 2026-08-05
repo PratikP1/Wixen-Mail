@@ -431,19 +431,27 @@ impl MsGraphClient {
     }
 
     /// Update an existing contact.
+    ///
+    /// The identifier is Graph's to choose and this program's to hand back
+    /// unchanged, so it goes into the address the same way an event's does. A
+    /// character that ends a path or starts a query, dropped in raw, addresses
+    /// the change at some other contact or at none.
     pub async fn update_contact(
         &self,
         token: &str,
         contact_id: &str,
         contact: &MsGraphContact,
     ) -> Result<MsGraphContact> {
-        let url = format!("{}/me/contacts/{}", self.base, contact_id);
+        let url = format!("{}/me/contacts/{}", self.base, in_a_path(contact_id));
         with_retry(3, || self.api_patch(&url, token, contact)).await
     }
 
     /// Delete a contact.
+    ///
+    /// Addressed the same way as the change above, and for a sharper reason: a
+    /// deletion sent to the wrong contact cannot be taken back.
     pub async fn delete_contact(&self, token: &str, contact_id: &str) -> Result<()> {
-        let url = format!("{}/me/contacts/{}", self.base, contact_id);
+        let url = format!("{}/me/contacts/{}", self.base, in_a_path(contact_id));
         with_retry(3, || self.api_delete(&url, token)).await
     }
 
@@ -713,6 +721,47 @@ mod tests {
         // change cannot empty a field it never mentioned.
         assert!(
             request.contains(r#"{"displayName":"Alice Smith"}"#),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_identifier_goes_into_the_address_the_way_an_event_identifier_does() {
+        // Graph's own identifiers are base64-ish and carry characters that end
+        // a path or start a query. Dropped in raw, a change is addressed at
+        // some other contact or at none, and a delete addressed at the wrong
+        // one cannot be taken back. Two functions away in this same file the
+        // event and calendar identifiers already go through `in_a_path`.
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .update_contact("a-token", "AAMk/AGI2+3?x", &MsGraphContact::default())
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "the contact change")
+            .await
+            .expect("a request");
+        assert!(
+            asked_for(&request).starts_with("PATCH /me/contacts/AAMk%2FAGI2%2B3%3Fx"),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_is_deleted_by_the_identifier_graph_gave_and_no_other() {
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .delete_contact("a-token", "AAMk/AGI2+3?x")
+            .await
+            .expect("the deletion to be sent");
+
+        let request = heard(listening, "the deletion").await.expect("a request");
+        assert!(
+            asked_for(&request).starts_with("DELETE /me/contacts/AAMk%2FAGI2%2B3%3Fx"),
             "{request}"
         );
     }

@@ -350,26 +350,78 @@ fn an_id_no_server_would_have_given() -> String {
     format!("calendar-{nanos}")
 }
 
-/// Add a calendar held on a calendar server: ask what it has, let somebody
-/// choose, keep the sign-in where passwords go, and write the row.
+/// How long a calendar server is given to answer before somebody is told it
+/// did not.
 ///
-/// `choosing` is handed the calendars the server offered and answers with the
-/// one somebody picked, or nothing if they changed their mind. It is a closure
-/// so the window can supply a picker and this can be run without one.
+/// The asking happens away from the thread that draws the window, so this is no
+/// longer the length of time a window can be dead for. It is still bounded,
+/// because a wait with no end is a dialog somebody has to close to find out
+/// nothing is coming. Long enough for a server on the other side of the world
+/// on a bad line, short enough that nobody sits through it twice.
+pub const HOW_LONG_A_SERVER_IS_GIVEN: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// What somebody is told the moment the asking starts.
 ///
-/// `Ok(None)` is somebody changing their mind, which is not a failure. `Err` is
-/// one sentence saying what happened and what to do next.
-pub async fn add_from_a_server(
-    cache: &MessageCache,
-    account_id: &str,
-    typed: &str,
-    user_name: &str,
-    password: &str,
-    choosing: impl FnOnce(&[Offer]) -> Option<usize>,
-) -> std::result::Result<Option<CalendarContainer>, String> {
+/// Said, not only shown. A button pressed with nothing said after it is a
+/// button somebody presses again, and the whole reason this unit exists is that
+/// there was no way to tell working from dead. The wait is bounded, so the
+/// sentence says by how much rather than leaving somebody to guess, and it
+/// names the way out.
+pub fn looking_for_calendars() -> String {
+    format!(
+        "Looking for calendars on that server. This can take up to {} seconds. \
+         Choose Stop looking if you would rather not wait.",
+        HOW_LONG_A_SERVER_IS_GIVEN.as_secs()
+    )
+}
+
+/// What the list of calendars is labelled once the server has answered.
+///
+/// The count comes first because it is the part nobody can get any other way:
+/// a list that fills in silence tells a listener one row and nothing about how
+/// many there are. It carries the mnemonic for the list it labels.
+pub fn how_many_were_found(count: usize) -> String {
+    match count {
+        1 => "1 &calendar found on that server. Choose it to add it:".to_string(),
+        many => format!("{many} &calendars found on that server. Choose the one to add:"),
+    }
+}
+
+/// What somebody is told when they stopped the looking themselves.
+///
+/// Says nothing was added, because somebody who stops something halfway has no
+/// way of knowing how far it got.
+pub const LOOKING_WAS_STOPPED: &str = "Looking for calendars was stopped. Nothing was added.";
+
+/// What somebody is told when the server never answered.
+pub const NO_ANSWER_IN_TIME: &str = "That server did not answer in time. Check the address and \
+                                     your connection, then try again.";
+
+/// Whether a calendar can be filed under this account at all, or the sentence
+/// saying why not.
+///
+/// Asked before a server is, so nobody types a password and waits for an answer
+/// to a question that could never have been kept.
+pub fn can_be_filed_under(account_id: &str) -> std::result::Result<(), String> {
     if account_id == crate::application::new_item::LOCAL_ACCOUNT_ID {
         return Err(NO_ACCOUNT_TO_FILE_IT_UNDER.to_string());
     }
+    Ok(())
+}
+
+/// Ask a calendar server what calendars it has.
+///
+/// Nothing on this computer is touched, which is what lets this run away from
+/// the thread that draws the window while that window stays alive and able to
+/// speak. Somebody who gives up, or closes the window, is left with exactly
+/// what they started with.
+///
+/// `Err` is one sentence saying what happened and what to do next.
+pub async fn what_a_server_has(
+    typed: &str,
+    user_name: &str,
+    password: &str,
+) -> std::result::Result<Vec<Offer>, String> {
     // Before anything is sent. A refusal after the request is a password
     // already on the wire.
     let address = address_for(typed, Source::Server).map_err(|why| why.said().to_string())?;
@@ -387,10 +439,22 @@ pub async fn add_from_a_server(
     if offers.is_empty() {
         return Err(NOTHING_OFFERED.to_string());
     }
-    let Some(chosen) = choosing(&offers).and_then(|which| offers.get(which)) else {
-        return Ok(None);
-    };
+    Ok(offers)
+}
 
+/// Add the calendar somebody chose: keep the sign-in where passwords go, and
+/// write the row.
+///
+/// Local work only, so it is the half that can happen on the thread the window
+/// is on without holding anything up.
+pub fn add_the_chosen(
+    cache: &MessageCache,
+    account_id: &str,
+    chosen: &Offer,
+    user_name: &str,
+    password: &str,
+) -> std::result::Result<CalendarContainer, String> {
+    can_be_filed_under(account_id)?;
     let row = row_for(account_id, Source::Server, &chosen.name, &chosen.address);
     // The sign-in first, so a calendar never exists with no way to reach it.
     // If the row cannot be written the sign-in is taken back out again. The
@@ -403,7 +467,7 @@ pub async fn add_from_a_server(
         tracing::error!("A calendar added by address could not be saved: {failure}");
         return Err("The calendar could not be saved on this computer. Try again.".to_string());
     }
-    Ok(Some(row))
+    Ok(row)
 }
 
 /// Add a calendar read from a published feed.
@@ -417,9 +481,7 @@ pub fn add_from_a_feed(
     typed: &str,
     name: &str,
 ) -> std::result::Result<CalendarContainer, String> {
-    if account_id == crate::application::new_item::LOCAL_ACCOUNT_ID {
-        return Err(NO_ACCOUNT_TO_FILE_IT_UNDER.to_string());
-    }
+    can_be_filed_under(account_id)?;
     let address = address_for(typed, Source::Feed).map_err(|why| why.said().to_string())?;
 
     let row = row_for(account_id, Source::Feed, name, &address);
@@ -909,6 +971,136 @@ mod tests {
         assert_eq!(FROM_A_FEED, "subscription");
     }
 
+    // ── Nothing waits on the thread that draws the window ────────────────
+
+    /// The body of one function in a source file, as text.
+    ///
+    /// Reading the whole file would answer about the wrong function: several
+    /// other things in that file wait on this thread deliberately, and they are
+    /// short local reads rather than a network request with half a minute to
+    /// answer in.
+    fn the_body_of(path: &str, signature: &str) -> String {
+        let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let start = source
+            .find(signature)
+            .unwrap_or_else(|| panic!("{path} no longer holds {signature}"));
+        let from_there = &source[start..];
+        let end = from_there
+            .find("\n}\n")
+            .unwrap_or_else(|| panic!("{signature} has no end in {path}"));
+        from_there[..end].to_string()
+    }
+
+    #[test]
+    fn test_the_window_is_never_held_while_a_calendar_server_is_asked() {
+        // Discovery ran on the thread that draws the window, with thirty
+        // seconds to answer in. So somebody pressed the button and for up to
+        // half a minute the window could not repaint, could not answer a key
+        // and could not speak. Silence with no way to tell working from dead
+        // is the worst failure this program has, and every other sync here
+        // already runs off this thread.
+        for signature in [
+            "pub fn add_calendar_by_address",
+            "fn ask_a_server_and_add_what_was_chosen",
+        ] {
+            let body = the_body_of("src/presentation/managers.rs", signature);
+            assert!(
+                !body.contains("block_on"),
+                "{signature} still waits on the thread that draws the window"
+            );
+        }
+        // And the asking really does happen somewhere else, rather than having
+        // been taken out altogether.
+        let asking = the_body_of(
+            "src/presentation/managers.rs",
+            "fn ask_a_server_and_add_what_was_chosen",
+        );
+        assert!(
+            asking.contains("rt.spawn"),
+            "nothing asks the server away from this thread"
+        );
+        assert!(
+            asking.contains("wait_for_an_answer"),
+            "nothing keeps the window alive while the answer is waited for"
+        );
+    }
+
+    #[test]
+    fn test_somebody_is_told_the_looking_has_started_and_how_long_it_can_take() {
+        // A button pressed with nothing said afterwards is a button somebody
+        // presses again. The wait is bounded, so the sentence can say by how
+        // much rather than leaving somebody to guess.
+        let said = looking_for_calendars();
+
+        assert!(said.contains("Looking"), "{said}");
+        assert!(
+            said.contains(&HOW_LONG_A_SERVER_IS_GIVEN.as_secs().to_string()),
+            "the sentence has to say the wait this code really allows: {said}"
+        );
+        assert!(said.ends_with('.'), "{said}");
+        // Read aloud, so a wrapped literal that lost a continuation is a run
+        // of silence in the middle of it.
+        assert!(!said.contains("  "), "{said}");
+    }
+
+    #[test]
+    fn test_the_count_is_said_rather_than_a_list_filling_in_silence() {
+        // A list that fills tells a listener nothing at all: they hear one row
+        // and have no idea whether it is one of two or one of forty.
+        assert!(
+            how_many_were_found(4).starts_with('4'),
+            "{}",
+            how_many_were_found(4)
+        );
+        assert!(
+            how_many_were_found(1).contains("1 "),
+            "{}",
+            how_many_were_found(1)
+        );
+    }
+
+    #[test]
+    fn test_one_calendar_is_not_announced_as_one_calendars() {
+        let one = how_many_were_found(1);
+
+        assert!(one.contains("calendar "), "{one}");
+        assert!(!one.contains("calendars"), "{one}");
+        assert!(
+            how_many_were_found(2).contains("calendars"),
+            "{}",
+            how_many_were_found(2)
+        );
+    }
+
+    #[test]
+    fn test_the_label_over_the_list_carries_exactly_one_mnemonic() {
+        // It is used as the label of the list somebody chooses from, and two
+        // ampersands in it would be two Alt keys for one control.
+        for count in [1, 2, 12] {
+            let said = how_many_were_found(count);
+            assert_eq!(said.matches('&').count(), 1, "{said}");
+        }
+    }
+
+    #[test]
+    fn test_stopping_the_looking_and_a_server_that_never_answered_are_told_apart() {
+        // Two different things happened and each wants its own sentence: one
+        // is somebody's own decision and the other is a fault to act on.
+        assert_ne!(LOOKING_WAS_STOPPED, NO_ANSWER_IN_TIME);
+        for said in [LOOKING_WAS_STOPPED, NO_ANSWER_IN_TIME] {
+            assert!(said.ends_with('.'), "{said}");
+            assert!(!said.contains("  "), "{said}");
+        }
+        assert!(
+            NO_ANSWER_IN_TIME.contains("try again"),
+            "a failure has to say what to do next: {NO_ANSWER_IN_TIME}"
+        );
+        assert!(
+            LOOKING_WAS_STOPPED.contains("Nothing"),
+            "somebody who stopped it has to be told nothing was added: {LOOKING_WAS_STOPPED}"
+        );
+    }
+
     // ── The whole act of adding one ──────────────────────────────────────
 
     use crate::common::answering::{answering, heard};
@@ -946,20 +1138,12 @@ mod tests {
         )
         .await;
 
-        let added = add_from_a_server(
-            &cache,
-            "acc-1",
-            &format!("http://{address}/dav/"),
-            "sam",
-            "hunter2",
-            |offers| {
-                assert_eq!(offers.len(), 1, "{offers:?}");
-                Some(0)
-            },
-        )
-        .await
-        .expect("the calendar to be added")
-        .expect("a calendar rather than a cancel");
+        let offers = what_a_server_has(&format!("http://{address}/dav/"), "sam", "hunter2")
+            .await
+            .expect("the server's own list");
+        assert_eq!(offers.len(), 1, "{offers:?}");
+        let added = add_the_chosen(&cache, "acc-1", &offers[0], "sam", "hunter2")
+            .expect("the calendar to be added");
 
         let stored = cache
             .get_calendars_for_account("acc-1")
@@ -989,17 +1173,11 @@ mod tests {
         )
         .await;
 
-        add_from_a_server(
-            &cache,
-            "acc-1",
-            &format!("http://{address}/dav/"),
-            "sam",
-            "hunter2",
-            |_| Some(0),
-        )
-        .await
-        .expect("the calendar to be added")
-        .expect("a calendar rather than a cancel");
+        let offers = what_a_server_has(&format!("http://{address}/dav/"), "sam", "hunter2")
+            .await
+            .expect("the server's own list");
+        add_the_chosen(&cache, "acc-1", &offers[0], "sam", "hunter2")
+            .expect("the calendar to be added");
 
         let stored = &cache.get_calendars_for_account("acc-1").expect("rows")[0];
         for column in [
@@ -1027,17 +1205,21 @@ mod tests {
         // A calendar filed there is one nothing will ever visit, so saying so
         // beats a calendar that appears and stays empty for ever.
         let cache = temp_cache("local");
+        let here = crate::application::new_item::LOCAL_ACCOUNT_ID;
 
-        let refused = add_from_a_server(
-            &cache,
-            crate::application::new_item::LOCAL_ACCOUNT_ID,
-            "https://cal.example.com/dav/",
-            "sam",
-            "hunter2",
-            |_| Some(0),
-        )
-        .await
-        .expect_err("a refusal");
+        // Asked before a server is, so nobody types a password for a calendar
+        // that could never have been kept.
+        let refused = can_be_filed_under(here).expect_err("a refusal");
+        assert!(refused.contains("account"), "{refused}");
+
+        // And again at the one place that writes, so a caller that forgot to
+        // ask cannot get a calendar in there anyway.
+        let offered_anyway = Offer {
+            name: "Work".to_string(),
+            address: "https://cal.example.com/dav/work/".to_string(),
+        };
+        let refused =
+            add_the_chosen(&cache, here, &offered_anyway, "sam", "hunter2").expect_err("a refusal");
 
         assert!(refused.contains("account"), "{refused}");
         assert!(
@@ -1051,7 +1233,6 @@ mod tests {
     #[tokio::test]
     async fn test_an_address_that_was_refused_never_reaches_the_network() {
         // The refusal has to happen before anything is sent, not after.
-        let cache = temp_cache("refused");
         let (address, listening) = answering(
             "207 Multi-Status",
             "application/xml",
@@ -1059,15 +1240,12 @@ mod tests {
         )
         .await;
 
-        let refused = add_from_a_server(
-            &cache,
-            "acc-1",
+        let refused = what_a_server_has(
             // Unencrypted and not on this computer, so the sign-in would be
             // in clear on the wire.
             &format!("http://cal.example.com@{address}/dav/"),
             "sam",
             "hunter2",
-            |_| Some(0),
         )
         .await
         .expect_err("a refusal");
@@ -1085,36 +1263,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_a_server_that_offers_nothing_leaves_no_calendar_behind() {
-        let cache = temp_cache("empty");
+    async fn test_a_server_that_offers_nothing_says_so_rather_than_offering_an_empty_list() {
         let nothing = r#"<?xml version="1.0" encoding="UTF-8"?>
 <d:multistatus xmlns:d="DAV:"></d:multistatus>"#
             .to_string();
         let (address, _listening) = answering("207 Multi-Status", "application/xml", nothing).await;
 
-        let refused = add_from_a_server(
-            &cache,
-            "acc-1",
-            &format!("http://{address}/dav/"),
-            "sam",
-            "hunter2",
-            |_| Some(0),
-        )
-        .await
-        .expect_err("a refusal");
+        let refused = what_a_server_has(&format!("http://{address}/dav/"), "sam", "hunter2")
+            .await
+            .expect_err("a refusal");
 
         assert!(refused.contains("no calendars"), "{refused}");
-        assert!(
-            cache
-                .get_calendars_for_account("acc-1")
-                .expect("rows")
-                .is_empty()
-        );
     }
 
     #[tokio::test]
-    async fn test_choosing_nothing_adds_nothing_and_is_not_a_failure() {
-        let cache = temp_cache("cancel");
+    async fn test_asking_a_server_what_it_has_stores_nothing_until_something_is_chosen() {
+        // What lets the asking happen away from the window at all: it writes
+        // nothing here, so a person who cancels or closes the window before it
+        // comes back is left with exactly what they started with.
+        let cache = temp_cache("nothing-yet");
         let (address, _listening) = answering(
             "207 Multi-Status",
             "application/xml",
@@ -1122,23 +1289,17 @@ mod tests {
         )
         .await;
 
-        let chosen = add_from_a_server(
-            &cache,
-            "acc-1",
-            &format!("http://{address}/dav/"),
-            "sam",
-            "hunter2",
-            |_| None,
-        )
-        .await
-        .expect("a cancel is not a failure");
+        let offers = what_a_server_has(&format!("http://{address}/dav/"), "sam", "hunter2")
+            .await
+            .expect("the server's own list");
 
-        assert!(chosen.is_none());
+        assert_eq!(offers.len(), 1, "{offers:?}");
         assert!(
             cache
                 .get_calendars_for_account("acc-1")
                 .expect("rows")
-                .is_empty()
+                .is_empty(),
+            "asking a server what it has must store nothing on this computer"
         );
     }
 
@@ -1221,17 +1382,12 @@ mod tests {
         let (home_address, _home_listening) =
             answering("207 Multi-Status", "application/xml", home_set).await;
 
-        let added = add_from_a_server(
-            &cache,
-            "acc-1",
-            &format!("http://{home_address}/dav/sam/"),
-            "sam",
-            "hunter2",
-            |_| Some(0),
-        )
-        .await
-        .expect("the calendar to be added")
-        .expect("a calendar rather than a cancel");
+        let offers =
+            what_a_server_has(&format!("http://{home_address}/dav/sam/"), "sam", "hunter2")
+                .await
+                .expect("the server's own list");
+        let added = add_the_chosen(&cache, "acc-1", &offers[0], "sam", "hunter2")
+            .expect("the calendar to be added");
 
         let (user_name, password) = sign_in::load(&added.id).expect("the sign-in back");
         let result = crate::application::caldav_sync::sync_caldav_calendar(
