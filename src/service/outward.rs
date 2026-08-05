@@ -313,6 +313,38 @@ mod completeness {
         }
     }
 
+    /// Every place that talks to a calendar server without going through a
+    /// provider client of its own.
+    ///
+    /// Adding a calendar asks a server what it has, which changes nothing
+    /// there, and asks it nothing else. If either of these ever holds a client
+    /// or reaches for the changing method, a write path has grown in a screen
+    /// whose whole reason for existing is that it only reads.
+    const READS_ONLY: [&str; 2] = [
+        "src/application/calendar_source.rs",
+        "src/presentation/wx_add_calendar.rs",
+    ];
+
+    #[test]
+    fn test_the_screen_that_adds_a_calendar_cannot_change_anything_at_a_server() {
+        for path in READS_ONLY {
+            let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            for way_round in ["reqwest::Client", "may_change_things", ".changing("] {
+                assert!(
+                    !source.contains(way_round),
+                    "{path} uses {way_round}, so it can change something at a server"
+                );
+            }
+            // And it really is the client that refuses, rather than no client
+            // at all: a file this test read as empty would pass every line
+            // above and prove nothing.
+            assert!(
+                source.contains("CalDavClient::new()") || source.contains("wxdragon"),
+                "{path} does not look like the file this check was written for"
+            );
+        }
+    }
+
     #[test]
     fn test_every_gated_module_is_still_there() {
         // A list of paths rots. If one is renamed, the test above passes by

@@ -219,14 +219,17 @@ fn stored_identities(
     };
     let accounts = cache.load_accounts().unwrap_or_default();
 
-    // No screen in this application can add a calendar held on a server, so
-    // this finds nothing today. It is here so that the sign-in is erased from
-    // the first day one can be added, rather than being remembered later.
+    // Every calendar somebody added by its server address. Each keeps its
+    // sign-in in the credential store under its own id, so uninstalling has to
+    // walk them rather than assume there is one.
     let calendar_ids = accounts
         .iter()
         .filter_map(|account| cache.get_calendars_for_account(&account.id).ok())
         .flatten()
-        .filter(|calendar| calendar.source_provider.as_deref() == Some("caldav"))
+        .filter(|calendar| {
+            calendar.source_provider.as_deref()
+                == Some(crate::application::calendar_source::ON_A_SERVER)
+        })
         .map(|calendar| calendar.id)
         .collect();
 

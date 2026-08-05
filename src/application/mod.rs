@@ -8,6 +8,7 @@ pub mod attaching;
 pub mod autosave;
 pub mod caldav_sync;
 pub mod calendar;
+pub mod calendar_source;
 pub mod categories;
 pub mod collection_sync;
 pub mod composition;

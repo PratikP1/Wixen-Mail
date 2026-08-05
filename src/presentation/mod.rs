@@ -25,6 +25,7 @@ pub mod scan_target;
 pub mod theme;
 pub mod ui_types;
 pub mod wx_account_manager;
+pub mod wx_add_calendar;
 pub mod wx_app;
 pub mod wx_calendar;
 pub mod wx_calendar_module;

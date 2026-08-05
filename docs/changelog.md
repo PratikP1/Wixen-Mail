@@ -8,6 +8,45 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You can now add a calendar by its address.** Tools, then Add a Calendar by
+  Address. Two kinds work. A calendar held on a calendar server, such as
+  Fastmail, Nextcloud or a server your workplace runs, which you sign in to: it
+  asks the server what calendars it has and you choose one, so you never have to
+  know the path to it. And a calendar feed, the kind a school or a football club
+  publishes as a file, which needs no sign-in.
+
+  Until now nothing in the application could set either address, so the code
+  that keeps those calendars up to date, and the code that erases their sign-ins
+  when you uninstall, could never run. Both are reachable for the first time.
+
+  The sign-in goes to the Windows credential store, where account passwords
+  already go, and never into the database. That means copying or backing up your
+  profile does not carry a calendar password with it, and uninstalling clears it
+  from one place.
+
+  A sign-in is only sent over a secure connection. An address that is not secure
+  is refused with a sentence saying why and what to do instead, because a
+  password sent over an ordinary connection is readable by anyone on the
+  network. A feed carries no sign-in, so an ordinary address is accepted for
+  one.
+
+  **Known limitations:** none of this has been tried against a real calendar
+  server. A calendar you add this way is read, not written: events you change in
+  it stay on this computer and are not sent back, which the window says before
+  you add anything. Some servers write their answers with different shorthand
+  from the four this program reads, and those are reported as having no
+  calendars when they may have several. A calendar is filed under the account
+  that was open when you added it, and only that account's calendars are brought
+  up to date while it is the one on screen.
+
+### Fixed
+
+- **Two buttons in the calendar sidebar now do what they say.** New and Delete
+  both said to use File, then New, then Calendar, and that menu item does not
+  exist: the New menu offers a message, an event, a reminder, a task, a note, a
+  contact and an account. Both buttons now make and remove a calendar
+  themselves, the way the same two buttons in Contacts already did.
+
 - **A change you make to an appointment now reaches your calendar.** Adding,
   editing or deleting an event in a Google or Outlook calendar used to stay on
   this computer, and the next sync quietly put the old version back. The change

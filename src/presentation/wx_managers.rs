@@ -2127,11 +2127,17 @@ fn show_sig_edit(parent: &Dialog, existing: Option<&SignatureEntry>) -> Option<S
 /// reached by keyboard, read by a screen reader, and closed with Escape, and
 /// none of that is improved by anything more elaborate.
 ///
+/// `confirm` is what the button that accepts says, because the word has to
+/// match what happens: "Open" is right for a draft and wrong for adding a
+/// calendar, and a button whose word is wrong is a button somebody hesitates
+/// over every time.
+///
 /// Returns the index chosen, or `None` if it was cancelled.
 pub fn choose_from_list(
     parent: &Frame,
     title: &str,
     label: &str,
+    confirm: &str,
     items: &[String],
 ) -> Option<usize> {
     let dlg = Dialog::builder(parent, title)
@@ -2159,13 +2165,15 @@ pub fn choose_from_list(
 
     let buttons = BoxSizer::builder(Orientation::Horizontal).build();
     let ok = Button::builder(&dlg)
-        .with_label("&Open")
+        .with_label(confirm)
         .with_id(ID_OK)
         .build();
+    set_accessible_name(&ok, &name_from_label(confirm));
     let cancel = Button::builder(&dlg)
         .with_label("Cancel")
         .with_id(ID_CANCEL)
         .build();
+    set_accessible_name(&cancel, "Cancel");
     buttons.add_spacer(0);
     buttons.add(&ok, 0, SizerFlag::All, 4);
     buttons.add(&cancel, 0, SizerFlag::All, 4);

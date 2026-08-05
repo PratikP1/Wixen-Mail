@@ -96,6 +96,7 @@ menu_ids!(
     ID_FILTER_MGR,
     ID_TAG_MGR,
     ID_SIG_MGR,
+    ID_ADD_CALENDAR_BY_ADDRESS,
     ID_ABOUT,
     ID_THREAD_VIEW,
     ID_OFFLINE_MODE,
@@ -1367,20 +1368,44 @@ impl WxMailApp {
                 }
             });
 
-            // Calendar sidebar buttons
+            // Calendar sidebar buttons.
+            //
+            // Both used to say "use File > New > Calendar", and that menu item
+            // does not exist: the New submenu offers a message, an event, a
+            // reminder, a task, a note, a contact and an account. So both
+            // buttons sent people to a route nobody has. They now do what the
+            // contacts sidebar's equivalents already did.
             cal_sb.btn_new.on_click({
+                let state = state.clone();
+                let cache = message_cache.clone();
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
                 move |_| {
-                    send_status(&ui_tx, &runtime, "New Calendar: use File > New > Calendar");
+                    managers::new_container(
+                        crate::application::new_item::ContainerKind::Calendar,
+                        &state,
+                        &cache,
+                        &frame,
+                        &ui_tx,
+                        &runtime,
+                    )
                 }
             });
 
             cal_sb.btn_delete.on_click({
+                let state = state.clone();
+                let cache = message_cache.clone();
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
                 move |_| {
-                    send_status(&ui_tx, &runtime, "New Calendar: use File > New > Calendar");
+                    managers::delete_container(
+                        crate::application::new_item::ContainerKind::Calendar,
+                        &state,
+                        &cache,
+                        &frame,
+                        &ui_tx,
+                        &runtime,
+                    )
                 }
             });
             cal_sb.btn_manage.on_click({
@@ -2996,6 +3021,9 @@ impl WxMailApp {
                         _ if id == ID_SIG_MGR => {
                             managers::manage_signatures(&state, &message_cache, &frame, &ui_tx, &runtime)
                         }
+                        _ if id == ID_ADD_CALENDAR_BY_ADDRESS => {
+                            managers::add_calendar_by_address(&state, &message_cache, &frame, &ui_tx, &runtime)
+                        }
                         _ if id == ID_SYNC_CONTACTS => {
                             send_status(&ui_tx, &runtime, "Contacts sync requested...");
                             spawn_contacts_sync(&state, &ui_tx, &runtime);
@@ -3645,6 +3673,15 @@ impl WxMailApp {
                 "Text added to the end of messages you send",
             )
             .append_item(ID_TAG_MGR, "Ta&gs...", "Labels you can put on messages")
+            .append_separator()
+            // b, because every other letter this menu uses is taken. No
+            // shortcut key: this is done once per calendar, and a key nobody
+            // presses twice is a key in the way of one somebody presses daily.
+            .append_item(
+                ID_ADD_CALENDAR_BY_ADDRESS,
+                "Add a Calendar &by Address...",
+                "Add a calendar held on a calendar server, or one published as a feed",
+            )
             .append_separator()
             .append_item(
                 ID_FLUSH_OUTBOX,
@@ -5952,6 +5989,13 @@ fn open_for_scanning(
             // itself once and never again, so the only way to look at it more
             // than once, by hand or from the scan, is to ask for it.
             let _ = crate::presentation::wx_first_run::ask_what_is_allowed(frame);
+        }
+        ScanTarget::AddCalendar => {
+            // The answer is thrown away, as with the screen above. Nothing is
+            // added and no server is asked anything: the window is opened so
+            // its controls can be walked, which is the only way a dialog in
+            // this application ever gets scanned at all.
+            let _ = crate::presentation::wx_add_calendar::ask_for_a_calendar(frame);
         }
         ScanTarget::Compose => {
             open_compose(frame, state, tx, rt, &None, a11y, ComposeMode::New);
@@ -9376,48 +9420,39 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
         // CalDAV calendar sync
         let calendars = cache.get_calendars_for_account(aid).unwrap_or_default();
         let caldav_client = crate::service::caldav::CalDavClient::for_account(aid);
-        for cal in calendars
-            .iter()
-            .filter(|c| c.source_provider.as_deref() == Some("caldav"))
-        {
-            // Retrieve credentials from OS keychain (same pattern as OAuth)
-            let service = crate::service::caldav::keyring_service(&cal.id);
-            let username: String =
-                keyring::Entry::new(&service, crate::service::caldav::KEYRING_USERNAME)
-                    .ok()
-                    .and_then(|e| e.get_password().ok())
-                    .unwrap_or_default();
-            let password: String =
-                keyring::Entry::new(&service, crate::service::caldav::KEYRING_PASSWORD)
-                    .ok()
-                    .and_then(|e| e.get_password().ok())
-                    .unwrap_or_default();
-            if !username.is_empty() && !password.is_empty() {
-                match handle.block_on(crate::application::caldav_sync::sync_caldav_calendar(
-                    &cache,
-                    &caldav_client,
-                    cal,
-                    aid,
-                    &username,
-                    &password,
-                )) {
-                    Ok(result) => {
-                        total_created += result.created;
-                        total_updated += result.updated;
-                        total_deleted += result.deleted;
-                        total_errors.extend(result.errors);
-                    }
-                    Err(e) => total_errors.push(format!("CalDAV sync ({}): {}", cal.name, e)),
+        for cal in calendars.iter().filter(|c| {
+            c.source_provider.as_deref() == Some(crate::application::calendar_source::ON_A_SERVER)
+        }) {
+            // Through the one service that owns the naming, rather than
+            // opening the entries here. Half a sign-in is not a sign-in, and
+            // that rule now lives beside the entries instead of being spelled
+            // out at every reader.
+            let Some((username, password)) = crate::service::caldav::sign_in::load(&cal.id) else {
+                continue;
+            };
+            match handle.block_on(crate::application::caldav_sync::sync_caldav_calendar(
+                &cache,
+                &caldav_client,
+                cal,
+                aid,
+                &username,
+                &password,
+            )) {
+                Ok(result) => {
+                    total_created += result.created;
+                    total_updated += result.updated;
+                    total_deleted += result.deleted;
+                    total_errors.extend(result.errors);
                 }
+                Err(e) => total_errors.push(format!("CalDAV sync ({}): {}", cal.name, e)),
             }
         }
 
         // ICS subscription calendar refresh
         let ical_client = crate::service::ical_subscription::ICalSubscriptionClient::new();
-        for cal in calendars
-            .iter()
-            .filter(|c| c.source_provider.as_deref() == Some("subscription"))
-        {
+        for cal in calendars.iter().filter(|c| {
+            c.source_provider.as_deref() == Some(crate::application::calendar_source::FROM_A_FEED)
+        }) {
             match handle.block_on(crate::application::caldav_sync::refresh_subscription(
                 &cache,
                 &ical_client,

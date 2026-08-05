@@ -46,12 +46,17 @@ pub enum ScanTarget {
     /// once and which no scan could reach before: it opens by itself on a
     /// fresh profile and never again after the answer is stored.
     FirstRun,
+    /// The screen that adds a calendar by its server or feed address. It is
+    /// the first window in the application that asks for a password to send
+    /// somewhere other than a mail server, so what it says about its own
+    /// controls matters more than most.
+    AddCalendar,
 }
 
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 7] = [
+    pub const ALL: [ScanTarget; 8] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
@@ -59,6 +64,7 @@ impl ScanTarget {
         ScanTarget::Search,
         ScanTarget::Filters,
         ScanTarget::FirstRun,
+        ScanTarget::AddCalendar,
     ];
 
     /// The name used on the command line.
@@ -71,6 +77,7 @@ impl ScanTarget {
             Self::Search => "search",
             Self::Filters => "filters",
             Self::FirstRun => "first-run",
+            Self::AddCalendar => "add-calendar",
         }
     }
 

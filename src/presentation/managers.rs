@@ -295,6 +295,102 @@ pub fn manage_filters(
     report(tx, rt, "rules", failures);
 }
 
+/// How long a calendar server is given to answer before somebody is told it
+/// did not.
+///
+/// The window cannot repaint or speak while this is waited on, so it is bounded
+/// rather than left to whatever the network decides. Long enough for a server
+/// on the other side of the world on a bad line, short enough that nobody
+/// thinks the application has died.
+const HOW_LONG_A_SERVER_IS_GIVEN: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Add a calendar by the address it lives at.
+///
+/// Asks for the address and the sign-in, asks the server what calendars it has,
+/// lets somebody choose one, and writes the row. The sign-in goes to the
+/// credential store and never to the database.
+///
+/// Everything decided here is decided in `application::calendar_source`, which
+/// can be tested. This is the wiring: two windows, a bounded wait, and a
+/// sentence for whatever comes back.
+pub fn add_calendar_by_address(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    use crate::application::calendar_source::{self, Source};
+
+    let (cache, account) = match manager_account(state, cache) {
+        Ok(pair) => pair,
+        Err(reason) => return send_refusal(tx, rt, reason),
+    };
+    let Some(asked) = crate::presentation::wx_add_calendar::ask_for_a_calendar(frame) else {
+        return;
+    };
+
+    let added = match asked.source {
+        Source::Feed => {
+            calendar_source::add_from_a_feed(&cache, &account, &asked.address, &asked.name)
+                .map(Some)
+        }
+        Source::Server => {
+            // On this thread, the way signing in to an account already is. A
+            // wait with no bound is a window that never comes back, so the
+            // whole act is given a limit and a server that says nothing is
+            // reported as one that said nothing.
+            let asking = calendar_source::add_from_a_server(
+                &cache,
+                &account,
+                &asked.address,
+                &asked.user_name,
+                &asked.password,
+                |offers| {
+                    let lines: Vec<String> =
+                        offers.iter().map(|offer| offer.name.clone()).collect();
+                    wx_managers::choose_from_list(
+                        frame,
+                        "Choose a calendar",
+                        "&Calendars on that server:",
+                        "&Add",
+                        &lines,
+                    )
+                },
+            );
+            match rt.block_on(tokio::time::timeout(HOW_LONG_A_SERVER_IS_GIVEN, asking)) {
+                Ok(answer) => answer,
+                Err(_) => Err("That server did not answer in time. Check the address and \
+                               your connection, then try again."
+                    .to_string()),
+            }
+        }
+    };
+
+    match added {
+        Ok(None) => {}
+        Ok(Some(calendar)) => {
+            send_status(
+                tx,
+                rt,
+                &format!(
+                    "Calendar \"{}\" added. It fills in on the next sync.",
+                    calendar.name
+                ),
+            );
+            crate::presentation::wx_app::load_module_data(
+                crate::presentation::ui_types::PimModule::Calendar,
+                &Some(cache),
+                Some(account.clone()),
+                tx,
+            );
+        }
+        Err(said) => {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(said));
+        }
+    }
+}
+
 /// The calendar dialog, which returns a list of actions rather than a set.
 pub fn manage_calendar(
     state: &Arc<StdMutex<WxUIState>>,
@@ -1328,7 +1424,8 @@ pub fn open_draft(
     }
 
     let labels: Vec<String> = drafts.iter().map(draft_label).collect();
-    let chosen = wx_managers::choose_from_list(frame, "Open Draft", "&Saved drafts:", &labels)?;
+    let chosen =
+        wx_managers::choose_from_list(frame, "Open Draft", "&Saved drafts:", "&Open", &labels)?;
     let draft = drafts.get(chosen)?;
 
     Some(crate::presentation::ui_types::CompositionData {
