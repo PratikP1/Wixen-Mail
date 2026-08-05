@@ -90,6 +90,12 @@ pub struct ComposeData {
     /// is written over minutes, and a file read at Send is the version somebody
     /// meant to send rather than the one that existed when they picked it.
     pub attachments: Vec<std::path::PathBuf>,
+    /// The conversation this is an answer to, when it is one.
+    ///
+    /// Read off the mode the window was opened with rather than off anything
+    /// somebody typed, so it survives every way out of the window: sending,
+    /// saving a draft, and the automatic save.
+    pub answering: Option<crate::application::threading::Continuing>,
 }
 
 /// Mode for opening the compose dialog
@@ -102,6 +108,8 @@ pub enum ComposeMode {
         to: String,
         subject: String,
         quoted_body: MessageBody,
+        /// What this answers, so the reply lands in that conversation.
+        answering: Option<crate::application::threading::Continuing>,
     },
     /// Reply to all recipients
     ReplyAll {
@@ -109,6 +117,8 @@ pub enum ComposeMode {
         cc: String,
         subject: String,
         quoted_body: MessageBody,
+        /// What this answers, so the reply lands in that conversation.
+        answering: Option<crate::application::threading::Continuing>,
     },
     /// Forward a message
     Forward { subject: String, body: MessageBody },
@@ -636,6 +646,7 @@ pub fn show_compose_dialog_full(
             to,
             subject,
             quoted_body,
+            ..
         } => {
             to_field.set_value(to);
             subject_field.set_value(&format_reply_subject(subject));
@@ -646,6 +657,7 @@ pub fn show_compose_dialog_full(
             cc,
             subject,
             quoted_body,
+            ..
         } => {
             to_field.set_value(to);
             cc_field.set_value(cc);
@@ -1041,6 +1053,17 @@ pub fn show_compose_dialog_full(
     // meant Save Draft, and Shift+Tab reached Save Draft when it meant the
     // Subject line. Putting it back on the ordinary event loop lets the
     // browser finish first, which is the same reason F7 goes through a timer.
+    // Taken off the mode once, before the closure that reads the window, so
+    // every way out of the window carries it: Send, Save Draft, and the
+    // automatic save. Nothing somebody types can change it.
+    let answering = match &mode {
+        ComposeMode::Reply { answering, .. } | ComposeMode::ReplyAll { answering, .. } => {
+            answering.clone()
+        }
+        ComposeMode::Draft(data) => data.answering.clone(),
+        ComposeMode::New | ComposeMode::Forward { .. } => None,
+    };
+
     let read_compose_data = {
         let attached = attached.clone();
         move || {
@@ -1067,6 +1090,7 @@ pub fn show_compose_dialog_full(
                     .iter()
                     .map(|file| file.path.clone())
                     .collect(),
+                answering: answering.clone(),
             })
         }
     };
@@ -2249,6 +2273,7 @@ mod tests {
             html_mode: true,
             account_index: None,
             attachments: Vec::new(),
+            answering: None,
         }
     }
 
@@ -2342,6 +2367,7 @@ mod tests {
                 to: String::new(),
                 subject: String::new(),
                 quoted_body: MessageBody::Plain(String::new()),
+                answering: None,
             }),
             "Reply"
         );
@@ -2351,6 +2377,7 @@ mod tests {
                 cc: String::new(),
                 subject: String::new(),
                 quoted_body: MessageBody::Plain(String::new()),
+                answering: None,
             }),
             "Reply All"
         );

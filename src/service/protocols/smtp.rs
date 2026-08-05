@@ -59,6 +59,18 @@ pub struct Email {
     pub subject: String,
     pub body_text: String,
     pub body_html: Option<String>,
+    /// The `Message-ID` of the message this answers, brackets and all.
+    ///
+    /// `None` for anything that is not a reply. The value is written verbatim,
+    /// so whoever builds it owns the brackets:
+    /// [`crate::application::threading::continuing`] does.
+    pub in_reply_to: Option<String>,
+    /// The whole conversation before this reply, oldest first, brackets and
+    /// all, ending with the message being answered.
+    ///
+    /// A chain rather than one identifier. Carrying only the parent puts every
+    /// reply directly under the top of the thread in the recipient's client.
+    pub references: Option<String>,
     /// The files to send with it, already read.
     ///
     /// Read by [`crate::application::attaching::read_all`] rather than here, so
@@ -80,6 +92,8 @@ impl Email {
             subject,
             body_text: body,
             body_html: None,
+            in_reply_to: None,
+            references: None,
             attachments: Vec::new(),
         }
     }
@@ -106,6 +120,16 @@ fn build_message(email: &Email) -> Result<Message> {
     let mut builder = Message::builder()
         .from(parse_mailbox(&email.from, email.from_name.as_deref())?)
         .subject(&email.subject);
+
+    // What puts a reply in the conversation it answers rather than starting a
+    // new one. Written verbatim by the mail library, which is why the brackets
+    // are added before they get here.
+    if let Some(parent) = &email.in_reply_to {
+        builder = builder.in_reply_to(parent.clone());
+    }
+    if let Some(chain) = &email.references {
+        builder = builder.references(chain.clone());
+    }
 
     for to in &email.to {
         builder = builder.to(parse_mailbox(to, None)?);
@@ -176,7 +200,16 @@ fn parse_mailbox(address: &str, name: Option<&str>) -> Result<Mailbox> {
         .trim()
         .parse::<lettre::Address>()
         .map_err(|e| Error::Protocol(format!("Invalid email address {}: {}", address, e)))?;
-    Ok(Mailbox::new(name.map(str::to_string), parsed))
+    // A name of nothing but spaces is not a name, and the mail library does not
+    // treat it as one: it writes `From: "   " <ada@example.com>`, which is a
+    // recipient's list showing a blank where the sender should be. Decided
+    // here rather than at each caller, because every caller would have to
+    // remember it and one of them would not.
+    let name = name
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string);
+    Ok(Mailbox::new(name, parsed))
 }
 
 /// SMTP client for async operations
@@ -394,6 +427,137 @@ mod tests {
         String::from_utf8_lossy(&build_message(email).expect("a message").formatted()).into_owned()
     }
 
+    /// A message with a display name on it, and nothing else changed.
+    fn note_from(name: &str) -> Email {
+        Email {
+            from_name: Some(name.to_string()),
+            ..plain_note()
+        }
+    }
+
+    #[test]
+    fn test_a_reply_says_which_message_it_answers() {
+        // Without these two headers every reply this program sends starts a
+        // new conversation in the recipient's client, which for somebody
+        // working through a mailbox by ear turns one thread into a scattering
+        // of unrelated messages.
+        let sent = on_the_wire(&Email {
+            in_reply_to: Some("<c@x>".to_string()),
+            references: Some("<a@x> <c@x>".to_string()),
+            ..plain_note()
+        });
+
+        assert!(sent.contains("In-Reply-To: <c@x>"), "{sent}");
+        assert!(sent.contains("References: <a@x> <c@x>"), "{sent}");
+    }
+
+    #[test]
+    fn test_a_message_that_is_not_a_reply_carries_neither_header() {
+        // A new message with an In-Reply-To naming nothing would be a reply to
+        // a message that does not exist.
+        let sent = on_the_wire(&plain_note());
+        assert!(!sent.contains("In-Reply-To"), "{sent}");
+        assert!(!sent.contains("References:"), "{sent}");
+    }
+
+    #[test]
+    fn test_a_long_chain_is_folded_rather_than_written_as_one_illegal_line() {
+        // A header line over 998 characters is not a header, and a thread of
+        // forty messages carries a chain that long.
+        let chain: Vec<String> = (0..40).map(|n| format!("<m{n}@example.com>")).collect();
+        let sent = on_the_wire(&Email {
+            in_reply_to: Some("<m39@example.com>".to_string()),
+            references: Some(chain.join(" ")),
+            ..plain_note()
+        });
+
+        let longest = sent.lines().map(str::len).max().unwrap_or(0);
+        assert!(longest <= 998, "a line of {longest} characters: {sent}");
+        assert!(sent.contains("<m0@example.com>"), "{sent}");
+        assert!(sent.contains("<m39@example.com>"), "{sent}");
+    }
+
+    #[test]
+    fn test_a_message_goes_out_with_the_name_recipients_see() {
+        // Every message went out as a bare address where every other mail
+        // program sends a name. The builder could always write one; nothing
+        // ever supplied it.
+        let sent = on_the_wire(&note_from("Ada Lovelace"));
+        assert!(
+            sent.contains("From: \"Ada Lovelace\" <ada@example.com>"),
+            "{sent}"
+        );
+    }
+
+    #[test]
+    fn test_no_name_leaves_a_bare_address_rather_than_empty_brackets() {
+        // What an account with nothing typed in that box sends, and what every
+        // message sent before the box existed sent.
+        let sent = on_the_wire(&plain_note());
+        assert!(sent.contains("From: ada@example.com"), "{sent}");
+        assert!(!sent.contains("From: <"), "{sent}");
+        assert!(!sent.contains("From: \"\""), "{sent}");
+    }
+
+    #[test]
+    fn test_a_name_that_is_only_spaces_is_no_name_at_all() {
+        // The neighbour case to the one above. A name of spaces written raw
+        // would be a From header starting with a quoted run of nothing.
+        let sent = on_the_wire(&note_from("   "));
+        assert!(sent.contains("From: ada@example.com"), "{sent}");
+        assert!(!sent.contains("\" \""), "{sent}");
+    }
+
+    #[test]
+    fn test_a_name_with_a_comma_stays_one_sender() {
+        // Unquoted, "Smith, John <j@example.com>" is two addresses, one of
+        // which does not exist. Asserted on the round trip rather than on the
+        // spelling, because the mail library encodes such a name as a single
+        // encoded word rather than quoting it, and both are one sender.
+        let sent = on_the_wire(&note_from("Smith, John"));
+
+        let read_back = crate::service::mime::parse(sent.as_bytes()).expect("a message to read");
+        assert_eq!(
+            read_back.from.len(),
+            1,
+            "one name became two senders: {:?}",
+            read_back.from
+        );
+        assert_eq!(read_back.from[0].address, "ada@example.com");
+        assert_eq!(read_back.from[0].name.as_deref(), Some("Smith, John"));
+    }
+
+    #[test]
+    fn test_a_name_that_is_not_english_survives_the_journey() {
+        // A header carries ASCII, so anything else is encoded on the way out
+        // and has to come back as what was typed.
+        let sent = on_the_wire(&note_from(
+            "\u{418}\u{432}\u{430}\u{43d}\u{43e}\u{432} \u{418}\u{432}\u{430}\u{43d}",
+        ));
+        assert!(sent.contains("=?utf-8?"), "not encoded: {sent}");
+
+        let read_back = crate::service::mime::parse(sent.as_bytes()).expect("a message to read");
+        assert_eq!(
+            read_back.from[0].name.as_deref(),
+            Some("\u{418}\u{432}\u{430}\u{43d}\u{43e}\u{432} \u{418}\u{432}\u{430}\u{43d}"),
+            "{:?}",
+            read_back.from
+        );
+    }
+
+    #[test]
+    fn test_a_name_the_same_as_the_address_is_still_only_written_once() {
+        // The neighbour case that the fixture rule exists for: two fields
+        // holding one value have to stay two fields.
+        let sent = on_the_wire(&note_from("ada@example.com"));
+        assert_eq!(sent.matches("From:").count(), 1, "{sent}");
+
+        let read_back = crate::service::mime::parse(sent.as_bytes()).expect("a message to read");
+        assert_eq!(read_back.from.len(), 1, "{:?}", read_back.from);
+        assert_eq!(read_back.from[0].address, "ada@example.com");
+        assert_eq!(read_back.from[0].name.as_deref(), Some("ada@example.com"));
+    }
+
     #[test]
     fn test_a_message_with_no_files_is_the_message_it_always_was() {
         // Wrapping every message in multipart/mixed to leave room for the case
@@ -535,6 +699,115 @@ mod gate_tests {
         let said = said.to_string();
         assert!(said.contains("send a message"), "{said}");
         assert!(said.contains("Allow Changes"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_reply_with_threading_headers_still_cannot_be_sent_with_the_gate_closed() {
+        // A reply is now a different shape of message from anything that could
+        // be sent before it, so it gets its own claim: nothing about carrying
+        // a conversation, or a display name, moves the refusal.
+        let client = SmtpClient::new(config()).expect("a client");
+        let sent = client
+            .send_email(
+                Email {
+                    from_name: Some("Ada Lovelace".to_string()),
+                    in_reply_to: Some("<c@x>".to_string()),
+                    references: Some("<a@x> <c@x>".to_string()),
+                    ..Email::simple(
+                        "me@example.com".to_string(),
+                        "them@example.com".to_string(),
+                        "Re: Hello".to_string(),
+                        "Body".to_string(),
+                    )
+                },
+                &MailAuth::Password("hunter2".to_string()),
+            )
+            .await;
+
+        let Err(said) = sent else {
+            panic!("it sent");
+        };
+        let said = said.to_string();
+        assert!(said.contains("send a message"), "{said}");
+        assert!(said.contains("Allow Changes"), "{said}");
+    }
+
+    /// A listener that says whether anything connected to it.
+    ///
+    /// "Nothing arrived" is only an observation if the same listener can be
+    /// shown to see something arrive, which is what the second half of the test
+    /// below does.
+    async fn a_listener() -> (SmtpConfig, tokio::sync::mpsc::Receiver<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a loopback port");
+        let address = listener.local_addr().expect("the port that was taken");
+        let (connected, heard) = tokio::sync::mpsc::channel(4);
+
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                if connected.send(()).await.is_err() {
+                    return;
+                }
+                drop(stream);
+            }
+        });
+
+        (
+            SmtpConfig {
+                server: address.ip().to_string(),
+                port: address.port(),
+                // Plaintext, so the connection itself is the whole observation
+                // and no handshake stands between the two halves of the test.
+                use_tls: false,
+                username: "me@example.com".to_string(),
+            },
+            heard,
+        )
+    }
+
+    #[tokio::test]
+    async fn test_nothing_reaches_a_server_with_the_gate_closed_and_something_does_when_it_is_open()
+    {
+        let (config, mut heard) = a_listener().await;
+        let a_message = || Email {
+            from_name: Some("Ada Lovelace".to_string()),
+            in_reply_to: Some("<c@x>".to_string()),
+            references: Some("<a@x> <c@x>".to_string()),
+            ..Email::simple(
+                "me@example.com".to_string(),
+                "them@example.com".to_string(),
+                "Re: Hello".to_string(),
+                "Body".to_string(),
+            )
+        };
+
+        // Closed. Built the way production builds it when the account is not
+        // allowed to send.
+        let refused = SmtpClient::new(config.clone())
+            .expect("a client")
+            .send_email(a_message(), &MailAuth::Password("hunter2".to_string()))
+            .await;
+        assert!(refused.is_err(), "it sent");
+        assert!(
+            heard.try_recv().is_err(),
+            "something connected to the server with the gate closed"
+        );
+
+        // Open. The send still fails, because nothing on the other end speaks
+        // SMTP, but the connection is made, which is what proves the listener
+        // above can see a connection at all.
+        let _ = SmtpClient::allowed_to_send(config)
+            .expect("a client")
+            .send_email(a_message(), &MailAuth::Password("hunter2".to_string()))
+            .await;
+        let saw_something = tokio::time::timeout(std::time::Duration::from_secs(5), heard.recv())
+            .await
+            .expect("the listener to be reached within five seconds");
+        assert!(
+            saw_something.is_some(),
+            "the listener never saw a connection, so it could never have seen one"
+        );
     }
 
     #[test]

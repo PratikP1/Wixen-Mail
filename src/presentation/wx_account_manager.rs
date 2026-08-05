@@ -440,6 +440,13 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
 
     let name_f = tf("Account &Name:", "");
     let email_f = tf("&Email Address:", "");
+    // The third box in this dialog that could be mistaken for the other two.
+    // Account Name is what you call the account, usually "Work"; Username is
+    // what signs in to the server; this is the name a recipient reads in their
+    // list. The label says what happens rather than naming a header, and the
+    // box starts empty, which is what every message sent before it existed
+    // carried.
+    let sender_name_f = tf("The na&me people see when your mail arrives:", "");
 
     // Auth hint: shown below email, tells user what will happen
     let auth_hint = {
@@ -533,6 +540,7 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
 
     if let Some(a) = existing {
         name_f.set_value(&a.name);
+        sender_name_f.set_value(&a.sender_name);
         email_f.set_value(&a.email);
         imap_f.set_value(&a.imap_server);
         imap_port_f.set_value(&a.imap_port);
@@ -647,6 +655,7 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
                 .map(|a| a.id.clone())
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
             name: name_f.get_value(),
+            sender_name: sender_name_f.get_value().trim().to_string(),
             email: email_val,
             provider,
             imap_server: imap_f.get_value(),

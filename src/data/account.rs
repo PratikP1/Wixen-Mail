@@ -11,7 +11,21 @@ pub struct Account {
     pub id: String,
 
     /// User-friendly account name
+    ///
+    /// The label somebody gave this account, so it is often "Work" or the
+    /// provider's name. It is not a person's name and must never be put in
+    /// front of an address on an outgoing message. See [`Account::sender_name`].
     pub name: String,
+
+    /// The name recipients see when mail from this account arrives.
+    ///
+    /// A separate field from [`Account::name`] on purpose. Those two look
+    /// interchangeable in the dialog and are not, which is the same trap that
+    /// once put the SMTP login name in the From header of every message.
+    ///
+    /// Empty means no name, and a message goes out with a bare address, which
+    /// is what every message sent before this field existed carried.
+    pub sender_name: String,
 
     /// Email address
     pub email: String,
@@ -192,6 +206,10 @@ impl Account {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name,
+            // Empty until somebody types one, which is what every message sent
+            // before this field existed carried. Guessing it from the address
+            // would put a name nobody chose in front of every message.
+            sender_name: String::new(),
             email,
             imap_server: String::new(),
             imap_port: "993".to_string(),
@@ -311,6 +329,7 @@ impl Account {
         Account {
             id: uuid::Uuid::new_v4().to_string(),
             name: "Primary Account".to_string(),
+            sender_name: String::new(),
             email: email.clone(),
             imap_server: config.imap_server.clone(),
             imap_port: config.imap_port.clone(),

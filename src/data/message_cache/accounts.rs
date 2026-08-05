@@ -26,9 +26,9 @@ impl MessageCache {
               enabled, check_interval_minutes, provider, last_sync, color,
               created_at, updated_at,
               protocol, pop_server, pop_port, pop_use_tls,
-              pop_leave_on_server, pop_remove_after_days)
+              pop_leave_on_server, pop_remove_after_days, sender_name)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                     ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
+                     ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
                 params![
                     &account.id,
                     &account.name,
@@ -56,7 +56,8 @@ impl MessageCache {
                     &account.pop_port,
                     &account.pop_use_tls,
                     &account.pop_leave_on_server,
-                    &account.pop_remove_after_days
+                    &account.pop_remove_after_days,
+                    &account.sender_name
                 ],
             )
             .map_err(|e| Error::Other(format!("Failed to save account: {}", e)))?;
@@ -73,7 +74,7 @@ impl MessageCache {
                     smtp_server, smtp_port, smtp_use_tls, username, password,
                     enabled, check_interval_minutes, provider, last_sync, color,
                     protocol, pop_server, pop_port, pop_use_tls,
-                    pop_leave_on_server, pop_remove_after_days
+                    pop_leave_on_server, pop_remove_after_days, sender_name
              FROM accounts
              ORDER BY created_at",
             )
@@ -117,6 +118,7 @@ impl MessageCache {
                         pop_use_tls: row.get(19)?,
                         pop_leave_on_server: row.get(20)?,
                         pop_remove_after_days: row.get(21)?,
+                        sender_name: row.get(22)?,
                     },
                 ))
             })
@@ -270,6 +272,58 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("the account to be in the table")
+    }
+
+    #[test]
+    fn test_the_name_recipients_see_is_kept_apart_from_the_label_you_gave_the_account() {
+        // Two boxes in one dialog that look interchangeable and are not. The
+        // label is what somebody calls the account, usually "Work" or the
+        // provider's name; the other is the name that goes in front of their
+        // address on every message they send. Putting the first in the second
+        // sends mail from "Work".
+        let cache = a_cache("sender_name");
+        let mut account = an_account("acc-1", "ada@example.com", "hunter2");
+        account.name = "Work".to_string();
+        account.sender_name = "Ada Lovelace".to_string();
+        cache.save_account(&account).expect("the account to save");
+
+        let loaded = cache.load_accounts().expect("the accounts to load");
+        let back = loaded.first().expect("one account");
+        assert_eq!(back.name, "Work");
+        assert_eq!(back.sender_name, "Ada Lovelace");
+        assert_ne!(
+            back.name, back.sender_name,
+            "the label and the name recipients see came back as one value"
+        );
+    }
+
+    #[test]
+    fn test_an_account_stored_before_there_was_a_name_still_opens_and_keeps_its_rows() {
+        // The column is added to a database that already exists, so an account
+        // written by an older build has to read back with no name, which is
+        // exactly what every message it sent carried.
+        let folder = env::temp_dir().join(format!(
+            "wixen_mail_test_older_db_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("a clock that has passed 1970")
+                .as_nanos()
+        ));
+        {
+            let cache = MessageCache::new(folder.clone(), None).expect("a cache to open");
+            let account = an_account("acc-old", "grace@example.com", "hunter2");
+            cache.save_account(&account).expect("the account to save");
+            cache
+                .conn
+                .execute("ALTER TABLE accounts DROP COLUMN sender_name", [])
+                .expect("the column to come off, making this an older database");
+        }
+
+        let reopened = MessageCache::new(folder, None).expect("the older database to open again");
+        let loaded = reopened.load_accounts().expect("the accounts to load");
+        let back = loaded.first().expect("the account to survive");
+        assert_eq!(back.email, "grace@example.com");
+        assert_eq!(back.sender_name, "");
     }
 
     #[test]
@@ -459,6 +513,8 @@ mod tests {
                     bcc: None,
                     subject: "Half written".to_string(),
                     body: "Body".to_string(),
+                    in_reply_to: None,
+                    references: None,
                     created_at: "2026-08-01".to_string(),
                     updated_at: "2026-08-01".to_string(),
                 })
@@ -550,6 +606,7 @@ mod tests {
         let account = crate::data::account::Account {
             id: "acc-1".to_string(),
             name: "Work Account".to_string(),
+            sender_name: "Ada Lovelace".to_string(),
             email: "work@example.com".to_string(),
             imap_server: "imap.example.com".to_string(),
             imap_port: "993".to_string(),
@@ -586,6 +643,7 @@ mod tests {
         let account2 = crate::data::account::Account {
             id: "acc-2".to_string(),
             name: "Personal Account".to_string(),
+            sender_name: "Grace Hopper".to_string(),
             email: "personal@example.com".to_string(),
             imap_server: "imap.gmail.com".to_string(),
             imap_port: "993".to_string(),

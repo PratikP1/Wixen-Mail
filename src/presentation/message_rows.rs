@@ -356,6 +356,8 @@ mod tests {
             to: "me@example.com".to_string(),
             cc: String::new(),
             reply_to: String::new(),
+            header_message_id: String::new(),
+            refs_header: None,
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,

@@ -19,7 +19,12 @@ pub enum ReplyMode {
     /// list that is the list, which is the answer people expect from the
     /// ordinary reply key.
     Default,
-    /// Everyone the message reached, and wherever replies go.
+    /// Everyone the message reached, wherever replies go, and the person who
+    /// wrote it.
+    ///
+    /// The author is included even when they asked for replies to go elsewhere,
+    /// which on a mailing list means they get a copy of the answer to their own
+    /// message. Decided rather than discovered.
     All,
     /// The person who wrote it, whatever `Reply-To` says.
     ///
@@ -59,6 +64,44 @@ impl ReplyRecipients {
     }
 }
 
+/// What a reply is about to do, in one sentence, before the window opens.
+///
+/// Said out loud because the three keys differ only by a modifier and the cost
+/// of the wrong one is a private answer in front of a mailing list. One
+/// recipient is named, because "Reply to sender only, Ada Lovelace" is the
+/// difference from a reply to all and is otherwise invisible until the message
+/// has gone. More than one is counted rather than listed: reading out
+/// thirty-four addresses is a wall somebody has to sit through.
+pub fn announcement(mode: ReplyMode, recipients: &ReplyRecipients) -> String {
+    let everyone: Vec<String> = split_addresses(&recipients.to)
+        .into_iter()
+        .chain(split_addresses(&recipients.cc))
+        .collect();
+
+    match everyone.as_slice() {
+        [] => format!("{}, nobody to send to", mode.description()),
+        [only] => format!("{}, {}", mode.description(), name_or_address(only)),
+        many => format!("{}, {} recipients", mode.description(), many.len()),
+    }
+}
+
+/// How to refer to one recipient out loud.
+///
+/// The display name where the address carries one, because that is what the
+/// person is called; the address itself where it does not, rather than a guess
+/// made from the local part, which would announce a name nobody chose.
+fn name_or_address(address: &str) -> String {
+    let trimmed = address.trim();
+    let Some(open) = trimmed.find('<') else {
+        return trimmed.to_string();
+    };
+    let name = trimmed[..open].trim().trim_matches('"').trim();
+    if name.is_empty() {
+        return key_of(trimmed);
+    }
+    name.to_string()
+}
+
 /// What one message looks like for the purpose of replying.
 #[derive(Debug, Clone, Default)]
 pub struct RepliedTo<'a> {
@@ -94,21 +137,24 @@ pub fn reply_recipients(
     }
 
     // What is already spoken for: the addresses this reply is going to, and
-    // our own. Note what is not here. The person who wrote the message is not
-    // added, so when they asked for replies to go somewhere else, a reply to
-    // all reaches that place and everyone copied and not the author, unless
-    // they happen to be in To or Cc themselves. On a mailing list that is
-    // exactly the common case.
-    //
-    // That is what the code does rather than what anybody decided. Some lists
-    // treat a personal copy as rude and some people want one, and nothing here
-    // or anywhere else states which this is meant to be.
+    // our own.
     let mut seen: Vec<String> = to.iter().map(|a| key_of(a)).collect();
     seen.extend(own_addresses.iter().map(|a| key_of(a)));
 
+    // The person who wrote it comes first, because a reply to all should reach
+    // them. When they set a `Reply-To`, which is the mailing list case, the
+    // reply is addressed to the list and they are not otherwise anywhere in
+    // it, so without this the one person the answer is for is the one person
+    // who does not get it. Decided rather than discovered: some lists treat a
+    // personal copy as rude, and reaching the author was judged the lesser
+    // cost of the two.
+    //
+    // Skipped when they are already the addressee, which is every message
+    // without a `Reply-To`, and skipped when they are you.
     let mut cc = Vec::new();
-    for address in split_addresses(message.to)
+    for address in split_addresses(message.from)
         .into_iter()
+        .chain(split_addresses(message.to))
         .chain(split_addresses(message.cc))
     {
         let key = key_of(&address);
@@ -208,6 +254,15 @@ mod tests {
         }
     }
 
+    fn own_message() -> RepliedTo<'static> {
+        RepliedTo {
+            from: "me@example.com",
+            reply_to: "rust-users@lists.example.org",
+            to: "rust-users@lists.example.org",
+            cc: "Charles Babbage <charles@example.com>",
+        }
+    }
+
     fn mine() -> Vec<String> {
         vec!["me@example.com".to_string()]
     }
@@ -234,20 +289,47 @@ mod tests {
     }
 
     #[test]
-    fn test_reply_to_all_on_a_list_reaches_the_list_and_not_the_author() {
-        // This records what happens today. It is not a decision anybody has
-        // taken: the author asked for replies to go to the list, so a reply to
-        // all goes there and to everyone copied, and never to the author
-        // personally. Whether it should is a question for a person.
+    fn test_reply_to_all_on_a_list_also_reaches_the_person_who_wrote_it() {
+        // This was a characterisation test recording that the author was left
+        // out. That is now a decision rather than an accident: a reply to all
+        // reaches everyone the message reached and the person who wrote it,
+        // even when they asked for replies to go to a list.
         let reply = reply_recipients(&list_message(), &mine(), ReplyMode::All);
 
         assert_eq!(reply.to, "rust-users@lists.example.org");
         assert!(reply.cc.contains("charles@example.com"), "{}", reply.cc);
         assert!(
-            !reply.cc.to_lowercase().contains("ada@example.com"),
+            reply.cc.to_lowercase().contains("ada@example.com"),
             "the author is left out of a reply to all: {}",
             reply.cc
         );
+    }
+
+    #[test]
+    fn test_reply_to_all_does_not_copy_the_author_who_is_already_the_addressee() {
+        // With no Reply-To the author is already in To, and copying them there
+        // as well sends one person two copies of the same reply.
+        let reply = reply_recipients(&plain_message(), &mine(), ReplyMode::All);
+        assert_eq!(reply.to, "Ada Lovelace <ada@example.com>");
+        assert_eq!(
+            reply.cc.to_lowercase().matches("ada@example.com").count(),
+            0,
+            "the author was copied as well as addressed: {}",
+            reply.cc
+        );
+    }
+
+    #[test]
+    fn test_reply_to_all_on_your_own_message_does_not_copy_you() {
+        // Answering your own message to a list is common, and your own address
+        // is the one address a reply to all has always left out.
+        let reply = reply_recipients(&own_message(), &mine(), ReplyMode::All);
+        assert!(
+            !reply.cc.to_lowercase().contains("me@example.com"),
+            "sent to self: {}",
+            reply.cc
+        );
+        assert!(reply.cc.contains("charles@example.com"), "{}", reply.cc);
     }
 
     #[test]
@@ -398,6 +480,54 @@ mod tests {
         assert_eq!(reply.count(), 3);
         let one = reply_recipients(&plain_message(), &mine(), ReplyMode::Sender);
         assert_eq!(one.count(), 1);
+    }
+
+    #[test]
+    fn test_a_reply_to_one_person_says_who_it_is_going_to() {
+        // The difference between answering one person and answering a list is
+        // the whole point of the sender-only key, and it is otherwise
+        // invisible until the message has gone.
+        let one = reply_recipients(&list_message(), &mine(), ReplyMode::Sender);
+        assert_eq!(
+            announcement(ReplyMode::Sender, &one),
+            "Reply to sender only, Ada Lovelace"
+        );
+    }
+
+    #[test]
+    fn test_a_reply_to_one_person_with_no_name_says_their_address() {
+        let one = reply_recipients(
+            &RepliedTo {
+                from: "charles@example.com",
+                ..Default::default()
+            },
+            &mine(),
+            ReplyMode::Default,
+        );
+        assert_eq!(
+            announcement(ReplyMode::Default, &one),
+            "Reply, charles@example.com"
+        );
+    }
+
+    #[test]
+    fn test_a_reply_to_many_says_how_many_rather_than_listing_them() {
+        // Reading out thirty-four addresses before the window opens is not
+        // information, it is a wall somebody has to sit through.
+        let many = reply_recipients(&plain_message(), &mine(), ReplyMode::All);
+        assert_eq!(
+            announcement(ReplyMode::All, &many),
+            "Reply to all, 3 recipients"
+        );
+    }
+
+    #[test]
+    fn test_a_reply_to_nobody_says_so_rather_than_counting_to_zero() {
+        let none = reply_recipients(&RepliedTo::default(), &mine(), ReplyMode::All);
+        assert_eq!(
+            announcement(ReplyMode::All, &none),
+            "Reply to all, nobody to send to"
+        );
     }
 
     #[test]

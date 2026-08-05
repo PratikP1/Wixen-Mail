@@ -8,6 +8,69 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A reply now lands in the conversation it answers.** Every reply this program
+  sent started a new conversation in the recipient's client, because the two
+  headers that say which message is being answered were never written. They are
+  now, both of them: the message being answered, and the whole chain of messages
+  before it. For somebody working through a mailbox by ear, this is the
+  difference between one thread and a scattering of unrelated messages.
+
+  This is carried all the way through. It survives Save Draft, so a reply put
+  aside half-written and reopened tomorrow still goes out inside its thread.
+
+  Known limitation: no reply from here has been read by a real mail client, so
+  whether the threading is right at the far end is untested. What can be checked
+  is that the headers are built correctly and reach the outgoing message, and
+  that is checked.
+
+- **You can now give the name recipients see.** Mail went out as a bare address
+  where every other program sends a name. The account dialog now has a box for
+  it, labelled "The name people see when your mail arrives", separate from the
+  Account Name box, which is the label you gave the account and is usually
+  something like "Work". Leaving it empty sends a bare address, which is what
+  every message sent until now carried, so nothing changes until you type
+  something.
+
+  The same name goes on the copy filed in your Drafts folder, so what you come
+  back to on another device is the message you were writing.
+
+  Known limitation: not tried against a real mail server.
+
+- **Reply to Sender Only is on the Message menu, so its key works.** The command
+  existed, with a toolbar button and three lines in the shortcuts document
+  saying `Alt+Shift+R`, and nothing bound the key: Windows dispatches menu
+  accelerators, and there was no menu item. The only way to reach it was the
+  mouse, which for the people this program is for means it did not exist.
+
+- **A read receipt is now filed against the message it is about.** It named the
+  subject and reached the right person, and arrived as loose mail rather than
+  inside the thread, because the message list did not carry the original's
+  identifier. It does now.
+
+### Changed
+
+- **Reply All now also reaches the person who wrote the message.** Before, on a
+  mailing list, a reply to all went to the list and everybody copied and never
+  to the author, because the author had asked for replies to go to the list.
+  This is a decision rather than a fix: some lists treat a personal copy as
+  rude, and reaching the person you are answering was judged the lesser cost.
+  They are added to Cc, and only when they are not already among the recipients
+  and are not you. Reply to Sender Only is unchanged and still reaches one
+  person.
+
+- **What a reply is about to do is said more usefully.** A reply to one person
+  now names them, "Reply to sender only, Ada Lovelace", instead of counting to
+  one. A reply to several still gives the count rather than reading out a list.
+
+### Fixed
+
+- **The shortcuts document said `Ctrl+Shift+G` gets older messages, and nothing
+  was bound to it.** The key is `Shift+F9`, which is what the menu has always
+  had. Worse, the sentence spoken after a sync said `Ctrl+Shift+G` too, so the
+  program was telling people to press a key that did nothing. Both corrected.
+
+### Added
+
 - **A change you make to a calendar you added by its address is now sent back to
   that server.** Until now it was not. You could edit an appointment in one of
   those calendars, the edit would look like it worked, and the next sync would

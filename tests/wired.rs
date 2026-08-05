@@ -451,6 +451,70 @@ fn test_the_menu_key_is_given_to_every_list_and_tree() {
     );
 }
 
+/// A read receipt is filed against the message it is about.
+///
+/// It was sent with no `In-Reply-To` for one reason only: the list row did not
+/// carry the original's `Message-ID`. It does now, so the receipt arrives in
+/// the sender's thread instead of as loose mail with a subject line.
+#[test]
+fn test_a_read_receipt_names_the_message_it_is_about() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    assert!(
+        !app.contains("message_id: None,\n            read_at:"),
+        "a read receipt still goes out naming no message"
+    );
+    assert!(
+        app.contains("header_message_id"),
+        "nothing on the receipt path reads the original's header identifier"
+    );
+}
+
+/// The account dialog asks for the name recipients see.
+///
+/// This pins that the code asks for the right thing. It can never mean a
+/// screen reader heard it: only a run with NVDA says that.
+///
+/// The dialog now holds three boxes that look interchangeable and are not.
+/// "Account Name" is the label somebody gave the account, usually "Work".
+/// "Username" is what signs in to the server. This one is the name that goes
+/// in front of their address on every message they send, and its label says
+/// what happens rather than naming a header.
+#[test]
+fn test_the_account_dialog_asks_for_the_name_recipients_see() {
+    let dialog =
+        fs::read_to_string("src/presentation/wx_account_manager.rs").expect("the account dialog");
+
+    assert!(
+        dialog.contains("The na&me people see when your mail arrives:"),
+        "the account dialog does not ask for the name recipients see"
+    );
+    assert!(
+        dialog.contains("sender_name:"),
+        "the account dialog asks for a name and does not put it on the account"
+    );
+}
+
+#[test]
+fn test_the_key_that_replies_to_the_author_alone_is_bound_to_a_menu_item() {
+    // Replying to one person on a mailing list is the command that stops a
+    // private answer reaching two thousand strangers, and it had a handler, a
+    // toolbar button and three lines in the shortcuts document while the key
+    // was bound to nothing. Windows dispatches menu accelerators, so a command
+    // with no menu item is a command with no key, and a toolbar button is the
+    // least reachable control on the window for the people this is for.
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    let on_the_menu = app.match_indices("ID_REPLY_SENDER").any(|(at, _)| {
+        let after = &app[at..(at + 200).min(app.len())];
+        after.contains(r"\tAlt+Shift+R")
+    });
+    assert!(
+        on_the_menu,
+        "nothing gives ID_REPLY_SENDER the Alt+Shift+R accelerator, so the key does nothing"
+    );
+}
+
 #[test]
 fn test_f6_and_shift_f6_reach_the_pane_handler() {
     // The specific one. Named separately from the sweep above because it is
@@ -519,35 +583,38 @@ fn test_the_shortcuts_document_and_the_menus_agree() {
 #[test]
 fn test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of() {
     let doc = fs::read_to_string("docs/KEYBOARD_SHORTCUTS.md").expect("the shortcuts document");
-    let mut code: String = sources()
+    let code: String = sources()
         .iter()
         .filter_map(|path| fs::read_to_string(path).ok())
         .collect();
 
     // The keys the code states outright, which no amount of reading the source
-    // as text would find: both are assembled from parts at run time.
+    // as text would find: all three are assembled from parts at run time, so
+    // they are kept apart from the source text and matched by name.
+    let mut stated = String::new();
     for format in wixen_mail::presentation::editor_document::Format::ALL {
-        code.push_str(&format!("\n{}", format.shortcut()));
+        stated.push_str(&format!("\n{}", format.shortcut()));
     }
     for kind in wixen_mail::application::new_item::ItemKind::ALL {
-        code.push_str(&format!("\n{}", kind.shortcut()));
+        stated.push_str(&format!("\n{}", kind.shortcut()));
     }
     // The label keys, which the menu builds by counting rather than by naming.
     for number in 1..=wixen_mail::application::tagging::REACHABLE_BY_KEY {
-        code.push_str(&format!("\nCtrl+{number}"));
+        stated.push_str(&format!("\nCtrl+{number}"));
     }
 
     let mut invented = Vec::new();
     for key in documented_combinations(&doc) {
-        if bound_somewhere(&key, &code) || invented.contains(&key) {
+        if bound_somewhere(&key, &code, &stated) || invented.contains(&key) {
             continue;
         }
         invented.push(key);
     }
+    invented.retain(|key| !bound_by_a_handler_rather_than_a_menu().contains(&key.as_str()));
 
     assert!(
         invented.is_empty(),
-        "docs/KEYBOARD_SHORTCUTS.md names these keys and nothing in src/presentation mentions them: {invented:?}"
+        "docs/KEYBOARD_SHORTCUTS.md names these keys and nothing in src/presentation binds them: {invented:?}"
     );
 }
 
@@ -556,7 +623,14 @@ fn test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of() {
 /// `Alt` and a single letter is a mnemonic, which is not written anywhere as
 /// `Alt+S`: it is the ampersand in a label, so `&Save Note` is what binds
 /// Alt+S. Matched without case because a label capitalises where it likes.
-fn bound_somewhere(key: &str, code: &str) -> bool {
+///
+/// Anything else has to be an accelerator, which on Windows means a menu item
+/// whose label ends in a tab and the key. Merely appearing in the source is not
+/// enough and used to be: `Alt+Shift+R` was in the document, in a toolbar
+/// tooltip that read "(Alt+Shift+R)", and bound to nothing, so the key did
+/// nothing and this check said it was fine. That is the second documented key
+/// to be dead, so the check now asks the question it was written for.
+fn bound_somewhere(key: &str, code: &str, stated: &str) -> bool {
     if let Some(letter) = key.strip_prefix("Alt+")
         && letter.chars().count() == 1
         && letter.chars().all(|c| c.is_ascii_alphabetic())
@@ -565,7 +639,36 @@ fn bound_somewhere(key: &str, code: &str) -> bool {
         let upper = format!("&{}", letter.to_ascii_uppercase());
         return code.contains(&lower) || code.contains(&upper);
     }
-    code.contains(key)
+    // `\t` as two characters, because that is how it is written in the source
+    // of a menu label: `"Reply &All\tCtrl+Shift+R"`. A few labels carry a real
+    // tab instead, which is the same thing to Windows.
+    code.contains(&format!(r"\t{key}"))
+        || code.contains(&format!("\t{key}"))
+        || stated.contains(key)
+}
+
+/// The keys nothing binds with a menu accelerator, and what does bind them.
+///
+/// Every one of these was checked by hand and works. They are here because
+/// there is no way to read a key code out of the source text and know which
+/// key it is, and the alternative, accepting any key that appears anywhere,
+/// is what let three documented keys be dead at once.
+///
+/// Adding to this list means saying where the key is bound. A key that only
+/// appears in a tooltip does not belong here.
+fn bound_by_a_handler_rather_than_a_menu() -> Vec<&'static str> {
+    vec![
+        // The notebook's own, bound by wxWidgets, named nowhere in this source.
+        "Ctrl+Tab",
+        "Ctrl+Shift+Tab",
+        // The editor's key handler, which posts Send back out of the document.
+        // src/presentation/editor_document.rs.
+        "Ctrl+Enter",
+        // The column list's key handler, which moves the selected column.
+        // src/presentation/wx_columns.rs, the `key.alt_down()` arm.
+        "Alt+Up",
+        "Alt+Down",
+    ]
 }
 
 /// Every backticked `Ctrl+...` or `Alt+...` combination in the document.

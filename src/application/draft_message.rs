@@ -41,11 +41,11 @@ pub fn message_id_for(draft_id: &str) -> String {
 /// Recipients that are empty are left out rather than written as empty headers.
 /// A `To:` with nothing after it is not a draft addressed to nobody, it is a
 /// malformed header that some servers refuse on APPEND.
-pub fn bytes_for(draft: &CachedDraft, from: &str) -> Vec<u8> {
+pub fn bytes_for(draft: &CachedDraft, from: &str, from_name: Option<&str>) -> Vec<u8> {
     let mut out = String::new();
 
     out.push_str(&format!("Message-ID: {}\r\n", message_id_for(&draft.id)));
-    out.push_str(&format!("From: {from}\r\n"));
+    out.push_str(&format!("From: {}\r\n", sender_line(from, from_name)));
     push_addresses(&mut out, "To", &draft.to_addr);
     push_addresses(&mut out, "Cc", draft.cc.as_deref().unwrap_or_default());
     // Blind copies are in the draft because the person writing it put them
@@ -67,6 +67,37 @@ pub fn bytes_for(draft: &CachedDraft, from: &str) -> Vec<u8> {
         out.push_str("\r\n");
     }
     out.into_bytes()
+}
+
+/// The value of the `From` line: an address, with a name in front where there
+/// is one.
+///
+/// Written through the mail library's own mailbox rather than by hand, so the
+/// rule about which names need quoting is one rule and not two. This builder
+/// quotes nothing and folds nothing, so a name holding a comma written raw
+/// would be two senders, one of which does not exist.
+///
+/// A carriage return or a line feed is taken out first. The library refuses to
+/// write either inside a quoted name, and it refuses from a `Display`
+/// implementation, so handing it one panics. Here it would also be a way to
+/// write arbitrary headers into a message.
+///
+/// An address the library will not parse falls back to the bare address, which
+/// is what this wrote before there was a name to add. A draft is somebody's
+/// unfinished work and is worth filing even when its sender is odd.
+fn sender_line(from: &str, from_name: Option<&str>) -> String {
+    let name = from_name
+        .map(|name| name.replace(['\r', '\n'], " "))
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty());
+
+    let Some(name) = name else {
+        return from.to_string();
+    };
+    match from.trim().parse::<lettre::Address>() {
+        Ok(address) => lettre::message::Mailbox::new(Some(name), address).to_string(),
+        Err(_) => from.to_string(),
+    }
 }
 
 /// Add a recipient header, unless there is nobody in it.
@@ -91,13 +122,55 @@ mod tests {
             bcc: None,
             subject: "Notes on the engine".to_string(),
             body: "Half a thought".to_string(),
+            in_reply_to: None,
+            references: None,
             created_at: "2026-07-30T10:00:00+00:00".to_string(),
             updated_at: "2026-07-30T10:05:00+00:00".to_string(),
         }
     }
 
     fn built(draft: &CachedDraft) -> String {
-        String::from_utf8(bytes_for(draft, "me@example.com")).expect("valid text")
+        String::from_utf8(bytes_for(draft, "me@example.com", None)).expect("valid text")
+    }
+
+    fn built_by(draft: &CachedDraft, name: &str) -> String {
+        String::from_utf8(bytes_for(draft, "me@example.com", Some(name))).expect("valid text")
+    }
+
+    #[test]
+    fn test_a_filed_draft_carries_the_name_recipients_would_see() {
+        // The copy in the Drafts folder is the message somebody comes back to,
+        // on this computer or on their phone. A copy whose From differs from
+        // the one that will be sent is a copy of a different message.
+        let raw = built_by(&draft(), "Ada Lovelace");
+        assert!(raw.contains("From: Ada Lovelace <me@example.com>"), "{raw}");
+    }
+
+    #[test]
+    fn test_a_name_with_a_comma_does_not_split_a_filed_draft_into_two_senders() {
+        // This builder writes the From line by hand and quotes nothing, so
+        // "Smith, John <me@example.com>" would be two senders, one of which
+        // does not exist, on a header some servers refuse.
+        let raw = built_by(&draft(), "Smith, John");
+        let from = raw
+            .lines()
+            .find(|line| line.starts_with("From:"))
+            .expect("a From line");
+        assert!(from.contains("\"Smith, John\""), "{from}");
+    }
+
+    #[test]
+    fn test_a_filed_draft_with_no_name_is_the_bare_address_it_always_was() {
+        let raw = built(&draft());
+        assert!(raw.contains("From: me@example.com\r\n"), "{raw}");
+    }
+
+    #[test]
+    fn test_a_name_cannot_write_a_second_header_on_a_filed_draft() {
+        // Here a line break really would be a header: nothing between this and
+        // the bytes appended to the folder folds or escapes anything.
+        let raw = built_by(&draft(), "Ada\r\nBcc: sneak@example.com");
+        assert!(!raw.contains("\r\nBcc: sneak@example.com"), "{raw}");
     }
 
     #[test]

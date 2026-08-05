@@ -141,6 +141,21 @@ pub struct MessageItem {
     pub cc: String,
     /// Where the sender asked replies to go, when they asked.
     pub reply_to: String,
+    /// The `Message-ID` header, which is what a reply names to stay in the
+    /// conversation.
+    ///
+    /// Not to be confused with `message_id` above, which is this message's row
+    /// in the local database. Two different numbers under two nearly identical
+    /// names is a defect in its own right and the older name is the wrong one,
+    /// but renaming it touches every list, reader and menu path, so the new
+    /// field takes the name that cannot be misread.
+    ///
+    /// Carried on the row rather than fetched when somebody presses Reply. A
+    /// query on the interface thread inside a key handler is a window that
+    /// cannot repaint, and a window that cannot repaint cannot speak.
+    pub header_message_id: String,
+    /// The conversation this message already belongs to, space separated.
+    pub refs_header: Option<String>,
     /// What the provider's spam and phishing filter made of it.
     pub safety: crate::service::safety::Safety,
     /// Why, in the sentences the warning bar shows.
@@ -210,6 +225,8 @@ impl MessageItem {
             to: row.to_addr.clone(),
             cc: row.cc.clone().unwrap_or_default(),
             reply_to: row.reply_to.clone().unwrap_or_default(),
+            header_message_id: row.message_id.clone(),
+            refs_header: row.refs_header.clone(),
             safety: row.safety,
             safety_reasons: row.safety_reasons.clone(),
             receipt_to: row.receipt_to.clone(),
@@ -330,6 +347,12 @@ pub struct CompositionData {
     pub bcc: String,
     pub subject: String,
     pub body: String,
+    /// The conversation this is an answer to, when it is one.
+    ///
+    /// Finished header values, worked out once when the reply was started.
+    /// Carried through the window so that a reply put aside and reopened still
+    /// goes out inside its thread instead of starting a new one.
+    pub answering: Option<crate::application::threading::Continuing>,
 }
 
 /// UI update messages sent from async tasks to the UI thread
@@ -926,6 +949,45 @@ fn note_preview(body: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_a_list_row_keeps_what_a_reply_needs_to_stay_in_the_conversation() {
+        // The layer nobody counted. The cache row holds both, and the list row
+        // built from it dropped both, so the compose window was never told
+        // which message it was answering and every reply started a new thread.
+        //
+        // `message_id` on a list row is the database row id, not the header, so
+        // the header goes in a field with an unambiguous name.
+        let row = crate::data::message_cache::MessageListRow {
+            id: 42,
+            uid: 7,
+            account_id: "acc-1".into(),
+            message_id: "c@x".into(),
+            refs_header: Some("a@x b@x".into()),
+            subject: "Notes".into(),
+            from_addr: "ada@example.com".into(),
+            to_addr: "me@example.com".into(),
+            cc: None,
+            reply_to: None,
+            date: "2026-08-01".into(),
+            snippet: None,
+            size_bytes: None,
+            read: false,
+            starred: false,
+            answered: false,
+            draft: false,
+            has_attachments: false,
+            safety: crate::service::safety::Safety::Ordinary,
+            safety_reasons: Vec::new(),
+            receipt_to: None,
+        };
+
+        let item = MessageItem::from_row(&row);
+
+        assert_eq!(item.header_message_id, "c@x");
+        assert_eq!(item.refs_header.as_deref(), Some("a@x b@x"));
+        assert_eq!(item.message_id, 42, "the row id is still the row id");
+    }
 
     fn reminder(due: Option<&str>, completed: bool) -> ReminderItem {
         ReminderItem {
@@ -1657,6 +1719,8 @@ mod tests {
             to: String::new(),
             cc: String::new(),
             reply_to: reply_to.to_string(),
+            header_message_id: String::new(),
+            refs_header: None,
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,

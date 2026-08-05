@@ -41,6 +41,15 @@ pub struct SendEmailRequest {
     /// The account's own address, which is a separate field from the login and
     /// nothing keeps the two equal.
     pub from_address: String,
+    /// The name recipients see in front of that address.
+    ///
+    /// The account holder's own name, from a field of its own. Not the
+    /// account's label, which is usually "Work" or the provider's name, and not
+    /// the login, which on a corporate server is often not a name at all.
+    ///
+    /// `None` where nobody has typed one, which sends a bare address: what
+    /// every message this program has ever sent carried.
+    pub from_name: Option<String>,
     pub auth: MailAuth,
     pub use_tls: bool,
     pub to: Vec<String>,
@@ -71,6 +80,16 @@ pub struct SendEmailRequest {
     /// been able to build and nothing has ever asked it for. Sending only HTML
     /// leaves a text-only reader with raw markup on the screen.
     pub body_html: Option<String>,
+    /// The `Message-ID` of the message this answers, brackets and all.
+    ///
+    /// Already a finished header value by the time it reaches here. The chain
+    /// rule and the brackets belong to
+    /// [`crate::application::threading::continuing`], which is asked once, when
+    /// the message is queued, so nothing on this path has to know either.
+    pub in_reply_to: Option<String>,
+    /// The whole conversation before this reply, ending with the message being
+    /// answered.
+    pub references: Option<String>,
 }
 
 impl SendEmailRequest {
@@ -104,6 +123,7 @@ impl SendEmailRequest {
             port,
             username: account.username.clone(),
             from_address: account.email.clone(),
+            from_name: Some(account.sender_name.trim().to_string()).filter(|n| !n.is_empty()),
             auth,
             use_tls: account.smtp_use_tls,
             to: recipients,
@@ -113,8 +133,55 @@ impl SendEmailRequest {
             attachments: crate::application::attaching::split(&queued.attachments),
             body: queued.body.clone(),
             body_html: queued.body_html.clone(),
+            in_reply_to: queued.in_reply_to.clone(),
+            references: queued.references.clone(),
         })
     }
+}
+
+/// The message a request becomes, before anything is connected to.
+///
+/// Pulled out of [`MailController::send_email`] so that what goes into an
+/// outgoing message can be checked without a server. There is no fake SMTP
+/// server in this tree, so every field built here used to be reachable only
+/// through code that opens a socket, and a field silently dropped on the way
+/// out was invisible. That has already cost a birthday, a website, a set of
+/// notes, a category, and the login name in the From header of every message.
+///
+/// This builds a value. It constructs no client, opens no connection and takes
+/// no credentials, so it sits above the gate rather than beside it: the gate
+/// stays the first thing `send_email` does.
+pub fn outgoing(req: &SendEmailRequest) -> Result<Email> {
+    Ok(Email {
+        // The account's address, not the name it signs in with. On a corporate
+        // server the two differ and the login is often not an address at all.
+        from: req.from_address.clone(),
+        from_name: req.from_name.as_deref().map(one_line),
+        to: req.to.clone(),
+        cc: req.cc.clone(),
+        bcc: req.bcc.clone(),
+        subject: req.subject.clone(),
+        body_text: req.body.clone(),
+        body_html: req.body_html.clone(),
+        in_reply_to: req.in_reply_to.clone(),
+        references: req.references.clone(),
+        // Read now rather than when they were picked, so what goes out is the
+        // version that exists at the moment of sending. A file that has moved
+        // stops the send and says which one, rather than sending a message
+        // without the thing it was written about.
+        attachments: crate::application::attaching::read_all(&req.attachments)?,
+    })
+}
+
+/// One line of text, whatever was typed.
+///
+/// A carriage return or a line feed in a display name is not a bad header, it
+/// is a crash: the mail library refuses to write either inside a quoted name,
+/// and it refuses from a `Display` implementation, which panics inside the
+/// `format!` that calls it. It is also how a name could write extra headers on
+/// somebody else's message.
+fn one_line(text: &str) -> String {
+    text.replace(['\r', '\n'], " ").trim().to_string()
 }
 
 /// Mail controller for managing mail operations
@@ -270,33 +337,7 @@ impl MailController {
             SmtpClient::new(config)?
         };
 
-        let email = Email {
-            // The account's address, not the name it signs in with. On a
-            // corporate server the two differ and the login is often not an
-            // address at all.
-            from: req.from_address.clone(),
-            // No display name, so recipients see a bare address where other
-            // mail programs show a name. Nothing here holds the sender's own
-            // name: an account's name is the label somebody gave the account,
-            // so it is often "Work" or the provider, and putting that in front
-            // of their address would be worse than leaving it off. Showing a
-            // name means asking for one, which is a field nobody has decided
-            // to add.
-            from_name: None,
-            to: req.to.clone(),
-            cc: req.cc.clone(),
-            bcc: req.bcc.clone(),
-            subject: req.subject.clone(),
-            body_text: req.body.clone(),
-            body_html: req.body_html.clone(),
-            // Read now rather than when they were picked, so what goes out is
-            // the version that exists at the moment of sending. A file that has
-            // moved stops the send and says which one, rather than sending a
-            // message without the thing it was written about.
-            attachments: crate::application::attaching::read_all(&req.attachments)?,
-        };
-
-        let sent = client.send_email(email, &req.auth).await?;
+        let sent = client.send_email(outgoing(req)?, &req.auth).await?;
         tracing::info!("Email sent successfully");
         Ok(sent)
     }
@@ -684,8 +725,9 @@ mod tests {
             account_id: "a1".to_string(),
             server: "smtp.example.com".to_string(),
             port: 587,
-            username: "test@example.com".to_string(),
+            username: "EXAMPLE\\alovelace".to_string(),
             from_address: "test@example.com".to_string(),
+            from_name: Some("Ada Lovelace".to_string()),
             auth: MailAuth::Password("password".to_string()),
             use_tls: true,
             to: vec!["to@example.com".to_string()],
@@ -695,6 +737,8 @@ mod tests {
             attachments: Vec::new(),
             body: "Body".to_string(),
             body_html: None,
+            in_reply_to: None,
+            references: None,
         };
         let result = controller.send_email(&req).await;
         assert!(result.is_err()); // expected in tests due placeholder/non-routable SMTP server
@@ -1083,15 +1127,21 @@ mod send_request_tests {
     fn account() -> Account {
         Account {
             id: "a1".into(),
+            // Four values that could be mistaken for one another, all
+            // different, because a test that passes with two of them equal has
+            // proved nothing. That is how the login name ended up in the From
+            // header of every message: every fixture in this file set the two
+            // to the same string.
             name: "Work".into(),
-            email: "me@example.com".into(),
+            sender_name: "Ada Lovelace".into(),
+            email: "ada@example.com".into(),
             imap_server: "imap.example.com".into(),
             imap_port: "993".into(),
             imap_use_tls: true,
             smtp_server: "smtp.example.com".into(),
             smtp_port: "587".into(),
             smtp_use_tls: true,
-            username: "me@example.com".into(),
+            username: "EXAMPLE\\alovelace".into(),
             password: "hunter2".into(),
             use_oauth: false,
             oauth_access_token: String::new(),
@@ -1113,6 +1163,128 @@ mod send_request_tests {
 
     fn queued(to: &str) -> QueuedOutboxMessage {
         queued_with(to, "", "")
+    }
+
+    #[test]
+    fn test_a_queued_reply_carries_the_conversation_it_answers_into_the_request() {
+        let mut reply = queued("you@example.com");
+        reply.in_reply_to = Some("<c@x>".to_string());
+        reply.references = Some("<a@x> <c@x>".to_string());
+
+        let req =
+            SendEmailRequest::from_queued(&reply, &account(), MailAuth::Password("hunter2".into()))
+                .expect("a sendable request");
+
+        assert_eq!(req.in_reply_to.as_deref(), Some("<c@x>"));
+        assert_eq!(req.references.as_deref(), Some("<a@x> <c@x>"));
+    }
+
+    #[test]
+    fn test_the_message_built_for_sending_carries_the_conversation() {
+        // Four handoffs between the queue and the message, and a field dropped
+        // at any one of them is invisible: the reply still sends, and it lands
+        // outside the thread in somebody else's client.
+        let mut reply = queued("you@example.com");
+        reply.in_reply_to = Some("<c@x>".to_string());
+        reply.references = Some("<a@x> <c@x>".to_string());
+
+        let req =
+            SendEmailRequest::from_queued(&reply, &account(), MailAuth::Password("hunter2".into()))
+                .expect("a sendable request");
+        let email = outgoing(&req).expect("a message to build");
+
+        assert_eq!(email.in_reply_to.as_deref(), Some("<c@x>"));
+        assert_eq!(email.references.as_deref(), Some("<a@x> <c@x>"));
+    }
+
+    #[test]
+    fn test_a_message_that_is_not_a_reply_carries_no_conversation() {
+        let req = SendEmailRequest::from_queued(
+            &queued("you@example.com"),
+            &account(),
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+        let email = outgoing(&req).expect("a message to build");
+
+        assert!(email.in_reply_to.is_none());
+        assert!(email.references.is_none());
+    }
+
+    #[test]
+    fn test_the_name_recipients_see_is_the_person_s_name_and_never_the_account_label() {
+        // Three fields that look interchangeable. The label is "Work", the
+        // login is a domain and a name, and only one of them is a person.
+        let req = SendEmailRequest::from_queued(
+            &queued("you@example.com"),
+            &account(),
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+
+        assert_eq!(req.from_name.as_deref(), Some("Ada Lovelace"));
+        assert_eq!(req.from_address, "ada@example.com");
+    }
+
+    #[test]
+    fn test_no_name_is_nobody_rather_than_an_empty_name() {
+        // An account with nothing typed in that box sends what it always sent:
+        // a bare address. Falling back to the label would send mail from
+        // "Work", and falling back to the login would send it from a domain
+        // and a name.
+        let mut unnamed = account();
+        unnamed.sender_name = "   ".to_string();
+
+        let req = SendEmailRequest::from_queued(
+            &queued("you@example.com"),
+            &unnamed,
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+
+        assert!(req.from_name.is_none(), "{:?}", req.from_name);
+    }
+
+    #[test]
+    fn test_the_message_built_for_sending_carries_the_sender_s_name() {
+        let req = SendEmailRequest::from_queued(
+            &queued("you@example.com"),
+            &account(),
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+
+        let email = outgoing(&req).expect("a message to build");
+        assert_eq!(email.from, "ada@example.com");
+        assert_eq!(email.from_name.as_deref(), Some("Ada Lovelace"));
+    }
+
+    #[test]
+    fn test_a_name_cannot_smuggle_a_second_header() {
+        // A line break in a display name is not a bad header, it is a panic:
+        // the mail library refuses to write a carriage return inside a quoted
+        // name, from a `Display` implementation, inside a `format!`. Unstripped
+        // it would also be a way to write arbitrary headers on somebody's
+        // message.
+        let mut sneaky = account();
+        sneaky.sender_name = "Ada\r\nBcc: sneak@example.com".to_string();
+
+        let req = SendEmailRequest::from_queued(
+            &queued("you@example.com"),
+            &sneaky,
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+
+        let name = outgoing(&req)
+            .expect("a message to build")
+            .from_name
+            .expect("a name");
+        assert!(!name.contains('\r'), "{name:?}");
+        assert!(!name.contains('\n'), "{name:?}");
+        // What is left is text inside a display name, which is quoted on the
+        // wire and cannot be a header. The smtp tests assert that on the bytes.
+        assert!(name.starts_with("Ada"), "{name:?}");
     }
 
     #[test]
@@ -1188,6 +1360,8 @@ mod send_request_tests {
             subject: "Quarterly report".into(),
             attachments: String::new(),
             body: "Attached.".into(),
+            in_reply_to: None,
+            references: None,
             attempt_count: 0,
             last_error: None,
             created_at: "2026-07-26".into(),

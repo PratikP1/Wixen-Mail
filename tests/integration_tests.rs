@@ -549,6 +549,8 @@ fn test_message_cache_outbox_queue() {
         subject: "Queued message".to_string(),
         body: "Sent while offline".to_string(),
         attachments: String::new(),
+        in_reply_to: None,
+        references: None,
         attempt_count: 0,
         last_error: None,
         created_at: chrono::Utc::now().to_rfc3339(),
@@ -893,4 +895,67 @@ fn test_a_note_written_in_markdown_is_read_back_with_its_structure() {
     assert!(said.contains("bullet, Charger"), "{said}");
     // The column shows the words, not the hashes.
     assert_eq!(item.body_preview, "Packing");
+}
+
+/// The whole way from the queue to the outgoing message, without a server.
+///
+/// The four handoffs between a queued reply and the message that goes out. A
+/// field dropped at any one of them is invisible: the reply still sends, and it
+/// lands outside its conversation in somebody else's client, where nothing here
+/// can see it.
+///
+/// It stops at the message rather than at the wire, because the function that
+/// turns a message into bytes is private to the SMTP module and there is no
+/// fake SMTP server in this tree. What reaches the wire is owned by the tests
+/// in that module, which build the bytes directly.
+#[test]
+fn test_a_reply_reaches_the_outgoing_message_naming_what_it_answers() {
+    use wixen_mail::application::mail_controller::{SendEmailRequest, outgoing};
+    use wixen_mail::service::protocols::MailAuth;
+
+    let dir = tempfile::tempdir().unwrap();
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).unwrap();
+
+    let mut account =
+        wixen_mail::data::account::Account::new("Work".to_string(), "ada@example.com".to_string());
+    account.id = "acct-1".to_string();
+    account.sender_name = "Ada Lovelace".to_string();
+    account.username = "EXAMPLE\\alovelace".to_string();
+    account.smtp_server = "smtp.example.com".to_string();
+    account.smtp_port = "587".to_string();
+
+    cache
+        .queue_outbox_message(&wixen_mail::data::message_cache::QueuedOutboxMessage {
+            id: "q-reply".to_string(),
+            account_id: "acct-1".to_string(),
+            to_addr: "sam@example.com".to_string(),
+            cc_addr: String::new(),
+            bcc_addr: String::new(),
+            subject: "Re: Notes".to_string(),
+            body: "Answering this".to_string(),
+            attachments: String::new(),
+            in_reply_to: Some("<c@x>".to_string()),
+            references: Some("<a@x> <b@x> <c@x>".to_string()),
+            attempt_count: 0,
+            last_error: None,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            body_html: None,
+        })
+        .unwrap();
+
+    let queued = cache.load_outbox_messages("acct-1").unwrap();
+    let request = SendEmailRequest::from_queued(
+        &queued[0],
+        &account,
+        MailAuth::Password("hunter2".to_string()),
+    )
+    .expect("a sendable request");
+    let email = outgoing(&request).expect("a message to build");
+
+    assert_eq!(email.in_reply_to.as_deref(), Some("<c@x>"));
+    assert_eq!(email.references.as_deref(), Some("<a@x> <b@x> <c@x>"));
+    // And the two fields that could be confused with one another, both of
+    // which travel the same four handoffs.
+    assert_eq!(email.from, "ada@example.com");
+    assert_eq!(email.from_name.as_deref(), Some("Ada Lovelace"));
 }

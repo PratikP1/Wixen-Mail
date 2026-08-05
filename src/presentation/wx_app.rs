@@ -3592,6 +3592,15 @@ impl WxMailApp {
         let message = Menu::builder()
             .append_item(ID_REPLY, "&Reply\tCtrl+R", "Reply to sender")
             .append_item(ID_REPLY_ALL, "Reply &All\tCtrl+Shift+R", "Reply to all")
+            // The one that answers a person rather than a list. It had a
+            // handler, a toolbar button and three lines in the shortcuts
+            // document, and no menu item, which on Windows means no key: the
+            // only way to reach it was the mouse.
+            .append_item(
+                ID_REPLY_SENDER,
+                "Reply to Sender &Only\tAlt+Shift+R",
+                "Reply only to the person who wrote it, never to the list",
+            )
             .append_item(ID_FORWARD, "&Forward\tCtrl+L", "Forward message")
             .append_separator()
             // How somebody works through a mailbox by ear: the next thing
@@ -3883,6 +3892,8 @@ fn sample_mailbox(count: usize) -> Vec<MessageItem> {
             to: "me@example.com".to_string(),
             cc: String::new(),
             reply_to: String::new(),
+            header_message_id: String::new(),
+            refs_header: None,
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
@@ -5162,6 +5173,8 @@ fn conversation_parts(
                     to: String::new(),
                     cc: String::new(),
                     reply_to: String::new(),
+                    header_message_id: String::new(),
+                    refs_header: None,
                     safety: crate::service::safety::Safety::Ordinary,
                     safety_reasons: Vec::new(),
                     receipt_to: None,
@@ -5489,19 +5502,18 @@ fn start_reply(
         return;
     }
 
-    let reach = recipients.count();
     let _ = a11y.announce(
-        &format!(
-            "{}, {} {}",
-            mode.description(),
-            reach,
-            if reach == 1 {
-                "recipient"
-            } else {
-                "recipients"
-            }
-        ),
+        &crate::application::reply::announcement(mode, &recipients),
         crate::presentation::accessibility::announcements::Priority::Normal,
+    );
+
+    // Worked out here, once, from values the list row already carries. Asking
+    // the database for them inside the handler for a key somebody just pressed
+    // would put a query on the interface thread, and a window that cannot
+    // repaint cannot speak.
+    let answering = crate::application::threading::continuing(
+        &message.header_message_id,
+        message.refs_header.as_deref(),
     );
 
     let compose = match mode {
@@ -5510,11 +5522,13 @@ fn start_reply(
             cc: recipients.cc,
             subject: message.subject.clone(),
             quoted_body: preview,
+            answering,
         },
         _ => ComposeMode::Reply {
             to: recipients.to,
             subject: message.subject.clone(),
             quoted_body: preview,
+            answering,
         },
     };
     open_compose(frame, state, tx, rt, cache, a11y, compose);
@@ -5744,6 +5758,8 @@ fn save_as_draft(
         bcc: Some(data.bcc.trim().to_string()).filter(|bcc| !bcc.is_empty()),
         subject: subject.clone(),
         body: data.body.clone(),
+        in_reply_to: data.answering.as_ref().map(|c| c.in_reply_to.clone()),
+        references: data.answering.as_ref().map(|c| c.references.clone()),
         created_at: chrono::Local::now().to_rfc3339(),
         updated_at: chrono::Local::now().to_rfc3339(),
     };
@@ -5782,7 +5798,14 @@ fn file_draft_copy(
             .cloned()
     };
     let Some(account) = account else { return };
-    let raw = draft_message::bytes_for(draft, &account.email);
+    // The same sender the message would go out with, name and all, so the copy
+    // somebody comes back to on another device is a copy of this message.
+    let sender_name = account.sender_name.trim();
+    let raw = draft_message::bytes_for(
+        draft,
+        &account.email,
+        Some(sender_name).filter(|name| !name.is_empty()),
+    );
 
     // A local Drafts folder is written here and now. There is no server, and
     // the cache holds a connection that cannot cross an await.
@@ -5950,6 +5973,10 @@ fn queue_for_sending(
         body: data.body_plain.clone(),
         body_html: Some(data.body.clone()).filter(|html| !html.trim().is_empty()),
         attachments: crate::application::attaching::joined(&data.attachments),
+        // What puts the reply in the conversation it answers. Worked out when
+        // the reply was started and carried through the window unchanged.
+        in_reply_to: data.answering.as_ref().map(|c| c.in_reply_to.clone()),
+        references: data.answering.as_ref().map(|c| c.references.clone()),
         attempt_count: 0,
         last_error: None,
         created_at: chrono::Local::now().to_rfc3339(),
@@ -6035,6 +6062,8 @@ fn open_for_scanning(
                     to: "me@example.com".to_string(),
                     cc: String::new(),
                     reply_to: String::new(),
+                    header_message_id: String::new(),
+                    refs_header: None,
                     // Deliberately not Ordinary, so the warning bar exists and
                     // gets scanned. It only appears when there is something to
                     // say, so an ordinary message would leave it out.
@@ -7405,15 +7434,20 @@ fn spawn_receipt(
             .as_ref()
             .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned())
     };
+    // The original's own `Message-ID`, so the receipt is filed against the
+    // message rather than arriving as loose mail with a subject line. Read off
+    // the list row, which now carries it; asking the database here would put a
+    // query on the interface thread.
     let original_id = {
         let s = lock_state(state);
         s.messages
             .iter()
             .find(|m| m.message_id == message_row_id)
-            .map(|m| m.subject.clone())
-            .map(|_| ())
+            .and_then(|m| {
+                crate::application::threading::continuing(&m.header_message_id, None)
+                    .map(|chain| chain.in_reply_to)
+            })
     };
-    let _ = original_id;
 
     rt.spawn_blocking(move || {
         let say = |update: UIUpdate| {
@@ -7459,11 +7493,7 @@ fn spawn_receipt(
             notify: notify.clone(),
             reader: account.email.clone(),
             subject,
-            // The original's Message-ID is not carried on the list row, so the
-            // receipt is not filed against it. It still names the subject and
-            // reaches the right person; filing it needs the header on the row,
-            // which is task #84.
-            message_id: None,
+            message_id: original_id.clone(),
             read_at: chrono::Utc::now().to_rfc2822(),
         });
 
@@ -9038,7 +9068,7 @@ fn spawn_mail_sync(
                         result.held,
                         result.total_on_server,
                     ) {
-                        report.push_str(", Ctrl+Shift+G for older");
+                        report.push_str(", Shift+F9 for older");
                     }
                     if result.flags_updated > 0 {
                         // What changed on another device. Worth saying because
@@ -9794,6 +9824,8 @@ mod tests {
             to: "me@example.com".to_string(),
             cc: String::new(),
             reply_to: String::new(),
+            header_message_id: String::new(),
+            refs_header: None,
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
@@ -10242,6 +10274,8 @@ mod tests {
             to: String::new(),
             cc: String::new(),
             reply_to: String::new(),
+            header_message_id: String::new(),
+            refs_header: None,
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
@@ -10321,6 +10355,8 @@ mod tests {
             to: String::new(),
             cc: String::new(),
             reply_to: String::new(),
+            header_message_id: String::new(),
+            refs_header: None,
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
@@ -10370,6 +10406,8 @@ mod tests {
             to: String::new(),
             cc: String::new(),
             reply_to: String::new(),
+            header_message_id: String::new(),
+            refs_header: None,
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,

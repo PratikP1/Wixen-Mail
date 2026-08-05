@@ -106,6 +106,15 @@ pub struct CachedDraft {
     pub bcc: Option<String>,
     pub subject: String,
     pub body: String,
+    /// The `Message-ID` of the message this draft answers, brackets and all.
+    ///
+    /// Kept so a reply saved half-written and reopened tomorrow still goes out
+    /// inside its conversation. Without it, Save Draft on a reply loses its
+    /// place silently: the draft comes back looking complete.
+    pub in_reply_to: Option<String>,
+    /// The conversation before it, oldest first, ending with the message being
+    /// answered.
+    pub references: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -442,6 +451,15 @@ pub struct QueuedOutboxMessage {
     /// the queue drains cannot be sent, and [`crate::application::attaching`]
     /// is where that is turned into a message somebody can act on.
     pub attachments: String,
+    /// The `Message-ID` of the message this answers, brackets and all.
+    ///
+    /// `None` for anything that is not a reply, which is what every message
+    /// queued before these columns existed reads as: it sends, and it carries
+    /// no threading headers, which is what it had.
+    pub in_reply_to: Option<String>,
+    /// The whole conversation before this reply, oldest first, brackets and
+    /// all, ending with the message being answered.
+    pub references: Option<String>,
     pub attempt_count: i64,
     pub last_error: Option<String>,
     pub created_at: String,
@@ -1341,6 +1359,11 @@ impl MessageCache {
         // here, and the time is what the removal policy counts from.
         self.ensure_column_exists("messages", "pop_uidl", "TEXT")?;
         self.ensure_column_exists("messages", "downloaded_at", "TEXT")?;
+        // The name recipients see on mail from this account, which is the
+        // person's own name and not the label they gave the account. Empty by
+        // default, which is exactly what every message sent before this column
+        // existed carried: a bare address and no name.
+        self.ensure_column_exists("accounts", "sender_name", "TEXT NOT NULL DEFAULT ''")?;
         // How an account reads its mail, and where from when that is POP.
         // Every account stored before these existed is IMAP, which is what the
         // defaults say and is correct: nothing could configure a POP account.
@@ -1393,6 +1416,18 @@ impl MessageCache {
         // half it always was, so a message queued by an older build still
         // sends, as plain text, which is what it was.
         self.ensure_column_exists("outbox_queue", "body_html", "TEXT")?;
+        // What conversation a queued reply belongs to. Named `references_header`
+        // because REFERENCES is a SQLite keyword, the same reason the messages
+        // table calls its half `refs_header`. Both read NULL on a message
+        // queued by an older build, which sends it with no threading headers:
+        // what it had.
+        self.ensure_column_exists("outbox_queue", "in_reply_to", "TEXT")?;
+        self.ensure_column_exists("outbox_queue", "references_header", "TEXT")?;
+        // The same pair on a draft, so a reply put aside half-written and
+        // reopened tomorrow still goes out inside its conversation. Both read
+        // NULL on a draft saved by an older build, which is what it was.
+        self.ensure_column_exists("drafts", "in_reply_to", "TEXT")?;
+        self.ensure_column_exists("drafts", "references_header", "TEXT")?;
         // The other recipients. The composer collected them, the preview
         // displayed them and Reply All announced a count that included them,
         // and then there was nowhere here to put them, so only the To

@@ -1561,6 +1561,13 @@ pub fn open_draft(
         bcc: draft.bcc.clone().unwrap_or_default(),
         subject: draft.subject.clone(),
         body: draft.body.clone(),
+        answering: match (&draft.in_reply_to, &draft.references) {
+            (Some(parent), chain) => Some(crate::application::threading::Continuing {
+                in_reply_to: parent.clone(),
+                references: chain.clone().unwrap_or_else(|| parent.clone()),
+            }),
+            (None, _) => None,
+        },
     })
 }
 

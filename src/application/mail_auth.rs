@@ -96,6 +96,7 @@ mod tests {
         Account {
             id: "a1".into(),
             name: "Work".into(),
+            sender_name: "Ada Lovelace".into(),
             email: "me@gmail.com".into(),
             imap_server: "imap.gmail.com".into(),
             imap_port: "993".into(),

@@ -10,9 +10,9 @@ impl MessageCache {
         let now = chrono::Utc::now().to_rfc3339();
 
         self.conn.execute(
-            "INSERT OR REPLACE INTO drafts (id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at)
+            "INSERT OR REPLACE INTO drafts (id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7,
-                     COALESCE((SELECT created_at FROM drafts WHERE id = ?1), ?8), ?9)",
+                     COALESCE((SELECT created_at FROM drafts WHERE id = ?1), ?8), ?9, ?10, ?11)",
             params![
                 draft.id,
                 draft.account_id,
@@ -23,6 +23,8 @@ impl MessageCache {
                 draft.body,
                 draft.created_at.clone(),
                 now,
+                draft.in_reply_to,
+                draft.references,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save draft: {}", e)))?;
 
@@ -34,7 +36,7 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at
+                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header
              FROM drafts
              WHERE account_id = ?1
              ORDER BY updated_at DESC",
@@ -53,6 +55,8 @@ impl MessageCache {
                     body: row.get(6)?,
                     created_at: row.get(7)?,
                     updated_at: row.get(8)?,
+                    in_reply_to: row.get(9)?,
+                    references: row.get(10)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query drafts: {}", e)))?;
@@ -70,7 +74,7 @@ impl MessageCache {
         let result = self
             .conn
             .query_row(
-                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at
+                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header
              FROM drafts
              WHERE id = ?1",
                 params![draft_id],
@@ -85,6 +89,8 @@ impl MessageCache {
                         body: row.get(6)?,
                         created_at: row.get(7)?,
                         updated_at: row.get(8)?,
+                        in_reply_to: row.get(9)?,
+                        references: row.get(10)?,
                     })
                 },
             )
@@ -121,6 +127,97 @@ mod tests {
     use super::*;
     use std::env;
 
+    fn a_cache(what_for: &str) -> MessageCache {
+        MessageCache::new(
+            env::temp_dir().join(format!(
+                "wixen_mail_test_drafts_{what_for}_{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("a clock that has passed 1970")
+                    .as_nanos()
+            )),
+            None,
+        )
+        .expect("a cache to open")
+    }
+
+    #[test]
+    fn test_a_reply_saved_as_a_draft_still_knows_what_it_answers() {
+        // Otherwise Save Draft on a reply loses its place in the thread
+        // silently: it comes back looking complete and goes out as the start of
+        // a new conversation, which is the same shape of invisible loss the
+        // missing Cc was.
+        let cache = a_cache("thread");
+        let draft = CachedDraft {
+            id: "draft-reply".to_string(),
+            account_id: "acc-1".to_string(),
+            to_addr: "ada@example.com".to_string(),
+            cc: None,
+            bcc: None,
+            subject: "Re: Notes".to_string(),
+            body: "Half a thought".to_string(),
+            in_reply_to: Some("<c@x>".to_string()),
+            references: Some("<a@x> <c@x>".to_string()),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+        };
+        cache.save_draft(&draft).expect("the draft to save");
+
+        let back = cache
+            .load_draft("draft-reply")
+            .expect("the draft to load")
+            .expect("a draft");
+        assert_eq!(back.in_reply_to.as_deref(), Some("<c@x>"));
+        assert_eq!(back.references.as_deref(), Some("<a@x> <c@x>"));
+
+        let listed = cache.load_drafts("acc-1").expect("the drafts to list");
+        assert_eq!(listed[0].in_reply_to.as_deref(), Some("<c@x>"));
+        assert_eq!(listed[0].references.as_deref(), Some("<a@x> <c@x>"));
+    }
+
+    #[test]
+    fn test_a_draft_saved_before_there_was_a_conversation_still_opens() {
+        let folder = env::temp_dir().join(format!(
+            "wixen_mail_test_drafts_older_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("a clock that has passed 1970")
+                .as_nanos()
+        ));
+        {
+            let cache = MessageCache::new(folder.clone(), None).expect("a cache to open");
+            cache
+                .save_draft(&CachedDraft {
+                    id: "draft-old".to_string(),
+                    account_id: "acc-1".to_string(),
+                    to_addr: "ada@example.com".to_string(),
+                    cc: None,
+                    bcc: None,
+                    subject: "Written long ago".to_string(),
+                    body: "Body".to_string(),
+                    in_reply_to: None,
+                    references: None,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                    updated_at: chrono::Utc::now().to_rfc3339(),
+                })
+                .expect("the draft to save");
+            for column in ["in_reply_to", "references_header"] {
+                cache
+                    .conn
+                    .execute(&format!("ALTER TABLE drafts DROP COLUMN {column}"), [])
+                    .expect("the column to come off, making this an older database");
+            }
+        }
+
+        let reopened = MessageCache::new(folder, None).expect("the older database to open again");
+        let back = reopened
+            .load_draft("draft-old")
+            .expect("the draft to load")
+            .expect("the draft to survive");
+        assert_eq!(back.subject, "Written long ago");
+        assert!(back.in_reply_to.is_none());
+    }
+
     #[test]
     fn test_draft_operations() {
         let temp_dir = env::temp_dir().join(format!(
@@ -140,6 +237,8 @@ mod tests {
             bcc: None,
             subject: "Draft Subject".to_string(),
             body: "Draft body content".to_string(),
+            in_reply_to: None,
+            references: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
@@ -177,6 +276,8 @@ mod tests {
             bcc: None,
             subject: "Original Subject".to_string(),
             body: "Original body".to_string(),
+            in_reply_to: None,
+            references: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
         };

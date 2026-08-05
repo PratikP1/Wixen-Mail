@@ -212,6 +212,67 @@ impl DisjointSet {
     }
 }
 
+/// The two headers that put a reply in the conversation it answers.
+///
+/// Finished header values, angle brackets and all, so nothing downstream has
+/// to know the bracket rule.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Continuing {
+    /// The message being answered.
+    pub in_reply_to: String,
+    /// Everything before it, oldest first, then it.
+    pub references: String,
+}
+
+/// The headers a reply to this message should carry.
+///
+/// The mirror of [`crate::application::mail_sync`]'s reading of the same two
+/// headers, and the two have to agree or a reply this program sends will not
+/// thread in the client that receives it, with nothing here able to notice.
+///
+/// `References` is a chain, not one value: the parent's chain, then the parent.
+/// Sending only the parent puts every reply directly under the top of the
+/// thread, and sending only the chain loses the message being answered.
+///
+/// `None` where the parent has no identifier of its own. `In-Reply-To: <>` is
+/// worse than no header: it is a malformed value that some servers refuse and
+/// every client ignores, so such a reply starts a new conversation openly
+/// rather than a broken one.
+///
+/// # The brackets are ours to add
+///
+/// The cache stores identifiers bare, because the parser unwraps them, while a
+/// draft's own identifier is stored already wrapped. The mail library writes
+/// whichever string it is handed, verbatim. So both spellings arrive here and
+/// exactly one pair of brackets leaves.
+pub fn continuing(parent_message_id: &str, parent_references: Option<&str>) -> Option<Continuing> {
+    let parent = parent_message_id.trim();
+    if parent.is_empty() {
+        return None;
+    }
+    let parent = bracketed(parent);
+
+    let mut chain: Vec<String> = parent_references
+        .unwrap_or_default()
+        .split_whitespace()
+        .map(bracketed)
+        .collect();
+    if !chain.contains(&parent) {
+        chain.push(parent.clone());
+    }
+
+    Some(Continuing {
+        in_reply_to: parent,
+        references: chain.join(" "),
+    })
+}
+
+/// One identifier with exactly one pair of angle brackets around it.
+fn bracketed(id: &str) -> String {
+    let bare = id.trim().trim_start_matches('<').trim_end_matches('>');
+    format!("<{bare}>")
+}
+
 /// The heading level a message renders at in a combined thread document.
 ///
 /// Capped at six and never skipping, because skipping a heading level is a
@@ -224,6 +285,67 @@ pub fn heading_level(depth: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_a_reply_names_its_parent_and_the_whole_chain_before_it() {
+        // References is a chain, not one value. The parent's own chain plus the
+        // parent, in that order, which is what puts the reply under the right
+        // message rather than under the top of the thread.
+        let chain = continuing("c@x", Some("a@x b@x")).expect("a chain");
+        assert_eq!(chain.in_reply_to, "<c@x>");
+        assert_eq!(chain.references, "<a@x> <b@x> <c@x>");
+    }
+
+    #[test]
+    fn test_a_reply_to_the_first_message_of_a_thread_still_names_it() {
+        // Nothing came before it, so the chain is just the message answered.
+        // Leaving References off here is the mistake that starts a new
+        // conversation on the second message of every thread.
+        let chain = continuing("c@x", None).expect("a chain");
+        assert_eq!(chain.in_reply_to, "<c@x>");
+        assert_eq!(chain.references, "<c@x>");
+    }
+
+    #[test]
+    fn test_a_parent_that_already_named_itself_is_not_named_twice() {
+        // Some senders put their own identifier in their References.
+        let chain = continuing("c@x", Some("a@x c@x")).expect("a chain");
+        assert_eq!(chain.references, "<a@x> <c@x>");
+    }
+
+    #[test]
+    fn test_a_message_with_no_identifier_starts_a_new_conversation_rather_than_a_broken_one() {
+        // `In-Reply-To: <>` is worse than no header: it is a malformed value
+        // some servers refuse and every client ignores.
+        assert!(continuing("", Some("a@x")).is_none());
+        assert!(continuing("   ", None).is_none());
+    }
+
+    #[test]
+    fn test_an_identifier_that_already_has_its_brackets_does_not_get_a_second_pair() {
+        // The cache stores identifiers bare and a saved draft stores its own
+        // already wrapped, so both spellings reach this.
+        let chain = continuing("<c@x>", Some("<a@x>")).expect("a chain");
+        assert_eq!(chain.in_reply_to, "<c@x>");
+        assert_eq!(chain.references, "<a@x> <c@x>");
+    }
+
+    #[test]
+    fn test_an_empty_references_column_reads_as_no_chain() {
+        // An old row stores an empty string where a newer one stores nothing.
+        for stored in ["", "   "] {
+            let chain = continuing("c@x", Some(stored)).expect("a chain");
+            assert_eq!(chain.references, "<c@x>", "from {stored:?}");
+        }
+    }
+
+    #[test]
+    fn test_a_chain_is_split_on_whatever_whitespace_it_was_stored_with() {
+        // Stored space separated, and a header can carry line breaks after
+        // folding, so anything blank between identifiers separates them.
+        let chain = continuing("c@x", Some("a@x\r\n  b@x")).expect("a chain");
+        assert_eq!(chain.references, "<a@x> <b@x> <c@x>");
+    }
 
     fn message(id: i64, message_id: &str, references: &[&str]) -> ThreadInput {
         ThreadInput {

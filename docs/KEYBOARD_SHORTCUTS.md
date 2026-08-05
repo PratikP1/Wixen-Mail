@@ -342,7 +342,7 @@ dialog once you have more than one.
 | Save | `Ctrl+S` | Save current draft |
 | Save As | (none) | Save message or attachment to file |
 | Check Mail | `F9` | Check for new messages |
-| Get Older Messages | `Ctrl+Shift+G` | Bring down the next page of older mail in the folder you are in |
+| Get Older Messages | `Shift+F9` | Bring down the next page of older mail in the folder you are in |
 | Quit | `Ctrl+Q` | Exit the application |
 
 ### Edit Menu
@@ -412,8 +412,8 @@ moves the menu, and sorting from the menu moves the headers.
 | Action | Shortcut | Description |
 |--------|----------|-------------|
 | Reply | `Ctrl+R` | Reply where the sender asked. On a mailing list this is the list. |
-| Reply All | `Ctrl+Shift+R` | Reply to everyone the message reached, leaving out your own address |
-| Reply to Sender Only | `Alt+Shift+R` | Reply only to the person who wrote it, never to the list |
+| Reply All | `Ctrl+Shift+R` | Reply to everyone the message reached and to the person who wrote it, leaving out your own address |
+| Reply to Sender Only | `Alt+Shift+R` | Reply only to the person who wrote it, never to the list. On the Message menu as Reply to Sender Only. |
 | Forward | `Ctrl+L` | Forward selected message |
 | Delete | `Delete` | Move selected message to trash |
 | Flag Message | `Ctrl+Shift+S` | Flag or unflag the selected message |

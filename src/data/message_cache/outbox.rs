@@ -32,12 +32,13 @@ impl MessageCache {
     /// Queue message for later sending when offline
     pub fn queue_outbox_message(&self, item: &QueuedOutboxMessage) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO outbox_queue (id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO outbox_queue (id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 &item.id, &item.account_id, &item.to_addr, &item.cc_addr, &item.bcc_addr,
                 &item.subject, &item.body, &item.body_html, &item.attachments,
                 &item.attempt_count, &item.last_error, &item.created_at,
+                &item.in_reply_to, &item.references,
             ],
         ).map_err(|e| Error::Other(format!("Failed to queue outbox message: {}", e)))?;
         Ok(())
@@ -46,7 +47,7 @@ impl MessageCache {
     /// Load queued outbox messages for an account
     pub fn load_outbox_messages(&self, account_id: &str) -> Result<Vec<QueuedOutboxMessage>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at
+            "SELECT id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header
              FROM outbox_queue
              WHERE account_id = ?1
              ORDER BY created_at ASC"
@@ -67,6 +68,8 @@ impl MessageCache {
                     attempt_count: row.get(9)?,
                     last_error: row.get(10)?,
                     created_at: row.get(11)?,
+                    in_reply_to: row.get(12)?,
+                    references: row.get(13)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query outbox messages: {}", e)))?
@@ -200,6 +203,8 @@ mod tests {
             bcc_addr: String::new(),
             subject: "Queued".to_string(),
             body: "Queued body".to_string(),
+            in_reply_to: None,
+            references: None,
             attempt_count: 0,
             last_error: None,
             created_at: chrono::Utc::now().to_rfc3339(),
@@ -245,6 +250,8 @@ mod tests {
             bcc_addr: String::new(),
             subject: subject.to_string(),
             body: "Body".to_string(),
+            in_reply_to: None,
+            references: None,
             attempt_count: 0,
             last_error: None,
             created_at: created_at.to_string(),
@@ -422,6 +429,8 @@ mod tests {
                 bcc_addr: "carol@example.com".to_string(),
                 subject: "Reply to all".to_string(),
                 body: "Body".to_string(),
+                in_reply_to: None,
+                references: None,
                 attempt_count: 0,
                 last_error: None,
                 created_at: chrono::Utc::now().to_rfc3339(),
@@ -433,5 +442,71 @@ mod tests {
         let loaded = cache.load_outbox_messages("acc-1").unwrap();
         assert_eq!(loaded[0].cc_addr, "bob@example.com");
         assert_eq!(loaded[0].bcc_addr, "carol@example.com");
+    }
+
+    #[test]
+    fn test_the_queue_keeps_the_conversation_a_reply_belongs_to() {
+        // The same shape of loss as Cc: everything above the queue can know
+        // which message is being answered, and the queue had nowhere to put it,
+        // so every reply arrived as the start of a new conversation.
+        let cache = a_cache("outbox_thread");
+
+        cache
+            .queue_outbox_message(&QueuedOutboxMessage {
+                id: "outbox-reply".to_string(),
+                account_id: "acc-1".to_string(),
+                to_addr: "alice@example.com".to_string(),
+                cc_addr: String::new(),
+                bcc_addr: String::new(),
+                subject: "Re: Notes".to_string(),
+                body: "Body".to_string(),
+                in_reply_to: Some("<c@x>".to_string()),
+                references: Some("<a@x> <b@x> <c@x>".to_string()),
+                attempt_count: 0,
+                last_error: None,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                body_html: None,
+                attachments: String::new(),
+            })
+            .unwrap();
+
+        let loaded = cache.load_outbox_messages("acc-1").unwrap();
+        assert_eq!(loaded[0].in_reply_to.as_deref(), Some("<c@x>"));
+        assert_eq!(loaded[0].references.as_deref(), Some("<a@x> <b@x> <c@x>"));
+    }
+
+    #[test]
+    fn test_a_message_queued_before_there_was_a_conversation_still_sends() {
+        // The columns arrive on a database that already exists, so a message
+        // queued by an older build reads as no reply, which is what it was.
+        let folder = env::temp_dir().join(format!(
+            "wixen_mail_test_outbox_older_{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        {
+            let cache = MessageCache::new(folder.clone(), None).unwrap();
+            cache
+                .queue_outbox_message(&queued("old-1", "acc-1", "Sent long ago", "2026-01-01"))
+                .unwrap();
+            for column in ["in_reply_to", "references_header"] {
+                cache
+                    .conn
+                    .execute(
+                        &format!("ALTER TABLE outbox_queue DROP COLUMN {column}"),
+                        [],
+                    )
+                    .expect("the column to come off, making this an older database");
+            }
+        }
+
+        let reopened = MessageCache::new(folder, None).expect("the older database to open again");
+        let loaded = reopened.load_outbox_messages("acc-1").unwrap();
+        assert_eq!(loaded.len(), 1, "the queued message did not survive");
+        assert_eq!(loaded[0].subject, "Sent long ago");
+        assert!(loaded[0].in_reply_to.is_none());
+        assert!(loaded[0].references.is_none());
     }
 }
