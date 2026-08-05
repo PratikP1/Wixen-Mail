@@ -616,6 +616,8 @@ cell" while the caret is inside one.
 | Field | Shortcut |
 |-------|----------|
 | Name | `Alt+N` |
+| Given name | `Alt+G` |
+| Family name | `Alt+M` |
 | Nickname | `Alt+K` |
 | Company | `Alt+C` |
 | Department | `Alt+D` |

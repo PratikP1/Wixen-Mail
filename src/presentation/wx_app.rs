@@ -1702,7 +1702,7 @@ impl WxMailApp {
                     let idx = event.get_item_index() as usize;
                     let contact = state.lock().ok().and_then(|s| s.contacts.get(idx).cloned());
                     let text = match &contact {
-                        Some(c) => c.detail_text(),
+                        Some(c) => c.detail_text(date_settings),
                         None => ContactItem::no_selection_text().to_string(),
                     };
                     detail_label.set_label(&text);

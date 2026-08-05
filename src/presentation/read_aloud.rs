@@ -309,12 +309,18 @@ impl ReadAloud for ContactItem {
         spoken(&[("", &self.name), ("", &self.email)])
     }
 
-    fn read_full(&self, _out: Reading) -> String {
+    fn read_full(&self, out: Reading) -> String {
+        // Not `out.date`, deliberately. That measures against now and would
+        // read a birthday falling this week as "2 days ago", which is not
+        // what anybody asked about a birthday, and it answers nothing at all
+        // for one stored without a year.
+        let birthday = crate::presentation::date_display::a_day_in_words(&self.birthday, out.dates);
         spoken(&[
             ("", &self.name),
             ("Email", &self.email),
             ("Phone", &self.phone),
             ("Company", &self.company),
+            ("Birthday", &birthday),
             // Spelled the way the menu item, the tree node and the detail
             // pane spell it. One record read two ways is two records to
             // anybody listening.
@@ -531,6 +537,7 @@ mod tests {
             email: "grace@example.com".to_string(),
             phone: String::new(),
             company: String::new(),
+            birthday: String::new(),
             favorite: false,
         }
     }
@@ -804,6 +811,41 @@ mod tests {
             contact.read_full(aloud()),
             "Grace Hopper. Email: grace@example.com. Phone: 555 0100. \
              Company: Analytical Engines. Favorite"
+        );
+    }
+
+    #[test]
+    fn test_a_birthday_with_no_year_is_read_aloud_as_a_day_and_a_month() {
+        let mut contact = contact();
+        contact.birthday = "--03-14".to_string();
+
+        let reading = contact.read_full(aloud());
+
+        assert!(
+            reading.contains("Birthday: March 14th"),
+            "a birthday nobody gave a year for is still said as words: {reading}"
+        );
+    }
+
+    #[test]
+    fn test_a_birthday_this_week_is_still_a_date_and_not_how_long_ago_it_was() {
+        use crate::presentation::date_display::DateStyle;
+        let mut contact = contact();
+        // Two days before the fixed "now" the reading is measured from.
+        contact.birthday = "2026-07-24".to_string();
+        let relative = Reading {
+            dates: crate::presentation::date_display::DateSettings {
+                style: DateStyle::RelativeWithinWeek,
+                ..aloud().dates
+            },
+            ..aloud()
+        };
+
+        let reading = contact.read_full(relative);
+
+        assert!(
+            reading.contains("Birthday: July 24, 2026"),
+            "a birthday is a day, never a count of days: {reading}"
         );
     }
 

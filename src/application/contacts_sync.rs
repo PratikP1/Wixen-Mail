@@ -18,6 +18,7 @@ use crate::data::message_cache::{
     AddressBook, AddressEntry, ContactEntry, EmailEntry, MessageCache, PhoneEntry,
     ProviderIdentity, SyncState,
 };
+use crate::presentation::date_display::YEAR_LEFT_OUT;
 use crate::service::google_api::{
     GoogleAddress, GoogleApiClient, GoogleBiography, GoogleBirthday, GoogleDate, GoogleEmail,
     GoogleName, GoogleNickname, GoogleOrganization, GooglePerson, GooglePhone, GoogleUrl,
@@ -308,21 +309,23 @@ fn version_marker(given: &str) -> Option<String> {
 
 // ── Names ───────────────────────────────────────────────────────────────────
 
-/// A name split into the two parts a provider stores it in.
+/// One part of a name as an address book sent it, or nothing when it sent none.
 ///
-/// The last word is the family name and everything before it the given name,
-/// so a middle name stays where somebody typed it. A name of one word is all
-/// given name: there is nothing to put in a family name, and inventing one puts
-/// a word in somebody's record that they never wrote. A family name that
-/// carries a space, such as van der Berg, goes the other way, which no rule can
-/// get right from one line of text.
-fn given_and_family_name(name: &str) -> (String, String) {
-    let words: Vec<&str> = name.split_whitespace().collect();
-    match words.split_last() {
-        None => (String::new(), String::new()),
-        Some((only, [])) => ((*only).to_string(), String::new()),
-        Some((family, given)) => (given.join(" "), (*family).to_string()),
-    }
+/// An address book that holds no separate parts sends empty strings for them,
+/// and an empty part is not a part: recording it would say somebody's family
+/// name is blank, which is a different claim from never having been asked.
+///
+/// This application no longer guesses either part from the whole name. Guessing
+/// split at the last space, which sent "Grace Brewster Murray Hopper" out as
+/// given "Grace Brewster Murray", and put a family name of "van der Berg" back
+/// as "Berg" the next time round. No one rule gets both right, so the parts an
+/// address book gave are the parts that are kept, and the one guess left in the
+/// application happens once, in the contact editor, where somebody can see it
+/// and correct it.
+fn a_recorded_part(given: Option<&str>) -> Option<String> {
+    given
+        .map(|part| part.trim().to_string())
+        .filter(|part| !part.is_empty())
 }
 
 // ── Birthdays ───────────────────────────────────────────────────────────────
@@ -330,8 +333,10 @@ fn given_and_family_name(name: &str) -> (String, String) {
 /// The year Google sends for a birthday that was recorded without one.
 const BIRTHDAY_WITH_NO_YEAR: i32 = 0;
 
-/// How a date with the year left out is written.
-const YEAR_LEFT_OUT: &str = "--";
+// How a date with the year left out is written, imported at the top of this
+// file from the module that reads one back out. Shared rather than spelled
+// twice: a birthday stored one way and read another is a birthday nobody
+// hears.
 
 /// The start of the day, which is how Microsoft stores a whole-day date.
 const START_OF_THE_DAY: &str = "T00:00:00Z";
@@ -491,6 +496,8 @@ fn the_stored_contact_this_is<'a>(
 fn google_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> ContactEntry {
     ContactEntry {
         name: remote.name.clone(),
+        given_name: remote.given_name.clone(),
+        family_name: remote.family_name.clone(),
         email: remote.email.clone(),
         phone: remote.phone.clone(),
         company: remote.company.clone(),
@@ -523,6 +530,8 @@ fn google_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> Cont
 fn microsoft_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> ContactEntry {
     ContactEntry {
         name: remote.name.clone(),
+        given_name: remote.given_name.clone(),
+        family_name: remote.family_name.clone(),
         email: remote.email.clone(),
         phone: remote.phone.clone(),
         company: remote.company.clone(),
@@ -1133,8 +1142,11 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
         .and_then(|b| b.date.as_ref())
         .and_then(birthday_from_google);
 
-    // Multi-value emails
-    let emails_json = if person.email_addresses.len() > 1 {
+    // Every address, even when there is one. The label is only ever held in
+    // this list, so writing it only for a contact with two threw away the word
+    // "Work" from everybody who has one number and one address, and the merge
+    // below then copied that nothing back over a label typed here.
+    let emails_json = if !person.email_addresses.is_empty() {
         let entries: Vec<EmailEntry> = person
             .email_addresses
             .iter()
@@ -1148,8 +1160,9 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
         None
     };
 
-    // Multi-value phones
-    let phones_json = if person.phone_numbers.len() > 1 {
+    // Every number, even when there is one. Same rule and same reason as the
+    // addresses above.
+    let phones_json = if !person.phone_numbers.is_empty() {
         let entries: Vec<PhoneEntry> = person
             .phone_numbers
             .iter()
@@ -1177,6 +1190,8 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
         } else {
             name
         },
+        given_name: a_recorded_part(person.names.first().map(|n| n.given_name.as_str())),
+        family_name: a_recorded_part(person.names.first().map(|n| n.family_name.as_str())),
         email: primary_email,
         phone,
         company,
@@ -1212,14 +1227,23 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
 }
 
 fn contact_to_google_person(contact: &ContactEntry) -> GooglePerson {
+    // Either the parts an address book recorded, or the whole name on one
+    // line, and never both: two answers to one question is how a name gets
+    // corrupted. displayName is sent because it always was and Google ignores
+    // it; unstructuredName is the field Google will actually write.
     let names = if contact.name.is_empty() {
         vec![]
     } else {
-        let (given_name, family_name) = given_and_family_name(&contact.name);
+        let recorded_parts = contact.given_name.is_some() || contact.family_name.is_some();
         vec![GoogleName {
             display_name: contact.name.clone(),
-            given_name,
-            family_name,
+            given_name: contact.given_name.clone().unwrap_or_default(),
+            family_name: contact.family_name.clone().unwrap_or_default(),
+            unstructured_name: if recorded_parts {
+                String::new()
+            } else {
+                contact.name.clone()
+            },
         }]
     };
 
@@ -1357,7 +1381,11 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         Some(ms.nick_name.clone())
     };
 
-    let emails_json = if ms.email_addresses.len() > 1 {
+    // Every address, even when there is one. Graph carries no label of its
+    // own, so all of them read Other; the list is still written, because a
+    // stored list of one is what stops the contact editor inventing a label
+    // and what stops the merge copying nothing over one typed here.
+    let emails_json = if !ms.email_addresses.is_empty() {
         let entries: Vec<_> = ms
             .email_addresses
             .iter()
@@ -1401,6 +1429,8 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         } else {
             ms.display_name.clone()
         },
+        given_name: a_recorded_part(Some(ms.given_name.as_str())),
+        family_name: a_recorded_part(Some(ms.surname.as_str())),
         email: primary_email,
         phone,
         company,
@@ -1469,12 +1499,13 @@ fn contact_to_ms_contact(contact: &ContactEntry) -> MsGraphContact {
         .find(|entry| microsoft_calls_this_a_work_address(&entry.label))
         .map(address_for_microsoft);
 
-    let (given_name, surname) = given_and_family_name(&contact.name);
-
     MsGraphContact {
         display_name: contact.name.clone(),
-        given_name,
-        surname,
+        // The parts an address book recorded, or neither. Graph leaves out an
+        // empty field rather than sending it, so a contact with no recorded
+        // parts goes out under its display name alone.
+        given_name: contact.given_name.clone().unwrap_or_default(),
+        surname: contact.family_name.clone().unwrap_or_default(),
         nick_name: contact.nickname.clone().unwrap_or_default(),
         email_addresses,
         home_phones,
@@ -1506,6 +1537,8 @@ mod tests {
             id: "local-1".to_string(),
             account_id: "test@example.com".to_string(),
             name: name.to_string(),
+            given_name: None,
+            family_name: None,
             email: email.to_string(),
             phone: None,
             company: None,
@@ -1542,6 +1575,7 @@ mod tests {
                 display_name: "Alice Smith".to_string(),
                 given_name: "Alice".to_string(),
                 family_name: "Smith".to_string(),
+                unstructured_name: String::new(),
             }],
             email_addresses: vec![GoogleEmail {
                 value: "alice@example.com".to_string(),
@@ -1581,6 +1615,8 @@ mod tests {
             id: "local-1".to_string(),
             account_id: "test@gmail.com".to_string(),
             name: "Bob Jones".to_string(),
+            given_name: None,
+            family_name: None,
             email: "bob@example.com".to_string(),
             phone: Some("+1-555-0202".to_string()),
             company: Some("Corp".to_string()),
@@ -1609,8 +1645,12 @@ mod tests {
 
         let person = contact_to_google_person(&contact);
         assert_eq!(person.names[0].display_name, "Bob Jones");
-        assert_eq!(person.names[0].given_name, "Bob");
-        assert_eq!(person.names[0].family_name, "Jones");
+        // No part of this name was ever recorded separately, so the whole name
+        // goes out in the one whole-name field Google will write, and neither
+        // part is guessed. This used to assert the guess.
+        assert_eq!(person.names[0].unstructured_name, "Bob Jones");
+        assert!(person.names[0].given_name.is_empty());
+        assert!(person.names[0].family_name.is_empty());
         assert_eq!(person.email_addresses[0].value, "bob@example.com");
         assert_eq!(person.phone_numbers[0].value, "+1-555-0202");
         assert_eq!(person.organizations[0].name, "Corp");
@@ -1653,6 +1693,8 @@ mod tests {
             id: "local-2".to_string(),
             account_id: "test@outlook.com".to_string(),
             name: "Dave Lee".to_string(),
+            given_name: None,
+            family_name: None,
             email: "dave@example.com".to_string(),
             phone: Some("+1-555-0404".to_string()),
             company: Some("Fabrikam".to_string()),
@@ -1681,8 +1723,11 @@ mod tests {
 
         let ms = contact_to_ms_contact(&contact);
         assert_eq!(ms.display_name, "Dave Lee");
-        assert_eq!(ms.given_name, "Dave");
-        assert_eq!(ms.surname, "Lee");
+        // No part of this name was ever recorded separately, so neither is
+        // sent and Graph is left with the display name alone. This used to
+        // assert the guess.
+        assert!(ms.given_name.is_empty());
+        assert!(ms.surname.is_empty());
         assert_eq!(ms.email_addresses[0].address, "dave@example.com");
         // A number recorded before there was a list to hold labels carries no
         // label, so it goes to the list Microsoft keeps unlabelled numbers in
@@ -1700,6 +1745,8 @@ mod tests {
             id: "rt-1".to_string(),
             account_id: "test@gmail.com".to_string(),
             name: "Test Person".to_string(),
+            given_name: None,
+            family_name: None,
             email: "test@example.com".to_string(),
             phone: Some("+1-555-9999".to_string()),
             company: Some("TestCo".to_string()),
@@ -1769,7 +1816,9 @@ mod tests {
     }
 
     #[test]
-    fn test_a_google_contact_with_one_email_address_stores_no_email_list() {
+    /// This pinned the opposite until the behaviour was decided again: one
+    /// address used to store no list, which threw the label away.
+    fn test_a_google_contact_with_one_email_address_still_stores_its_label() {
         let person = GooglePerson {
             resource_name: "people/c1".to_string(),
             email_addresses: vec![GoogleEmail {
@@ -1783,7 +1832,11 @@ mod tests {
         let contact = google_person_to_contact(&person, "acct");
 
         assert_eq!(contact.email, "only@example.com");
-        assert!(contact.emails_json.is_none());
+        let stored = contact.emails_json.expect("one address still has a label");
+        let entries: Vec<EmailEntry> = serde_json::from_str(&stored).expect("valid JSON list");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].label, "Home");
+        assert_eq!(entries[0].address, "only@example.com");
     }
 
     #[test]
@@ -1816,7 +1869,9 @@ mod tests {
     }
 
     #[test]
-    fn test_a_google_contact_with_one_phone_number_stores_no_phone_list() {
+    /// This pinned the opposite until the behaviour was decided again: one
+    /// number used to store no list, which threw the label away.
+    fn test_a_google_contact_with_one_phone_number_still_stores_its_label() {
         let person = GooglePerson {
             resource_name: "people/c1".to_string(),
             phone_numbers: vec![GooglePhone {
@@ -1829,7 +1884,392 @@ mod tests {
         let contact = google_person_to_contact(&person, "acct");
 
         assert_eq!(contact.phone.as_deref(), Some("+1-555-0101"));
-        assert!(contact.phones_json.is_none());
+        let stored = contact.phones_json.expect("one number still has a label");
+        let entries: Vec<PhoneEntry> = serde_json::from_str(&stored).expect("valid JSON list");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].label, "Mobile");
+        assert_eq!(entries[0].number, "+1-555-0101");
+    }
+
+    #[test]
+    fn test_nothing_in_the_contacts_write_path_builds_its_own_client() {
+        // The gate is only worth having if nothing goes round it. A module
+        // that builds its own client can send whatever it likes, and no test
+        // of what goes out would notice. The twin of this over the calendar
+        // path has been in the tree since changes to a calendar started being
+        // sent; contacts had none until now.
+        let path = "src/application/contacts_sync.rs";
+        let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let before_the_tests = source
+            .split_once("#[cfg(test)]")
+            .map(|(before, _)| before)
+            .unwrap_or(&source);
+        assert!(
+            !before_the_tests.contains("may_change_things"),
+            "{path} builds a client that may change things, going round the gate"
+        );
+        assert!(
+            !before_the_tests.contains("reqwest::Client"),
+            "{path} holds a raw client, so nothing can tell a read from a change"
+        );
+    }
+
+    /// A person whose family name carries a space, which is the case no rule
+    /// splitting one line of text can get right.
+    fn grace_van_der_berg_at_google() -> GooglePerson {
+        GooglePerson {
+            resource_name: "people/c1".to_string(),
+            names: vec![GoogleName {
+                display_name: "Grace van der Berg".to_string(),
+                given_name: "Grace".to_string(),
+                family_name: "van der Berg".to_string(),
+                unstructured_name: String::new(),
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_the_two_name_parts_a_provider_sent_are_stored_as_they_arrived() {
+        let contact = google_person_to_contact(&grace_van_der_berg_at_google(), "acct");
+
+        assert_eq!(contact.given_name.as_deref(), Some("Grace"));
+        assert_eq!(contact.family_name.as_deref(), Some("van der Berg"));
+    }
+
+    #[test]
+    fn test_a_provider_that_sent_no_name_parts_records_none() {
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            names: vec![GoogleName {
+                display_name: "Prince".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let contact = google_person_to_contact(&person, "acct");
+
+        assert_eq!(contact.given_name, None, "an empty part is not a part");
+        assert_eq!(contact.family_name, None);
+    }
+
+    #[test]
+    fn test_the_two_name_parts_microsoft_sent_are_stored_as_they_arrived() {
+        let ms = MsGraphContact {
+            id: "AAMk1".to_string(),
+            display_name: "Grace van der Berg".to_string(),
+            given_name: "Grace".to_string(),
+            surname: "van der Berg".to_string(),
+            ..Default::default()
+        };
+
+        let contact = ms_contact_to_contact(&ms, "acct");
+
+        assert_eq!(contact.given_name.as_deref(), Some("Grace"));
+        assert_eq!(contact.family_name.as_deref(), Some("van der Berg"));
+    }
+
+    #[test]
+    fn test_a_google_sync_keeps_the_name_parts_the_provider_sent() {
+        let local = a_local_contact("Grace van der Berg", "grace@example.com");
+        let remote = google_person_to_contact(&grace_van_der_berg_at_google(), "acct");
+
+        let merged = google_fields_over_local(&local, &remote);
+
+        assert_eq!(merged.given_name.as_deref(), Some("Grace"));
+        assert_eq!(merged.family_name.as_deref(), Some("van der Berg"));
+    }
+
+    #[test]
+    fn test_a_microsoft_sync_keeps_the_name_parts_the_provider_sent() {
+        let local = a_local_contact("Grace van der Berg", "grace@example.com");
+        let mut remote = a_local_contact("Grace van der Berg", "grace@example.com");
+        remote.given_name = Some("Grace".to_string());
+        remote.family_name = Some("van der Berg".to_string());
+
+        let merged = microsoft_fields_over_local(&local, &remote);
+
+        assert_eq!(merged.given_name.as_deref(), Some("Grace"));
+        assert_eq!(merged.family_name.as_deref(), Some("van der Berg"));
+    }
+
+    #[test]
+    fn test_a_family_name_with_a_space_survives_a_google_round_trip() {
+        let sent_back = contact_to_google_person(&google_person_to_contact(
+            &grace_van_der_berg_at_google(),
+            "acct",
+        ));
+
+        assert_eq!(sent_back.names.len(), 1);
+        assert_eq!(sent_back.names[0].given_name, "Grace");
+        assert_eq!(sent_back.names[0].family_name, "van der Berg");
+    }
+
+    #[test]
+    fn test_a_family_name_with_a_space_survives_a_microsoft_round_trip() {
+        let ms = MsGraphContact {
+            id: "AAMk1".to_string(),
+            display_name: "Grace van der Berg".to_string(),
+            given_name: "Grace".to_string(),
+            surname: "van der Berg".to_string(),
+            ..Default::default()
+        };
+
+        let sent_back = contact_to_ms_contact(&ms_contact_to_contact(&ms, "acct"));
+
+        assert_eq!(sent_back.given_name, "Grace");
+        assert_eq!(sent_back.surname, "van der Berg");
+    }
+
+    #[test]
+    fn test_a_contact_with_no_recorded_name_parts_goes_to_google_as_one_whole_name() {
+        let contact = a_local_contact("Grace Brewster Murray Hopper", "grace@example.com");
+
+        let person = contact_to_google_person(&contact);
+
+        assert_eq!(person.names.len(), 1);
+        assert_eq!(
+            person.names[0].unstructured_name, "Grace Brewster Murray Hopper",
+            "the whole name goes in the one field Google will write"
+        );
+        assert!(person.names[0].given_name.is_empty());
+        assert!(person.names[0].family_name.is_empty());
+    }
+
+    #[test]
+    fn test_a_contact_that_has_name_parts_is_not_also_sent_as_one_whole_name() {
+        let mut contact = a_local_contact("Grace van der Berg", "grace@example.com");
+        contact.given_name = Some("Grace".to_string());
+        contact.family_name = Some("van der Berg".to_string());
+
+        let person = contact_to_google_person(&contact);
+
+        assert!(
+            person.names[0].unstructured_name.is_empty(),
+            "Google is never given two answers to one question"
+        );
+    }
+
+    #[test]
+    fn test_a_contact_with_only_one_recorded_part_sends_that_part_and_no_whole_name() {
+        let mut contact = a_local_contact("Prince", "prince@example.com");
+        contact.given_name = Some("Prince".to_string());
+
+        let person = contact_to_google_person(&contact);
+
+        assert_eq!(person.names[0].given_name, "Prince");
+        assert!(person.names[0].family_name.is_empty());
+        assert!(person.names[0].unstructured_name.is_empty());
+    }
+
+    #[test]
+    fn test_a_contact_with_no_recorded_name_parts_goes_to_microsoft_as_a_display_name_alone() {
+        let contact = a_local_contact("Grace Brewster Murray Hopper", "grace@example.com");
+
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(ms.display_name, "Grace Brewster Murray Hopper");
+        assert!(ms.given_name.is_empty());
+        assert!(ms.surname.is_empty());
+    }
+
+    #[test]
+    fn test_a_contact_with_no_name_at_all_is_sent_with_no_name_object() {
+        let contact = a_local_contact("", "grace@example.com");
+
+        let person = contact_to_google_person(&contact);
+
+        assert!(person.names.is_empty());
+    }
+
+    #[test]
+    fn test_a_given_name_the_same_as_the_family_name_still_sends_both() {
+        // Two fields carrying one value is exactly where a converter that
+        // builds one and forgets the other looks correct.
+        let mut contact = a_local_contact("Ng Ng", "ng@example.com");
+        contact.given_name = Some("Ng".to_string());
+        contact.family_name = Some("Ng".to_string());
+
+        let person = contact_to_google_person(&contact);
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(person.names[0].given_name, "Ng");
+        assert_eq!(person.names[0].family_name, "Ng");
+        assert_eq!(ms.given_name, "Ng");
+        assert_eq!(ms.surname, "Ng");
+    }
+
+    #[test]
+    fn test_a_name_part_that_is_only_spaces_is_recorded_as_no_part() {
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            names: vec![GoogleName {
+                display_name: "Prince".to_string(),
+                given_name: "Prince".to_string(),
+                family_name: "   ".to_string(),
+                unstructured_name: String::new(),
+            }],
+            ..Default::default()
+        };
+
+        let contact = google_person_to_contact(&person, "acct");
+
+        assert_eq!(contact.given_name.as_deref(), Some("Prince"));
+        assert_eq!(contact.family_name, None);
+    }
+
+    #[test]
+    fn test_a_number_google_gave_no_label_is_stored_as_other_and_goes_back_as_other() {
+        // A label nobody chose used to be nowhere at all. It is now the word
+        // this application uses for one, which does mean a first push writes
+        // "other" where Google had nothing. It converges after one round trip
+        // rather than drifting, and this pins that it does.
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            phone_numbers: vec![GooglePhone {
+                value: "+1-555-0101".to_string(),
+                phone_type: String::new(),
+            }],
+            ..Default::default()
+        };
+
+        let once = google_person_to_contact(&person, "acct");
+        let sent = contact_to_google_person(&once);
+        let twice = google_person_to_contact(&sent, "acct");
+
+        assert_eq!(sent.phone_numbers[0].phone_type, "other");
+        assert_eq!(once.phones_json, twice.phones_json, "it does not drift");
+    }
+
+    #[test]
+    fn test_two_numbers_sharing_one_label_are_both_kept() {
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            phone_numbers: vec![
+                GooglePhone {
+                    value: "+1-555-0101".to_string(),
+                    phone_type: "work".to_string(),
+                },
+                GooglePhone {
+                    value: "+1-555-0202".to_string(),
+                    phone_type: "work".to_string(),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let contact = google_person_to_contact(&person, "acct");
+
+        let stored = contact.phones_json.expect("both numbers are kept");
+        let entries: Vec<PhoneEntry> = serde_json::from_str(&stored).expect("valid JSON list");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].number, "+1-555-0101");
+        assert_eq!(entries[1].number, "+1-555-0202");
+        assert!(entries.iter().all(|entry| entry.label == "Work"));
+    }
+
+    #[test]
+    fn test_a_contact_google_gave_no_number_at_all_stores_no_number_list() {
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            ..Default::default()
+        };
+
+        let contact = google_person_to_contact(&person, "acct");
+
+        assert_eq!(contact.phones_json, None);
+        assert_eq!(contact.emails_json, None);
+    }
+
+    #[test]
+    fn test_a_google_contact_with_one_phone_number_keeps_the_label_google_gave_it() {
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            phone_numbers: vec![GooglePhone {
+                value: "+1-555-0101".to_string(),
+                phone_type: "work".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        let contact = google_person_to_contact(&person, "acct");
+
+        let stored = contact.phones_json.expect("the label is kept");
+        let entries: Vec<PhoneEntry> = serde_json::from_str(&stored).expect("valid JSON list");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].label, "Work");
+        assert_eq!(entries[0].number, "+1-555-0101");
+    }
+
+    #[test]
+    fn test_a_google_contact_with_one_email_address_keeps_the_label_google_gave_it() {
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            email_addresses: vec![GoogleEmail {
+                value: "alice@work.example.com".to_string(),
+                email_type: "work".to_string(),
+                metadata: None,
+            }],
+            ..Default::default()
+        };
+
+        let contact = google_person_to_contact(&person, "acct");
+
+        let stored = contact.emails_json.expect("the label is kept");
+        let entries: Vec<EmailEntry> = serde_json::from_str(&stored).expect("valid JSON list");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].label, "Work");
+        assert_eq!(entries[0].address, "alice@work.example.com");
+    }
+
+    #[test]
+    fn test_a_work_number_from_google_is_still_a_work_number_when_it_goes_back() {
+        let person = GooglePerson {
+            resource_name: "people/c1".to_string(),
+            phone_numbers: vec![GooglePhone {
+                value: "+1-555-0101".to_string(),
+                phone_type: "work".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        let sent_back = contact_to_google_person(&google_person_to_contact(&person, "acct"));
+
+        assert_eq!(sent_back.phone_numbers.len(), 1);
+        assert_eq!(sent_back.phone_numbers[0].phone_type, "work");
+        assert_eq!(sent_back.phone_numbers[0].value, "+1-555-0101");
+    }
+
+    #[test]
+    fn test_a_single_number_labelled_here_is_not_wiped_by_the_next_google_sync() {
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.phone = Some("+44 113 496 0000".to_string());
+        local.phones_json = Some(
+            serde_json::to_string(&[PhoneEntry {
+                label: "Work".to_string(),
+                number: "+44 113 496 0000".to_string(),
+            }])
+            .expect("the list can be written"),
+        );
+        let remote = google_person_to_contact(
+            &GooglePerson {
+                resource_name: "people/c1".to_string(),
+                phone_numbers: vec![GooglePhone {
+                    value: "+44 113 496 0000".to_string(),
+                    phone_type: "work".to_string(),
+                }],
+                ..Default::default()
+            },
+            "acct",
+        );
+
+        let merged = google_fields_over_local(&local, &remote);
+
+        let stored = merged.phones_json.expect("the label survives the sync");
+        let entries: Vec<PhoneEntry> = serde_json::from_str(&stored).expect("valid JSON list");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].label, "Work");
     }
 
     #[test]
@@ -1907,7 +2347,10 @@ mod tests {
     }
 
     #[test]
-    fn test_a_microsoft_contact_with_one_email_address_stores_no_email_list() {
+    /// This pinned the opposite until the behaviour was decided again. Graph
+    /// gives no label of its own, so the one it gets is Other; the list is
+    /// written anyway, so the contact editor does not invent Personal for it.
+    fn test_a_microsoft_contact_with_one_email_address_still_stores_a_list() {
         let ms = MsGraphContact {
             id: "AAMk1".to_string(),
             email_addresses: vec![MsEmailAddress {
@@ -1920,7 +2363,11 @@ mod tests {
         let contact = ms_contact_to_contact(&ms, "acct");
 
         assert_eq!(contact.email, "only@outlook.com");
-        assert!(contact.emails_json.is_none());
+        let stored = contact.emails_json.expect("one address still has a list");
+        let entries: Vec<EmailEntry> = serde_json::from_str(&stored).expect("valid JSON list");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].label, "Other");
+        assert_eq!(entries[0].address, "only@outlook.com");
     }
 
     #[test]
@@ -2167,6 +2614,7 @@ mod tests {
                 display_name: name.to_string(),
                 given_name: name.split(' ').next().unwrap_or_default().to_string(),
                 family_name: name.split(' ').nth(1).unwrap_or_default().to_string(),
+                unstructured_name: String::new(),
             }],
             email_addresses: vec![GoogleEmail {
                 value: email.to_string(),
@@ -2535,11 +2983,15 @@ mod tests {
                 .to_string(),
         );
         let remote = alice_from_microsoft();
-        assert_eq!(remote.emails_json, None, "Microsoft holds one address now");
+        assert_eq!(
+            remote.emails_json.as_deref(),
+            Some(r#"[{"label":"Other","address":"alice@example.com"}]"#),
+            "Microsoft holds one address now"
+        );
 
         let merged = microsoft_fields_over_local(&local, &remote);
 
-        assert_eq!(merged.emails_json, None);
+        assert_eq!(merged.emails_json, remote.emails_json);
     }
 
     #[test]
@@ -2730,6 +3182,7 @@ mod tests {
                 display_name: String::new(),
                 given_name: "Phone".to_string(),
                 family_name: "Only".to_string(),
+                unstructured_name: String::new(),
             }],
             ..Default::default()
         };
@@ -2918,48 +3371,68 @@ mod tests {
     }
 
     // ── A middle name ───────────────────────────────────────────────────────
+    //
+    // These four pinned a rule that has been reversed. The whole name used to
+    // be split at the last space on the way out, which sent "Grace Brewster
+    // Murray Hopper" as given "Grace Brewster Murray" and put a family name of
+    // "van der Berg" back as "Berg". Nothing splits a name at push time now:
+    // the parts an address book recorded go out unchanged, and a name with no
+    // recorded parts goes out whole.
 
     #[test]
-    fn test_a_middle_name_stays_with_the_given_name_when_pushed_to_google() {
+    fn test_a_middle_name_is_no_longer_split_off_when_a_contact_goes_to_google() {
         let contact = a_local_contact("Grace Brewster Murray Hopper", "grace@example.com");
 
         let person = contact_to_google_person(&contact);
 
-        assert_eq!(person.names[0].given_name, "Grace Brewster Murray");
-        assert_eq!(person.names[0].family_name, "Hopper");
+        assert_eq!(
+            person.names[0].unstructured_name,
+            "Grace Brewster Murray Hopper"
+        );
+        assert!(person.names[0].given_name.is_empty());
+        assert!(person.names[0].family_name.is_empty());
     }
 
     #[test]
-    fn test_a_middle_name_stays_with_the_given_name_when_pushed_to_microsoft() {
+    fn test_a_middle_name_is_no_longer_split_off_when_a_contact_goes_to_microsoft() {
         let contact = a_local_contact("Grace Brewster Murray Hopper", "grace@example.com");
 
         let ms = contact_to_ms_contact(&contact);
 
+        assert_eq!(ms.display_name, "Grace Brewster Murray Hopper");
+        assert!(ms.given_name.is_empty());
+        assert!(ms.surname.is_empty());
+    }
+
+    #[test]
+    fn test_the_parts_a_person_typed_are_what_goes_out_however_many_words_they_hold() {
+        let mut contact = a_local_contact("Grace Brewster Murray Hopper", "grace@example.com");
+        contact.given_name = Some("Grace Brewster Murray".to_string());
+        contact.family_name = Some("Hopper".to_string());
+
+        let person = contact_to_google_person(&contact);
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(person.names[0].given_name, "Grace Brewster Murray");
+        assert_eq!(person.names[0].family_name, "Hopper");
+        assert!(person.names[0].unstructured_name.is_empty());
         assert_eq!(ms.given_name, "Grace Brewster Murray");
         assert_eq!(ms.surname, "Hopper");
     }
 
     #[test]
-    fn test_a_one_word_name_is_pushed_as_a_given_name_with_no_family_name() {
+    fn test_a_one_word_name_with_no_recorded_parts_is_pushed_whole() {
         let contact = a_local_contact("Prince", "prince@example.com");
 
         let person = contact_to_google_person(&contact);
         let ms = contact_to_ms_contact(&contact);
 
-        assert_eq!(person.names[0].given_name, "Prince");
+        assert_eq!(person.names[0].unstructured_name, "Prince");
+        assert!(person.names[0].given_name.is_empty());
         assert!(person.names[0].family_name.is_empty());
-        assert_eq!(ms.given_name, "Prince");
+        assert_eq!(ms.display_name, "Prince");
+        assert!(ms.given_name.is_empty());
         assert!(ms.surname.is_empty());
-    }
-
-    #[test]
-    fn test_a_name_typed_with_two_spaces_does_not_carry_one_into_the_family_name() {
-        let contact = a_local_contact("Grace  Hopper", "grace@example.com");
-
-        let person = contact_to_google_person(&contact);
-
-        assert_eq!(person.names[0].given_name, "Grace");
-        assert_eq!(person.names[0].family_name, "Hopper");
     }
 
     // ── A contact with nothing to call it by ────────────────────────────────

@@ -686,6 +686,8 @@ fn test_contact_item_display_conversion() {
         id: "c1".to_string(),
         account_id: "test".to_string(),
         name: "Jane Doe".to_string(),
+        given_name: None,
+        family_name: None,
         email: "jane@example.com".to_string(),
         phone: Some("555-9999".to_string()),
         company: Some("Widgets Inc".to_string()),

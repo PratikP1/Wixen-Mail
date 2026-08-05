@@ -659,6 +659,10 @@ pub struct ContactItem {
     pub email: String,
     pub phone: String,
     pub company: String,
+    /// Exactly as it is stored, which for a birthday nobody gave a year for is
+    /// "--03-14". Written as words wherever it is shown or said, never here:
+    /// this is the value, and the value is what a card holds.
+    pub birthday: String,
     pub favorite: bool,
 }
 
@@ -671,6 +675,7 @@ impl ContactItem {
             email: entry.email.clone(),
             phone: entry.phone.clone().unwrap_or_default(),
             company: entry.company.clone().unwrap_or_default(),
+            birthday: entry.birthday.clone().unwrap_or_default(),
             favorite: entry.favorite,
         }
     }
@@ -679,12 +684,18 @@ impl ContactItem {
     ///
     /// Empty fields are left out entirely rather than shown with a blank
     /// value, so a screen reader never reads a label with nothing after it.
-    pub fn detail_text(&self) -> String {
+    ///
+    /// The date settings are carried in because a birthday is written the way
+    /// this reader writes every other date, and one with no year would
+    /// otherwise be read out character by character.
+    pub fn detail_text(&self, dates: crate::presentation::date_display::DateSettings) -> String {
         let mut lines = vec![self.name.clone()];
+        let birthday = crate::presentation::date_display::a_day_in_words(&self.birthday, dates);
         let fields = [
             ("Email", &self.email),
             ("Phone", &self.phone),
             ("Company", &self.company),
+            ("Birthday", &birthday),
         ];
         for (label, value) in fields {
             if !value.is_empty() {
@@ -1105,10 +1116,11 @@ mod tests {
             email: "ada@example.com".into(),
             phone: String::new(),
             company: String::new(),
+            birthday: String::new(),
             favorite: false,
         };
         assert_eq!(
-            contact.detail_text(),
+            contact.detail_text(date_settings()),
             "Ada Lovelace\nEmail: ada@example.com"
         );
     }
@@ -1121,12 +1133,117 @@ mod tests {
             email: "ada@example.com".into(),
             phone: "555-0100".into(),
             company: "Analytical Engines".into(),
+            birthday: "1815-12-10".into(),
             favorite: true,
         };
         assert_eq!(
-            contact.detail_text(),
-            "Ada Lovelace\nEmail: ada@example.com\nPhone: 555-0100\nCompany: Analytical Engines\nFavorite"
+            contact.detail_text(date_settings()),
+            "Ada Lovelace\nEmail: ada@example.com\nPhone: 555-0100\n\
+             Company: Analytical Engines\nBirthday: December 10, 1815\nFavorite"
         );
+    }
+
+    /// Fixed rather than the machine's, so this reads the same everywhere.
+    fn date_settings() -> crate::presentation::date_display::DateSettings {
+        use crate::presentation::date_display::{Clock, DateOrder, DateStyle, DateWording};
+        crate::presentation::date_display::DateSettings {
+            style: DateStyle::Absolute,
+            order: DateOrder::MonthFirst,
+            wording: DateWording::Verbal,
+            clock: Clock::TwelveHour,
+        }
+    }
+
+    #[test]
+    fn test_a_contact_detail_reads_a_birthday_with_no_year_as_words() {
+        let contact = ContactItem {
+            id: "c1".into(),
+            name: "Ada Lovelace".into(),
+            email: String::new(),
+            phone: String::new(),
+            company: String::new(),
+            birthday: "--12-10".into(),
+            favorite: false,
+        };
+        assert_eq!(
+            contact.detail_text(date_settings()),
+            "Ada Lovelace\nBirthday: December 10th"
+        );
+    }
+
+    #[test]
+    fn test_a_contact_with_no_birthday_gets_no_birthday_line() {
+        let contact = ContactItem {
+            id: "c1".into(),
+            name: "Ada Lovelace".into(),
+            email: "ada@example.com".into(),
+            phone: String::new(),
+            company: String::new(),
+            birthday: String::new(),
+            favorite: false,
+        };
+        assert!(
+            !contact.detail_text(date_settings()).contains("Birthday"),
+            "{}",
+            contact.detail_text(date_settings())
+        );
+    }
+
+    #[test]
+    fn test_a_contact_detail_reads_a_birthday_that_has_a_year_as_a_whole_date() {
+        let contact = ContactItem {
+            id: "c1".into(),
+            name: "Ada Lovelace".into(),
+            email: String::new(),
+            phone: String::new(),
+            company: String::new(),
+            birthday: "1815-12-10".into(),
+            favorite: false,
+        };
+        assert_eq!(
+            contact.detail_text(date_settings()),
+            "Ada Lovelace\nBirthday: December 10, 1815"
+        );
+    }
+
+    #[test]
+    fn test_a_contacts_birthday_is_carried_out_of_what_was_stored() {
+        let mut entry = crate::data::message_cache::ContactEntry {
+            id: "c1".into(),
+            account_id: "acct".into(),
+            name: "Ada Lovelace".into(),
+            given_name: None,
+            family_name: None,
+            email: String::new(),
+            phone: None,
+            company: None,
+            job_title: None,
+            website: None,
+            address: None,
+            birthday: Some("--12-10".into()),
+            avatar_url: None,
+            avatar_data_base64: None,
+            source_provider: None,
+            last_synced_at: None,
+            vcard_raw: None,
+            notes: None,
+            favorite: false,
+            created_at: String::new(),
+            nickname: None,
+            department: None,
+            relationship: None,
+            emails_json: None,
+            phones_json: None,
+            addresses_json: None,
+            custom_fields_json: None,
+            pending: false,
+            known_to: Vec::new(),
+        };
+
+        assert_eq!(ContactItem::from_entry(&entry).birthday, "--12-10");
+
+        entry.birthday = None;
+        assert_eq!(ContactItem::from_entry(&entry).birthday, "");
     }
 
     #[test]
@@ -1292,6 +1409,8 @@ mod tests {
             id: "c1".to_string(),
             account_id: "test".to_string(),
             name: "Alice Smith".to_string(),
+            given_name: None,
+            family_name: None,
             email: "alice@example.com".to_string(),
             phone: Some("555-1234".to_string()),
             company: Some("Acme Corp".to_string()),
@@ -1331,6 +1450,8 @@ mod tests {
             id: "c2".to_string(),
             account_id: "test".to_string(),
             name: "Bob".to_string(),
+            given_name: None,
+            family_name: None,
             email: "bob@example.com".to_string(),
             phone: None,
             company: None,

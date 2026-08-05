@@ -8,6 +8,63 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A person's name survives a trip to an address book and back.** The two parts
+  of a name, the given name and the family name, are now kept as they were given
+  rather than worked out from the whole name each time. A family name that
+  carries a space, such as "van der Berg", stays whole, and a middle name stays
+  in the given name where somebody put it.
+
+  What went wrong before: the whole name was split at its last space every time
+  it was sent. "Grace Brewster Murray Hopper" went out as a given name of "Grace
+  Brewster Murray", and a person whose address book held "Grace" and "van der
+  Berg" got them joined into one line here and split back as "Grace van der" and
+  "Berg". Each round trip could change the name again.
+
+  The contact editor now has a Given name box (Alt+G) and a Family name box
+  (Alt+M) on the Basic Info tab. For a contact whose parts were never recorded,
+  they open filled with one guess at where the name divides, so you can see the
+  guess and correct it. Nothing splits a name after that, ever.
+
+  Known limitations: none of this has run against a real Google or Outlook
+  account. Whether a screen reader announces the two new boxes correctly has not
+  been checked with a screen reader. Clearing a family name here does not clear
+  it at Outlook, which is how Outlook has always treated a field left out.
+
+- **A birthday with no year is read out as a day and a month.** A birthday
+  recorded without a year is stored as "--03-14", which is what a contact card
+  writes and what an export needs, and a screen reader reads that one character
+  at a time. The contact details now say "March 14th", or "14th March" where
+  this computer writes the day first, and the reading aloud of a contact says the
+  same. A birthday that does carry a year is read as a whole date and never as
+  "2 days ago", because how long ago somebody was born is not the question.
+
+  Known limitations: the Birthday box in the contact editor still shows the
+  stored form, on purpose, because that box holds the value being edited and
+  typing words into it would store the words. Month names are English whatever
+  language this computer is set to, so on a non-English machine a birthday is
+  now two English words in a row rather than one.
+
+### Changed
+
+- **A phone number or an address with one label keeps it.** A label was only
+  ever kept when a contact had two or more of something, so a person with one
+  number labelled Work had that word thrown away on the way in. It was worse
+  than losing it: opening such a contact in the editor invented a label, calling
+  a lone number "Mobile" and a lone address "Personal", and saving sent that
+  invented label back to the address book. And a label you chose here for your
+  single number was deleted from this computer on the very next check, because
+  the address book sent one number back and one number meant no list.
+
+  This was a deliberate choice when it was made and it has been reversed. A
+  contact from Outlook, which sends no labels of its own, now stores "Other" for
+  its one address rather than nothing, which is what stops the editor inventing
+  "Personal" for it.
+
+  Known limitations: none of this has run against a real account. A number an
+  address book gave no label at all is now stored as "Other" and sent back as
+  "other", so the first change to such a contact writes a label where there was
+  none. It settles after that and does not keep changing.
+
 - **A message you send is kept somewhere, even when the server will not keep
   it.** Sending put a copy in the account's Sent folder on the server and wrote
   nothing on this computer. When that failed the failure went to a log file, the

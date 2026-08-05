@@ -287,6 +287,7 @@ mod tests {
             email: "grace@example.com".to_string(),
             phone: "555 0100".to_string(),
             company: "Navy".to_string(),
+            birthday: String::new(),
             favorite: false,
         }
     }

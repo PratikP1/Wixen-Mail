@@ -24,9 +24,9 @@ impl MessageCache {
              (id, account_id, name, email, phone, company, job_title, website, address, birthday,
               avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at, updated_at,
               nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
-              pending)
+              pending, given_name, family_name)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19,
-                    ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
+                    ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)
              ON CONFLICT(id) DO UPDATE SET
                 account_id = excluded.account_id,
                 name = excluded.name,
@@ -52,7 +52,9 @@ impl MessageCache {
                 phones_json = excluded.phones_json,
                 addresses_json = excluded.addresses_json,
                 custom_fields_json = excluded.custom_fields_json,
-                pending = excluded.pending",
+                pending = excluded.pending,
+                given_name = excluded.given_name,
+                family_name = excluded.family_name",
             params![
                 &contact.id, &contact.account_id, &contact.name, &contact.email,
                 &contact.phone, &contact.company,
@@ -63,6 +65,7 @@ impl MessageCache {
                 &contact.nickname, &contact.department, &contact.relationship,
                 &contact.emails_json, &contact.phones_json, &contact.addresses_json,
                 &contact.custom_fields_json, &contact.pending,
+                &contact.given_name, &contact.family_name,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
 
@@ -191,7 +194,7 @@ impl MessageCache {
             "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
                     avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
                     nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
-                    pending
+                    pending, given_name, family_name
              FROM contacts
              WHERE account_id = ?1
              ORDER BY favorite DESC, name ASC"
@@ -234,6 +237,8 @@ impl MessageCache {
             addresses_json: row.get(23)?,
             custom_fields_json: row.get(24)?,
             pending: row.get(25)?,
+            given_name: row.get(26)?,
+            family_name: row.get(27)?,
             known_to: Vec::new(),
         })
     }
@@ -250,7 +255,7 @@ impl MessageCache {
             "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
                     avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
                     nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
-                    pending
+                    pending, given_name, family_name
              FROM contacts
              WHERE account_id = ?1
                AND (
@@ -326,6 +331,11 @@ impl MessageCache {
                             } else {
                                 name
                             },
+                            // A message header carries one name and no parts
+                            // of it, and guessing which word is the family
+                            // name is the thing this stopped doing.
+                            given_name: None,
+                            family_name: None,
                             email,
                             phone: None,
                             company: None,
@@ -857,6 +867,8 @@ impl MessageCache {
             id: uuid::Uuid::new_v4().to_string(),
             account_id: account_id.to_string(),
             name,
+            given_name: None,
+            family_name: None,
             email: primary_email,
             phone,
             company,
@@ -1061,6 +1073,8 @@ mod tests {
             id: id.to_string(),
             account_id: "test@example.com".to_string(),
             name: name.to_string(),
+            given_name: None,
+            family_name: None,
             email: String::new(),
             phone: None,
             company: None,
@@ -1514,6 +1528,8 @@ mod tests {
         let contact = ContactEntry {
             id: "contact-1".to_string(), account_id: "test@example.com".to_string(),
             name: "Ada Lovelace".to_string(), email: "ada@example.com".to_string(),
+            given_name: None,
+            family_name: None,
             phone: Some("+1-555-0101".to_string()), company: Some("Analytical Engines".to_string()),
             job_title: Some("Mathematician".to_string()), website: Some("https://example.com".to_string()),
             address: Some("London".to_string()), birthday: Some("1815-12-10".to_string()),
@@ -2080,6 +2096,57 @@ mod tests {
                 .iter()
                 .all(|identity| identity.provider_version.is_none() && !identity.change_is_waiting)
         );
+    }
+
+    #[test]
+    fn test_a_contact_keeps_the_two_parts_of_a_name_it_was_saved_with() {
+        let cache = a_cache("name_parts");
+        let mut grace = a_contact("grace-1", "Grace van der Berg");
+        grace.given_name = Some("Grace".to_string());
+        grace.family_name = Some("van der Berg".to_string());
+        cache.save_contact(&grace).expect("the contact to save");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].given_name.as_deref(), Some("Grace"));
+        assert_eq!(stored[0].family_name.as_deref(), Some("van der Berg"));
+    }
+
+    #[test]
+    fn test_a_contact_saved_with_no_name_parts_reads_back_with_none() {
+        let cache = a_cache("no_name_parts");
+        cache
+            .save_contact(&a_contact("prince-1", "Prince"))
+            .expect("the contact to save");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+
+        assert_eq!(stored[0].given_name, None);
+        assert_eq!(stored[0].family_name, None);
+    }
+
+    #[test]
+    fn test_a_database_from_before_the_name_parts_existed_still_opens_and_keeps_its_rows() {
+        let dir = a_directory_holding_an_older_database("older_name_parts");
+
+        let cache = MessageCache::new(dir, None).expect("the older database to open");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+        assert_eq!(stored.len(), 3);
+        assert!(
+            stored
+                .iter()
+                .all(|contact| contact.given_name.is_none() && contact.family_name.is_none()),
+            "a row written before the columns existed recorded no parts, which is the truth"
+        );
+        assert!(stored.iter().any(|contact| !contact.name.is_empty()));
     }
 
     #[test]

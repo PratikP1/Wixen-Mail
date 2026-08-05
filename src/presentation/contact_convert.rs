@@ -39,6 +39,27 @@ fn store_list<T: serde::Serialize>(items: &[T]) -> Option<String> {
     serde_json::to_string(items).ok()
 }
 
+/// One guess at where a whole name divides, made once and shown to be
+/// corrected.
+///
+/// The last word is the family name and everything before it the given name,
+/// so a middle name stays where somebody typed it. A name of one word is all
+/// given name: there is nothing to put in a family name, and inventing one
+/// puts a word in somebody's record that they never wrote.
+///
+/// This is the only guess left in the application, and it runs once, here,
+/// where the answer appears in two boxes a person can edit. Nothing splits a
+/// name again afterwards: a family name of "van der Berg" corrected here is
+/// stored as "van der Berg" and sent to every address book as "van der Berg".
+fn parts_guessed_from(name: &str) -> (String, String) {
+    let words: Vec<&str> = name.split_whitespace().collect();
+    match words.split_last() {
+        None => (String::new(), String::new()),
+        Some((only, [])) => ((*only).to_string(), String::new()),
+        Some((family, given)) => (given.join(" "), (*family).to_string()),
+    }
+}
+
 /// The editor's shape, from what is stored.
 pub fn to_editor(stored: &StoredContact) -> EditorContact {
     let mut emails: Vec<EmailItem> = parse_list::<EmailEntry>(stored.emails_json.as_ref())
@@ -94,9 +115,24 @@ pub fn to_editor(stored: &StoredContact) -> EditorContact {
             })
             .collect();
 
+    // The stored parts when there are any, and one guess at the whole name
+    // when there are none, which is every contact stored before the two parts
+    // had columns of their own. The guess is shown in the two boxes rather
+    // than made silently at push time, so somebody can see it and put it
+    // right before it reaches an address book.
+    let (given_name, family_name) = match (&stored.given_name, &stored.family_name) {
+        (None, None) => parts_guessed_from(&stored.name),
+        (given, family) => (
+            given.clone().unwrap_or_default(),
+            family.clone().unwrap_or_default(),
+        ),
+    };
+
     EditorContact {
         id: stored.id.clone(),
         name: stored.name.clone(),
+        given_name,
+        family_name,
         nickname: stored.nickname.clone().unwrap_or_default(),
         company: stored.company.clone().unwrap_or_default(),
         department: stored.department.clone().unwrap_or_default(),
@@ -178,6 +214,10 @@ pub fn to_stored(
         id: editor.id.clone(),
         account_id: account_id.to_string(),
         name: editor.name.clone(),
+        // Written exactly as the two boxes hold them. Nothing splits here:
+        // this is where a person's correction is taken at its word.
+        given_name: blank_to_none(&editor.given_name),
+        family_name: blank_to_none(&editor.family_name),
         // The primary is the first of the list, which is the order the editor
         // shows and the user can rearrange.
         email: emails
@@ -256,6 +296,8 @@ mod tests {
         EditorContact {
             id: "c1".to_string(),
             name: "Grace Hopper".to_string(),
+            given_name: "Grace".to_string(),
+            family_name: "Hopper".to_string(),
             nickname: "Amazing Grace".to_string(),
             company: "Navy".to_string(),
             department: "Research".to_string(),
@@ -387,6 +429,86 @@ mod tests {
         assert_eq!(restored.phones.len(), 2);
     }
 
+    #[test]
+    fn test_a_name_typed_here_is_split_once_so_it_can_be_corrected() {
+        let mut stored = to_stored(&editor_contact(), "acct", None);
+        stored.name = "Grace Hopper".to_string();
+        stored.given_name = None;
+        stored.family_name = None;
+
+        let editing = to_editor(&stored);
+
+        assert_eq!(editing.given_name, "Grace");
+        assert_eq!(editing.family_name, "Hopper");
+    }
+
+    #[test]
+    fn test_a_one_word_name_typed_here_is_all_given_name() {
+        let mut stored = to_stored(&editor_contact(), "acct", None);
+        stored.name = "Prince".to_string();
+        stored.given_name = None;
+        stored.family_name = None;
+
+        let editing = to_editor(&stored);
+
+        assert_eq!(editing.given_name, "Prince");
+        assert_eq!(
+            editing.family_name, "",
+            "inventing a family name puts a word in somebody's record"
+        );
+    }
+
+    #[test]
+    fn test_the_parts_an_address_book_recorded_are_shown_rather_than_a_guess() {
+        let mut stored = to_stored(&editor_contact(), "acct", None);
+        stored.name = "Grace van der Berg".to_string();
+        stored.given_name = Some("Grace".to_string());
+        stored.family_name = Some("van der Berg".to_string());
+
+        let editing = to_editor(&stored);
+
+        assert_eq!(editing.given_name, "Grace");
+        assert_eq!(editing.family_name, "van der Berg");
+    }
+
+    #[test]
+    fn test_a_family_name_a_person_corrected_is_not_overwritten_by_the_display_name() {
+        let mut editing = editor_contact();
+        editing.name = "Grace van der Berg".to_string();
+        editing.given_name = "Grace".to_string();
+        editing.family_name = "van der Berg".to_string();
+
+        let stored = to_stored(&editing, "acct", None);
+
+        assert_eq!(stored.given_name.as_deref(), Some("Grace"));
+        assert_eq!(stored.family_name.as_deref(), Some("van der Berg"));
+    }
+
+    #[test]
+    fn test_a_name_split_at_entry_is_never_split_again() {
+        let mut editing = editor_contact();
+        editing.name = "Grace van der Berg".to_string();
+        editing.given_name = "Grace".to_string();
+        editing.family_name = "van der Berg".to_string();
+
+        let round_tripped = to_editor(&to_stored(&editing, "acct", None));
+
+        assert_eq!(round_tripped.given_name, "Grace");
+        assert_eq!(round_tripped.family_name, "van der Berg");
+    }
+
+    #[test]
+    fn test_a_name_part_left_blank_in_the_editor_is_recorded_as_no_part() {
+        let mut editing = editor_contact();
+        editing.given_name = "   ".to_string();
+        editing.family_name = String::new();
+
+        let stored = to_stored(&editing, "acct", None);
+
+        assert_eq!(stored.given_name, None);
+        assert_eq!(stored.family_name, None);
+    }
+
     /// A contact as it was before the editor was opened on it.
     fn a_contact_being_edited() -> StoredContact {
         let mut stored = to_stored(&editor_contact(), "acct", None);
@@ -476,6 +598,8 @@ mod tests {
         let empty = EditorContact {
             id: String::new(),
             name: String::new(),
+            given_name: String::new(),
+            family_name: String::new(),
             nickname: String::new(),
             company: String::new(),
             department: String::new(),

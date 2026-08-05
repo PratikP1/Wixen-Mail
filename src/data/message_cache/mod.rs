@@ -287,6 +287,23 @@ pub struct ContactEntry {
     pub id: String,
     pub account_id: String,
     pub name: String,
+    /// What an address book calls the first part of this person's name, when
+    /// one was ever recorded separately.
+    ///
+    /// `None` means no part was ever recorded, which is the honest answer for
+    /// every contact stored before these two columns existed and for one
+    /// harvested from a message header. It is not the same as a part recorded
+    /// as empty.
+    ///
+    /// Kept apart from `name` because guessing one from the other cannot be
+    /// done: splitting at the last space sends "Grace Brewster Murray Hopper"
+    /// out with the wrong given name, and joining then re-splitting turns a
+    /// family name of "van der Berg" into "Berg". The parts an address book
+    /// gave are stored as it gave them and pushed back unchanged.
+    pub given_name: Option<String>,
+    /// The other half of [`ContactEntry::given_name`], under the same rule. A
+    /// family name carrying a space is kept whole and never separated.
+    pub family_name: Option<String>,
     /// The address to write to, or empty. A contact with only a phone number
     /// is an ordinary contact, so this being empty is a real answer and not a
     /// missing one.
@@ -1525,6 +1542,19 @@ impl MessageCache {
         // that could open it either. Nothing the rebuild moves was ever
         // waiting to be sent, so 0 is the true answer for every row it carries.
         self.ensure_column_exists("contacts", "pending", "INTEGER NOT NULL DEFAULT 0")?;
+        // After the rebuild too, and for exactly the same reason as `pending`
+        // above: the table the rebuild writes out by hand does not have these
+        // two columns, so adding them before it would make the copy name a
+        // column that is not there and the database would never open again.
+        //
+        // Both nullable and neither backfilled. NULL means no part of the name
+        // was ever recorded separately, which is true of every row written
+        // before this shipped. A contact in that state is sent to an address
+        // book as one whole name, so an unfilled row still goes out correctly
+        // and stops being unfilled the first time an address book sends the
+        // parts or somebody saves the contact here.
+        self.ensure_column_exists("contacts", "given_name", "TEXT")?;
+        self.ensure_column_exists("contacts", "family_name", "TEXT")?;
         // Before the indexes below and not after them: each rebuild drops its
         // table and the indexes over it go with it, and the index list at the
         // end of this function is what puts those back.

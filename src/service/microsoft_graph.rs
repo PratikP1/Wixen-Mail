@@ -726,6 +726,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_the_change_graph_is_sent_carries_the_family_name_as_it_was_typed() {
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .update_contact(
+                "a-token",
+                "AAMkAGI2",
+                &MsGraphContact {
+                    display_name: "Grace van der Berg".to_string(),
+                    given_name: "Grace".to_string(),
+                    surname: "van der Berg".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "the contact change")
+            .await
+            .expect("a request");
+        assert!(
+            request.contains(r#""surname":"van der Berg""#),
+            "the family name goes out whole, not split at its last space: {request}"
+        );
+        assert!(request.contains(r#""givenName":"Grace""#), "{request}");
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_with_no_recorded_parts_reaches_graph_under_its_display_name_alone() {
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .update_contact(
+                "a-token",
+                "AAMkAGI2",
+                &MsGraphContact {
+                    display_name: "Grace Brewster Murray Hopper".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "the contact change")
+            .await
+            .expect("a request");
+        assert!(!request.contains("givenName"), "{request}");
+        assert!(!request.contains("surname"), "{request}");
+    }
+
+    #[tokio::test]
     async fn test_a_contact_identifier_goes_into_the_address_the_way_an_event_identifier_does() {
         // Graph's own identifiers are base64-ish and carry characters that end
         // a path or start a query. Dropped in raw, a change is addressed at

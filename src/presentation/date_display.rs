@@ -294,6 +294,13 @@ pub fn spoken(stored: &str, now: DateTime<Local>, settings: DateSettings) -> Str
     if stored.trim().is_empty() {
         return String::new();
     }
+    // A day with no year names no moment, so nothing below can measure it or
+    // put a clock on it. Handled here rather than left to `parse`, which
+    // answers nothing for it and hands the reader "--03-14" character by
+    // character.
+    if stored.trim().starts_with(YEAR_LEFT_OUT) {
+        return a_day_in_words(stored, settings);
+    }
     let Some(when) = parse(stored) else {
         return stored.to_string();
     };
@@ -307,6 +314,84 @@ pub fn spoken(stored: &str, now: DateTime<Local>, settings: DateSettings) -> Str
     } else {
         date_part(when, settings)
     }
+}
+
+/// How a stored date whose year nobody gave is written: "--03-14".
+///
+/// That is what a contact card writes and what a card reader expects, so it is
+/// the right thing to keep. It is also the wrong thing to show anybody: a
+/// screen reader says it one character at a time, which is why
+/// [`a_day_in_words`] exists.
+pub const YEAR_LEFT_OUT: &str = "--";
+
+/// One stored day read as words, for a date that may name no year.
+///
+/// A birthday is the reason this exists. It is never written as how long ago
+/// it was, because a birthday every year is not an event three days back, and
+/// it never carries a clock reading, because midnight is a claim the stored
+/// value never made.
+///
+/// The month and the day go in whichever order this reader writes a date, the
+/// same rule the rest of this module follows. A value that names a year is
+/// written the ordinary way. A value that cannot be read comes back exactly as
+/// it was stored, so nothing is invented from a run of characters nobody here
+/// understands.
+pub fn a_day_in_words(stored: &str, settings: DateSettings) -> String {
+    let trimmed = stored.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let Some(after_the_missing_year) = trimmed.strip_prefix(YEAR_LEFT_OUT) else {
+        return match parse(trimmed) {
+            Some(when) => date_part(when, settings),
+            None => stored.to_string(),
+        };
+    };
+    let Some((month, day)) = a_month_and_a_day(after_the_missing_year) else {
+        return stored.to_string();
+    };
+    let month_name = MONTHS[(month - 1) as usize];
+    match (settings.wording, settings.order) {
+        (DateWording::Verbal, DateOrder::MonthFirst) => {
+            format!("{} {}", month_name, ordinal(day))
+        }
+        (DateWording::Verbal, DateOrder::DayFirst) => {
+            format!("{} {}", ordinal(day), month_name)
+        }
+        (DateWording::Numeric, DateOrder::MonthFirst) => format!("{:02}/{:02}", month, day),
+        (DateWording::Numeric, DateOrder::DayFirst) => format!("{:02}/{:02}", day, month),
+    }
+}
+
+/// The two numbers in "03-14", when both name a real month and a real day.
+///
+/// The range check is not politeness: the month is used to index the month
+/// names, so a thirteenth month read out of a corrupt record would take the
+/// whole application down rather than show one odd birthday.
+fn a_month_and_a_day(written: &str) -> Option<(u32, u32)> {
+    let (month, day) = written.split_once('-')?;
+    let month: u32 = month.parse().ok()?;
+    let day: u32 = day.parse().ok()?;
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    Some((month, day))
+}
+
+/// A day of the month as it is said: "1st", "2nd", "3rd", "4th".
+///
+/// The eleventh, twelfth and thirteenth take "th" although they end in one,
+/// two and three, which is the whole reason this is a function rather than a
+/// look at the last digit.
+fn ordinal(day: u32) -> String {
+    let ending = match (day % 100, day % 10) {
+        (11..=13, _) => "th",
+        (_, 1) => "st",
+        (_, 2) => "nd",
+        (_, 3) => "rd",
+        _ => "th",
+    };
+    format!("{}{}", day, ending)
 }
 
 /// The full date and time.
@@ -446,6 +531,93 @@ mod tests {
             wording: DateWording::Verbal,
             clock: Clock::TwelveHour,
         }
+    }
+
+    #[test]
+    fn test_a_birthday_with_no_year_is_read_as_a_day_and_a_month() {
+        assert_eq!(a_day_in_words("--03-14", settings()), "March 14th");
+    }
+
+    #[test]
+    fn test_a_birthday_with_no_year_follows_the_order_the_locale_uses() {
+        let day_first = DateSettings {
+            order: DateOrder::DayFirst,
+            ..settings()
+        };
+
+        assert_eq!(a_day_in_words("--03-14", day_first), "14th March");
+    }
+
+    #[test]
+    fn test_a_birthday_with_no_year_can_be_had_as_numbers() {
+        let month_first = DateSettings {
+            wording: DateWording::Numeric,
+            ..settings()
+        };
+        let day_first = DateSettings {
+            order: DateOrder::DayFirst,
+            wording: DateWording::Numeric,
+            ..settings()
+        };
+
+        assert_eq!(a_day_in_words("--03-14", month_first), "03/14");
+        assert_eq!(a_day_in_words("--03-14", day_first), "14/03");
+    }
+
+    #[test]
+    fn test_the_eleventh_the_twelfth_and_the_thirteenth_are_not_first_second_and_third() {
+        let read = |day: &str| a_day_in_words(&format!("--03-{day}"), settings());
+
+        assert_eq!(read("01"), "March 1st");
+        assert_eq!(read("02"), "March 2nd");
+        assert_eq!(read("03"), "March 3rd");
+        assert_eq!(read("04"), "March 4th");
+        assert_eq!(read("11"), "March 11th");
+        assert_eq!(read("12"), "March 12th");
+        assert_eq!(read("13"), "March 13th");
+        assert_eq!(read("21"), "March 21st");
+        assert_eq!(read("22"), "March 22nd");
+        assert_eq!(read("23"), "March 23rd");
+        assert_eq!(read("31"), "March 31st");
+    }
+
+    #[test]
+    fn test_a_birthday_that_names_no_real_month_is_left_as_it_was_stored() {
+        assert_eq!(a_day_in_words("--13-14", settings()), "--13-14");
+        assert_eq!(a_day_in_words("--00-14", settings()), "--00-14");
+        assert_eq!(a_day_in_words("--03-00", settings()), "--03-00");
+        assert_eq!(a_day_in_words("--03-32", settings()), "--03-32");
+        assert_eq!(a_day_in_words("--ab-14", settings()), "--ab-14");
+        assert_eq!(a_day_in_words("--0314", settings()), "--0314");
+    }
+
+    #[test]
+    fn test_nothing_stored_is_nothing_said_for_a_day_in_words() {
+        assert_eq!(a_day_in_words("", settings()), "");
+        assert_eq!(a_day_in_words("   ", settings()), "");
+    }
+
+    #[test]
+    fn test_a_birthday_with_a_year_is_still_read_as_a_whole_date() {
+        assert_eq!(a_day_in_words("1906-12-09", settings()), "December 9, 1906");
+
+        let relative = DateSettings {
+            style: DateStyle::RelativeWithinWeek,
+            ..settings()
+        };
+        assert_eq!(
+            a_day_in_words("1906-12-09", relative),
+            "December 9, 1906",
+            "a birthday is never how long ago it was"
+        );
+    }
+
+    #[test]
+    fn test_a_date_with_no_year_reaching_the_ordinary_reading_is_read_as_words() {
+        assert_eq!(
+            spoken("--03-14", at("2026-07-26 09:15:00"), settings()),
+            "March 14th"
+        );
     }
 
     #[test]

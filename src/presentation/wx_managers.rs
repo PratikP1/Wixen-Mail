@@ -236,6 +236,12 @@ pub struct ContactEntry {
     pub id: String,
     // ── Name & Identity ─────────────────────────────────────────────────
     pub name: String,
+    /// The first part of the person's name, shown in a box of its own so it
+    /// can be corrected. Filled from what an address book recorded, or from
+    /// one guess at the whole name when nothing recorded the parts.
+    pub given_name: String,
+    /// The other part, kept whole however many spaces it carries.
+    pub family_name: String,
     pub nickname: String,
     // ── Organization ────────────────────────────────────────────────────
     pub company: String,
@@ -798,8 +804,9 @@ fn show_contact_edit(
     let notebook = Notebook::builder(&dlg).build();
 
     // ── Tab 1: Basic Info ────────────────────────────────────────────────
-    // Accelerators: N(Name), K(Nickname), C(Company), D(Department),
-    //   J(Job Title), B(Birthday), W(Website), R(Relationship), A(Avatar), F(Favorite)
+    // Accelerators: N(Name), G(Given name), M(Family name), K(Nickname),
+    //   C(Company), D(Department), J(Job Title), B(Birthday), W(Website),
+    //   R(Relationship), A(Avatar), F(Favorite)
     let basic_panel = Panel::builder(&notebook).build();
     let basic_sizer = BoxSizer::builder(Orientation::Vertical).build();
     let basic_fields = FlexGridSizer::builder(0, 2)
@@ -809,6 +816,10 @@ fn show_contact_edit(
     basic_fields.add_growable_col(1, 1);
 
     let name_f = add_panel_field(&basic_panel, &basic_fields, "&Name:");
+    // The two parts, shown so a guess at them can be corrected before it goes
+    // anywhere. Nothing splits the name again after this.
+    let given_f = add_panel_field(&basic_panel, &basic_fields, "&Given name:");
+    let family_f = add_panel_field(&basic_panel, &basic_fields, "Fa&mily name:");
     let nick_f = add_panel_field(&basic_panel, &basic_fields, "Nic&kname:");
     let company_f = add_panel_field(&basic_panel, &basic_fields, "&Company:");
     let dept_f = add_panel_field(&basic_panel, &basic_fields, "&Department:");
@@ -1002,6 +1013,8 @@ fn show_contact_edit(
 
     if let Some(c) = existing {
         name_f.set_value(&c.name);
+        given_f.set_value(&c.given_name);
+        family_f.set_value(&c.family_name);
         nick_f.set_value(&c.nickname);
         company_f.set_value(&c.company);
         dept_f.set_value(&c.department);
@@ -1148,6 +1161,8 @@ fn show_contact_edit(
                         .map(|c| c.id.clone())
                         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                     name: contact_name,
+                    given_name: given_f.get_value(),
+                    family_name: family_f.get_value(),
                     nickname: nick_f.get_value(),
                     company: company_f.get_value(),
                     department: dept_f.get_value(),

@@ -63,12 +63,25 @@ pub struct GooglePersonMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleName {
+    /// What Google works out to call this person. Google documents it as
+    /// something it writes and nothing else may set, so it is read on the way
+    /// in and ignored on the way out.
     #[serde(default)]
     pub display_name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub given_name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub family_name: String,
+    /// The whole name on one line, which is the only whole-name field Google
+    /// will accept a change to.
+    ///
+    /// Sent for a contact whose name was never recorded in parts, and left out
+    /// for one whose parts are known. Without it, a change carrying only a
+    /// display name asks Google to clear the person's name entirely, because
+    /// `names` is one of the fields a change replaces and Google ignores the
+    /// only thing in it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub unstructured_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -905,6 +918,111 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_the_change_google_is_sent_carries_the_family_name_as_it_was_typed() {
+        let (google, listening) = a_google_client_allowed_to_change_things().await;
+        let grace = GooglePerson {
+            names: vec![GoogleName {
+                display_name: "Grace van der Berg".to_string(),
+                given_name: "Grace".to_string(),
+                family_name: "van der Berg".to_string(),
+                unstructured_name: String::new(),
+            }],
+            ..Default::default()
+        };
+
+        google
+            .update_contact("a-token", "people/c1", &grace)
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "the contact change")
+            .await
+            .expect("a request");
+        assert!(
+            request.contains(r#""familyName":"van der Berg""#),
+            "the family name goes out whole, not split at its last space: {request}"
+        );
+        assert!(request.contains(r#""givenName":"Grace""#), "{request}");
+        assert!(
+            !request.contains("unstructuredName"),
+            "a name with known parts is not also sent whole: {request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_with_no_recorded_parts_reaches_google_as_one_whole_name() {
+        let (google, listening) = a_google_client_allowed_to_change_things().await;
+        let grace = GooglePerson {
+            names: vec![GoogleName {
+                display_name: "Grace Brewster Murray Hopper".to_string(),
+                unstructured_name: "Grace Brewster Murray Hopper".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        google
+            .update_contact("a-token", "people/c1", &grace)
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "the contact change")
+            .await
+            .expect("a request");
+        assert!(
+            request.contains(r#""unstructuredName":"Grace Brewster Murray Hopper""#),
+            "{request}"
+        );
+        assert!(!request.contains("givenName"), "{request}");
+        assert!(!request.contains("familyName"), "{request}");
+    }
+
+    #[tokio::test]
+    async fn test_with_the_gate_shut_a_name_change_reaches_no_listener_that_could_have_seen_it() {
+        // Two halves, and the second is the point. A listener that heard
+        // nothing proves nothing unless the same listener, the same client
+        // shape and the same call are shown to produce a request when the gate
+        // is open.
+        let grace = GooglePerson {
+            names: vec![GoogleName {
+                display_name: "Grace van der Berg".to_string(),
+                given_name: "Grace".to_string(),
+                family_name: "van der Berg".to_string(),
+                unstructured_name: String::new(),
+            }],
+            ..Default::default()
+        };
+
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        // Exactly what `for_account` builds for an account whose personal
+        // information gate is shut: the transport wrapped by
+        // `Outward::read_only`.
+        let shut = GoogleApiClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = shut.update_contact("a-token", "people/c1", &grace).await;
+
+        assert!(
+            matches!(refused, Err(crate::common::Error::Security(_))),
+            "{refused:?}"
+        );
+        assert!(
+            heard(listening, "a name change that must never be sent")
+                .await
+                .is_err(),
+            "nothing may reach the network with the gate shut"
+        );
+
+        let (open, watching) = a_google_client_allowed_to_change_things().await;
+        open.update_contact("a-token", "people/c1", &grace)
+            .await
+            .expect("the change to be sent with the gate open");
+        let seen = heard(watching, "the same change with the gate open")
+            .await
+            .expect("the listener can see a request when there is one to see");
+        assert!(seen.contains(r#""familyName":"van der Berg""#), "{seen}");
+    }
+
+    #[tokio::test]
     async fn test_a_client_pointed_at_an_address_asks_that_address() {
         let (google, listening) = a_google_client_talking_to_itself().await;
 
@@ -1042,6 +1160,7 @@ mod tests {
                 display_name: "Grace Hopper".to_string(),
                 given_name: "Grace".to_string(),
                 family_name: "Hopper".to_string(),
+                unstructured_name: String::new(),
             }],
             ..Default::default()
         };
@@ -1252,12 +1371,45 @@ mod tests {
     }
 
     #[test]
+    fn test_a_whole_name_is_sent_in_the_field_google_can_actually_write() {
+        // Google treats displayName as something it works out and will not let
+        // anything set. A name object carrying only that asks Google to clear
+        // the person's name, because `names` is in the list of fields a change
+        // replaces. unstructuredName is the writable whole-name field.
+        let name = GoogleName {
+            display_name: "Grace Brewster Murray Hopper".to_string(),
+            unstructured_name: "Grace Brewster Murray Hopper".to_string(),
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&name).expect("a name can be written");
+
+        assert!(json.contains("\"unstructuredName\":\"Grace Brewster Murray Hopper\""));
+    }
+
+    #[test]
+    fn test_a_name_with_no_whole_name_leaves_the_field_out_entirely() {
+        let name = GoogleName {
+            display_name: "Grace van der Berg".to_string(),
+            given_name: "Grace".to_string(),
+            family_name: "van der Berg".to_string(),
+            unstructured_name: String::new(),
+        };
+
+        let json = serde_json::to_string(&name).expect("a name can be written");
+
+        assert!(!json.contains("unstructuredName"), "{json}");
+        assert!(json.contains("\"familyName\":\"van der Berg\""));
+    }
+
+    #[test]
     fn test_serialize_person_for_create() {
         let person = GooglePerson {
             names: vec![GoogleName {
                 display_name: "Test User".to_string(),
                 given_name: "Test".to_string(),
                 family_name: "User".to_string(),
+                unstructured_name: String::new(),
             }],
             email_addresses: vec![GoogleEmail {
                 value: "test@example.com".to_string(),
