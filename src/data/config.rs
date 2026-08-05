@@ -52,6 +52,19 @@ pub struct AppConfig {
     /// Show preview dialog before sending emails
     #[serde(default = "default_true")]
     pub preview_before_send: bool,
+    /// Whether to keep a copy of sent mail here even when the server saved one.
+    ///
+    /// Off unless somebody asks for it, and off in every settings file written
+    /// before it existed. On, the Sent folder lists each message twice once the
+    /// server's own copy comes down on the next check for mail: one row filed
+    /// here and one from the server. That is what it does rather than a fault,
+    /// and both the setting's label and its description say so.
+    ///
+    /// It has no effect on an account whose mail is collected over POP, which
+    /// has no server folder and whose copy is always the one on this computer,
+    /// and none on a copy the server refuses, which is kept here regardless.
+    #[serde(default)]
+    pub keep_sent_mail_on_this_computer: bool,
     /// The language messages are spell-checked in.
     ///
     /// A BCP 47 tag such as `en-GB` where Windows is doing the checking, and a
@@ -329,6 +342,9 @@ impl Default for AppConfig {
             enable_notifications: true,
             log_level: "info".to_string(),
             preview_before_send: true,
+            // The safe answer is the one that changes nothing: the server's own
+            // copy is what Sent has always listed.
+            keep_sent_mail_on_this_computer: false,
             language: default_language(),
             check_spelling_before_send: true,
             allowed_changes: default_allowed(),
@@ -1094,6 +1110,43 @@ mod permission_tests {
         let parsed: AppConfig = serde_json::from_value(older).expect("an older config still opens");
 
         assert!(parsed.look_at_message_contents);
+    }
+
+    #[test]
+    fn test_a_settings_file_written_before_this_existed_keeps_no_extra_copy() {
+        // Off on a fresh install and off in a settings file that predates it.
+        // Turning it on for somebody who never asked would double every row in
+        // their Sent folder, which reads as the folder having gone wrong.
+        assert!(!AppConfig::default().keep_sent_mail_on_this_computer);
+
+        let mut older = serde_json::to_value(AppConfig::default()).expect("a config to serialise");
+        let fields = older.as_object_mut().expect("an object");
+        assert!(
+            fields.remove("keep_sent_mail_on_this_computer").is_some(),
+            "the setting is not written to the settings file, so this test covers nothing"
+        );
+
+        let parsed: AppConfig = serde_json::from_value(older).expect("an older config still opens");
+
+        assert!(!parsed.keep_sent_mail_on_this_computer);
+    }
+
+    #[test]
+    fn test_keeping_a_copy_here_survives_a_restart() {
+        // A setting that reads back as the default after a restart is a setting
+        // nobody can turn on, and the only sign is sent mail quietly not being
+        // where they put it.
+        let dir = std::env::temp_dir().join(format!("wixen_sent_setting_{}", uuid::Uuid::new_v4()));
+        {
+            let mut manager = ConfigManager::in_dir(dir.clone()).expect("a config folder");
+            manager.app_config_mut().keep_sent_mail_on_this_computer = true;
+            manager.save().expect("the settings to save");
+        }
+
+        let mut reopened = ConfigManager::in_dir(dir).expect("the settings to open again");
+        reopened.load().expect("the settings to read back");
+
+        assert!(reopened.app_config().keep_sent_mail_on_this_computer);
     }
 
     #[test]

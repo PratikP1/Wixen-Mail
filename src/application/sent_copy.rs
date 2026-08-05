@@ -1,0 +1,949 @@
+//! Keeping a copy of a message that has gone out.
+//!
+//! A message that has been sent and filed nowhere is gone. There is no draft
+//! left, the outbox row was removed the moment the server took it, and nothing
+//! on this computer says it was ever written. So the copy is filed in three
+//! steps, in this order:
+//!
+//! 1. On the server, into the account's Sent folder, so it is there on every
+//!    device. That is what an IMAP account has always done.
+//! 2. On this computer, when the server refuses it. Before this, a refusal was
+//!    a line in a log and the message existed nowhere at all.
+//! 3. On this computer as well as the server, when somebody asks for that.
+//!
+//! An account whose mail is collected over POP has no server folder to file
+//! anything in, so step 1 does not apply and its copy is always the one here.
+//!
+//! # Why a copy filed here needs marking
+//!
+//! For an IMAP account the copy goes into the same Sent folder the sync fills.
+//! That is the right place: sent mail belongs where the reader looks for sent
+//! mail. It also means a row the server has never heard of sits in a folder the
+//! sync reconciles against the server, and the sync's rule for such a row is to
+//! delete it. [`crate::data::message_cache::MessageCache::file_message_here`]
+//! marks it, and the marker is what the forget step checks.
+
+use crate::common::types::EmailAddress;
+use crate::data::account::Account;
+use crate::data::message_cache::{IncomingMessage, MessageCache};
+
+/// Somewhere a copy of a sent message can be put that is not this computer.
+///
+/// One method, which is the whole of what filing a copy asks of a mail server.
+/// Named for what it does rather than for IMAP, so the decisions around it can
+/// be run in a test: what to file, where, what to do when it is refused and
+/// what to say afterwards are all decisions, and none of them could be reached
+/// before without a server.
+pub(crate) trait FilesACopy {
+    /// Put a copy of the message in the named folder. The string in the error
+    /// is what the person is shown, so it says what the server said.
+    async fn keep_a_copy(&self, folder: &str, raw: &[u8]) -> std::result::Result<(), String>;
+}
+
+/// What became of the copy of a message that has gone out.
+///
+/// Five answers rather than success and failure, because each is a different
+/// thing for the person to hear and two of them are not failures at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Kept {
+    /// Filed in the account's Sent folder at the server.
+    OnTheServer,
+    /// Filed on this computer, which is where this account's sent mail lives.
+    Here,
+    /// Filed in both, because somebody asked for a copy here as well.
+    OnTheServerAndHere,
+    /// The server would not take it, so it was kept here instead.
+    HereBecauseTheServerRefused(String),
+    /// It could not be kept anywhere, and this is why.
+    Nowhere(String),
+}
+
+/// What to say when an account has no Sent folder yet.
+///
+/// A brand new account that has never checked for mail has no folder list, so
+/// there is nowhere to file a copy and nothing to name. It says what to do next
+/// rather than only what went wrong.
+pub const NO_SENT_FOLDER_YET: &str = "this account has not learned where its Sent folder is yet. Check for mail once, \
+     and copies of what you send will be filed there from then on";
+
+/// The label on the setting that keeps a copy here as well.
+///
+/// It says what happens rather than naming a folder or a protocol, and it
+/// carries its own mnemonic. Kept here rather than written into the settings
+/// screen so the words can be checked by a test. No test here, or anywhere,
+/// can show that a screen reader read them out.
+pub const KEEP_A_COPY_LABEL: &str =
+    "&Keep a copy of sent mail on this computer, even when the server saves one";
+
+/// The consequence of turning it on, which is what nobody can see coming.
+///
+/// Goes into the accessible description rather than the label, because it is
+/// the answer to "and then what", not the name of the control.
+pub const KEEP_A_COPY_CONSEQUENCE: &str = "Sent will then list each message twice: once saved here as you send it, and once from \
+     the server on the next check for mail.";
+
+impl Kept {
+    /// One sentence saying where the copy is, for the status line.
+    ///
+    /// Never empty. This is read aloud, and a status line that goes blank is
+    /// indistinguishable from one that never spoke.
+    pub fn what_happened(&self) -> String {
+        match self {
+            Self::OnTheServer => "A copy was saved in Sent.".to_string(),
+            Self::Here => "A copy was saved in Sent on this computer.".to_string(),
+            Self::OnTheServerAndHere => {
+                "A copy was saved in Sent, and another on this computer.".to_string()
+            }
+            Self::HereBecauseTheServerRefused(reason) => format!(
+                "The server would not save a copy in Sent, so one was saved on this computer \
+                 instead. The server said: {}",
+                ended(reason)
+            ),
+            Self::Nowhere(reason) => format!(
+                "The message was sent, but no copy of it could be saved anywhere: {}",
+                ended(reason)
+            ),
+        }
+    }
+
+    /// Whether this is worth interrupting the person with.
+    ///
+    /// Three of the five are the ordinary end of sending a message and saying
+    /// them every time is noise that buries the two that matter.
+    pub fn needs_saying(&self) -> bool {
+        matches!(
+            self,
+            Self::HereBecauseTheServerRefused(_) | Self::Nowhere(_)
+        )
+    }
+}
+
+/// A reason with a full stop after it.
+///
+/// A reason comes from a server or from the file system and ends however it
+/// ends. Read aloud, a sentence running into the next one without a stop is
+/// heard as one long sentence, so the stop is put here rather than hoped for.
+fn ended(reason: &str) -> String {
+    let reason = reason.trim_end();
+    if reason.ends_with(['.', '!', '?']) {
+        return reason.to_string();
+    }
+    format!("{reason}.")
+}
+
+/// Where a copy of this account's sent mail goes.
+///
+/// Worked out once, before any message is sent, because it is the same answer
+/// for every message in the queue.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Destination {
+    /// The account has no Sent folder yet, which is one that has never checked
+    /// for mail. There is nowhere to put a copy and nothing to name.
+    NotKnownYet,
+    /// A folder on this computer, which is what an account collecting its mail
+    /// over POP has. Nothing is offered to a server, and this is the only copy
+    /// there will ever be.
+    OnThisComputer(String),
+    /// A folder at the account's own mail server.
+    AtTheServer(String),
+}
+
+/// Where this account's sent mail is filed.
+pub fn destination(cache: &MessageCache, account: &Account) -> Destination {
+    if let Some(here) = crate::application::local_folders::local_sent(account.protocol()) {
+        return Destination::OnThisComputer(here);
+    }
+    let at_the_server = cache
+        .get_folders_for_account(&account.id)
+        .ok()
+        .and_then(|folders| {
+            folders.into_iter().find(|folder| {
+                crate::common::types::FolderType::from_stored(&folder.folder_type)
+                    == crate::common::types::FolderType::Sent
+            })
+        });
+    match at_the_server {
+        Some(folder) => Destination::AtTheServer(folder.path),
+        None => Destination::NotKnownYet,
+    }
+}
+
+/// What the account's mail server said about keeping the copy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServerSaid {
+    /// There was no server to ask.
+    Nothing,
+    /// It has the copy.
+    ItHasIt,
+    /// It would not take it, and this is what it said.
+    No(String),
+}
+
+/// Offer the copy to the account's mail server, where there is one.
+///
+/// The one step here that reaches a network, and the only one. It is split from
+/// the writing below so that the connection this program holds to its own
+/// database is never held across the wait for a server: that connection is not
+/// safe to share between threads, and a task holding it across an await cannot
+/// be handed to the runtime at all.
+///
+/// Called only after the message has actually been sent, and it can send
+/// nothing itself. `keep_a_copy` goes through the same account and the same
+/// permission check the send did.
+pub(crate) async fn offer_to_the_server<F: FilesACopy>(
+    server: &F,
+    goes_to: &Destination,
+    raw: &[u8],
+) -> ServerSaid {
+    let Destination::AtTheServer(folder) = goes_to else {
+        return ServerSaid::Nothing;
+    };
+    match server.keep_a_copy(folder, raw).await {
+        Ok(()) => ServerSaid::ItHasIt,
+        Err(refusal) => ServerSaid::No(refusal),
+    }
+}
+
+/// Write whatever copy belongs on this computer, and say where the copy is.
+///
+/// Everything here touches this computer and nothing else.
+///
+/// `also_here` is the person's setting and is not a permission: the most it can
+/// do is write one more row to the database.
+pub fn file_the_copy(
+    cache: &MessageCache,
+    account: &Account,
+    goes_to: &Destination,
+    said: &ServerSaid,
+    also_here: bool,
+    raw: &[u8],
+) -> Kept {
+    let folder = match goes_to {
+        Destination::NotKnownYet => return Kept::Nowhere(NO_SENT_FOLDER_YET.to_string()),
+        Destination::OnThisComputer(folder) | Destination::AtTheServer(folder) => folder,
+    };
+
+    match said {
+        // No server was asked, so the copy here is the only one there will be.
+        ServerSaid::Nothing => match file_here(cache, account, folder, raw) {
+            Ok(()) => Kept::Here,
+            Err(reason) => Kept::Nowhere(reason),
+        },
+        ServerSaid::ItHasIt if !also_here => Kept::OnTheServer,
+        ServerSaid::ItHasIt => match file_here(cache, account, folder, raw) {
+            Ok(()) => Kept::OnTheServerAndHere,
+            // The server has the message, so nothing has been lost and telling
+            // somebody their mail is in danger would be wrong. The extra copy
+            // they asked for is missing, which is worth a line in the log.
+            Err(reason) => {
+                tracing::warn!(
+                    "The server saved a copy, but a second one could not be kept here: {reason}"
+                );
+                Kept::OnTheServer
+            }
+        },
+        ServerSaid::No(refusal) => match file_here(cache, account, folder, raw) {
+            Ok(()) => Kept::HereBecauseTheServerRefused(refusal.clone()),
+            Err(reason) => Kept::Nowhere(format!(
+                "the server refused it ({refusal}), and it could not be kept on this computer \
+                 either ({reason})"
+            )),
+        },
+    }
+}
+
+/// Put a copy of a sent message into a folder on this computer.
+///
+/// Marked read, because a message somebody wrote themselves is not unread mail
+/// waiting to be dealt with and an unread count that climbs every time they
+/// send something is a count nobody can use. Stored with its body, since for
+/// this row there is nowhere to fetch one from later.
+fn file_here(
+    cache: &MessageCache,
+    account: &Account,
+    folder: &str,
+    raw: &[u8],
+) -> std::result::Result<(), String> {
+    let parsed = crate::service::mime::parse(raw).map_err(|e| e.to_string())?;
+    let row = cache
+        .get_folder(&account.id, folder)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("there is no {folder} folder for this account"))?;
+
+    // A folder the server also fills needs a number the server will never
+    // issue. See `next_reserved_uid`: taking the next one upward hides a real
+    // message forever and lets a later sync write over this copy.
+    let uid = if crate::application::local_folders::is_local(folder) {
+        cache.next_local_uid(row.id)
+    } else {
+        cache.next_reserved_uid(row.id)
+    }
+    .map_err(|e| e.to_string())?;
+
+    // The moment it was sent, for a message with no usable Date header of its
+    // own. An empty date sorts the copy to whichever end of Sent nobody looks
+    // at, which is the same as losing it for anybody reading by ear.
+    let filed_at = chrono::Utc::now().to_rfc3339();
+    let message = IncomingMessage {
+        folder_id: row.id,
+        uid,
+        message_id: parsed.message_id.clone().unwrap_or_default(),
+        subject: parsed.subject.clone(),
+        from_addr: addresses(&parsed.from),
+        to_addr: addresses(&parsed.to),
+        cc: Some(addresses(&parsed.cc)).filter(|cc| !cc.is_empty()),
+        // Where the sender asked replies to go, which on a message somebody
+        // sent is where they asked their correspondent to reply. Dropping it
+        // meant replying to your own sent copy went to your own address.
+        reply_to: Some(addresses(&parsed.reply_to)).filter(|to| !to.is_empty()),
+        date: parsed.date.clone().unwrap_or_else(|| filed_at.clone()),
+        internal_date: Some(filed_at),
+        size_bytes: Some(raw.len() as i64),
+        // The same chain the sync would store for this message, through the
+        // same function, so a reply filed here sits in the conversation it
+        // answers rather than starting a new one in this client's own list.
+        refs_header: crate::application::threading::as_stored(
+            &parsed.references,
+            parsed.in_reply_to.as_deref(),
+        ),
+        read: true,
+        starred: false,
+        answered: false,
+        draft: false,
+        deleted: false,
+        has_attachments: !parsed.attachments.is_empty(),
+        safety: crate::service::safety::Verdict::ordinary(),
+        gmail_message_id: None,
+        labels: None,
+        // Deliberately not `parsed.receipt_to`. On an outgoing message that
+        // header is this sender asking their recipient for a receipt, so
+        // carrying it onto their own copy would have the client offer to tell
+        // them they had read their own mail.
+        receipt_to: None,
+        pop_uidl: None,
+    };
+
+    let stored = cache
+        .file_message_here(&message)
+        .map_err(|e| e.to_string())?;
+    cache
+        .save_message_body(
+            stored,
+            parsed.body_plain.as_deref(),
+            parsed.body_html.as_deref(),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Addresses as one line, the way the message list shows them.
+fn addresses(list: &[EmailAddress]) -> String {
+    list.iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The account's Sent folder at its own mail server.
+///
+/// On a connection of its own. The send loop holds no IMAP session, and opening
+/// one here keeps a failure to file the copy from touching the send at all.
+///
+/// Flagged `\Seen`, for the same reason the copy kept here is marked read.
+pub(crate) struct ServerCopy<'a> {
+    pub account: &'a Account,
+}
+
+impl FilesACopy for ServerCopy<'_> {
+    async fn keep_a_copy(&self, folder: &str, raw: &[u8]) -> std::result::Result<(), String> {
+        let account = self.account;
+        let port = account
+            .imap_port
+            .trim()
+            .parse::<u16>()
+            .map_err(|_| format!("{} has no usable IMAP port", account.name))?;
+        let auth = crate::application::mail_auth::for_account(account)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let controller = crate::application::mail_controller::MailController::new();
+        // The account's own id, so this connection is under the same permission
+        // the send was. An account that may not change anything at its server
+        // gets a session that refuses the append rather than one that makes it.
+        controller
+            .connect_imap(
+                account.imap_server.clone(),
+                port,
+                account.username.clone(),
+                auth,
+                account.imap_use_tls,
+                &account.id,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        let already_read = format!("({})", crate::service::protocols::imap::flag::SEEN);
+        let filed = controller
+            .append_message(folder, Some(&already_read), raw)
+            .await
+            .map_err(|e| e.to_string());
+        let _ = controller.disconnect_imap().await;
+        filed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::message_cache::{CachedFolder, MessageCache};
+
+    /// A place to file a copy that always refuses.
+    struct Refusing;
+
+    impl FilesACopy for Refusing {
+        async fn keep_a_copy(&self, _folder: &str, _raw: &[u8]) -> std::result::Result<(), String> {
+            Err("the mailbox is over quota".to_string())
+        }
+    }
+
+    /// A place to file a copy that takes it, and remembers what it was given.
+    #[derive(Default)]
+    struct Accepting {
+        given: std::cell::RefCell<Vec<String>>,
+    }
+
+    impl FilesACopy for Accepting {
+        async fn keep_a_copy(&self, folder: &str, _raw: &[u8]) -> std::result::Result<(), String> {
+            self.given.borrow_mut().push(folder.to_string());
+            Ok(())
+        }
+    }
+
+    fn a_cache(sent: bool) -> (MessageCache, crate::data::account::Account) {
+        let dir = std::env::temp_dir().join(format!("wixen_sent_{}", uuid::Uuid::new_v4()));
+        let cache = MessageCache::new(dir, None).expect("a cache");
+        let mut account =
+            crate::data::account::Account::new("Work".into(), "me@example.com".into());
+        account.id = "acct".to_string();
+        if sent {
+            cache
+                .save_folder(&CachedFolder {
+                    id: 0,
+                    account_id: "acct".into(),
+                    name: "Sent".into(),
+                    path: "Sent".into(),
+                    folder_type: "Sent".into(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .expect("a folder");
+        }
+        (cache, account)
+    }
+
+    fn a_message() -> Vec<u8> {
+        concat!(
+            "From: me@example.com\r\n",
+            "To: you@example.com\r\n",
+            "Subject: The quarterly figures\r\n",
+            "Date: Tue, 4 Aug 2026 10:00:00 +0000\r\n",
+            "Message-ID: <sent-1@example.com>\r\n",
+            "\r\n",
+            "Here they are.\r\n",
+        )
+        .as_bytes()
+        .to_vec()
+    }
+
+    /// The two steps the send loop runs, in the order it runs them.
+    ///
+    /// They are two because the connection to this program's own database
+    /// cannot be held across the wait for a server. What the send loop composes
+    /// is these two lines.
+    fn keeping<F: FilesACopy>(
+        server: &F,
+        cache: &MessageCache,
+        account: &Account,
+        also_here: bool,
+        raw: &[u8],
+    ) -> Kept {
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(async {
+                let goes_to = destination(cache, account);
+                let said = offer_to_the_server(server, &goes_to, raw).await;
+                file_the_copy(cache, account, &goes_to, &said, also_here, raw)
+            })
+    }
+
+    #[test]
+    fn test_a_copy_the_server_refuses_is_kept_on_this_computer() {
+        // The case the fallback exists for. Before this, a refused APPEND was a
+        // warning in a log and the sent message existed nowhere at all.
+        let (cache, account) = a_cache(true);
+        let kept = keeping(&Refusing, &cache, &account, false, &a_message());
+
+        assert!(
+            matches!(kept, Kept::HereBecauseTheServerRefused(_)),
+            "the copy was not kept here: {kept:?}"
+        );
+
+        let folder = cache
+            .get_folder("acct", "Sent")
+            .expect("read the folder")
+            .expect("the Sent folder");
+        let listed = cache
+            .get_message_list(folder.id, "acct")
+            .expect("list the folder");
+        assert_eq!(listed.len(), 1, "the Sent folder holds {listed:?}");
+        assert_eq!(listed[0].subject, "The quarterly figures");
+        let body = cache
+            .get_message_body(listed[0].id)
+            .expect("read the body")
+            .expect("a body was stored");
+        assert!(
+            body.body_plain
+                .unwrap_or_default()
+                .contains("Here they are"),
+            "the copy was filed without its body"
+        );
+    }
+
+    #[test]
+    fn test_an_account_with_no_sent_folder_says_so_rather_than_going_quiet() {
+        // The most likely of the five ways the copy used to be lost: somebody
+        // adds an account and sends before the first check for mail, so there
+        // is no folder list and no Sent folder in it. The old code turned that
+        // into `Ok(())` and said nothing at all.
+        let (cache, account) = a_cache(false);
+
+        let kept = keeping(&Accepting::default(), &cache, &account, false, &a_message());
+
+        let Kept::Nowhere(reason) = &kept else {
+            panic!("a copy with nowhere to go was reported as {kept:?}");
+        };
+        assert!(
+            reason.contains("Check for mail once"),
+            "the reason does not say what to do next: {reason}"
+        );
+        assert!(
+            kept.needs_saying(),
+            "losing the only copy of a sent message passed over in silence"
+        );
+        assert!(!kept.what_happened().trim().is_empty());
+    }
+
+    #[test]
+    fn test_every_answer_is_a_sentence_somebody_can_hear() {
+        // What `what_happened` returns goes to the status line, which is read
+        // aloud. A blank one is indistinguishable from one that never spoke.
+        for answer in [
+            Kept::OnTheServer,
+            Kept::Here,
+            Kept::OnTheServerAndHere,
+            Kept::HereBecauseTheServerRefused("over quota".into()),
+            Kept::Nowhere("no folder".into()),
+        ] {
+            let said = answer.what_happened();
+            assert!(!said.trim().is_empty(), "{answer:?} says nothing");
+            assert!(said.ends_with('.'), "{said:?} is not a sentence");
+        }
+        // The three ordinary endings are not worth interrupting anybody with,
+        // and saying them every time buries the two that are.
+        assert!(!Kept::OnTheServer.needs_saying());
+        assert!(!Kept::Here.needs_saying());
+        assert!(!Kept::OnTheServerAndHere.needs_saying());
+    }
+
+    #[test]
+    fn test_a_reply_kept_here_still_threads_with_what_it_answered() {
+        // The chain the recipient's client threads on has to be the chain this
+        // one stores, or a reply somebody sent is a message on its own in their
+        // own Sent folder. The old local filing wrote nothing into this column.
+        let (cache, account) = a_cache(true);
+        let raw = concat!(
+            "From: me@example.com\r\n",
+            "To: you@example.com\r\n",
+            "Subject: Re: Lunch\r\n",
+            "Date: Tue, 4 Aug 2026 10:00:00 +0000\r\n",
+            "Message-ID: <reply-1@example.com>\r\n",
+            "In-Reply-To: <parent@example.com>\r\n",
+            "References: <root@example.com> <parent@example.com>\r\n",
+            "Reply-To: desk@example.com\r\n",
+            "\r\n",
+            "One o'clock.\r\n",
+        )
+        .as_bytes();
+
+        keeping(&Refusing, &cache, &account, false, raw);
+
+        let row = the_only_row(&cache);
+        assert_eq!(
+            row.refs_header.as_deref(),
+            Some("root@example.com parent@example.com"),
+            "the copy does not name what it answered"
+        );
+        // Where the sender asked replies to go. Dropping it sent a reply to
+        // your own sent copy to your own address.
+        assert_eq!(row.reply_to.as_deref(), Some("desk@example.com"));
+        assert_eq!(row.message_id, "reply-1@example.com");
+        assert!(
+            row.read,
+            "a message somebody wrote themselves is not unread"
+        );
+    }
+
+    #[test]
+    fn test_a_message_that_answers_only_one_other_still_names_it() {
+        // In-Reply-To with no References at all, which is what a great many
+        // clients send. Reading only References would store nothing.
+        let (cache, account) = a_cache(true);
+        let raw = with_headers(&["In-Reply-To: <parent@example.com>"]);
+
+        keeping(&Refusing, &cache, &account, false, &raw);
+
+        assert_eq!(
+            the_only_row(&cache).refs_header.as_deref(),
+            Some("parent@example.com")
+        );
+    }
+
+    #[test]
+    fn test_a_message_answering_nothing_stores_no_chain_rather_than_an_empty_one() {
+        // An empty string here is not the same as nothing: it is a chain of no
+        // ancestors, which reads back as a reply to a message with no name.
+        let (cache, account) = a_cache(true);
+
+        keeping(&Refusing, &cache, &account, false, &a_message());
+
+        assert_eq!(the_only_row(&cache).refs_header, None);
+        assert_eq!(the_only_row(&cache).reply_to, None);
+    }
+
+    #[test]
+    fn test_a_parent_already_named_in_the_chain_is_not_named_twice() {
+        // Some clients repeat the message answered at the end of References.
+        let (cache, account) = a_cache(true);
+        let raw = with_headers(&[
+            "In-Reply-To: <parent@example.com>",
+            "References: <root@example.com> <parent@example.com>",
+        ]);
+
+        keeping(&Refusing, &cache, &account, false, &raw);
+
+        assert_eq!(
+            the_only_row(&cache).refs_header.as_deref(),
+            Some("root@example.com parent@example.com")
+        );
+    }
+
+    #[test]
+    fn test_a_copy_kept_here_is_sorted_where_the_reader_will_find_it() {
+        // A blank date sorts the copy to whichever end of Sent nobody looks at,
+        // which for somebody reading by ear is the same as losing it.
+        let (cache, account) = a_cache(true);
+        let no_date = concat!(
+            "From: me@example.com\r\n",
+            "To: you@example.com\r\n",
+            "Subject: No date on this one\r\n",
+            "\r\n",
+            "Body.\r\n",
+        )
+        .as_bytes();
+
+        keeping(&Refusing, &cache, &account, false, no_date);
+
+        let row = the_only_row(&cache);
+        assert!(!row.date.trim().is_empty(), "the copy has no date at all");
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(&row.date).is_ok(),
+            "{} is not a date the listing can sort on",
+            row.date
+        );
+        // A message with no identifier of its own stores an empty one rather
+        // than inventing one. Pinned because two such copies in one folder are
+        // then indistinguishable to a lookup by identifier.
+        assert_eq!(row.message_id, "");
+    }
+
+    #[test]
+    fn test_a_receipt_the_sender_asked_for_is_not_turned_back_on_themselves() {
+        // On an outgoing message that header is this sender asking their
+        // recipient for a receipt. Carrying it onto their own copy would have
+        // the client offer to tell them they had read their own mail.
+        let (cache, account) = a_cache(true);
+        let raw = with_headers(&["Disposition-Notification-To: me@example.com"]);
+
+        keeping(&Refusing, &cache, &account, false, &raw);
+
+        assert_eq!(the_only_row(&cache).receipt_to, None);
+    }
+
+    #[test]
+    fn test_nothing_extra_is_kept_here_when_nobody_asked_for_it() {
+        // The setting is off by default, and off means the Sent folder lists
+        // each message once, from the server, exactly as it did before.
+        let (cache, account) = a_cache(true);
+        let server = Accepting::default();
+
+        let kept = keeping(&server, &cache, &account, false, &a_message());
+
+        assert_eq!(kept, Kept::OnTheServer);
+        assert_eq!(*server.given.borrow(), vec!["Sent".to_string()]);
+        assert!(
+            rows(&cache).is_empty(),
+            "a copy was written here that nobody asked for"
+        );
+    }
+
+    #[test]
+    fn test_keeping_a_copy_here_as_well_leaves_one_in_each_place() {
+        // What the setting is for: the message is in Sent now, without waiting
+        // for the next check for mail. The cost is that Sent lists it twice
+        // once the server's own copy arrives, which the setting's own text says.
+        let (cache, account) = a_cache(true);
+        let server = Accepting::default();
+
+        let kept = keeping(&server, &cache, &account, true, &a_message());
+
+        assert_eq!(kept, Kept::OnTheServerAndHere);
+        assert_eq!(*server.given.borrow(), vec!["Sent".to_string()]);
+        let row = the_only_row(&cache);
+        assert_eq!(row.subject, "The quarterly figures");
+        assert!(cache.get_message_body(row.id).unwrap().is_some());
+    }
+
+    #[test]
+    fn test_a_copy_kept_here_takes_a_number_the_server_will_never_issue() {
+        // The part most likely to be got wrong later. A number one past the
+        // highest is the number the server is about to hand out, and giving it
+        // to a copy kept here hides a real message forever.
+        let (cache, account) = a_cache(true);
+        let folder = cache.get_folder("acct", "Sent").unwrap().unwrap();
+        for uid in 1..=4 {
+            cache
+                .upsert_message(&crate::data::message_cache::IncomingMessage {
+                    folder_id: folder.id,
+                    uid,
+                    ..from_the_server(folder.id, uid)
+                })
+                .unwrap();
+        }
+
+        keeping(&Refusing, &cache, &account, false, &a_message());
+
+        let copy = rows(&cache)
+            .into_iter()
+            .find(|row| row.subject == "The quarterly figures")
+            .expect("the copy");
+        assert_eq!(copy.uid, u32::MAX);
+    }
+
+    #[test]
+    fn test_an_account_whose_mail_is_collected_over_pop_files_its_copy_here() {
+        // There is no server folder to offer it to, so the copy here is the
+        // only one there will ever be, and it is numbered from the bottom
+        // because no server numbers that folder.
+        let dir = std::env::temp_dir().join(format!("wixen_sent_pop_{}", uuid::Uuid::new_v4()));
+        let cache = MessageCache::new(dir, None).expect("a cache");
+        let mut account =
+            crate::data::account::Account::new("Home".into(), "me@example.com".into());
+        account.id = "acct".to_string();
+        account.protocol = crate::common::types::Protocol::Pop3.as_str().to_string();
+        let path = crate::application::local_folders::local_sent(account.protocol())
+            .expect("a POP account files sent mail here");
+        cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Sent".into(),
+                path: path.clone(),
+                folder_type: "Sent".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        let server = Accepting::default();
+
+        let kept = keeping(&server, &cache, &account, false, &a_message());
+
+        assert_eq!(kept, Kept::Here);
+        assert!(
+            server.given.borrow().is_empty(),
+            "a POP account offered its sent mail to an IMAP server"
+        );
+        let folder = cache.get_folder("acct", &path).unwrap().unwrap();
+        let listed = cache.get_message_list(folder.id, "acct").unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].uid, 1, "a folder no server numbers counts up");
+    }
+
+    #[test]
+    fn test_a_copy_that_cannot_be_written_here_is_reported_rather_than_swallowed() {
+        // A POP account whose folders have never been made: there is a path to
+        // file the copy under and no folder behind it. The person is owed the
+        // reason, because on this account there is no other copy anywhere.
+        let dir = std::env::temp_dir().join(format!("wixen_sent_nofold_{}", uuid::Uuid::new_v4()));
+        let cache = MessageCache::new(dir, None).expect("a cache");
+        let mut account =
+            crate::data::account::Account::new("Home".into(), "me@example.com".into());
+        account.id = "acct".to_string();
+        account.protocol = crate::common::types::Protocol::Pop3.as_str().to_string();
+
+        let kept = keeping(&Refusing, &cache, &account, false, &a_message());
+
+        let Kept::Nowhere(reason) = &kept else {
+            panic!("a copy that went nowhere was reported as {kept:?}");
+        };
+        assert!(
+            reason.contains("no") && reason.contains("folder"),
+            "the reason does not say what was missing: {reason}"
+        );
+        assert!(kept.needs_saying());
+    }
+
+    #[test]
+    fn test_the_setting_says_what_happens_rather_than_naming_a_mechanism() {
+        // The label is what somebody hears when they arrow onto the box, and
+        // the description is the part they cannot otherwise see coming: their
+        // Sent folder will list everything twice.
+        let spoken = crate::presentation::accessibility::names::name_from_label(KEEP_A_COPY_LABEL);
+        assert_eq!(
+            spoken,
+            "Keep a copy of sent mail on this computer, even when the server saves one"
+        );
+        assert!(
+            KEEP_A_COPY_LABEL.contains("&K"),
+            "the box has no mnemonic, so it cannot be reached by keyboard from the tab"
+        );
+        assert!(
+            KEEP_A_COPY_CONSEQUENCE.contains("twice"),
+            "the description does not say what actually changes: {KEEP_A_COPY_CONSEQUENCE}"
+        );
+        for machinery in ["IMAP", "APPEND", "cache", "database", "uid"] {
+            let said = format!("{KEEP_A_COPY_LABEL} {KEEP_A_COPY_CONSEQUENCE}");
+            assert!(
+                !said.to_lowercase().contains(&machinery.to_lowercase()),
+                "the setting names {machinery}, which is a mechanism and not what happens"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_one_thing_here_that_reaches_a_server_is_still_behind_the_gate() {
+        // This unit adds no new outward write. It moves one: the command that
+        // asks a mail server to keep a copy. Moving a write is exactly when its
+        // gate gets left behind, so the two links in that chain are pinned
+        // here rather than reasoned about.
+        //
+        // Read from the source because there is no way to reach either without
+        // a live IMAP server: a session cannot be built without a socket, and
+        // no client in this tree can be pointed at a listener of our own the
+        // way the web clients can. So what is proved is that the code asks, not
+        // that a socket stayed quiet. That difference is real and is said out
+        // loud rather than dressed up.
+        let imap = include_str!("../service/protocols/imap.rs");
+        let append = imap
+            .split_once("pub async fn append_message(")
+            .expect("append_message is still the command that keeps a copy")
+            .1;
+        let body = append
+            .split_once("\n    }")
+            .expect("append_message has an end")
+            .0;
+        assert!(
+            body.contains("self.may_i("),
+            "the command that keeps a copy at a server no longer asks whether it may: {body}"
+        );
+
+        // The other link: nothing turns a session's permission on except the
+        // one place that reads the account's own setting first.
+        let controller = include_str!("mail_controller.rs");
+        let turns_it_on: Vec<&str> = controller
+            .lines()
+            .filter(|line| line.contains("allow_changes()"))
+            .collect();
+        assert_eq!(
+            turns_it_on.len(),
+            1,
+            "the permission is turned on in more than one place: {turns_it_on:?}"
+        );
+        let before = controller
+            .split_once("allow_changes()")
+            .expect("the one place")
+            .0;
+        let guard = before.lines().rev().take(4).collect::<Vec<_>>().join(" ");
+        assert!(
+            guard.contains("allowed_for") && guard.contains(".mail"),
+            "the permission is no longer read from the account's own setting: {guard}"
+        );
+
+        // And nothing in this module opens its own session another way.
+        let mine = include_str!("sent_copy.rs")
+            .split_once("#[cfg(test)]")
+            .expect("this module has tests")
+            .0;
+        assert_eq!(
+            mine.matches(".connect_imap(").count(),
+            1,
+            "this module reaches a mail server by more than one route"
+        );
+    }
+
+    fn with_headers(extra: &[&str]) -> Vec<u8> {
+        let mut raw = String::from(
+            "From: me@example.com\r\nTo: you@example.com\r\nSubject: A message\r\n\
+             Date: Tue, 4 Aug 2026 10:00:00 +0000\r\nMessage-ID: <one@example.com>\r\n",
+        );
+        for header in extra {
+            raw.push_str(header);
+            raw.push_str("\r\n");
+        }
+        raw.push_str("\r\nBody.\r\n");
+        raw.into_bytes()
+    }
+
+    fn from_the_server(folder_id: i64, uid: u32) -> crate::data::message_cache::IncomingMessage {
+        crate::data::message_cache::IncomingMessage {
+            folder_id,
+            uid,
+            message_id: format!("<server-{uid}@example.com>"),
+            subject: "From the server".to_string(),
+            from_addr: "me@example.com".to_string(),
+            to_addr: "you@example.com".to_string(),
+            cc: None,
+            reply_to: None,
+            date: "2026-08-01T10:00:00+00:00".to_string(),
+            internal_date: None,
+            size_bytes: None,
+            refs_header: None,
+            read: true,
+            starred: false,
+            answered: false,
+            draft: false,
+            deleted: false,
+            has_attachments: false,
+            safety: crate::service::safety::Verdict::ordinary(),
+            gmail_message_id: None,
+            labels: None,
+            receipt_to: None,
+            pop_uidl: None,
+        }
+    }
+
+    fn rows(cache: &MessageCache) -> Vec<crate::data::message_cache::MessageListRow> {
+        let folder = cache
+            .get_folder("acct", "Sent")
+            .expect("read the folder")
+            .expect("the Sent folder");
+        cache
+            .get_message_list(folder.id, "acct")
+            .expect("list the folder")
+    }
+
+    fn the_only_row(cache: &MessageCache) -> crate::data::message_cache::MessageListRow {
+        let mut listed = rows(cache);
+        assert_eq!(listed.len(), 1, "the Sent folder holds {listed:?}");
+        listed.remove(0)
+    }
+}

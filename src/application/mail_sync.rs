@@ -204,16 +204,7 @@ fn to_incoming(message: &ImapMessage, folder_id: i64, in_junk_folder: bool) -> I
 /// some senders write only one of the two and threading needs whichever
 /// arrived.
 fn reference_chain(message: &ImapMessage) -> Option<String> {
-    let mut chain: Vec<&str> = message.references.iter().map(String::as_str).collect();
-    if let Some(parent) = message.in_reply_to.as_deref()
-        && !chain.contains(&parent)
-    {
-        chain.push(parent);
-    }
-    if chain.is_empty() {
-        return None;
-    }
-    Some(chain.join(" "))
+    crate::application::threading::as_stored(&message.references, message.in_reply_to.as_deref())
 }
 
 /// Addresses as one line, the way the list column shows them.
@@ -1623,6 +1614,168 @@ mod tests {
             message_id: Some("note-1@example.com".to_string()),
             ..Default::default()
         }
+    }
+
+    /// A mail server that will not take a copy of a sent message.
+    ///
+    /// Which is what puts a locally written row into a folder a sync
+    /// reconciles, and is the whole reason the marker exists.
+    struct WillNotFileACopy;
+
+    impl crate::application::sent_copy::FilesACopy for WillNotFileACopy {
+        async fn keep_a_copy(&self, _folder: &str, _raw: &[u8]) -> std::result::Result<(), String> {
+            Err("the mailbox is over quota".to_string())
+        }
+    }
+
+    /// A Sent folder holding a copy of one message that was kept here, plus
+    /// however many the server has in it.
+    fn a_sent_folder_with_a_copy_kept_here() -> (MessageCache, i64, ImapFolder, i64) {
+        let dir = std::env::temp_dir().join(format!("wixen_sent_sync_{}", uuid::Uuid::new_v4()));
+        let cache = MessageCache::new(dir, None).expect("a cache");
+        let folder_id = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Sent".into(),
+                path: "Sent".into(),
+                folder_type: "Sent".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        let mut account =
+            crate::data::account::Account::new("Work".into(), "me@example.com".into());
+        account.id = "acct".to_string();
+        let raw = concat!(
+            "From: me@example.com\r\n",
+            "To: you@example.com\r\n",
+            "Subject: What I sent\r\n",
+            "Date: Tue, 4 Aug 2026 10:00:00 +0000\r\n",
+            "Message-ID: <mine-1@example.com>\r\n",
+            "\r\n",
+            "The only copy of this.\r\n",
+        )
+        .as_bytes();
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(async {
+                let goes_to = crate::application::sent_copy::destination(&cache, &account);
+                let said = crate::application::sent_copy::offer_to_the_server(
+                    &WillNotFileACopy,
+                    &goes_to,
+                    raw,
+                )
+                .await;
+                crate::application::sent_copy::file_the_copy(
+                    &cache, &account, &goes_to, &said, false, raw,
+                )
+            });
+        let kept = cache
+            .get_message_list(folder_id, "acct")
+            .expect("list the folder")
+            .into_iter()
+            .find(|row| row.subject == "What I sent")
+            .expect("the copy the server refused");
+        let folder = ImapFolder {
+            name: "Sent".into(),
+            display_path: "Sent".into(),
+            path: "Sent".into(),
+            folder_type: FolderType::Sent,
+            selectable: true,
+            holds_all_mail: false,
+            subscribed: true,
+        };
+        (cache, folder_id, folder, kept.id)
+    }
+
+    #[test]
+    fn test_a_copy_kept_here_survives_a_sync_that_finds_it_is_not_on_the_server() {
+        // #112 through the whole sync rather than at the statement. The server
+        // has never heard of this message, so the forget step reads it as one
+        // the server no longer has and deletes the row. The body goes with it,
+        // through the foreign key, and it was the only copy.
+        let (cache, folder_id, folder, copy) = a_sent_folder_with_a_copy_kept_here();
+        let server = Scripted {
+            on_server: vec![1, 2],
+            headers: vec![message(1), message(2)],
+            ..Default::default()
+        };
+
+        let done = run(&server, &cache, folder_id, &folder);
+
+        assert!(
+            cache.get_message(copy).expect("read back").is_some(),
+            "the sync deleted the only copy of a sent message"
+        );
+        assert!(
+            cache.get_message_body(copy).expect("read back").is_some(),
+            "the sync deleted the only copy of the message text"
+        );
+        assert_eq!(done.fetched, 2, "the server's own messages did not arrive");
+    }
+
+    #[test]
+    fn test_a_sync_does_not_report_forgetting_a_copy_it_kept() {
+        // A count that lies is the same defect as a status line that lies. The
+        // copy is on neither side of the comparison a sync makes, so naming it
+        // means reporting a deletion that the guard refused, and asking the
+        // server for the flags of a message it has never had.
+        let (cache, folder_id, folder, _) = a_sent_folder_with_a_copy_kept_here();
+        let server = Scripted {
+            on_server: vec![1],
+            headers: vec![message(1)],
+            ..Default::default()
+        };
+
+        let done = run(&server, &cache, folder_id, &folder);
+
+        assert_eq!(
+            done.forgotten, 0,
+            "a deletion that never happened was counted"
+        );
+        assert!(
+            !server.asked_for.borrow().contains(&u32::MAX),
+            "the server was asked about a message it has never had"
+        );
+    }
+
+    #[test]
+    fn test_a_copy_kept_here_survives_the_server_renumbering_the_mailbox() {
+        // A new UIDVALIDITY empties the folder, because every number held now
+        // names a different message. It says nothing about the copies kept
+        // here, which no server ever numbered.
+        let (cache, folder_id, folder, copy) = a_sent_folder_with_a_copy_kept_here();
+        run(
+            &Scripted {
+                on_server: vec![1],
+                headers: vec![message(1)],
+                uid_validity: Some(1),
+                ..Default::default()
+            },
+            &cache,
+            folder_id,
+            &folder,
+        );
+
+        let after = Scripted {
+            on_server: vec![1],
+            headers: vec![message(1)],
+            uid_validity: Some(2),
+            ..Default::default()
+        };
+        let done = run(&after, &cache, folder_id, &folder);
+
+        assert!(
+            cache.get_message(copy).expect("read back").is_some(),
+            "renumbering took the copy kept here with it"
+        );
+        assert!(cache.get_message_body(copy).expect("read back").is_some());
+        assert_eq!(
+            done.fetched, 1,
+            "the server's own messages were not re-read"
+        );
     }
 
     #[test]

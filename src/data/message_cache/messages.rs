@@ -5,6 +5,19 @@ use crate::common::{Error, Result};
 use crate::service::protocols::imap::flag;
 use rusqlite::{OptionalExtension, params};
 
+/// The first number handed to a row this program files into a synced folder.
+///
+/// The top of the range, counted down from. See [`MessageCache::next_reserved_uid`].
+const FIRST_RESERVED_UID: u32 = u32::MAX;
+
+/// The rows whose body has nowhere else to be fetched from.
+///
+/// Mail collected over POP was downloaded once and the server may well have
+/// dropped it; a copy of a sent message filed here was never on a server at
+/// all. Deleting either body destroys the only copy, so the two places that
+/// drop bodies ask this first.
+pub(super) const ONLY_COPY_IS_HERE: &str = "(filed_here = 1 OR pop_uidl IS NOT NULL)";
+
 /// One row of a folder listing.
 ///
 /// Deliberately not `CachedMessage`. A listing needs the snippet, the size and
@@ -250,6 +263,10 @@ impl MessageCache {
     /// A local folder and a POP mailbox both need one: the table keys messages
     /// on folder and number, and neither has a number of its own to use. One
     /// past the highest, which is stable because nothing renumbers.
+    ///
+    /// Only for a folder no server numbers. In a folder a server fills, one
+    /// past the highest is the next number the SERVER is about to issue, and
+    /// [`Self::next_reserved_uid`] is what to ask instead.
     pub fn next_local_uid(&self, folder_id: i64) -> Result<u32> {
         let highest: Option<i64> = self
             .conn
@@ -263,6 +280,64 @@ impl MessageCache {
             .flatten();
         Ok(highest.unwrap_or(0).saturating_add(1) as u32)
     }
+
+    /// The next number for a row this program writes into a folder a server
+    /// numbers.
+    ///
+    /// Counted downward from the top of the range rather than upward from the
+    /// highest in use, and that is not a tidiness choice. A server assigns UIDs
+    /// upward and never reuses one, so one past the highest is the number it is
+    /// about to hand out. Give that number to a copy kept here and two things
+    /// go wrong at once and silently: the sync sees the number as already held
+    /// and never fetches the real message, and if anything did fetch it, the
+    /// upsert keyed on folder and number writes over the copy. A real message
+    /// invisible forever, and a sent message replaced.
+    ///
+    /// Colliding from this end needs the server to have issued four billion
+    /// numbers in one mailbox.
+    pub fn next_reserved_uid(&self, folder_id: i64) -> Result<u32> {
+        let lowest: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT MIN(uid) FROM messages WHERE folder_id = ?1 AND filed_here = 1",
+                params![folder_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read the folder: {}", e)))?
+            .flatten();
+        Ok(lowest.map_or(FIRST_RESERVED_UID, |low| (low as u32).saturating_sub(1)))
+    }
+
+    /// Write a row this program is filing itself, and mark it as one.
+    ///
+    /// One method rather than an upsert followed by a marker the caller sets,
+    /// because a row written without the marker is a row the next sync deletes.
+    /// Nothing outside this can put half of it in place.
+    pub fn file_message_here(&self, incoming: &IncomingMessage) -> Result<i64> {
+        let id = self.upsert_message(incoming)?;
+        self.conn
+            .execute(
+                "UPDATE messages SET filed_here = 1 WHERE id = ?1",
+                params![id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to mark the message: {}", e)))?;
+        Ok(id)
+    }
+
+    /// Whether this program wrote the row rather than a sync downloading it.
+    pub fn was_filed_here(&self, message_id: i64) -> Result<bool> {
+        self.conn
+            .query_row(
+                "SELECT filed_here FROM messages WHERE id = ?1",
+                params![message_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read the message: {}", e)))
+            .map(|filed| filed == Some(1))
+    }
+
     /// Write a message a sync has fetched, updating one already stored.
     ///
     /// Deliberately not `save_message`, which is `INSERT OR REPLACE`. On a
@@ -451,10 +526,15 @@ impl MessageCache {
     ///
     /// A sync compares this with what the server lists, so it only fetches
     /// headers it does not have.
+    ///
+    /// Rows this program filed itself are left out. They are on neither side of
+    /// that comparison: naming one means a deletion the guard below refuses but
+    /// the sync still counts, and a flag fetch asking the server about a
+    /// message it has never had.
     pub fn stored_uids(&self, folder_id: i64) -> Result<Vec<u32>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT uid FROM messages WHERE folder_id = ?1")
+            .prepare("SELECT uid FROM messages WHERE folder_id = ?1 AND filed_here = 0")
             .map_err(|e| Error::Other(format!("Failed to prepare uid query: {}", e)))?;
         let uids = stmt
             .query_map(params![folder_id], |row| row.get(0))
@@ -465,10 +545,16 @@ impl MessageCache {
     }
 
     /// Forget one message the server no longer has.
+    ///
+    /// Never a row this program filed itself. The server never heard of that
+    /// message, so "the server no longer has it" is true of it and means
+    /// nothing, and acting on it deletes the only copy of somebody's sent mail
+    /// along with its body. The guard is in the statement rather than only in
+    /// the caller, so it holds for callers nobody has written yet.
     pub fn forget_message(&self, folder_id: i64, uid: u32) -> Result<()> {
         self.conn
             .execute(
-                "DELETE FROM messages WHERE folder_id = ?1 AND uid = ?2",
+                "DELETE FROM messages WHERE folder_id = ?1 AND uid = ?2 AND filed_here = 0",
                 params![folder_id, uid],
             )
             .map_err(|e| Error::Other(format!("Failed to remove message: {}", e)))?;
@@ -524,10 +610,14 @@ impl MessageCache {
     /// renumbered the mailbox and every UID we hold now points at a different
     /// message, or at none. Keeping them would show the reader one message and
     /// open another.
+    ///
+    /// Rows this program filed itself are kept. Renumbering says nothing about
+    /// them: no server ever gave them a number, so none of them points at
+    /// anything that has moved.
     pub fn forget_folder_messages(&self, folder_id: i64) -> Result<usize> {
         self.conn
             .execute(
-                "DELETE FROM messages WHERE folder_id = ?1",
+                "DELETE FROM messages WHERE folder_id = ?1 AND filed_here = 0",
                 params![folder_id],
             )
             .map_err(|e| Error::Other(format!("Failed to clear folder: {}", e)))
@@ -1056,11 +1146,23 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to delete message: {}", e)))?;
 
         // This is a soft delete, matching IMAP's deleted flag, so no foreign
-        // key cascade fires. Drop the cached body anyway: nobody reads a
-        // deleted message, and it can be fetched again if it is undeleted.
+        // key cascade fires. Drop the cached body anyway, because nobody reads
+        // a deleted message and it can be fetched from the server again if it
+        // is undeleted.
+        //
+        // Except where there is no server to fetch it from. Mail collected over
+        // POP and a copy of a sent message filed here have one copy of the body
+        // and it is this one, so undeleting either would give back a message
+        // whose text had been destroyed. Reachable today through a filter rule
+        // carrying a delete action.
         self.conn
             .execute(
-                "DELETE FROM message_bodies WHERE message_id = ?1",
+                &format!(
+                    "DELETE FROM message_bodies WHERE message_id = ?1
+                     AND NOT EXISTS (
+                         SELECT 1 FROM messages WHERE id = ?1 AND {ONLY_COPY_IS_HERE}
+                     )"
+                ),
                 params![message_id],
             )
             .map_err(|e| Error::Other(format!("Failed to drop deleted message body: {}", e)))?;
@@ -1397,6 +1499,256 @@ mod tests {
             cache.next_local_uid(other).unwrap(),
             1,
             "numbering is per folder, and one folder's messages moved another's"
+        );
+    }
+
+    #[test]
+    fn test_a_database_written_before_the_marker_existed_still_opens_and_keeps_its_mail() {
+        // The column arrives through `ensure_column_exists` on open. An older
+        // database has no such column, and every row in it reads as a message
+        // that came from a server, which is the truthful answer: nothing wrote
+        // a row of the other kind before this existed.
+        let dir = std::env::temp_dir().join(format!("wixen_older_db_{}", uuid::Uuid::new_v4()));
+        let (before, row) = {
+            let cache = super::super::MessageCache::new(dir.clone(), None).expect("a cache");
+            let sent = folder(&cache, "Sent");
+            let row = cache
+                .upsert_message(&incoming(sent, 4, "Written by the older build"))
+                .unwrap();
+            cache
+                .save_message_body(row, Some("Still here"), None)
+                .unwrap();
+            cache
+                .conn
+                .execute("ALTER TABLE messages DROP COLUMN filed_here", [])
+                .expect("the column to come off, making this an older database");
+            (sent, row)
+        };
+
+        let reopened =
+            super::super::MessageCache::new(dir, None).expect("the older database to open again");
+
+        let listed = reopened.get_message_list(before, "acc").unwrap();
+        assert_eq!(listed.len(), 1, "the mail already stored was lost");
+        assert_eq!(listed[0].subject, "Written by the older build");
+        assert!(reopened.get_message_body(row).unwrap().is_some());
+        assert!(
+            !reopened.was_filed_here(row).unwrap(),
+            "an old row read as one this program filed, which would exempt it from every sync"
+        );
+        assert_eq!(reopened.stored_uids(before).unwrap(), vec![4]);
+    }
+
+    #[test]
+    fn test_a_number_given_to_a_copy_kept_here_is_one_the_server_will_never_hand_out() {
+        // `next_local_uid` is one past the highest, which in a folder a server
+        // numbers is the next number the SERVER will issue. When it does, the
+        // sync sees that number as already held and never fetches the real
+        // message, and an upsert keyed on folder and number writes over the
+        // copy kept here. Both losses are silent and permanent.
+        let cache = fresh("reserved_uid");
+        let sent = folder(&cache, "Sent");
+        for uid in 1..=10 {
+            cache
+                .upsert_message(&incoming(sent, uid, "From the server"))
+                .unwrap();
+        }
+
+        assert_eq!(
+            cache.next_reserved_uid(sent).unwrap(),
+            u32::MAX,
+            "a copy kept here took a number the server is about to issue"
+        );
+    }
+
+    #[test]
+    fn test_a_second_copy_kept_here_does_not_take_the_first_ones_number() {
+        // The table keys messages on folder and number. Handing out the same
+        // number twice means the second copy replaces the first, which is a
+        // sent message lost with nothing to show it.
+        let cache = fresh("reserved_uid_twice");
+        let sent = folder(&cache, "Sent");
+
+        let first = cache.next_reserved_uid(sent).unwrap();
+        let row = cache
+            .file_message_here(&incoming(sent, first, "The first one"))
+            .unwrap();
+        let second = cache.next_reserved_uid(sent).unwrap();
+        assert_eq!(second, u32::MAX - 1, "the second copy reused a number");
+
+        cache
+            .file_message_here(&incoming(sent, second, "The second one"))
+            .unwrap();
+        assert_eq!(
+            cache.get_message_list(sent, "acc").unwrap().len(),
+            2,
+            "one copy replaced the other"
+        );
+        assert_eq!(cache.next_reserved_uid(sent).unwrap(), u32::MAX - 2);
+
+        // The marker is what tells a row this program wrote from one a sync
+        // downloaded, and it is the whole of #112.
+        assert!(cache.was_filed_here(row).unwrap());
+        let downloaded = cache
+            .upsert_message(&incoming(sent, 5, "From the server"))
+            .unwrap();
+        assert!(
+            !cache.was_filed_here(downloaded).unwrap(),
+            "a message the server sent is being treated as one kept here"
+        );
+    }
+
+    #[test]
+    fn test_a_sync_reading_a_copy_kept_here_again_does_not_clear_its_marker() {
+        // `upsert_message` must never turn the marker off. If it did, one sync
+        // that happened to fetch the same number would strip the protection
+        // and the next would delete the copy.
+        let cache = fresh("marker_survives_upsert");
+        let sent = folder(&cache, "Sent");
+        let uid = cache.next_reserved_uid(sent).unwrap();
+        let row = cache
+            .file_message_here(&incoming(sent, uid, "Kept here"))
+            .unwrap();
+
+        let again = cache
+            .upsert_message(&incoming(sent, uid, "Kept here"))
+            .unwrap();
+
+        assert_eq!(again, row);
+        assert!(
+            cache.was_filed_here(row).unwrap(),
+            "a sync cleared the marker on a row it did not write"
+        );
+    }
+
+    #[test]
+    fn test_a_copy_kept_here_is_not_offered_to_the_sync_as_something_to_reconcile() {
+        // A sync compares what it holds against what the server lists. A copy
+        // kept here is on neither side of that comparison: naming it means a
+        // deletion the guard then refuses, counted as if it happened, and a
+        // flag fetch asking the server about a message it has never had.
+        let cache = fresh("stored_uids_skips_copies");
+        let sent = folder(&cache, "Sent");
+        cache
+            .upsert_message(&incoming(sent, 3, "From the server"))
+            .unwrap();
+        let uid = cache.next_reserved_uid(sent).unwrap();
+        cache
+            .file_message_here(&incoming(sent, uid, "Kept here"))
+            .unwrap();
+
+        assert_eq!(cache.stored_uids(sent).unwrap(), vec![3]);
+    }
+
+    #[test]
+    fn test_a_copy_kept_here_survives_the_sync_that_finds_it_is_not_on_the_server() {
+        // #112 at the layer that does the deleting. The server has never heard
+        // of this number, so the forget step reads it as a message the server
+        // no longer has and takes the row and its body with it.
+        let cache = fresh("forget_spares_copies");
+        let sent = folder(&cache, "Sent");
+        let uid = cache.next_reserved_uid(sent).unwrap();
+        let row = cache
+            .file_message_here(&incoming(sent, uid, "Kept here"))
+            .unwrap();
+        cache
+            .save_message_body(row, Some("The only copy"), None)
+            .unwrap();
+        let downloaded = cache
+            .upsert_message(&incoming(sent, 3, "From the server"))
+            .unwrap();
+
+        cache.forget_message(sent, uid).unwrap();
+        cache.forget_message(sent, 3).unwrap();
+
+        assert!(
+            cache.get_message(row).unwrap().is_some(),
+            "the copy kept here was deleted"
+        );
+        assert!(
+            cache.get_message_body(row).unwrap().is_some(),
+            "the only copy of the body was deleted"
+        );
+        assert!(
+            cache.get_message(downloaded).unwrap().is_none(),
+            "a message the server really has dropped is still listed"
+        );
+    }
+
+    #[test]
+    fn test_a_copy_kept_here_survives_the_server_renumbering_the_mailbox() {
+        // A new UIDVALIDITY empties the folder, because every number held now
+        // names a different message. It does not name the copies kept here,
+        // which no server ever numbered.
+        let cache = fresh("renumber_spares_copies");
+        let sent = folder(&cache, "Sent");
+        let uid = cache.next_reserved_uid(sent).unwrap();
+        let row = cache
+            .file_message_here(&incoming(sent, uid, "Kept here"))
+            .unwrap();
+        cache
+            .save_message_body(row, Some("The only copy"), None)
+            .unwrap();
+        cache
+            .upsert_message(&incoming(sent, 3, "From the server"))
+            .unwrap();
+
+        let cleared = cache.forget_folder_messages(sent).unwrap();
+
+        assert_eq!(cleared, 1, "the wrong number of rows was cleared");
+        assert!(
+            cache.get_message(row).unwrap().is_some(),
+            "renumbering took the copy kept here with it"
+        );
+        assert!(cache.get_message_body(row).unwrap().is_some());
+    }
+
+    #[test]
+    fn test_deleting_a_message_that_is_only_here_keeps_its_body() {
+        // The comment on `delete_message` said a body could be fetched again if
+        // the message were undeleted. That is untrue for mail collected over
+        // POP and for a copy kept here: there is nowhere to fetch it from.
+        // Reachable today through a filter rule with a delete action.
+        let cache = fresh("delete_keeps_the_only_body");
+        let inbox = folder(&cache, "INBOX");
+
+        let mut over_pop = incoming(inbox, 1, "Collected over POP");
+        over_pop.pop_uidl = Some("uidl-1".to_string());
+        let over_pop = cache.upsert_message(&over_pop).unwrap();
+        cache
+            .save_message_body(over_pop, Some("Only here"), None)
+            .unwrap();
+
+        let uid = cache.next_reserved_uid(inbox).unwrap();
+        let kept_here = cache
+            .file_message_here(&incoming(inbox, uid, "Sent"))
+            .unwrap();
+        cache
+            .save_message_body(kept_here, Some("Also only here"), None)
+            .unwrap();
+
+        let from_a_server = cache
+            .upsert_message(&incoming(inbox, 2, "From the server"))
+            .unwrap();
+        cache
+            .save_message_body(from_a_server, Some("Fetchable again"), None)
+            .unwrap();
+
+        cache.delete_message(over_pop).unwrap();
+        cache.delete_message(kept_here).unwrap();
+        cache.delete_message(from_a_server).unwrap();
+
+        assert!(
+            cache.get_message_body(over_pop).unwrap().is_some(),
+            "the only copy of POP mail was destroyed"
+        );
+        assert!(
+            cache.get_message_body(kept_here).unwrap().is_some(),
+            "the only copy of a sent message was destroyed"
+        );
+        assert!(
+            cache.get_message_body(from_a_server).unwrap().is_none(),
+            "a body that can be fetched again is still taking up room"
         );
     }
 

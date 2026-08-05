@@ -6835,15 +6835,23 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
 
         let controller = MailController::new();
 
-        // Where a copy of each sent message goes. Worked out once, before the
-        // loop, because it is the same answer for every message in the queue.
+        // Whether a copy is kept here as well as at the server. Read once,
+        // before the loop and inside this task rather than in the block that
+        // picks the account: that block runs on the interface thread and this
+        // reads a file off the disk.
         //
-        // It does not ask whether a copy is wanted, and on some accounts it
-        // should. A provider that files its own copy of everything it sends,
-        // which Gmail does, ends up with a Sent folder holding everything
-        // twice. Nothing here checks for that yet, and whether to skip the copy
-        // for those accounts is not settled.
-        let sent_copy_goes_to = sent_copy_destination(&cache, &account);
+        // It does not ask whether the server files its own copy, and on some
+        // accounts it should. A provider that files everything it sends, which
+        // Gmail does, ends up with a Sent folder holding everything twice.
+        // Nothing here checks for that yet, and guessing wrong in the other
+        // direction means the copy exists nowhere.
+        let keep_one_here = crate::data::config::ConfigManager::load_stored()
+            .map(|stored| stored.app_config().keep_sent_mail_on_this_computer)
+            .unwrap_or(false);
+        let file_at_the_server = crate::application::sent_copy::ServerCopy { account: &account };
+        // Where every copy in this queue goes. The same answer for all of them,
+        // and worked out before the loop so the folder list is read once.
+        let copies_go_to = crate::application::sent_copy::destination(&cache, &account);
 
         for msg in &queued {
             // A message the account cannot send is a configuration problem, not
@@ -6875,24 +6883,33 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
                     // The copy is filed after the send, and a failure to file
                     // it is not a failure to send: the message has gone, and
                     // reporting it as failed would have somebody send it again.
-                    // A local folder is written here and now, without an
-                    // await: the cache holds a SQLite connection that cannot
-                    // cross one, and a folder on this computer has nothing to
-                    // wait for anyway.
-                    let filed = match sent_copy_goes_to.as_deref() {
-                        None => Ok(()),
-                        Some(folder) if crate::application::local_folders::is_local(folder) => {
-                            file_sent_copy_locally(&cache, &account, folder, raw)
-                        }
-                        Some(folder) => file_sent_copy(&account, folder, raw).await,
-                    };
-                    if let Err(e) = filed {
-                        tracing::warn!("The message was sent, but no copy reached Sent: {e}");
-                        let _ = tx
-                            .send(UIUpdate::StatusUpdated(format!(
-                                "Sent, but no copy could be saved in Sent: {e}"
-                            )))
-                            .await;
+                    // Where it ended up is said only when that is not the
+                    // ordinary answer, because a line after every message
+                    // buries the two that matter.
+                    //
+                    // Two steps, and the order matters: the server is asked
+                    // while nothing holds the database, and everything that
+                    // writes here happens afterwards. The connection to this
+                    // program's own database cannot be held across a wait for
+                    // a server.
+                    let said = crate::application::sent_copy::offer_to_the_server(
+                        &file_at_the_server,
+                        &copies_go_to,
+                        raw,
+                    )
+                    .await;
+                    let filed = crate::application::sent_copy::file_the_copy(
+                        &cache,
+                        &account,
+                        &copies_go_to,
+                        &said,
+                        keep_one_here,
+                        raw,
+                    );
+                    if filed.needs_saying() {
+                        let said = filed.what_happened();
+                        tracing::warn!("{said}");
+                        let _ = tx.send(UIUpdate::StatusUpdated(said)).await;
                     }
                 }
                 Err(reason) => {
@@ -7845,137 +7862,6 @@ fn ensure_local_folders(
     inbox
         .or(fallback)
         .ok_or_else(|| crate::common::Error::Other("This account has no folders".into()))
-}
-
-/// Where a copy of a sent message should go, if anywhere.
-///
-/// Every account files one. On IMAP it goes to the server's Sent folder, so it
-/// is there on every device. On POP there is no server folder to put it in, so
-/// it goes to that account's local Sent, which is the only copy there will ever
-/// be and is exactly why POP accounts need local folders at all.
-///
-/// `None` means the account has no Sent folder yet, which is a brand new IMAP
-/// account that has never synced.
-fn sent_copy_destination(
-    cache: &crate::data::message_cache::MessageCache,
-    account: &crate::data::account::Account,
-) -> Option<String> {
-    if let Some(local) = crate::application::local_folders::local_sent(account.protocol()) {
-        return Some(local);
-    }
-    cache
-        .get_folders_for_account(&account.id)
-        .ok()?
-        .into_iter()
-        .find(|folder| {
-            crate::common::types::FolderType::from_stored(&folder.folder_type)
-                == crate::common::types::FolderType::Sent
-        })
-        .map(|folder| folder.path)
-}
-
-/// Put a copy of a message that has gone out into the Sent folder.
-///
-/// On its own connection. The send loop has no IMAP session, and opening one
-/// here keeps a failure to file the copy from touching the send at all.
-///
-/// Flagged `\Seen`, because a message somebody wrote themselves is not unread
-/// mail waiting to be dealt with, and an unread count that goes up every time
-/// they send something is a count nobody can use.
-async fn file_sent_copy(
-    account: &crate::data::account::Account,
-    folder: &str,
-    raw: &[u8],
-) -> std::result::Result<(), String> {
-    let port = account
-        .imap_port
-        .trim()
-        .parse::<u16>()
-        .map_err(|_| format!("{} has no usable IMAP port", account.name))?;
-    let auth = crate::application::mail_auth::for_account(account)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let controller = MailController::new();
-    controller
-        .connect_imap(
-            account.imap_server.clone(),
-            port,
-            account.username.clone(),
-            auth,
-            account.imap_use_tls,
-            &account.id,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-    let already_read = format!("({})", crate::service::protocols::imap::flag::SEEN);
-    let filed = controller
-        .append_message(folder, Some(&already_read), raw)
-        .await
-        .map_err(|e| e.to_string());
-    let _ = controller.disconnect_imap().await;
-    filed
-}
-
-/// Put a sent message into a folder on this computer.
-///
-/// Marked read, the same as the server copy, because a message somebody wrote
-/// is not unread mail waiting to be dealt with. Stored with its body, since
-/// there is nowhere to fetch it from later.
-fn file_sent_copy_locally(
-    cache: &crate::data::message_cache::MessageCache,
-    account: &crate::data::account::Account,
-    folder: &str,
-    raw: &[u8],
-) -> std::result::Result<(), String> {
-    let parsed = crate::service::mime::parse(raw).map_err(|e| e.to_string())?;
-    let row = cache
-        .get_folder(&account.id, folder)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "there is no Sent folder for this account".to_string())?;
-    let uid = cache.next_local_uid(row.id).map_err(|e| e.to_string())?;
-
-    let addresses = |list: &[crate::common::types::EmailAddress]| {
-        list.iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    let message_row = cache
-        .upsert_message(&crate::data::message_cache::IncomingMessage {
-            folder_id: row.id,
-            uid,
-            message_id: parsed.message_id.clone().unwrap_or_default(),
-            subject: parsed.subject.clone(),
-            from_addr: addresses(&parsed.from),
-            to_addr: addresses(&parsed.to),
-            cc: Some(addresses(&parsed.cc)).filter(|cc| !cc.is_empty()),
-            reply_to: None,
-            date: parsed.date.clone().unwrap_or_default(),
-            internal_date: None,
-            size_bytes: Some(raw.len() as i64),
-            refs_header: None,
-            read: true,
-            starred: false,
-            answered: false,
-            draft: false,
-            deleted: false,
-            has_attachments: !parsed.attachments.is_empty(),
-            safety: crate::service::safety::Verdict::ordinary(),
-            gmail_message_id: None,
-            labels: None,
-            receipt_to: None,
-            pop_uidl: None,
-        })
-        .map_err(|e| e.to_string())?;
-    cache
-        .save_message_body(
-            message_row,
-            parsed.body_plain.as_deref(),
-            parsed.body_html.as_deref(),
-        )
-        .map_err(|e| e.to_string())?;
-    Ok(())
 }
 
 /// Watch the inbox for arrivals on a connection of its own.

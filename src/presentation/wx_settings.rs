@@ -41,6 +41,7 @@ struct SettingsWidgets {
     check_updates: CheckBox,
     // Compose
     preview_before_send: CheckBox,
+    keep_sent_mail_on_this_computer: CheckBox,
     draft_autosave: SpinCtrl,
     // Reading
     sort_order: Choice,
@@ -110,7 +111,8 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 
     // ── Tab 2: Compose
     let compose_panel = Panel::builder(&notebook).build();
-    let (preview_before_send, draft_autosave) = build_compose_tab(&compose_panel, config);
+    let (preview_before_send, keep_sent_mail_on_this_computer, draft_autosave) =
+        build_compose_tab(&compose_panel, config);
     notebook.add_page(&compose_panel, "Compose", false, None);
 
     // ── Tab 3: Reading
@@ -202,6 +204,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         notifications,
         check_updates,
         preview_before_send,
+        keep_sent_mail_on_this_computer,
         draft_autosave,
         sort_order,
         read_receipts,
@@ -325,7 +328,9 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, Ch
 }
 
 /// Compose settings: preview-before-send, default format, signatures.
-fn build_compose_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, SpinCtrl) {
+fn build_compose_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, CheckBox, SpinCtrl) {
+    use crate::application::sent_copy::{KEEP_A_COPY_CONSEQUENCE, KEEP_A_COPY_LABEL};
+
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Sending
@@ -336,6 +341,21 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, SpinCtrl) 
     set_accessible_name(&preview_cb, "Show preview before sending");
     preview_cb.set_value(config.preview_before_send);
     send_sec.add(&preview_cb, 0, SizerFlag::All, 4);
+
+    // The description carries the consequence: with this on, Sent lists every
+    // message twice once the server's own copy comes down. That is what the
+    // setting does rather than a fault, and it is the part nobody can see
+    // coming from the label alone.
+    let keep_a_copy_cb = CheckBox::builder(panel)
+        .with_label(KEEP_A_COPY_LABEL)
+        .build();
+    set_accessible_name_and_description(
+        &keep_a_copy_cb,
+        &name_from_label(KEEP_A_COPY_LABEL),
+        KEEP_A_COPY_CONSEQUENCE,
+    );
+    keep_a_copy_cb.set_value(config.keep_sent_mail_on_this_computer);
+    send_sec.add(&keep_a_copy_cb, 0, SizerFlag::All, 4);
 
     let format_row = BoxSizer::builder(Orientation::Horizontal).build();
     let format_label = StaticText::builder(panel)
@@ -402,7 +422,7 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, SpinCtrl) 
     sizer.add_sizer(&sig_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    (preview_cb, autosave_spin)
+    (preview_cb, keep_a_copy_cb, autosave_spin)
 }
 
 /// Reading settings: sort order, mark-as-read, threading.
@@ -1356,6 +1376,7 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
 
     // Compose
     cfg.preview_before_send = w.preview_before_send.get_value();
+    cfg.keep_sent_mail_on_this_computer = w.keep_sent_mail_on_this_computer.get_value();
     cfg.draft_autosave_minutes =
         AutosaveInterval::from_setting(w.draft_autosave.value().max(0) as u32).minutes();
 

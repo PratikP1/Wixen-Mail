@@ -9,6 +9,15 @@
 //! budget. A message with no cached body is a normal state, not an error. It
 //! means the body has not been fetched yet or has been evicted since, and either
 //! way the fix is to fetch it again.
+//!
+//! Two kinds of message have no server to fetch from: mail collected over POP,
+//! which was downloaded once, and a copy of a sent message filed on this
+//! computer. Their bodies are never evicted and never dropped on a delete,
+//! because this is the only copy.
+//!
+//! Nothing applies the budget today. `evict_bodies_over` has no caller outside
+//! its own tests, so what this paragraph describes is the design and not what
+//! is running.
 
 use super::MessageCache;
 use crate::common::{Error, Result};
@@ -185,20 +194,34 @@ impl MessageCache {
 
     /// Drop least-recently-read bodies until the cache fits `budget_bytes`.
     ///
-    /// Returns the number of bytes freed. Evicting a body loses nothing: it can
-    /// be fetched again from the server.
+    /// Returns the number of bytes freed. Evicting an ordinary body loses
+    /// nothing, because the server still holds the message and it can be
+    /// fetched again. That is not true of every message here: mail collected
+    /// over POP and a copy of a sent message filed on this computer have one
+    /// copy of their text and it is this one, so those are never candidates.
+    ///
+    /// Which means the budget cannot always be met. A cache whose surplus is
+    /// all mail of that kind frees less than it was asked for and stays over,
+    /// and whoever wires this has to accept that rather than loop.
+    ///
+    /// Nothing calls this outside its own tests, so the budget the module
+    /// header describes is not running. Wiring it is a decision with a number
+    /// attached that nobody has taken.
     pub fn evict_bodies_over(&self, budget_bytes: i64) -> Result<i64> {
         let mut total = self.cached_body_bytes()?;
         if total <= budget_bytes {
             return Ok(0);
         }
 
+        let only_copy_is_here = super::messages::ONLY_COPY_IS_HERE;
         let mut stmt = self
             .conn
-            .prepare(
-                "SELECT message_id, bytes FROM message_bodies
-                 ORDER BY last_read_at ASC, message_id ASC",
-            )
+            .prepare(&format!(
+                "SELECT b.message_id, b.bytes FROM message_bodies b
+                 INNER JOIN messages m ON m.id = b.message_id
+                 WHERE NOT {only_copy_is_here}
+                 ORDER BY b.last_read_at ASC, b.message_id ASC",
+            ))
             .map_err(|e| Error::Other(format!("Failed to prepare eviction query: {}", e)))?;
 
         let candidates: Vec<(i64, i64)> = stmt
@@ -537,6 +560,59 @@ mod tests {
         assert!(
             later >= earlier,
             "two readings came back in the wrong order: {earlier} then {later}"
+        );
+    }
+
+    #[test]
+    fn test_eviction_leaves_a_body_that_has_nowhere_to_be_fetched_from() {
+        // The claim above this function said evicting a body loses nothing,
+        // because it can be fetched again. That is untrue for mail collected
+        // over POP and for a copy of a sent message filed here: this is the
+        // only copy and there is no server holding another. Nothing calls this
+        // yet, and wiring it as it was written would have deleted the only copy
+        // of every message of both kinds.
+        let (cache, _dir) = body_test_cache();
+        let ordinary = cache.save_message(&cached(1, "From the server")).unwrap();
+        let second = cache
+            .save_message(&cached(2, "Also from the server"))
+            .unwrap();
+        let over_pop = cache
+            .save_message(&cached(3, "Collected over POP"))
+            .unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET pop_uidl = 'uidl-3' WHERE id = ?1",
+                rusqlite::params![over_pop],
+            )
+            .unwrap();
+        let kept_here = cache.save_message(&cached(4, "Sent from here")).unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET filed_here = 1 WHERE id = ?1",
+                rusqlite::params![kept_here],
+            )
+            .unwrap();
+
+        for id in [ordinary, second, over_pop, kept_here] {
+            cache
+                .save_message_body(id, Some("aaaaaaaaaa"), None)
+                .unwrap();
+        }
+
+        let freed = cache.evict_bodies_over(10).unwrap();
+
+        assert_eq!(freed, 20, "it counted bodies it did not free");
+        assert!(cache.get_message_body(ordinary).unwrap().is_none());
+        assert!(cache.get_message_body(second).unwrap().is_none());
+        assert!(
+            cache.get_message_body(over_pop).unwrap().is_some(),
+            "the only copy of POP mail was evicted"
+        );
+        assert!(
+            cache.get_message_body(kept_here).unwrap().is_some(),
+            "the only copy of a sent message was evicted"
         );
     }
 

@@ -1359,6 +1359,13 @@ impl MessageCache {
         // here, and the time is what the removal policy counts from.
         self.ensure_column_exists("messages", "pop_uidl", "TEXT")?;
         self.ensure_column_exists("messages", "downloaded_at", "TEXT")?;
+        // Whether this program wrote the row itself, rather than a sync
+        // downloading it. A copy of a sent message kept on this computer sits
+        // in a folder a server also fills, and without this the sync reads it
+        // as a message the server no longer has and deletes it with its body.
+        // Zero for every row written before this existed, which is the truthful
+        // answer: nothing wrote such a row until now.
+        self.ensure_column_exists("messages", "filed_here", "INTEGER NOT NULL DEFAULT 0")?;
         // The name recipients see on mail from this account, which is the
         // person's own name and not the label they gave the account. Empty by
         // default, which is exactly what every message sent before this column

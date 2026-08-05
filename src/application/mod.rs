@@ -44,6 +44,7 @@ pub mod repeating;
 pub mod reply;
 pub mod running;
 pub mod search;
+pub mod sent_copy;
 pub mod sign_off;
 pub mod spell_session;
 pub mod tagging;

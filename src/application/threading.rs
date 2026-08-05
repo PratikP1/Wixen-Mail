@@ -267,6 +267,29 @@ pub fn continuing(parent_message_id: &str, parent_references: Option<&str>) -> O
     })
 }
 
+/// The `References` column as the cache stores it, or nothing to store.
+///
+/// Every ancestor the sender named, oldest first, then the message answered
+/// where that is not already among them. Identifiers go in as they arrive,
+/// bare, because that is how both parsers hand them over and how
+/// [`continuing`] expects to read them back.
+///
+/// One rule for both ways a message reaches the cache: downloaded by a sync,
+/// and filed here after it has gone out. Two copies of it would mean the same
+/// message threading one way when it arrives and another when it is sent.
+pub fn as_stored(references: &[String], in_reply_to: Option<&str>) -> Option<String> {
+    let mut chain: Vec<&str> = references.iter().map(String::as_str).collect();
+    if let Some(parent) = in_reply_to
+        && !chain.contains(&parent)
+    {
+        chain.push(parent);
+    }
+    if chain.is_empty() {
+        return None;
+    }
+    Some(chain.join(" "))
+}
+
 /// One identifier with exactly one pair of angle brackets around it.
 fn bracketed(id: &str) -> String {
     let bare = id.trim().trim_start_matches('<').trim_end_matches('>');

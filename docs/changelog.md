@@ -8,6 +8,66 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A message you send is kept somewhere, even when the server will not keep
+  it.** Sending put a copy in the account's Sent folder on the server and wrote
+  nothing on this computer. When that failed the failure went to a log file, the
+  message had already gone, and the copy then existed nowhere at all. There were
+  five ways to reach that: an account that has never checked for mail and so has
+  no Sent folder yet, an account set up with sending but no usable receiving
+  port, a connection that drops between sending and filing, a sign-in that
+  expires in the same gap, and a server that refuses the copy because the
+  mailbox is full or the message is too large.
+
+  The copy still goes to the server first, because that is what puts it on every
+  device. If the server will not take it, a copy is saved in Sent on this
+  computer instead, with its text, and you are told what the server said. If
+  there is nowhere at all to put it, you are told that too, and told to check
+  for mail once so the account learns where its Sent folder is.
+
+  Known limitation: none of this has run against a live mail server.
+
+- **A setting to keep your own copy of sent mail on this computer.** On the
+  Compose tab of Settings: "Keep a copy of sent mail on this computer, even when
+  the server saves one". Off unless you turn it on, and off in settings files
+  written before it existed. With it on, the message is in Sent the moment it
+  goes, without waiting for the next check for mail. The cost is that Sent then
+  lists each message twice once the server's own copy comes down, which is what
+  the setting does rather than a fault. The box says so, and so does the
+  description a screen reader reads after the label.
+
+  Known limitation: whether a screen reader reads that description has not been
+  checked with a screen reader.
+
+- **A copy saved on this computer is no longer deleted by the next check for
+  mail.** This is what made the change above possible rather than a way of
+  losing mail more slowly. Checking for mail compares what the server lists
+  against what is stored, and anything stored that the server does not list is
+  removed, along with its text. A copy saved here was never on the server, so it
+  read as a message the server had dropped. Rows this program writes itself now
+  carry a mark, and neither the ordinary removal pass nor the one that runs when
+  a server renumbers a mailbox touches a marked row. A saved copy is also left
+  out of the comparison entirely, so the count of what a check removed no longer
+  includes messages nothing removed, and the server is not asked about a message
+  it has never had.
+
+- **A reply you sent still sits in the conversation it answers.** The copy saved
+  on this computer recorded nothing about what the message replied to, and did
+  not record where the sender asked replies to go. So a reply filed here started
+  a fresh conversation in your own Sent folder, and replying to it went to your
+  own address. It now carries the same chain of ancestors a downloaded message
+  carries, through the same code, so the two cannot disagree. A message that has
+  no date of its own is filed under the time it was sent, rather than with a
+  blank date that sorts it to an end nobody reads.
+
+  Known limitations, both unchanged from how mail collected over POP has always
+  been filed: attachments are recorded as present but their contents are not
+  saved, so a saved copy says it has attachments and cannot list them. And an
+  account on a provider that files its own copy of everything it sends, which
+  Gmail does, already ends up with two copies in Sent. Nothing here checks for
+  that, because skipping the copy on a guess about a provider risks the copy
+  existing nowhere, which is the failure this release closes. With the new
+  setting on, such an account would have three.
+
 - **Delete works on a POP account.** Pressing Delete on mail collected over POP
   refused, and the reason it gave was about a mail server setting that had
   nothing to do with it. Delete now moves the message to that account's Trash
@@ -78,6 +138,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   nothing. `docs/privacy.md` says what each of them does.
 
 ### Fixed
+
+- **Deleting a message no longer destroys text that exists nowhere else.**
+  Deleting marks the message and drops its saved text, on the reasoning that it
+  can be downloaded again if the message is brought back. That is true of mail
+  on an IMAP server and untrue of everything else: mail collected over POP was
+  downloaded once, and a copy of a sent message saved here was never on a server
+  at all. Both are now kept. A filter rule carrying a delete action reaches this
+  today, so it was not hypothetical.
+
+  The same rule is applied to the routine that drops old message text to keep
+  the cache within a size limit. Nothing calls that routine, so no size limit is
+  actually being applied, and this release does not start applying one: turning
+  it on as it was written would have deleted the only copy of every POP message
+  and every saved sent message on the machine.
 
 - **A refused delete no longer says the change was undone.** The row only leaves
   the list once the server has agreed, so when a delete failed nothing had been
