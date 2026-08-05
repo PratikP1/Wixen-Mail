@@ -54,6 +54,15 @@ pub fn bytes_for(draft: &CachedDraft, from: &str, from_name: Option<&str>) -> Ve
     // is removed at the point of sending, which is where blindness matters.
     push_addresses(&mut out, "Bcc", draft.bcc.as_deref().unwrap_or_default());
     out.push_str(&format!("Subject: {}\r\n", draft.subject));
+    // A reply saved half written is still a reply, and this copy is what
+    // somebody comes back to on another device. Without these it is a copy that
+    // has forgotten what it answers, so finishing it there sends something that
+    // starts a new conversation in the recipient's client.
+    //
+    // Written only when there is something to write. An empty In-Reply-To is
+    // not a message that answers nothing, it is a malformed one.
+    push_if_present(&mut out, "In-Reply-To", draft.in_reply_to.as_deref());
+    push_if_present(&mut out, "References", draft.references.as_deref());
     out.push_str(&format!("Date: {}\r\n", draft.updated_at));
     out.push_str("MIME-Version: 1.0\r\n");
     out.push_str("Content-Type: text/plain; charset=utf-8\r\n");
@@ -67,6 +76,18 @@ pub fn bytes_for(draft: &CachedDraft, from: &str, from_name: Option<&str>) -> Ve
         out.push_str("\r\n");
     }
     out.into_bytes()
+}
+
+/// Write a header, or nothing at all when there is no value for it.
+///
+/// Nothing rather than an empty value, because a header present and empty says
+/// something different from a header absent, and for the threading pair what it
+/// says is malformed.
+fn push_if_present(out: &mut String, header: &str, value: Option<&str>) {
+    let Some(value) = value.map(str::trim).filter(|v| !v.is_empty()) else {
+        return;
+    };
+    out.push_str(&format!("{header}: {value}\r\n"));
 }
 
 /// The value of the `From` line: an address, with a name in front where there
@@ -135,6 +156,40 @@ mod tests {
 
     fn built_by(draft: &CachedDraft, name: &str) -> String {
         String::from_utf8(bytes_for(draft, "me@example.com", Some(name))).expect("valid text")
+    }
+
+    #[test]
+    fn test_a_half_written_reply_keeps_its_place_in_the_conversation() {
+        // The draft carries both values, because a reply saved half written is
+        // still a reply. Leaving them out of the copy filed at the server means
+        // somebody who starts a reply here, saves it, and finishes it on their
+        // phone sends something that starts a new conversation. The reply this
+        // program sends itself gets both; the copy it leaves behind did not.
+        let mut half_written = draft();
+        half_written.in_reply_to = Some("<parent@example.com>".to_string());
+        half_written.references = Some("<first@example.com> <parent@example.com>".to_string());
+
+        let filed = built(&half_written);
+
+        assert!(
+            filed.contains("In-Reply-To: <parent@example.com>\r\n"),
+            "the draft filed at the server says nothing about what it answers:\n{filed}"
+        );
+        assert!(
+            filed.contains("References: <first@example.com> <parent@example.com>\r\n"),
+            "the chain a reply belongs to is missing:\n{filed}"
+        );
+    }
+
+    #[test]
+    fn test_a_draft_that_answers_nothing_carries_neither_header() {
+        // An absent header and an empty one are different things to a mail
+        // client, and an empty In-Reply-To is not a message that answers
+        // nothing, it is a malformed one.
+        let filed = built(&draft());
+
+        assert!(!filed.contains("In-Reply-To:"), "{filed}");
+        assert!(!filed.contains("References:"), "{filed}");
     }
 
     #[test]

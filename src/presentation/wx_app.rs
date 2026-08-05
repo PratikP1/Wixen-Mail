@@ -3722,7 +3722,11 @@ impl WxMailApp {
             .append_item(
                 ID_DELETE_OUTRIGHT,
                 "Delete &Permanently\tShift+Del",
-                "Remove this message from the server without putting it in the Trash",
+                // Not "from the server". On an account that collects its mail
+                // rather than reading it in place, this takes the message off
+                // this computer and the server still has it. Saying otherwise
+                // is the claim somebody acts on when they mean to be rid of it.
+                "Remove this message without putting it in the Trash",
             )
             .append_item(
                 ID_SEND_RECEIPT,
@@ -5973,7 +5977,11 @@ fn replace_local_draft(
         date: draft.updated_at.clone(),
         internal_date: None,
         size_bytes: Some(raw.len() as i64),
-        refs_header: None,
+        // What this answers, kept on the row as well as in the bytes above.
+        // The row is what the list reads and what a reply resumed from here is
+        // built out of, so a row with neither forgets the conversation even
+        // though the copy beside it remembers.
+        refs_header: draft.references.clone(),
         // Your own unfinished message is not unread mail to deal with.
         read: true,
         starred: false,
