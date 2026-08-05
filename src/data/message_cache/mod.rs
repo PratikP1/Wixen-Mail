@@ -232,6 +232,23 @@ impl AddressBook {
 pub struct ProviderIdentity {
     pub address_book: AddressBook,
     pub provider_contact_id: String,
+    /// The version marker this address book last gave for this contact, when
+    /// it gives one at all.
+    ///
+    /// Google refuses a change to a contact that does not carry the marker it
+    /// last handed out. It belongs to one address book's copy of one contact
+    /// rather than to the contact, because a contact has several copies and
+    /// each has its own version. Nothing stored before this column existed has
+    /// one, and no address book has to give one.
+    pub provider_version: Option<String>,
+    /// Whether this address book has yet to be told about a change made here.
+    ///
+    /// Per address book and not per contact, because one push can be accepted
+    /// and another refused in the same run. Kept on the contact instead, a
+    /// failure at one address book either lost the change at the other or
+    /// resent it to both for ever, depending on which way the flag was
+    /// cleared.
+    pub change_is_waiting: bool,
 }
 
 /// Contact entry for account address book
@@ -272,6 +289,18 @@ pub struct ContactEntry {
     pub addresses_json: Option<String>,
     /// JSON array of `CustomFieldEntry`
     pub custom_fields_json: Option<String>,
+    /// Whether this contact was changed here and no address book has been told.
+    ///
+    /// Set by the one path an edit takes, `presentation::contact_convert`, and
+    /// cleared once every address book that knows the contact has accepted the
+    /// change. A field on the contact rather than a call somebody has to
+    /// remember: the compiler names every place a contact is built, and a
+    /// change that never sets this is a change that never leaves.
+    ///
+    /// A contact harvested from a message header is not set, deliberately. An
+    /// address this application guessed at is not something somebody asked to
+    /// have written into their real address book.
+    pub pending: bool,
     /// Every address book that knows this contact, and what each one calls it.
     ///
     /// A list rather than one identifier, because the same person is
@@ -298,7 +327,13 @@ impl ContactEntry {
         &self,
         address_book: AddressBook,
         provider_contact_id: &str,
+        provider_version: Option<&str>,
     ) -> ContactEntry {
+        let still_waiting = self
+            .known_to
+            .iter()
+            .find(|identity| identity.address_book == address_book)
+            .is_some_and(|identity| identity.change_is_waiting);
         let mut known_to: Vec<ProviderIdentity> = self
             .known_to
             .iter()
@@ -308,8 +343,42 @@ impl ContactEntry {
         known_to.push(ProviderIdentity {
             address_book,
             provider_contact_id: provider_contact_id.to_string(),
+            provider_version: provider_version.map(str::to_string),
+            // Whether a change is still waiting for this address book is not
+            // something a read can answer. A pull naming the contact again
+            // must not clear a push that has not gone through yet.
+            change_is_waiting: still_waiting,
         });
         ContactEntry {
+            known_to,
+            ..self.clone()
+        }
+    }
+
+    /// The contact, with this address book told about the change made here.
+    ///
+    /// The change stops waiting only once every address book that knows the
+    /// contact has been told. Cleared any earlier, an address book that
+    /// refused the change would never be offered it again.
+    pub fn told(&self, address_book: &AddressBook, provider_version: Option<&str>) -> ContactEntry {
+        let known_to: Vec<ProviderIdentity> = self
+            .known_to
+            .iter()
+            .map(|identity| {
+                if &identity.address_book != address_book {
+                    return identity.clone();
+                }
+                ProviderIdentity {
+                    change_is_waiting: false,
+                    provider_version: provider_version
+                        .map(str::to_string)
+                        .or_else(|| identity.provider_version.clone()),
+                    ..identity.clone()
+                }
+            })
+            .collect();
+        ContactEntry {
+            pending: known_to.iter().any(|identity| identity.change_is_waiting),
             known_to,
             ..self.clone()
         }
@@ -1344,11 +1413,28 @@ impl MessageCache {
         self.ensure_column_exists("contacts", "phones_json", "TEXT")?;
         self.ensure_column_exists("contacts", "addresses_json", "TEXT")?;
         self.ensure_column_exists("contacts", "custom_fields_json", "TEXT")?;
+        // The version marker one address book last gave for one contact. Its
+        // table is created with CREATE TABLE IF NOT EXISTS and the contacts
+        // rebuild never touches it, so where this sits does not matter.
+        self.ensure_column_exists("contact_identities", "provider_version", "TEXT")?;
+        self.ensure_column_exists(
+            "contact_identities",
+            "change_is_waiting",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         // After the columns above, and never before them: the rebuild copies
         // every column by name, so a table written by an older build has to
         // have them all first or the copy names one that is not there and the
         // application cannot open the database at all.
         self.rebuild_contacts_keyed_by_the_contact()?;
+        // After the rebuild and never before it. The rebuild copies the
+        // columns named in CONTACT_COLUMNS into a table written out by hand,
+        // and that table does not have this column. Added first, the copy
+        // would name a column the new table lacks, the migration would fail,
+        // and the database would never open again with no earlier version left
+        // that could open it either. Nothing the rebuild moves was ever
+        // waiting to be sent, so 0 is the true answer for every row it carries.
+        self.ensure_column_exists("contacts", "pending", "INTEGER NOT NULL DEFAULT 0")?;
         // Before the indexes below and not after them: each rebuild drops its
         // table and the indexes over it go with it, and the index list at the
         // end of this function is what puts those back.

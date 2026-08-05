@@ -170,6 +170,16 @@ pub fn refusal(doing: &str) -> String {
     )
 }
 
+/// Whether a change was refused by the setting rather than by the provider.
+///
+/// One answer to the question, here beside the refusal itself, because it is
+/// asked by every sync that sends anything and two answers is how one of them
+/// comes to be wrong. [`Outward::changing`] raises this before the request is
+/// built, so nothing left the machine and the change is still worth keeping.
+pub fn was_refused_by_the_gate(error: &crate::common::Error) -> bool {
+    matches!(error, crate::common::Error::Security(_))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

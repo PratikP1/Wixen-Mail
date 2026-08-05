@@ -112,11 +112,60 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   account as one nobody had synced. The next sync then treated the whole address
   book as new.
 
-  **Known limitations:** a contact the provider no longer lists is still kept
-  here after a full re-read. Deciding to delete somebody's contacts because a
-  read came back short is a write decision, and it waits for the work on sending
-  changes outward. None of the address book syncing has run against a live
-  Google or Microsoft account.
+- **A change you make to a contact now reaches every address book that has that
+  contact.** Correcting a phone number used to stay on this computer, and the
+  next sync put the old number back. The correction is now sent out the next
+  time that account syncs, to Gmail and to Outlook if both have that person, and
+  each is sent its own name for them. The status line says how many changes
+  went.
+
+  Which address books get it is yours to decide, in Settings, on the Language
+  tab under Contacts: "Send a change to a contact to every address book that has
+  that contact". It is on to begin with. Turned off, a change goes only to the
+  address book the contact came from and the others keep what they had.
+
+  As with the calendar, it only happens for an account whose owner has turned on
+  Allow Changes. With that setting off nothing leaves the computer, the change
+  waits rather than being lost, and the status line names the setting instead of
+  reporting an error you cannot act on. Turning on the new setting does not
+  switch any of that on.
+
+  If one address book takes the change and another refuses it, only the one that
+  refused is asked again next time, so a Gmail failure cannot send your edit to
+  Outlook twice.
+
+- **The Allowed Changes settings are on the screen again.** The section holding
+  "Let Wixen Mail change my tasks, contacts and calendar", "Let Wixen Mail send
+  and delete mail" and the sentence saying none of it has been tried against a
+  real account was built and never placed on the panel, so the warning had
+  nowhere to appear and the two boxes were not where they said they were. This
+  needs a look on screen and with a screen reader to confirm it now reads in the
+  right order.
+
+- **A contact sent to Outlook now arrives with everything you typed.** Only the
+  first email address and the first phone number went, no postal address went at
+  all, and a website could not go because there was nowhere to put it. All of
+  them now go: every address, every number in the place Outlook keeps that kind
+  of number, both postal addresses, and the website. A contact sent to Google
+  now carries its postal address too, which was the one thing missing there.
+
+- **Editing a contact no longer relabels it as one you made here.** Correcting a
+  detail on a contact that came from Gmail used to record it as having come from
+  nowhere. Nothing visible depended on that until now; with changes going out,
+  it decided where the change went.
+
+  **Known limitations:** none of this has met a live Google or Outlook address
+  book, and the version marker Google wants with a change is stored and sent but
+  has never been checked against a real one. A change sent to Outlook can add
+  and correct but cannot empty: clearing a contact's nickname here leaves the
+  old nickname at Outlook, which is the direction that loses less. A contact you
+  type in here still reaches one address book, whichever syncs first, rather
+  than all of them; that is unfinished. When a change cannot be sent, the
+  sentence saying why goes to the log file and the screen shows only a count, so
+  you learn that something failed and not what. A contact the provider no longer
+  lists is still kept here after a full re-read, unchanged: deciding to delete
+  somebody's contacts because a read came back short needs to know the read was
+  complete, which is separate work.
 
 - **F1 opens help for whatever you are looking at, and the Help menu lists
   every page.** The guides were written and they ship beside the program, and

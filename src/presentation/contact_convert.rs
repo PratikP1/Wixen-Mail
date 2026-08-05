@@ -114,6 +114,9 @@ pub fn to_editor(stored: &StoredContact) -> EditorContact {
     }
 }
 
+/// What a contact's source is called when it came from no address book.
+const MADE_HERE: &str = "local";
+
 /// What to store, from what the editor holds.
 ///
 /// The record being replaced is passed in whole, and everything the editor
@@ -202,7 +205,14 @@ pub fn to_stored(
         birthday: blank_to_none(&editor.birthday),
         avatar_url: blank_to_none(&editor.avatar_url),
         avatar_data_base64: None,
-        source_provider: Some("local".to_string()),
+        // Which address book the contact came from, kept from the record being
+        // replaced. Written flat as "local" on every edit, this relabelled a
+        // Gmail contact as one made here the first time somebody corrected a
+        // phone number, and a contact that came from nowhere is the only one
+        // that is really local.
+        source_provider: replacing
+            .and_then(|existing| existing.source_provider.clone())
+            .or_else(|| Some(MADE_HERE.to_string())),
         last_synced_at: None,
         vcard_raw: None,
         notes: blank_to_none(&editor.notes),
@@ -217,8 +227,23 @@ pub fn to_stored(
         phones_json: store_list(&phones),
         addresses_json: store_list(&addresses),
         custom_fields_json: store_list(&custom),
+        // The one path an edit or a newly typed contact takes, so this is the
+        // one place that says a change is waiting to be sent.
+        pending: true,
+        // Every address book that knows the contact needs telling, which is
+        // the whole of the rule: one edit reaches all of them, not whichever
+        // one happens to sync first.
         known_to: replacing
-            .map(|existing| existing.known_to.clone())
+            .map(|existing| {
+                existing
+                    .known_to
+                    .iter()
+                    .map(|identity| crate::data::message_cache::ProviderIdentity {
+                        change_is_waiting: true,
+                        ..identity.clone()
+                    })
+                    .collect()
+            })
             .unwrap_or_default(),
     }
 }
@@ -369,8 +394,60 @@ mod tests {
         stored.known_to = vec![crate::data::message_cache::ProviderIdentity {
             address_book: crate::data::message_cache::AddressBook::Google,
             provider_contact_id: "people/c1".to_string(),
+            provider_version: None,
+            change_is_waiting: false,
         }];
         stored
+    }
+
+    #[test]
+    fn test_a_contact_edited_here_is_marked_as_waiting_to_be_sent() {
+        let before = a_contact_being_edited();
+
+        let after = to_stored(&to_editor(&before), "acct", Some(&before));
+
+        assert!(after.pending, "an edit made here has somewhere to go");
+    }
+
+    #[test]
+    fn test_an_edit_leaves_every_address_book_that_knows_the_contact_needing_to_be_told() {
+        let mut before = a_contact_being_edited();
+        before
+            .known_to
+            .push(crate::data::message_cache::ProviderIdentity {
+                address_book: crate::data::message_cache::AddressBook::Microsoft,
+                provider_contact_id: "AAMkAGI2".to_string(),
+                provider_version: None,
+                change_is_waiting: false,
+            });
+
+        let after = to_stored(&to_editor(&before), "acct", Some(&before));
+
+        assert_eq!(after.known_to.len(), 2);
+        assert!(
+            after
+                .known_to
+                .iter()
+                .all(|identity| identity.change_is_waiting),
+            "one edit, every address book that has the contact"
+        );
+    }
+
+    #[test]
+    fn test_editing_a_contact_does_not_forget_which_address_book_it_came_from() {
+        let mut before = a_contact_being_edited();
+        before.source_provider = Some("gmail".to_string());
+
+        let after = to_stored(&to_editor(&before), "acct", Some(&before));
+
+        assert_eq!(after.source_provider.as_deref(), Some("gmail"));
+    }
+
+    #[test]
+    fn test_a_contact_typed_here_came_from_nowhere_else() {
+        let typed = to_stored(&editor_contact(), "acct", None);
+
+        assert_eq!(typed.source_provider.as_deref(), Some("local"));
     }
 
     #[test]

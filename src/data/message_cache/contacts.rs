@@ -23,9 +23,10 @@ impl MessageCache {
             "INSERT INTO contacts
              (id, account_id, name, email, phone, company, job_title, website, address, birthday,
               avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at, updated_at,
-              nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json)
+              nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
+              pending)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19,
-                    ?20, ?21, ?22, ?23, ?24, ?25, ?26)
+                    ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
              ON CONFLICT(id) DO UPDATE SET
                 account_id = excluded.account_id,
                 name = excluded.name,
@@ -50,7 +51,8 @@ impl MessageCache {
                 emails_json = excluded.emails_json,
                 phones_json = excluded.phones_json,
                 addresses_json = excluded.addresses_json,
-                custom_fields_json = excluded.custom_fields_json",
+                custom_fields_json = excluded.custom_fields_json,
+                pending = excluded.pending",
             params![
                 &contact.id, &contact.account_id, &contact.name, &contact.email,
                 &contact.phone, &contact.company,
@@ -60,7 +62,7 @@ impl MessageCache {
                 &contact.favorite, &contact.created_at, &now,
                 &contact.nickname, &contact.department, &contact.relationship,
                 &contact.emails_json, &contact.phones_json, &contact.addresses_json,
-                &contact.custom_fields_json,
+                &contact.custom_fields_json, &contact.pending,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
 
@@ -74,13 +76,16 @@ impl MessageCache {
             saving
                 .execute(
                     "INSERT INTO contact_identities
-                     (contact_id, account_id, address_book, provider_contact_id)
-                     VALUES (?1, ?2, ?3, ?4)",
+                     (contact_id, account_id, address_book, provider_contact_id, provider_version,
+                      change_is_waiting)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     params![
                         &contact.id,
                         &contact.account_id,
                         identity.address_book.as_stored(),
-                        &identity.provider_contact_id
+                        &identity.provider_contact_id,
+                        &identity.provider_version,
+                        &identity.change_is_waiting
                     ],
                 )
                 .map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
@@ -127,7 +132,8 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT contact_id, address_book, provider_contact_id
+                "SELECT contact_id, address_book, provider_contact_id, provider_version,
+                        change_is_waiting
                  FROM contact_identities WHERE account_id = ?1 ORDER BY address_book",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare identity query: {}", e)))?;
@@ -138,6 +144,8 @@ impl MessageCache {
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, bool>(4)?,
                 ))
             })
             .map_err(|e| Error::Other(format!("Failed to query contact identities: {}", e)))?
@@ -145,13 +153,17 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to collect contact identities: {}", e)))?;
 
         let mut by_contact: HashMap<String, Vec<ProviderIdentity>> = HashMap::new();
-        for (contact_id, address_book, provider_contact_id) in rows {
+        for (contact_id, address_book, provider_contact_id, provider_version, change_is_waiting) in
+            rows
+        {
             by_contact
                 .entry(contact_id)
                 .or_default()
                 .push(ProviderIdentity {
                     address_book: AddressBook::from_stored(&address_book),
                     provider_contact_id,
+                    provider_version,
+                    change_is_waiting,
                 });
         }
         Ok(by_contact)
@@ -178,7 +190,8 @@ impl MessageCache {
         let mut stmt = self.conn.prepare(
             "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
                     avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
-                    nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json
+                    nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
+                    pending
              FROM contacts
              WHERE account_id = ?1
              ORDER BY favorite DESC, name ASC"
@@ -220,6 +233,7 @@ impl MessageCache {
             phones_json: row.get(22)?,
             addresses_json: row.get(23)?,
             custom_fields_json: row.get(24)?,
+            pending: row.get(25)?,
             known_to: Vec::new(),
         })
     }
@@ -235,7 +249,8 @@ impl MessageCache {
         let mut stmt = self.conn.prepare(
             "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
                     avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
-                    nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json
+                    nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
+                    pending
              FROM contacts
              WHERE account_id = ?1
                AND (
@@ -333,6 +348,11 @@ impl MessageCache {
                             phones_json: None,
                             addresses_json: None,
                             custom_fields_json: None,
+                            // An address seen in a message header is a guess
+                            // this application made. Writing somebody's
+                            // guesses into their real address book is not
+                            // what they asked for.
+                            pending: false,
                             known_to: Vec::new(),
                         };
                         match self.save_contact(&contact) {
@@ -859,6 +879,9 @@ impl MessageCache {
             phones_json,
             addresses_json,
             custom_fields_json: None,
+            // A contact read out of a card somebody imported is not a change
+            // they made to an address book that already holds it.
+            pending: false,
             known_to: Vec::new(),
         })
     }
@@ -1060,6 +1083,7 @@ mod tests {
             phones_json: None,
             addresses_json: None,
             custom_fields_json: None,
+            pending: false,
             known_to: Vec::new(),
         }
     }
@@ -1504,9 +1528,12 @@ mod tests {
             phones_json: Some(r#"[{"label":"Mobile","number":"+1-555-0101"},{"label":"Home","number":"+1-555-0102"}]"#.to_string()),
             addresses_json: Some(r#"[{"label":"Home","street":"123 Math St","city":"London","state":"","zip":"EC1A","country":"UK"}]"#.to_string()),
             custom_fields_json: Some(r#"[{"label":"GitHub","value":"adalovelace"}]"#.to_string()),
+            pending: false,
             known_to: vec![ProviderIdentity {
                 address_book: AddressBook::Google,
                 provider_contact_id: "gmail-contact-1".to_string(),
+                provider_version: None,
+                change_is_waiting: false,
             }],
         };
 
@@ -1806,10 +1833,14 @@ mod tests {
             ProviderIdentity {
                 address_book: AddressBook::Google,
                 provider_contact_id: "people/c1".to_string(),
+                provider_version: None,
+                change_is_waiting: false,
             },
             ProviderIdentity {
                 address_book: AddressBook::Microsoft,
                 provider_contact_id: "AAMkAGI2".to_string(),
+                provider_version: None,
+                change_is_waiting: false,
             },
         ];
 
@@ -1824,12 +1855,266 @@ mod tests {
     }
 
     #[test]
+    fn test_the_version_google_gave_a_contact_is_kept_with_the_address_book_that_gave_it() {
+        let cache = a_cache("provider_version");
+        let mut alice = a_contact("alice-1", "Alice Smith");
+        alice.known_to = vec![
+            ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: "people/c1".to_string(),
+                provider_version: Some("etag-1".to_string()),
+                change_is_waiting: false,
+            },
+            ProviderIdentity {
+                address_book: AddressBook::Microsoft,
+                provider_contact_id: "AAMkAGI2".to_string(),
+                provider_version: None,
+                change_is_waiting: false,
+            },
+        ];
+
+        cache.save_contact(&alice).expect("the contact to save");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+        let google = stored[0]
+            .known_to
+            .iter()
+            .find(|identity| identity.address_book == AddressBook::Google)
+            .expect("Google to still know the contact");
+        assert_eq!(google.provider_version.as_deref(), Some("etag-1"));
+        let microsoft = stored[0]
+            .known_to
+            .iter()
+            .find(|identity| identity.address_book == AddressBook::Microsoft)
+            .expect("Microsoft to still know the contact");
+        assert_eq!(microsoft.provider_version, None);
+    }
+
+    #[test]
+    fn test_which_address_book_still_needs_telling_survives_being_stored() {
+        let cache = a_cache("waiting_identity");
+        let mut alice = a_contact("alice-1", "Alice Smith");
+        alice.pending = true;
+        alice.known_to = vec![
+            ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: "people/c1".to_string(),
+                provider_version: None,
+                change_is_waiting: true,
+            },
+            ProviderIdentity {
+                address_book: AddressBook::Microsoft,
+                provider_contact_id: "AAMkAGI2".to_string(),
+                provider_version: None,
+                change_is_waiting: false,
+            },
+        ];
+
+        cache.save_contact(&alice).expect("the contact to save");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+        let waiting: Vec<&AddressBook> = stored[0]
+            .known_to
+            .iter()
+            .filter(|identity| identity.change_is_waiting)
+            .map(|identity| &identity.address_book)
+            .collect();
+        assert_eq!(waiting, vec![&AddressBook::Google]);
+    }
+
+    #[test]
+    fn test_telling_one_address_book_leaves_the_other_still_waiting() {
+        let mut alice = a_contact("alice-1", "Alice Smith");
+        alice.pending = true;
+        alice.known_to = vec![
+            ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: "people/c1".to_string(),
+                provider_version: None,
+                change_is_waiting: true,
+            },
+            ProviderIdentity {
+                address_book: AddressBook::Microsoft,
+                provider_contact_id: "AAMkAGI2".to_string(),
+                provider_version: None,
+                change_is_waiting: true,
+            },
+        ];
+
+        let after_google = alice.told(&AddressBook::Google, Some("etag-2"));
+
+        assert!(
+            after_google.pending,
+            "Microsoft has still not been told, so the change is still waiting"
+        );
+        assert_eq!(
+            after_google
+                .known_to
+                .iter()
+                .find(|i| i.address_book == AddressBook::Google)
+                .and_then(|i| i.provider_version.as_deref()),
+            Some("etag-2")
+        );
+
+        let after_both = after_google.told(&AddressBook::Microsoft, None);
+
+        assert!(
+            !after_both.pending,
+            "every address book that knows the contact has been told"
+        );
+    }
+
+    #[test]
+    fn test_a_contact_edited_here_and_read_back_is_still_waiting_to_be_sent() {
+        let cache = a_cache("pending_contact");
+        let mut alice = a_contact("alice-1", "Alice Smith");
+        alice.pending = true;
+
+        cache.save_contact(&alice).expect("the contact to save");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+        assert!(stored[0].pending);
+    }
+
+    /// A database at the shape the last build left behind: contacts already
+    /// keyed by the contact, identities already in their own table, and
+    /// neither carrying any of the columns this change adds.
+    fn a_directory_holding_the_shape_before_changes_were_sent(
+        what_for: &str,
+    ) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock that has passed 1970")
+            .as_nanos();
+        let dir = env::temp_dir().join(format!("wixen_mail_before_sending_{what_for}_{nanos}"));
+        std::fs::create_dir_all(&dir).expect("a directory to write into");
+        let conn =
+            rusqlite::Connection::open(dir.join("message_cache.db")).expect("a database to open");
+        conn.execute(
+            "CREATE TABLE contacts (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL DEFAULT '',
+                phone TEXT, company TEXT, job_title TEXT, website TEXT, address TEXT,
+                birthday TEXT, avatar_url TEXT, avatar_data_base64 TEXT, source_provider TEXT,
+                last_synced_at TEXT, vcard_raw TEXT, notes TEXT, favorite BOOLEAN DEFAULT 0,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                nickname TEXT, department TEXT, relationship TEXT, emails_json TEXT,
+                phones_json TEXT, addresses_json TEXT, custom_fields_json TEXT
+            )",
+            [],
+        )
+        .expect("the contacts table as the last build left it");
+        conn.execute(
+            "CREATE TABLE contact_identities (
+                contact_id TEXT NOT NULL,
+                account_id TEXT NOT NULL,
+                address_book TEXT NOT NULL,
+                provider_contact_id TEXT NOT NULL,
+                PRIMARY KEY (contact_id, address_book)
+            )",
+            [],
+        )
+        .expect("the identities table as the last build left it");
+        conn.execute(
+            "INSERT INTO contacts
+             (id, account_id, name, email, phone, company, website, birthday, notes,
+              source_provider, favorite, created_at, updated_at, emails_json)
+             VALUES ('alice-1', 'test@example.com', 'Alice Smith', 'alice@example.com',
+                     '+44 113 496 0000', 'Analytical Engines', 'https://example.com',
+                     '1815-12-10', 'A note', 'gmail', 1,
+                     '2020-01-01T00:00:00Z', '2020-01-01T00:00:00Z',
+                     '[{\"label\":\"Home\",\"address\":\"alice@example.com\"}]')",
+            [],
+        )
+        .expect("a contact from the last build");
+        conn.execute(
+            "INSERT INTO contact_identities (contact_id, account_id, address_book, provider_contact_id)
+             VALUES ('alice-1', 'test@example.com', 'gmail', 'people/c1'),
+                    ('alice-1', 'test@example.com', 'outlook', 'AAMkAGI2')",
+            [],
+        )
+        .expect("two identities from the last build");
+        drop(conn);
+        dir
+    }
+
+    #[test]
+    fn test_a_database_from_the_build_before_changes_were_sent_keeps_every_field() {
+        let dir = a_directory_holding_the_shape_before_changes_were_sent("every_field");
+
+        let cache = MessageCache::new(dir, None).expect("the older database to open");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+        assert_eq!(stored.len(), 1);
+        let alice = &stored[0];
+        assert_eq!(alice.name, "Alice Smith");
+        assert_eq!(alice.email, "alice@example.com");
+        assert_eq!(alice.phone.as_deref(), Some("+44 113 496 0000"));
+        assert_eq!(alice.company.as_deref(), Some("Analytical Engines"));
+        assert_eq!(alice.website.as_deref(), Some("https://example.com"));
+        assert_eq!(alice.birthday.as_deref(), Some("1815-12-10"));
+        assert_eq!(alice.notes.as_deref(), Some("A note"));
+        assert_eq!(alice.source_provider.as_deref(), Some("gmail"));
+        assert!(alice.favorite);
+        assert_eq!(alice.created_at, "2020-01-01T00:00:00Z");
+        assert!(alice.emails_json.is_some());
+        // The new columns read as what an older row honestly is: nothing here
+        // was ever waiting to be sent, so upgrading writes to nobody.
+        assert!(!alice.pending);
+        assert_eq!(alice.known_to.len(), 2);
+        assert_eq!(alice.id_in(&AddressBook::Google), Some("people/c1"));
+        assert_eq!(alice.id_in(&AddressBook::Microsoft), Some("AAMkAGI2"));
+        assert!(
+            alice
+                .known_to
+                .iter()
+                .all(|identity| identity.provider_version.is_none() && !identity.change_is_waiting)
+        );
+    }
+
+    #[test]
+    fn test_a_contact_stored_by_an_older_build_is_not_waiting_to_be_sent() {
+        // Nothing here could disagree with an address book before this shipped,
+        // so nothing stored before it is waiting to be sent anywhere. The
+        // column defaults to that answer, which is why upgrading writes
+        // nothing to anybody's address book.
+        let dir = a_directory_holding_an_older_database("older_pending");
+
+        let cache = MessageCache::new(dir, None).expect("the older database to open");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+        assert_eq!(stored.len(), 3);
+        assert!(stored.iter().all(|contact| !contact.pending));
+        assert!(
+            stored
+                .iter()
+                .flat_map(|contact| &contact.known_to)
+                .all(|identity| identity.provider_version.is_none()),
+            "an address book that never gave a version marker has none"
+        );
+    }
+
+    #[test]
     fn test_an_address_book_this_build_does_not_know_survives_being_stored() {
         let cache = a_cache("unknown_address_book");
         let mut someone = a_contact("someone-1", "Someone");
         someone.known_to = vec![ProviderIdentity {
             address_book: AddressBook::Other("carddav".to_string()),
             provider_contact_id: "urn:uuid:1".to_string(),
+            provider_version: None,
+            change_is_waiting: false,
         }];
 
         cache.save_contact(&someone).expect("the contact to save");
@@ -1851,6 +2136,8 @@ mod tests {
         alice.known_to = vec![ProviderIdentity {
             address_book: AddressBook::Google,
             provider_contact_id: "people/c1".to_string(),
+            provider_version: None,
+            change_is_waiting: false,
         }];
         cache.save_contact(&alice).expect("the contact to save");
 
@@ -1869,6 +2156,8 @@ mod tests {
         alice.known_to = vec![ProviderIdentity {
             address_book: AddressBook::Google,
             provider_contact_id: "people/c1".to_string(),
+            provider_version: None,
+            change_is_waiting: false,
         }];
         cache.save_contact(&alice).expect("the contact to save");
         cache

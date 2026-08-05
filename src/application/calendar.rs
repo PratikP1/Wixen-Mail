@@ -294,15 +294,6 @@ fn whose_change(
     }
 }
 
-/// Whether the provider refused because of the setting rather than the change.
-///
-/// Matched on the error the gate raises, which is the one thing every refused
-/// write has in common: [`crate::service::outward::Outward::changing`] returns
-/// it before the request is built, so nothing left the machine.
-fn refused_because_this_account_is_read_only(error: &crate::common::Error) -> bool {
-    matches!(error, crate::common::Error::Security(_))
-}
-
 /// Everything waiting to go to one provider, with the calendar at it to send to.
 fn waiting_for(
     cache: &MessageCache,
@@ -371,7 +362,7 @@ fn deletions_for(
 fn record(sent: Result<()>, doing: &str, result: &mut CalendarSyncResult) {
     match sent {
         Ok(()) => result.sent += 1,
-        Err(e) if refused_because_this_account_is_read_only(&e) => {
+        Err(e) if crate::service::outward::was_refused_by_the_gate(&e) => {
             result.waiting_on_the_setting += 1;
         }
         Err(e) => result.errors.push(format!("{doing}: {e}")),

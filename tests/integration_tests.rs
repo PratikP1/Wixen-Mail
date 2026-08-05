@@ -705,6 +705,7 @@ fn test_contact_item_display_conversion() {
         phones_json: None,
         addresses_json: None,
         custom_fields_json: None,
+        pending: false,
         known_to: Vec::new(),
     };
 

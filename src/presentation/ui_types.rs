@@ -380,6 +380,10 @@ pub enum UIUpdate {
         created: usize,
         updated: usize,
         deleted: usize,
+        /// Changes made here that an address book has now been told about.
+        sent: usize,
+        /// Changes still here because the account is open for reading only.
+        waiting_on_the_setting: usize,
         errors: Vec<String>,
     },
     /// Calendar events loaded for display
@@ -1172,6 +1176,7 @@ mod tests {
             phones_json: None,
             addresses_json: None,
             custom_fields_json: None,
+            pending: false,
             known_to: Vec::new(),
         };
         let item = ContactItem::from_entry(&entry);
@@ -1210,6 +1215,7 @@ mod tests {
             phones_json: None,
             addresses_json: None,
             custom_fields_json: None,
+            pending: false,
             known_to: Vec::new(),
         };
         let item = ContactItem::from_entry(&entry);

@@ -58,6 +58,7 @@ struct SettingsWidgets {
     check_spelling_before_send: CheckBox,
     allow_mail: CheckBox,
     allow_pim: CheckBox,
+    send_contact_changes_everywhere: CheckBox,
     check_spelling_as_you_type: CheckBox,
     // Calendar & PIM
     cal_default_view: Choice,
@@ -129,8 +130,14 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 
     // ── Tab 4: Language & Spelling
     let lang_panel = Panel::builder(&notebook).build();
-    let (language, check_spelling_before_send, check_spelling_as_you_type, allow_mail, allow_pim) =
-        build_language_tab(&lang_panel, config);
+    let (
+        language,
+        check_spelling_before_send,
+        check_spelling_as_you_type,
+        allow_mail,
+        allow_pim,
+        send_contact_changes_everywhere,
+    ) = build_language_tab(&lang_panel, config);
     notebook.add_page(&lang_panel, "Language", false, None);
 
     // ── Tab 5: Calendar & PIM
@@ -210,6 +217,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         check_spelling_as_you_type,
         allow_mail,
         allow_pim,
+        send_contact_changes_everywhere,
         cal_default_view,
         cal_show_weekends,
         cal_first_day,
@@ -767,10 +775,15 @@ fn labelled_choice(
 }
 
 /// Language & Spelling: which language to check, and whether to check on send.
+/// One sentence, said once, in the label and in the accessible name. Those two
+/// were hand-written copies elsewhere in this file and had already drifted.
+const CONTACT_CHANGES_WHEN_THIS_IS_OFF: &str =
+    "Off: a change goes only to the address book the contact came from.";
+
 fn build_language_tab(
     panel: &Panel,
     config: &AppConfig,
-) -> (Choice, CheckBox, CheckBox, CheckBox, CheckBox) {
+) -> (Choice, CheckBox, CheckBox, CheckBox, CheckBox, CheckBox) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Language
@@ -866,6 +879,39 @@ fn build_language_tab(
     );
     allowed_sec.add(&allowed_note, 0, SizerFlag::Expand | SizerFlag::All, 4);
 
+    // This line was missing. The section was built, the two checkboxes and the
+    // experimental warning were put into it, and the section itself was never
+    // put into the panel's layout, so the one place that says none of this has
+    // run against a real account had nowhere to appear.
+    sizer.add_sizer(&allowed_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    // ── Contacts ─────────────────────────────────────────────────────────
+    //
+    // Directly under the warning above, so somebody reading down the panel
+    // meets the sentence saying none of this has run against a real account
+    // before they meet this. The label says what happens rather than naming
+    // the machinery, and the sentence under it says what turning it off does,
+    // because a checkbox alone cannot say what its unticked state means.
+    let contacts_sec = section(panel, "Contacts");
+
+    let send_contact_changes_everywhere = CheckBox::builder(panel)
+        .with_label("&Send a change to a contact to every address book that has that contact")
+        .build();
+    set_accessible_name(
+        &send_contact_changes_everywhere,
+        "Send a change to a contact to every address book that has that contact",
+    );
+    send_contact_changes_everywhere.set_value(config.send_contact_changes_everywhere);
+    contacts_sec.add(&send_contact_changes_everywhere, 0, SizerFlag::All, 4);
+
+    let contacts_note = StaticText::builder(panel)
+        .with_label(CONTACT_CHANGES_WHEN_THIS_IS_OFF)
+        .build();
+    set_accessible_name(&contacts_note, CONTACT_CHANGES_WHEN_THIS_IS_OFF);
+    contacts_sec.add(&contacts_note, 0, SizerFlag::Expand | SizerFlag::All, 4);
+
+    sizer.add_sizer(&contacts_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
     let spell_sec = section(panel, "Spell Check");
 
     let check_before_send = CheckBox::builder(panel)
@@ -915,6 +961,7 @@ fn build_language_tab(
         check_as_you_type,
         allow_mail,
         allow_pim,
+        send_contact_changes_everywhere,
     )
 }
 
@@ -1270,6 +1317,7 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         mail: w.allow_mail.get_value(),
         personal_information: w.allow_pim.get_value(),
     };
+    cfg.send_contact_changes_everywhere = w.send_contact_changes_everywhere.get_value();
 
     // General
     cfg.theme = match sel(&w.theme) {

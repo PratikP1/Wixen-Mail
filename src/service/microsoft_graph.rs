@@ -14,6 +14,19 @@ use serde::{Deserialize, Serialize};
 // ── Microsoft Graph Contact Types ───────────────────────────────────────────
 
 /// A contact from Microsoft Graph API.
+///
+/// One type for what is read and what is written, and every field left out of
+/// what is written unless something set it, the same rule [`MsGraphEvent`]
+/// follows and for the same reason: Graph honours whatever a change carries,
+/// so a field sent empty is an instruction rather than a silence. Sending a
+/// name as the empty string clears the name, and sending an empty list of
+/// email addresses removes every address the contact has. That property is
+/// pinned by a test rather than trusted, because a field added without its
+/// attribute would quietly wipe something on every change.
+///
+/// What this choice costs, and it is a real cost: a value emptied here is not
+/// emptied at Graph. Somebody who clears a contact's nickname will find it
+/// still set at Outlook. That is the direction that loses less.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct MsGraphContact {
@@ -21,28 +34,34 @@ pub struct MsGraphContact {
     /// refuses a contact that carries one.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub id: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub display_name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub given_name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub surname: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub nick_name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub email_addresses: Vec<MsEmailAddress>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub home_phones: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub business_phones: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub mobile_phone: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub company_name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub job_title: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub department: String,
+    /// Graph's one web address for a contact. Its own name for it says work,
+    /// and there is no second one, so the website somebody typed goes here
+    /// whether or not it is a work one. A website in no field at all was the
+    /// alternative.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub business_home_page: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub home_address: Option<MsPhysicalAddress>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -617,6 +636,80 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_an_account_that_may_only_be_read_sends_no_change_to_a_contact() {
+        // The client the application builds for an account whose write gate is
+        // shut. `for_account` hands the transport to `Outward::read_only` in
+        // exactly this way.
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        let shut = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = shut
+            .update_contact("a-token", "AAMkAGI2", &MsGraphContact::default())
+            .await;
+
+        assert!(
+            matches!(refused, Err(crate::common::Error::Security(_))),
+            "{refused:?}"
+        );
+        assert!(
+            heard(listening, "a change that must never be sent")
+                .await
+                .is_err(),
+            "nothing may reach the network with the gate shut"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_account_that_may_only_be_read_deletes_no_contact() {
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        let shut = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = shut.delete_contact("a-token", "AAMkAGI2").await;
+
+        assert!(
+            matches!(refused, Err(crate::common::Error::Security(_))),
+            "{refused:?}"
+        );
+        assert!(
+            heard(listening, "a deletion that must never be sent")
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_to_a_contact_is_sent_under_the_name_graph_gives_it() {
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .update_contact(
+                "a-token",
+                "AAMkAGI2",
+                &MsGraphContact {
+                    display_name: "Alice Smith".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "the contact change")
+            .await
+            .expect("a request");
+        assert!(
+            asked_for(&request).starts_with("PATCH /me/contacts/AAMkAGI2"),
+            "{request}"
+        );
+        // The body names the one thing that changed and nothing else, so a
+        // change cannot empty a field it never mentioned.
+        assert!(
+            request.contains(r#"{"displayName":"Alice Smith"}"#),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_a_client_pointed_at_an_address_asks_that_address() {
         let (graph, listening) = a_graph_client_talking_to_itself().await;
 
@@ -713,6 +806,35 @@ mod tests {
         assert!(!fields.contains_key("@removed"), "{sent}");
         assert!(!fields.contains_key("lastModifiedDateTime"), "{sent}");
         assert!(!fields.contains_key("birthday"), "{sent}");
+    }
+
+    #[test]
+    fn test_a_contact_with_nothing_set_is_sent_to_microsoft_as_nothing() {
+        // What every change to a contact rests on. Graph honours whatever a
+        // change carries, so a name sent empty is an instruction to clear the
+        // name and an empty list of addresses is an instruction to remove
+        // every address. A contact with nothing set has to serialize to
+        // nothing before a change built from one can name only what changed.
+        let sent = serde_json::to_value(MsGraphContact::default()).expect("a contact to serialize");
+
+        assert_eq!(sent, serde_json::json!({}), "{sent}");
+    }
+
+    #[test]
+    fn test_a_change_to_a_microsoft_contact_does_not_carry_an_empty_list_of_addresses() {
+        let renamed = MsGraphContact {
+            display_name: "Grace Hopper".to_string(),
+            ..Default::default()
+        };
+
+        let sent = serde_json::to_value(&renamed).expect("a contact to serialize");
+        let fields = sent.as_object().expect("an object");
+
+        assert!(!fields.contains_key("emailAddresses"), "{sent}");
+        assert!(!fields.contains_key("homePhones"), "{sent}");
+        assert!(!fields.contains_key("businessPhones"), "{sent}");
+        assert!(!fields.contains_key("nickName"), "{sent}");
+        assert_eq!(fields.len(), 1, "{sent}");
     }
 
     #[test]

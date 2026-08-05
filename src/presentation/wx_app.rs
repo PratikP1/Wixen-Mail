@@ -6334,17 +6334,19 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             created,
             updated,
             deleted,
+            sent,
+            waiting_on_the_setting,
             errors,
         } => {
-            let msg = format!(
-                "Contacts sync: {} created, {} updated, {} deleted{}",
-                created,
-                updated,
-                deleted,
-                if errors.is_empty() {
-                    String::new()
-                } else {
-                    format!(", {} errors", errors.len())
+            let msg = crate::application::contacts_sync::what_the_contacts_sync_did(
+                &crate::application::contacts_sync::SyncResult {
+                    created_local: *created,
+                    updated_local: *updated,
+                    deleted_local: *deleted,
+                    updated_remote: *sent,
+                    waiting_on_the_setting: *waiting_on_the_setting,
+                    errors: errors.clone(),
+                    ..Default::default()
                 },
             );
             frame.set_status_text(&msg, 0);
@@ -9089,7 +9091,18 @@ fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
         let mut total_created = 0usize;
         let mut total_updated = 0usize;
         let mut total_deleted = 0usize;
+        let mut total_sent = 0usize;
+        let mut total_waiting_on_the_setting = 0usize;
         let mut total_errors = Vec::new();
+
+        // How far a change travels, from the setting. Read once here rather
+        // than inside the sync, so the decision can be argued about in a test
+        // without a settings file on disk.
+        let how_far = crate::application::contacts_sync::HowFarAChangeGoes::from(
+            crate::data::config::ConfigManager::load_stored()
+                .map(|stored| stored.app_config().send_contact_changes_everywhere)
+                .unwrap_or(true),
+        );
 
         // Try Google contacts sync
         let google_client = crate::service::google_api::GoogleApiClient::for_account(aid);
@@ -9107,11 +9120,14 @@ fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
                         &google_client,
                         &token,
                         aid,
+                        how_far,
                     )) {
                         Ok(result) => {
                             total_created += result.created_local + result.created_remote;
-                            total_updated += result.updated_local + result.updated_remote;
+                            total_updated += result.updated_local;
                             total_deleted += result.deleted_local + result.deleted_remote;
+                            total_sent += result.updated_remote;
+                            total_waiting_on_the_setting += result.waiting_on_the_setting;
                             total_errors.extend(result.errors);
                         }
                         Err(e) => total_errors.push(format!("Google contacts: {}", e)),
@@ -9134,13 +9150,15 @@ fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
                 Ok(token) => {
                     match handle.block_on(
                         crate::application::contacts_sync::sync_microsoft_contacts(
-                            &cache, &ms_client, &token, aid,
+                            &cache, &ms_client, &token, aid, how_far,
                         ),
                     ) {
                         Ok(result) => {
                             total_created += result.created_local + result.created_remote;
-                            total_updated += result.updated_local + result.updated_remote;
+                            total_updated += result.updated_local;
                             total_deleted += result.deleted_local + result.deleted_remote;
+                            total_sent += result.updated_remote;
+                            total_waiting_on_the_setting += result.waiting_on_the_setting;
                             total_errors.extend(result.errors);
                         }
                         Err(e) => total_errors.push(format!("Microsoft contacts: {}", e)),
@@ -9156,6 +9174,8 @@ fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
                     created: total_created,
                     updated: total_updated,
                     deleted: total_deleted,
+                    sent: total_sent,
+                    waiting_on_the_setting: total_waiting_on_the_setting,
                     errors: total_errors,
                 })
                 .await;

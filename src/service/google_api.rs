@@ -320,6 +320,18 @@ const PEOPLE_API_BASE: &str = "https://people.googleapis.com/v1";
 const CALENDAR_API_BASE: &str = "https://www.googleapis.com/calendar/v3";
 const PERSON_FIELDS: &str = "names,emailAddresses,phoneNumbers,organizations,addresses,birthdays,photos,nicknames,urls,biographies,metadata";
 
+/// What a change to a contact is allowed to name.
+///
+/// Not the list above, for two reasons that both cost data. Google refuses the
+/// whole request for naming `metadata`, which it will not let anything change.
+/// And `photos` goes through an endpoint of its own that this client does not
+/// have, so naming it here asks Google to clear somebody's contact photo and
+/// sends nothing to put back.
+///
+/// Everything named here is cleared at Google when the body leaves it out, so
+/// a field added to this list has to be one the converter always builds.
+const UPDATABLE_PERSON_FIELDS: &str = "names,emailAddresses,phoneNumbers,organizations,addresses,birthdays,nicknames,urls,biographies";
+
 /// How many contacts to ask for at a time.
 const CONTACTS_PAGE_SIZE: u32 = 1000;
 
@@ -526,7 +538,7 @@ impl GoogleApiClient {
     ) -> Result<GooglePerson> {
         let url = format!(
             "{}/{}:updateContact?updatePersonFields={}",
-            self.people_base, resource_name, PERSON_FIELDS,
+            self.people_base, resource_name, UPDATABLE_PERSON_FIELDS,
         );
         with_retry(3, || self.api_patch(&url, token, person)).await
     }
@@ -790,6 +802,85 @@ mod tests {
             GoogleApiClient::new().pointed_at(&format!("http://{address}")),
             listening,
         )
+    }
+
+    /// A server that answers one write, and a client allowed to send one.
+    async fn a_google_client_allowed_to_change_things()
+    -> (GoogleApiClient, tokio::sync::oneshot::Receiver<String>) {
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        (
+            GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            listening,
+        )
+    }
+
+    #[tokio::test]
+    async fn test_an_account_that_may_only_be_read_sends_no_change_to_a_contact() {
+        // The client the application builds for an account whose write gate is
+        // shut. `for_account` hands the transport to `Outward::read_only` in
+        // exactly this way, and reading the real settings here would make the
+        // test pass or fail depending on whose machine ran it.
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        let shut = GoogleApiClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = shut
+            .update_contact("a-token", "people/c1", &GooglePerson::default())
+            .await;
+
+        assert!(
+            matches!(refused, Err(crate::common::Error::Security(_))),
+            "{refused:?}"
+        );
+        assert!(
+            heard(listening, "a change that must never be sent")
+                .await
+                .is_err(),
+            "nothing may reach the network with the gate shut"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_account_that_may_only_be_read_deletes_no_contact() {
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        let shut = GoogleApiClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = shut.delete_contact("a-token", "people/c1").await;
+
+        assert!(
+            matches!(refused, Err(crate::common::Error::Security(_))),
+            "{refused:?}"
+        );
+        assert!(
+            heard(listening, "a deletion that must never be sent")
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_to_a_contact_does_not_ask_google_to_change_its_metadata_or_its_photo() {
+        let (google, listening) = a_google_client_allowed_to_change_things().await;
+
+        google
+            .update_contact("a-token", "people/c1", &GooglePerson::default())
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "the contact change")
+            .await
+            .expect("a request");
+        let asked = asked_for(&request);
+        assert!(
+            asked.starts_with("PATCH /people/c1:updateContact?"),
+            "{request}"
+        );
+        assert!(asked.contains("updatePersonFields="), "{request}");
+        // Google clears every field named here that the body leaves out.
+        // Neither of these two can be updated through this call at all: one is
+        // refused outright, and the other would ask Google to take away
+        // somebody's contact photo.
+        assert!(!asked.contains("metadata"), "{request}");
+        assert!(!asked.contains("photos"), "{request}");
     }
 
     #[tokio::test]

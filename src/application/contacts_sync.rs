@@ -3,18 +3,24 @@
 //!
 //! Converts between each provider's contact format and the stored contact,
 //! asking only for what changed since the last run where the provider offers
-//! that. Reading is the whole of it in practice: a contact created here is
-//! sent outward on a full sync when the account allows changes, and no edit
-//! made here ever reaches a provider. None of this has run against a live
-//! account.
+//! that.
+//!
+//! A change made here goes back out. An edit reaches every address book that
+//! already knows that contact, each under that address book's own name for it,
+//! before anything is read; the setting behind that is described where a
+//! person meets it. A contact created here is still sent to one address book,
+//! the first that syncs, which is unfinished. Every write goes through a
+//! client the write gate built, so an account open for reading only sends
+//! nothing. None of this has run against a live account.
 
 use crate::common::{Error, Result};
 use crate::data::message_cache::{
-    AddressBook, ContactEntry, EmailEntry, MessageCache, PhoneEntry, ProviderIdentity, SyncState,
+    AddressBook, AddressEntry, ContactEntry, EmailEntry, MessageCache, PhoneEntry,
+    ProviderIdentity, SyncState,
 };
 use crate::service::google_api::{
-    GoogleApiClient, GoogleBiography, GoogleBirthday, GoogleDate, GoogleEmail, GoogleName,
-    GoogleNickname, GoogleOrganization, GooglePerson, GooglePhone, GoogleUrl,
+    GoogleAddress, GoogleApiClient, GoogleBiography, GoogleBirthday, GoogleDate, GoogleEmail,
+    GoogleName, GoogleNickname, GoogleOrganization, GooglePerson, GooglePhone, GoogleUrl,
 };
 use crate::service::microsoft_graph::{MsEmailAddress, MsGraphClient, MsGraphContact};
 
@@ -27,7 +33,38 @@ pub struct SyncResult {
     pub updated_remote: usize,
     pub deleted_local: usize,
     pub deleted_remote: usize,
+    /// Changes still waiting because the account is open for reading only.
+    ///
+    /// Counted rather than reported as a failure. Nothing went wrong: the
+    /// change is waiting on a setting, and one error per waiting contact on
+    /// every sync from now on is how a warning somebody needs stops being
+    /// read.
+    pub waiting_on_the_setting: usize,
     pub errors: Vec<String>,
+}
+
+/// How far a change made here travels.
+///
+/// The setting behind it says what happens rather than naming a mechanism, and
+/// what it says when nobody has touched it is the first of these.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HowFarAChangeGoes {
+    /// To every address book that already knows the contact.
+    ToEveryAddressBookThatKnowsThem,
+    /// Only to the address book the contact came from. The others keep what
+    /// they had.
+    OnlyToWhereItCameFrom,
+}
+
+impl HowFarAChangeGoes {
+    /// What the setting says, read from the stored configuration.
+    pub fn from(send_everywhere: bool) -> Self {
+        if send_everywhere {
+            Self::ToEveryAddressBookThatKnowsThem
+        } else {
+            Self::OnlyToWhereItCameFrom
+        }
+    }
 }
 
 /// Written to the stored contact and to the sync state. Existing databases
@@ -175,6 +212,98 @@ fn chosen_emails(contact: &ContactEntry) -> Vec<EmailEntry> {
         label: String::new(),
         address: contact.email.clone(),
     }]
+}
+
+// ── The three places Microsoft keeps a number ───────────────────────────────
+
+/// Which of Microsoft's three phone fields a number belongs in.
+///
+/// Graph has three named places and no room for a label of its own, so a
+/// number labelled anything else arrives back labelled Home. Losing the word
+/// beats losing the number, which is what leaving it out would do.
+enum MicrosoftPhoneSlot {
+    /// One number only. Graph holds a single mobile number, not a list.
+    Mobile,
+    Business,
+    Home,
+}
+
+/// Where Microsoft keeps a number carrying this label.
+///
+/// The first word decides it, so "Work Fax" is a work number and "Mobile
+/// (personal)" is the mobile one. A number nobody labelled goes to the home
+/// list, which is where Graph's own contact form puts one.
+fn where_microsoft_keeps(label: &str) -> MicrosoftPhoneSlot {
+    match label
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_lowercase()
+        .as_str()
+    {
+        "mobile" | "cell" => MicrosoftPhoneSlot::Mobile,
+        "work" | "business" => MicrosoftPhoneSlot::Business,
+        _ => MicrosoftPhoneSlot::Home,
+    }
+}
+
+/// Whether Microsoft would keep an address with this label as the work one.
+///
+/// Graph has two places for an address and this application's list has no
+/// limit, so anything not named as work goes in the home one. An address that
+/// is neither is still an address, and dropping it because its label is
+/// "Other" is how a house somebody typed in stops existing.
+fn microsoft_calls_this_a_work_address(label: &str) -> bool {
+    matches!(
+        label
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .to_lowercase()
+            .as_str(),
+        "work" | "business"
+    )
+}
+
+/// One of this application's addresses, in the shape Graph takes.
+fn address_for_microsoft(
+    entry: &AddressEntry,
+) -> crate::service::microsoft_graph::MsPhysicalAddress {
+    crate::service::microsoft_graph::MsPhysicalAddress {
+        street: entry.street.clone(),
+        city: entry.city.clone(),
+        state: entry.state.clone(),
+        postal_code: entry.zip.clone(),
+        country_or_region: entry.country.clone(),
+    }
+}
+
+/// One of Graph's two addresses, as this application stores one.
+fn address_from_microsoft(
+    address: &crate::service::microsoft_graph::MsPhysicalAddress,
+    label: &str,
+) -> AddressEntry {
+    AddressEntry {
+        label: label.to_string(),
+        street: address.street.clone(),
+        city: address.city.clone(),
+        state: address.state.clone(),
+        zip: address.postal_code.clone(),
+        country: address.country_or_region.clone(),
+    }
+}
+
+/// What the two addresses Graph holds are called when they are stored here.
+const A_HOME_ADDRESS: &str = "Home";
+const A_WORK_ADDRESS: &str = "Work";
+
+/// The version marker an address book gave, or nothing when it gave none.
+///
+/// An empty marker is no marker. Sending one back would claim a version the
+/// address book never issued, and Google refuses a change carrying a version
+/// that does not match.
+fn version_marker(given: &str) -> Option<String> {
+    Some(given.to_string()).filter(|marker| !marker.is_empty())
 }
 
 // ── Names ───────────────────────────────────────────────────────────────────
@@ -382,10 +511,9 @@ fn google_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> Cont
 
 /// The stored contact with Microsoft's copy of it folded in.
 ///
-/// Same rule as the Google side, over a shorter list. Microsoft holds no
-/// website at all, so that one is left as it is. It does hold more phone
-/// numbers than one, but only the first is read in, so there is no second
-/// number arriving here to fold and the stored list is left alone too.
+/// Same rule as the Google side, over a shorter list. Microsoft holds more
+/// phone numbers than one, but only the first is read in, so there is no
+/// second number arriving here to fold and the stored list is left alone.
 /// Reading the rest of them is work not done.
 ///
 /// The address books that know the contact are deliberately not named here,
@@ -401,6 +529,7 @@ fn microsoft_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> C
         job_title: remote.job_title.clone(),
         department: remote.department.clone(),
         nickname: remote.nickname.clone(),
+        website: remote.website.clone(),
         birthday: remote.birthday.clone(),
         notes: remote.notes.clone(),
         source_provider: remote.source_provider.clone(),
@@ -428,6 +557,14 @@ pub(crate) trait GoogleContactBook {
         sync_token: Option<&str>,
     ) -> Result<(Vec<GooglePerson>, Option<String>)>;
     async fn create_contact(&self, token: &str, person: &GooglePerson) -> Result<GooglePerson>;
+    /// Change a contact this address book already holds, under the name this
+    /// address book gives it.
+    async fn update_contact(
+        &self,
+        token: &str,
+        provider_contact_id: &str,
+        person: &GooglePerson,
+    ) -> Result<GooglePerson>;
 }
 
 impl GoogleContactBook for GoogleApiClient {
@@ -445,6 +582,15 @@ impl GoogleContactBook for GoogleApiClient {
     async fn create_contact(&self, token: &str, person: &GooglePerson) -> Result<GooglePerson> {
         GoogleApiClient::create_contact(self, token, person).await
     }
+
+    async fn update_contact(
+        &self,
+        token: &str,
+        provider_contact_id: &str,
+        person: &GooglePerson,
+    ) -> Result<GooglePerson> {
+        GoogleApiClient::update_contact(self, token, provider_contact_id, person).await
+    }
 }
 
 /// What a contacts sync asks of a Microsoft address book.
@@ -456,6 +602,14 @@ pub(crate) trait MicrosoftContactBook {
     ) -> Result<(Vec<MsGraphContact>, Option<String>)>;
     async fn create_contact(&self, token: &str, contact: &MsGraphContact)
     -> Result<MsGraphContact>;
+    /// Change a contact this address book already holds, under the name this
+    /// address book gives it.
+    async fn update_contact(
+        &self,
+        token: &str,
+        provider_contact_id: &str,
+        contact: &MsGraphContact,
+    ) -> Result<MsGraphContact>;
 }
 
 impl MicrosoftContactBook for MsGraphClient {
@@ -474,6 +628,207 @@ impl MicrosoftContactBook for MsGraphClient {
     ) -> Result<MsGraphContact> {
         MsGraphClient::create_contact(self, token, contact).await
     }
+
+    async fn update_contact(
+        &self,
+        token: &str,
+        provider_contact_id: &str,
+        contact: &MsGraphContact,
+    ) -> Result<MsGraphContact> {
+        MsGraphClient::update_contact(self, token, provider_contact_id, contact).await
+    }
+}
+
+/// What a contacts sync did, in the words the status line and a screen reader
+/// both use.
+///
+/// Named here rather than built where it is spoken, so it can be argued about
+/// in a test. It counts what went up as well as what came down, because
+/// somebody who has just corrected a phone number needs to hear that the
+/// correction reached their address book.
+///
+/// A change held back by the setting is not a failure and is not counted as
+/// one. It names the setting, because "nothing happened" sends somebody
+/// looking for a broken account.
+pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
+    let mut said = format!(
+        "Contacts sync: {} created, {} updated, {} deleted",
+        result.created_local + result.created_remote,
+        result.updated_local,
+        result.deleted_local + result.deleted_remote
+    );
+    if result.updated_remote > 0 {
+        said.push_str(&format!(", {} sent", result.updated_remote));
+    }
+    if result.waiting_on_the_setting > 0 {
+        said.push_str(&format!(
+            ". {} changes are waiting here: turn on Allow Changes for this \
+             account to send them.",
+            result.waiting_on_the_setting
+        ));
+    }
+    if !result.errors.is_empty() {
+        said.push_str(&format!(", {} errors", result.errors.len()));
+    }
+    said
+}
+
+// ── Sending a change back out ───────────────────────────────────────────────
+
+/// Write down what an address book now holds.
+///
+/// Never with `?`. A row that will not save must not abandon the contacts
+/// behind it in the queue, and must not skip the marker stored at the end of a
+/// sync: losing that turns the next run into a full re-read of the whole
+/// address book, which is how one failure becomes a long one.
+fn write_down(cache: &MessageCache, contact: &ContactEntry, result: &mut SyncResult) {
+    if let Err(unwritten) = cache.save_contact(contact) {
+        result.errors.push(format!(
+            "The contact {} was sent but could not be written down here: {unwritten}",
+            contact.id
+        ));
+    }
+}
+
+/// Every change waiting for one address book, with that address book's own
+/// name for the contact.
+///
+/// Whether a change is waiting is asked of the address book's own identity and
+/// not of the contact, so a push refused by one address book is still owed to
+/// that one and not to the other.
+fn changes_waiting_for(
+    cache: &MessageCache,
+    account_id: &str,
+    address_book: &AddressBook,
+    how_far: HowFarAChangeGoes,
+    result: &mut SyncResult,
+) -> Vec<(ContactEntry, String)> {
+    let contacts = match cache.get_contacts_for_account(account_id) {
+        Ok(contacts) => contacts,
+        Err(unreadable) => {
+            result.errors.push(format!(
+                "The changes waiting to be sent could not be read: {unreadable}"
+            ));
+            return Vec::new();
+        }
+    };
+    contacts
+        .into_iter()
+        .filter_map(|contact| {
+            let identity = contact
+                .known_to
+                .iter()
+                .find(|identity| &identity.address_book == address_book)?;
+            if !identity.change_is_waiting {
+                return None;
+            }
+            if how_far == HowFarAChangeGoes::OnlyToWhereItCameFrom
+                && contact.source_provider.as_deref() != Some(address_book.as_stored())
+            {
+                return None;
+            }
+            let name_there = identity.provider_contact_id.clone();
+            Some((contact, name_there))
+        })
+        .collect()
+}
+
+/// Count one attempt to send a change, whichever way it went.
+///
+/// The contact's own identifier and nothing else goes into the sentence. A
+/// name, an address or a note would end up in a log file.
+fn count_the_attempt(
+    sent: &Result<()>,
+    contact_id: &str,
+    address_book_called: &str,
+    result: &mut SyncResult,
+) {
+    match sent {
+        Ok(()) => result.updated_remote += 1,
+        Err(refused) if crate::service::outward::was_refused_by_the_gate(refused) => {
+            result.waiting_on_the_setting += 1;
+        }
+        Err(failed) => result.errors.push(format!(
+            "The change to contact {contact_id} could not be sent to {address_book_called}: {failed}"
+        )),
+    }
+}
+
+/// The version marker one address book last gave for this contact.
+fn version_given_by(contact: &ContactEntry, address_book: &AddressBook) -> Option<String> {
+    contact
+        .known_to
+        .iter()
+        .find(|identity| &identity.address_book == address_book)
+        .and_then(|identity| identity.provider_version.clone())
+}
+
+/// Send Google every change made here to a contact it already holds.
+///
+/// Runs before the pull. The other order would send a value the pull had just
+/// overwritten, so the push would undo the thing it was told to accept.
+///
+/// A change that cannot be sent keeps its flag for this address book and is
+/// tried again next time. Failing once is not a reason to drop somebody's
+/// edit, and a refusal by one address book leaves the other's alone.
+async fn push_changed_contacts_to_google<B: GoogleContactBook>(
+    cache: &MessageCache,
+    google: &B,
+    token: &str,
+    account_id: &str,
+    how_far: HowFarAChangeGoes,
+    result: &mut SyncResult,
+) {
+    let book = AddressBook::Google;
+    for (contact, name_there) in changes_waiting_for(cache, account_id, &book, how_far, result) {
+        let mut person = contact_to_google_person(&contact);
+        person.resource_name = name_there.clone();
+        // Google refuses a change that does not carry the version it last
+        // handed out for this contact.
+        person.etag = version_given_by(&contact, &book).unwrap_or_default();
+
+        let sent = google.update_contact(token, &name_there, &person).await;
+        if let Ok(now_there) = &sent {
+            write_down(
+                cache,
+                &contact.told(&book, version_marker(&now_there.etag).as_deref()),
+                result,
+            );
+        }
+        count_the_attempt(&sent.map(|_| ()), &contact.id, "Google", result);
+    }
+}
+
+/// Send Microsoft every change made here to a contact it already holds. Same
+/// rules as the Google side.
+async fn push_changed_contacts_to_microsoft<B: MicrosoftContactBook>(
+    cache: &MessageCache,
+    ms_client: &B,
+    token: &str,
+    account_id: &str,
+    how_far: HowFarAChangeGoes,
+    result: &mut SyncResult,
+) {
+    let book = AddressBook::Microsoft;
+    for (contact, name_there) in changes_waiting_for(cache, account_id, &book, how_far, result) {
+        let changed = contact_to_ms_contact(&contact);
+
+        let sent = ms_client.update_contact(token, &name_there, &changed).await;
+        if let Ok(now_there) = &sent {
+            write_down(
+                cache,
+                &contact.told(
+                    &book,
+                    now_there
+                        .odata_etag
+                        .as_deref()
+                        .filter(|marker| !marker.is_empty()),
+                ),
+                result,
+            );
+        }
+        count_the_attempt(&sent.map(|_| ()), &contact.id, "Microsoft", result);
+    }
 }
 
 // ── Google Contacts Sync ────────────────────────────────────────────────────
@@ -484,8 +839,11 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
     google: &B,
     token: &str,
     account_id: &str,
+    how_far: HowFarAChangeGoes,
 ) -> Result<SyncResult> {
     let mut result = SyncResult::default();
+
+    push_changed_contacts_to_google(cache, google, token, account_id, how_far, &mut result).await;
 
     // Load sync state
     let state = cache.get_sync_state(account_id, CONTACTS_SYNC, GOOGLE_ADDRESS_BOOK)?;
@@ -540,8 +898,11 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
             Some(local) => {
                 // Google adds itself to the address books that know this
                 // contact and leaves the others as they were.
-                let merged = google_fields_over_local(local, &remote_contact)
-                    .also_known_to(AddressBook::Google, &person.resource_name);
+                let merged = google_fields_over_local(local, &remote_contact).also_known_to(
+                    AddressBook::Google,
+                    &person.resource_name,
+                    version_marker(&person.etag).as_deref(),
+                );
                 cache.save_contact(&merged)?;
                 result.updated_local += 1;
             }
@@ -557,17 +918,32 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
         // Only push on full sync to avoid duplicates
         let locals = cache.get_contacts_for_account(account_id)?;
         for local in &locals {
-            if local.known_to.is_empty()
+            // Made here and no address book knows it yet. `pending` is what
+            // says made here: without it, every address auto-import harvested
+            // from a message header goes into somebody's real address book,
+            // and nobody asked for their mail history to be copied there.
+            if local.pending
+                && local.known_to.is_empty()
                 && local.source_provider.as_deref() != Some(GOOGLE_ADDRESS_BOOK)
             {
                 let person = contact_to_google_person(local);
                 match google.create_contact(token, &person).await {
                     Ok(created) => {
-                        let mut updated =
-                            local.also_known_to(AddressBook::Google, &created.resource_name);
+                        let mut updated = local.also_known_to(
+                            AddressBook::Google,
+                            &created.resource_name,
+                            version_marker(&created.etag).as_deref(),
+                        );
                         updated.source_provider = Some(GOOGLE_ADDRESS_BOOK.to_string());
                         updated.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
-                        cache.save_contact(&updated)?;
+                        // Never `?`. Google has already made the contact, so
+                        // giving up here would abandon the contacts behind it
+                        // and skip the marker at the end of this sync as well.
+                        // The window cannot be closed, only narrowed: the
+                        // identifier is Google's to assign and only exists
+                        // after the answer, so a crash in between still makes
+                        // the contact a second time on the next full read.
+                        write_down(cache, &updated, &mut result);
                         result.created_remote += 1;
                     }
                     Err(e) => {
@@ -613,8 +989,12 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
     ms_client: &B,
     token: &str,
     account_id: &str,
+    how_far: HowFarAChangeGoes,
 ) -> Result<SyncResult> {
     let mut result = SyncResult::default();
+
+    push_changed_contacts_to_microsoft(cache, ms_client, token, account_id, how_far, &mut result)
+        .await;
 
     // Load sync state
     let state = cache.get_sync_state(account_id, CONTACTS_SYNC, MICROSOFT_ADDRESS_BOOK)?;
@@ -651,8 +1031,11 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
             &remote_contact.email,
         ) {
             Some(local) => {
-                let merged = microsoft_fields_over_local(local, &remote_contact)
-                    .also_known_to(AddressBook::Microsoft, &ms_contact.id);
+                let merged = microsoft_fields_over_local(local, &remote_contact).also_known_to(
+                    AddressBook::Microsoft,
+                    &ms_contact.id,
+                    ms_contact.odata_etag.as_deref().filter(|m| !m.is_empty()),
+                );
                 cache.save_contact(&merged)?;
                 result.updated_local += 1;
             }
@@ -667,16 +1050,24 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
     if delta_link.is_none() {
         let locals = cache.get_contacts_for_account(account_id)?;
         for local in &locals {
-            if local.known_to.is_empty()
+            // Made here and no address book knows it yet, for the reason
+            // written on the Google side.
+            if local.pending
+                && local.known_to.is_empty()
                 && local.source_provider.as_deref() != Some(MICROSOFT_ADDRESS_BOOK)
             {
                 let ms_contact = contact_to_ms_contact(local);
                 match ms_client.create_contact(token, &ms_contact).await {
                     Ok(created) => {
-                        let mut updated = local.also_known_to(AddressBook::Microsoft, &created.id);
+                        let mut updated = local.also_known_to(
+                            AddressBook::Microsoft,
+                            &created.id,
+                            created.odata_etag.as_deref().filter(|m| !m.is_empty()),
+                        );
                         updated.source_provider = Some(MICROSOFT_ADDRESS_BOOK.to_string());
                         updated.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
-                        cache.save_contact(&updated)?;
+                        // Never `?`, for the reason written on the Google side.
+                        write_down(cache, &updated, &mut result);
                         result.created_remote += 1;
                     }
                     Err(e) => {
@@ -808,9 +1199,14 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
         phones_json,
         addresses_json: None,
         custom_fields_json: None,
+        // Google's copy of the contact, as Google has it. Nothing here has
+        // been changed against it.
+        pending: false,
         known_to: vec![ProviderIdentity {
             address_book: AddressBook::Google,
             provider_contact_id: person.resource_name.clone(),
+            provider_version: version_marker(&person.etag),
+            change_is_waiting: false,
         }],
     }
 }
@@ -884,11 +1280,28 @@ fn contact_to_google_person(contact: &ContactEntry) -> GooglePerson {
         .map(|n| vec![GoogleBiography { value: n.clone() }])
         .unwrap_or_default();
 
+    // The whole address written out on one line is left empty on purpose. It
+    // is Google's to compose from the parts, and sending a hand-joined copy
+    // beside them gives two answers to one question.
+    let addresses = stored_list::<AddressEntry>(contact.addresses_json.as_ref())
+        .into_iter()
+        .map(|entry| GoogleAddress {
+            formatted_value: String::new(),
+            address_type: provider_type_for_label(&entry.label),
+            street_address: entry.street,
+            city: entry.city,
+            region: entry.state,
+            postal_code: entry.zip,
+            country: entry.country,
+        })
+        .collect();
+
     GooglePerson {
         names,
         email_addresses,
         phone_numbers,
         organizations,
+        addresses,
         nicknames,
         birthdays: birthday_for_google(contact.birthday.as_deref())
             .into_iter()
@@ -958,6 +1371,27 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         None
     };
 
+    // Both of Graph's addresses, under the two labels this application knows
+    // them by. Not folded over a stored contact's list on a sync: that list is
+    // one list for every address book, and Graph can only speak for its own
+    // two places, so writing it whole would take a Google address off a
+    // contact both books know. Same rule as the address books themselves.
+    let addresses: Vec<AddressEntry> = ms
+        .home_address
+        .iter()
+        .map(|address| address_from_microsoft(address, A_HOME_ADDRESS))
+        .chain(
+            ms.business_address
+                .iter()
+                .map(|address| address_from_microsoft(address, A_WORK_ADDRESS)),
+        )
+        .collect();
+    let addresses_json = if addresses.is_empty() {
+        None
+    } else {
+        serde_json::to_string(&addresses).ok()
+    };
+
     let now = chrono::Utc::now().to_rfc3339();
     ContactEntry {
         id: uuid::Uuid::new_v4().to_string(),
@@ -971,7 +1405,11 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         phone,
         company,
         job_title,
-        website: None,
+        website: if ms.business_home_page.is_empty() {
+            None
+        } else {
+            Some(ms.business_home_page.clone())
+        },
         address: None,
         birthday: birthday_from_microsoft(ms.birthday.as_deref()),
         avatar_url: None,
@@ -987,24 +1425,49 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         relationship: None,
         emails_json,
         phones_json: None,
-        addresses_json: None,
+        addresses_json,
         custom_fields_json: None,
+        pending: false,
         known_to: vec![ProviderIdentity {
             address_book: AddressBook::Microsoft,
             provider_contact_id: ms.id.clone(),
+            provider_version: ms.odata_etag.clone().filter(|marker| !marker.is_empty()),
+            change_is_waiting: false,
         }],
     }
 }
 
 fn contact_to_ms_contact(contact: &ContactEntry) -> MsGraphContact {
-    let email_addresses = if contact.email.is_empty() {
-        vec![]
-    } else {
-        vec![MsEmailAddress {
+    let email_addresses = chosen_emails(contact)
+        .into_iter()
+        .map(|entry| MsEmailAddress {
             name: contact.name.clone(),
-            address: contact.email.clone(),
-        }]
-    };
+            address: entry.address,
+        })
+        .collect();
+
+    // Graph holds one mobile number and two lists. A second number labelled
+    // mobile joins the home list rather than taking the first one's place.
+    let mut mobile_phone = String::new();
+    let mut business_phones: Vec<String> = Vec::new();
+    let mut home_phones: Vec<String> = Vec::new();
+    for entry in chosen_phones(contact) {
+        match where_microsoft_keeps(&entry.label) {
+            MicrosoftPhoneSlot::Mobile if mobile_phone.is_empty() => mobile_phone = entry.number,
+            MicrosoftPhoneSlot::Business => business_phones.push(entry.number),
+            MicrosoftPhoneSlot::Mobile | MicrosoftPhoneSlot::Home => home_phones.push(entry.number),
+        }
+    }
+
+    let stored_addresses = stored_list::<AddressEntry>(contact.addresses_json.as_ref());
+    let home_address = stored_addresses
+        .iter()
+        .find(|entry| !microsoft_calls_this_a_work_address(&entry.label))
+        .map(address_for_microsoft);
+    let business_address = stored_addresses
+        .iter()
+        .find(|entry| microsoft_calls_this_a_work_address(&entry.label))
+        .map(address_for_microsoft);
 
     let (given_name, surname) = given_and_family_name(&contact.name);
 
@@ -1014,10 +1477,15 @@ fn contact_to_ms_contact(contact: &ContactEntry) -> MsGraphContact {
         surname,
         nick_name: contact.nickname.clone().unwrap_or_default(),
         email_addresses,
-        mobile_phone: contact.phone.clone().unwrap_or_default(),
+        home_phones,
+        business_phones,
+        home_address,
+        business_address,
+        mobile_phone,
         company_name: contact.company.clone().unwrap_or_default(),
         job_title: contact.job_title.clone().unwrap_or_default(),
         department: contact.department.clone().unwrap_or_default(),
+        business_home_page: contact.website.clone().unwrap_or_default(),
         birthday: birthday_for_microsoft(contact.birthday.as_deref()),
         personal_notes: contact.notes.clone(),
         ..Default::default()
@@ -1060,6 +1528,7 @@ mod tests {
             phones_json: None,
             addresses_json: None,
             custom_fields_json: None,
+            pending: false,
             known_to: Vec::new(),
         }
     }
@@ -1134,6 +1603,7 @@ mod tests {
             phones_json: None,
             addresses_json: None,
             custom_fields_json: None,
+            pending: false,
             known_to: Vec::new(),
         };
 
@@ -1205,6 +1675,7 @@ mod tests {
             phones_json: None,
             addresses_json: None,
             custom_fields_json: None,
+            pending: false,
             known_to: Vec::new(),
         };
 
@@ -1213,7 +1684,12 @@ mod tests {
         assert_eq!(ms.given_name, "Dave");
         assert_eq!(ms.surname, "Lee");
         assert_eq!(ms.email_addresses[0].address, "dave@example.com");
-        assert_eq!(ms.mobile_phone, "+1-555-0404");
+        // A number recorded before there was a list to hold labels carries no
+        // label, so it goes to the list Microsoft keeps unlabelled numbers in
+        // rather than being called a mobile number nobody said it was. This
+        // assertion used to expect the guess.
+        assert_eq!(ms.home_phones, vec!["+1-555-0404".to_string()]);
+        assert!(ms.mobile_phone.is_empty());
         assert_eq!(ms.company_name, "Fabrikam");
         assert_eq!(ms.personal_notes.as_deref(), Some("Test notes"));
     }
@@ -1246,6 +1722,7 @@ mod tests {
             phones_json: None,
             addresses_json: None,
             custom_fields_json: None,
+            pending: false,
             known_to: Vec::new(),
         };
 
@@ -1466,6 +1943,164 @@ mod tests {
         assert_eq!(ms.job_title, "Director");
     }
 
+    /// A contact with a labelled list of numbers, which is what the editor
+    /// writes and what a provider that keeps labels sends.
+    fn a_contact_whose_numbers_are_labelled(labels_and_numbers: &[(&str, &str)]) -> ContactEntry {
+        let mut contact = a_local_contact("Carol White", "carol@outlook.com");
+        let numbers: Vec<PhoneEntry> = labels_and_numbers
+            .iter()
+            .map(|(label, number)| PhoneEntry {
+                label: (*label).to_string(),
+                number: (*number).to_string(),
+            })
+            .collect();
+        contact.phones_json = serde_json::to_string(&numbers).ok();
+        contact
+    }
+
+    #[test]
+    fn test_a_second_email_address_goes_with_a_contact_pushed_to_microsoft() {
+        let mut contact = a_local_contact("Carol White", "carol@outlook.com");
+        contact.emails_json = serde_json::to_string(&vec![
+            EmailEntry {
+                label: "Home".to_string(),
+                address: "carol@outlook.com".to_string(),
+            },
+            EmailEntry {
+                label: "Work".to_string(),
+                address: "carol@contoso.com".to_string(),
+            },
+        ])
+        .ok();
+
+        let ms = contact_to_ms_contact(&contact);
+
+        let sent: Vec<&str> = ms
+            .email_addresses
+            .iter()
+            .map(|e| e.address.as_str())
+            .collect();
+        assert_eq!(sent, vec!["carol@outlook.com", "carol@contoso.com"]);
+    }
+
+    #[test]
+    fn test_a_work_number_and_a_home_number_both_go_to_microsoft_in_their_own_places() {
+        let contact = a_contact_whose_numbers_are_labelled(&[
+            ("Work", "+44 113 496 0001"),
+            ("Home", "+44 113 496 0002"),
+        ]);
+
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(ms.business_phones, vec!["+44 113 496 0001".to_string()]);
+        assert_eq!(ms.home_phones, vec!["+44 113 496 0002".to_string()]);
+    }
+
+    #[test]
+    fn test_a_mobile_number_goes_to_the_one_place_microsoft_keeps_one() {
+        let contact = a_contact_whose_numbers_are_labelled(&[
+            ("Home", "+44 113 496 0002"),
+            ("Mobile", "+44 7700 900000"),
+            ("Mobile", "+44 7700 900001"),
+        ]);
+
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(ms.mobile_phone, "+44 7700 900000");
+        assert_eq!(
+            ms.home_phones,
+            vec![
+                "+44 113 496 0002".to_string(),
+                "+44 7700 900001".to_string()
+            ],
+            "the second mobile number is kept somewhere rather than dropped"
+        );
+    }
+
+    #[test]
+    fn test_a_number_with_a_label_microsoft_cannot_hold_still_goes() {
+        let contact = a_contact_whose_numbers_are_labelled(&[("Other", "+44 113 496 0003")]);
+
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(ms.home_phones, vec!["+44 113 496 0003".to_string()]);
+    }
+
+    #[test]
+    fn test_a_home_address_and_a_work_address_both_go_to_microsoft() {
+        let mut contact = a_local_contact("Carol White", "carol@outlook.com");
+        contact.addresses_json = serde_json::to_string(&vec![
+            AddressEntry {
+                label: "Home".to_string(),
+                street: "1 Navy Yard".to_string(),
+                city: "Arlington".to_string(),
+                state: "VA".to_string(),
+                zip: "22202".to_string(),
+                country: "USA".to_string(),
+            },
+            AddressEntry {
+                label: "Work".to_string(),
+                street: "2 Contoso Way".to_string(),
+                city: "Redmond".to_string(),
+                state: "WA".to_string(),
+                zip: "98052".to_string(),
+                country: "USA".to_string(),
+            },
+        ])
+        .ok();
+
+        let ms = contact_to_ms_contact(&contact);
+
+        let home = ms.home_address.expect("the home address to be sent");
+        assert_eq!(home.street, "1 Navy Yard");
+        assert_eq!(home.state, "VA");
+        assert_eq!(home.postal_code, "22202");
+        assert_eq!(home.country_or_region, "USA");
+        let work = ms.business_address.expect("the work address to be sent");
+        assert_eq!(work.street, "2 Contoso Way");
+        assert_eq!(work.city, "Redmond");
+    }
+
+    #[test]
+    fn test_an_address_from_microsoft_is_stored_with_the_label_it_arrived_under() {
+        let mut ms = a_microsoft_contact("AAMk1", "Carol White", "carol@outlook.com");
+        ms.home_address = Some(crate::service::microsoft_graph::MsPhysicalAddress {
+            street: "1 Navy Yard".to_string(),
+            city: "Arlington".to_string(),
+            state: "VA".to_string(),
+            postal_code: "22202".to_string(),
+            country_or_region: "USA".to_string(),
+        });
+
+        let contact = ms_contact_to_contact(&ms, "acct");
+
+        let stored: Vec<AddressEntry> = stored_list(contact.addresses_json.as_ref());
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].label, "Home");
+        assert_eq!(stored[0].street, "1 Navy Yard");
+        assert_eq!(stored[0].zip, "22202");
+    }
+
+    #[test]
+    fn test_a_website_goes_with_a_contact_pushed_to_microsoft() {
+        let mut contact = a_local_contact("Carol White", "carol@outlook.com");
+        contact.website = Some("https://carol.example".to_string());
+
+        let ms = contact_to_ms_contact(&contact);
+
+        assert_eq!(ms.business_home_page, "https://carol.example");
+    }
+
+    #[test]
+    fn test_a_website_from_microsoft_is_stored() {
+        let mut ms = a_microsoft_contact("AAMk1", "Carol White", "carol@outlook.com");
+        ms.business_home_page = "https://carol.example".to_string();
+
+        let contact = ms_contact_to_contact(&ms, "acct");
+
+        assert_eq!(contact.website.as_deref(), Some("https://carol.example"));
+    }
+
     #[test]
     fn test_a_department_is_carried_when_a_contact_is_pushed_to_microsoft() {
         let mut contact = a_local_contact("Carol White", "carol@outlook.com");
@@ -1576,12 +2211,20 @@ mod tests {
         assert_eq!(merged.vcard_raw, local.vcard_raw);
     }
 
+    /// Replaces a test that said Microsoft holds no website. It does, under a
+    /// name of its own, and now that this application reads it the stored one
+    /// no longer wins: a website taken off a contact at Outlook would otherwise
+    /// come back here on every sync.
     #[test]
-    fn test_a_microsoft_sync_keeps_the_website_it_cannot_carry() {
+    fn test_a_microsoft_sync_takes_the_website_from_the_provider() {
         let mut local = a_local_contact("Alice Smith", "alice@example.com");
-        local.website = Some("https://alice.example".to_string());
+        local.website = Some("https://the-old-one.example".to_string());
+        let mut from_microsoft =
+            a_microsoft_contact("AAMkAGI2", "Alice Smith", "alice@example.com");
+        from_microsoft.business_home_page = "https://alice.example".to_string();
 
-        let merged = microsoft_fields_over_local(&local, &alice_from_microsoft());
+        let merged =
+            microsoft_fields_over_local(&local, &ms_contact_to_contact(&from_microsoft, "acct"));
 
         assert_eq!(merged.website.as_deref(), Some("https://alice.example"));
     }
@@ -1671,10 +2314,15 @@ mod tests {
         local.known_to = vec![ProviderIdentity {
             address_book: AddressBook::Microsoft,
             provider_contact_id: "AAMkAGI2".to_string(),
+            provider_version: None,
+            change_is_waiting: false,
         }];
 
-        let merged = google_fields_over_local(&local, &alice_from_google())
-            .also_known_to(AddressBook::Google, "people/c1");
+        let merged = google_fields_over_local(&local, &alice_from_google()).also_known_to(
+            AddressBook::Google,
+            "people/c1",
+            None,
+        );
 
         assert_eq!(merged.id_in(&AddressBook::Microsoft), Some("AAMkAGI2"));
         assert_eq!(merged.id_in(&AddressBook::Google), Some("people/c1"));
@@ -1686,10 +2334,15 @@ mod tests {
         local.known_to = vec![ProviderIdentity {
             address_book: AddressBook::Google,
             provider_contact_id: "people/c1".to_string(),
+            provider_version: None,
+            change_is_waiting: false,
         }];
 
-        let merged = microsoft_fields_over_local(&local, &alice_from_microsoft())
-            .also_known_to(AddressBook::Microsoft, "AAMkAGI2");
+        let merged = microsoft_fields_over_local(&local, &alice_from_microsoft()).also_known_to(
+            AddressBook::Microsoft,
+            "AAMkAGI2",
+            None,
+        );
 
         assert_eq!(merged.id_in(&AddressBook::Google), Some("people/c1"));
         assert_eq!(merged.id_in(&AddressBook::Microsoft), Some("AAMkAGI2"));
@@ -1699,7 +2352,7 @@ mod tests {
     fn test_an_address_book_naming_a_contact_again_replaces_what_it_said_before() {
         let alice = alice_from_google();
 
-        let moved = alice.also_known_to(AddressBook::Google, "people/c9");
+        let moved = alice.also_known_to(AddressBook::Google, "people/c9", None);
 
         assert_eq!(moved.id_in(&AddressBook::Google), Some("people/c9"));
         assert_eq!(moved.known_to.len(), 1);
@@ -1865,6 +2518,8 @@ mod tests {
         stored.known_to = vec![ProviderIdentity {
             address_book,
             provider_contact_id: provider_contact_id.to_string(),
+            provider_version: None,
+            change_is_waiting: false,
         }];
         stored
     }
@@ -2420,6 +3075,43 @@ mod tests {
     }
 
     #[test]
+    fn test_a_postal_address_goes_with_a_contact_pushed_to_google() {
+        let mut contact = a_local_contact("Grace Hopper", "grace@example.com");
+        contact.addresses_json = serde_json::to_string(&vec![AddressEntry {
+            label: "Home".to_string(),
+            street: "1 Navy Yard".to_string(),
+            city: "Arlington".to_string(),
+            state: "VA".to_string(),
+            zip: "22202".to_string(),
+            country: "USA".to_string(),
+        }])
+        .ok();
+
+        let person = contact_to_google_person(&contact);
+
+        let sent = person.addresses.first().expect("the address to be sent");
+        assert_eq!(sent.street_address, "1 Navy Yard");
+        assert_eq!(sent.city, "Arlington");
+        assert_eq!(sent.region, "VA");
+        assert_eq!(sent.postal_code, "22202");
+        assert_eq!(sent.country, "USA");
+        assert_eq!(sent.address_type, "home");
+        assert!(
+            sent.formatted_value.is_empty(),
+            "the whole address written out is Google's to compose"
+        );
+    }
+
+    #[test]
+    fn test_a_contact_with_no_postal_address_sends_no_addresses_to_google() {
+        let contact = a_local_contact("Grace Hopper", "grace@example.com");
+
+        let person = contact_to_google_person(&contact);
+
+        assert!(person.addresses.is_empty());
+    }
+
+    #[test]
     fn test_a_note_goes_with_a_contact_pushed_to_google() {
         let mut contact = a_local_contact("Grace Hopper", "grace@example.com");
         contact.notes = Some("Met at the conference".to_string());
@@ -2488,6 +3180,11 @@ mod tests {
 
     // ── A whole sync, against an address book that answers from a script ────
 
+    /// What the setting says when nobody has touched it, which is what almost
+    /// every test here runs with.
+    const ANYWHERE_IT_IS_KNOWN: HowFarAChangeGoes =
+        HowFarAChangeGoes::ToEveryAddressBookThatKnowsThem;
+
     /// The account every sync test runs for. The same words `a_local_contact`
     /// uses, so a contact built by that helper belongs to this account.
     const AN_ACCOUNT: &str = "test@example.com";
@@ -2539,6 +3236,8 @@ mod tests {
         contact.known_to = vec![ProviderIdentity {
             address_book: AddressBook::from_stored(provider),
             provider_contact_id: provider_contact_id.to_string(),
+            provider_version: None,
+            change_is_waiting: false,
         }];
         contact.source_provider = Some(provider.to_string());
         cache
@@ -2559,8 +3258,18 @@ mod tests {
         /// default, so a test that sends something it did not mean to fails on
         /// that rather than passing quietly.
         accepts_a_contact: bool,
+        /// Whether a change to a contact is accepted. Refusing is the default,
+        /// for the same reason.
+        accepts_a_change: bool,
+        /// Whether a change comes back refused by the write gate rather than
+        /// by Google, which is what an account open for reading only answers.
+        the_account_is_read_only: bool,
         /// Every contact this test sent outward.
         sent: std::cell::RefCell<Vec<GooglePerson>>,
+        /// Every change this test sent outward, and the identifier it was sent
+        /// under. The identifier is the assertion that catches Outlook's name
+        /// for a contact being sent to Google.
+        changed: std::cell::RefCell<Vec<(String, GooglePerson)>>,
     }
 
     impl GoogleContactBook for ScriptedGoogle {
@@ -2598,6 +3307,30 @@ mod tests {
                 ..person.clone()
             })
         }
+
+        async fn update_contact(
+            &self,
+            _token: &str,
+            provider_contact_id: &str,
+            person: &GooglePerson,
+        ) -> Result<GooglePerson> {
+            if self.the_account_is_read_only {
+                return Err(Error::Security(crate::service::outward::refusal(
+                    "change something in this account",
+                )));
+            }
+            self.changed
+                .borrow_mut()
+                .push((provider_contact_id.to_string(), person.clone()));
+            if !self.accepts_a_change {
+                return Err(Error::Protocol("Google refused the change".to_string()));
+            }
+            Ok(GooglePerson {
+                resource_name: provider_contact_id.to_string(),
+                etag: "etag-after".to_string(),
+                ..person.clone()
+            })
+        }
     }
 
     /// A Microsoft address book that answers from a script rather than a
@@ -2607,7 +3340,10 @@ mod tests {
     struct ScriptedMicrosoft {
         contacts: Vec<MsGraphContact>,
         accepts_a_contact: bool,
+        accepts_a_change: bool,
+        the_account_is_read_only: bool,
         sent: std::cell::RefCell<Vec<MsGraphContact>>,
+        changed: std::cell::RefCell<Vec<(String, MsGraphContact)>>,
     }
 
     impl MicrosoftContactBook for ScriptedMicrosoft {
@@ -2635,6 +3371,29 @@ mod tests {
             }
             Ok(MsGraphContact {
                 id: "AAMkNew".to_string(),
+                ..contact.clone()
+            })
+        }
+
+        async fn update_contact(
+            &self,
+            _token: &str,
+            provider_contact_id: &str,
+            contact: &MsGraphContact,
+        ) -> Result<MsGraphContact> {
+            if self.the_account_is_read_only {
+                return Err(Error::Security(crate::service::outward::refusal(
+                    "change something in this account",
+                )));
+            }
+            self.changed
+                .borrow_mut()
+                .push((provider_contact_id.to_string(), contact.clone()));
+            if !self.accepts_a_change {
+                return Err(Error::Protocol("Microsoft refused the change".to_string()));
+            }
+            Ok(MsGraphContact {
+                id: provider_contact_id.to_string(),
                 ..contact.clone()
             })
         }
@@ -2681,9 +3440,10 @@ mod tests {
             ..Default::default()
         };
 
-        let result = sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync that read the whole address book");
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync that read the whole address book");
 
         assert_eq!(result.created_local, 1);
         assert_eq!(the_names_stored(&cache), vec!["Alice Smith".to_string()]);
@@ -2703,7 +3463,9 @@ mod tests {
             ..Default::default()
         };
 
-        let answer = sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT).await;
+        let answer =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await;
 
         assert!(
             answer.is_err(),
@@ -2735,9 +3497,10 @@ mod tests {
             ..Default::default()
         };
 
-        let result = sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync");
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
 
         assert_eq!(result.deleted_local, 1);
         assert_eq!(the_names_stored(&cache), vec!["Bob Jones".to_string()]);
@@ -2763,9 +3526,10 @@ mod tests {
             ..Default::default()
         };
 
-        let result = sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync");
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
 
         assert_eq!(result.updated_local, 1);
         assert_eq!(result.created_local, 0);
@@ -2785,9 +3549,10 @@ mod tests {
             ..Default::default()
         };
 
-        let result = sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync");
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
 
         assert_eq!(result.created_local, 1);
         assert_eq!(result.updated_local, 0);
@@ -2797,17 +3562,23 @@ mod tests {
     #[tokio::test]
     async fn test_a_contact_typed_here_is_sent_to_google_when_the_whole_address_book_is_read() {
         let cache = a_cache("google_push");
+        // Typed here, which is what `pending` says. The helper builds a
+        // contact with nothing set, and a contact nobody typed is one
+        // auto-import harvested from a message header.
+        let mut typed_here = a_local_contact("Grace Hopper", "grace@example.com");
+        typed_here.pending = true;
         cache
-            .save_contact(&a_local_contact("Grace Hopper", "grace@example.com"))
+            .save_contact(&typed_here)
             .expect("a contact to be stored");
         let google = ScriptedGoogle {
             accepts_a_contact: true,
             ..Default::default()
         };
 
-        let result = sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync");
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
 
         assert_eq!(result.created_remote, 1);
         assert!(result.errors.is_empty(), "{:?}", result.errors);
@@ -2831,9 +3602,10 @@ mod tests {
         );
         let google = ScriptedGoogle::default();
 
-        let result = sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync");
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
 
         assert!(
             google.sent.borrow().is_empty(),
@@ -2865,9 +3637,15 @@ mod tests {
             ..Default::default()
         };
 
-        let result = sync_microsoft_contacts(&cache, &microsoft, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync");
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
 
         assert_eq!(result.deleted_local, 1);
         assert_eq!(the_names_stored(&cache), vec!["Bob Jones".to_string()]);
@@ -2893,9 +3671,15 @@ mod tests {
             ..Default::default()
         };
 
-        let result = sync_microsoft_contacts(&cache, &microsoft, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync");
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
 
         assert_eq!(result.updated_local, 1);
         assert_eq!(result.created_local, 0);
@@ -2915,9 +3699,15 @@ mod tests {
             ..Default::default()
         };
 
-        let result = sync_microsoft_contacts(&cache, &microsoft, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync");
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
 
         assert_eq!(result.created_local, 1);
         assert_eq!(result.updated_local, 0);
@@ -2927,17 +3717,26 @@ mod tests {
     #[tokio::test]
     async fn test_a_contact_typed_here_is_sent_to_microsoft_when_the_whole_address_book_is_read() {
         let cache = a_cache("microsoft_push");
+        // Typed here, for the reason written on the Google side of this.
+        let mut typed_here = a_local_contact("Grace Hopper", "grace@example.com");
+        typed_here.pending = true;
         cache
-            .save_contact(&a_local_contact("Grace Hopper", "grace@example.com"))
+            .save_contact(&typed_here)
             .expect("a contact to be stored");
         let microsoft = ScriptedMicrosoft {
             accepts_a_contact: true,
             ..Default::default()
         };
 
-        let result = sync_microsoft_contacts(&cache, &microsoft, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync");
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
 
         assert_eq!(result.created_remote, 1);
         assert!(result.errors.is_empty(), "{:?}", result.errors);
@@ -2958,9 +3757,15 @@ mod tests {
         );
         let microsoft = ScriptedMicrosoft::default();
 
-        let result = sync_microsoft_contacts(&cache, &microsoft, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync");
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
 
         assert!(
             microsoft.sent.borrow().is_empty(),
@@ -2970,6 +3775,393 @@ mod tests {
     }
 
     // ── A person in two address books, and a person with no address ─────────
+
+    #[test]
+    fn test_a_change_held_back_by_the_setting_names_the_setting_rather_than_saying_nothing() {
+        let held = SyncResult {
+            updated_local: 2,
+            waiting_on_the_setting: 3,
+            ..Default::default()
+        };
+
+        let said = what_the_contacts_sync_did(&held);
+
+        assert!(said.contains("Allow Changes"), "{said}");
+        assert!(!said.contains("errors"), "{said}");
+    }
+
+    #[test]
+    fn test_a_sync_that_sent_something_says_so() {
+        let sent = SyncResult {
+            updated_remote: 1,
+            ..Default::default()
+        };
+
+        let said = what_the_contacts_sync_did(&sent);
+
+        assert!(said.contains("1 sent"), "{said}");
+    }
+
+    #[test]
+    fn test_a_quiet_sync_says_only_what_came_down() {
+        let said = what_the_contacts_sync_did(&SyncResult::default());
+
+        assert_eq!(said, "Contacts sync: 0 created, 0 updated, 0 deleted");
+    }
+
+    #[tokio::test]
+    async fn test_an_address_harvested_from_a_message_is_not_written_into_a_real_address_book() {
+        // Auto-import mints a contact for every address seen in a message
+        // header. Those are guesses this application made, and nobody asked to
+        // have their whole mail history copied into their Gmail address book.
+        let cache = a_cache("harvested_stays_here");
+        let mut harvested = a_local_contact("Somebody Who Wrote", "stranger@example.com");
+        harvested.pending = false;
+        cache
+            .save_contact(&harvested)
+            .expect("a harvested contact to be stored");
+        let google = ScriptedGoogle {
+            accepts_a_contact: true,
+            ..Default::default()
+        };
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
+
+        assert!(
+            google.sent.borrow().is_empty(),
+            "{:?}",
+            google.sent.borrow()
+        );
+        assert_eq!(result.created_remote, 0);
+    }
+
+    // ── A change made here, going back out ──────────────────────────────────
+
+    /// A contact both address books know, changed here and told to neither.
+    fn a_contact_both_address_books_know_was_changed_here(cache: &MessageCache) {
+        let mut contact = a_local_contact("Alice Smith", "alice@example.com");
+        contact.id = "local-both".to_string();
+        contact.source_provider = Some(GOOGLE_ADDRESS_BOOK.to_string());
+        contact.pending = true;
+        contact.known_to = vec![
+            ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: "people/c1".to_string(),
+                provider_version: Some("etag-1".to_string()),
+                change_is_waiting: true,
+            },
+            ProviderIdentity {
+                address_book: AddressBook::Microsoft,
+                provider_contact_id: "AAMkAGI2".to_string(),
+                provider_version: None,
+                change_is_waiting: true,
+            },
+        ];
+        cache
+            .save_contact(&contact)
+            .expect("a contact to be stored");
+    }
+
+    fn an_address_book_that_takes_changes() -> ScriptedGoogle {
+        ScriptedGoogle {
+            accepts_a_change: true,
+            ..Default::default()
+        }
+    }
+
+    fn an_outlook_that_takes_changes() -> ScriptedMicrosoft {
+        ScriptedMicrosoft {
+            accepts_a_change: true,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_an_edit_to_a_contact_both_address_books_know_reaches_both() {
+        let cache = a_cache("fan_out_both");
+        a_contact_both_address_books_know_was_changed_here(&cache);
+        let google = an_address_book_that_takes_changes();
+        let microsoft = an_outlook_that_takes_changes();
+
+        let from_google = sync_google_contacts(
+            &cache,
+            &google,
+            "a token",
+            AN_ACCOUNT,
+            HowFarAChangeGoes::ToEveryAddressBookThatKnowsThem,
+        )
+        .await
+        .expect("a Google sync");
+        let from_microsoft = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            HowFarAChangeGoes::ToEveryAddressBookThatKnowsThem,
+        )
+        .await
+        .expect("a Microsoft sync");
+
+        assert_eq!(google.changed.borrow().len(), 1);
+        assert_eq!(google.changed.borrow()[0].0, "people/c1");
+        assert_eq!(microsoft.changed.borrow().len(), 1);
+        assert_eq!(
+            microsoft.changed.borrow()[0].0,
+            "AAMkAGI2",
+            "each address book is sent its own name for the contact"
+        );
+        assert_eq!(from_google.updated_remote, 1);
+        assert_eq!(from_microsoft.updated_remote, 1);
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_nobody_has_changed_here_is_not_sent_anywhere() {
+        let cache = a_cache("fan_out_unchanged");
+        a_stored_contact(
+            &cache,
+            "Alice Smith",
+            "alice@example.com",
+            "people/c1",
+            GOOGLE_ADDRESS_BOOK,
+        );
+        let google = an_address_book_that_takes_changes();
+
+        sync_google_contacts(
+            &cache,
+            &google,
+            "a token",
+            AN_ACCOUNT,
+            HowFarAChangeGoes::ToEveryAddressBookThatKnowsThem,
+        )
+        .await
+        .expect("a sync");
+
+        assert!(google.changed.borrow().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_both_address_books_accepted_stops_waiting_to_be_sent() {
+        let cache = a_cache("fan_out_settles");
+        a_contact_both_address_books_know_was_changed_here(&cache);
+        let google = an_address_book_that_takes_changes();
+        let microsoft = an_outlook_that_takes_changes();
+        let far = HowFarAChangeGoes::ToEveryAddressBookThatKnowsThem;
+
+        sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, far)
+            .await
+            .expect("a Google sync");
+        let after_google = the_contact_stored(&cache, "Alice Smith");
+        assert!(
+            after_google.pending,
+            "Microsoft has not been told, so the change is still waiting"
+        );
+
+        sync_microsoft_contacts(&cache, &microsoft, "a token", AN_ACCOUNT, far)
+            .await
+            .expect("a Microsoft sync");
+        let after_both = the_contact_stored(&cache, "Alice Smith");
+        assert!(!after_both.pending, "both were told");
+
+        sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, far)
+            .await
+            .expect("a second Google sync");
+        sync_microsoft_contacts(&cache, &microsoft, "a token", AN_ACCOUNT, far)
+            .await
+            .expect("a second Microsoft sync");
+        assert_eq!(
+            google.changed.borrow().len(),
+            1,
+            "a change already accepted is not sent again"
+        );
+        assert_eq!(microsoft.changed.borrow().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_a_change_one_address_book_refuses_still_reaches_the_other() {
+        let cache = a_cache("fan_out_one_refuses");
+        a_contact_both_address_books_know_was_changed_here(&cache);
+        let google = ScriptedGoogle::default();
+        let microsoft = an_outlook_that_takes_changes();
+        let far = HowFarAChangeGoes::ToEveryAddressBookThatKnowsThem;
+
+        let from_google = sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, far)
+            .await
+            .expect("a Google sync");
+        sync_microsoft_contacts(&cache, &microsoft, "a token", AN_ACCOUNT, far)
+            .await
+            .expect("a Microsoft sync");
+
+        assert_eq!(from_google.errors.len(), 1, "{:?}", from_google.errors);
+        assert!(
+            !from_google.errors[0].contains("Alice"),
+            "a name never goes to a log file: {:?}",
+            from_google.errors
+        );
+        assert_eq!(microsoft.changed.borrow().len(), 1);
+        let still = the_contact_stored(&cache, "Alice Smith");
+        assert!(
+            still
+                .known_to
+                .iter()
+                .any(|i| i.address_book == AddressBook::Google && i.change_is_waiting),
+            "Google refused, so it is still owed the change"
+        );
+        assert!(
+            still
+                .known_to
+                .iter()
+                .all(|i| i.address_book != AddressBook::Microsoft || !i.change_is_waiting),
+            "Microsoft accepted, so it is not owed it twice"
+        );
+        assert!(still.pending);
+    }
+
+    #[tokio::test]
+    async fn test_a_refused_change_is_reported_as_a_setting_rather_than_as_an_error() {
+        let cache = a_cache("fan_out_gate_closed");
+        a_contact_both_address_books_know_was_changed_here(&cache);
+        let google = ScriptedGoogle {
+            the_account_is_read_only: true,
+            ..Default::default()
+        };
+
+        let result = sync_google_contacts(
+            &cache,
+            &google,
+            "a token",
+            AN_ACCOUNT,
+            HowFarAChangeGoes::ToEveryAddressBookThatKnowsThem,
+        )
+        .await
+        .expect("a sync");
+
+        assert_eq!(result.waiting_on_the_setting, 1);
+        assert!(
+            result.errors.is_empty(),
+            "one refusal per contact on every sync is how a warning stops being read: {:?}",
+            result.errors
+        );
+        let still = the_contact_stored(&cache, "Alice Smith");
+        assert!(still.pending, "the change is kept, waiting on the setting");
+    }
+
+    #[tokio::test]
+    async fn test_with_the_setting_off_a_change_goes_only_to_the_address_book_it_came_from() {
+        let cache = a_cache("fan_out_setting_off");
+        a_contact_both_address_books_know_was_changed_here(&cache);
+        let google = an_address_book_that_takes_changes();
+        let microsoft = an_outlook_that_takes_changes();
+        let only = HowFarAChangeGoes::OnlyToWhereItCameFrom;
+
+        sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, only)
+            .await
+            .expect("a Google sync");
+        sync_microsoft_contacts(&cache, &microsoft, "a token", AN_ACCOUNT, only)
+            .await
+            .expect("a Microsoft sync");
+
+        assert_eq!(google.changed.borrow().len(), 1);
+        assert!(
+            microsoft.changed.borrow().is_empty(),
+            "the contact came from Google, so only Google is told"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_what_is_sent_as_a_change_to_google_carries_the_values_that_were_typed_here() {
+        let cache = a_cache("fan_out_fields");
+        let mut contact = a_local_contact("Alice Smith", "alice@example.com");
+        contact.id = "local-fields".to_string();
+        contact.pending = true;
+        contact.website = Some("https://alice.example".to_string());
+        contact.notes = Some("Met at the conference".to_string());
+        contact.birthday = Some("1906-12-09".to_string());
+        contact.addresses_json = serde_json::to_string(&vec![AddressEntry {
+            label: "Home".to_string(),
+            street: "1 Navy Yard".to_string(),
+            city: "Arlington".to_string(),
+            state: "VA".to_string(),
+            zip: "22202".to_string(),
+            country: "USA".to_string(),
+        }])
+        .ok();
+        contact.known_to = vec![ProviderIdentity {
+            address_book: AddressBook::Google,
+            provider_contact_id: "people/c1".to_string(),
+            provider_version: Some("etag-1".to_string()),
+            change_is_waiting: true,
+        }];
+        cache
+            .save_contact(&contact)
+            .expect("a contact to be stored");
+        let google = an_address_book_that_takes_changes();
+
+        sync_google_contacts(
+            &cache,
+            &google,
+            "a token",
+            AN_ACCOUNT,
+            HowFarAChangeGoes::ToEveryAddressBookThatKnowsThem,
+        )
+        .await
+        .expect("a sync");
+
+        let changed = google.changed.borrow();
+        let sent = &changed[0].1;
+        assert_eq!(
+            sent.etag, "etag-1",
+            "Google refuses a change that does not carry the version it gave"
+        );
+        assert_eq!(
+            sent.urls.first().map(|u| u.value.as_str()),
+            Some("https://alice.example")
+        );
+        assert_eq!(
+            sent.biographies.first().map(|b| b.value.as_str()),
+            Some("Met at the conference")
+        );
+        assert_eq!(
+            sent.addresses.first().map(|a| a.street_address.as_str()),
+            Some("1 Navy Yard")
+        );
+        assert_eq!(
+            sent.birthdays
+                .first()
+                .and_then(|b| b.date.as_ref())
+                .map(|d| (d.year, d.month, d.day)),
+            Some((1906, 12, 9))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_version_google_gives_back_after_a_change_is_kept_for_the_next_one() {
+        let cache = a_cache("fan_out_version");
+        a_contact_both_address_books_know_was_changed_here(&cache);
+        let google = an_address_book_that_takes_changes();
+
+        sync_google_contacts(
+            &cache,
+            &google,
+            "a token",
+            AN_ACCOUNT,
+            HowFarAChangeGoes::ToEveryAddressBookThatKnowsThem,
+        )
+        .await
+        .expect("a sync");
+
+        let stored = the_contact_stored(&cache, "Alice Smith");
+        assert_eq!(
+            stored
+                .known_to
+                .iter()
+                .find(|i| i.address_book == AddressBook::Google)
+                .and_then(|i| i.provider_version.as_deref()),
+            Some("etag-after")
+        );
+    }
 
     fn the_contact_stored(cache: &MessageCache, name: &str) -> ContactEntry {
         cache
@@ -3000,9 +4192,10 @@ mod tests {
             ..Default::default()
         };
 
-        let result = sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync");
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
 
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         assert_eq!(result.updated_local, 1);
@@ -3033,9 +4226,15 @@ mod tests {
             ..Default::default()
         };
 
-        let result = sync_microsoft_contacts(&cache, &microsoft, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync");
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
 
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         assert_eq!(result.updated_local, 1);
@@ -3057,9 +4256,10 @@ mod tests {
             ..Default::default()
         };
 
-        let result = sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync");
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
 
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         assert_eq!(result.created_local, 2);
@@ -3086,9 +4286,15 @@ mod tests {
             ..Default::default()
         };
 
-        let result = sync_microsoft_contacts(&cache, &microsoft, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync");
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
 
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         assert_eq!(result.created_local, 2);
@@ -3111,9 +4317,10 @@ mod tests {
             ..Default::default()
         };
 
-        let result = sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT)
-            .await
-            .expect("a sync");
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
 
         assert_eq!(result.deleted_local, 0);
         assert_eq!(the_names_stored(&cache), vec!["Alice Smith".to_string()]);

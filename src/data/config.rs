@@ -69,6 +69,17 @@ pub struct AppConfig {
     /// wrong that way.
     #[serde(default)]
     pub allowed_per_account: HashMap<String, crate::application::allowed::Allowed>,
+    /// Whether a change to a contact goes to every address book that has that
+    /// contact, or only to the one it came from.
+    ///
+    /// Not a permission and it cannot open the write gate: whether anything is
+    /// written at all is decided by `allowed_changes` above, and this only
+    /// decides how many of the already-allowed address books an edit reaches.
+    /// It is on unless somebody turns it off, because a contact in two address
+    /// books is one person, and quietly correcting a phone number in one of
+    /// them leaves the other wrong with nothing to say so.
+    #[serde(default = "default_true")]
+    pub send_contact_changes_everywhere: bool,
     /// The folder each account's last move or copy went to, by account id.
     ///
     /// Filing mail is repetitive: several messages go into the same folder one
@@ -306,6 +317,7 @@ impl Default for AppConfig {
             check_spelling_before_send: true,
             allowed_changes: default_allowed(),
             allowed_per_account: HashMap::new(),
+            send_contact_changes_everywhere: default_true(),
             last_filed_into: HashMap::new(),
             read_receipts: crate::application::receipts::Policy::Never
                 .as_str()
@@ -1024,5 +1036,24 @@ mod permission_tests {
 
         assert_eq!(parsed.allowed_changes, Allowed::FOR_TESTING);
         assert!(parsed.allowed_per_account.is_empty());
+    }
+
+    #[test]
+    fn test_a_setting_nobody_has_touched_sends_a_change_to_every_address_book_that_has_it() {
+        assert!(AppConfig::default().send_contact_changes_everywhere);
+    }
+
+    #[test]
+    fn test_a_settings_file_written_before_this_setting_existed_still_sends_to_all_of_them() {
+        let mut older = serde_json::to_value(AppConfig::default()).expect("a config to serialise");
+        let fields = older.as_object_mut().expect("an object");
+        assert!(
+            fields.remove("send_contact_changes_everywhere").is_some(),
+            "the setting is not written to the settings file, so this test covers nothing"
+        );
+
+        let parsed: AppConfig = serde_json::from_value(older).expect("an older config still opens");
+
+        assert!(parsed.send_contact_changes_everywhere);
     }
 }
