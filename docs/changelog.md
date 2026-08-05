@@ -8,6 +8,84 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A repeating event now shows on every day it falls on.** A weekly meeting
+  used to appear once, on the day it was first set up, and nothing told you why
+  the other weeks were empty. Every day of a series is now a row of its own, in
+  date order with everything else, and each one says how often the event comes
+  round and when it stops: "every week", "every two weeks", "every week on
+  Tuesday and Thursday", "every week, until 2026-09-30".
+
+  A day the series has called off is no longer shown, so a meeting that was
+  cancelled is not one you turn up to.
+
+  The words are the same ones the New Item form offers when you set a repeat, so
+  a series is described one way wherever you meet it. Where a rule uses
+  something the form cannot express, it is described in plain words instead.
+
+  Repeats that this cannot work out are not guessed at. The event is shown once
+  and says so, out loud, without you having to ask for the full reading: that is
+  the one case where there is nothing else on the screen to tell you.
+
+- **The reading of an event now says what kind of day it is.** A birthday, a
+  holiday and a dentist appointment sound different from each other. Categories
+  could be set before and nothing ever read them back.
+
+### Changed
+
+- **Changing a repeating event asks which days you mean.** All the days of a
+  series come from one stored event, so changing the fortieth Tuesday would have
+  rewritten all fifty-two and told you the event was updated. You are now asked
+  whether you mean just that one day or every day in the series, before anything
+  is written and before the editor opens. The same question is asked before a
+  delete.
+
+  **Changing one day on its own is refused for now**, with a sentence saying so
+  and saying that nothing has been changed. It is refused rather than quietly
+  widened to the whole series, because widening it destroys the other days'
+  details and cannot be undone. Choosing every day in the series works.
+
+- **The count of events in the calendar will look larger.** It now counts days
+  rather than stored events, so an account with one daily meeting counts that
+  meeting once for each day it falls on.
+
+### Fixed
+
+- **A repeat rule was being thrown away on the way to a calendar server.** The
+  document built for a calendar server carried no repeat rule, no called-off
+  days and no time zone, so the first change ever sent to one would have turned
+  a weekly meeting into a single appointment and moved the times of anything not
+  kept in UTC. Nothing sends one yet, so no calendar has been harmed; the
+  document is now correct for the day something does.
+
+  A time typed here was also being written in a shape no calendar server reads
+  ("20260306 0900", with a space and no seconds), which a server that checks
+  what it is sent refuses outright.
+
+- **A repeat rule from Google was being read as the wrong thing.** Google sends
+  the rule, the called-off days and any extra days as separate lines of one
+  list, and whichever line came first was stored as the rule. A list of
+  called-off days stored as a rule repeats nothing at all.
+
+**Known limitations for repeating events**, and none of this has run against a
+live account or a live calendar server:
+
+- A series you make here still reaches Google or Outlook as a single
+  appointment. The repeat rule is deliberately never included in a change sent
+  to a provider, because sending an empty one is an instruction to stop
+  repeating and would flatten the series at their end. So the days show
+  correctly here and not there.
+- A day of a series that was moved or renamed at the server is shown at its
+  original time and under its original name, and you are not told. Only whole
+  days that were called off are handled.
+- A repeating event from Google or Outlook does not say that it repeats. Those
+  two send the days themselves rather than the series, so the rule never arrives
+  and there is nothing to read out. The days are all there.
+- Days are worked out for 180 days back and 365 days forward, the same stretch
+  the syncs ask for. A series is not shown outside that.
+- Rules using positions within a month, particular months of the year, or
+  anything finer than a day are not worked out. Those events are shown once and
+  say so.
+
 - **You can now add a calendar by its address.** Tools, then Add a Calendar by
   Address. Two kinds work. A calendar held on a calendar server, such as
   Fastmail, Nextcloud or a server your workplace runs, which you sign in to: it

@@ -391,6 +391,25 @@ pub fn add_calendar_by_address(
     }
 }
 
+/// What a refusal names when the calendar the event came from is not to hand.
+///
+/// The list row carries no provider, and reading the stored event only to
+/// choose between two sentences is a database read on a keystroke. The shorter
+/// refusal is the one that claims least, which is the safe direction.
+const PROVIDER_IS_UNKNOWN_HERE: &str = "local";
+
+/// Which kind of calendar an event came from, for a refusal that has to say so.
+///
+/// An event nothing could be read for is treated as made here, which is the
+/// answer that says least: it produces the shorter refusal rather than a
+/// sentence about a server that may not be involved.
+fn provider_of(stored: &Option<crate::data::message_cache::CalendarEventEntry>) -> &str {
+    stored
+        .as_ref()
+        .and_then(|event| event.source_provider.as_deref())
+        .unwrap_or(PROVIDER_IS_UNKNOWN_HERE)
+}
+
 /// The calendar dialog, which returns a list of actions rather than a set.
 pub fn manage_calendar(
     state: &Arc<StdMutex<WxUIState>>,
@@ -426,13 +445,23 @@ pub fn manage_calendar(
                     Err(e) => failures.push(format!("{}: {}", data.summary, e)),
                 }
             }
-            wx_calendar::CalendarAction::UpdateEvent(id, data) => {
+            wx_calendar::CalendarAction::UpdateEvent(id, means, data) => {
                 // Onto the event as it stands, rather than a fresh one built
                 // from the editor: the editor asks about nine things and an
                 // event carries more than nine.
-                let entry = match cache.get_event_by_id(&id) {
-                    Ok(Some(stored)) => event_with_edits(stored, &data),
-                    _ => event_entry(id.clone(), &account, &data),
+                let stored = cache.get_event_by_id(&id).ok().flatten();
+                // Before anything is written. A change meant for one day of a
+                // series would otherwise rewrite every day of it, and the other
+                // days' own values cannot be got back.
+                if let Err(refused) =
+                    crate::application::calendar::can_be_honoured(means, provider_of(&stored))
+                {
+                    send_refusal(tx, rt, &refused);
+                    continue;
+                }
+                let entry = match stored {
+                    Some(stored) => event_with_edits(stored, &data),
+                    None => event_entry(id.clone(), &account, &data),
                 };
                 match cache.save_calendar_event(&entry) {
                     Ok(()) => {
@@ -442,7 +471,14 @@ pub fn manage_calendar(
                     Err(e) => failures.push(format!("{}: {}", data.summary, e)),
                 }
             }
-            wx_calendar::CalendarAction::DeleteEvent(id) => {
+            wx_calendar::CalendarAction::DeleteEvent(id, means) => {
+                let stored = cache.get_event_by_id(&id).ok().flatten();
+                if let Err(refused) =
+                    crate::application::calendar::can_be_honoured(means, provider_of(&stored))
+                {
+                    send_refusal(tx, rt, &refused);
+                    continue;
+                }
                 match cache.delete_calendar_event(&id) {
                     Ok(()) => {
                         changed = true;
@@ -459,8 +495,9 @@ pub fn manage_calendar(
         // shows what is stored, which is the thing that has to be true.
         match cache.get_all_events_for_account(&account) {
             Ok(events) => {
+                let (from, to) = CalendarEventItem::the_window_now();
                 let _ = tx.try_send(UIUpdate::CalendarEventsLoaded(
-                    events.iter().map(CalendarEventItem::from_entry).collect(),
+                    CalendarEventItem::every_day_shown(&events, from, to),
                 ));
             }
             Err(e) => failures.push(format!("reload: {}", e)),
@@ -488,6 +525,9 @@ fn event_with_edits(
         time_zone: stored.time_zone,
         status: stored.status,
         recurrence_rule: stored.recurrence_rule,
+        // Both halves of how a series repeats, or correcting a spelling would
+        // put every day the series had called off back on the calendar.
+        exception_dates: stored.exception_dates,
         categories: stored.categories,
         source_provider: stored.source_provider,
         etag: stored.etag,
@@ -545,6 +585,9 @@ fn event_entry(
         time_zone: None,
         status: "confirmed".to_string(),
         recurrence_rule: None,
+        // Nothing to leave out. The editor here cannot set a repeat at all, and
+        // an event with no repeat has no days to call off.
+        exception_dates: None,
         categories: String::new(),
         source_provider: Some("local".to_string()),
         etag: None,
@@ -897,6 +940,25 @@ pub fn pim_command(
             .show_modal();
         if asked != ID_YES {
             return;
+        }
+        // This is the door people actually use, and every day of a repeating
+        // event carries the stored event's own identity. Without asking, a
+        // Delete on the fortieth Tuesday takes all fifty-two, and the sentence
+        // above only ever named the one.
+        if kind == ItemKind::Event {
+            let repeats = lock_state(state)
+                .events
+                .get(row)
+                .map(|shown| shown.repeats.clone())
+                .unwrap_or_default();
+            let Some(means) = wx_calendar::which_days_are_meant(frame, &name, &repeats) else {
+                return;
+            };
+            if let Err(refused) =
+                crate::application::calendar::can_be_honoured(means, PROVIDER_IS_UNKNOWN_HERE)
+            {
+                return send_refusal(tx, rt, &refused);
+            }
         }
     }
 
@@ -1257,6 +1319,9 @@ fn store_new_item(
                 updated_at: stamp,
                 // Made here, so the provider has not been told about it.
                 pending: true,
+                // A series just made has no days called off yet. Calling one
+                // off is not something any screen here offers.
+                exception_dates: None,
             })
         }
         ItemKind::Reminder => cache.save_reminder(&ReminderEntry {

@@ -31,6 +31,7 @@ pub mod mail_sync;
 pub mod messages;
 pub mod new_item;
 pub mod notes;
+pub mod occurrences;
 pub mod pim_command;
 pub mod pop_sync;
 pub mod reading_habits;

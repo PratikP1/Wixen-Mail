@@ -342,6 +342,8 @@ mod tests {
             calendar_name: Some("Work".to_string()),
             calendar_color: None,
             reminder_minutes: None,
+            repeats: String::new(),
+            categories: String::new(),
         }
     }
 

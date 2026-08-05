@@ -511,6 +511,13 @@ pub struct CalendarEventEntry {
     /// is a change that never leaves. A sync writing the provider's own copy
     /// back leaves it false, or the push would send the provider its own value.
     pub pending: bool,
+    /// The days of a repeating event that were called off, as the calendar
+    /// standard writes them: `20261225T090000Z`, several separated by commas.
+    ///
+    /// Kept apart from `recurrence_rule` because it is a separate property and
+    /// not part of the rule. Without it a cancelled day of a series is shown as
+    /// a meeting somebody turns up to that is not happening.
+    pub exception_dates: Option<String>,
 }
 
 /// Reminder entry
@@ -1384,6 +1391,11 @@ impl MessageCache {
         // answer for all of them: until this shipped, nothing here could change
         // a provider's copy of anything.
         self.ensure_column_exists("calendar_events", "pending", "INTEGER NOT NULL DEFAULT 0")?;
+        // The days of a series that were called off. Nothing for every event
+        // already stored, which is the right answer for all of them: until this
+        // shipped, a series was shown on one day and had no other days to call
+        // off.
+        self.ensure_column_exists("calendar_events", "exception_dates", "TEXT")?;
         self.ensure_column_exists(
             "message_filter_rules",
             "match_type",
@@ -1872,6 +1884,11 @@ impl MessageCache {
                 -- need this rebuild predates anything here being able to change
                 -- a provider's copy, so none of them is waiting to be sent.
                 pending INTEGER NOT NULL DEFAULT 0,
+                -- Left out of EVENT_COLUMNS for the same reason as the column
+                -- above: a database old enough to need this rebuild has no such
+                -- column to copy from, and no series it could have called a day
+                -- off, because a series was shown on one day only.
+                exception_dates TEXT,
                 UNIQUE(account_id, calendar_id, provider_event_id)
             )",
                 [],

@@ -886,6 +886,76 @@ fn carry_over_local_only(merged: &mut CalendarEventEntry, held: &CalendarEventEn
     }
 }
 
+// ── Changing one day of a series, or all of them ────────────────────────────
+//
+// Every day of a series shown in the calendar carries the stored event's own
+// identity, because there is one row behind all of them. That is what makes
+// opening any day work, and it is also what makes changing one day rewrite the
+// whole series without saying so. Somebody has to be asked which they meant,
+// and the answer has to be honoured or refused in a sentence. Quietly widening
+// one day to the whole series destroys the other days' values and cannot be
+// taken back.
+
+/// Which of the two a change to a repeating event was meant for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditMeans {
+    /// The one day that was on the screen.
+    OneDay,
+    /// Every day the event falls on.
+    WholeSeries,
+}
+
+/// What the first answer is called, wherever it is offered.
+pub const JUST_THIS_ONE_DAY: &str = "&Just this one day";
+/// What the second answer is called, wherever it is offered.
+pub const EVERY_DAY_IN_THE_SERIES: &str = "&Every day in the series";
+
+/// Whether somebody has to be asked which of the two they meant.
+///
+/// Asked whenever the row is one day of a series, which is what the sentence
+/// saying how often it repeats already tells us. An event that happens once has
+/// nothing to ask about and is not interrupted by a question.
+pub fn asking_is_needed(how_often_the_row_repeats: &str) -> bool {
+    !how_often_the_row_repeats.trim().is_empty()
+}
+
+/// Whether an answer can be carried out, or the sentence saying why not.
+///
+/// Changing every day is what the save already does, so it is honoured.
+/// Changing one day on its own is refused, because carrying it out means
+/// calling that day off in the series and storing a separate event for it, and
+/// the separate event would then be sent to the provider as an extra
+/// appointment while the calling-off would not be sent at all: `recurrence` is
+/// deliberately never built into a change, for the reason at the top of this
+/// file. Half of that reaching somebody's real calendar is worse than a
+/// refusal.
+pub fn can_be_honoured(means: EditMeans, provider: &str) -> std::result::Result<(), String> {
+    match means {
+        EditMeans::WholeSeries => Ok(()),
+        EditMeans::OneDay => Err(format!(
+            "Changing one day of a repeating event on its own is not something \
+             this can do yet. Nothing has been changed. Choose \"every day in \
+             the series\" to change all of them.{}",
+            further_off_for(provider)
+        )),
+    }
+}
+
+/// The extra sentence for a calendar whose changes do not leave this computer.
+///
+/// Without it somebody told that one day is not built would reasonably expect
+/// the other answer to reach their calendar, and it does not.
+fn further_off_for(provider: &str) -> &'static str {
+    match provider {
+        crate::application::calendar_source::ON_A_SERVER
+        | crate::application::calendar_source::FROM_A_FEED => {
+            " A change to a calendar held on a server is also not sent yet: it \
+             is kept on this computer and the next sync writes over it."
+        }
+        _ => "",
+    }
+}
+
 // ── Conversion: Google ↔ Local ──────────────────────────────────────────────
 
 /// What a Google event becomes here, filed under a calendar somebody can open.
@@ -894,6 +964,27 @@ fn carry_over_local_only(merged: &mut CalendarEventEntry, held: &CalendarEventEn
 /// It used to be left blank with a comment saying the caller would fill it in,
 /// and no caller ever did, so every event Google sent was stored belonging to
 /// nothing. An argument the compiler insists on cannot be forgotten that way.
+/// The one line of a recurrence list that names a given property.
+///
+/// Google sends the repeat rule, the days called off and the days added on as
+/// separate lines of one list, each starting with its own property name. Taking
+/// whichever line came first stored a list of called-off days as the rule, and
+/// a rule that is not a rule repeats nothing.
+///
+/// The property name is kept on the value rather than stripped, because a
+/// calendar server's rule arrives without one and both shapes end up in the
+/// same column, so whatever reads it has to cope with both anyway.
+fn only_the_line_naming(lines: &[String], property: &str) -> Option<String> {
+    lines
+        .iter()
+        .find(|line| {
+            line.trim()
+                .to_ascii_uppercase()
+                .starts_with(&format!("{property}:"))
+        })
+        .cloned()
+}
+
 pub fn google_event_to_local(
     event: &GoogleEvent,
     account_id: &str,
@@ -988,7 +1079,11 @@ pub fn google_event_to_local(
             .clone()
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "confirmed".to_string()),
-        recurrence_rule: event.recurrence.first().cloned(),
+        // The line that is the rule, not whichever line came first: Google
+        // sends the called-off days and the extra days in the same list, and
+        // storing one of those as the rule would repeat nothing at all.
+        recurrence_rule: only_the_line_naming(&event.recurrence, "RRULE"),
+        exception_dates: only_the_line_naming(&event.recurrence, "EXDATE"),
         categories: String::new(),
         source_provider: Some("gmail".to_string()),
         etag: Some(event.etag.clone()),
@@ -1319,6 +1414,10 @@ pub fn ms_event_to_local(
         time_zone,
         status: "confirmed".to_string(),
         recurrence_rule: event.recurrence.as_ref().map(|r| r.to_string()),
+        // Nothing to fill it from. Graph names the days it left out inside the
+        // series itself, and the calendar view this asks for hands back the
+        // days rather than the series, so no series ever arrives.
+        exception_dates: None,
         categories: String::new(),
         source_provider: Some("outlook".to_string()),
         etag: event.odata_etag.clone(),
@@ -1479,6 +1578,85 @@ fn reminder_lead_minutes(event: &CalendarEventEntry) -> Option<i32> {
 mod tests {
     use super::*;
 
+    use crate::application::occurrences;
+
+    #[test]
+    fn test_changing_one_day_of_a_series_asks_which_was_meant() {
+        // Every day of a series carries the stored event's identity, so without
+        // asking, changing the fortieth Tuesday rewrites all fifty-two and
+        // somebody is told "Event updated".
+        assert!(asking_is_needed("every week"));
+        assert!(asking_is_needed(occurrences::CANNOT_BE_READ));
+        // An event that happens once has nothing to ask about, so an ordinary
+        // edit is not interrupted by a question.
+        assert!(!asking_is_needed(""));
+        assert!(!asking_is_needed("   "));
+    }
+
+    #[test]
+    fn test_changing_every_day_of_a_series_is_what_this_can_do() {
+        for provider in ["local", "gmail", "outlook", "caldav", "subscription"] {
+            assert_eq!(
+                can_be_honoured(EditMeans::WholeSeries, provider),
+                Ok(()),
+                "for {provider}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_changing_one_day_on_its_own_is_refused_rather_than_changing_all_of_them() {
+        // The refusal is the feature. Quietly widening one day to the whole
+        // series is the data loss this exists to prevent, and it cannot be
+        // taken back: the other days' own values are gone.
+        for provider in ["local", "gmail", "outlook", "caldav", "subscription"] {
+            let refusal = can_be_honoured(EditMeans::OneDay, provider)
+                .expect_err("changing one day on its own is not built");
+
+            assert!(
+                refusal.contains("one day"),
+                "it has to say which of the two it refused: {refusal}"
+            );
+            assert!(
+                refusal.contains("Nothing has been changed"),
+                "somebody has to know the series is untouched: {refusal}"
+            );
+            for machine in ["RRULE", "EXDATE", "RECURRENCE-ID", "provider", "API"] {
+                assert!(!refusal.contains(machine), "{machine} in {refusal}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_calendar_on_a_server_says_the_other_reason_as_well() {
+        // Changing the whole series of one of those is saved here and never
+        // sent, so a refusal that only talks about single days would leave
+        // somebody expecting the other answer to work.
+        let refusal =
+            can_be_honoured(EditMeans::OneDay, "caldav").expect_err("one day is not built");
+
+        assert!(refusal.contains("server"), "{refusal}");
+    }
+
+    #[test]
+    fn test_the_two_answers_are_offered_in_words_somebody_can_tell_apart() {
+        // Read out one after another from a dialog. Two labels beginning with
+        // the same three words are two labels nobody can choose between.
+        assert_ne!(JUST_THIS_ONE_DAY, EVERY_DAY_IN_THE_SERIES);
+        for label in [JUST_THIS_ONE_DAY, EVERY_DAY_IN_THE_SERIES] {
+            assert!(label.contains('&'), "no keyboard letter in {label}");
+            assert!(
+                !label.contains("  "),
+                "a wrapped literal lost a space: {label}"
+            );
+        }
+        assert_ne!(
+            JUST_THIS_ONE_DAY.chars().find(|c| *c == '&'),
+            None,
+            "the letter has to be there to be pressed"
+        );
+    }
+
     #[test]
     fn test_google_event_to_local() {
         let event = GoogleEvent {
@@ -1564,6 +1742,7 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             pending: false,
+            exception_dates: None,
         };
 
         let google = local_to_google_event(&local).expect("a time Google could read");
@@ -1632,6 +1811,7 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             pending: false,
+            exception_dates: None,
         };
 
         let ms = local_to_ms_event(&local).expect("a time Graph could read");
@@ -1671,6 +1851,7 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             pending: false,
+            exception_dates: None,
         });
         mgr.add_event(CalendarEventEntry {
             id: "e2".to_string(),
@@ -1700,6 +1881,7 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             pending: false,
+            exception_dates: None,
         });
 
         let day_events = mgr.events_for_day("2026-03-05");
@@ -1761,6 +1943,7 @@ mod tests {
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
             pending: false,
+            exception_dates: None,
         }
     }
 
@@ -2001,6 +2184,7 @@ mod tests {
             created_at: "2026-03-01T00:00:00Z".to_string(),
             updated_at: "2026-03-01T00:00:00Z".to_string(),
             pending: false,
+            exception_dates: None,
         }
     }
 
@@ -3126,6 +3310,97 @@ mod tests {
             .map(|(_, body)| body)
             .unwrap_or_default();
         serde_json::from_str(body).unwrap_or_else(|e| panic!("{body:?}: {e}"))
+    }
+
+    #[tokio::test]
+    async fn test_a_repeating_event_changed_here_is_not_sent_in_a_way_that_flattens_it() {
+        // The most expensive thing this unit could get wrong. Working out the
+        // days of a series here does not change what goes out, and it must not:
+        // an empty `recurrence` list sent to Google is an instruction to stop
+        // repeating, so a weekly meeting would come back as one appointment on
+        // somebody's real calendar and every other day of it would be gone.
+        //
+        // Asserted on the request that actually left, not on a promise. The
+        // absence is the whole point, so the key list is compared whole: a
+        // `recurrence` added to the converter later fails here.
+        let cache = temp_cache("push_google_series");
+        let mut event = a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, Some("evt1"));
+        event.recurrence_rule = Some("FREQ=WEEKLY;BYDAY=TU".to_string());
+        event.exception_dates = Some("20260312T090000Z".to_string());
+        cache.save_calendar_event(&event).expect("the series");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{\"id\":\"evt1\"}".to_string(), "{}".to_string()],
+        )
+        .await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a change and then a read")
+            .await
+            .expect("two requests");
+        assert!(
+            !body_keys(&requests[0]).contains(&"recurrence".to_string()),
+            "{}",
+            requests[0]
+        );
+        assert_eq!(
+            body_keys(&requests[0]),
+            [
+                "description",
+                "end",
+                "location",
+                "reminders",
+                "start",
+                "status",
+                "summary",
+                "transparency",
+            ],
+            "{}",
+            requests[0]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_repeating_event_reaches_no_calendar_at_all_when_changes_are_not_allowed() {
+        // The gate, with a series in hand. Nothing this unit added may open a
+        // way round it, and the proof has to be that nothing arrives rather
+        // than that a function returned an error.
+        let cache = temp_cache("gate_shut_series");
+        let mut event = a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, Some("evt1"));
+        event.recurrence_rule = Some("FREQ=WEEKLY".to_string());
+        cache.save_calendar_event(&event).expect("the series");
+        let (address, listening) =
+            answering_several("200 OK", "application/json", vec!["{}".to_string()]).await;
+
+        // Built the way a read-only account builds one, which is what
+        // `for_account` picks when Allow Changes is off.
+        let refused = update_google_event(
+            &cache,
+            &GoogleApiClient::new().pointed_at(&format!("http://{address}")),
+            "a-token",
+            &event,
+        )
+        .await;
+
+        assert!(
+            crate::service::outward::was_refused_by_the_gate(
+                &refused.expect_err("a read-only account cannot change a calendar")
+            ),
+            "a change went out through something other than the gate"
+        );
+        assert!(
+            heard(listening, "nothing at all").await.is_err(),
+            "a change reached the calendar with the gate shut"
+        );
     }
 
     #[tokio::test]

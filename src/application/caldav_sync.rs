@@ -7,12 +7,13 @@
 //! than leaving as an omission.
 //!
 //! A change to one of these is a PUT of the whole calendar document, so
-//! everything the builder does not write is destroyed. `build_ical_vevent`
-//! writes no repeat rule, no guests and no alerts, and nothing here keeps the
-//! server's own document to write back into. Wiring a change on top of that
-//! would flatten every repeating event and uninvite every guest, which is worse
-//! than not building it. The unit that stores the server's document is what
-//! makes it safe.
+//! everything the builder does not write is destroyed. `build_ical_vevent` now
+//! writes the repeat rule, the days the series called off and the zone, which
+//! it did not, so a change would no longer flatten a series or move it an hour.
+//! It still writes no guests and no alerts, and nothing here keeps the server's
+//! own document to write back into, so a change would still uninvite everybody
+//! and drop every alarm. That is why a change is still not sent. The unit that
+//! stores the server's document is what makes it safe.
 //!
 //! An event deleted here in a calendar from a server does leave a note saying
 //! the server has not been told. Those notes are kept rather than cleared, so
@@ -236,6 +237,7 @@ fn caldav_event_to_local(
         account_id: account_id.to_string(),
         provider_event_id: Some(remote.uid.clone()),
         calendar_id: Some(calendar_id.to_string()),
+        exception_dates: remote.exception_dates.clone(),
         summary: remote.summary.clone(),
         description: remote.description.clone(),
         location: remote.location.clone(),
@@ -288,6 +290,10 @@ pub fn local_to_caldav_event(local: &CalendarEventEntry) -> CalDavEvent {
         status: local.status.to_uppercase(),
         time_zone: local.time_zone.clone(),
         recurrence_rule: local.recurrence_rule.clone(),
+        // Both halves of how the series repeats. Sending the rule without the
+        // days it calls off would put every cancelled day back on the server's
+        // copy of somebody's calendar.
+        exception_dates: local.exception_dates.clone(),
     };
 
     // Generate iCalendar data
@@ -316,6 +322,7 @@ mod tests {
             status: "CONFIRMED".to_string(),
             time_zone: Some("Europe/London".to_string()),
             recurrence_rule: Some("FREQ=WEEKLY;BYDAY=TU".to_string()),
+            exception_dates: None,
         };
 
         let local = caldav_event_to_local(&remote, "test@example.com", "cal-1");
@@ -356,6 +363,7 @@ mod tests {
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
             pending: false,
+            exception_dates: None,
         };
 
         let caldav = local_to_caldav_event(&local);
@@ -436,6 +444,7 @@ mod tests {
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
             pending: false,
+            exception_dates: None,
         }
     }
 
@@ -742,6 +751,7 @@ mod tests {
             status: "CONFIRMED".to_string(),
             time_zone: None,
             recurrence_rule: None,
+            exception_dates: None,
         };
 
         let timed = caldav_event_to_local(&remote, "acct", "cal-1");

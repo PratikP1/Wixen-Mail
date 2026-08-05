@@ -473,6 +473,17 @@ pub struct CalendarEventItem {
     /// set. Without it, opening an event to change its name offered fifteen
     /// minutes whatever the event had, and saving wrote that back.
     pub reminder_minutes: Option<i32>,
+    /// How often the event comes round, in the words it is read out in.
+    ///
+    /// Empty for an event that does not repeat, which is most of them, so an
+    /// ordinary calendar costs nothing to listen to. A row with something here
+    /// is one day of a series, which is what decides whether changing it has to
+    /// ask what was meant.
+    pub repeats: String,
+    /// What kind of day it is: a birthday, a holiday, a deadline.
+    ///
+    /// Comma separated, as stored. Empty for most events.
+    pub categories: String,
 }
 
 /// Calendar container item for UI display (represents a whole calendar)
@@ -749,7 +760,63 @@ impl CalendarEventItem {
             calendar_name: None,
             calendar_color: None,
             reminder_minutes: first_reminder_minutes(entry.reminders_json.as_deref()),
+            // Filled in by `shown_days`, which is the only caller that knows
+            // which window is being shown and therefore how the series reads.
+            repeats: String::new(),
+            categories: entry.categories.clone(),
         }
+    }
+
+    /// Every row a stored event puts in the list, one for each day it falls on.
+    ///
+    /// One row for an ordinary event. One for each day of a series, all of them
+    /// carrying the stored event's own identity so that opening any of them
+    /// still finds the event it belongs to, and all of them saying how often it
+    /// repeats.
+    pub fn shown_days(
+        entry: &crate::data::message_cache::CalendarEventEntry,
+        from: chrono::NaiveDate,
+        to: chrono::NaiveDate,
+    ) -> Vec<Self> {
+        let shown = crate::application::occurrences::falls_on(entry, from, to);
+        shown
+            .days
+            .into_iter()
+            .map(|day| Self {
+                start: day.start,
+                end: day.end,
+                repeats: shown.how_often.clone(),
+                ..Self::from_entry(entry)
+            })
+            .collect()
+    }
+
+    /// The whole calendar as rows, in the order the days come in.
+    ///
+    /// Expanding a series produces its days together, so a list built by simply
+    /// walking the stored events reads July, August, July. Somebody arrowing
+    /// down a calendar has only the order to go on, so the order is put back.
+    pub fn every_day_shown(
+        entries: &[crate::data::message_cache::CalendarEventEntry],
+        from: chrono::NaiveDate,
+        to: chrono::NaiveDate,
+    ) -> Vec<Self> {
+        let mut rows: Vec<Self> = entries
+            .iter()
+            .flat_map(|entry| Self::shown_days(entry, from, to))
+            .collect();
+        rows.sort_by(|one, other| one.start.cmp(&other.start));
+        rows
+    }
+
+    /// The stretch of calendar the list shows, counted from today.
+    pub fn the_window_now() -> (chrono::NaiveDate, chrono::NaiveDate) {
+        use crate::application::occurrences::{HOW_FAR_BACK, HOW_FAR_FORWARD};
+        let today = chrono::Utc::now().date_naive();
+        (
+            today - chrono::Duration::days(HOW_FAR_BACK),
+            today + chrono::Duration::days(HOW_FAR_FORWARD),
+        )
     }
 }
 
@@ -886,6 +953,8 @@ mod tests {
             calendar_name: None,
             calendar_color: None,
             reminder_minutes: None,
+            repeats: String::new(),
+            categories: String::new(),
         }
     }
 
@@ -1285,7 +1354,95 @@ mod tests {
             created_at: "2026-01-01".into(),
             updated_at: "2026-01-01".into(),
             pending: false,
+            exception_dates: None,
         }
+    }
+
+    fn three_weeks_from(start: &str) -> (chrono::NaiveDate, chrono::NaiveDate) {
+        let read = |d: &str| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").expect("a date");
+        (read(start), read(start) + chrono::Duration::days(21))
+    }
+
+    #[test]
+    fn test_a_weekly_meeting_shows_on_every_week_it_falls_on() {
+        // A weekly meeting used to be one row in the list, on the day it was
+        // first set up, and nothing said why.
+        let repeating = CalendarEventEntry {
+            recurrence_rule: Some("FREQ=WEEKLY".into()),
+            ..calendar_event()
+        };
+        let (from, to) = three_weeks_from("2026-07-20");
+
+        let rows = CalendarEventItem::shown_days(&repeating, from, to);
+
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].start, "2026-07-26T09:00:00Z");
+        assert_eq!(rows[1].start, "2026-08-02T09:00:00Z");
+        assert_eq!(rows[1].end, "2026-08-02T09:15:00Z");
+        // Every row keeps the stored event's own identity, so opening one still
+        // finds the event it belongs to.
+        assert!(rows.iter().all(|row| row.id == "e1"));
+        assert!(rows.iter().all(|row| row.repeats == "every week"));
+    }
+
+    #[test]
+    fn test_the_whole_calendar_is_still_in_the_order_the_days_come_in() {
+        // Expanding a series produces its days together, so a list built by
+        // walking the events would read July, August, July, and somebody
+        // arrowing down a calendar would have no idea where they were.
+        let weekly = CalendarEventEntry {
+            recurrence_rule: Some("FREQ=WEEKLY".into()),
+            ..calendar_event()
+        };
+        let one_off = CalendarEventEntry {
+            id: "e2".into(),
+            summary: "Dentist".into(),
+            start_datetime: "2026-07-30T11:00:00Z".into(),
+            end_datetime: "2026-07-30T11:30:00Z".into(),
+            ..calendar_event()
+        };
+        let (from, to) = three_weeks_from("2026-07-20");
+
+        let rows = CalendarEventItem::every_day_shown(&[weekly, one_off], from, to);
+
+        let starts: Vec<&str> = rows.iter().map(|row| row.start.as_str()).collect();
+        assert_eq!(
+            starts,
+            [
+                "2026-07-26T09:00:00Z",
+                "2026-07-30T11:00:00Z",
+                "2026-08-02T09:00:00Z",
+                "2026-08-09T09:00:00Z",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_an_event_that_does_not_repeat_is_still_one_row_that_says_nothing() {
+        let (from, to) = three_weeks_from("2026-07-20");
+
+        let rows = CalendarEventItem::shown_days(&calendar_event(), from, to);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].repeats, "");
+        assert_eq!(rows[0].summary, "Standup");
+        assert_eq!(rows[0].location, "Room 2");
+    }
+
+    #[test]
+    fn test_a_row_carries_what_kind_of_day_it_is() {
+        // `categories::spoken` had nothing to read from, because the item the
+        // calendar rows are built out of carried no category at all.
+        let birthday = CalendarEventEntry {
+            categories: "Birthday".into(),
+            ..calendar_event()
+        };
+        let (from, to) = three_weeks_from("2026-07-20");
+
+        assert_eq!(
+            CalendarEventItem::shown_days(&birthday, from, to)[0].categories,
+            "Birthday"
+        );
     }
 
     #[test]

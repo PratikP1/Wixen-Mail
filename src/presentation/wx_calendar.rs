@@ -5,6 +5,9 @@
 
 use wxdragon::prelude::*;
 
+use crate::application::calendar::{
+    EVERY_DAY_IN_THE_SERIES, EditMeans, JUST_THIS_ONE_DAY, asking_is_needed,
+};
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::ui_types::CalendarEventItem;
 
@@ -14,6 +17,8 @@ const ID_CAL_NEW: Id = ID_HIGHEST + 500;
 const ID_CAL_EDIT: Id = ID_HIGHEST + 501;
 const ID_CAL_DELETE: Id = ID_HIGHEST + 502;
 const ID_CAL_SYNC: Id = ID_HIGHEST + 503;
+const ID_ONE_DAY: Id = ID_HIGHEST + 504;
+const ID_WHOLE_SERIES: Id = ID_HIGHEST + 505;
 
 // ── Calendar Action Result ──────────────────────────────────────────────────
 
@@ -26,10 +31,14 @@ pub enum CalendarAction {
     SyncRequested,
     /// User created a new event.
     CreateEvent(CalendarEventData),
-    /// User edited an existing event (includes the event ID).
-    UpdateEvent(String, CalendarEventData),
-    /// User deleted an event (by event ID).
-    DeleteEvent(String),
+    /// User edited an existing event: which event, and which days they meant.
+    ///
+    /// A repeating event has one stored row behind every day it falls on, so
+    /// the second half is not decoration: without it, changing the fortieth
+    /// Tuesday rewrites all fifty-two.
+    UpdateEvent(String, EditMeans, CalendarEventData),
+    /// User deleted an event: which event, and which days they meant.
+    DeleteEvent(String, EditMeans),
 }
 
 /// Data captured from the event editor dialog.
@@ -225,8 +234,14 @@ pub fn show_calendar_dialog(parent: &Frame, events: &[CalendarEventItem]) -> Vec
                             description: item.description.clone(),
                             reminder_minutes: item.reminder_minutes.unwrap_or(0),
                         };
-                        if let Some(data) = show_event_editor(&dialog, Some(&prefill)) {
-                            actions.push(CalendarAction::UpdateEvent(item.id.clone(), data));
+                        // Asked before the editor opens, so somebody who meant
+                        // one day is not made to fill a form first and then
+                        // told it cannot be done.
+                        if let Some(means) =
+                            which_days_are_meant(&dialog, &item.summary, &item.repeats)
+                            && let Some(data) = show_event_editor(&dialog, Some(&prefill))
+                        {
+                            actions.push(CalendarAction::UpdateEvent(item.id.clone(), means, data));
                             status.set_label("Event updated.");
                         }
                     }
@@ -275,8 +290,11 @@ pub fn show_calendar_dialog(parent: &Frame, events: &[CalendarEventItem]) -> Vec
                             }
                         });
 
-                        if confirm.show_modal() == ID_OK {
-                            actions.push(CalendarAction::DeleteEvent(item.id.clone()));
+                        if confirm.show_modal() == ID_OK
+                            && let Some(means) =
+                                which_days_are_meant(&dialog, &item.summary, &item.repeats)
+                        {
+                            actions.push(CalendarAction::DeleteEvent(item.id.clone(), means));
                             status.set_label("Event deleted.");
                         }
                         confirm.destroy();
@@ -310,6 +328,87 @@ fn populate_event_list(list: &ListCtrl, events: &[CalendarEventItem]) {
         list.set_item_text_by_column(idx, 1, &event.summary);
         list.set_item_text_by_column(idx, 2, &event.location);
         list.set_item_text_by_column(idx, 3, &event.status);
+    }
+}
+
+// ── One day, or the whole series ────────────────────────────────────────────
+
+/// Ask whether a change is meant for one day or for the whole series.
+///
+/// `Some` with the answer, or `None` if it was called off. An event that does
+/// not repeat is not asked about at all: there is only one day, so there is
+/// nothing to choose between, and a question with one true answer is a question
+/// nobody should be made to read.
+///
+/// The wording of the two answers lives in `application::calendar`, so the
+/// words offered here and the words the refusal quotes back cannot drift.
+pub fn which_days_are_meant(
+    parent: &dyn WxWidget,
+    summary: &str,
+    repeats: &str,
+) -> Option<EditMeans> {
+    if !asking_is_needed(repeats) {
+        return Some(EditMeans::WholeSeries);
+    }
+
+    let dialog = Dialog::builder(parent, "This event repeats")
+        .with_size(430, 200)
+        .build();
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    let question = StaticText::builder(&dialog)
+        .with_label(&format!(
+            "\"{summary}\" repeats: {repeats}.\nWhich days do you mean?"
+        ))
+        .build();
+    sizer.add(&question, 0, SizerFlag::Expand | SizerFlag::All, 12);
+
+    let buttons = BoxSizer::builder(Orientation::Horizontal).build();
+    let one_day = Button::builder(&dialog)
+        .with_label(JUST_THIS_ONE_DAY)
+        .with_id(ID_ONE_DAY)
+        .build();
+    let whole_series = Button::builder(&dialog)
+        .with_label(EVERY_DAY_IN_THE_SERIES)
+        .with_id(ID_WHOLE_SERIES)
+        .build();
+    let cancel = Button::builder(&dialog)
+        .with_label("&Cancel")
+        .with_id(ID_CANCEL)
+        .build();
+    // Named the only way that reaches a screen reader on Windows. The visible
+    // label carries the keyboard letter, which is not a word anybody should
+    // hear, so the spoken name is the same sentence without it.
+    set_accessible_name(&one_day, &JUST_THIS_ONE_DAY.replace('&', ""));
+    set_accessible_name(&whole_series, &EVERY_DAY_IN_THE_SERIES.replace('&', ""));
+    set_accessible_name(&cancel, "Cancel, and change nothing");
+    for button in [&one_day, &whole_series, &cancel] {
+        buttons.add(button, 0, SizerFlag::All, 4);
+    }
+    sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
+    dialog.set_sizer(*sizer, true);
+    dialog.centre();
+
+    // Opens on the answer that changes nothing, because the other two both act
+    // on somebody's calendar and one of them acts on every day of it.
+    cancel.set_focus();
+    for (button, answer) in [(&one_day, ID_ONE_DAY), (&whole_series, ID_WHOLE_SERIES)] {
+        button.on_click({
+            let closing = dialog;
+            move |_| closing.end_modal(answer)
+        });
+    }
+    cancel.on_click({
+        let closing = dialog;
+        move |_| closing.end_modal(ID_CANCEL)
+    });
+
+    let answered = dialog.show_modal();
+    dialog.destroy();
+    match answered {
+        id if id == ID_ONE_DAY => Some(EditMeans::OneDay),
+        id if id == ID_WHOLE_SERIES => Some(EditMeans::WholeSeries),
+        _ => None,
     }
 }
 

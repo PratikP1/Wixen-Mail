@@ -45,9 +45,14 @@ pub struct CalDavEvent {
     pub time_zone: Option<String>,
     /// How the event repeats, in the form the calendar standard writes it.
     ///
-    /// Kept as it arrived. Nothing turns it into a list of occurrences yet, so
-    /// an event that repeats is still shown once.
+    /// Kept as it arrived, without the property name in front of it.
     pub recurrence_rule: Option<String>,
+    /// The days of the series that were called off, comma separated.
+    ///
+    /// A separate property from the rule, and a server may write it on several
+    /// lines, so every line is gathered rather than the first one only. Without
+    /// it a day somebody cancelled is shown as a meeting that is not happening.
+    pub exception_dates: Option<String>,
 }
 
 /// Credential store service name holding one calendar's sign-in details.
@@ -620,6 +625,7 @@ pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Opti
         status,
         time_zone: ical_parameter(block, "DTSTART", TIME_ZONE_PARAMETER),
         recurrence_rule: extract_ical_property(block, "RRULE"),
+        exception_dates: every_ical_property(block, "EXDATE"),
     })
 }
 
@@ -673,6 +679,32 @@ fn extract_ical_property(ical: &str, property: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Every value a property carries, joined by commas, or nothing if it has none.
+///
+/// A property that can be given more than once needs all of them. The days a
+/// series calls off are written either as one line with commas or as a line
+/// each, and both mean the same thing, so keeping only the first line loses
+/// every cancelled day but one.
+fn every_ical_property(ical: &str, property: &str) -> Option<String> {
+    let mut found: Vec<String> = Vec::new();
+    for line in ical.lines() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix(property) else {
+            continue;
+        };
+        if !rest.starts_with(':') && !rest.starts_with(';') {
+            continue;
+        }
+        if let Some(colon) = rest.find(':') {
+            let value = rest[colon + 1..].trim();
+            if !value.is_empty() {
+                found.push(value.to_string());
+            }
+        }
+    }
+    (!found.is_empty()).then(|| found.join(","))
 }
 
 /// An instant written the way a calendar server expects to read it.
@@ -795,12 +827,32 @@ pub fn build_ical_vevent(event: &CalDavEvent) -> String {
             lines.push(format!("DTEND;VALUE=DATE:{}", dtend.replace('-', "")));
         }
     } else {
-        lines.push(format!(
-            "DTSTART:{}",
-            denormalize_ical_datetime(&event.dtstart)
-        ));
+        // The zone the times are named in. Without it a nine o'clock meeting in
+        // London is read as nine o'clock wherever the server keeps its clock.
+        // Left off a time that already says it is UTC, where naming a zone as
+        // well says two different things about one instant.
+        let start = denormalize_ical_datetime(&event.dtstart);
+        let zone = match &event.time_zone {
+            Some(named) if !start.ends_with('Z') => format!(";TZID={named}"),
+            _ => String::new(),
+        };
+        lines.push(format!("DTSTART{zone}:{start}"));
         if let Some(ref dtend) = event.dtend {
-            lines.push(format!("DTEND:{}", denormalize_ical_datetime(dtend)));
+            lines.push(format!("DTEND{zone}:{}", denormalize_ical_datetime(dtend)));
+        }
+        // How the series repeats, and the days it has called off. Both, or the
+        // first change ever sent to a calendar server turns somebody's weekly
+        // meeting into a single appointment, or puts every day they cancelled
+        // back on their calendar.
+        if let Some(rule) = worth_sending(event.recurrence_rule.as_deref()) {
+            lines.push(format!("RRULE:{}", without_the_property_name(rule)));
+        }
+        if let Some(called_off) = worth_sending(event.exception_dates.as_deref()) {
+            let zone = match &event.time_zone {
+                Some(named) if !called_off.ends_with('Z') => format!(";TZID={named}"),
+                _ => String::new(),
+            };
+            lines.push(format!("EXDATE{zone}:{called_off}"));
         }
     }
 
@@ -815,9 +867,53 @@ pub fn build_ical_vevent(event: &CalDavEvent) -> String {
     lines.join("\r\n")
 }
 
-/// Convert RFC 3339 datetime back to iCalendar format.
+/// A stored date and time written the way a calendar server reads one.
+///
+/// `20260306T090000`, with a trailing `Z` kept when the stored value said UTC.
+/// Taking the punctuation out was not enough: the editor here writes
+/// "2026-03-06 09:00", a space and no seconds, and stripping that gives
+/// "20260306 0900", which is not a date and time at all. A server that checks
+/// what it is sent refuses the whole change, and the sync can only report that
+/// the server said no.
+///
+/// A stored value carrying a numeric offset rather than a `Z` loses the offset
+/// and is sent as a clock face with no zone. Nothing writes one today; it is
+/// named here so it is not mistaken for handled.
 fn denormalize_ical_datetime(dt: &str) -> String {
-    dt.replace(['-', ':'], "")
+    let trimmed = dt.trim();
+    let digits: String = trimmed.chars().filter(char::is_ascii_digit).collect();
+    let Some(date) = digits.get(..8) else {
+        // Not a date at all. Sending it unchanged is no worse than sending a
+        // shortened version of it, and it keeps whatever a reader could use.
+        return trimmed.to_string();
+    };
+    let mut clock = digits.get(8..).unwrap_or_default().to_string();
+    clock.truncate(6);
+    while clock.len() < 6 {
+        clock.push('0');
+    }
+    let utc = if trimmed.ends_with('Z') { "Z" } else { "" };
+    format!("{date}T{clock}{utc}")
+}
+
+/// A property value that says something, or nothing at all.
+fn worth_sending(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+/// A rule without the property name in front of it.
+///
+/// Google keeps the name on the rule and a calendar server's reader takes it
+/// off, so both shapes reach the one column this is built from, and writing
+/// `RRULE:` in front of a value that already says `RRULE:` is not a rule. The
+/// application layer keeps its own copy of this for its own reader rather than
+/// reaching across into the service layer for four lines.
+fn without_the_property_name(rule: &str) -> &str {
+    let start = rule
+        .get(..6)
+        .filter(|head| head.eq_ignore_ascii_case("RRULE:"))
+        .map_or(0, str::len);
+    rule[start..].trim()
 }
 
 #[cfg(test)]
@@ -893,6 +989,7 @@ mod tests {
             status: "CONFIRMED".to_string(),
             time_zone: None,
             recurrence_rule: None,
+            exception_dates: None,
         };
         let ical = build_ical_vevent(&event);
         assert!(ical.contains("BEGIN:VCALENDAR"));
@@ -901,6 +998,122 @@ mod tests {
         assert!(ical.contains("DESCRIPTION:A test"));
         assert!(ical.contains("LOCATION:Here"));
         assert!(ical.contains("END:VCALENDAR"));
+    }
+
+    #[test]
+    fn test_a_series_sent_to_a_calendar_server_still_says_how_often_it_repeats() {
+        // The builder wrote nine properties and the repeat rule was not one of
+        // them, so the first change ever sent to a calendar server would have
+        // turned somebody's weekly meeting into a single appointment on their
+        // real calendar. The zone goes the same way: without it a nine o'clock
+        // meeting in London is re-read as nine o'clock wherever the server is.
+        let event = CalDavEvent {
+            url: String::new(),
+            uid: "series-1".to_string(),
+            etag: None,
+            ical_data: String::new(),
+            summary: "Standup".to_string(),
+            description: None,
+            location: None,
+            dtstart: "2026-03-05T09:00:00".to_string(),
+            dtend: Some("2026-03-05T09:15:00".to_string()),
+            is_all_day: false,
+            status: "CONFIRMED".to_string(),
+            time_zone: Some("Europe/London".to_string()),
+            recurrence_rule: Some("FREQ=WEEKLY;BYDAY=TU".to_string()),
+            exception_dates: Some("20260312T090000".to_string()),
+        };
+
+        let ical = build_ical_vevent(&event);
+
+        assert!(ical.contains("RRULE:FREQ=WEEKLY;BYDAY=TU"), "{ical}");
+        // Without this every day the series called off comes back. It carries
+        // the zone for the same reason the start does: a day cancelled at nine
+        // in London is not the same day cancelled at nine in UTC.
+        assert!(
+            ical.contains("EXDATE;TZID=Europe/London:20260312T090000"),
+            "{ical}"
+        );
+        assert!(ical.contains("DTSTART;TZID=Europe/London:"), "{ical}");
+        assert!(ical.contains("DTEND;TZID=Europe/London:"), "{ical}");
+    }
+
+    #[test]
+    fn test_a_rule_that_arrived_with_its_property_name_is_not_sent_with_two() {
+        // Google keeps the name on the front of the rule, so a series that came
+        // from there and went to a calendar server would carry RRULE:RRULE:.
+        let event = CalDavEvent {
+            recurrence_rule: Some("RRULE:FREQ=DAILY".to_string()),
+            ..an_event_to_send()
+        };
+
+        let ical = build_ical_vevent(&event);
+
+        assert!(ical.contains("RRULE:FREQ=DAILY"), "{ical}");
+        assert!(!ical.contains("RRULE:RRULE:"), "{ical}");
+    }
+
+    #[test]
+    fn test_a_time_typed_here_is_sent_in_the_shape_a_calendar_server_reads() {
+        // The editor here writes "2026-03-06 09:00": a space, and no seconds.
+        // Stripping the punctuation out of that gives "20260306 0900", which is
+        // not a date and time at all, and a server that checks what it is sent
+        // refuses the whole change.
+        let event = CalDavEvent {
+            dtstart: "2026-03-06 09:00".to_string(),
+            dtend: Some("2026-03-06 10:30".to_string()),
+            ..an_event_to_send()
+        };
+
+        let ical = build_ical_vevent(&event);
+
+        assert!(ical.contains("DTSTART:20260306T090000"), "{ical}");
+        assert!(ical.contains("DTEND:20260306T103000"), "{ical}");
+        assert!(
+            !ical
+                .lines()
+                .any(|line| line.starts_with("DT") && line.contains(' ')),
+            "no spaces in a date and time: {ical}"
+        );
+    }
+
+    fn an_event_to_send() -> CalDavEvent {
+        CalDavEvent {
+            url: String::new(),
+            uid: "u".to_string(),
+            etag: None,
+            ical_data: String::new(),
+            summary: "Standup".to_string(),
+            description: None,
+            location: None,
+            dtstart: "2026-03-05T09:00:00Z".to_string(),
+            dtend: Some("2026-03-05T09:15:00Z".to_string()),
+            is_all_day: false,
+            status: "CONFIRMED".to_string(),
+            time_zone: None,
+            recurrence_rule: None,
+            exception_dates: None,
+        }
+    }
+
+    #[test]
+    fn test_a_changed_day_of_a_series_is_kept_when_the_server_sends_it_with_the_series() {
+        // A cancelled day, which a server may write on one line or on several,
+        // and which every reader before this dropped. Shown, it is a meeting
+        // somebody turns up to that is not happening.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:series-1\r\n\
+                    SUMMARY:Standup\r\nDTSTART:20260305T090000Z\r\nDTEND:20260305T091500Z\r\n\
+                    RRULE:FREQ=WEEKLY\r\nEXDATE:20260312T090000Z\r\n\
+                    EXDATE;TZID=Europe/London:20260326T090000\r\nEND:VEVENT\r\nEND:VCALENDAR";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(event.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+        assert_eq!(
+            event.exception_dates.as_deref(),
+            Some("20260312T090000Z,20260326T090000"),
+            "every line, not the first one only"
+        );
     }
 
     /// A calendar server sends the timezone rules in the same document as the
@@ -1281,6 +1494,41 @@ mod discovery_tests {
         assert_eq!(found.len(), 2, "{found:?}");
     }
 
+    #[tokio::test]
+    async fn test_a_calendar_server_is_not_asked_to_expand_a_series() {
+        // The decision the whole of the repeating-events work rests on, pinned
+        // rather than remembered. A calendar server sends the series with its
+        // rule and this side works out the days, so the request must keep
+        // asking for the calendar data itself and never for an expansion: an
+        // expanded answer carries no rule, and the reading could then never say
+        // how often something repeats. It also multiplies the size of the
+        // answer on the one transport here that does not page.
+        let (address, listening) =
+            answering("207 Multi-Status", "application/xml", String::new()).await;
+
+        let _ = CalDavClient::new()
+            .list_events(
+                &format!("http://{address}/dav/sam/work/"),
+                "sam",
+                "secret",
+                None,
+                None,
+                None,
+            )
+            .await;
+
+        let request = heard(listening, "a calendar report")
+            .await
+            .expect("the request");
+        assert_eq!(asked_for(&request), "REPORT /dav/sam/work/");
+        assert!(request.contains("<c:calendar-data/>"), "{request}");
+        assert!(
+            !request.contains("<c:expand"),
+            "the days are worked out here, so the server must not be asked to \
+             send them instead: {request}"
+        );
+    }
+
     /// The same home set from a server that repeats its namespaces on every
     /// block rather than declaring them once at the top. Both are ordinary.
     fn a_home_set_naming_its_namespaces_on_every_block() -> String {
@@ -1375,6 +1623,7 @@ mod discovery_tests {
             status: "CONFIRMED".to_string(),
             time_zone: None,
             recurrence_rule: None,
+            exception_dates: None,
         };
 
         let refused = CalDavClient::new()

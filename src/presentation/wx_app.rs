@@ -4846,8 +4846,11 @@ pub(crate) fn load_module_data(
             let events = from_every(&sources, &mut failures, "events", |id| {
                 cache.get_all_events_for_account(id)
             });
+            // Every day a series falls on, not one row per stored event. A
+            // weekly meeting used to appear once, on the day it was set up.
+            let (from, to) = CalendarEventItem::the_window_now();
             updates.push(UIUpdate::CalendarEventsLoaded(
-                events.iter().map(CalendarEventItem::from_entry).collect(),
+                CalendarEventItem::every_day_shown(&events, from, to),
             ));
         }
         PimModule::Contacts => {

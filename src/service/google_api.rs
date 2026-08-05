@@ -782,6 +782,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_the_calendar_is_asked_to_expand_a_series_before_it_sends_it() {
+        // Nothing checked this string, and the whole shape of how repeating
+        // events are handled rests on it. Asking for single events means Google
+        // sends the days themselves rather than the series, so a Google event
+        // arrives carrying no repeat rule and the days are already there.
+        // Dropping this parameter would turn every Google series into one row
+        // holding a rule that nothing on this side asked the server to expand,
+        // and no test anywhere would notice.
+        let url = events_url(
+            "https://example.test/calendars",
+            "primary",
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert!(url.contains("singleEvents=true"), "{url}");
+    }
+
+    #[test]
     fn test_a_contacts_request_asks_google_for_a_sync_token() {
         let url = connections_url(PEOPLE_API_BASE, None, None);
 

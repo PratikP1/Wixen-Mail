@@ -23,7 +23,7 @@ const EVENT_COLS: &str =
      start_datetime, end_datetime, start_date, end_date, is_all_day, time_zone,
      status, recurrence_rule, source_provider, etag, web_link, show_as,
      last_modified_remote, last_synced_at, attendees_json, reminders_json,
-     created_at, updated_at, categories, pending";
+     created_at, updated_at, categories, pending, exception_dates";
 
 /// Map a rusqlite row to a `CalendarEventEntry` (columns must match `EVENT_COLS` order).
 fn map_event_row(row: &rusqlite::Row) -> rusqlite::Result<CalendarEventEntry> {
@@ -53,10 +53,12 @@ fn map_event_row(row: &rusqlite::Row) -> rusqlite::Result<CalendarEventEntry> {
         reminders_json: row.get(22)?,
         created_at: row.get(23)?,
         updated_at: row.get(24)?,
-        // Last two, because they were added last: the column list above puts
-        // them there so every position before them stays where it was.
+        // Last, because they were added last: the column list above puts them
+        // there so every position before them stays where it was. Anything
+        // added later goes on the end of both, never in the middle.
         categories: row.get(25)?,
         pending: row.get(26)?,
+        exception_dates: row.get(27)?,
     })
 }
 
@@ -86,12 +88,12 @@ impl MessageCache {
               start_datetime, end_datetime, start_date, end_date, is_all_day, time_zone,
               status, recurrence_rule, source_provider, etag, web_link, show_as,
               last_modified_remote, last_synced_at, attendees_json, reminders_json,
-              created_at, updated_at, categories, pending)
+              created_at, updated_at, categories, pending, exception_dates)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
                      ?17, ?18, ?19, ?20, ?21, ?22, ?23,
                      COALESCE((SELECT created_at FROM calendar_events
                                WHERE account_id = ?2 AND calendar_id IS ?4 AND provider_event_id = ?3), ?24),
-                     ?25, ?26, ?27)
+                     ?25, ?26, ?27, ?28)
              ON CONFLICT(id) DO UPDATE SET
                 provider_event_id = COALESCE(excluded.provider_event_id, calendar_events.provider_event_id),
                 calendar_id = excluded.calendar_id,
@@ -116,6 +118,7 @@ impl MessageCache {
                 reminders_json = excluded.reminders_json,
                 categories = excluded.categories,
                 pending = excluded.pending,
+                exception_dates = excluded.exception_dates,
                 updated_at = excluded.updated_at
              ON CONFLICT(account_id, calendar_id, provider_event_id) DO UPDATE SET
                 summary = excluded.summary,
@@ -139,6 +142,7 @@ impl MessageCache {
                 reminders_json = excluded.reminders_json,
                 categories = excluded.categories,
                 pending = excluded.pending,
+                exception_dates = excluded.exception_dates,
                 updated_at = excluded.updated_at",
             params![
                 &event.id, &event.account_id, &event.provider_event_id, &event.calendar_id,
@@ -150,7 +154,7 @@ impl MessageCache {
                 &event.source_provider, &event.etag, &event.web_link, &event.show_as,
                 &event.last_modified_remote, &event.last_synced_at,
                 &event.attendees_json, &event.reminders_json,
-                &now, &now, &event.categories, &event.pending,
+                &now, &now, &event.categories, &event.pending, &event.exception_dates,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save calendar event: {}", e)))?;
         Ok(())
@@ -512,6 +516,7 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             pending: false,
+            exception_dates: None,
         }
     }
 
@@ -596,6 +601,7 @@ mod tests {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             pending: false,
+            exception_dates: None,
         };
 
         cache.save_calendar_event(&event).unwrap();
@@ -969,6 +975,71 @@ mod tests {
 
     /// A directory holding a database written before an event could say which
     /// calendar it was in: three events, and calendars for one of the two
+    #[test]
+    fn test_a_repeating_event_from_an_older_database_keeps_its_rule_and_gains_no_days_called_off() {
+        // The column added by this change. A database written before it has no
+        // days called off, and reading nothing as "every day is called off"
+        // would empty somebody's calendar of every series in it.
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock that has passed 1970")
+            .as_nanos();
+        let dir = env::temp_dir().join(format!("wixen_mail_before_exdate_{nanos}"));
+        std::fs::create_dir_all(&dir).expect("a directory to write into");
+        let conn =
+            rusqlite::Connection::open(dir.join("message_cache.db")).expect("a database to open");
+        conn.execute(THE_EVENTS_TABLE_AS_THE_LAST_RELEASE_WROTE_IT, [])
+            .expect("the events table as it was");
+        conn.execute(
+            "INSERT INTO calendar_events
+             (id, account_id, provider_event_id, summary, start_datetime, end_datetime,
+              is_all_day, status, recurrence_rule, source_provider, show_as,
+              created_at, updated_at, categories, calendar_id)
+             VALUES ('evt-r', 'acct', 'uid-r', 'Standup', '2026-03-05 09:00',
+                     '2026-03-05 09:15', 0, 'confirmed', 'FREQ=WEEKLY;BYDAY=TU,TH',
+                     'caldav', 'busy', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z',
+                     '', 'cal-1')",
+            params![],
+        )
+        .expect("a repeating event written by the last release");
+        drop(conn);
+
+        let cache = MessageCache::new(dir, None).expect("the older database to open");
+
+        let stored = cache
+            .get_event_by_id("evt-r")
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(stored.summary, "Standup");
+        assert_eq!(
+            stored.recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;BYDAY=TU,TH"),
+            "the rule an older database already held"
+        );
+        assert_eq!(stored.exception_dates, None);
+        assert_eq!(stored.start_datetime, "2026-03-05 09:00");
+        assert_eq!(stored.created_at, "2026-01-01T00:00:00Z");
+
+        // And the new column is really a column: written and read back.
+        let called_off = CalendarEventEntry {
+            exception_dates: Some("20260312T090000Z".to_string()),
+            ..stored
+        };
+        cache
+            .save_calendar_event(&called_off)
+            .expect("the event to save");
+
+        assert_eq!(
+            cache
+                .get_event_by_id("evt-r")
+                .expect("the calendar to be readable")
+                .expect("the event to still be there")
+                .exception_dates
+                .as_deref(),
+            Some("20260312T090000Z"),
+        );
+    }
+
     /// accounts they belong to.
     fn a_directory_holding_events_before_calendars_existed(what_for: &str) -> std::path::PathBuf {
         let nanos = SystemTime::now()

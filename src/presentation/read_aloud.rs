@@ -398,7 +398,13 @@ impl ReadAloud for ReminderItem {
 
 impl ReadAloud for CalendarEventItem {
     fn read_id(&self) -> String {
-        self.id.clone()
+        // Every day of a series carries the stored event's identity, so the day
+        // has to come into it or all fifty-two Tuesdays are one item and the
+        // Space cycle carries on from whichever one was pressed last.
+        if self.repeats.is_empty() {
+            return self.id.clone();
+        }
+        format!("{} {}", self.id, self.start)
     }
 
     fn read_short(&self, out: Reading) -> String {
@@ -407,7 +413,16 @@ impl ReadAloud for CalendarEventItem {
         } else {
             out.date(&self.start)
         };
-        spoken(&[("", &self.summary), ("", &when)])
+        // A series that was worked out has its own days on the screen to say it
+        // repeats. One that could not be worked out has nothing at all: a
+        // single row that looks exactly like an event happening once. That is
+        // the only case worth spending a line on without being asked.
+        let unreadable = if self.repeats == crate::application::occurrences::CANNOT_BE_READ {
+            self.repeats.as_str()
+        } else {
+            ""
+        };
+        spoken(&[("", &self.summary), ("", &when), ("", unreadable)])
     }
 
     fn read_full(&self, out: Reading) -> String {
@@ -431,6 +446,13 @@ impl ReadAloud for CalendarEventItem {
             ("Location", &self.location),
             ("Status", status_worth_saying(&self.status)),
             ("Calendar", self.calendar_name.as_deref().unwrap_or("")),
+            // Both empty on an ordinary event, and `spoken` drops empty parts,
+            // so a plain calendar costs nothing to listen to.
+            ("", &self.repeats),
+            (
+                "",
+                &crate::application::categories::spoken(&self.categories),
+            ),
             ("", &long_text::spoken(&self.description)),
         ])
     }
@@ -562,6 +584,8 @@ mod tests {
             calendar_name: None,
             calendar_color: None,
             reminder_minutes: None,
+            repeats: String::new(),
+            categories: String::new(),
         }
     }
 
@@ -968,6 +992,84 @@ mod tests {
     }
 
     #[test]
+    fn test_an_event_that_repeats_says_so_when_it_is_read() {
+        // Nothing anywhere said an event repeated. Somebody met a meeting on
+        // one day with no way of knowing it was the same meeting as last week.
+        let event = CalendarEventItem {
+            repeats: "every week, 6 times".to_string(),
+            ..event()
+        };
+
+        let read = event.read_full(aloud());
+
+        assert!(read.contains("every week, 6 times"), "{read}");
+    }
+
+    #[test]
+    fn test_a_birthday_is_told_from_a_dentist_appointment_by_ear() {
+        // The reason categories exist, and the half that was never delivered:
+        // telling one kind of day from another by colour tells this
+        // application's own audience nothing.
+        let birthday = CalendarEventItem {
+            summary: "Ada".to_string(),
+            categories: "Birthday".to_string(),
+            ..event()
+        };
+
+        let read = birthday.read_full(aloud());
+
+        assert!(read.contains("Birthday"), "{read}");
+        assert!(
+            !event().read_full(aloud()).contains("Birthday"),
+            "an event with no category must not gain one"
+        );
+    }
+
+    #[test]
+    fn test_an_event_whose_repeat_rule_cannot_be_read_says_so_without_pressing_space() {
+        // The one case somebody has to be told without asking. For a series
+        // that was worked out, the days themselves are the evidence; for one
+        // that was not, there is no evidence at all and the single row on the
+        // screen looks exactly like an event that happens once.
+        let unreadable = CalendarEventItem {
+            repeats: crate::application::occurrences::CANNOT_BE_READ.to_string(),
+            ..event()
+        };
+
+        let short = unreadable.read_short(aloud());
+
+        assert!(
+            short.contains(crate::application::occurrences::CANNOT_BE_READ),
+            "{short}"
+        );
+        // An ordinary weekly meeting stays a line, because the other rows say it.
+        let weekly = CalendarEventItem {
+            repeats: "every week".to_string(),
+            ..event()
+        };
+        assert!(!weekly.read_short(aloud()).contains("every week"));
+    }
+
+    #[test]
+    fn test_two_days_of_the_same_series_are_not_the_same_item_to_read() {
+        // Every day of a series carries the stored event's identity, so without
+        // the day as well all fifty-two Tuesdays are one item: pressing Space
+        // on the second would carry on the cycle begun on the first.
+        let first = CalendarEventItem {
+            repeats: "every week".to_string(),
+            ..event()
+        };
+        let second = CalendarEventItem {
+            start: "2026-08-03 09:00".to_string(),
+            ..first.clone()
+        };
+
+        assert_ne!(first.read_id(), second.read_id());
+        // An event that does not repeat is one row and keeps the plain answer.
+        assert_eq!(event().read_id(), "e1");
+    }
+
+    #[test]
     fn test_an_events_description_is_read_at_all() {
         // Where the dial-in number and the agenda live. Nothing read it.
         let event = CalendarEventItem {
@@ -984,6 +1086,8 @@ mod tests {
             calendar_name: None,
             calendar_color: None,
             reminder_minutes: None,
+            repeats: String::new(),
+            categories: String::new(),
         };
 
         assert!(
@@ -1009,6 +1113,8 @@ mod tests {
             calendar_name: None,
             calendar_color: None,
             reminder_minutes: None,
+            repeats: String::new(),
+            categories: String::new(),
         };
         assert!(event.read_full(aloud()).contains("all day"));
         assert!(
