@@ -168,6 +168,14 @@ pub struct MsGraphEvent {
     /// Who is invited. An empty list sent to Graph uninvites all of them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attendees: Vec<MsAttendee>,
+    /// What the event is filed under. Outlook calls these categories and shows
+    /// them by name and colour; this program stores one per event.
+    ///
+    /// Skipped when empty for the same reason as the attendees above: Graph
+    /// reads a list that is present as the whole truth, so sending an empty one
+    /// takes away every category the event had. Absent means leave them alone.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub categories: Vec<String>,
     /// What makes this a repeating series. Sent as null, the series is flattened
     /// into the one appointment the change was about.
     #[serde(skip_serializing_if = "Option::is_none")]

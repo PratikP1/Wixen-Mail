@@ -8,6 +8,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A category you typed on an event now goes to Outlook with it.** Outlook has
+  categories and shows them by name and colour, and this was filling one in and
+  then not sending it, so an event arrived filed under nothing. Google Calendar
+  has no equivalent, which is why this is the Outlook half only.
+
+  Known limitation: it goes out and does not come back. A category changed in
+  Outlook is not read here, and the copy stored on this computer is the one
+  that gets sent on the next change. Nothing has met a live account, so whether
+  Outlook accepts the list as sent is unconfirmed.
+
 - **A repeating event now shows on every day it falls on.** A weekly meeting
   used to appear once, on the day it was first set up, and nothing told you why
   the other weeks were empty. Every day of a series is now a row of its own, in
@@ -710,9 +720,9 @@ live account or a live calendar server:
   nothing, which is already how the master key is handled.
 
 - **A category typed onto a Google or Outlook calendar event survives the next
-  sync.** Neither service carries a category, so every sync wrote a blank one
-  over whatever had been typed here and the category was gone by the time
-  anybody looked. The calendar an event was filed under went the same way. Both
+  sync.** Neither category was being read back from the service, so every sync
+  wrote a blank one over whatever had been typed here and the category was gone
+  by the time anybody looked. The calendar an event was filed under went the same way. Both
   are kept from the copy already stored now, which is what the CalDAV sync
   already did. The people invited and the alerts set are still taken from the
   service, because unlike a CalDAV server both of these do send them.

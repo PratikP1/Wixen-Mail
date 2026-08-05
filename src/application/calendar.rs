@@ -1552,8 +1552,23 @@ pub fn local_to_ms_event(event: &CalendarEventEntry) -> Result<MsGraphEvent> {
         show_as: Some(event.show_as.clone()),
         is_reminder_on: Some(lead.is_some()),
         reminder_minutes_before_start: Some(lead.unwrap_or(0)),
+        categories: categories_for_outlook(&event.categories),
         ..Default::default()
     })
+}
+
+/// What an event is filed under, as Outlook wants to be told it.
+///
+/// This program stores one category per event as a string; Graph takes a list.
+/// An event filed under nothing sends no list at all rather than an empty one,
+/// because Graph reads a list that is present as the whole truth and an empty
+/// one takes away every category the event already had.
+fn categories_for_outlook(stored: &str) -> Vec<String> {
+    let filed = stored.trim();
+    if filed.is_empty() {
+        return Vec::new();
+    }
+    vec![filed.to_string()]
 }
 
 /// How long before an event its alert goes off, or nothing when it has none.
@@ -2670,6 +2685,32 @@ mod tests {
     }
 
     #[test]
+    fn test_a_category_somebody_typed_reaches_outlook() {
+        // Outlook has categories and shows them by name and colour, so this is
+        // a field somebody filled in that was being dropped on the way out. It
+        // is the same family as the birthday that never reached Outlook and the
+        // website that never reached Google: no mutant can ask about a field
+        // that is not built, so it has to be read for.
+        //
+        // Google Calendar has no equivalent, which is why only this half exists.
+        let mut filed = make_event("e1", "Dentist", None);
+        filed.categories = "Health".to_string();
+
+        let ms = local_to_ms_event(&filed).expect("a time Graph could read");
+
+        assert_eq!(ms.categories, vec!["Health".to_string()]);
+
+        let unfiled = make_event("e2", "Standup", None);
+        let ms = local_to_ms_event(&unfiled).expect("a time Graph could read");
+        assert!(
+            ms.categories.is_empty(),
+            "an event filed under nothing must send no list at all: Graph reads a \
+             list that is present as the whole truth, so an empty one takes away \
+             every category the event had"
+        );
+    }
+
+    #[test]
     fn test_the_alert_set_on_an_event_is_the_alert_microsoft_is_given() {
         let mut with_alert = make_event("e1", "Review", None);
         with_alert.reminders_json = Some("[{\"method\":\"popup\",\"minutes\":30}]".to_string());
@@ -2973,7 +3014,8 @@ mod tests {
             .expect("the event to still be there");
         assert_eq!(
             stored.categories, "Birthday",
-            "a category typed here is not something Microsoft carries, so a sync cannot take it away"
+            "Microsoft does carry categories, and this sync does not read them back, \
+             so the copy stored here is the only one there is and a sync cannot take it away"
         );
         assert_eq!(
             stored.calendar_id.as_deref(),
