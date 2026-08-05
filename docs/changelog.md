@@ -8,6 +8,41 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A contact group does something now.** Until now a group could be made, named
+  and listed, and that was all it could do. You can now rename one, put a
+  contact in one, take a contact out of one, and, the point of the whole thing,
+  write to one: choosing Write to this group opens a new message with everybody
+  in the group already on the To line.
+
+  Everything is on the context menu, opened with the `Applications` key or
+  `Shift+F10`. Press it on the groups tree in the contacts sidebar for Write to
+  this group, New group, Rename this group and Delete this group. Press it on a
+  contact in the list for Put in a group and Take out of a group. No new
+  keyboard shortcut was added. The entries are listed under Contact Groups in
+  [the keyboard shortcuts guide](KEYBOARD_SHORTCUTS.md).
+
+  The sidebar now has a Groups branch of its own, and each group reads as its
+  name and how many people are in it, such as "Team A, 3 people", rather than
+  "Team A (3)".
+
+  A member with no email address is left off the To line rather than sent as an
+  empty recipient, and the announcement says so: "Writing to Team A, 2 of 4
+  people. The others have no email address." The address it uses is the one on
+  the contact's main line, so somebody whose only address is one of their extra
+  ones is counted as having none.
+
+  Known limitations: nothing has been checked with a screen reader, including
+  what the new Groups branch does to where focus lands when the sidebar is
+  filled again. Nothing here has run against a real account, and nothing needs
+  to, because none of it touches one.
+
+- **Contact groups are kept on this computer, and the product now says so.** A
+  group made here is not sent to Google or Outlook, and a group you already keep
+  there does not appear here. That has always been true and nothing said it.
+  The window that makes a group now says it before you type a name, the privacy
+  page has a section on it, and the sentence said after a group is made no
+  longer names a mail account.
+
 - **A person's name survives a trip to an address book and back.** The two parts
   of a name, the given name and the family name, are now kept as they were given
   rather than worked out from the whole name each time. A family name that
@@ -195,6 +230,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   nothing. `docs/privacy.md` says what each of them does.
 
 ### Fixed
+
+- **Deleting a contact group no longer offers to delete the people in it.** The
+  question said "Delete the contact group "Team A" and the 3 contacts in it?
+  This cannot be undone." It never touched the contacts. It now says the people
+  in it stay in your address book.
+
+- **Deleting a contact group no longer promises it will come back.** The same
+  question added "It will come back at the next sync", which was said for
+  anything deleted while a mail account was open. Nothing has ever sent a
+  contact group to a provider, so the sync was never going to mention it. The
+  sentence is now added only where there really is a copy at the provider, which
+  is a calendar or a task list.
+
+- **A contact group no longer disappears when you open a different account.** A
+  group was filed under whichever account was set as the default, and the
+  sidebar only ever read the account being looked at, so a group could be made
+  and vanish. Groups are now kept on this computer and are shown whichever
+  account is open. Groups made before this change are still found, so a group
+  somebody thought they had lost will reappear.
 
 - **Deleting a message no longer destroys text that exists nowhere else.**
   Deleting marks the message and drops its saved text, on the reasoning that it

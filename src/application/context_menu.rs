@@ -14,8 +14,12 @@
 //! rule is already written down for [`crate::application::pim_command`] and
 //! this follows it.
 //!
-//! Rename, mark a whole folder read and empty a folder are the obvious
-//! absences. None of them is implemented, so none of them is offered.
+//! Marking a whole folder read and emptying a folder are the obvious
+//! absences. Neither is implemented, so neither is offered. Rename was in that
+//! list and is now written for a contact group, which is the only container
+//! that has one; the other three still have no rename and are still not
+//! offered it, and
+//! [`crate::application::new_item::renaming_works`] is where that is decided.
 //!
 //! # Why this is data
 //!
@@ -87,6 +91,24 @@ pub enum Action {
     NewContainer,
     /// Remove this container and say what goes with it.
     DeleteContainer,
+    /// Give this container a different name.
+    ///
+    /// Offered only where a rename is written, which today is a contact group.
+    /// [`crate::application::new_item::renaming_works`] is the one answer, and
+    /// a test holds this list to it.
+    RenameContainer,
+    /// Open a message addressed to everybody in this group.
+    ///
+    /// The reason anybody keeps a group. Without it a group is a name in a
+    /// sidebar and nothing more.
+    WriteToGroup,
+    /// Put the chosen contact in a group.
+    AddToGroup,
+    /// Take the chosen contact out of a group, leaving the contact alone.
+    ///
+    /// Named apart from [`Action::DeleteItem`] because they are one keystroke
+    /// apart and one of them is not reversible.
+    RemoveFromGroup,
     /// Fetch this module from the provider now.
     SyncNow,
     /// Make a task from this message, keeping its subject and its text.
@@ -171,6 +193,10 @@ static MAIL_FOLDERS: &[Entry] = &[
 
 static CONTACTS: &[Entry] = &[
     entry("&New contact", Action::NewItem),
+    // Worded as putting somebody in and taking them out, rather than as adding
+    // and removing, so the one next to Delete does not read like one.
+    entry("Put in a &group", Action::AddToGroup),
+    entry("Take &out of a group", Action::RemoveFromGroup),
     entry("&Delete", Action::DeleteItem),
 ];
 
@@ -220,7 +246,10 @@ static NOTE_FOLDERS: &[Entry] = &[
 ];
 
 static CONTACT_GROUPS: &[Entry] = &[
+    // First, because it is what a group is for.
+    entry("&Write to this group", Action::WriteToGroup),
     entry("&New group", Action::NewContainer),
+    entry("&Rename this group", Action::RenameContainer),
     entry("&Delete this group", Action::DeleteContainer),
     entry("&Sync contacts now", Action::SyncNow),
 ];
@@ -247,6 +276,50 @@ mod tests {
                 "the menu and the command disagree about {kind:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_rename_is_offered_exactly_where_it_works() {
+        // A name typed in a hurry is the ordinary case, and until now the only
+        // way to correct one was to delete the group and make it again, which
+        // also emptied it. The other three containers have no rename written,
+        // so offering one there would be a line that does nothing.
+        for kind in ContainerKind::ALL {
+            let offered = entries_for(Focus::Containers(kind))
+                .iter()
+                .any(|e| e.action == Action::RenameContainer);
+            assert_eq!(
+                offered,
+                crate::application::new_item::renaming_works(kind),
+                "the menu and what is written disagree about {kind:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_contact_can_be_put_in_a_group_from_its_own_menu() {
+        // The two storage calls behind these have existed since groups did and
+        // neither had a caller, so a group could be made and could never gain
+        // or lose a member.
+        let offered: Vec<Action> = entries_for(Focus::Items(ItemKind::Contact))
+            .iter()
+            .map(|e| e.action)
+            .collect();
+
+        assert!(offered.contains(&Action::AddToGroup), "{offered:?}");
+        assert!(offered.contains(&Action::RemoveFromGroup), "{offered:?}");
+    }
+
+    #[test]
+    fn test_a_group_can_be_written_to_from_its_own_menu() {
+        // Without this a group is decoration: it can be made, named and filled
+        // and never used for the one thing anybody keeps a group for.
+        let offered: Vec<Action> = entries_for(Focus::Containers(ContainerKind::ContactGroup))
+            .iter()
+            .map(|e| e.action)
+            .collect();
+
+        assert!(offered.contains(&Action::WriteToGroup), "{offered:?}");
     }
 
     #[test]

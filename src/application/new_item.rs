@@ -293,6 +293,44 @@ pub fn destination(
     }
 }
 
+/// Whether this kind of container can be renamed.
+///
+/// True only where a rename is written. A menu line that does nothing is worse
+/// than one that is absent, because it is a stop somebody lands on, hears, and
+/// learns nothing from. The other three are storable in the same way and
+/// nobody has written the command, so this is the honest answer today and the
+/// place to change when somebody does.
+pub const fn renaming_works(kind: ContainerKind) -> bool {
+    match kind {
+        ContainerKind::ContactGroup => true,
+        ContainerKind::Calendar | ContainerKind::TaskList | ContainerKind::NoteFolder => false,
+    }
+}
+
+/// Where a new container of this kind belongs.
+///
+/// Three of the four follow the things they hold, so a calendar and its events
+/// can never end up in different accounts. A contact group does not, and it is
+/// the only container whose own kind decides: nothing sends a group to a
+/// provider and nothing reads one back, so filing it under a mail account
+/// would announce it as created somewhere that will never hear of it, and
+/// would take it out of the sidebar the moment another account was opened.
+///
+/// The contacts in a group are untouched by this. Membership is by contact,
+/// and a contact goes on belonging to whichever account holds it.
+pub fn container_destination(
+    kind: ContainerKind,
+    accounts: &[Account],
+    default_id: Option<&str>,
+) -> Destination {
+    if matches!(kind, ContainerKind::ContactGroup) {
+        return Destination::Local;
+    }
+    // Never `None` for a container: `destination` only refuses mail, and a
+    // container is not mail.
+    destination(kind.holds(), accounts, default_id).unwrap_or(Destination::Local)
+}
+
 /// Which account a compose window sends from.
 ///
 /// Two different questions that were being answered the same way. Answering
@@ -622,16 +660,32 @@ mod tests {
     }
 
     #[test]
-    fn test_a_gmail_account_keeps_its_calendars_and_contact_groups() {
+    fn test_a_gmail_account_keeps_the_calendar_a_new_event_goes_in() {
         let accounts = vec![account("a1", "me@gmail.com")];
 
-        for container in [ContainerKind::Calendar, ContainerKind::ContactGroup] {
-            assert_eq!(
-                destination(container.holds(), &accounts, Some("a1")),
-                Some(Destination::Account("a1".to_string())),
-                "{container:?}"
-            );
-        }
+        assert_eq!(
+            destination(ContainerKind::Calendar.holds(), &accounts, Some("a1")),
+            Some(Destination::Account("a1".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_a_contact_group_is_kept_here_whatever_account_is_default() {
+        // A group is not sent anywhere, so filing it under a Gmail account
+        // would announce it as created in an account that will never see it,
+        // and would hide it from the sidebar whenever another account is being
+        // looked at. The contacts in it still belong wherever they belong.
+        let accounts = vec![account("a1", "me@gmail.com")];
+
+        assert_eq!(
+            container_destination(ContainerKind::ContactGroup, &accounts, Some("a1")),
+            Destination::Local
+        );
+        // The other three still follow the things they hold.
+        assert_eq!(
+            container_destination(ContainerKind::Calendar, &accounts, Some("a1")),
+            Destination::Account("a1".to_string())
+        );
     }
 
     #[test]
@@ -736,6 +790,14 @@ mod tests {
 /// thinks a list is empty and is told it holds forty things has just been
 /// saved, and somebody told a list is empty can answer instantly.
 pub fn deletion_question(kind: ContainerKind, name: &str, holding: usize) -> String {
+    // A contact group is the one container that does not own what it holds. A
+    // calendar deleted takes its events with it; a group deleted takes only
+    // the label, and the people go on existing in the address book. Saying
+    // "and the 3 contacts in it? This cannot be undone" offered to destroy
+    // three people it never touches.
+    if matches!(kind, ContainerKind::ContactGroup) {
+        return group_deletion_question(name, holding);
+    }
     let held = kind.holds().plural();
     match holding {
         0 => format!(
@@ -757,6 +819,23 @@ pub fn deletion_question(kind: ContainerKind, name: &str, holding: usize) -> Str
     }
 }
 
+/// The same question for a group, which loses only its own name.
+///
+/// Where the others say what is destroyed, this says what survives. Somebody
+/// deciding whether to delete a group needs to know the people in it are not
+/// going anywhere, and that is the thing they are most likely to fear.
+fn group_deletion_question(name: &str, holding: usize) -> String {
+    match holding {
+        0 => format!("Delete the contact group \"{name}\"? It is empty."),
+        1 => format!(
+            "Delete the contact group \"{name}\"? The 1 contact in it stays in your address book."
+        ),
+        many => format!(
+            "Delete the contact group \"{name}\"? The {many} contacts in it stay in your address book."
+        ),
+    }
+}
+
 /// Whether deleting this container also removes it at the provider.
 ///
 /// It does not, and saying so matters: somebody who deletes a synced list here
@@ -766,9 +845,47 @@ pub fn deletion_reaches_provider(_kind: ContainerKind) -> bool {
     false
 }
 
+/// Whether a provider holds a copy of this kind of container at all.
+///
+/// Separate from [`deletion_reaches_provider`], which asks whether deleting
+/// here also deletes there. This asks whether there is anything there in the
+/// first place, and the answer decides whether somebody is told to expect the
+/// thing back at the next sync. Telling them that about something no provider
+/// has ever heard of leaves them waiting for a sync that will never mention it.
+pub const fn the_provider_has_a_copy(kind: ContainerKind) -> bool {
+    match kind {
+        // Both arrive from Google and Microsoft, so one deleted here is put
+        // back by the next read.
+        ContainerKind::Calendar | ContainerKind::TaskList => true,
+        // Neither is sent anywhere. Notes stay on this computer, and a contact
+        // group is a name kept here over people who may live anywhere.
+        ContainerKind::NoteFolder | ContainerKind::ContactGroup => false,
+    }
+}
+
 /// What to add to the question when the provider still has a copy.
 pub const STILL_AT_THE_PROVIDER: &str = " It will come back at the next sync, because deleting it here does not \
      delete it at your provider yet.";
+
+/// The whole question asked before a container is deleted.
+///
+/// [`deletion_question`] plus the warning about the provider, added only where
+/// there is a provider copy to come back. Written here rather than at the one
+/// call site so the two halves cannot be composed differently by the next
+/// caller, and so the composition can be tested without a window.
+pub fn deletion_warning(
+    kind: ContainerKind,
+    name: &str,
+    holding: usize,
+    account_id: &str,
+) -> String {
+    let mut asked = deletion_question(kind, name, holding);
+    let kept_here = account_id.starts_with(LOCAL_ACCOUNT_ID);
+    if the_provider_has_a_copy(kind) && !deletion_reaches_provider(kind) && !kept_here {
+        asked.push_str(STILL_AT_THE_PROVIDER);
+    }
+    asked
+}
 
 #[cfg(test)]
 mod deletion_tests {
@@ -812,6 +929,52 @@ mod deletion_tests {
                 "{kind:?}: {asked}"
             );
         }
+    }
+
+    #[test]
+    fn test_deleting_a_group_keeps_the_people_in_it() {
+        // A group is a label over people who exist on their own. Deleting one
+        // removes the label and nothing else, and the question said the
+        // opposite: "and the 3 contacts in it? This cannot be undone."
+        let asked = deletion_question(ContainerKind::ContactGroup, "Team A", 3);
+
+        assert!(asked.contains("Team A"), "{asked}");
+        assert!(asked.contains("stay in your address book"), "{asked}");
+        assert!(!asked.contains("cannot be undone"), "{asked}");
+
+        let one = deletion_question(ContainerKind::ContactGroup, "Team A", 1);
+        assert!(one.contains("stays in your address book"), "{one}");
+    }
+
+    #[test]
+    fn test_the_whole_question_only_mentions_a_sync_where_one_happens() {
+        // The sentence was appended whenever the open account was not the
+        // local one, whatever was being deleted, so a group nothing has ever
+        // sent anywhere was announced as coming back at the next sync.
+        let group = deletion_warning(ContainerKind::ContactGroup, "Team A", 3, "acct-1");
+        assert!(!group.contains("come back at the next sync"), "{group}");
+
+        let calendar = deletion_warning(ContainerKind::Calendar, "Trips", 2, "acct-1");
+        assert!(
+            calendar.contains("come back at the next sync"),
+            "{calendar}"
+        );
+
+        // A calendar kept here has no provider copy either, whatever kind it is.
+        let here = deletion_warning(ContainerKind::Calendar, "Trips", 2, LOCAL_ACCOUNT_ID);
+        assert!(!here.contains("come back at the next sync"), "{here}");
+    }
+
+    #[test]
+    fn test_a_group_is_not_promised_back_from_a_provider() {
+        // Nothing sends a contact group to Google or Microsoft, so the
+        // sentence promising it would come back at the next sync was telling
+        // somebody to wait for something that is never going to happen.
+        // Notes go nowhere either, for the same reason.
+        assert!(!the_provider_has_a_copy(ContainerKind::ContactGroup));
+        assert!(!the_provider_has_a_copy(ContainerKind::NoteFolder));
+        assert!(the_provider_has_a_copy(ContainerKind::Calendar));
+        assert!(the_provider_has_a_copy(ContainerKind::TaskList));
     }
 
     #[test]

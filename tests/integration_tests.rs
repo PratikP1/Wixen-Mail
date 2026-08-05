@@ -3,12 +3,12 @@
 //! Tests that span multiple modules and verify cross-layer interactions.
 
 use wixen_mail::application::accounts::{Account, AccountManager};
-use wixen_mail::application::contacts::{Contact, ContactManager};
+use wixen_mail::application::contact_groups::{Writing, writing_to};
 use wixen_mail::application::filters::{FilterAction, FilterEngine, FilterRule};
 use wixen_mail::application::messages::{Message, MessageManager};
 use wixen_mail::application::search::{SearchEngine, SearchQuery};
 use wixen_mail::common::types::*;
-use wixen_mail::data::message_cache::{CachedMessage, MessageCache};
+use wixen_mail::data::message_cache::{CachedMessage, ContactEntry, ContactGroup, MessageCache};
 use wixen_mail::service::cache::CacheService;
 use wixen_mail::service::oauth::OAuthService;
 use wixen_mail::service::security::SecurityService;
@@ -52,75 +52,93 @@ fn test_multi_account_workflow() {
 // ── Contact and Group Tests ─────────────────────────────────────────────────
 
 #[test]
-fn test_contact_group_full_lifecycle() {
-    let mut manager = ContactManager::new().unwrap();
+fn test_a_group_lives_in_storage_and_resolves_to_a_to_line() {
+    // The whole way through, against the storage the running program uses.
+    // This replaces a test of an in-memory contact manager that nothing in
+    // the application ever reached, including its own second resolver.
+    let dir = tempfile::tempdir().unwrap();
+    let cache = MessageCache::new(dir.path().join("groups.db"), None).unwrap();
 
-    // Create contacts
-    let alice = Contact::new(
-        "Alice Smith".to_string(),
-        EmailAddress::new("alice@example.com".to_string(), Some("Alice".to_string())),
-    );
-    let bob = Contact::new(
-        "Bob Jones".to_string(),
-        EmailAddress::new("bob@example.com".to_string(), Some("Bob".to_string())),
-    );
-    let charlie = Contact::new(
-        "Charlie Brown".to_string(),
-        EmailAddress::new("charlie@example.com".to_string(), None),
-    );
+    for (id, name, email) in [
+        ("c-alice", "Alice Smith", "alice@example.com"),
+        ("c-bob", "Bob Jones", "bob@example.com"),
+        ("c-charlie", "Charlie Brown", ""),
+    ] {
+        cache.save_contact(&a_contact(id, name, email)).unwrap();
+    }
+    cache
+        .create_contact_group(&ContactGroup {
+            id: "g-team".to_string(),
+            account_id: "local".to_string(),
+            name: "Engineering Team".to_string(),
+            description: None,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            member_ids: Vec::new(),
+        })
+        .unwrap();
+    for id in ["c-alice", "c-bob", "c-charlie"] {
+        cache.add_contact_to_group("g-team", id).unwrap();
+    }
 
-    let alice_id = alice.id.clone();
-    let bob_id = bob.id.clone();
-    let charlie_id = charlie.id.clone();
+    let group = cache
+        .load_contact_groups("local")
+        .unwrap()
+        .into_iter()
+        .find(|g| g.id == "g-team")
+        .expect("the group that was just made");
+    assert_eq!(group.member_ids.len(), 3);
 
-    manager.add_contact(alice).unwrap();
-    manager.add_contact(bob).unwrap();
-    manager.add_contact(charlie).unwrap();
+    let addresses = cache.resolve_group_emails("g-team").unwrap();
+    let writing = writing_to(&group.name, group.member_ids.len(), &addresses);
 
-    // Create groups
-    let team = manager.create_group("Engineering Team".to_string(), Some("Dev team".to_string()));
-    let all = manager.create_group("All Staff".to_string(), None);
+    let Writing::Opens { to, said } = writing else {
+        panic!("a group with addresses should open a message");
+    };
+    // Charlie has no address, so Charlie is not on the To line and the
+    // sentence says so rather than leaving somebody to notice later.
+    assert_eq!(to, "alice@example.com, bob@example.com");
+    assert!(said.contains("2 of 3 people"), "{said}");
 
-    // Add members
-    manager.add_to_group(&alice_id, &team.id).unwrap();
-    manager.add_to_group(&bob_id, &team.id).unwrap();
-    manager.add_to_group(&alice_id, &all.id).unwrap();
-    manager.add_to_group(&bob_id, &all.id).unwrap();
-    manager.add_to_group(&charlie_id, &all.id).unwrap();
-
-    // Check memberships
-    assert_eq!(manager.contacts_in_group(&team.id).len(), 2);
-    assert_eq!(manager.contacts_in_group(&all.id).len(), 3);
-
-    // Resolve emails
-    let team_emails = manager.resolve_group_emails(&team.id);
-    assert!(team_emails.contains("alice@example.com"));
-    assert!(team_emails.contains("bob@example.com"));
-    assert!(!team_emails.contains("charlie@example.com"));
-
-    // Remove a member
-    manager.remove_from_group(&bob_id, &team.id).unwrap();
-    assert_eq!(manager.contacts_in_group(&team.id).len(), 1);
-
-    // Delete a group
-    manager.delete_group(&team.id);
-    assert_eq!(manager.get_groups().len(), 1);
-    // Contacts should still exist
-    assert_eq!(manager.get_contacts().len(), 3);
+    // Taking somebody out of the group leaves the person alone.
+    cache.remove_contact_from_group("g-team", "c-bob").unwrap();
+    cache.delete_contact_group("g-team").unwrap();
+    assert!(cache.load_contact_groups("local").unwrap().is_empty());
+    assert_eq!(cache.get_contacts_for_account("local").unwrap().len(), 3);
 }
 
-#[test]
-fn test_contact_search_case_insensitive() {
-    let mut manager = ContactManager::new().unwrap();
-    let contact = Contact::new(
-        "Jane Doe".to_string(),
-        EmailAddress::new("jane.doe@company.com".to_string(), None),
-    );
-    manager.add_contact(contact).unwrap();
-
-    assert_eq!(manager.search("JANE").len(), 1);
-    assert_eq!(manager.search("company.com").len(), 1);
-    assert_eq!(manager.search("nonexistent").len(), 0);
+/// A contact with a name and an address and nothing else.
+fn a_contact(id: &str, name: &str, email: &str) -> ContactEntry {
+    ContactEntry {
+        id: id.to_string(),
+        account_id: "local".to_string(),
+        name: name.to_string(),
+        given_name: None,
+        family_name: None,
+        email: email.to_string(),
+        phone: None,
+        company: None,
+        job_title: None,
+        website: None,
+        address: None,
+        birthday: None,
+        avatar_url: None,
+        avatar_data_base64: None,
+        source_provider: None,
+        last_synced_at: None,
+        vcard_raw: None,
+        notes: None,
+        favorite: false,
+        created_at: chrono::Utc::now().to_rfc3339(),
+        nickname: None,
+        department: None,
+        relationship: None,
+        emails_json: None,
+        phones_json: None,
+        addresses_json: None,
+        custom_fields_json: None,
+        pending: false,
+        known_to: Vec::new(),
+    }
 }
 
 // ── Message Management Tests ────────────────────────────────────────────────

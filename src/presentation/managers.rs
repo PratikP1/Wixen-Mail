@@ -1133,14 +1133,19 @@ pub fn new_container(
         let s = lock_state(state);
         (s.accounts.clone(), s.default_account_id.clone())
     };
-    // Never nothing for a container: `destination` only answers `None` for
-    // mail, which cannot be sent from this computer alone. A calendar or a
-    // note folder can live here perfectly well, so the fallback is this
-    // computer rather than a refusal.
-    let destination = new_item::destination(kind.holds(), &accounts, default_id.as_deref())
-        .unwrap_or(new_item::Destination::Local);
+    // Never nothing for a container: a calendar or a note folder can live here
+    // perfectly well, so the fallback is this computer rather than a refusal.
+    // A contact group is always this computer, because nothing carries one
+    // anywhere.
+    let destination = new_item::container_destination(kind, &accounts, default_id.as_deref());
 
-    let Some(name) = crate::presentation::wx_app::prompt_for_new_item(frame, kind.label()) else {
+    // Said before the name is typed rather than after it is saved. A group is
+    // the one container somebody is likely to expect their provider to already
+    // have, so where it lives belongs in the window that makes one.
+    let note = matches!(kind, new_item::ContainerKind::ContactGroup)
+        .then_some(crate::application::contact_groups::STAYS_ON_THIS_COMPUTER);
+    let Some(name) = crate::presentation::wx_app::prompt_for_new_item(frame, kind.label(), note)
+    else {
         return;
     };
     let name = name.trim().to_string();
@@ -1153,20 +1158,28 @@ pub fn new_container(
     let account_id = destination.account_id().to_string();
     match store_new_container(&cache, kind, &account_id, &name) {
         Ok(()) => {
-            send_status(
-                tx,
-                rt,
-                &format!(
+            // A group says where it is kept rather than naming the account it
+            // was filed under, because it is not filed under one.
+            let said = if matches!(kind, new_item::ContainerKind::ContactGroup) {
+                crate::application::contact_groups::made(&name)
+            } else {
+                format!(
                     "{} \"{}\" created in {}",
                     kind.label(),
                     name,
                     destination.spoken(&accounts)
-                ),
-            );
+                )
+            };
+            send_status(tx, rt, &said);
+            // Filled again for the account being looked at, not the one the
+            // container was filed under. Those are the same for a calendar on
+            // the default account and different for a group, which is always
+            // kept on this computer: reloading under "local" would have taken
+            // the open account's contacts out of the list.
             crate::presentation::wx_app::load_module_data(
                 module_for(kind.holds()),
                 &Some(cache),
-                Some(account_id),
+                Some(active_or_local(state)),
                 tx,
             );
         }
@@ -2074,18 +2087,21 @@ pub fn delete_container(
         );
     }
 
-    let Some(chosen) = pick_one(frame, kind, &choices) else {
+    let Some(chosen) = pick_one(
+        frame,
+        &format!("Which {} should be deleted?", kind.label().to_lowercase()),
+        &format!("Delete {}", kind.label()),
+        &named_for_choosing(kind, &choices),
+    ) else {
         return;
     };
     let (id, name, holding) = choices[chosen].clone();
 
-    let mut asked = new_item::deletion_question(kind, &name, holding);
     // Said before the deletion rather than discovered after it. Deleting a
     // synced list here and watching it come back on the next sync looks
-    // exactly like the delete having failed.
-    if !new_item::deletion_reaches_provider(kind) && !account_id.starts_with("local") {
-        asked.push_str(new_item::STILL_AT_THE_PROVIDER);
-    }
+    // exactly like the delete having failed, and being told to expect that
+    // about something no provider has is the same confusion the other way up.
+    let asked = new_item::deletion_warning(kind, &name, holding, &account_id);
 
     let confirm = MessageDialog::builder(frame, &asked, &format!("Delete {}", kind.label()))
         .with_style(MessageDialogStyle::YesNo | MessageDialogStyle::IconQuestion)
@@ -2317,16 +2333,416 @@ fn containers_in(
                 (f.id, f.name, holding)
             })
             .collect(),
-        ContainerKind::ContactGroup => cache
-            .load_contact_groups(account_id)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|g| {
-                let holding = g.member_ids.len();
-                (g.id, g.name, holding)
-            })
-            .collect(),
+        ContainerKind::ContactGroup => groups_in(cache, account_id),
     }
+}
+
+/// Every contact group somebody can see from here, with how many are in each.
+///
+/// Both places a panel draws from, the account being looked at and this
+/// computer, for the reason the contacts list itself already reads both. A
+/// group is kept here now, so a chooser reading only the open account would
+/// have found none of them; and a group made before that was true is still
+/// filed under an account, so reading only this computer would lose those.
+fn groups_in(cache: &MessageCache, account_id: &str) -> Vec<(String, String, usize)> {
+    crate::presentation::wx_app::sources_for(account_id)
+        .iter()
+        .flat_map(|source| cache.load_contact_groups(source).unwrap_or_default())
+        .map(|group| {
+            let holding = group.member_ids.len();
+            (group.id, group.name, holding)
+        })
+        .collect()
+}
+
+/// Ask which group, by name and by how many people are in it.
+///
+/// `None` when there are none to offer or somebody left the chooser without
+/// choosing. Leaving a chooser is not a failure and is not announced as one.
+///
+/// The sidebar tree is not used for this. It holds display labels rather than
+/// identifiers and has no selection handler at all, so recovering which group
+/// somebody was on would mean reading a name back out of a sentence. A list
+/// also reads the names out in order, which is how somebody who cannot see the
+/// tree finds the one they meant.
+fn which_group(
+    frame: &Frame,
+    cache: &MessageCache,
+    account_id: &str,
+    question: &str,
+    window: &str,
+) -> Option<(String, String)> {
+    let choices = groups_in(cache, account_id);
+    if choices.is_empty() {
+        return None;
+    }
+    let names: Vec<String> = choices
+        .iter()
+        .map(|(_, name, members)| crate::application::contact_groups::spoken(name, *members))
+        .collect();
+    let chosen = pick_one(frame, question, window, &names)?;
+    let (id, name, _) = choices[chosen].clone();
+    Some((id, name))
+}
+
+/// Give a contact group a different name.
+///
+/// The one container with a rename, which is why this asks nothing about the
+/// kind: [`crate::application::new_item::renaming_works`] answers false for
+/// the other three and the menu never offers it there.
+pub fn rename_group(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    let Some(cache) = cache.clone() else {
+        return send_refusal(tx, rt, "No storage is open");
+    };
+    let account_id = active_or_local(state);
+
+    let Some((id, was)) = which_group(
+        frame,
+        &cache,
+        &account_id,
+        "Which group should be renamed?",
+        "Rename Contact group",
+    ) else {
+        return send_refusal(tx, rt, "There are no contact groups to rename");
+    };
+
+    // The name it has now is already in the box, so changing one word does not
+    // mean typing the rest again.
+    let Some(name) = crate::presentation::wx_app::ask_for_a_name(
+        frame,
+        crate::presentation::wx_app::Asking {
+            window: "Rename Contact group",
+            label: "New &name for this group:",
+            note: None,
+            filled_in: &was,
+            button: "&Rename",
+        },
+    ) else {
+        return;
+    };
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return send_refusal(tx, rt, "A group needs a name");
+    }
+
+    match store_the_new_name(&cache, &id, &account_id, &name) {
+        Ok(said) => {
+            send_status(tx, rt, &said);
+            refill_the_contacts_panel(&cache, &account_id, tx);
+        }
+        Err(e) => {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(e.to_string()));
+        }
+    }
+}
+
+/// Put the chosen contact in a group, or take it out of one.
+///
+/// The two are one function because everything but the direction is the same:
+/// which contact, which group, and what the group holds afterwards.
+pub fn change_the_group_a_contact_is_in(
+    which_way: Membership,
+    row: Option<usize>,
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    use crate::application::new_item::ItemKind;
+
+    let Some(cache) = cache.clone() else {
+        return send_refusal(tx, rt, "No storage is open");
+    };
+    let Some(row) = row else {
+        return send_refusal(tx, rt, "Choose a contact first");
+    };
+    let Some((contact_id, _, _)) = selected_item(state, ItemKind::Contact, row) else {
+        return send_refusal(tx, rt, "That row is no longer there");
+    };
+    let account_id = active_or_local(state);
+
+    let (question, window) = match which_way {
+        Membership::PutIn => ("Which group should this contact go in?", "Put in a group"),
+        Membership::TakeOut => (
+            "Which group should this contact come out of?",
+            "Take out of a group",
+        ),
+    };
+    let Some((group_id, _)) = which_group(frame, &cache, &account_id, question, window) else {
+        return send_refusal(
+            tx,
+            rt,
+            "There are no contact groups yet. Make one from the contacts sidebar first.",
+        );
+    };
+
+    match change_membership(&cache, which_way, &group_id, &account_id, &contact_id) {
+        Ok(said) => {
+            send_status(tx, rt, &said);
+            refill_the_contacts_panel(&cache, &account_id, tx);
+        }
+        Err(e) => {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(e.to_string()));
+        }
+    }
+}
+
+/// Work out who a group would be written to, and say so.
+///
+/// Returns the To line for a compose window, or `None` when there is nobody to
+/// write to and a sentence has been sent saying why. The window itself is
+/// opened by the caller: compose belongs to the frame, and a second way to
+/// open it is a second thing to keep working.
+pub fn write_to_group(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) -> Option<String> {
+    use crate::application::contact_groups::Writing;
+
+    let cache = match cache.clone() {
+        Some(cache) => cache,
+        None => {
+            send_refusal(tx, rt, "No storage is open");
+            return None;
+        }
+    };
+    let account_id = active_or_local(state);
+
+    let Some((group_id, _)) = which_group(
+        frame,
+        &cache,
+        &account_id,
+        "Which group should this message go to?",
+        "Write to a group",
+    ) else {
+        send_refusal(
+            tx,
+            rt,
+            "There are no contact groups yet. Make one from the contacts sidebar first.",
+        );
+        return None;
+    };
+
+    match writing_to_a_group(&cache, &group_id, &account_id) {
+        Ok(Writing::Opens { to, said }) => {
+            send_status(tx, rt, &said);
+            Some(to)
+        }
+        Ok(Writing::Refused(why)) => {
+            // Not the status line. A group that cannot be written to is the
+            // reason a command somebody just chose did nothing, and that is
+            // the one thing that must not be missed.
+            send_refusal(tx, rt, &why);
+            None
+        }
+        Err(e) => {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(e.to_string()));
+            None
+        }
+    }
+}
+
+/// The account being looked at, or this computer when there is none.
+fn active_or_local(state: &Arc<StdMutex<WxUIState>>) -> String {
+    lock_state(state)
+        .active_account_id
+        .clone()
+        .unwrap_or_else(|| crate::application::new_item::LOCAL_ACCOUNT_ID.to_string())
+}
+
+/// Fill the whole contacts panel again after a group has changed.
+///
+/// Through `load_module_data` rather than the narrower `reload_contacts`
+/// above, because a group change moves the sidebar as well as the list: a
+/// rename changes a row and putting somebody in a group changes a count.
+fn refill_the_contacts_panel(cache: &Arc<MessageCache>, account_id: &str, tx: &Sender<UIUpdate>) {
+    crate::presentation::wx_app::load_module_data(
+        crate::presentation::ui_types::PimModule::Contacts,
+        &Some(cache.clone()),
+        Some(account_id.to_string()),
+        tx,
+    );
+}
+
+/// One contact group by its identifier, wherever it is filed.
+///
+/// Across both sources for the reason [`groups_in`] reads both: a group made
+/// now is kept on this computer, and one made before that was true is filed
+/// under an account.
+fn a_group_here(
+    cache: &MessageCache,
+    account_id: &str,
+    group_id: &str,
+) -> Option<crate::data::message_cache::ContactGroup> {
+    crate::presentation::wx_app::sources_for(account_id)
+        .iter()
+        .flat_map(|source| cache.load_contact_groups(source).unwrap_or_default())
+        .find(|group| group.id == group_id)
+}
+
+/// Who a group would be written to, and what to say about it.
+///
+/// The addresses come from the storage's own `resolve_group_emails`, which
+/// skips a member with no address rather than putting an empty recipient on
+/// the To line. That function had no caller in the running program at all,
+/// which is what made a group something that could be built and never used.
+///
+/// One lookup and one pure decision, so the words and the To line cannot
+/// disagree about how many people are being written to.
+fn writing_to_a_group(
+    cache: &MessageCache,
+    group_id: &str,
+    account_id: &str,
+) -> crate::common::Result<crate::application::contact_groups::Writing> {
+    use crate::common::Error;
+
+    let group = a_group_here(cache, account_id, group_id)
+        .ok_or_else(|| Error::Other("That group is no longer there".into()))?;
+    let addresses = cache.resolve_group_emails(group_id)?;
+    Ok(crate::application::contact_groups::writing_to(
+        &group.name,
+        group.member_ids.len(),
+        &addresses,
+    ))
+}
+
+/// Which way a contact is moving with respect to a group.
+///
+/// A named pair rather than a boolean, because `change_membership(.., true)`
+/// at a call site says nothing about which way true is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Membership {
+    PutIn,
+    TakeOut,
+}
+
+/// Put a contact in a group or take one out, and say what happened.
+///
+/// Four answers rather than two. The insert ignores a repeat and the delete
+/// ignores an absence, so both would otherwise report success for something
+/// that did not happen, and the count would sit still while the words said it
+/// had moved.
+fn change_membership(
+    cache: &MessageCache,
+    which_way: Membership,
+    group_id: &str,
+    account_id: &str,
+    contact_id: &str,
+) -> crate::common::Result<String> {
+    use crate::application::contact_groups;
+    use crate::common::Error;
+
+    let group = a_group_here(cache, account_id, group_id)
+        .ok_or_else(|| Error::Other("That group is no longer there".into()))?;
+    let person = cache
+        .get_contacts_for_account(&group.account_id)
+        .ok()
+        .into_iter()
+        .flatten()
+        .chain(
+            cache
+                .get_contacts_for_account(crate::application::new_item::LOCAL_ACCOUNT_ID)
+                .ok()
+                .into_iter()
+                .flatten(),
+        )
+        .find(|contact| contact.id == contact_id);
+    // The name is read from the row rather than passed in, so the sentence
+    // says who was actually moved rather than who the list thought was
+    // selected. An unknown contact is still moved: membership is by
+    // identifier, and refusing would mean a contact from another account
+    // could not be put in a group at all.
+    let person = person.map_or_else(|| "That contact".to_string(), |contact| contact.name);
+    let was_in = group.member_ids.iter().any(|id| id == contact_id);
+
+    match (which_way, was_in) {
+        (Membership::PutIn, true) => Ok(contact_groups::already_in(&person, &group.name)),
+        (Membership::PutIn, false) => {
+            cache.add_contact_to_group(group_id, contact_id)?;
+            Ok(contact_groups::put_in(
+                &person,
+                &group.name,
+                group.member_ids.len() + 1,
+            ))
+        }
+        (Membership::TakeOut, false) => Ok(contact_groups::not_in(&person, &group.name)),
+        (Membership::TakeOut, true) => {
+            cache.remove_contact_from_group(group_id, contact_id)?;
+            Ok(contact_groups::taken_out(
+                &person,
+                &group.name,
+                group.member_ids.len() - 1,
+            ))
+        }
+    }
+}
+
+/// Give a group a different name, and say what it is called now.
+///
+/// A name already in use is refused here, in words, rather than at the
+/// storage, which answers with the text of a unique constraint. Read aloud
+/// that is somebody's database talking to them, and it says nothing about what
+/// to do next.
+///
+/// Two names differing only in case are refused as well, although the storage
+/// would accept them. "Team A" and "Team a" are one name when they are read
+/// out, and a chooser offering both is a chooser nobody can use.
+fn store_the_new_name(
+    cache: &MessageCache,
+    group_id: &str,
+    account_id: &str,
+    new_name: &str,
+) -> crate::common::Result<String> {
+    use crate::common::Error;
+
+    let mut group = a_group_here(cache, account_id, group_id)
+        .ok_or_else(|| Error::Other("That group is no longer there".into()))?;
+    let taken = cache
+        .load_contact_groups(&group.account_id)?
+        .into_iter()
+        .any(|other| other.id != group.id && other.name.eq_ignore_ascii_case(new_name));
+    if taken {
+        return Err(Error::Other(format!(
+            "There is already a group called \"{new_name}\". Give this one a different name."
+        )));
+    }
+
+    let was = std::mem::replace(&mut group.name, new_name.to_string());
+    cache.update_contact_group(&group)?;
+    Ok(format!("\"{was}\" is now called \"{new_name}\"."))
+}
+
+/// How each container reads in a chooser: its name and what it holds.
+///
+/// A group counts people rather than items, because "Team A, 3 items" is not
+/// what anybody calls three people, and this list is read out loud.
+fn named_for_choosing(
+    kind: crate::application::new_item::ContainerKind,
+    choices: &[(String, String, usize)],
+) -> Vec<String> {
+    use crate::application::new_item::ContainerKind;
+
+    choices
+        .iter()
+        .map(|(_, name, holding)| match (kind, holding) {
+            (ContainerKind::ContactGroup, _) => {
+                crate::application::contact_groups::spoken(name, *holding)
+            }
+            (_, 0) => format!("{name}, empty"),
+            (_, 1) => format!("{name}, 1 item"),
+            (_, many) => format!("{name}, {many} items"),
+        })
+        .collect()
 }
 
 /// Ask which one, by name.
@@ -2335,28 +2751,9 @@ fn containers_in(
 /// selection handler and adding one for this would be a second way to pick a
 /// thing. A list also reads the names out in order, which is how somebody
 /// who cannot see the tree finds the one they meant.
-fn pick_one(
-    frame: &Frame,
-    kind: crate::application::new_item::ContainerKind,
-    choices: &[(String, String, usize)],
-) -> Option<usize> {
-    let names: Vec<String> = choices
-        .iter()
-        .map(|(_, name, holding)| match holding {
-            0 => format!("{name}, empty"),
-            1 => format!("{name}, 1 item"),
-            many => format!("{name}, {many} items"),
-        })
-        .collect();
-
+fn pick_one(frame: &Frame, question: &str, window: &str, names: &[String]) -> Option<usize> {
     let borrowed: Vec<&str> = names.iter().map(String::as_str).collect();
-    let dialog = SingleChoiceDialog::builder(
-        frame,
-        &format!("Which {} should be deleted?", kind.label().to_lowercase()),
-        &format!("Delete {}", kind.label()),
-        &borrowed,
-    )
-    .build();
+    let dialog = SingleChoiceDialog::builder(frame, question, window, &borrowed).build();
     let answer = dialog.show_modal();
     let chosen = dialog.get_selection();
     dialog.destroy();
@@ -2438,5 +2835,353 @@ mod deletion_wiring {
         ] {
             assert!(source.contains(storage), "{storage} is never called");
         }
+    }
+}
+
+#[cfg(test)]
+mod group_wiring {
+    use super::*;
+    use crate::data::message_cache::{ContactEntry, ContactGroup};
+    use std::env;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// A cache in a folder of its own, so tests do not share a database.
+    ///
+    /// Copied from the cache's own tests rather than shared with them. A
+    /// fixture that says only what one test needs is one that does not change
+    /// when something else does, and two tests writing one file report every
+    /// mutant as caught.
+    fn a_cache(what_for: &str) -> MessageCache {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock that has passed 1970")
+            .as_nanos();
+        MessageCache::new(
+            env::temp_dir().join(format!("wixen_mail_group_{what_for}_{nanos}")),
+            None,
+        )
+        .expect("a cache to open")
+    }
+
+    /// A contact with a name and an address and nothing else.
+    fn a_contact(id: &str, name: &str, email: &str) -> ContactEntry {
+        ContactEntry {
+            id: id.to_string(),
+            account_id: "acct-1".to_string(),
+            name: name.to_string(),
+            given_name: None,
+            family_name: None,
+            email: email.to_string(),
+            phone: None,
+            company: None,
+            job_title: None,
+            website: None,
+            address: None,
+            birthday: None,
+            avatar_url: None,
+            avatar_data_base64: None,
+            source_provider: None,
+            last_synced_at: None,
+            vcard_raw: None,
+            notes: None,
+            favorite: false,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            nickname: None,
+            department: None,
+            relationship: None,
+            emails_json: None,
+            phones_json: None,
+            addresses_json: None,
+            custom_fields_json: None,
+            pending: false,
+            known_to: Vec::new(),
+        }
+    }
+
+    fn a_group(id: &str, account_id: &str, name: &str) -> ContactGroup {
+        ContactGroup {
+            id: id.to_string(),
+            account_id: account_id.to_string(),
+            name: name.to_string(),
+            description: None,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            member_ids: Vec::new(),
+        }
+    }
+
+    /// The weakest tests here, and worth saying so.
+    ///
+    /// These prove a caller exists. They prove nothing about whether it is
+    /// reached with the right group, and a mutation run cannot see them at
+    /// all. They are here because Rust never reports a public item in a
+    /// library as unused, which is exactly how four storage functions and one
+    /// whole feature stayed dead through two dead-code passes. The real proof
+    /// is running the application.
+    #[test]
+    fn test_the_storage_a_group_needs_is_actually_called() {
+        let managers = std::fs::read_to_string("src/presentation/managers.rs").expect("this file");
+
+        for call in [
+            "update_contact_group(",
+            "add_contact_to_group(",
+            "remove_contact_from_group(",
+            "resolve_group_emails(",
+        ] {
+            assert!(
+                managers.contains(call),
+                "{call} has no caller, so that part of a group still does nothing"
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_group_command_is_raised_by_something() {
+        let window = std::fs::read_to_string("src/presentation/wx_app.rs").expect("the frame");
+
+        for raised in [
+            "ID_CONTEXT_RENAME_CONTAINER",
+            "ID_CONTEXT_WRITE_TO_GROUP",
+            "ID_CONTEXT_ADD_TO_GROUP",
+            "ID_CONTEXT_REMOVE_FROM_GROUP",
+        ] {
+            // Declared, and handled, and reached from the context menu, which
+            // is three mentions. Two would mean an id with a handler that
+            // nothing raises.
+            assert!(
+                window.matches(raised).count() >= 2,
+                "{raised} is declared and never handled"
+            );
+        }
+        assert!(
+            window.contains("ComposeMode::WriteTo"),
+            "nothing opens a message to a group"
+        );
+    }
+
+    #[test]
+    fn test_the_tree_reads_a_group_as_a_group_with_its_people() {
+        // "Team A (3)" is read out as "Team A three" or "Team A bracket
+        // three", depending on punctuation settings, and neither says what
+        // the three are. This only pins that the code asks for the right
+        // words: what a screen reader makes of the tree, its branch and its
+        // levels is a real run and not this.
+        let window = std::fs::read_to_string("src/presentation/wx_app.rs").expect("the frame");
+
+        assert!(
+            window.contains("contact_groups::spoken("),
+            "the tree still builds its own label"
+        );
+        assert!(
+            !window.contains(r#"format!("{} ({})", g.name, g.member_count)"#),
+            "the old label is still there"
+        );
+    }
+
+    #[test]
+    fn test_a_group_resolves_to_a_to_line_with_no_blanks_and_no_repeats() {
+        // The one thing a group is for. `resolve_group_emails` has sat in the
+        // storage with no caller in the running program since it was written,
+        // which is why a group could be made and never used.
+        let cache = a_cache("write_to");
+        for (id, name, email) in [
+            ("c-1", "A one", "ada@example.com"),
+            ("c-2", "B two", "Ada@Example.com"),
+            ("c-3", "C three", "bob@example.com"),
+            ("c-4", "D four", ""),
+        ] {
+            cache
+                .save_contact(&a_contact(id, name, email))
+                .expect("a contact");
+        }
+        cache
+            .create_contact_group(&a_group("g-1", "local", "Team A"))
+            .expect("a group");
+        for id in ["c-1", "c-2", "c-3", "c-4"] {
+            change_membership(&cache, Membership::PutIn, "g-1", "local", id).expect("a member");
+        }
+
+        let writing = writing_to_a_group(&cache, "g-1", "local").expect("a group to write to");
+
+        let crate::application::contact_groups::Writing::Opens { to, said } = writing else {
+            panic!("a group with addresses should open a message");
+        };
+        assert_eq!(to, "ada@example.com, bob@example.com");
+        assert_eq!(
+            said,
+            "Writing to Team A, 2 of 4 people. The others have no email address."
+        );
+    }
+
+    #[test]
+    fn test_a_group_with_nobody_in_it_refuses_rather_than_opening_an_empty_message() {
+        let cache = a_cache("write_to_empty");
+        cache
+            .create_contact_group(&a_group("g-1", "local", "Team A"))
+            .expect("a group");
+
+        let writing = writing_to_a_group(&cache, "g-1", "local").expect("an answer");
+
+        let crate::application::contact_groups::Writing::Refused(why) = writing else {
+            panic!("an empty group has nobody to write to");
+        };
+        assert!(why.contains("nobody in it"), "{why}");
+    }
+
+    #[test]
+    fn test_putting_the_same_person_in_a_group_twice_says_they_are_already_there() {
+        // The insert ignores a repeat, so a second attempt would otherwise
+        // report success and the count would not move, which reads as the
+        // first one having failed.
+        let cache = a_cache("join_twice");
+        cache
+            .save_contact(&a_contact("c-1", "Ada Lovelace", "ada@x.example"))
+            .expect("a contact");
+        cache
+            .create_contact_group(&a_group("g-1", "local", "Team A"))
+            .expect("a group");
+
+        let first = change_membership(&cache, Membership::PutIn, "g-1", "local", "c-1")
+            .expect("a contact to go in");
+        let second = change_membership(&cache, Membership::PutIn, "g-1", "local", "c-1")
+            .expect("a repeat to be answered rather than to fail");
+
+        assert!(first.contains("put in"), "{first}");
+        assert!(second.contains("already in"), "{second}");
+        let counts: Vec<usize> = groups_in(&cache, "local")
+            .into_iter()
+            .map(|(_, _, holding)| holding)
+            .collect();
+        assert_eq!(counts, vec![1], "the group counted the same person twice");
+    }
+
+    #[test]
+    fn test_taking_somebody_out_of_a_group_leaves_the_contact_alone() {
+        let cache = a_cache("leave");
+        cache
+            .save_contact(&a_contact("c-1", "Ada Lovelace", "ada@x.example"))
+            .expect("a contact");
+        cache
+            .create_contact_group(&a_group("g-1", "local", "Team A"))
+            .expect("a group");
+        change_membership(&cache, Membership::PutIn, "g-1", "local", "c-1").expect("a member");
+
+        let said = change_membership(&cache, Membership::TakeOut, "g-1", "local", "c-1")
+            .expect("a member to come out");
+
+        assert!(said.contains("taken out of"), "{said}");
+        let counts: Vec<usize> = groups_in(&cache, "local")
+            .into_iter()
+            .map(|(_, _, holding)| holding)
+            .collect();
+        assert_eq!(counts, vec![0]);
+        // The whole point: the person is still there.
+        let still_here = cache
+            .get_contacts_for_account("acct-1")
+            .expect("the address book");
+        assert_eq!(still_here.len(), 1, "taking somebody out deleted them");
+    }
+
+    #[test]
+    fn test_taking_out_somebody_who_was_never_in_says_so() {
+        let cache = a_cache("leave_absent");
+        cache
+            .save_contact(&a_contact("c-1", "Ada Lovelace", "ada@x.example"))
+            .expect("a contact");
+        cache
+            .create_contact_group(&a_group("g-1", "local", "Team A"))
+            .expect("a group");
+
+        let said = change_membership(&cache, Membership::TakeOut, "g-1", "local", "c-1")
+            .expect("an answer rather than a failure");
+
+        assert!(said.contains("is not in"), "{said}");
+    }
+
+    #[test]
+    fn test_a_group_can_actually_be_renamed() {
+        let cache = a_cache("rename");
+        cache
+            .create_contact_group(&a_group("g-1", "local", "Team A"))
+            .expect("a group");
+
+        let said = store_the_new_name(&cache, "g-1", "local", "Book club").expect("a rename");
+
+        let names: Vec<String> = groups_in(&cache, "local")
+            .into_iter()
+            .map(|(_, name, _)| name)
+            .collect();
+        assert_eq!(names, vec!["Book club".to_string()]);
+        assert!(said.contains("Book club"), "{said}");
+        assert!(said.contains("Team A"), "{said}");
+    }
+
+    #[test]
+    fn test_renaming_a_group_to_a_name_already_taken_says_so_in_words() {
+        // Two groups called the same thing is an ordinary mistake, and the
+        // storage refuses it with a sentence about a unique constraint. Read
+        // aloud, that is somebody's database talking to them.
+        let cache = a_cache("rename_clash");
+        cache
+            .create_contact_group(&a_group("g-1", "local", "Team A"))
+            .expect("a group");
+        cache
+            .create_contact_group(&a_group("g-2", "local", "Team B"))
+            .expect("a second group");
+
+        let refused = store_the_new_name(&cache, "g-2", "local", "Team A")
+            .expect_err("two groups cannot share a name");
+        let refused = refused.to_string();
+
+        assert!(refused.contains("already a group called"), "{refused}");
+        assert!(!refused.to_uppercase().contains("UNIQUE"), "{refused}");
+        assert!(!refused.contains("constraint"), "{refused}");
+        // And the group it refused still has its own name.
+        let names: Vec<String> = groups_in(&cache, "local")
+            .into_iter()
+            .map(|(_, name, _)| name)
+            .collect();
+        assert!(names.contains(&"Team B".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn test_the_chooser_counts_people_in_a_group_and_items_everywhere_else() {
+        // Read out loud, one at a time, which is how somebody who cannot see
+        // the sidebar picks the group they meant. "Team A, 3 items" is not
+        // what anybody calls three people.
+        use crate::application::new_item::ContainerKind;
+
+        let choices = vec![("g-1".to_string(), "Team A".to_string(), 3)];
+
+        assert_eq!(
+            named_for_choosing(ContainerKind::ContactGroup, &choices),
+            vec!["Team A, 3 people".to_string()]
+        );
+        assert_eq!(
+            named_for_choosing(ContainerKind::TaskList, &choices),
+            vec!["Team A, 3 items".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_a_group_kept_on_this_computer_is_offered_too() {
+        // Groups are made on this computer now, and the chooser used to read
+        // the account being looked at, so every group would have been invisible
+        // to it. Groups made before that change are still filed under an
+        // account and must not disappear either.
+        let cache = a_cache("sources");
+        cache
+            .create_contact_group(&a_group("g-here", "local", "Book club"))
+            .expect("a group kept here");
+        cache
+            .create_contact_group(&a_group("g-account", "acct-1", "Team A"))
+            .expect("a group made before groups were kept here");
+
+        let found: Vec<String> = groups_in(&cache, "acct-1")
+            .into_iter()
+            .map(|(_, name, _)| name)
+            .collect();
+
+        assert!(found.contains(&"Book club".to_string()), "{found:?}");
+        assert!(found.contains(&"Team A".to_string()), "{found:?}");
     }
 }

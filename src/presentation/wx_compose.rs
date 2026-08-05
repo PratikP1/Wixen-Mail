@@ -122,6 +122,16 @@ pub enum ComposeMode {
     },
     /// Forward a message
     Forward { subject: String, body: MessageBody },
+    /// A new message that already knows who it is going to.
+    ///
+    /// Written to a contact group, where the recipients are worked out before
+    /// the window opens. Everything else about it is a new message: no quoted
+    /// text, no subject, no thread to join, and the signature a new message
+    /// gets.
+    WriteTo {
+        /// The To line, already joined and already free of blanks and repeats.
+        to: String,
+    },
     /// Edit an existing draft
     Draft(CompositionData),
 }
@@ -216,10 +226,29 @@ fn html_escape(text: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// The conversation this window is answering, if it is answering one.
+///
+/// Taken off the mode once, before anything reads the window, so every way out
+/// carries it: Send, Save Draft, and the automatic save. Nothing somebody
+/// types can change it.
+fn answering_of(mode: &ComposeMode) -> Option<crate::application::threading::Continuing> {
+    match mode {
+        ComposeMode::Reply { answering, .. } | ComposeMode::ReplyAll { answering, .. } => {
+            answering.clone()
+        }
+        ComposeMode::Draft(data) => data.answering.clone(),
+        // A message to a group starts a conversation rather than joining one,
+        // so it carries no thread headers, the same as any new message.
+        ComposeMode::New | ComposeMode::Forward { .. } | ComposeMode::WriteTo { .. } => None,
+    }
+}
+
 /// Title for the compose dialog based on mode.
 fn compose_title(mode: &ComposeMode) -> &'static str {
     match mode {
-        ComposeMode::New => "Compose New Message",
+        // A message to a group is a new message that already has its
+        // addresses, so it is titled as one.
+        ComposeMode::New | ComposeMode::WriteTo { .. } => "Compose New Message",
         ComposeMode::Reply { .. } => "Reply",
         ComposeMode::ReplyAll { .. } => "Reply All",
         ComposeMode::Forward { .. } => "Forward",
@@ -669,6 +698,19 @@ pub fn show_compose_dialog_full(
             set_body(&with_signature(&format_forward_body(body), signature));
             to_field.set_focus();
         }
+        // The addresses are already worked out, so the first thing left to do
+        // is the subject, and that is where focus goes. The To line is still
+        // one Shift+Tab away for anybody who wants to check or change it.
+        ComposeMode::WriteTo { to } => {
+            to_field.set_value(to);
+            if !signature.trim().is_empty() {
+                set_body(&with_signature(
+                    &MessageBody::Plain(String::new()),
+                    signature,
+                ));
+            }
+            subject_field.set_focus();
+        }
         // A draft carries whatever signature it was saved with. Adding one
         // here would put a second on every reopen.
         ComposeMode::Draft(data) => {
@@ -1056,13 +1098,7 @@ pub fn show_compose_dialog_full(
     // Taken off the mode once, before the closure that reads the window, so
     // every way out of the window carries it: Send, Save Draft, and the
     // automatic save. Nothing somebody types can change it.
-    let answering = match &mode {
-        ComposeMode::Reply { answering, .. } | ComposeMode::ReplyAll { answering, .. } => {
-            answering.clone()
-        }
-        ComposeMode::Draft(data) => data.answering.clone(),
-        ComposeMode::New | ComposeMode::Forward { .. } => None,
-    };
+    let answering = answering_of(&mode);
 
     let read_compose_data = {
         let attached = attached.clone();
@@ -2392,6 +2428,19 @@ mod tests {
             compose_title(&ComposeMode::Draft(CompositionData::default())),
             "Edit Draft"
         );
+    }
+
+    #[test]
+    fn test_writing_to_a_group_opens_a_new_message_that_already_has_its_addresses() {
+        // A new message rather than an answer to one: it starts no thread, has
+        // no quoted text, and takes the signature the way any new message
+        // does. Only the To line is filled in before somebody arrives.
+        let mode = ComposeMode::WriteTo {
+            to: "ada@example.com, bob@example.com".to_string(),
+        };
+
+        assert_eq!(compose_title(&mode), "Compose New Message");
+        assert_eq!(answering_of(&mode), None);
     }
 
     #[test]

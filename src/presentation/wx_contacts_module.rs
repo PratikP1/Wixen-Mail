@@ -94,6 +94,16 @@ pub fn build_contacts_sidebar(parent: &Panel) -> ContactsSidebarHandles {
     if let Some(root) = tree.add_root("Contacts", None, None) {
         tree.append_item(&root, "All Contacts", None, None);
         tree.append_item(&root, "Favorites", None, None);
+        // The same branch the groups are filled into, so the tree has the
+        // same shape before anything has loaded as it has afterwards. Without
+        // it, somebody with no account at all finds nowhere to press the menu
+        // key and no sign that groups exist.
+        tree.append_item(
+            &root,
+            &crate::application::contact_groups::the_groups_branch(0),
+            None,
+            None,
+        );
         tree.expand(&root);
     }
 

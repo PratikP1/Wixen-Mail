@@ -164,6 +164,10 @@ menu_ids!(
     ID_CONTEXT_TOGGLE_PIN,
     ID_CONTEXT_NEW_CONTAINER,
     ID_CONTEXT_DELETE_CONTAINER,
+    ID_CONTEXT_RENAME_CONTAINER,
+    ID_CONTEXT_WRITE_TO_GROUP,
+    ID_CONTEXT_ADD_TO_GROUP,
+    ID_CONTEXT_REMOVE_FROM_GROUP,
     ID_CONTEXT_SYNC_NOW,
     ID_CONTEXT_COPY_TO_TASK,
     ID_CONTEXT_COPY_TO_EVENT,
@@ -2419,6 +2423,68 @@ impl WxMailApp {
                                     &frame,
                                     &ui_tx,
                                     &runtime,
+                                );
+                            }
+                        }
+                        _ if id == ID_CONTEXT_RENAME_CONTAINER => {
+                            // Only a contact group has a rename written, and
+                            // the menu only offers it there, so anywhere else
+                            // says why rather than doing nothing.
+                            let module = lock_state(&state).active_module;
+                            match module.container_kind() {
+                                Some(crate::application::new_item::ContainerKind::ContactGroup) => managers::rename_group(
+                                    &state,
+                                    &message_cache,
+                                    &frame,
+                                    &ui_tx,
+                                    &runtime,
+                                ),
+                                _ => send_refusal(
+                                    &ui_tx,
+                                    &runtime,
+                                    "Only a contact group can be renamed here",
+                                ),
+                            }
+                        }
+                        _ if id == ID_CONTEXT_ADD_TO_GROUP
+                            || id == ID_CONTEXT_REMOVE_FROM_GROUP =>
+                        {
+                            let which_way = if id == ID_CONTEXT_ADD_TO_GROUP {
+                                managers::Membership::PutIn
+                            } else {
+                                managers::Membership::TakeOut
+                            };
+                            managers::change_the_group_a_contact_is_in(
+                                which_way,
+                                selected_row(&contact_list),
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                            );
+                        }
+                        _ if id == ID_CONTEXT_WRITE_TO_GROUP => {
+                            // The addresses are worked out first, and the
+                            // window only opens when there is somebody to
+                            // write to. A compose window addressed to nobody
+                            // fails at the server with an error nobody can act
+                            // on.
+                            if let Some(to) = managers::write_to_group(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                            ) {
+                                open_compose(
+                                    &frame,
+                                    &state,
+                                    &ui_tx,
+                                    &runtime,
+                                    &message_cache,
+                                    &a11y,
+                                    ComposeMode::WriteTo { to },
                                 );
                             }
                         }
@@ -4791,7 +4857,7 @@ fn holding_of(
 /// Items no provider syncs are filed under a reserved local id, so a panel that
 /// showed only the active account would hide them completely. Somebody would
 /// make a note and watch it disappear.
-fn sources_for(account_id: &str) -> Vec<String> {
+pub(crate) fn sources_for(account_id: &str) -> Vec<String> {
     let mut sources = vec![account_id.to_string()];
     if account_id != crate::application::new_item::LOCAL_ACCOUNT_ID {
         sources.push(crate::application::new_item::LOCAL_ACCOUNT_ID.to_string());
@@ -4900,19 +4966,23 @@ pub(crate) fn load_module_data(
             updates.push(UIUpdate::ContactsLoaded(
                 contacts.iter().map(ContactItem::from_entry).collect(),
             ));
-            match cache.load_contact_groups(&account_id) {
-                Ok(groups) => updates.push(UIUpdate::ContactGroupsLoaded(
-                    groups
-                        .iter()
-                        .map(|g| ContactGroupItem {
-                            id: g.id.clone(),
-                            name: g.name.clone(),
-                            member_count: g.member_ids.len(),
-                        })
-                        .collect(),
-                )),
-                Err(e) => failures.push(format!("contact groups: {}", e)),
-            }
+            // Both sources, as the contacts list above already does. Groups
+            // are kept on this computer, so an account-only lookup found none
+            // of them; groups made before that was true are filed under an
+            // account, so a local-only lookup would lose those.
+            let groups = from_every(&sources, &mut failures, "contact groups", |id| {
+                cache.load_contact_groups(id)
+            });
+            updates.push(UIUpdate::ContactGroupsLoaded(
+                groups
+                    .iter()
+                    .map(|g| ContactGroupItem {
+                        id: g.id.clone(),
+                        name: g.name.clone(),
+                        member_count: g.member_ids.len(),
+                    })
+                    .collect(),
+            ));
         }
         PimModule::Reminders => {
             let reminders = from_every(&sources, &mut failures, "reminders", |id| {
@@ -5606,8 +5676,11 @@ fn open_compose(
             true
         }
         // A draft was written from somewhere once already, and reopening it is
-        // not the moment to change its sender.
-        ComposeMode::New | ComposeMode::Draft(_) => false,
+        // not the moment to change its sender. A message to a group answers
+        // nothing, so it comes from the default account rather than from
+        // whichever mailbox happened to be open when somebody opened the
+        // contacts panel.
+        ComposeMode::New | ComposeMode::Draft(_) | ComposeMode::WriteTo { .. } => false,
     };
     let (names, active) = state
         .lock()
@@ -6634,15 +6707,34 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let _ = a11y.announce_topic(&msg, Priority::Low, "contacts");
         }
         UIUpdate::ContactGroupsLoaded(groups) => {
+            use crate::application::contact_groups;
+
             pim.contacts_tree.delete_all_items();
             if let Some(root) = pim.contacts_tree.add_root("Contacts", None, None) {
                 pim.contacts_tree
                     .append_item(&root, "All Contacts", None, None);
                 pim.contacts_tree
                     .append_item(&root, "Favorites", None, None);
-                for g in groups {
-                    let label = format!("{} ({})", g.name, g.member_count);
-                    pim.contacts_tree.append_item(&root, &label, None, None);
+                // A branch of their own, so the tree itself says these are
+                // groups and each row only has to say which group and how
+                // many people are in it. "Team A (3)" was read out as a name
+                // and a number with nothing saying what the number counted.
+                let branch = pim.contacts_tree.append_item(
+                    &root,
+                    &contact_groups::the_groups_branch(groups.len()),
+                    None,
+                    None,
+                );
+                if let Some(branch) = branch {
+                    for g in groups {
+                        pim.contacts_tree.append_item(
+                            &branch,
+                            &contact_groups::spoken(&g.name, g.member_count),
+                            None,
+                            None,
+                        );
+                    }
+                    pim.contacts_tree.expand(&branch);
                 }
                 pim.contacts_tree.expand(&root);
             }
@@ -9803,11 +9895,74 @@ fn show_search_dialog(parent: &Frame) -> Option<String> {
 /// Returns what was typed, or `None` if it was cancelled. Deliberately does not
 /// store anything or announce success: it used to do both, announcing "created"
 /// for an item that was written to a log line and thrown away.
-pub(crate) fn prompt_for_new_item(frame: &Frame, item_type: &str) -> Option<String> {
-    let dlg = Dialog::builder(frame, &format!("New {}", item_type))
-        .with_size(400, 180)
+/// `note` is a sentence put above the box, for a kind of thing where where it
+/// is kept is not what somebody would assume. It is a label rather than an
+/// announcement, so it is read when the dialog takes focus rather than racing
+/// the dialog opening.
+pub(crate) fn prompt_for_new_item(
+    frame: &Frame,
+    item_type: &str,
+    note: Option<&str>,
+) -> Option<String> {
+    ask_for_a_name(
+        frame,
+        Asking {
+            window: &format!("New {}", item_type),
+            label: &format!("{} &title:", item_type),
+            note,
+            filled_in: "",
+            button: "C&reate",
+        },
+    )
+}
+
+/// What a name is being asked for, and what to say while asking.
+///
+/// A struct rather than five arguments, so the two callers cannot get the
+/// window title and the label the wrong way round: both are strings and both
+/// still compile.
+pub(crate) struct Asking<'a> {
+    /// The window title.
+    pub window: &'a str,
+    /// The label beside the box, carrying its own mnemonic.
+    pub label: &'a str,
+    /// A sentence above the box, where where the thing is kept is not what
+    /// somebody would assume. It is a label rather than an announcement, so it
+    /// is read when the dialog takes focus rather than racing the dialog
+    /// opening.
+    pub note: Option<&'a str>,
+    /// What the box starts with. A rename starts with the name it has now, so
+    /// changing one word does not mean retyping the rest (3.3.7).
+    pub filled_in: &'a str,
+    /// The label on the button that accepts, carrying its own mnemonic.
+    pub button: &'a str,
+}
+
+/// Ask for one name, and nothing else.
+///
+/// Returns what was typed, or `None` if it was cancelled. Deliberately does
+/// not store anything or announce success: it used to do both, announcing
+/// "created" for an item that was written to a log line and thrown away.
+pub(crate) fn ask_for_a_name(frame: &Frame, asking: Asking) -> Option<String> {
+    let Asking {
+        window,
+        label,
+        note,
+        filled_in,
+        button,
+    } = asking;
+    let dlg = Dialog::builder(frame, window)
+        .with_size(400, if note.is_some() { 260 } else { 180 })
         .build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    if let Some(note) = note {
+        let said = StaticText::builder(&dlg).with_label(note).build();
+        // Wrapped to the dialog, less the padding either side, so the sentence
+        // is not cut off at the window edge at 200% zoom.
+        said.wrap(360);
+        sizer.add(&said, 0, SizerFlag::Expand | SizerFlag::All, 8);
+    }
 
     let fields = FlexGridSizer::builder(0, 2)
         .with_vgap(4)
@@ -9815,11 +9970,12 @@ pub(crate) fn prompt_for_new_item(frame: &Frame, item_type: &str) -> Option<Stri
         .build();
     fields.add_growable_col(1, 1);
 
-    let title_label = StaticText::builder(&dlg)
-        .with_label(&format!("{} &title:", item_type))
-        .build();
+    let title_label = StaticText::builder(&dlg).with_label(label).build();
     let title_field = TextCtrl::builder(&dlg).build();
-    set_accessible_name(&title_field, "Title");
+    title_field.set_value(filled_in);
+    // The visible label without its mnemonic marker, so what is seen and what
+    // is heard are the same words.
+    set_accessible_name(&title_field, &label.replace('&', ""));
     fields.add(
         &title_label,
         0,
@@ -9832,7 +9988,7 @@ pub(crate) fn prompt_for_new_item(frame: &Frame, item_type: &str) -> Option<Stri
 
     let btns = BoxSizer::builder(Orientation::Horizontal).build();
     let ok = Button::builder(&dlg)
-        .with_label("C&reate")
+        .with_label(button)
         .with_id(ID_OK)
         .build();
     let cancel = Button::builder(&dlg)
@@ -9870,6 +10026,43 @@ mod tests {
     use super::{Deleting, ServerChange};
     use crate::presentation::panes::{Holding, Pane};
     use crate::presentation::ui_types::{MessageItem, PimModule};
+
+    #[test]
+    fn test_the_sidebar_shows_a_group_kept_on_this_computer() {
+        // Groups are kept on this computer, and the sidebar asked only the
+        // account being looked at, so every group made after that change would
+        // have been stored, listed by nothing, and read as not saved.
+        use crate::data::message_cache::ContactGroup;
+        use crate::presentation::ui_types::UIUpdate;
+
+        let (_dir, cache) = test_cache();
+        cache
+            .as_ref()
+            .expect("a cache")
+            .create_contact_group(&ContactGroup {
+                id: "g-here".to_string(),
+                account_id: "local".to_string(),
+                name: "Book club".to_string(),
+                description: None,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                member_ids: Vec::new(),
+            })
+            .expect("a group kept here");
+
+        let (tx, rx) = async_channel::unbounded();
+        super::load_module_data(PimModule::Contacts, &cache, Some("acct-1".to_string()), &tx);
+
+        let names: Vec<String> = drain(&rx)
+            .into_iter()
+            .filter_map(|update| match update {
+                UIUpdate::ContactGroupsLoaded(groups) => Some(groups),
+                _ => None,
+            })
+            .flatten()
+            .map(|group| group.name)
+            .collect();
+        assert!(names.contains(&"Book club".to_string()), "{names:?}");
+    }
 
     #[test]
     fn test_a_delete_that_was_refused_does_not_claim_it_was_undone() {

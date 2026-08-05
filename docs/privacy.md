@@ -27,6 +27,21 @@ drive out unless the disk itself is encrypted. Turn on BitLocker if that matters
 is the same position as Outlook's offline folders and Thunderbird's local store, and it is
 stated here rather than left to be discovered.
 
+### Contact groups stay here
+
+A contact group is a name you give to some of the people in your address book, so you can write
+to all of them at once. Groups are kept on this computer and nowhere else.
+
+That means two things:
+
+- A group you make here is never sent to Google or Outlook. Nobody else sees it, and it will not
+  appear on your phone.
+- A group you already keep in Gmail or Outlook does not appear here. Your contacts arrive from
+  those accounts, but their groups do not.
+
+The people in a group still belong to whichever account holds them, and putting somebody in a
+group changes nothing about their contact.
+
 ## Who Wixen Mail talks to
 
 | Who | When | What goes |

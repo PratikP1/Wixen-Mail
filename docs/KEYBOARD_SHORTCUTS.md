@@ -363,6 +363,27 @@ dialog once you have more than one.
 |--------|----------|-------------|
 | Open Contact Manager | (Tools menu) | Open contact / address book manager |
 
+### Contact Groups
+
+A contact group is a name you give to some of the people in your address book, so you can write
+to all of them at once. Groups are kept on this computer and are not sent to Google or Outlook.
+
+Everything here is on a context menu, opened with the `Applications` key or `Shift+F10`. No new
+key was added. Press the menu key on the groups tree in the contacts sidebar, or on a contact in
+the contacts list.
+
+| Where you are | Menu entry | What it does |
+|--------|----------|-------------|
+| Groups tree | Write to this group (`Alt+W`) | Opens a new message with everybody in the group on the To line |
+| Groups tree | New group (`Alt+N`) | Makes a group and asks for its name |
+| Groups tree | Rename this group (`Alt+R`) | Asks which group, then for a new name, with the name it has now already filled in |
+| Groups tree | Delete this group (`Alt+D`) | Removes the group. The people in it stay in your address book |
+| Contacts list | Put in a group (`Alt+G`) | Asks which group, then puts the selected contact in it |
+| Contacts list | Take out of a group (`Alt+O`) | Asks which group, then takes the selected contact out. The contact itself is untouched |
+
+A member with no email address is left off the To line, and the announcement says how many of the
+group are being written to, so you can tell when somebody has been missed.
+
 ### Rules Management
 
 | Action | Shortcut | Description |
