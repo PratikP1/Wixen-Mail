@@ -1210,7 +1210,8 @@ impl MessageCache {
                 account_id TEXT NOT NULL,
                 provider_event_id TEXT,
                 calendar_id TEXT,
-                deleted_at TEXT NOT NULL
+                deleted_at TEXT NOT NULL,
+                event_url TEXT
             )",
                 [],
             )
@@ -1417,6 +1418,11 @@ impl MessageCache {
         // shipped, a series was shown on one day and had no other days to call
         // off.
         self.ensure_column_exists("calendar_events", "exception_dates", "TEXT")?;
+        // Where an event was at the calendar server that held it. Nothing for
+        // every note already written, which is the right answer for all of
+        // them: until this shipped no deletion had ever been sent anywhere, so
+        // none of them was ever going to be.
+        self.ensure_column_exists("deleted_calendar_events", "event_url", "TEXT")?;
         self.ensure_column_exists(
             "message_filter_rules",
             "match_type",

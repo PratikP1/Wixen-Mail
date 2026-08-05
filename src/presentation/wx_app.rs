@@ -9431,6 +9431,14 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
             // that rule now lives beside the entries instead of being spelled
             // out at every reader.
             let Some((username, password)) = crate::service::caldav::sign_in::load(&cal.id) else {
+                // Said rather than passed over. With changes now going up, a
+                // calendar nobody can sign in to is a change waiting for ever
+                // with no explanation, which reads as the sync being broken.
+                total_errors.push(format!(
+                    "{}: the sign-in for this calendar could not be read, so it \
+                     was not synced and any changes to it are still waiting.",
+                    cal.name
+                ));
                 continue;
             };
             match handle.block_on(crate::application::caldav_sync::sync_caldav_calendar(
@@ -9445,9 +9453,11 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
                     total_created += result.created;
                     total_updated += result.updated;
                     total_deleted += result.deleted;
+                    total_sent += result.sent;
+                    total_waiting += result.waiting_on_the_setting;
                     total_errors.extend(result.errors);
                 }
-                Err(e) => total_errors.push(format!("CalDAV sync ({}): {}", cal.name, e)),
+                Err(e) => total_errors.push(format!("Calendar server ({}): {}", cal.name, e)),
             }
         }
 

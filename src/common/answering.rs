@@ -29,6 +29,30 @@ pub async fn answering(
     content_type: &'static str,
     reply: String,
 ) -> (std::net::SocketAddr, tokio::sync::oneshot::Receiver<String>) {
+    answering_one(status, content_type, None, reply).await
+}
+
+/// Answer one request with a version tag on the reply, and hand back what was
+/// asked.
+///
+/// A calendar server names the version of a document with an `ETag`, and a
+/// change that has to match one can only be tested against a reply that carries
+/// one. Everything else behaves as [`answering`] does.
+pub async fn answering_with_a_tag(
+    status: &'static str,
+    content_type: &'static str,
+    tag: &'static str,
+    reply: String,
+) -> (std::net::SocketAddr, tokio::sync::oneshot::Receiver<String>) {
+    answering_one(status, content_type, Some(tag), reply).await
+}
+
+async fn answering_one(
+    status: &'static str,
+    content_type: &'static str,
+    tag: Option<&'static str>,
+    reply: String,
+) -> (std::net::SocketAddr, tokio::sync::oneshot::Receiver<String>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("a loopback port");
@@ -40,18 +64,26 @@ pub async fn answering(
             return;
         };
         let request = read_request(&mut stream).await;
-        let head = format!(
-            "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\n\
-             Content-Length: {}\r\nConnection: close\r\n\r\n",
-            reply.len()
-        );
-        let _ = stream.write_all(head.as_bytes()).await;
+        let _ = stream
+            .write_all(head(status, content_type, tag, reply.len()).as_bytes())
+            .await;
         let _ = stream.write_all(reply.as_bytes()).await;
         let _ = stream.shutdown().await;
         let _ = asked.send(request);
     });
 
     (address, heard)
+}
+
+/// The head of a canned reply.
+fn head(status: &str, content_type: &str, tag: Option<&str>, length: usize) -> String {
+    let named_version = tag
+        .map(|tag| format!("ETag: {tag}\r\n"))
+        .unwrap_or_default();
+    format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\n{named_version}\
+         Content-Length: {length}\r\nConnection: close\r\n\r\n"
+    )
 }
 
 /// Answer several requests on a loopback port, and hand back all of them in the
@@ -86,13 +118,74 @@ pub async fn answering_several(
                 return;
             };
             requests.push(read_request(&mut stream).await);
-            let head = format!(
-                "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\n\
-                 Content-Length: {}\r\nConnection: close\r\n\r\n",
-                reply.len()
-            );
-            let _ = stream.write_all(head.as_bytes()).await;
+            let _ = stream
+                .write_all(head(status, content_type, None, reply.len()).as_bytes())
+                .await;
             let _ = stream.write_all(reply.as_bytes()).await;
+            let _ = stream.shutdown().await;
+        }
+        let _ = asked.send(requests);
+    });
+
+    (address, heard)
+}
+
+/// One canned answer in a sequence.
+///
+/// Separate from [`answering_several`] because a sequence that reads a document
+/// and then changes it needs the read to carry a version tag and the change
+/// not to, and a list of bare strings cannot say which is which.
+pub struct Answer {
+    tag: Option<&'static str>,
+    body: String,
+}
+
+impl Answer {
+    /// An answer with no version tag on it, which is what most servers give.
+    pub fn plain(body: String) -> Self {
+        Self { tag: None, body }
+    }
+
+    /// An answer naming the version of what it carries.
+    pub fn tagged(tag: &'static str, body: String) -> Self {
+        Self {
+            tag: Some(tag),
+            body,
+        }
+    }
+}
+
+/// Answer several requests in order, each with its own version tag.
+///
+/// Otherwise exactly [`answering_several`]: one connection per answer, nothing
+/// handed back until the last has been served, so a run that makes fewer
+/// requests than there are answers reports a missing request rather than a
+/// short list that looks like success.
+pub async fn answering_in_turn(
+    status: &'static str,
+    content_type: &'static str,
+    answers: Vec<Answer>,
+) -> (
+    std::net::SocketAddr,
+    tokio::sync::oneshot::Receiver<Vec<String>>,
+) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("a loopback port");
+    let address = listener.local_addr().expect("the port that was taken");
+    let (asked, heard) = tokio::sync::oneshot::channel();
+
+    tokio::spawn(async move {
+        let mut requests = Vec::with_capacity(answers.len());
+        for answer in answers {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            requests.push(read_request(&mut stream).await);
+            let _ = stream
+                .write_all(head(status, content_type, answer.tag, answer.body.len()).as_bytes())
+                .await;
+            let _ = stream.write_all(answer.body.as_bytes()).await;
             let _ = stream.shutdown().await;
         }
         let _ = asked.send(requests);
@@ -229,6 +322,31 @@ mod tests {
         .await;
 
         assert!(waited.is_err(), "a missing request was reported as arrived");
+    }
+
+    #[tokio::test]
+    async fn test_a_reply_can_carry_the_tag_a_change_has_to_match() {
+        // The whole concurrency story rests on a tag coming off a reply, and
+        // the head written here carries three fixed headers and nothing else.
+        // Proving the header really arrives comes before anything reads one.
+        let (address, _listening) = answering_with_a_tag(
+            "200 OK",
+            "text/calendar",
+            "\"v7\"",
+            "BEGIN:VCALENDAR\r\nEND:VCALENDAR".to_string(),
+        )
+        .await;
+
+        let answer = reqwest::Client::new()
+            .get(format!("http://{address}/e-1.ics"))
+            .send()
+            .await
+            .expect("the reply");
+
+        assert_eq!(
+            answer.headers().get("ETag").and_then(|v| v.to_str().ok()),
+            Some("\"v7\"")
+        );
     }
 
     #[tokio::test]

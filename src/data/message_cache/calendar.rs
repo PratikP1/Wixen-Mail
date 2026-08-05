@@ -15,6 +15,15 @@ pub struct DeletedCalendarEvent {
     pub provider_event_id: Option<String>,
     pub calendar_id: Option<String>,
     pub deleted_at: String,
+    /// Where the event was at the server, for the kinds of calendar addressed
+    /// that way.
+    ///
+    /// A calendar server deletes an event by its own address, and an address
+    /// cannot be worked out from an identifier. Nothing for a note written
+    /// before this existed, and nothing for an event no server ever held,
+    /// which is the same case and is handled the same way: no request is made
+    /// and the note is cleared rather than carried for ever.
+    pub event_url: Option<String>,
 }
 
 /// SQL column list for calendar events (used in all SELECT queries).
@@ -320,14 +329,15 @@ impl MessageCache {
             self.conn
                 .execute(
                     "INSERT OR REPLACE INTO deleted_calendar_events
-                        (id, account_id, provider_event_id, calendar_id, deleted_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                        (id, account_id, provider_event_id, calendar_id, deleted_at, event_url)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     params![
                         going.id,
                         going.account_id,
                         going.provider_event_id,
                         going.calendar_id,
                         chrono::Utc::now().to_rfc3339(),
+                        going.web_link,
                     ],
                 )
                 .map_err(|e| Error::Other(format!("Failed to record a deleted event: {}", e)))?;
@@ -355,7 +365,7 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, account_id, provider_event_id, calendar_id, deleted_at
+                "SELECT id, account_id, provider_event_id, calendar_id, deleted_at, event_url
                  FROM deleted_calendar_events WHERE account_id = ?1 ORDER BY deleted_at",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare deletions query: {}", e)))?;
@@ -367,6 +377,7 @@ impl MessageCache {
                     provider_event_id: row.get(2)?,
                     calendar_id: row.get(3)?,
                     deleted_at: row.get(4)?,
+                    event_url: row.get(5)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query deletions: {}", e)))?
@@ -518,6 +529,27 @@ mod tests {
             pending: false,
             exception_dates: None,
         }
+    }
+
+    #[test]
+    fn test_a_deletion_remembers_the_address_the_event_was_at() {
+        // A calendar server is told to delete an event by its own address, and
+        // that address cannot be worked out from an identifier. The row that
+        // knew it is gone by the time the deletion is sent, so the note has to
+        // carry it or the deletion can never leave this computer.
+        let cache = temp_cache("deletion_address");
+        let mut going = make_event("evt-1", "acct", "e-1", "Quarterly review");
+        going.web_link = Some("https://cal.example.com/dav/sam/work/e-1.ics".to_string());
+        cache.save_calendar_event(&going).expect("the event");
+
+        cache.delete_calendar_event("evt-1").expect("the deletion");
+
+        let notes = cache.deleted_calendar_events("acct").expect("the notes");
+        assert_eq!(notes.len(), 1);
+        assert_eq!(
+            notes[0].event_url.as_deref(),
+            Some("https://cal.example.com/dav/sam/work/e-1.ics")
+        );
     }
 
     #[test]
@@ -911,6 +943,57 @@ mod tests {
                 calendar_id TEXT,
                 UNIQUE(account_id, calendar_id, provider_event_id)
             )";
+
+    #[test]
+    fn test_deletions_written_before_addresses_were_kept_still_open_and_keep_their_rows() {
+        // The table gains one column. An existing database has to open, keep
+        // every note in it, and read the new column as nothing rather than
+        // refusing to open at all.
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock that has passed 1970")
+            .as_nanos();
+        let dir = env::temp_dir().join(format!("wixen_mail_deletions_before_{nanos}"));
+        std::fs::create_dir_all(&dir).expect("a directory to write into");
+        let conn =
+            rusqlite::Connection::open(dir.join("message_cache.db")).expect("a database to open");
+        conn.execute(
+            "CREATE TABLE deleted_calendar_events (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                provider_event_id TEXT,
+                calendar_id TEXT,
+                deleted_at TEXT NOT NULL
+            )",
+            params![],
+        )
+        .expect("the deletions table as it was");
+        conn.execute(
+            "INSERT INTO deleted_calendar_events
+             (id, account_id, provider_event_id, calendar_id, deleted_at)
+             VALUES ('evt-1', 'acct', 'uid-1', 'cal-1', '2026-01-01T00:00:00Z')",
+            params![],
+        )
+        .expect("a deletion written before this shipped");
+        drop(conn);
+
+        let cache = MessageCache::new(dir, None).expect("the older database to open");
+
+        let notes = cache.deleted_calendar_events("acct").expect("the notes");
+        assert_eq!(
+            notes.len(),
+            1,
+            "a note somebody's deletion depended on went"
+        );
+        assert_eq!(notes[0].provider_event_id.as_deref(), Some("uid-1"));
+        assert_eq!(notes[0].calendar_id.as_deref(), Some("cal-1"));
+        assert_eq!(notes[0].deleted_at, "2026-01-01T00:00:00Z");
+        assert_eq!(
+            notes[0].event_url, None,
+            "an address nobody ever stored has to read as nothing, which is the \
+             case the sync already has to handle"
+        );
+    }
 
     #[test]
     fn test_a_calendar_written_by_the_last_release_opens_with_every_event_intact() {

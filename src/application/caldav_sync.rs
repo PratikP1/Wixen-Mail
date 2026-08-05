@@ -1,31 +1,263 @@
-//! Reading a calendar from a server, and refreshing a subscribed feed.
+//! Reading a calendar from a server, changing one, and refreshing a feed.
 //!
-//! The calendar is read and nothing is sent back. An event made or changed here
-//! stays on this computer, and the next sync overwrites a change made here to an
-//! event the server also holds. Google and Outlook calendars do now send changes
-//! up; a calendar server does not, and the reason is worth writing down rather
-//! than leaving as an omission.
+//! The sync goes both ways now. A change made here is sent before the calendar
+//! is read, the same order and for the same reason as the Google and Outlook
+//! passes, and through the same gate: nothing here builds its own client, so an
+//! account whose owner has not turned on Allow Changes makes no request at all
+//! and the change keeps waiting.
 //!
-//! A change to one of these is a PUT of the whole calendar document, so
-//! everything the builder does not write is destroyed. `build_ical_vevent` now
-//! writes the repeat rule, the days the series called off and the zone, which
-//! it did not, so a change would no longer flatten a series or move it an hour.
-//! It still writes no guests and no alerts, and nothing here keeps the server's
-//! own document to write back into, so a change would still uninvite everybody
-//! and drop every alarm. That is why a change is still not sent. The unit that
-//! stores the server's document is what makes it safe.
+//! # Why a change is safe to send
 //!
-//! An event deleted here in a calendar from a server does leave a note saying
-//! the server has not been told. Those notes are kept rather than cleared, so
-//! that the deletion is still there to send when a write path exists.
+//! A change to one of these is a PUT of the whole document, so everything the
+//! builder does not write would be destroyed, and this program models about a
+//! third of a calendar document. So a change is not built from nothing. The
+//! document the server holds is fetched, the handful of properties this program
+//! owns are replaced inside it, and everything else goes back exactly as it
+//! came: guests, alarms, the organiser and every property nobody here has
+//! thought about. `ical_with_the_event_changed` is where that happens.
+//!
+//! That guarantee is real and it is weaker than Google's, which is worth saying
+//! plainly rather than implying parity. Google merges on its own side, so only
+//! the named fields can ever move. Here the merge happens on this side against
+//! what the server held one round trip ago, and `If-Match` is what turns that
+//! window into a refusal rather than a silent overwrite.
+//!
+//! A deletion carries the address the event was at, because a server is told to
+//! delete by address and an address cannot be worked out from an identifier. It
+//! deliberately does not name a version: somebody asked for the event to go,
+//! and a version that had moved on would make the deletion fail on every sync
+//! from now on with nothing they could do about it.
+//!
+//! A feed is different and stays different: it is published, it is only ever
+//! read, and a change to one is kept here and written over by the next refresh.
 //!
 //! None of this has run against a live server.
 
 use crate::application::calendar::CalendarSyncResult;
 use crate::common::Result;
 use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache};
-use crate::service::caldav::{CalDavClient, CalDavEvent, build_ical_vevent};
+use crate::service::caldav::{
+    CalDavClient, CalDavEvent, build_ical_vevent, ical_with_the_event_changed,
+};
 use crate::service::ical_subscription::ICalSubscriptionClient;
+
+/// Where an event this program changed lives at the calendar server.
+enum WhereItLives {
+    /// At this address, which is where a change is sent.
+    AtThisAddress(String),
+    /// Nowhere yet. It was made here, so it is added rather than changed.
+    NotThereYet,
+    /// The server has it and this computer does not know where.
+    ///
+    /// Every event stored before addresses were resolved holds a bare path
+    /// rather than an address, and a change cannot be sent to a path. The read
+    /// that follows rewrites it, so this fixes itself on the next sync; it is
+    /// said out loud rather than skipped, because a change that silently does
+    /// nothing is the failure this program keeps hitting.
+    AddressNotKnownYet,
+}
+
+/// Where the event a change was made to lives.
+fn where_it_lives(event: &CalendarEventEntry) -> WhereItLives {
+    if event.provider_event_id.is_none() {
+        return WhereItLives::NotThereYet;
+    }
+    match event.web_link.as_deref() {
+        // A feed event is stored with an empty address, and a calendar read
+        // before this shipped holds the bare path the server answered with.
+        Some(at) if at.starts_with("http") => WhereItLives::AtThisAddress(at.to_string()),
+        _ => WhereItLives::AddressNotKnownYet,
+    }
+}
+
+/// Send a calendar server everything changed here that it has not been told.
+///
+/// Runs before the calendar is read, the same way and for the same reason the
+/// Google and Outlook passes do: the other order sends a value the read has
+/// just overwritten, so the change would undo the thing it was told to accept.
+///
+/// Hands back the identities it sent, because the read that follows removes any
+/// event the server did not mention and an event created a moment ago outside
+/// the window that read asks for is not mentioned.
+async fn push_to_the_calendar_server(
+    cache: &MessageCache,
+    caldav: &CalDavClient,
+    calendar: &CalendarContainer,
+    account_id: &str,
+    sign_in: (&str, &str),
+    result: &mut CalendarSyncResult,
+) -> std::collections::HashSet<String> {
+    let (username, password) = sign_in;
+    let calendar_url = calendar.caldav_url.as_deref().unwrap_or_default();
+    let mut just_sent = std::collections::HashSet::new();
+    if calendar.is_read_only {
+        // A calendar this account may only read, such as a feed. The waiting
+        // flag stays set rather than being cleared, because moving the event
+        // into a calendar that can be written to should still send it.
+        return just_sent;
+    }
+
+    for note in deletions_waiting(cache, calendar, account_id, result) {
+        let Some(at) = worth_sending(note.event_url.as_deref()) else {
+            // Nothing at the server was ever at an address this computer
+            // knows, so there is nothing to ask it to delete and the note is
+            // cleared rather than carried for ever.
+            let _ = cache.forget_deleted_calendar_event(&note.id);
+            continue;
+        };
+        // No version check on a deletion, deliberately. Somebody asked for the
+        // event to go; a tag that had moved on would make the deletion fail on
+        // every sync from now on with nothing they could do about it.
+        let sent = caldav.delete_event(at, username, password, None).await;
+        if sent.is_ok() {
+            let _ = cache.forget_deleted_calendar_event(&note.id);
+        }
+        crate::application::calendar::record(
+            sent,
+            "Deleting an event at the calendar server",
+            result,
+        );
+    }
+
+    for event in changes_waiting(cache, calendar, account_id, result) {
+        let sent = send_one_change(cache, caldav, calendar_url, &event, username, password).await;
+        if let Ok(ref uid) = sent {
+            just_sent.insert(uid.clone());
+        }
+        // The event's own identity here, never its title: this goes to a
+        // summary and a log, and a title is the person's own words.
+        crate::application::calendar::record(
+            sent.map(|_| ()),
+            &format!("Event {} at the calendar server", event.id),
+            result,
+        );
+    }
+
+    just_sent
+}
+
+/// Send one change, and write down that the server now holds it.
+///
+/// Returns the identity the server knows the event by, so the read that follows
+/// does not remove what was just created.
+async fn send_one_change(
+    cache: &MessageCache,
+    caldav: &CalDavClient,
+    calendar_url: &str,
+    event: &CalendarEventEntry,
+    username: &str,
+    password: &str,
+) -> Result<String> {
+    let mut going = local_to_caldav_event(event);
+
+    match where_it_lives(event) {
+        WhereItLives::AtThisAddress(at) => {
+            if !caldav.may_change() {
+                // Refused before anything leaves, by the transport's own gate,
+                // so there is one sentence for a refusal and one place that
+                // counts it. Asked here so that an account open for reading
+                // only does not fetch a document it could never write back.
+                caldav
+                    .update_event(&at, username, password, &going, None)
+                    .await?;
+                return Ok(going.uid);
+            }
+            // Read, change, write. A PUT replaces the whole document and this
+            // program models about a third of one, so the change is made
+            // inside what the server holds this moment rather than in a
+            // document built from nothing.
+            let held = caldav.fetch_event(&at, username, password).await?;
+            going.ical_data = ical_with_the_event_changed(&held.document, &going);
+            let changed = caldav
+                .update_event(&at, username, password, &going, held.tag.as_deref())
+                .await?;
+            settled_here(cache, event, &going.uid, &at, changed.etag)?;
+            Ok(going.uid)
+        }
+        WhereItLives::NotThereYet => {
+            let added = caldav
+                .create_event(calendar_url, username, password, &going)
+                .await?;
+            settled_here(cache, event, &going.uid, &added.url, added.etag)?;
+            Ok(going.uid)
+        }
+        WhereItLives::AddressNotKnownYet => Err(crate::common::Error::Other(
+            "This change cannot be sent yet: where the event lives on the \
+             calendar server is not known here. Reading the calendar again \
+             will find it."
+                .to_string(),
+        )),
+    }
+}
+
+/// Write down that the calendar server now holds this event.
+///
+/// The identity, the address and the version, and nothing else. The server's
+/// answer is not read back over the stored row, for the reason the Google and
+/// Outlook passes give: a server that answers sparsely would blank it. The
+/// address matters most: without it the next change would add a second copy
+/// under a fresh identity, and the next deletion would have nowhere to go.
+fn settled_here(
+    cache: &MessageCache,
+    event: &CalendarEventEntry,
+    uid: &str,
+    at: &str,
+    tag: Option<String>,
+) -> Result<()> {
+    let mut settled = event.clone();
+    settled.provider_event_id = Some(uid.to_string());
+    settled.web_link = Some(at.to_string());
+    settled.etag = tag;
+    settled.pending = false;
+    cache.save_calendar_event(&settled)
+}
+
+/// Everything waiting to go to this calendar.
+fn changes_waiting(
+    cache: &MessageCache,
+    calendar: &CalendarContainer,
+    account_id: &str,
+    result: &mut CalendarSyncResult,
+) -> Vec<CalendarEventEntry> {
+    match cache.pending_calendar_events(account_id) {
+        Ok(waiting) => waiting
+            .into_iter()
+            .filter(|event| event.calendar_id.as_deref() == Some(calendar.id.as_str()))
+            .collect(),
+        Err(e) => {
+            result.errors.push(format!(
+                "The changes waiting to be sent could not be read: {e}"
+            ));
+            Vec::new()
+        }
+    }
+}
+
+/// Every deletion in this calendar the server has not been told about.
+fn deletions_waiting(
+    cache: &MessageCache,
+    calendar: &CalendarContainer,
+    account_id: &str,
+    result: &mut CalendarSyncResult,
+) -> Vec<crate::data::message_cache::DeletedCalendarEvent> {
+    match cache.deleted_calendar_events(account_id) {
+        Ok(notes) => notes
+            .into_iter()
+            .filter(|note| note.calendar_id.as_deref() == Some(calendar.id.as_str()))
+            .collect(),
+        Err(e) => {
+            result.errors.push(format!(
+                "The deletions waiting to be sent could not be read: {e}"
+            ));
+            Vec::new()
+        }
+    }
+}
+
+/// A value that says something, or nothing at all.
+fn worth_sending(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
 
 /// Sync a CalDAV calendar with the local cache.
 pub async fn sync_caldav_calendar(
@@ -43,6 +275,16 @@ pub async fn sync_caldav_calendar(
         result.errors.push("No CalDAV URL configured".to_string());
         return Ok(result);
     }
+
+    let just_sent = push_to_the_calendar_server(
+        cache,
+        caldav,
+        calendar,
+        account_id,
+        (username, password),
+        &mut result,
+    )
+    .await;
 
     // Ask for six months back and a year forward.
     let now = chrono::Utc::now();
@@ -76,9 +318,25 @@ pub async fn sync_caldav_calendar(
 
     // Store what the server sent, keeping the parts of an event it does not
     // carry.
-    let mut seen_uids = std::collections::HashSet::new();
+    // What the push just put there counts as seen. The read below asks for six
+    // months back to a year ahead, so an event created a moment ago outside
+    // that window is not in the answer, and without this it would be created at
+    // the server and deleted from this computer in the same pass.
+    let mut seen_uids: std::collections::HashSet<&str> =
+        just_sent.iter().map(String::as_str).collect();
     for remote in &remote_events {
         seen_uids.insert(remote.uid.as_str());
+
+        // A change made here that has not been sent yet is the newer copy, so
+        // the server's is not written over it. Doing that destroys the edit the
+        // next push was going to send, which turns "waiting to be sent" into
+        // waiting for ever to send the server's own words back to it.
+        if local_uids
+            .get(remote.uid.as_str())
+            .is_some_and(|held| held.pending)
+        {
+            continue;
+        }
 
         let mut local_entry = caldav_event_to_local(remote, account_id, &calendar.id);
         match local_uids.get(remote.uid.as_str()) {
@@ -266,8 +524,11 @@ fn caldav_event_to_local(
 
 /// Convert a local CalendarEventEntry to a CalDavEvent for upload.
 ///
-/// Nothing uploads. This is the shape a change would take if there were a way
-/// to send one, and there is not, so an event changed here stays here.
+/// The shape a change takes on the way out. An event that has never been sent
+/// is given an identifier here, and that identifier is written back to the
+/// stored row as soon as the server accepts it: a fresh one is minted on every
+/// call, so an event sent twice without the write-back in between would end up
+/// on somebody's calendar twice.
 pub fn local_to_caldav_event(local: &CalendarEventEntry) -> CalDavEvent {
     let event = CalDavEvent {
         url: local.web_link.clone().unwrap_or_default(),
@@ -869,6 +1130,538 @@ mod tests {
         assert_eq!(
             left[0].id, "local-1",
             "an event that is still in the feed is the same event, so it keeps the row it had"
+        );
+    }
+
+    // ── Sending a change back to the calendar server ─────────────────────
+
+    use crate::common::answering::{Answer, answering_in_turn, asked_for, heard};
+    use crate::service::caldav::writing_tests::a_document_the_server_holds;
+
+    /// A change somebody made here that has not been sent yet.
+    fn a_change_waiting_in(
+        cache: &MessageCache,
+        calendar: &CalendarContainer,
+        provider_event_id: Option<&str>,
+        web_link: Option<String>,
+    ) -> CalendarEventEntry {
+        let mut event = held_event("local-1", "unused", &calendar.id, &calendar.account_id);
+        event.provider_event_id = provider_event_id.map(str::to_string);
+        event.web_link = web_link;
+        event.etag = Some("\"the tag from the last sync\"".to_string());
+        event.summary = "Quarterly review, moved".to_string();
+        event.pending = true;
+        cache
+            .save_calendar_event(&event)
+            .expect("the waiting change");
+        event
+    }
+
+    /// One header of a captured request, read without its name.
+    ///
+    /// By name rather than by looking for the words anywhere in the request:
+    /// a body that happened to hold "if-match" would satisfy that, and the
+    /// whole concurrency story rests on this being the header and not the body.
+    fn header_of(request: &str, name: &str) -> Option<String> {
+        let head = request.split("\r\n\r\n").next().unwrap_or_default();
+        let wanted = format!("{}:", name.to_ascii_lowercase());
+        head.lines()
+            .find(|line| line.to_ascii_lowercase().starts_with(&wanted))
+            .map(|line| line[wanted.len()..].trim().to_string())
+    }
+
+    fn body_of(request: &str) -> &str {
+        request
+            .split_once("\r\n\r\n")
+            .map(|(_, body)| body)
+            .unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn test_a_change_waiting_here_is_sent_to_the_calendar_server_before_the_calendar_is_read()
+    {
+        // The whole point of the unit. Until now every edit to an event in one
+        // of these calendars was written over by the next sync. Sent before the
+        // read, because the other order sends a value the read has just
+        // overwritten.
+        let cache = temp_cache("push_change");
+        let mut calendar = container("cal-push", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::tagged("\"v7\"", a_document_the_server_holds("e-1")),
+                Answer::plain(String::new()),
+                Answer::plain(multi_status(&["e-1"])),
+            ],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        a_change_waiting_in(
+            &cache,
+            &calendar,
+            Some("e-1"),
+            Some(format!("http://{address}/cal/e-1.ics")),
+        );
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a read, a change and the calendar")
+            .await
+            .expect("three requests");
+        assert_eq!(asked_for(&requests[0]), "GET /cal/e-1.ics");
+        assert_eq!(asked_for(&requests[1]), "PUT /cal/e-1.ics");
+        assert_eq!(asked_for(&requests[2]), "REPORT /cal/");
+        assert_eq!(
+            header_of(&requests[1], "If-Match").as_deref(),
+            Some("\"v7\""),
+            "the change has to name the version it was made against, and that \
+             is the one the server just answered with rather than the one \
+             stored at the last sync"
+        );
+        let sent = body_of(&requests[1]);
+        assert!(
+            sent.contains("SUMMARY:Quarterly review\\, moved"),
+            "what was typed here did not go out: {sent}"
+        );
+        assert!(
+            sent.contains("ATTENDEE;CN=Sam;PARTSTAT=ACCEPTED:mailto:sam@example.com"),
+            "changing the room uninvited everybody: {sent}"
+        );
+        assert!(
+            sent.contains("BEGIN:VALARM"),
+            "changing the title dropped the alarm: {sent}"
+        );
+        assert_eq!(result.sent, 1);
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+    }
+
+    #[tokio::test]
+    async fn test_an_event_made_here_in_a_calendar_on_a_server_is_added_there_and_can_be_found_again()
+     {
+        // Adding is only half of it. Unless the identity and the address come
+        // back to the stored row, the next change would add a second copy
+        // under a fresh identifier and the next deletion would have nowhere to
+        // go, so somebody would end up with two of everything they edited.
+        let cache = temp_cache("push_create");
+        let mut calendar = container("cal-create", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::tagged("\"v1\"", String::new()),
+                Answer::plain(multi_status(&[])),
+            ],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let made_here = a_change_waiting_in(&cache, &calendar, None, None);
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a change and the calendar")
+            .await
+            .expect("two requests");
+        assert_eq!(requests.len(), 2, "{requests:?}");
+        let added = asked_for(&requests[0]);
+        assert!(
+            added.starts_with("PUT /cal/") && added.ends_with(".ics"),
+            "{added}"
+        );
+        assert_eq!(
+            header_of(&requests[0], "If-None-Match").as_deref(),
+            Some("*")
+        );
+        assert_eq!(
+            header_of(&requests[0], "If-Match"),
+            None,
+            "a brand new event was sent as a change to a version that never existed"
+        );
+        assert_eq!(result.sent, 1);
+
+        let stored = cache
+            .get_event_by_id(&made_here.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        let uid = stored
+            .provider_event_id
+            .as_deref()
+            .unwrap_or_else(|| panic!("the server's name for the event was not written down"));
+        assert_eq!(
+            stored.web_link.as_deref(),
+            Some(format!("http://{address}/cal/{uid}.ics").as_str()),
+            "where it now lives was not written down, so nothing can find it again"
+        );
+        assert_eq!(stored.etag.as_deref(), Some("\"v1\""));
+        assert!(
+            !stored.pending,
+            "it was sent and is still waiting to be sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_to_a_calendar_on_a_server_never_leaves_this_computer_when_changes_are_not_allowed()
+     {
+        // The client `for_account` builds for an account whose owner has not
+        // turned Allow Changes on is exactly `CalDavClient::new()`. Reading the
+        // real settings here would make this pass or fail depending on whose
+        // computer ran it.
+        //
+        // Nothing goes out, not even the read that a change would need, and it
+        // is counted as waiting on a setting rather than reported as a failure:
+        // one error per waiting event on every sync from now on is how a
+        // warning somebody needs stops being read.
+        let cache = temp_cache("push_refused");
+        let mut calendar = container("cal-refused", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![Answer::plain(multi_status(&["e-1"]))],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let waiting = a_change_waiting_in(
+            &cache,
+            &calendar,
+            Some("e-1"),
+            Some(format!("http://{address}/cal/e-1.ics")),
+        );
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "only the calendar being read")
+            .await
+            .expect("one request");
+        assert_eq!(
+            requests.len(),
+            1,
+            "something went out on an account open for reading only: {requests:?}"
+        );
+        assert_eq!(asked_for(&requests[0]), "REPORT /cal/");
+        assert_eq!(result.waiting_on_the_setting, 1);
+        assert_eq!(result.sent, 0);
+        assert!(
+            result.errors.is_empty(),
+            "waiting on a setting was reported as a failure: {:?}",
+            result.errors
+        );
+        assert!(
+            cache
+                .get_event_by_id(&waiting.id)
+                .expect("the calendar to be readable")
+                .expect("the event to still be there")
+                .pending,
+            "a change that could not be sent was forgotten rather than kept"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_still_waiting_to_be_sent_is_not_written_over_by_the_read_that_follows() {
+        // The whole promise of this unit, and the case that breaks it. When a
+        // change could not go, the copy here is the newer one and the read
+        // must leave it alone: overwriting it destroys the edit that the next
+        // push was going to send, so the change would be "waiting" for ever
+        // and the words waiting for would be the server's.
+        let cache = temp_cache("waiting_survives_read");
+        let mut calendar = container("cal-waiting", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![Answer::plain(multi_status(&["e-1"]))],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let waiting = a_change_waiting_in(
+            &cache,
+            &calendar,
+            Some("e-1"),
+            Some(format!("http://{address}/cal/e-1.ics")),
+        );
+
+        sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let _ = heard(listening, "the calendar being read").await;
+        let stored = cache
+            .get_event_by_id(&waiting.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(
+            stored.summary, "Quarterly review, moved",
+            "the words somebody typed were replaced by the server's, so the \
+             change that is still waiting is no longer their change"
+        );
+        assert!(
+            stored.pending,
+            "the change stopped waiting without being sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_deleted_here_is_deleted_at_the_calendar_server_and_the_note_is_forgotten()
+     {
+        let cache = temp_cache("push_delete");
+        let mut calendar = container("cal-delete", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::plain(String::new()),
+                Answer::plain(multi_status(&[])),
+            ],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let going = a_change_waiting_in(
+            &cache,
+            &calendar,
+            Some("e-1"),
+            Some(format!("http://{address}/cal/e-1.ics")),
+        );
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the deletion to be noted");
+
+        sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a deletion and the calendar")
+            .await
+            .expect("two requests");
+        assert_eq!(asked_for(&requests[0]), "DELETE /cal/e-1.ics");
+        assert_eq!(
+            header_of(&requests[0], "If-Match"),
+            None,
+            "a deletion that names a version fails for ever once anybody else \
+             touches the event, and somebody asked for it to go"
+        );
+        assert!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the notes")
+                .is_empty(),
+            "the server was told and the note was kept, so it will be told again \
+             on every sync from now on"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_the_server_never_had_leaves_no_request() {
+        // Made here and deleted before it was ever sent. There is nothing at
+        // the server to delete, so the note is cleared rather than carried for
+        // ever and nothing is asked of anybody.
+        let cache = temp_cache("push_delete_unknown");
+        let mut calendar = container("cal-delete-unknown", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![Answer::plain(multi_status(&[]))],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let going = a_change_waiting_in(&cache, &calendar, None, None);
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the deletion to be noted");
+
+        sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "only the calendar being read")
+            .await
+            .expect("one request");
+        assert_eq!(requests.len(), 1, "{requests:?}");
+        assert_eq!(asked_for(&requests[0]), "REPORT /cal/");
+        assert!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the notes")
+                .is_empty(),
+            "a note nobody could ever act on was kept for ever"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_just_sent_to_the_server_is_not_removed_by_the_read_that_follows() {
+        // The read asks for six months back to a year ahead. An event further
+        // off than that is correctly missing from the answer, and without this
+        // it would be created at the server and dropped from this computer
+        // moments later, in the same pass.
+        let cache = temp_cache("push_then_read");
+        let mut calendar = container("cal-window", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::tagged("\"v1\"", String::new()),
+                Answer::plain(multi_status(&[])),
+            ],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let mut far_off = a_change_waiting_in(&cache, &calendar, None, None);
+        far_off.start_datetime = (chrono::Utc::now() + chrono::Duration::days(730)).to_rfc3339();
+        cache
+            .save_calendar_event(&far_off)
+            .expect("an event two years out");
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let _ = heard(listening, "a change and the calendar").await;
+        assert_eq!(result.deleted, 0, "what was just created was then deleted");
+        let left = cache
+            .get_events_for_calendar(&calendar.id)
+            .expect("the calendar to be readable");
+        assert_eq!(
+            left.len(),
+            1,
+            "the event was added to the server and taken off this computer"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_with_no_known_address_says_so_rather_than_doing_nothing_quietly() {
+        // Every event read from a calendar server before addresses were
+        // resolved holds a bare path, and a change cannot be sent to a path.
+        // Reading the calendar again repairs it, so this fixes itself; saying
+        // nothing meanwhile is the silent-nothing-happened failure this program
+        // keeps hitting.
+        let cache = temp_cache("push_no_address");
+        let mut calendar = container("cal-no-address", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![Answer::plain(multi_status(&["e-1"]))],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        a_change_waiting_in(
+            &cache,
+            &calendar,
+            Some("e-1"),
+            Some("/cal/e-1.ics".to_string()),
+        );
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "only the calendar being read")
+            .await
+            .expect("one request");
+        assert_eq!(requests.len(), 1, "{requests:?}");
+        assert_eq!(result.sent, 0);
+        assert_eq!(
+            result.errors.len(),
+            1,
+            "a change that went nowhere was not mentioned: {:?}",
+            result.errors
+        );
+        assert!(
+            result.errors[0].contains("Reading the calendar again"),
+            "the sentence has to say what will fix it: {}",
+            result.errors[0]
+        );
+    }
+
+    #[test]
+    fn test_a_change_sent_to_a_calendar_server_is_counted_in_what_the_person_is_told() {
+        // This one reads source rather than behaviour, and says so. The block
+        // it checks is inside a closure that builds its own cache on a
+        // background thread, so there is no seam short of a running window.
+        //
+        // Without it the sync would send somebody's change to their calendar
+        // server and then tell them nothing about it, which is the silence
+        // this program treats as its worst failure.
+        let path = "src/presentation/wx_app.rs";
+        let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let arm = source
+            .split_once("sync_caldav_calendar(")
+            .map(|(_, after)| after)
+            .unwrap_or_else(|| panic!("{path} no longer syncs a calendar server"));
+        let arm = arm
+            .split_once("refresh_subscription(")
+            .map(|(before, _)| before)
+            .unwrap_or(arm);
+
+        for counted in ["total_sent += result.sent", "total_waiting += result"] {
+            assert!(
+                arm.contains(counted),
+                "{path} does not count {counted} for a calendar server, so a \
+                 change that reached one is never mentioned"
+            );
+        }
+        assert!(
+            arm.contains("total_errors.push"),
+            "{path} passes over a calendar whose sign-in it cannot read without \
+             a word, so a change waits for ever with no explanation"
         );
     }
 

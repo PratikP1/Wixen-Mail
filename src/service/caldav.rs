@@ -1,13 +1,17 @@
 //! CalDAV client for calendar synchronization.
 //!
-//! Calendar operations over HTTP with iCalendar payloads. Reading a calendar
-//! is wired up and used, and so is asking a server what calendars it has:
-//! [`CalDavClient::discover_calendars`] is what the screen for adding a
-//! calendar by its address calls. Writing is not: nothing in the application
-//! calls [`CalDavClient::create_event`], [`CalDavClient::update_event`] or
-//! [`CalDavClient::delete_event`], so an event made or changed here stays on
-//! this computer and the next sync overwrites it. None of this has run against
-//! a live server.
+//! Calendar operations over HTTP with iCalendar payloads. Reading a calendar,
+//! asking a server what calendars it has, and changing one are all wired up and
+//! used: `application::caldav_sync` sends a change through
+//! [`CalDavClient::create_event`], [`CalDavClient::update_event`] and
+//! [`CalDavClient::delete_event`], each of which asks the write gate before it
+//! builds a request. None of this has run against a live server.
+//!
+//! A change replaces the whole document, so a change is made by editing the one
+//! the server holds rather than by building a fresh one:
+//! [`CalDavClient::fetch_event`] reads it with the name of its version, and
+//! [`ical_with_the_event_changed`] puts this program's properties into it and
+//! leaves everything else alone.
 //!
 //! The reader assumes the `d:`, `c:`, `cs:` and `a:` prefixes for the four
 //! namespaces it reads. A server that answers with `D:` and `C:`, or with the
@@ -53,6 +57,30 @@ pub struct CalDavEvent {
     /// lines, so every line is gathered rather than the first one only. Without
     /// it a day somebody cancelled is shown as a meeting that is not happening.
     pub exception_dates: Option<String>,
+}
+
+/// What a server holds for one event right now.
+///
+/// The document itself and the name the server gives this version of it. A
+/// change built from these two is a change to what the server has this moment,
+/// and one that names the version cannot quietly write over somebody else's
+/// change made from another device.
+#[derive(Debug, Clone)]
+pub struct HeldAtTheServer {
+    pub document: String,
+    pub tag: Option<String>,
+}
+
+/// The name a server gives the version of a document it just answered with.
+///
+/// Some servers answer without one. That is not an error: it costs the check
+/// against another device's change and nothing else, because the document being
+/// sent back is the one that just arrived.
+fn named_version(headers: &reqwest::header::HeaderMap) -> Option<String> {
+    headers
+        .get("ETag")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
 }
 
 /// Credential store service name holding one calendar's sign-in details.
@@ -235,10 +263,23 @@ impl CalDavClient {
         }
     }
 
+    /// A client that may change things, for tests only.
+    ///
+    /// [`Self::for_account`] reads the settings really stored on whichever
+    /// machine is running, so a test built on it would pass or fail depending
+    /// on whose computer ran it. No address to point at: every method here
+    /// takes a whole URL, so a test points the client by handing it one.
+    #[cfg(test)]
+    pub fn allowed_to_change_things() -> Self {
+        Self {
+            http: crate::service::outward::Outward::may_change_things(reqwest::Client::new()),
+        }
+    }
+
     /// Discover calendars at a CalDAV server URL.
     ///
-    /// Nothing calls this. There is no screen for adding a calendar by its
-    /// server address, so no calendar is ever discovered.
+    /// The screen for adding a calendar by its server address is what calls
+    /// this. A read, so it is ungated.
     pub async fn discover_calendars(
         &self,
         base_url: &str,
@@ -353,9 +394,52 @@ impl CalDavClient {
         Ok((events, None))
     }
 
+    /// Whether this client may change anything at a server.
+    ///
+    /// Reading the one gate rather than being a second one: every write still
+    /// goes through [`crate::service::outward::Outward::changing`] and is still
+    /// refused there. This is what lets a caller skip fetching a document it
+    /// would only be refused permission to write back, so an account open for
+    /// reading only makes no requests at all instead of pointless ones.
+    pub fn may_change(&self) -> bool {
+        self.http.may_change()
+    }
+
+    /// The document a server holds for one event, and the name of its version.
+    ///
+    /// A GET, so it is ungated: reading somebody's own calendar into memory
+    /// changes nothing at the other end. It is what makes a change safe. A PUT
+    /// replaces the whole document, and this program models about a third of
+    /// one, so a change is made by editing what the server just handed back
+    /// rather than by building a fresh document and hoping.
+    pub async fn fetch_event(
+        &self,
+        event_url: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<HeldAtTheServer> {
+        let response = self
+            .http
+            .reading(event_url)
+            .basic_auth(username, Some(password))
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("CalDAV GET failed: {}", e)))?;
+
+        refused_with(&response, "Reading an event")?;
+
+        let tag = named_version(response.headers());
+        let document = response
+            .text()
+            .await
+            .map_err(|e| Error::Network(format!("CalDAV response read error: {}", e)))?;
+        Ok(HeldAtTheServer { document, tag })
+    }
+
     /// Create a new event on a CalDAV calendar.
     ///
-    /// Nothing calls this, so an event made here never reaches the server.
+    /// Written inside the calendar under an address made from the event's own
+    /// identifier, and refused by the server if anything is there already.
     /// Never run against a live server.
     pub async fn create_event(
         &self,
@@ -364,7 +448,15 @@ impl CalDavClient {
         password: &str,
         event: &CalDavEvent,
     ) -> Result<CalDavEvent> {
-        let event_url = format!("{}{}.ics", calendar_url.trim_end_matches('/'), event.uid);
+        // Inside the calendar, not beside it, and with the identifier escaped:
+        // whatever made the event chose it, and one holding a space breaks the
+        // request line while one holding a hash truncates the address at the
+        // fragment, so the write lands on a calendar nobody named.
+        let event_url = format!(
+            "{}/{}.ics",
+            calendar_url.trim_end_matches('/'),
+            crate::service::outward::in_a_path(&event.uid)
+        );
 
         let response = self
             .http
@@ -374,18 +466,17 @@ impl CalDavClient {
                 "add an event to the calendar",
             )?
             .header("Content-Type", "text/calendar; charset=utf-8")
+            // Nothing may be there already. A create that replaced whatever it
+            // found would write over a stranger's appointment on an identifier
+            // collision, silently.
+            .header("If-None-Match", "*")
             .basic_auth(username, Some(password))
             .body(event.ical_data.clone())
             .send()
             .await
             .map_err(|e| Error::Network(format!("CalDAV PUT failed: {}", e)))?;
 
-        if !response.status().is_success() {
-            return Err(Error::Network(format!(
-                "CalDAV PUT returned {}",
-                response.status()
-            )));
-        }
+        refused_with(&response, "Adding an event")?;
 
         let etag = response
             .headers()
@@ -401,8 +492,11 @@ impl CalDavClient {
 
     /// Update an existing event on a CalDAV calendar.
     ///
-    /// Nothing calls this, so a change made here never reaches the server and
-    /// the next sync overwrites it. Never run against a live server.
+    /// The document handed in replaces whatever is at that address, so the
+    /// caller builds it with [`ical_with_the_event_changed`] from what the
+    /// server just answered rather than from nothing. `etag` is the version
+    /// that document was read at: without it a change made from another device
+    /// in between is silently written over. Never run against a live server.
     pub async fn update_event(
         &self,
         event_url: &str,
@@ -427,12 +521,7 @@ impl CalDavClient {
             .await
             .map_err(|e| Error::Network(format!("CalDAV PUT update failed: {}", e)))?;
 
-        if !response.status().is_success() {
-            return Err(Error::Network(format!(
-                "CalDAV PUT update returned {}",
-                response.status()
-            )));
-        }
+        refused_with(&response, "Changing an event")?;
 
         let new_etag = response
             .headers()
@@ -448,8 +537,10 @@ impl CalDavClient {
 
     /// Delete an event from a CalDAV calendar.
     ///
-    /// Nothing calls this, so an event deleted here comes back on the next
-    /// sync. Never run against a live server.
+    /// `etag` names the version being deleted. The sync deliberately passes
+    /// nothing: somebody asked for the event to go, and a version that had
+    /// moved on would make the deletion fail for ever. Never run against a
+    /// live server.
     pub async fn delete_event(
         &self,
         event_url: &str,
@@ -471,15 +562,29 @@ impl CalDavClient {
             .await
             .map_err(|e| Error::Network(format!("CalDAV DELETE failed: {}", e)))?;
 
-        if !response.status().is_success() {
-            return Err(Error::Network(format!(
-                "CalDAV DELETE returned {}",
-                response.status()
-            )));
-        }
+        refused_with(&response, "Deleting an event")?;
 
         Ok(())
     }
+}
+
+/// What the server said, when it refused a change.
+///
+/// A clash with a change made from another device, a full disk and a wrong
+/// password are three different things to tell somebody, and a transport string
+/// read back at them tells them none of them. The shape `discover_calendars`
+/// already answers with, so the screen that turns a status into a sentence
+/// works for a write as well.
+fn refused_with(response: &reqwest::Response, doing: &str) -> Result<()> {
+    if response.status().is_success() {
+        return Ok(());
+    }
+    let status = response.status();
+    Err(Error::Api {
+        status: status.as_u16(),
+        provider: CALENDAR_SERVER.to_string(),
+        message: format!("{doing} returned {status}"),
+    })
 }
 
 // ── XML Parsing Helpers ──────────────────────────────────────────────────────
@@ -539,19 +644,8 @@ fn parse_propfind_calendars(xml: &str, base_url: &str) -> Result<Vec<CalDavCalen
         let ctag = extract_xml_value(response_block, "cs:getctag");
         let color = extract_xml_value(response_block, "a:calendar-color");
 
-        let url = if href.starts_with("http") {
-            href
-        } else {
-            // Relative path: resolve against base URL
-            let base = url::Url::parse(base_url)
-                .map_err(|e| Error::Other(format!("Invalid base URL: {}", e)))?;
-            base.join(&href)
-                .map(|u| u.to_string())
-                .unwrap_or_else(|_| format!("{}{}", base_url.trim_end_matches('/'), href))
-        };
-
         calendars.push(CalDavCalendar {
-            url,
+            url: resolved_against(&href, base_url),
             display_name: display_name.unwrap_or_else(|| "Untitled".to_string()),
             color,
             ctag,
@@ -562,8 +656,24 @@ fn parse_propfind_calendars(xml: &str, base_url: &str) -> Result<Vec<CalDavCalen
     Ok(calendars)
 }
 
+/// Where something a server named actually lives.
+///
+/// A server answers with a path, `/dav/sam/work/e-1.ics`, and a path on its own
+/// is not a request that can be made. An address it gave whole is kept as it
+/// came, because it may point at another host entirely.
+fn resolved_against(href: &str, base_url: &str) -> String {
+    if href.starts_with("http") {
+        return href.to_string();
+    }
+    url::Url::parse(base_url)
+        .ok()
+        .and_then(|base| base.join(href).ok())
+        .map(|whole| whole.to_string())
+        .unwrap_or_else(|| format!("{}{}", base_url.trim_end_matches('/'), href))
+}
+
 /// Parse REPORT multistatus response to extract events.
-fn parse_report_events(xml: &str, _calendar_url: &str) -> Result<Vec<CalDavEvent>> {
+fn parse_report_events(xml: &str, calendar_url: &str) -> Result<Vec<CalDavEvent>> {
     let mut events = Vec::new();
 
     for response_block in response_blocks(xml) {
@@ -580,7 +690,8 @@ fn parse_report_events(xml: &str, _calendar_url: &str) -> Result<Vec<CalDavEvent
         }
 
         // Parse the iCalendar data to extract event properties
-        if let Some(event) = parse_ical_vevent(&ical_data, &href, etag.as_deref()) {
+        let at = resolved_against(&href, calendar_url);
+        if let Some(event) = parse_ical_vevent(&ical_data, &at, etag.as_deref()) {
             events.push(event);
         }
     }
@@ -800,7 +911,9 @@ fn normalize_ical_datetime(dt: &str) -> String {
 ///
 /// The zone named on the event is not written out. A zone and a trailing Z on
 /// the same time are not valid together, and writing one properly means
-/// sending the timezone rules with it. Nothing sends this anywhere yet.
+/// sending the timezone rules with it. Used for an event the server has never
+/// seen; a change to one it already holds goes through
+/// [`ical_with_the_event_changed`] instead.
 pub fn build_ical_vevent(event: &CalDavEvent) -> String {
     let mut lines = vec![
         "BEGIN:VCALENDAR".to_string(),
@@ -808,63 +921,82 @@ pub fn build_ical_vevent(event: &CalDavEvent) -> String {
         "PRODID:-//Wixen Mail//NONSGML v1.0//EN".to_string(),
         "BEGIN:VEVENT".to_string(),
         format!("UID:{}", event.uid),
-        format!("SUMMARY:{}", event.summary),
     ];
+    lines.extend(the_properties_this_program_owns(event));
+    lines.push(format!("DTSTAMP:{}", ical_utc_stamp(chrono::Utc::now())));
+    lines.push("END:VEVENT".to_string());
+    lines.push("END:VCALENDAR".to_string());
 
-    if let Some(ref desc) = event.description {
-        lines.push(format!("DESCRIPTION:{}", desc));
+    lines.join("\r\n")
+}
+
+/// Every property of an event this program has a value for.
+///
+/// One list, because it is written twice: once into a document built from
+/// nothing for an event that is new to the server, and once over the document
+/// the server already holds for one it does not. Two lists would be two
+/// answers to what this program owns, and the second change to somebody's
+/// calendar would disagree with the first.
+///
+/// What is NOT here is as load-bearing as what is. Guests, alarms, the
+/// organiser, how the time shows as busy, and every property this program has
+/// never modelled are absent, which is what lets the merge below leave them
+/// exactly as the server had them.
+fn the_properties_this_program_owns(event: &CalDavEvent) -> Vec<String> {
+    let mut lines = vec![format!("SUMMARY:{}", as_one_value(&event.summary))];
+
+    if let Some(note) = worth_sending(event.description.as_deref()) {
+        lines.push(format!("DESCRIPTION:{}", as_one_value(note)));
     }
-    if let Some(ref loc) = event.location {
-        lines.push(format!("LOCATION:{}", loc));
+    if let Some(place) = worth_sending(event.location.as_deref()) {
+        lines.push(format!("LOCATION:{}", as_one_value(place)));
     }
 
-    if event.is_all_day {
-        lines.push(format!(
-            "DTSTART;VALUE=DATE:{}",
-            event.dtstart.replace('-', "")
-        ));
-        if let Some(ref dtend) = event.dtend {
-            lines.push(format!("DTEND;VALUE=DATE:{}", dtend.replace('-', "")));
-        }
+    // The zone the times are named in. Without it a nine o'clock meeting in
+    // London is read as nine o'clock wherever the server keeps its clock. Left
+    // off a whole-day date, which has no time to be in a zone, and off a time
+    // that already says it is UTC, where naming a zone as well says two
+    // different things about one instant.
+    let (start, zone) = if event.is_all_day {
+        (event.dtstart.replace('-', ""), ";VALUE=DATE".to_string())
     } else {
-        // The zone the times are named in. Without it a nine o'clock meeting in
-        // London is read as nine o'clock wherever the server keeps its clock.
-        // Left off a time that already says it is UTC, where naming a zone as
-        // well says two different things about one instant.
         let start = denormalize_ical_datetime(&event.dtstart);
         let zone = match &event.time_zone {
             Some(named) if !start.ends_with('Z') => format!(";TZID={named}"),
             _ => String::new(),
         };
-        lines.push(format!("DTSTART{zone}:{start}"));
-        if let Some(ref dtend) = event.dtend {
-            lines.push(format!("DTEND{zone}:{}", denormalize_ical_datetime(dtend)));
-        }
-        // How the series repeats, and the days it has called off. Both, or the
-        // first change ever sent to a calendar server turns somebody's weekly
-        // meeting into a single appointment, or puts every day they cancelled
-        // back on their calendar.
-        if let Some(rule) = worth_sending(event.recurrence_rule.as_deref()) {
-            lines.push(format!("RRULE:{}", without_the_property_name(rule)));
-        }
-        if let Some(called_off) = worth_sending(event.exception_dates.as_deref()) {
-            let zone = match &event.time_zone {
-                Some(named) if !called_off.ends_with('Z') => format!(";TZID={named}"),
-                _ => String::new(),
-            };
-            lines.push(format!("EXDATE{zone}:{called_off}"));
-        }
+        (start, zone)
+    };
+    lines.push(format!("DTSTART{zone}:{start}"));
+    if let Some(end) = worth_sending(event.dtend.as_deref()) {
+        let end = if event.is_all_day {
+            end.replace('-', "")
+        } else {
+            denormalize_ical_datetime(end)
+        };
+        lines.push(format!("DTEND{zone}:{end}"));
     }
 
-    lines.push(format!("STATUS:{}", event.status));
-    lines.push(format!(
-        "DTSTAMP:{}",
-        chrono::Utc::now().format("%Y%m%dT%H%M%SZ")
-    ));
-    lines.push("END:VEVENT".to_string());
-    lines.push("END:VCALENDAR".to_string());
+    // How the series repeats, and the days it has called off. Both, for both
+    // shapes of event: written only for events with a time on them, a
+    // birthday, which is a whole-day event that happens every year, went out
+    // as one day in 2026 and never again.
+    if let Some(rule) = worth_sending(event.recurrence_rule.as_deref()) {
+        lines.push(format!("RRULE:{}", without_the_property_name(rule)));
+    }
+    if let Some(called_off) = worth_sending(event.exception_dates.as_deref()) {
+        let zone = if called_off.ends_with('Z') && !event.is_all_day {
+            String::new()
+        } else {
+            zone
+        };
+        lines.push(format!("EXDATE{zone}:{called_off}"));
+    }
 
-    lines.join("\r\n")
+    if let Some(state) = worth_sending(Some(event.status.as_str())) {
+        lines.push(format!("STATUS:{state}"));
+    }
+    lines
 }
 
 /// A stored date and time written the way a calendar server reads one.
@@ -894,6 +1026,183 @@ fn denormalize_ical_datetime(dt: &str) -> String {
     }
     let utc = if trimmed.ends_with('Z') { "Z" } else { "" };
     format!("{date}T{clock}{utc}")
+}
+
+/// The properties this program replaces when it changes an event.
+///
+/// Everything it writes and nothing else. A property on this list that the
+/// event no longer has a value for is taken out of the document, so emptying
+/// the notes box here clears the note at the server, which is what emptying it
+/// means. `SEQUENCE` and `DTSTAMP` are here because both are rewritten below
+/// rather than kept.
+const PROPERTIES_A_CHANGE_REPLACES: [&str; 10] = [
+    "SUMMARY",
+    "DESCRIPTION",
+    "LOCATION",
+    "DTSTART",
+    "DTEND",
+    "RRULE",
+    "EXDATE",
+    "STATUS",
+    "SEQUENCE",
+    "DTSTAMP",
+];
+
+/// The document the server holds, with this program's idea of the event in it.
+///
+/// This is what makes a change safe. A PUT replaces the whole document and this
+/// program models about a third of one, so a change built from nothing would
+/// uninvite every guest, drop every alarm and lose every property nobody here
+/// has ever thought about. Instead the document the server just handed back is
+/// edited: the handful of properties this program owns are replaced, and
+/// everything else is passed through exactly as it arrived.
+///
+/// Nested blocks are copied untouched, so an alarm keeps its own trigger, its
+/// own start and its own description, and the timezone rules keep theirs. The
+/// identity is never rewritten.
+///
+/// The guarantee is real and it is weaker than the one Google gives, and it is
+/// worth saying which: Google merges on its side, so only the named fields can
+/// ever move. Here the merge happens on this side against what the server held
+/// one round trip ago, and `If-Match` is what turns that window into a refusal
+/// rather than a silent overwrite.
+pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> String {
+    let ours = the_properties_this_program_owns(event);
+    let mut written: Vec<String> = Vec::new();
+    let mut where_ours_go: Option<usize> = None;
+    let mut inside_the_event = false;
+    let mut depth_below_the_event = 0_usize;
+    let mut numbered = 0_u64;
+
+    for line in unfolded(held) {
+        // A block inside the event belongs to something else: an alarm has a
+        // start and a description of its own, and rewriting those makes the
+        // alert fire at the wrong time saying the wrong thing.
+        if inside_the_event && depth_below_the_event > 0 {
+            if line.starts_with("BEGIN:") {
+                depth_below_the_event += 1;
+            } else if line.starts_with("END:") {
+                depth_below_the_event -= 1;
+            }
+            written.push(line);
+            continue;
+        }
+
+        if inside_the_event {
+            if line.starts_with("BEGIN:") {
+                depth_below_the_event += 1;
+                written.push(line);
+                continue;
+            }
+            if line.starts_with("END:VEVENT") {
+                let at = where_ours_go.unwrap_or(written.len());
+                written.splice(at..at, said_again(&ours, numbered));
+                inside_the_event = false;
+                written.push(line);
+                continue;
+            }
+            if let Some(name) = property_name(&line) {
+                if name == "SEQUENCE" {
+                    numbered = value_of(&line).and_then(|n| n.parse().ok()).unwrap_or(0);
+                }
+                if PROPERTIES_A_CHANGE_REPLACES.contains(&name) {
+                    where_ours_go.get_or_insert(written.len());
+                    continue;
+                }
+            }
+            written.push(line);
+            continue;
+        }
+
+        if line.starts_with("BEGIN:VEVENT") {
+            inside_the_event = true;
+        }
+        written.push(line);
+    }
+
+    let mut document = written.join("\r\n");
+    document.push_str("\r\n");
+    document
+}
+
+/// This program's properties, plus the two that say which copy is newer.
+///
+/// The number goes up because the standard says a changed event's must, and
+/// other calendar programs use it to decide whose copy to believe. The stamp
+/// says when this copy was written, which is now.
+fn said_again(ours: &[String], numbered: u64) -> Vec<String> {
+    let mut lines = ours.to_vec();
+    lines.push(format!("SEQUENCE:{}", numbered.saturating_add(1)));
+    lines.push(format!("DTSTAMP:{}", ical_utc_stamp(chrono::Utc::now())));
+    lines
+}
+
+/// One document's lines, with folded ones put back together.
+///
+/// A calendar document may break a long property across lines, each carrying on
+/// with a space or a tab. Read line by line, one property looks like a property
+/// and two lines of nonsense, and removing the property leaves the nonsense.
+fn unfolded(document: &str) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for line in document.split("\r\n").flat_map(|line| line.split('\n')) {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        match line.strip_prefix([' ', '\t']) {
+            Some(carried_on) if !lines.is_empty() => {
+                if let Some(last) = lines.last_mut() {
+                    last.push_str(carried_on);
+                }
+            }
+            _ => lines.push(line.to_string()),
+        }
+    }
+    // A document ends with a line break, which splits into a last empty line.
+    while lines.last().is_some_and(|line| line.is_empty()) {
+        lines.pop();
+    }
+    lines
+}
+
+/// The name of the property a line carries, if it carries one.
+///
+/// The name runs to the first `;` or `:`, so `DTSTART;TZID=Europe/London:...`
+/// is a DTSTART. A line with neither is not a property.
+fn property_name(line: &str) -> Option<&str> {
+    let end = line.find([';', ':'])?;
+    (end > 0).then(|| &line[..end])
+}
+
+/// The value a property line carries.
+fn value_of(line: &str) -> Option<&str> {
+    line.find(':').map(|at| line[at + 1..].trim())
+}
+
+/// Text somebody typed, written so a document reads it as one value.
+///
+/// Four characters mean something in a calendar document. A comma separates
+/// values, a semicolon starts parameters, a backslash escapes, and a line break
+/// ends the property so that whatever follows is read as the next property.
+/// That last one is the serious one: it lets anything typed into a notes box
+/// write arbitrary properties into somebody's calendar, and this program puts
+/// its own titles and notes straight into the document.
+///
+/// The backslash goes first. Escaped last, the slash written for a comma would
+/// itself be escaped and every save would grow another one.
+fn as_one_value(text: &str) -> String {
+    let mut written = String::with_capacity(text.len());
+    // One pair of characters is one line break. Left as two, a note typed on a
+    // Windows machine would come out with a blank line between every line.
+    for character in text.replace("\r\n", "\n").chars() {
+        match character {
+            '\\' => written.push_str("\\\\"),
+            ';' => written.push_str("\\;"),
+            ',' => written.push_str("\\,"),
+            // A carriage return on its own is still a line break, and left
+            // alone it still ends the property line.
+            '\n' | '\r' => written.push_str("\\n"),
+            _ => written.push(character),
+        }
+    }
+    written
 }
 
 /// A property value that says something, or nothing at all.
@@ -1074,6 +1383,78 @@ mod tests {
                 .lines()
                 .any(|line| line.starts_with("DT") && line.contains(' ')),
             "no spaces in a date and time: {ical}"
+        );
+    }
+
+    #[test]
+    fn test_a_comma_in_a_title_is_one_title_and_a_line_break_in_the_notes_cannot_add_a_property() {
+        // Text somebody typed went into the document raw. A comma reads as two
+        // values, a semicolon starts parameters, and a line break ends the
+        // property and starts whatever the next line says, which is a way of
+        // writing arbitrary properties into somebody's calendar from a text
+        // box.
+        let event = CalDavEvent {
+            summary: "Lunch, then a walk".to_string(),
+            description: Some("Line one\r\nSUMMARY:hijacked".to_string()),
+            location: Some("Room 42; door 3".to_string()),
+            ..an_event_to_send()
+        };
+
+        let ical = build_ical_vevent(&event);
+
+        assert!(ical.contains("SUMMARY:Lunch\\, then a walk"), "{ical}");
+        assert!(ical.contains("LOCATION:Room 42\\; door 3"), "{ical}");
+        assert_eq!(
+            ical.lines()
+                .filter(|line| line.starts_with("SUMMARY:"))
+                .count(),
+            1,
+            "a note wrote a second title into the document: {ical}"
+        );
+        assert!(
+            !ical.lines().any(|line| line.starts_with("hijacked")),
+            "{ical}"
+        );
+        assert!(
+            ical.contains("DESCRIPTION:Line one\\nSUMMARY:hijacked"),
+            "{ical}"
+        );
+    }
+
+    #[test]
+    fn test_a_birthday_sent_to_a_calendar_server_still_happens_every_year() {
+        // The rule and the days called off were written in the branch for
+        // events with a time on them and nowhere else, so every whole-day
+        // series went out as one day. A birthday is exactly that shape, and
+        // this is the family of defect that has already cost this program one.
+        let event = CalDavEvent {
+            is_all_day: true,
+            dtstart: "2026-03-05".to_string(),
+            dtend: Some("2026-03-06".to_string()),
+            recurrence_rule: Some("FREQ=YEARLY".to_string()),
+            exception_dates: Some("20270305".to_string()),
+            ..an_event_to_send()
+        };
+
+        let ical = build_ical_vevent(&event);
+
+        assert!(ical.contains("RRULE:FREQ=YEARLY"), "{ical}");
+        assert!(ical.contains("EXDATE;VALUE=DATE:20270305"), "{ical}");
+    }
+
+    #[test]
+    fn test_a_backslash_somebody_typed_is_kept_as_a_backslash() {
+        // Escaped last, the backslash written for a comma would itself be
+        // escaped and a title would grow slashes on every save.
+        let event = CalDavEvent {
+            summary: "C:\\Users and, more".to_string(),
+            ..an_event_to_send()
+        };
+
+        assert!(
+            build_ical_vevent(&event).contains("SUMMARY:C:\\\\Users and\\, more"),
+            "{}",
+            build_ical_vevent(&event)
         );
     }
 
@@ -1410,6 +1791,427 @@ mod sign_in_tests {
 }
 
 #[cfg(test)]
+pub(crate) mod writing_tests {
+    use super::*;
+    use crate::common::answering::{answering, answering_with_a_tag, asked_for, heard};
+
+    /// What a real calendar server hands back: a timezone block, an event
+    /// carrying guests, a category, a folded note and its own alarm, and a
+    /// property no program here has ever modelled.
+    ///
+    /// This one fixture is what makes "everything else survives" a claim a test
+    /// can check rather than a sentence in a comment.
+    pub fn a_document_the_server_holds(uid: &str) -> String {
+        format!(
+            "BEGIN:VCALENDAR\r\n\
+             VERSION:2.0\r\n\
+             PRODID:-//Somebody Else//Their Calendar//EN\r\n\
+             BEGIN:VTIMEZONE\r\n\
+             TZID:Europe/London\r\n\
+             BEGIN:DAYLIGHT\r\n\
+             DTSTART:19700329T010000\r\n\
+             RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\n\
+             END:DAYLIGHT\r\n\
+             END:VTIMEZONE\r\n\
+             BEGIN:VEVENT\r\n\
+             UID:{uid}\r\n\
+             SUMMARY:Quarterly review\r\n\
+             DESCRIPTION:The first line of the note\\n\r\n\
+             \x20and a second that was folded\\n\r\n\
+             \x20and a third\r\n\
+             ORGANIZER;CN=Ada:mailto:ada@example.com\r\n\
+             ATTENDEE;CN=Sam;PARTSTAT=ACCEPTED:mailto:sam@example.com\r\n\
+             ATTENDEE;CN=Kit;PARTSTAT=NEEDS-ACTION:mailto:kit@example.com\r\n\
+             CATEGORIES:Work,Important\r\n\
+             TRANSP:OPAQUE\r\n\
+             SEQUENCE:3\r\n\
+             X-APPLE-TRAVEL-DURATION;VALUE=DURATION:PT30M\r\n\
+             DTSTART;TZID=Europe/London:20260305T090000\r\n\
+             DTEND;TZID=Europe/London:20260305T100000\r\n\
+             STATUS:CONFIRMED\r\n\
+             DTSTAMP:20260101T000000Z\r\n\
+             BEGIN:VALARM\r\n\
+             ACTION:DISPLAY\r\n\
+             DESCRIPTION:Reminder\r\n\
+             TRIGGER:-PT15M\r\n\
+             DTSTART:20260305T084500Z\r\n\
+             END:VALARM\r\n\
+             END:VEVENT\r\n\
+             END:VCALENDAR\r\n"
+        )
+    }
+
+    /// The collection a test calendar lives at on a loopback listener.
+    fn a_calendar_at(address: std::net::SocketAddr) -> String {
+        format!("http://{address}/dav/sam/work/")
+    }
+
+    fn an_event(uid: &str) -> CalDavEvent {
+        CalDavEvent {
+            url: String::new(),
+            uid: uid.to_string(),
+            etag: None,
+            ical_data: "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:x\r\nEND:VEVENT\r\n\
+                        END:VCALENDAR"
+                .to_string(),
+            summary: "Lunch".to_string(),
+            description: None,
+            location: None,
+            dtstart: "2026-03-05T12:00:00Z".to_string(),
+            dtend: Some("2026-03-05T13:00:00Z".to_string()),
+            is_all_day: false,
+            status: "CONFIRMED".to_string(),
+            time_zone: None,
+            recurrence_rule: None,
+            exception_dates: None,
+        }
+    }
+
+    /// The event as somebody changed it here.
+    fn as_it_was_changed_here(uid: &str) -> CalDavEvent {
+        CalDavEvent {
+            summary: "Quarterly review, moved".to_string(),
+            description: Some("A shorter note".to_string()),
+            location: Some("Room 12".to_string()),
+            dtstart: "2026-03-06T14:00:00Z".to_string(),
+            dtend: Some("2026-03-06T15:00:00Z".to_string()),
+            ..an_event(uid)
+        }
+    }
+
+    /// Whether a document has a line starting with the given property name.
+    fn holds_a_line_starting(document: &str, opening: &str) -> bool {
+        document.lines().any(|line| line.starts_with(opening))
+    }
+
+    #[test]
+    fn test_a_change_keeps_the_guests_the_alarms_and_everything_else_the_server_had() {
+        // A PUT replaces the whole document, and this program models about a
+        // third of one. Building a fresh document for a change would uninvite
+        // every guest and drop every alarm, which are the two things somebody
+        // is least likely to notice missing and least able to put back.
+        let held = a_document_the_server_holds("e-1");
+
+        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"));
+
+        for kept in [
+            "ATTENDEE;CN=Sam;PARTSTAT=ACCEPTED:mailto:sam@example.com",
+            "ATTENDEE;CN=Kit;PARTSTAT=NEEDS-ACTION:mailto:kit@example.com",
+            "ORGANIZER;CN=Ada:mailto:ada@example.com",
+            "CATEGORIES:Work,Important",
+            "TRANSP:OPAQUE",
+            "X-APPLE-TRAVEL-DURATION;VALUE=DURATION:PT30M",
+            "BEGIN:VALARM",
+            "TRIGGER:-PT15M",
+            "END:VALARM",
+            "BEGIN:VTIMEZONE",
+            "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU",
+        ] {
+            assert!(changed.contains(kept), "{kept} was lost:\n{changed}");
+        }
+        // And the change really was made, so "everything survived" cannot pass
+        // by handing the document back untouched.
+        assert!(
+            changed.contains("SUMMARY:Quarterly review\\, moved"),
+            "{changed}"
+        );
+        assert!(changed.contains("DTSTART:20260306T140000Z"), "{changed}");
+        assert!(
+            !changed.contains("SUMMARY:Quarterly review\r\n"),
+            "the old title is still in the document:\n{changed}"
+        );
+        assert!(
+            !changed.contains("DTSTART;TZID=Europe/London:20260305T090000"),
+            "the old start is still in the document:\n{changed}"
+        );
+        assert_eq!(
+            changed.matches("UID:e-1").count(),
+            1,
+            "the identity was rewritten or repeated:\n{changed}"
+        );
+    }
+
+    #[test]
+    fn test_a_change_says_it_is_newer_than_the_copy_it_replaced() {
+        // Other calendar programs decide whose copy is newer by the sequence
+        // number, so a change that leaves it alone is a change they may ignore.
+        let changed = ical_with_the_event_changed(
+            &a_document_the_server_holds("e-1"),
+            &as_it_was_changed_here("e-1"),
+        );
+
+        assert!(changed.contains("SEQUENCE:4"), "{changed}");
+        assert!(!changed.contains("SEQUENCE:3"), "{changed}");
+        assert_eq!(
+            changed
+                .lines()
+                .filter(|line| line.starts_with("DTSTAMP:"))
+                .count(),
+            1,
+            "two stamps say two different things about when this was written:\n{changed}"
+        );
+        assert!(
+            !changed.contains("DTSTAMP:20260101T000000Z"),
+            "the stamp still says when the server last wrote it:\n{changed}"
+        );
+    }
+
+    #[test]
+    fn test_an_event_the_server_has_never_numbered_is_numbered_from_the_start() {
+        let held = a_document_the_server_holds("e-1").replace("SEQUENCE:3\r\n", "");
+
+        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"));
+
+        assert!(changed.contains("SEQUENCE:1"), "{changed}");
+    }
+
+    #[test]
+    fn test_a_note_deleted_here_is_taken_out_of_the_document_including_the_lines_it_was_folded_onto()
+     {
+        // The one case where somebody can destroy something at the server, and
+        // it is what they asked for: emptying the notes box clears the note
+        // there. A long note arrives folded across several lines, and removing
+        // only the first leaves the rest behind as lines that mean nothing.
+        let held = a_document_the_server_holds("e-1");
+        let emptied = CalDavEvent {
+            description: None,
+            location: Some(String::new()),
+            ..as_it_was_changed_here("e-1")
+        };
+
+        let changed = ical_with_the_event_changed(&held, &emptied);
+
+        assert!(
+            !holds_a_line_starting(&changed, "DESCRIPTION:The first"),
+            "the note somebody cleared is still there:\n{changed}"
+        );
+        assert!(
+            !changed.contains("and a second that was folded"),
+            "a line the note was folded onto was left behind:\n{changed}"
+        );
+        assert!(
+            !changed.contains("\r\n and "),
+            "a continuation line with nothing in front of it was left behind:\n{changed}"
+        );
+        assert!(
+            !holds_a_line_starting(&changed, "LOCATION:"),
+            "an emptied place was left in the document:\n{changed}"
+        );
+        // The alarm has a description of its own and it is not this one.
+        assert!(changed.contains("DESCRIPTION:Reminder"), "{changed}");
+    }
+
+    #[test]
+    fn test_the_alarm_keeps_its_own_start_time_when_the_event_moves() {
+        // A VALARM carries its own DTSTART and its own DESCRIPTION. Walking
+        // the document without watching for the nested block rewrites those
+        // with the event's values, so the alert fires at the wrong time and
+        // reads out the appointment's title.
+        let changed = ical_with_the_event_changed(
+            &a_document_the_server_holds("e-1"),
+            &as_it_was_changed_here("e-1"),
+        );
+
+        let alarm = changed
+            .split_once("BEGIN:VALARM")
+            .map(|(_, after)| after)
+            .unwrap_or_else(|| panic!("the alarm is gone:\n{changed}"));
+        assert!(alarm.contains("DTSTART:20260305T084500Z"), "{changed}");
+        assert!(alarm.contains("DESCRIPTION:Reminder"), "{changed}");
+        assert!(
+            !alarm.contains("SUMMARY:"),
+            "the event's own properties were written into the alarm:\n{changed}"
+        );
+    }
+
+    #[test]
+    fn test_a_series_called_off_here_stops_carrying_the_days_it_had_called_off() {
+        // The rule and the days it calls off move together. Left behind, a
+        // one-off appointment carries days somebody cancelled from a series it
+        // is no longer part of, and some programs then hide it altogether.
+        let held = a_document_the_server_holds("e-1").replace(
+            "STATUS:CONFIRMED\r\n",
+            "STATUS:CONFIRMED\r\nRRULE:FREQ=WEEKLY\r\nEXDATE:20260312T090000Z\r\n",
+        );
+
+        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"));
+
+        assert!(
+            !holds_a_line_starting(&changed, "RRULE:FREQ=WEEKLY"),
+            "{changed}"
+        );
+        assert!(!holds_a_line_starting(&changed, "EXDATE"), "{changed}");
+        // The timezone block has a rule of its own and it must be left alone.
+        assert!(
+            changed.contains("RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU"),
+            "{changed}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_check_that_nothing_was_sent_can_see_something_being_sent() {
+        // Every gate test below asserts that a listener heard nothing. That
+        // claim is worth nothing until the same listener, the same wait and
+        // the same call have been shown reporting a write when there is one.
+        let (address, listening) = answering("201 Created", "text/calendar", String::new()).await;
+
+        CalDavClient::allowed_to_change_things()
+            .create_event(&a_calendar_at(address), "sam", "secret", &an_event("e-1"))
+            .await
+            .expect("a write through a client allowed to make one");
+
+        let request = heard(listening, "a write").await.expect("the request");
+        assert!(asked_for(&request).starts_with("PUT "), "{request}");
+    }
+
+    #[tokio::test]
+    async fn test_an_event_added_to_a_calendar_is_put_inside_it_rather_than_beside_it() {
+        // The address was built by sticking the identifier onto the end of the
+        // collection with no separator, so an event for the calendar at
+        // `/dav/sam/work/` was written to `/dav/sam/worke-1.ics`, which is a
+        // sibling of the calendar and not in it.
+        let (address, listening) = answering("201 Created", "text/calendar", String::new()).await;
+
+        let _ = CalDavClient::allowed_to_change_things()
+            .create_event(&a_calendar_at(address), "sam", "secret", &an_event("e-1"))
+            .await;
+
+        let request = heard(listening, "a write").await.expect("the request");
+        assert_eq!(asked_for(&request), "PUT /dav/sam/work/e-1.ics");
+    }
+
+    #[tokio::test]
+    async fn test_an_identifier_with_a_space_or_a_hash_still_names_the_event_it_meant() {
+        // An identifier is whatever made the event, and one holding a space
+        // breaks the request line in two while one holding a hash truncates
+        // the address at the fragment, so the write lands somewhere else.
+        let (address, listening) = answering("201 Created", "text/calendar", String::new()).await;
+
+        let _ = CalDavClient::allowed_to_change_things()
+            .create_event(&a_calendar_at(address), "sam", "secret", &an_event("a b#c"))
+            .await;
+
+        let request = heard(listening, "a write").await.expect("the request");
+        assert_eq!(asked_for(&request), "PUT /dav/sam/work/a%20b%23c.ics");
+    }
+
+    #[tokio::test]
+    async fn test_adding_an_event_never_replaces_one_that_is_already_at_that_address() {
+        // Two identifiers colliding is unlikely and quietly writing over a
+        // stranger's appointment is not a thing to leave to chance. The server
+        // refuses rather than replacing.
+        let (address, listening) = answering("201 Created", "text/calendar", String::new()).await;
+
+        let _ = CalDavClient::allowed_to_change_things()
+            .create_event(&a_calendar_at(address), "sam", "secret", &an_event("e-1"))
+            .await;
+
+        let request = heard(listening, "a write").await.expect("the request");
+        assert!(
+            request.to_ascii_lowercase().contains("if-none-match: *"),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_document_a_server_holds_comes_back_with_the_tag_that_names_this_version() {
+        // A change is made by editing the document the server holds right now,
+        // so the document and the name of its version have to arrive together.
+        // Reading it is a GET and is deliberately ungated: taking somebody's
+        // own calendar into memory changes nothing at the other end.
+        let (address, listening) = answering_with_a_tag(
+            "200 OK",
+            "text/calendar",
+            "\"v7\"",
+            a_document_the_server_holds("e-1"),
+        )
+        .await;
+
+        let held = CalDavClient::new()
+            .fetch_event(&format!("http://{address}/cal/e-1.ics"), "sam", "secret")
+            .await
+            .expect("the document the server holds");
+
+        let request = heard(listening, "a read").await.expect("the request");
+        assert_eq!(asked_for(&request), "GET /cal/e-1.ics");
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains("authorization: basic"),
+            "the sign-in was not sent: {request}"
+        );
+        assert_eq!(held.tag.as_deref(), Some("\"v7\""));
+        assert!(
+            held.document.contains("ATTENDEE;CN=Sam"),
+            "{}",
+            held.document
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_calendar_server_that_refused_a_change_says_which_status_it_refused_with() {
+        // A clash with somebody else's change and a server having a bad day
+        // arrived as the same "network error", so nothing above the transport
+        // could tell somebody their change collided.
+        let (address, _listening) =
+            answering("412 Precondition Failed", "text/plain", String::new()).await;
+
+        let refused = CalDavClient::allowed_to_change_things()
+            .update_event(
+                &format!("http://{address}/dav/sam/work/e-1.ics"),
+                "sam",
+                "secret",
+                &an_event("e-1"),
+                Some("\"stale\""),
+            )
+            .await
+            .expect_err("a refusal");
+
+        assert!(
+            matches!(refused, Error::Api { status: 412, ref provider, .. }
+                     if provider == CALENDAR_SERVER),
+            "{refused:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_calendar_server_that_refused_a_deletion_says_which_status_too() {
+        let (address, _listening) =
+            answering("507 Insufficient Storage", "text/plain", String::new()).await;
+
+        let refused = CalDavClient::allowed_to_change_things()
+            .delete_event(
+                &format!("http://{address}/dav/sam/work/e-1.ics"),
+                "sam",
+                "secret",
+                None,
+            )
+            .await
+            .expect_err("a refusal");
+
+        assert!(
+            matches!(refused, Error::Api { status: 507, .. }),
+            "{refused:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_calendar_server_that_refused_a_new_event_says_which_status_too() {
+        let (address, _listening) = answering("409 Conflict", "text/plain", String::new()).await;
+
+        let refused = CalDavClient::allowed_to_change_things()
+            .create_event(&a_calendar_at(address), "sam", "secret", &an_event("e-1"))
+            .await
+            .expect_err("a refusal");
+
+        assert!(
+            matches!(refused, Error::Api { status: 409, .. }),
+            "{refused:?}"
+        );
+    }
+}
+
+#[cfg(test)]
 mod discovery_tests {
     use super::*;
     use crate::common::answering::{answering, asked_for, heard};
@@ -1641,6 +2443,66 @@ mod discovery_tests {
         )
         .await;
         assert!(waited.is_err(), "a write reached the server anyway");
+    }
+
+    #[tokio::test]
+    async fn test_the_address_an_event_is_at_is_one_a_change_could_be_sent_to() {
+        // A server answers a report with a path, `/dav/sam/work/e-1.ics`, and
+        // that path is stored as the event's address. A change sent to a bare
+        // path is not a request that can be made, so an event read from a
+        // calendar has to come back carrying somewhere a change could go.
+        let body = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:response>
+    <d:href>/dav/sam/work/e-1.ics</d:href>
+    <d:propstat><d:prop>
+      <d:getetag>"one"</d:getetag>
+      <c:calendar-data>{}</c:calendar-data>
+    </d:prop></d:propstat>
+  </d:response>
+  <d:response>
+    <d:href>https://other.example.com/x.ics</d:href>
+    <d:propstat><d:prop>
+      <d:getetag>"two"</d:getetag>
+      <c:calendar-data>{}</c:calendar-data>
+    </d:prop></d:propstat>
+  </d:response>
+</d:multistatus>"#,
+            one_event("e-1"),
+            one_event("e-2")
+        );
+        let (address, _listening) = answering("207 Multi-Status", "application/xml", body).await;
+
+        let (events, _) = CalDavClient::new()
+            .list_events(
+                &format!("http://{address}/dav/sam/work/"),
+                "sam",
+                "secret",
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect("the server's answer to be read");
+
+        assert_eq!(events.len(), 2, "{events:?}");
+        assert_eq!(
+            events[0].url,
+            format!("http://{address}/dav/sam/work/e-1.ics"),
+            "a path is not an address a change can be sent to"
+        );
+        assert_eq!(
+            events[1].url, "https://other.example.com/x.ics",
+            "an address the server gave whole is used as it came"
+        );
+    }
+
+    fn one_event(uid: &str) -> String {
+        format!(
+            "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:{uid}\nSUMMARY:Lunch\n\
+             DTSTART:20260305T120000Z\nEND:VEVENT\nEND:VCALENDAR"
+        )
     }
 
     #[tokio::test]

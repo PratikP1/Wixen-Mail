@@ -38,14 +38,16 @@ pub const FROM_A_FEED: &str = "subscription";
 /// What the window says about itself, where somebody adding a calendar reads it.
 ///
 /// Not in a report and not in a log line. This is the first way in the product
-/// to reach a calendar server at all, nobody has pointed it at a real one, and
-/// a change made to one of these calendars is not sent anywhere yet. Somebody
-/// deciding whether to trust it with their calendar should be told all three
-/// before they do, not after.
+/// to reach a calendar server at all, and nobody has pointed it at a real one.
+/// Changes now do go back, which raises the stakes rather than lowering them:
+/// what was a calendar this program could only get wrong on this computer is
+/// now one it can get wrong on somebody's server. Somebody deciding whether to
+/// trust it with their calendar should be told that before they do, not after.
 pub const NOT_TRIED_FOR_REAL: &str = "This is experimental. Nothing here has been tried against \
                                       a real calendar server yet, so expect problems. Changes \
-                                      you make to a calendar added this way stay on this \
-                                      computer: they are not sent back to the server.";
+                                      you make to a calendar added this way are sent back to \
+                                      that server, and turning on Allow Changes for this \
+                                      account is what lets them go.";
 
 /// What a calendar this program added for somebody is coloured.
 ///
@@ -690,10 +692,17 @@ mod tests {
             NOT_TRIED_FOR_REAL.contains("real calendar server"),
             "{NOT_TRIED_FOR_REAL}"
         );
+        // Changes made to one of these calendars now are sent back to the
+        // server, so the sentence saying they stay here has to go: a warning
+        // that is no longer true teaches somebody to ignore the rest of it.
         assert!(
-            NOT_TRIED_FOR_REAL.contains("stay on this computer"),
-            "{NOT_TRIED_FOR_REAL}"
+            !NOT_TRIED_FOR_REAL.contains("stay on this computer"),
+            "the window still says a change is never sent, and it is: \
+             {NOT_TRIED_FOR_REAL}"
         );
+        // And it still says what could go wrong, so removing the false half
+        // cannot be done by removing the warning.
+        assert!(NOT_TRIED_FOR_REAL.contains("sent"), "{NOT_TRIED_FOR_REAL}");
         // Read aloud, so a wrapped literal that lost its continuations is
         // runs of silence in the middle of the sentence.
         assert!(!NOT_TRIED_FOR_REAL.contains("  "), "{NOT_TRIED_FOR_REAL}");

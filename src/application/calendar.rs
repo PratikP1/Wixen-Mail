@@ -359,7 +359,11 @@ fn deletions_for(
 }
 
 /// Count one attempt to send, whichever way it went.
-fn record(sent: Result<()>, doing: &str, result: &mut CalendarSyncResult) {
+///
+/// Shared with the calendar-server pass rather than copied, because "a change
+/// held back by the setting is not a failure" is one rule and two copies of it
+/// drift the moment one of them is edited.
+pub(crate) fn record(sent: Result<()>, doing: &str, result: &mut CalendarSyncResult) {
     match sent {
         Ok(()) => result.sent += 1,
         Err(e) if crate::service::outward::was_refused_by_the_gate(&e) => {
@@ -969,13 +973,16 @@ pub fn can_be_honoured(means: EditMeans, provider: &str) -> std::result::Result<
 /// The extra sentence for a calendar whose changes do not leave this computer.
 ///
 /// Without it somebody told that one day is not built would reasonably expect
-/// the other answer to reach their calendar, and it does not.
+/// the other answer to reach their calendar, and for a feed it does not.
+///
+/// A calendar held on a server used to be in the same position and no longer
+/// is: changes to one of those are sent now. It gets no extra sentence, because
+/// a warning that is not true teaches somebody to ignore the ones that are.
 fn further_off_for(provider: &str) -> &'static str {
     match provider {
-        crate::application::calendar_source::ON_A_SERVER
-        | crate::application::calendar_source::FROM_A_FEED => {
-            " A change to a calendar held on a server is also not sent yet: it \
-             is kept on this computer and the next sync writes over it."
+        crate::application::calendar_source::FROM_A_FEED => {
+            " A published calendar feed can only ever be read, so a change to \
+             one is kept on this computer and the next refresh writes over it."
         }
         _ => "",
     }
@@ -1672,14 +1679,40 @@ mod tests {
     }
 
     #[test]
-    fn test_a_calendar_on_a_server_says_the_other_reason_as_well() {
-        // Changing the whole series of one of those is saved here and never
-        // sent, so a refusal that only talks about single days would leave
-        // somebody expecting the other answer to work.
-        let refusal =
-            can_be_honoured(EditMeans::OneDay, "caldav").expect_err("one day is not built");
+    fn test_a_calendar_read_from_a_feed_says_the_other_reason_as_well() {
+        // A feed really is only ever read, so changing the whole series of one
+        // of those is saved here and never sent. A refusal that only talks
+        // about single days would leave somebody expecting the other answer to
+        // reach the feed.
+        let feed = can_be_honoured(
+            EditMeans::OneDay,
+            crate::application::calendar_source::FROM_A_FEED,
+        )
+        .expect_err("one day is not built");
 
-        assert!(refusal.contains("server"), "{refusal}");
+        assert!(feed.contains("read"), "{feed}");
+        assert!(
+            !feed.contains("  "),
+            "a wrapped literal lost a space: {feed}"
+        );
+
+        // A calendar held on a server is different now: changes to one of
+        // those are sent. Telling somebody otherwise sends them looking for a
+        // fault that is not there.
+        let server = can_be_honoured(
+            EditMeans::OneDay,
+            crate::application::calendar_source::ON_A_SERVER,
+        )
+        .expect_err("one day is not built");
+
+        assert!(
+            !server.contains("not sent"),
+            "the refusal still claims a change to a calendar server stays here: {server}"
+        );
+        assert!(
+            !server.contains("  "),
+            "a wrapped literal lost a space: {server}"
+        );
     }
 
     #[test]

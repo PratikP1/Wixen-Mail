@@ -8,6 +8,50 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A change you make to a calendar you added by its address is now sent back to
+  that server.** Until now it was not. You could edit an appointment in one of
+  those calendars, the edit would look like it worked, and the next sync would
+  quietly put the server's version back. Adding an event, changing one and
+  deleting one all reach the server now.
+
+  Nothing goes anywhere unless Allow Changes is on for that account. With it
+  off, the change waits on this computer and the sync says how many are waiting,
+  and no request of any kind is made.
+
+  **What happens to the parts of an event this program does not understand.**
+  A calendar server holds a whole document per event, and a change replaces the
+  whole thing, so this could easily have wiped out everything it does not model.
+  It does not: the document the server holds is read first, the handful of
+  things this program knows about are replaced inside it, and everything else
+  goes back exactly as it arrived. Guests keep their invitations and their
+  answers, alarms keep their own times, and anything another calendar program
+  put there is left alone.
+
+  What this program replaces is the title, the notes, the place, the start and
+  end, the repeat rule, the days the series calls off, and the status. Emptying
+  one of those here clears it on the server too, because that is what emptying
+  it means.
+
+  **If somebody else changed the same event first**, from a phone or another
+  program, the change is refused rather than written over theirs, and the sync
+  reports it. Opening the event and saving again will send it. A deletion is
+  deliberately not checked this way: you asked for the event to go, and a check
+  there would make the deletion fail on every sync from then on with nothing you
+  could do about it.
+
+  A server that does not name versions is a server this check cannot be made
+  against. The change still only alters what that server had a moment earlier,
+  so nothing else is lost, but a change made from another device in the same few
+  seconds could be overwritten.
+
+  **None of this has been tried against a real calendar server**, so treat a
+  calendar you care about with caution. The window for adding one says so.
+
+- **A birthday sent to a calendar server now still happens every year.** The
+  repeat rule was written only for events with a time on them, so any whole-day
+  series, which is what a birthday and an anniversary are, would have gone out
+  as a single day.
+
 - **A category you typed on an event now goes to Outlook with it, and one set in
   Outlook now comes back.** Outlook has categories and shows them by name and
   colour, and this was filling one in and then not sending it, so an event
@@ -66,12 +110,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A comma in an appointment's title no longer splits it in two, and a line
+  break in the notes can no longer add anything to the event.** Text you typed
+  went into the document for a calendar server exactly as typed, and four
+  characters mean something there. A note with a line break in it could write
+  whatever the next line said straight into the appointment as a property of its
+  own.
+
+- **A change waiting to be sent is no longer written over by the next sync.**
+  When a change could not go, because Allow Changes was off or the server was
+  unreachable, the read that followed replaced your words with the server's. The
+  change then went on waiting, but what it was waiting to send was the server's
+  own copy back to it.
+
 - **A repeat rule was being thrown away on the way to a calendar server.** The
   document built for a calendar server carried no repeat rule, no called-off
   days and no time zone, so the first change ever sent to one would have turned
   a weekly meeting into a single appointment and moved the times of anything not
-  kept in UTC. Nothing sends one yet, so no calendar has been harmed; the
-  document is now correct for the day something does.
+  kept in UTC. No calendar was harmed, because nothing sent one until the change
+  above in this same release; the document was made correct first.
 
   A time typed here was also being written in a shape no calendar server reads
   ("20260306 0900", with a space and no seconds), which a server that checks
