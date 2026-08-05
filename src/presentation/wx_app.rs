@@ -334,6 +334,21 @@ impl WxMailApp {
             if state.default_account_id != stored {
                 persist_default_account(state.default_account_id.as_deref());
             }
+            // The folders that live on this computer, for every account rather
+            // than only for one that has finished a check over POP. An IMAP
+            // account never got its Outbox at all, so a message waiting to go
+            // out had no folder anybody could open to find it, and a POP
+            // account only got its folders after the first check that worked.
+            // Saving is an upsert keyed on the account and the path, so this
+            // costs nothing on every run after the first.
+            for account in &accounts {
+                if let Err(e) = ensure_local_folders(cache, account) {
+                    tracing::warn!(
+                        "Could not set up the folders on this computer for {}: {e}",
+                        account.name
+                    );
+                }
+            }
             state.accounts = accounts;
         }
 
@@ -2918,6 +2933,20 @@ impl WxMailApp {
                                 // There is no server copy to remove: the
                                 // message has not been anywhere.
                                 if cancel_if_queued(&state, &message_cache, &ui_tx, &runtime, cache_id) {
+                                    return;
+                                }
+                                // A message on this computer. POP mail is all
+                                // of it, and the route below needs a session
+                                // with a server this account has never had.
+                                if delete_if_local(
+                                    &state,
+                                    &message_cache,
+                                    &ui_tx,
+                                    &runtime,
+                                    cache_id,
+                                    &subject,
+                                    asked,
+                                ) {
                                     return;
                                 }
                                 send_status(&ui_tx, &runtime, &format!("Deleting {}...", subject));
@@ -6405,6 +6434,27 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let msg = format!("Outbox flush: {} sent, {} failed", sent, failed);
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce(&msg, Priority::Normal);
+            // Read the folder again if it is the one on screen. Without this,
+            // somebody watching the Outbox sees rows for mail that has already
+            // gone, and rows that say "waiting to send" for messages that
+            // failed, until they leave the folder and come back.
+            let open = {
+                let s = lock_state(state);
+                s.selected_folder
+                    .as_ref()
+                    .and_then(|name| s.folder_ids.get(name).copied())
+            };
+            if let (Some(cache), Some(folder_id)) = (&message_cache, open)
+                && cache.folder_kind(folder_id).ok().flatten()
+                    == Some(crate::common::types::FolderType::Outbox)
+            {
+                load_folder_messages(
+                    &Some(cache.clone()),
+                    Some(folder_id),
+                    lock_state(state).active_account_id.clone(),
+                    tx,
+                );
+            }
         }
         UIUpdate::ContactsSyncComplete {
             created,
@@ -6606,27 +6656,10 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // The row leaves the list here rather than when Delete was pressed,
             // because this is the point at which the server has agreed. If it
             // refuses, no row was removed and nothing has to be put back.
-            let removed = {
-                let mut s = lock_state(state);
-                match s.messages.iter().position(|m| m.message_id == *cache_id) {
-                    Some(idx) => {
-                        s.messages.remove(idx);
-                        // Keep focus somewhere real. Landing on nothing after a
-                        // delete leaves a reader with no idea where they are.
-                        s.selected_message_index = if s.messages.is_empty() {
-                            None
-                        } else {
-                            Some(idx.min(s.messages.len() - 1))
-                        };
-                        Some(s.messages.len())
-                    }
-                    None => None,
-                }
-            };
-            if let Some(count) = removed {
-                msg_list.set_item_count(count as i64);
-                msg_list.refresh(true, None);
-            }
+            take_row_out_of_the_list(state, msg_list, *cache_id);
+        }
+        UIUpdate::MessageLeftTheFolder(cache_id) => {
+            take_row_out_of_the_list(state, msg_list, *cache_id);
         }
         UIUpdate::MessageReadToggled(cache_id, new_read) => {
             // The row on screen as well as the row in the database. Writing
@@ -7311,6 +7344,112 @@ fn cancel_if_queued(
     true
 }
 
+/// Take one row out of the message list on screen.
+///
+/// The database is not touched. Two things ask for this and they mean different
+/// things by it: a message the server has agreed to delete, and a message that
+/// has moved to another folder on this computer, which is still there and must
+/// not be marked as deleted where it landed.
+fn take_row_out_of_the_list(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtrl, cache_id: i64) {
+    let removed = {
+        let mut s = lock_state(state);
+        match s.messages.iter().position(|m| m.message_id == cache_id) {
+            Some(idx) => {
+                s.messages.remove(idx);
+                // Keep focus somewhere real. Landing on nothing after a delete
+                // leaves a reader with no idea where they are.
+                s.selected_message_index = if s.messages.is_empty() {
+                    None
+                } else {
+                    Some(idx.min(s.messages.len() - 1))
+                };
+                Some(s.messages.len())
+            }
+            None => None,
+        }
+    };
+    if let Some(count) = removed {
+        msg_list.set_item_count(count as i64);
+        msg_list.refresh(true, None);
+    }
+}
+
+/// Take the message off this computer, if that is where it lives.
+///
+/// Returns whether it handled it. `false` means the message is on a server and
+/// the route that asks the server runs next, exactly as it did before.
+///
+/// This runs on the interface thread deliberately, the way `cancel_if_queued`
+/// beside it does. There is no network work here at all: a folder lookup by
+/// identifier, at most one folder row written, and one update or one mark by
+/// primary key. Moving it off would mean opening a second database connection
+/// for two indexed statements, because the cache holds a SQLite connection that
+/// is not shared between threads. The boundary is worth stating: no loop over
+/// messages, no network, no credential store. Any of those appearing here means
+/// it moves.
+fn delete_if_local(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    row_id: i64,
+    subject: &str,
+    asked: Deleting,
+) -> bool {
+    let Some(cache) = cache.as_ref() else {
+        return false;
+    };
+    // The account the message is in, not the one that happens to be open. A
+    // list drawn from several accounts would otherwise ask the wrong account
+    // whether deleting is allowed.
+    let account = {
+        let s = lock_state(state);
+        let owner = s
+            .messages
+            .iter()
+            .find(|m| m.message_id == row_id)
+            .map(|m| m.account_id.clone())
+            .filter(|id| !id.is_empty())
+            .or_else(|| s.active_account_id.clone());
+        owner
+            .as_ref()
+            .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned())
+    };
+    let Some(account) = account else {
+        return false;
+    };
+
+    match crate::application::local_delete::perform(cache, &account, row_id, asked) {
+        Ok(None) => false,
+        Ok(Some(outcome)) => {
+            if outcome.message_left_the_folder {
+                let tx_now = tx.clone();
+                rt.spawn(async move {
+                    // The row goes and the database is left alone: a message
+                    // moved to the Trash here is still a message, and the
+                    // other variant would mark it deleted where it landed.
+                    let _ = tx_now.send(UIUpdate::MessageLeftTheFolder(row_id)).await;
+                });
+                send_status(tx, rt, &format!("{}: {subject}", outcome.said));
+            } else {
+                // Its own topic and above the ordinary run of status: this is
+                // the answer to a key somebody just pressed, and a message that
+                // stayed where it was with nothing said reads as a dead key.
+                let tx_now = tx.clone();
+                let said = outcome.said;
+                rt.spawn(async move {
+                    let _ = tx_now.send(UIUpdate::CommandRefused(said)).await;
+                });
+            }
+            true
+        }
+        Err(e) => {
+            send_status(tx, rt, &format!("{subject} was not deleted: {e}"));
+            true
+        }
+    }
+}
+
 /// Say whether the open message asked to be acknowledged, and act on it.
 ///
 /// Three outcomes, and every one of them says something. Nothing asked, so
@@ -7599,12 +7738,21 @@ fn check_pop_mail(
         leave_on_server: account.pop_leave_on_server,
         remove_after_days: account.pop_remove_after_days,
     };
+    // Read once, before the loop. Asking the settings file per downloaded
+    // message is a file read per message on a first sync of a full mailbox.
+    let look_at_the_body = crate::data::config::ConfigManager::load_stored()
+        .map(|stored| stored.app_config().look_at_message_contents)
+        .unwrap_or(true);
     match handle.block_on(pop_sync::sync(
         &controller,
-        &cache,
-        inbox,
+        &pop_sync::Landing {
+            cache: &cache,
+            account_id: &account.id,
+            folder_id: inbox,
+        },
         housekeeping,
         false,
+        look_at_the_body,
         chrono::Utc::now(),
     )) {
         Ok(result) => {
@@ -7621,6 +7769,32 @@ fn check_pop_mail(
                 ));
             }
             say(UIUpdate::StatusUpdated(report));
+            // The links in each new message, against Google's lists, if the
+            // reader turned that on and a key exists. Any of those missing
+            // makes this nothing at all. Mail arriving over IMAP has had this
+            // since the body fetch was written; mail arriving here had none of
+            // it, and nothing said so.
+            //
+            // Only the rows this check wrote, so a message is never looked at
+            // twice, and inside the same blocking thread the whole check runs
+            // on: a request on the interface thread is a window that cannot
+            // repaint, which for anybody reading by ear is silence.
+            for row in &result.written {
+                let Ok(Some(body)) = cache.get_message_body(*row) else {
+                    continue;
+                };
+                let text = format!(
+                    "{}\n{}",
+                    body.body_plain.unwrap_or_default(),
+                    body.body_html.unwrap_or_default()
+                );
+                if let Some(google) = handle.block_on(safe_browsing_verdict(&text))
+                    && let Err(e) =
+                        crate::application::body_safety::merge_into(&cache, *row, &google)
+                {
+                    tracing::warn!("Could not store the safety verdict: {}", e);
+                }
+            }
             // The tree and the list are redrawn from the cache, the same way
             // the IMAP path finishes, so new mail appears without another key.
             if let Ok(updates) = folder_tree_updates(&cache, &account.id) {
@@ -7935,6 +8109,18 @@ enum ServerChange {
     },
 }
 
+/// What to say when the server would not take a change.
+///
+/// Deleting is the odd one out and has to be, because the row only leaves the
+/// list once the server has agreed. Nothing was undone, so saying it was tells
+/// somebody a message came back that never went anywhere.
+fn change_was_refused(change: &ServerChange, reason: &str) -> String {
+    match change {
+        ServerChange::Deleted(_) => format!("Nothing was deleted: {reason}"),
+        _ => format!("The change did not reach the server, so it has been undone here: {reason}"),
+    }
+}
+
 impl ServerChange {
     /// What to say when it worked.
     fn done(&self, subject: &str) -> String {
@@ -8029,8 +8215,8 @@ fn spawn_server_change(
                 // corrected rather than left standing.
                 ServerChange::Labelled { .. } => say(UIUpdate::LabelsChanged(message_row_id)),
             }
-            say(UIUpdate::ErrorOccurred(format!(
-                "The change did not reach the server, so it has been undone here: {reason}"
+            say(UIUpdate::ErrorOccurred(change_was_refused(
+                &change, &reason,
             )));
         };
 
@@ -8774,8 +8960,15 @@ fn spawn_body_fetch(
         // the header sync, and merge with what the provider already said
         // rather than replacing it. A message can be both in the junk folder
         // and carrying a link that lies about where it goes.
-        if let Ok(security) = crate::service::security::SecurityService::new() {
-            let report = security.analyze_message_security(
+        //
+        // The reading itself is `application::body_safety`, which the POP path
+        // calls too, so the same message gets the same answer whichever way it
+        // arrived. It is on unless somebody has turned it off.
+        let mut ours = if crate::data::config::ConfigManager::load_stored()
+            .map(|stored| stored.app_config().look_at_message_contents)
+            .unwrap_or(true)
+        {
+            crate::application::body_safety::from_body(
                 &parsed
                     .from
                     .iter()
@@ -8783,37 +8976,26 @@ fn spawn_body_fetch(
                     .collect::<Vec<_>>()
                     .join(", "),
                 &parsed.subject,
-                parsed.body_plain.as_deref().unwrap_or_default(),
+                parsed.body_plain.as_deref(),
                 parsed.body_html.as_deref(),
-            );
-            if let Ok(report) = report {
-                let mut ours = crate::service::safety::from_analysis(
-                    report.phishing_risk.into(),
-                    &report.phishing_indicators,
-                );
-                // Google's lists, if the reader asked for them and a key
-                // exists. A fourth source merged like the others, worst
-                // winning. Nothing is sent unless a link's hash collides with
-                // the copy of the list held on this machine, which for
-                // ordinary correspondence is never.
-                let body_for_links = format!(
-                    "{}\n{}",
-                    parsed.body_plain.as_deref().unwrap_or_default(),
-                    parsed.body_html.as_deref().unwrap_or_default()
-                );
-                if let Some(google) = handle.block_on(safe_browsing_verdict(&body_for_links)) {
-                    ours = ours.and(google);
-                }
-                if ours.level != crate::service::safety::Safety::Ordinary {
-                    let merged = cache
-                        .message_safety(message_row_id)
-                        .unwrap_or_default()
-                        .and(ours);
-                    if let Err(e) = cache.set_message_safety(message_row_id, &merged) {
-                        tracing::warn!("Could not store the safety verdict: {}", e);
-                    }
-                }
-            }
+            )
+        } else {
+            crate::service::safety::Verdict::ordinary()
+        };
+        // Google's lists, if the reader asked for them and a key exists. A
+        // fourth source merged like the others, worst winning. Nothing is sent
+        // unless a link's hash collides with the copy of the list held on this
+        // machine, which for ordinary correspondence is never.
+        let body_for_links = format!(
+            "{}\n{}",
+            parsed.body_plain.as_deref().unwrap_or_default(),
+            parsed.body_html.as_deref().unwrap_or_default()
+        );
+        if let Some(google) = handle.block_on(safe_browsing_verdict(&body_for_links)) {
+            ours = ours.and(google);
+        }
+        if let Err(e) = crate::application::body_safety::merge_into(&cache, message_row_id, &ours) {
+            tracing::warn!("Could not store the safety verdict: {}", e);
         }
 
         // Replaced rather than added to. A body evicted from the cache is
@@ -9799,8 +9981,38 @@ pub(crate) fn prompt_for_new_item(frame: &Frame, item_type: &str) -> Option<Stri
 
 #[cfg(test)]
 mod tests {
+    use super::{Deleting, ServerChange};
     use crate::presentation::panes::{Holding, Pane};
     use crate::presentation::ui_types::{MessageItem, PimModule};
+
+    #[test]
+    fn test_a_delete_that_was_refused_does_not_claim_it_was_undone() {
+        // The row was never taken out of the list, so there was nothing to put
+        // back. A POP account heard both halves wrong at once: that its IMAP
+        // port was the trouble, and that something had been undone.
+        let said = super::change_was_refused(&ServerChange::Deleted(Deleting::ToTrash), "no");
+
+        assert!(
+            !said.to_lowercase().contains("undone"),
+            "a delete that never happened was reported as undone: {said}"
+        );
+        assert!(said.contains("no"), "the reason was dropped: {said}");
+    }
+
+    #[test]
+    fn test_a_change_that_was_put_back_still_says_so() {
+        // The other half. Marking read and flagging both change the row before
+        // the server has agreed, so when the server refuses, something really
+        // has been put back and somebody has to be told.
+        for change in [ServerChange::Read(true), ServerChange::Flagged(true)] {
+            let said = super::change_was_refused(&change, "the server said no");
+
+            assert!(
+                said.to_lowercase().contains("undone"),
+                "a change that was put back said nothing about it: {said}"
+            );
+        }
+    }
 
     /// A message, for tests that only care that one exists.
     fn a_message() -> MessageItem {

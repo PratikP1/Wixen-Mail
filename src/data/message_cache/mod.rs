@@ -1384,6 +1384,15 @@ impl MessageCache {
             "pop_remove_after_days",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
+        // Whether Delete may take mail out of this account's folders on this
+        // computer. Allowed for every account already stored, because that is
+        // the answer they had: there was no switch, so treating them as having
+        // said no would take away something nobody was offered a choice about.
+        self.ensure_column_exists(
+            "accounts",
+            "allow_deleting_here",
+            "INTEGER NOT NULL DEFAULT 1",
+        )?;
         // Answered and Draft, from the server's flags. The columns for these
         // were withdrawn because nothing could fill them; a sync fills them.
         self.ensure_column_exists("messages", "answered", "BOOLEAN DEFAULT 0")?;

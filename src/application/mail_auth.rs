@@ -121,6 +121,7 @@ mod tests {
             pop_use_tls: true,
             pop_leave_on_server: true,
             pop_remove_after_days: 0,
+            allow_deleting_here: true,
         }
     }
 

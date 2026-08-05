@@ -118,6 +118,82 @@ impl MessageCache {
         Ok(found)
     }
 
+    /// Every POP identifier this account has downloaded.
+    ///
+    /// The account's scope rather than one folder's, and rows marked as deleted
+    /// as well as the rest. A message moved to the trash is out of the inbox,
+    /// and a message somebody deleted is marked and hidden, and both are still
+    /// mail this computer has had. Reading only the inbox downloads them again
+    /// on the very next check, so deleting POP mail would put it straight back.
+    pub fn pop_uidls_for_account(
+        &self,
+        account_id: &str,
+    ) -> Result<std::collections::HashSet<String>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT m.pop_uidl FROM messages m
+                 INNER JOIN folders f ON m.folder_id = f.id
+                 WHERE f.account_id = ?1 AND m.pop_uidl IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+        stmt.query_map(params![account_id], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("Failed to read the identifiers: {}", e)))?
+            .collect::<std::result::Result<std::collections::HashSet<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read the identifiers: {}", e)))
+    }
+
+    /// When each of this account's POP messages was downloaded.
+    ///
+    /// The same widening as [`MessageCache::pop_uidls_for_account`], and it
+    /// matters for a different reason. This is what the removal policy counts
+    /// from, so a message that leaves the inbox and loses its time is one that
+    /// silently never leaves the server, whatever somebody asked for.
+    pub fn pop_download_times_for_account(
+        &self,
+        account_id: &str,
+    ) -> Result<std::collections::HashMap<String, chrono::DateTime<chrono::Utc>>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT m.pop_uidl, m.downloaded_at FROM messages m
+                 INNER JOIN folders f ON m.folder_id = f.id
+                 WHERE f.account_id = ?1 AND m.pop_uidl IS NOT NULL
+                   AND m.downloaded_at IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+        let found = stmt
+            .query_map(params![account_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Failed to read the download times: {}", e)))?
+            .filter_map(|row| {
+                let (uidl, when) = row.ok()?;
+                let when = chrono::DateTime::parse_from_rfc3339(&when).ok()?;
+                Some((uidl, when.into()))
+            })
+            .collect();
+        Ok(found)
+    }
+
+    /// Put a message in a different folder.
+    ///
+    /// The row keeps its identity, so the body and the attachments, which are
+    /// keyed on it, go with it. What it cannot keep is its number: the table
+    /// keys messages on folder and number together, so carrying the old one
+    /// across collides with whatever already holds it there and the move fails
+    /// while the interface says it happened.
+    pub fn move_message(&self, message_id: i64, into_folder: i64) -> Result<()> {
+        let uid = self.next_local_uid(into_folder)?;
+        self.conn
+            .execute(
+                "UPDATE messages SET folder_id = ?1, uid = ?2 WHERE id = ?3",
+                params![into_folder, uid, message_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to move the message: {}", e)))?;
+        Ok(())
+    }
+
     /// When each POP message in a folder was downloaded.
     ///
     /// What the removal policy counts from. A message with no time recorded is
@@ -1089,6 +1165,192 @@ mod tests {
             None,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn test_a_moved_message_is_in_the_new_folder_and_gone_from_the_old() {
+        let cache = fresh("move_between_folders");
+        let inbox = folder(&cache, "INBOX");
+        let trash = folder(&cache, "Trash");
+        let row = cache
+            .upsert_message(&incoming(inbox, 1, "Notes on the engine"))
+            .unwrap();
+
+        cache.move_message(row, trash).unwrap();
+
+        assert!(
+            cache.get_message_list(inbox, "acc").unwrap().is_empty(),
+            "it is still in the folder it was deleted from"
+        );
+        let now_in = cache.get_message_list(trash, "acc").unwrap();
+        assert_eq!(now_in.len(), 1);
+        assert_eq!(now_in[0].subject, "Notes on the engine");
+    }
+
+    #[test]
+    fn test_a_moved_message_keeps_its_body() {
+        // On a POP account this copy is the only one there will ever be. A move
+        // that loses the body turns a message somebody can read into a subject
+        // line and an apology, and there is no server left to ask again.
+        let cache = fresh("move_keeps_body");
+        let inbox = folder(&cache, "INBOX");
+        let trash = folder(&cache, "Trash");
+        let row = cache
+            .upsert_message(&incoming(inbox, 1, "With a body"))
+            .unwrap();
+        cache
+            .save_message_body(row, Some("The whole of it."), None)
+            .unwrap();
+
+        cache.move_message(row, trash).unwrap();
+
+        let body = cache
+            .get_message_body(row)
+            .unwrap()
+            .expect("the body went with the message");
+        assert_eq!(body.body_plain.as_deref(), Some("The whole of it."));
+    }
+
+    #[test]
+    fn test_two_messages_moved_into_one_folder_do_not_collide() {
+        // The table keys messages on folder and number, so carrying the old
+        // number across means the second move fails and the message stays
+        // where it was while the interface says it went.
+        let cache = fresh("move_two_collide");
+        let inbox = folder(&cache, "INBOX");
+        let other = folder(&cache, "Archive");
+        let trash = folder(&cache, "Trash");
+        let first = cache.upsert_message(&incoming(inbox, 1, "One")).unwrap();
+        let second = cache.upsert_message(&incoming(other, 1, "Two")).unwrap();
+
+        cache.move_message(first, trash).unwrap();
+        cache.move_message(second, trash).unwrap();
+
+        let in_trash = cache.get_message_list(trash, "acc").unwrap();
+        assert_eq!(
+            in_trash.len(),
+            2,
+            "one of the two did not arrive: {in_trash:#?}"
+        );
+    }
+
+    #[test]
+    fn test_mail_moved_to_the_trash_is_still_mail_this_computer_has() {
+        // Folder-scoped is the wrong scope for POP. A message moved out of the
+        // inbox is invisible to a check that only looks in the inbox, so the
+        // very next check downloads it again and deleting mail puts it back.
+        let cache = fresh("uidls_span_the_account");
+        let inbox = folder(&cache, "INBOX");
+        let trash = folder(&cache, "Trash");
+        let mut arrived = incoming(inbox, 1, "Notes");
+        arrived.pop_uidl = Some("aaa".to_string());
+        let row = cache.upsert_message(&arrived).unwrap();
+        cache.move_message(row, trash).unwrap();
+
+        assert!(
+            !cache.pop_uidls(inbox).unwrap().contains("aaa"),
+            "the folder-scoped read found it, so this proves nothing"
+        );
+        assert!(cache.pop_uidls_for_account("acc").unwrap().contains("aaa"));
+    }
+
+    #[test]
+    fn test_another_accounts_downloads_are_not_counted_as_ours() {
+        // Two POP accounts can be handed the same identifier by their servers:
+        // it is unique to one mailbox and to nothing else. Counting theirs as
+        // ours would skip a message that never arrived here.
+        let cache = fresh("uidls_per_account");
+        let ours = folder(&cache, "INBOX");
+        let theirs = cache
+            .save_folder(&super::super::CachedFolder {
+                id: 0,
+                account_id: "other".to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .unwrap();
+        let mut mine = incoming(ours, 1, "Mine");
+        mine.pop_uidl = Some("aaa".to_string());
+        cache.upsert_message(&mine).unwrap();
+        let mut yours = incoming(theirs, 1, "Yours");
+        yours.pop_uidl = Some("bbb".to_string());
+        cache.upsert_message(&yours).unwrap();
+
+        let held = cache.pop_uidls_for_account("acc").unwrap();
+
+        assert!(held.contains("aaa"));
+        assert!(
+            !held.contains("bbb"),
+            "another account's mail was counted as ours"
+        );
+    }
+
+    #[test]
+    fn test_the_download_time_of_moved_mail_still_counts_towards_the_policy() {
+        // The quiet half of the same bug. Mail that leaves the inbox stops
+        // counting, so a mailbox somebody asked to be cleared after so many
+        // days silently never is, with nothing saying so.
+        let cache = fresh("download_times_span_the_account");
+        let inbox = folder(&cache, "INBOX");
+        let trash = folder(&cache, "Trash");
+        let mut arrived = incoming(inbox, 1, "Notes");
+        arrived.pop_uidl = Some("aaa".to_string());
+        let row = cache.upsert_message(&arrived).unwrap();
+        cache.move_message(row, trash).unwrap();
+
+        assert!(!cache.pop_download_times(inbox).unwrap().contains_key("aaa"));
+        assert!(
+            cache
+                .pop_download_times_for_account("acc")
+                .unwrap()
+                .contains_key("aaa")
+        );
+    }
+
+    #[test]
+    fn test_mail_taken_off_this_computer_is_still_mail_this_computer_has_had() {
+        // Deleting marks the row rather than removing it, and that mark is what
+        // stops the next check downloading the message all over again. Both
+        // halves are asserted: that it has really gone from the folder somebody
+        // is looking at, so this is not a test passing because nothing
+        // happened, and that its identifier is still counted as held.
+        let cache = fresh("deleted_mail_is_still_held");
+        let inbox = folder(&cache, "INBOX");
+        let mut arrived = incoming(inbox, 1, "Notes");
+        arrived.pop_uidl = Some("aaa".to_string());
+        let row = cache.upsert_message(&arrived).unwrap();
+
+        cache.delete_message(row).unwrap();
+
+        assert!(
+            cache.get_message_list(inbox, "acc").unwrap().is_empty(),
+            "the message is still in the folder, so nothing was deleted"
+        );
+        assert!(cache.pop_uidls_for_account("acc").unwrap().contains("aaa"));
+    }
+
+    #[test]
+    fn test_the_removal_policy_still_counts_from_when_deleted_mail_arrived() {
+        // The quiet half of the same rule. Losing the time means mail somebody
+        // asked to be cleared from the server after so many days silently never
+        // is, and nothing says so.
+        let cache = fresh("deleted_mail_keeps_its_time");
+        let inbox = folder(&cache, "INBOX");
+        let mut arrived = incoming(inbox, 1, "Notes");
+        arrived.pop_uidl = Some("aaa".to_string());
+        let row = cache.upsert_message(&arrived).unwrap();
+
+        cache.delete_message(row).unwrap();
+
+        assert!(
+            cache
+                .pop_download_times_for_account("acc")
+                .unwrap()
+                .contains_key("aaa")
+        );
     }
 
     fn folder(cache: &super::super::MessageCache, path: &str) -> i64 {

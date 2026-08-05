@@ -26,6 +26,21 @@ pub struct AppConfig {
     /// to Google for ordinary mail.
     #[serde(default)]
     pub check_links_with_google: bool,
+    /// Whether to read each message here and mark it when it looks wrong.
+    ///
+    /// On unless somebody turns it off, and the one setting in this file that
+    /// starts on while still being about safety. It sends nothing to anybody:
+    /// the reading happens on this computer, over text already in hand, and the
+    /// most it can do is put a word in the safety column. It is also what mail
+    /// arriving over IMAP has had since the body fetch was written, so starting
+    /// it off would take a marking away from people who never asked for that.
+    ///
+    /// Deliberately not the same switch as `check_links_with_google` above.
+    /// That one can put four bytes of a link on the wire, so turning this on to
+    /// get a check that touches nothing would mean agreeing to something else
+    /// entirely.
+    #[serde(default = "default_true")]
+    pub look_at_message_contents: bool,
     /// Theme name
     pub theme: String,
     /// Font size
@@ -295,6 +310,7 @@ impl Default for AppConfig {
             download_folder: dirs::download_dir().unwrap_or_else(|| PathBuf::from(".")),
             check_updates: true,
             check_links_with_google: false,
+            look_at_message_contents: default_true(),
             theme: "default".to_string(),
             font_size: 12,
             date_style: default_date_style(),
@@ -1055,5 +1071,36 @@ mod permission_tests {
         let parsed: AppConfig = serde_json::from_value(older).expect("an older config still opens");
 
         assert!(parsed.send_contact_changes_everywhere);
+    }
+
+    #[test]
+    fn test_a_setting_nobody_has_touched_looks_at_the_message_itself() {
+        // The only new setting here that starts on. It sends nothing anywhere,
+        // it only adds a warning, and it is what mail arriving over IMAP has
+        // had since the body fetch was written: starting it off would quietly
+        // take that away from people who never asked.
+        assert!(AppConfig::default().look_at_message_contents);
+    }
+
+    #[test]
+    fn test_a_settings_file_written_before_this_setting_existed_still_looks_at_the_message() {
+        let mut older = serde_json::to_value(AppConfig::default()).expect("a config to serialise");
+        let fields = older.as_object_mut().expect("an object");
+        assert!(
+            fields.remove("look_at_message_contents").is_some(),
+            "the setting is not written to the settings file, so this test covers nothing"
+        );
+
+        let parsed: AppConfig = serde_json::from_value(older).expect("an older config still opens");
+
+        assert!(parsed.look_at_message_contents);
+    }
+
+    #[test]
+    fn test_asking_google_about_links_is_still_off_unless_somebody_asks_for_it() {
+        // The other half of the pair, kept apart deliberately: one reads the
+        // message here and sends nothing, the other can put four bytes of a
+        // link on the wire. They cannot share a switch.
+        assert!(!AppConfig::default().check_links_with_google);
     }
 }

@@ -408,6 +408,11 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
     let cb = |label: &str, default: bool| -> CheckBox {
         let l = StaticText::builder(&dlg).with_label("").build();
         let c = CheckBox::builder(&dlg).with_label(label).build();
+        // Set here as well as carried on the label. A checkbox's own label is
+        // what Windows falls back to, so these were named already, but that is
+        // a name coming from the framework rather than from this code, and
+        // every other builder in this dialog says the name outright.
+        set_accessible_name(&c, &name_from_label(label));
         c.set_value(default);
         fields.add(&l, 0, SizerFlag::All, 4);
         fields.add(&c, 0, SizerFlag::All, 4);
@@ -480,6 +485,12 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
     // one copy, on one computer, with no way back.
     let pop_leave = cb("&Leave mail on the server after downloading it", true);
     let pop_days = spin("Then remove it after this many &days (0 for never):", 0);
+    // What happens, rather than what it is called underneath. On by default,
+    // because Delete doing nothing is what somebody meets first and it never
+    // touches a server: mail moves to this account's own Trash folder here.
+    // Somebody clearing the POP server after downloading has this computer as
+    // the only copy, and this is how they say Delete must not lose it.
+    let allow_deleting = cb("Let me delete mail on this &computer", true);
 
     section("── SMTP Settings ──");
     let smtp_f = tf("&SMTP Server:", "");
@@ -550,6 +561,7 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
         pop_tls.set_value(a.pop_use_tls);
         pop_leave.set_value(a.pop_leave_on_server);
         pop_days.set_value(a.pop_remove_after_days as i32);
+        allow_deleting.set_value(a.allow_deleting_here);
         protocol_choice.set_selection(
             Protocol::ALL
                 .iter()
@@ -687,6 +699,7 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
             pop_use_tls: pop_tls.get_value(),
             pop_leave_on_server: pop_leave.get_value(),
             pop_remove_after_days: pop_days.value().max(0) as u32,
+            allow_deleting_here: allow_deleting.get_value(),
             color: existing
                 .map(|a| a.color.clone())
                 .unwrap_or_else(|| "#4A90E2".into()),

@@ -70,6 +70,7 @@ struct SettingsWidgets {
     // Advanced
     log_level: Choice,
     download_folder: TextCtrl,
+    look_at_message_contents: CheckBox,
     check_links_with_google: CheckBox,
     // Feedback channels: each box carries the channel it switches, so a tick
     // cannot be read back against a different one.
@@ -159,7 +160,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 
     // ── Tab 7: Advanced
     let advanced_panel = Panel::builder(&notebook).build();
-    let (log_level, download_folder, check_links_with_google) =
+    let (log_level, download_folder, look_at_message_contents, check_links_with_google) =
         build_advanced_tab(&advanced_panel, config);
     notebook.add_page(&advanced_panel, "Advanced", false, None);
 
@@ -226,6 +227,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         day_ends,
         log_level,
         download_folder,
+        look_at_message_contents,
         check_links_with_google,
         feedback,
     };
@@ -1133,7 +1135,7 @@ const HOURS: [&str; 25] = [
 ];
 
 /// Advanced: log level, download folder, cache info, link checking.
-fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, CheckBox) {
+fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, CheckBox, CheckBox) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Logging
@@ -1210,13 +1212,29 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, C
 
     sizer.add_sizer(&store_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
-    // -- Link checking
+    // -- Checking whether a message is what it says it is
     //
-    // Off unless somebody turns it on, and the label says exactly what is sent
-    // rather than asking anybody to take "privacy-preserving" on trust. The
-    // whole reason this is offerable at all is that the lists come here and
-    // the comparison happens here.
-    let links_sec = section(panel, "Link checking");
+    // Two boxes, deliberately apart. The first reads the message on this
+    // computer and sends nothing, so it is on unless somebody turns it off.
+    // The second can put four bytes of a link on the wire, so it is off unless
+    // somebody turns it on. Sharing one switch would mean agreeing to the
+    // second to get the first.
+    let links_sec = section(panel, "Checking whether a message is what it says it is");
+
+    let body_box = CheckBox::builder(panel)
+        .with_label("Read each message on this computer and mark suspicious ones")
+        .build();
+    set_accessible_name(
+        &body_box,
+        "Read each message on this computer and mark suspicious ones",
+    );
+    body_box.set_value(config.look_at_message_contents);
+    links_sec.add(&body_box, 0, SizerFlag::All, 4);
+
+    let body_hint = StaticText::builder(panel)
+        .with_label(crate::application::body_safety::LOOKING_AT_THE_MESSAGE_ITSELF)
+        .build();
+    links_sec.add(&body_hint, 0, SizerFlag::All, 4);
 
     let links_box = CheckBox::builder(panel)
         .with_label("Check links against Google Safe Browsing")
@@ -1242,7 +1260,7 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, C
     sizer.add_sizer(&links_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    (log_choice, dl_field, links_box)
+    (log_choice, dl_field, body_box, links_box)
 }
 
 /// Feedback channels: how the application tells you something happened.
@@ -1457,6 +1475,7 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     if !path.is_empty() {
         cfg.download_folder = std::path::PathBuf::from(path);
     }
+    cfg.look_at_message_contents = w.look_at_message_contents.is_checked();
     cfg.check_links_with_google = w.check_links_with_google.is_checked();
 
     cfg

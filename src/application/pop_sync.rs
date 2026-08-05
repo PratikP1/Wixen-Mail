@@ -29,6 +29,12 @@ pub struct PopSync {
     pub removed_from_server: usize,
     /// How many are on the server in total.
     pub on_server: usize,
+    /// The rows this check wrote, oldest first.
+    ///
+    /// So anything that has to look at each new message can find them without
+    /// reading the whole folder again. A check that downloaded nothing reports
+    /// none, which is what keeps a message from being looked at twice.
+    pub written: Vec<i64>,
 }
 
 /// What the account said about clearing the server.
@@ -138,6 +144,20 @@ impl PopMailbox for crate::application::mail_controller::MailController {
     }
 }
 
+/// Where downloaded mail is going.
+///
+/// The three together rather than three parameters in a row, because the
+/// account and the folder are both identifiers and writing them the wrong way
+/// round still compiles. Both are needed and they answer different questions:
+/// the folder is where a message is filed, the account is the scope of "have we
+/// had this one already", which is wider than one folder on purpose.
+#[derive(Clone, Copy)]
+pub(crate) struct Landing<'a> {
+    pub cache: &'a crate::data::message_cache::MessageCache,
+    pub account_id: &'a str,
+    pub folder_id: i64,
+}
+
 /// Bring a POP mailbox into a folder, and clear the server if asked.
 ///
 /// The order matters. Everything is downloaded and written before anything is
@@ -151,22 +171,30 @@ impl PopMailbox for crate::application::mail_controller::MailController {
 /// against a clock the test cannot set.
 pub(crate) async fn sync<M: PopMailbox>(
     server: &M,
-    cache: &crate::data::message_cache::MessageCache,
-    folder_id: i64,
+    into: &Landing<'_>,
     housekeeping: Housekeeping,
     in_junk_folder: bool,
+    look_at_the_body: bool,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<PopSync> {
+    let Landing {
+        cache,
+        account_id,
+        folder_id,
+    } = *into;
     let listing = server.list().await?;
     let on_server: Vec<(u32, String)> = listing
         .iter()
         .map(|message| (message.id, message.uidl.clone()))
         .collect();
 
-    let already_have = cache.pop_uidls(folder_id)?;
+    // The whole account, not just the inbox. A message somebody moved to the
+    // trash or deleted has left the inbox and is still mail this computer has
+    // had, and asking one folder brings it straight back on the next check.
+    let already_have = cache.pop_uidls_for_account(account_id)?;
     let wanted = to_fetch(&on_server, &already_have);
 
-    let mut fetched = 0usize;
+    let mut written: Vec<i64> = Vec::new();
     for (id, uidl) in &wanted {
         let raw = server.retrieve(*id).await?;
         let parsed = crate::service::mime::parse(&raw)?;
@@ -177,6 +205,7 @@ pub(crate) async fn sync<M: PopMailbox>(
             uid,
             uidl,
             in_junk_folder,
+            look_at_the_body,
             at: now,
         };
         let row = cache.upsert_message(&to_incoming(&parsed, &arrival))?;
@@ -188,10 +217,13 @@ pub(crate) async fn sync<M: PopMailbox>(
             parsed.body_plain.as_deref(),
             parsed.body_html.as_deref(),
         )?;
-        fetched += 1;
+        written.push(row);
     }
 
-    let downloaded = cache.pop_download_times(folder_id)?;
+    // Widened for the same reason, and it matters differently: this is what the
+    // removal policy counts from, so mail that leaves the inbox and loses its
+    // time is mail that silently never leaves the server.
+    let downloaded = cache.pop_download_times_for_account(account_id)?;
     let stale = to_remove(&on_server, &downloaded, housekeeping, now);
     for (id, _) in &stale {
         server.mark_for_deletion(*id).await?;
@@ -201,9 +233,10 @@ pub(crate) async fn sync<M: PopMailbox>(
     server.finish().await?;
 
     Ok(PopSync {
-        fetched,
+        fetched: written.len(),
         removed_from_server: stale.len(),
         on_server: on_server.len(),
+        written,
     })
 }
 
@@ -220,6 +253,12 @@ struct Arrival<'a> {
     /// The identifier the server gave it.
     uidl: &'a str,
     in_junk_folder: bool,
+    /// Whether to read the message itself as well as its headers.
+    ///
+    /// Carried here rather than read from the settings file per message: this
+    /// runs inside the download loop, and reading a file once per message on a
+    /// first sync of a full mailbox is a cost nobody asked for.
+    look_at_the_body: bool,
     /// When this computer got it.
     at: chrono::DateTime<chrono::Utc>,
 }
@@ -235,6 +274,7 @@ fn to_incoming(
         uid,
         uidl,
         in_junk_folder,
+        look_at_the_body,
         at,
     } = *arrival;
     let addresses = |list: &[crate::common::types::EmailAddress]| {
@@ -272,8 +312,22 @@ fn to_incoming(
         draft: false,
         deleted: false,
         has_attachments: !parsed.attachments.is_empty(),
+        // Three sources, worst winning. The whole message is already in hand
+        // here, so the third one costs nothing extra: an IMAP account has had
+        // this reading since the body fetch was written and a POP account had
+        // none of it, with nothing saying which account you were on.
         safety: crate::service::safety::from_headers(&String::from_utf8_lossy(header_block(raw)))
-            .and(crate::service::safety::from_folder(in_junk_folder)),
+            .and(crate::service::safety::from_folder(in_junk_folder))
+            .and(if look_at_the_body {
+                crate::application::body_safety::from_body(
+                    &addresses(&parsed.from),
+                    &parsed.subject,
+                    parsed.body_plain.as_deref(),
+                    parsed.body_html.as_deref(),
+                )
+            } else {
+                crate::service::safety::Verdict::ordinary()
+            }),
         gmail_message_id: None,
         labels: None,
         receipt_to: parsed.receipt_to.clone(),
@@ -446,7 +500,18 @@ mod tests {
         tokio::runtime::Builder::new_current_thread()
             .build()
             .expect("a runtime")
-            .block_on(sync(server, cache, folder_id, housekeeping, false, now))
+            .block_on(sync(
+                server,
+                &Landing {
+                    cache,
+                    account_id: "acct",
+                    folder_id,
+                },
+                housekeeping,
+                false,
+                true,
+                now,
+            ))
     }
 
     fn server() -> Vec<(u32, String)> {
@@ -558,6 +623,10 @@ mod tests {
             uid: 1,
             uidl: "aaa",
             in_junk_folder: false,
+            // Off in the shared helper, so a test about anything else is not
+            // quietly also a test about the reading of the message. The tests
+            // that are about it switch it on by name.
+            look_at_the_body: false,
             at: one_oclock(),
         }
     }
@@ -654,6 +723,310 @@ mod tests {
             reference_chain(&reply).as_deref(),
             Some("first@example.com")
         );
+    }
+
+    /// A downloaded message pretending to come from somebody it does not.
+    fn pretending() -> crate::service::mime::ParsedMessage {
+        crate::service::mime::ParsedMessage {
+            subject: "Urgent: your account is suspended".to_string(),
+            from: vec![EmailAddress::new(
+                "noreply@paypa1.example".to_string(),
+                Some("Security".to_string()),
+            )],
+            body_plain: Some("Reply to this email with your details.".to_string()),
+            body_html: Some(
+                "<p>Visit <a href=\"http://192.0.2.7/collect\">https://yourbank.example</a></p>"
+                    .to_string(),
+            ),
+            ..plain()
+        }
+    }
+
+    /// The same arrival, with the reading of the message switched on or off.
+    fn arrival_reading(raw: &[u8], look_at_the_body: bool) -> Arrival<'_> {
+        Arrival {
+            look_at_the_body,
+            ..arrival(raw)
+        }
+    }
+
+    #[test]
+    fn test_a_downloaded_message_carrying_a_deceptive_link_is_marked_suspicious() {
+        // Mail collected this way had no reading of its own contents at all.
+        // The same message arriving on an IMAP account was marked and on a POP
+        // account was silent, and nothing said which account you were on.
+        let stored = to_incoming(&pretending(), &arrival_reading(b"", true));
+
+        assert_eq!(
+            stored.safety.level,
+            crate::service::safety::Safety::Suspicious
+        );
+        assert!(!stored.safety.reasons.is_empty(), "marked with no reason");
+    }
+
+    #[test]
+    fn test_an_ordinary_downloaded_message_is_still_left_alone() {
+        // A mailbox where every row announces a warning is a mailbox where
+        // nobody hears the one that mattered.
+        let ordinary = crate::service::mime::ParsedMessage {
+            body_plain: Some("The numbers are attached. See you Thursday.".to_string()),
+            ..plain()
+        };
+
+        assert_eq!(
+            to_incoming(&ordinary, &arrival_reading(b"", true))
+                .safety
+                .level,
+            crate::service::safety::Safety::Ordinary
+        );
+    }
+
+    #[test]
+    fn test_the_reading_of_the_message_can_be_switched_off() {
+        // With it off the verdict is exactly what the headers said and nothing
+        // more, which is what this path did before.
+        let stored = to_incoming(&pretending(), &arrival_reading(b"", false));
+
+        assert_eq!(
+            stored.safety.level,
+            crate::service::safety::Safety::Ordinary
+        );
+        assert!(stored.safety.reasons.is_empty());
+    }
+
+    #[test]
+    fn test_the_reading_of_the_message_does_not_overrule_the_provider() {
+        // Two sources, worst winning, and both reasons kept. A message can be
+        // both in a filter's junk pile and carrying a link that lies about
+        // where it goes, and losing either half loses why it was marked.
+        let headers = b"Subject: Your account is suspended\r\n\
+X-Spam-Flag: YES\r\n\r\nbody";
+
+        let stored = to_incoming(&pretending(), &arrival_reading(headers, true));
+
+        assert_eq!(stored.safety.level, crate::service::safety::Safety::Spam);
+        assert!(
+            stored.safety.reasons.len() > 1,
+            "one of the two sources lost its reason: {:?}",
+            stored.safety.reasons
+        );
+    }
+
+    #[test]
+    fn test_the_formatted_part_of_a_downloaded_message_is_read() {
+        // Which half carries the trouble is the sender's choice, so a field
+        // that is built and never passed on is a whole class of message that
+        // arrives with nothing said about it.
+        let formatted_only = crate::service::mime::ParsedMessage {
+            body_plain: None,
+            ..pretending()
+        };
+
+        assert_eq!(
+            to_incoming(&formatted_only, &arrival_reading(b"", true))
+                .safety
+                .level,
+            crate::service::safety::Safety::Suspicious
+        );
+    }
+
+    #[test]
+    fn test_the_plain_part_of_a_downloaded_message_is_read() {
+        let plain_only = crate::service::mime::ParsedMessage {
+            body_plain: Some(
+                "Reply to this email. Go to http://192.0.2.7/collect now.".to_string(),
+            ),
+            body_html: None,
+            ..pretending()
+        };
+
+        assert_eq!(
+            to_incoming(&plain_only, &arrival_reading(b"", true))
+                .safety
+                .level,
+            crate::service::safety::Safety::Suspicious
+        );
+    }
+
+    #[test]
+    fn test_who_the_message_says_it_is_from_is_read() {
+        // The sender is one of the four things the reading is given, and the
+        // one whose absence is hardest to notice: the message still gets a
+        // verdict, just never this one.
+        let body = "Reply to this email with your password. \
+                    It is urgent. Go to http://192.0.2.7/collect";
+        let from_a_do_not_reply = crate::service::mime::ParsedMessage {
+            subject: "Immediate action required".to_string(),
+            from: vec![EmailAddress::new(
+                "noreply@example.com".to_string(),
+                Some("Support".to_string()),
+            )],
+            body_plain: Some(body.to_string()),
+            body_html: None,
+            ..plain()
+        };
+        let from_a_person = crate::service::mime::ParsedMessage {
+            from: vec![EmailAddress::new(
+                "ada@example.com".to_string(),
+                Some("Ada Lovelace".to_string()),
+            )],
+            ..from_a_do_not_reply.clone()
+        };
+
+        let unsigned = to_incoming(&from_a_do_not_reply, &arrival_reading(b"", true));
+        let signed = to_incoming(&from_a_person, &arrival_reading(b"", true));
+
+        assert_ne!(
+            unsigned.safety.reasons, signed.safety.reasons,
+            "changing who it came from changed nothing, so the sender is not being read"
+        );
+    }
+
+    #[test]
+    fn test_the_subject_of_a_downloaded_message_is_read() {
+        let pressure_in_the_subject = crate::service::mime::ParsedMessage {
+            subject: "Urgent: wire transfer".to_string(),
+            body_plain: Some("Go to http://192.0.2.7/collect".to_string()),
+            body_html: None,
+            ..plain()
+        };
+        let no_pressure = crate::service::mime::ParsedMessage {
+            subject: "Notes".to_string(),
+            ..pressure_in_the_subject.clone()
+        };
+
+        assert_ne!(
+            to_incoming(&pressure_in_the_subject, &arrival_reading(b"", true))
+                .safety
+                .level,
+            to_incoming(&no_pressure, &arrival_reading(b"", true))
+                .safety
+                .level,
+            "changing the subject changed nothing, so the subject is not being read"
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_no_body_stored_is_not_marked_for_having_none() {
+        // A warning on every message that happens to be empty is a warning
+        // nobody reads by the second one.
+        let empty = crate::service::mime::ParsedMessage {
+            body_plain: None,
+            body_html: None,
+            ..plain()
+        };
+        let blank = crate::service::mime::ParsedMessage {
+            body_plain: Some(String::new()),
+            body_html: Some(String::new()),
+            ..plain()
+        };
+
+        for message in [empty, blank] {
+            assert_eq!(
+                to_incoming(&message, &arrival_reading(b"", true))
+                    .safety
+                    .level,
+                crate::service::safety::Safety::Ordinary
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_message_repeating_itself_in_both_halves_reads_the_same_as_one() {
+        // Some senders put identical text in both parts. Reading it twice must
+        // not make one message look worse than the same message sent once.
+        let text = "Reply to this email. http://192.0.2.7/collect";
+        let once = crate::service::mime::ParsedMessage {
+            body_plain: Some(text.to_string()),
+            body_html: None,
+            ..pretending()
+        };
+        let twice = crate::service::mime::ParsedMessage {
+            body_html: Some(text.to_string()),
+            ..once.clone()
+        };
+
+        assert_eq!(
+            to_incoming(&once, &arrival_reading(b"", true)).safety,
+            to_incoming(&twice, &arrival_reading(b"", true)).safety
+        );
+    }
+
+    #[test]
+    fn test_a_header_quoted_in_the_body_still_decides_nothing() {
+        // The rule the header reader already holds, restated now that the body
+        // is read too: what somebody wrote must not be able to set the verdict
+        // a server gave, in either direction.
+        let raw = raw_message(
+            "Subject: What that message was\r\nFrom: colleague@example.com",
+            "The one you forwarded had this on it:\r\nX-Spam-Flag: YES\r\nso I binned it.",
+        );
+        let quoting = crate::service::mime::ParsedMessage {
+            body_plain: Some(
+                "The one you forwarded had this on it:\r\nX-Spam-Flag: YES".to_string(),
+            ),
+            ..plain()
+        };
+
+        assert_eq!(
+            to_incoming(&quoting, &arrival_reading(&raw, true))
+                .safety
+                .level,
+            crate::service::safety::Safety::Ordinary
+        );
+    }
+
+    #[test]
+    fn test_a_check_says_which_rows_it_wrote() {
+        // What the link check needs to reach POP mail at all. Without it there
+        // is no way to say which of the folder's messages are the new ones, so
+        // either every message is looked at again on every check or none is.
+        let raw = raw_message("Subject: One\r\nFrom: ada@example.com", "Text.");
+        let (cache, folder_id) = a_cache();
+
+        let first = run(
+            &Scripted::holding(&[(1, "aaa", &raw), (2, "bbb", &raw)]),
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("the first check runs");
+
+        assert_eq!(first.written.len(), 2);
+        for row in &first.written {
+            assert!(
+                cache.get_message(*row).expect("the lookup").is_some(),
+                "a row was reported that is not there"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_check_that_downloaded_nothing_reports_no_rows() {
+        // Mail already here contributes none, so nothing is looked at twice.
+        let raw = raw_message("Subject: One\r\nFrom: ada@example.com", "Text.");
+        let (cache, folder_id) = a_cache();
+        let two = [(1, "aaa", raw.as_slice()), (2, "bbb", raw.as_slice())];
+        run(
+            &Scripted::holding(&two),
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("the first check runs");
+
+        let second = run(
+            &Scripted::holding(&two),
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("the second check runs");
+
+        assert!(second.written.is_empty(), "{:?}", second.written);
     }
 
     /// Housekeeping that clears the server after a fortnight.
@@ -859,10 +1232,14 @@ mod tests {
             .expect("a runtime")
             .block_on(sync(
                 &controller,
-                &cache,
-                folder_id,
+                &Landing {
+                    cache: &cache,
+                    account_id: "acct",
+                    folder_id,
+                },
                 Housekeeping::CAUTIOUS,
                 false,
+                true,
                 Utc::now(),
             ));
 
@@ -1152,6 +1529,54 @@ mod tests {
             stored,
             chrono::DateTime::parse_from_rfc3339("2026-07-20T10:00:00+00:00")
                 .expect("the sender's")
+        );
+    }
+
+    #[test]
+    fn test_a_message_moved_out_of_the_inbox_is_not_downloaded_again() {
+        // What deleting POP mail means. Moving a message to the trash takes it
+        // out of the inbox, and a check that only looks in the inbox concludes
+        // it never arrived, so the next check puts it straight back and nobody
+        // can delete anything.
+        let raw = raw_message("Subject: One\r\nFrom: ada@example.com", "Text.");
+        let (cache, folder_id) = a_cache();
+        run(
+            &Scripted::holding(&[(1, "aaa", &raw)]),
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("the first check runs");
+        let trash = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Trash".into(),
+                path: "\u{1}Local/Trash".into(),
+                folder_type: "Trash".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a trash folder");
+        let row = cache
+            .message_row_for_uid(folder_id, 1)
+            .expect("the lookup")
+            .expect("the downloaded message");
+        cache.move_message(row, trash).expect("the move");
+
+        let again = run(
+            &Scripted::holding(&[(1, "aaa", &raw)]),
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("the second check runs");
+
+        assert_eq!(
+            again.fetched, 0,
+            "mail that was moved out of the inbox was downloaded again"
         );
     }
 

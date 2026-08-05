@@ -8,6 +8,82 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Delete works on a POP account.** Pressing Delete on mail collected over POP
+  refused, and the reason it gave was about a mail server setting that had
+  nothing to do with it. Delete now moves the message to that account's Trash
+  folder on this computer, and Delete again from the Trash, or Shift+Delete
+  anywhere, takes it off the computer.
+
+  Nothing is removed from the POP server by this. Mail stays there until the
+  account's own "Leave mail on the server" setting takes it, which is unchanged
+  and still leaves everything by default. The wording says "on this computer"
+  every time for that reason.
+
+  The account dialog has a new box, "Let me delete mail on this computer",
+  ticked unless you untick it. Somebody who has told the account to clear the
+  POP server after downloading has this computer as the only copy, and this is
+  how they say Delete must not be the thing that loses it. Unticking it makes
+  Delete say so, by name, instead of blaming a server.
+
+  Known limitation: none of this has run against a live POP server.
+
+- **A message deleted on a POP account stays deleted.** Checking for mail asked
+  one folder what had already been downloaded, so anything moved to the Trash
+  looked like mail that had never arrived and came straight back on the next
+  check. It now asks across the whole account, including messages that have been
+  deleted. The same fix means the "remove from the server after so many days"
+  setting keeps counting for mail that has left the inbox, where before that
+  mail silently never left the server at all.
+
+- **Every account has an Outbox you can open.** The folders that live on this
+  computer were only created part-way through checking for mail over POP, so an
+  IMAP account never got an Outbox at all and a POP account only got its folders
+  after the first check that worked. They are now made for every account when it
+  is read on the way in. What the Outbox shows is the send queue itself, which
+  is still the one source of truth: a message waiting appears there, says what a
+  failed attempt reported, leaves when it goes, and Delete in that folder takes
+  it out of the queue.
+
+- **The open Outbox is read again when sending finishes.** Somebody watching it
+  saw rows for mail that had already gone until they left the folder and came
+  back.
+
+- **A POP account's Junk folder can be opened.** It has existed in the database
+  since local folders shipped and has never been reachable: the rule that keeps
+  a server's spam folder from being downloaded was also being applied to folders
+  on this computer, which have nothing to download.
+
+- **Mail collected over POP is read for signs of an impersonation.** Only the
+  message's headers were looked at, so a link whose words and address disagree,
+  an address made to look like somebody else's, or pressure to act at once
+  produced a warning on an IMAP account and silence on a POP one, with nothing
+  saying which account you were on. The same reading now runs on both, from the
+  message the download already has in hand.
+
+  Links are also now checked against Google's lists on POP mail, if you have
+  switched that on. It is off unless you ask for it and unchanged in what it
+  sends.
+
+  This will produce some false positives. The reading can never call something
+  a phishing attempt on its own: the strongest word it uses is "suspicious",
+  which is the existing guard against a warning becoming the thing people click
+  past.
+
+- **A setting for that reading: "Read each message on this computer and mark
+  suspicious ones".** In Settings, then Advanced. On unless you turn it off,
+  because it sends nothing anywhere and it is what mail arriving over IMAP has
+  had all along. It sits beside the Google Safe Browsing box and is deliberately
+  a separate switch: that one can put four bytes of a link on the wire, and
+  sharing a switch would mean agreeing to it to get a check that touches
+  nothing. `docs/privacy.md` says what each of them does.
+
+### Fixed
+
+- **A refused delete no longer says the change was undone.** The row only leaves
+  the list once the server has agreed, so when a delete failed nothing had been
+  put back. Marking read and flagging do change the row first, and those still
+  say so.
+
 - **A reply now lands in the conversation it answers.** Every reply this program
   sent started a new conversation in the recipient's client, because the two
   headers that say which message is being answered were never written. They are

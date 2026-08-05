@@ -676,6 +676,14 @@ pub fn cached_folder_syncs(
     facts: &StoredFacts,
     keeps_subscriptions: bool,
 ) -> bool {
+    // A folder on this computer is always there to be opened. Every rule below
+    // is about what to download from a server, and this folder has no server
+    // behind it: the junk rule in particular was keeping a POP account's own
+    // Junk folder out of its tree, where a filter could file into it and
+    // nobody could reach it.
+    if crate::application::local_folders::is_local(&folder.path) {
+        return true;
+    }
     if let Some(wanted) = chosen.get(&folder.path) {
         return *wanted;
     }
@@ -1909,6 +1917,43 @@ mod tests {
             &FolderChoices::new(),
             &keeps_none,
             keeps_subscriptions_stored(&keeps_none)
+        ));
+    }
+
+    #[test]
+    fn test_a_folder_on_this_computer_is_always_in_the_tree() {
+        // The junk rule is about not downloading a server's spam folder, which
+        // costs the whole of it. A folder on this computer has nothing to
+        // download, and a POP account's Junk folder has existed in the database
+        // since local folders shipped and has never once been reachable: a
+        // filter could file into it and nobody could open it.
+        let junk = cached(
+            &crate::application::local_folders::LocalFolder {
+                kind: FolderType::Spam,
+                name: "Junk",
+            }
+            .path(),
+            FolderType::Spam,
+        );
+
+        assert!(cached_folder_syncs(
+            &junk,
+            &FolderChoices::new(),
+            &StoredFacts::new(),
+            false
+        ));
+    }
+
+    #[test]
+    fn test_a_spam_folder_on_a_server_is_still_left_alone() {
+        // The other half, and the reason the rule exists: downloading a
+        // server's junk folder costs the whole of it and hands somebody a
+        // mailbox of mail they never asked for.
+        assert!(!cached_folder_syncs(
+            &cached("[Gmail]/Spam", FolderType::Spam),
+            &FolderChoices::new(),
+            &StoredFacts::new(),
+            false
         ));
     }
 

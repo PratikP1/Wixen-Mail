@@ -446,6 +446,13 @@ pub enum UIUpdate {
     ContactGroupsLoaded(Vec<ContactGroupItem>),
     /// A message was deleted from the list (cache_id)
     MessageDeletedFromCache(i64),
+    /// A message is no longer in the folder on screen (cache_id).
+    ///
+    /// The row goes, and the database is left alone. Separate from the variant
+    /// above because that one deletes the message as well, which is wrong for
+    /// one that has been moved somewhere else: a message put in the Trash on
+    /// this computer would be marked as deleted the moment it arrived there.
+    MessageLeftTheFolder(i64),
     /// A message's read flag was toggled in the cache (cache_id, new_read_state)
     MessageReadToggled(i64, bool),
     /// A sync finished, so the inbox can be watched again.

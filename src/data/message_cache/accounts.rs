@@ -26,9 +26,10 @@ impl MessageCache {
               enabled, check_interval_minutes, provider, last_sync, color,
               created_at, updated_at,
               protocol, pop_server, pop_port, pop_use_tls,
-              pop_leave_on_server, pop_remove_after_days, sender_name)
+              pop_leave_on_server, pop_remove_after_days, sender_name,
+              allow_deleting_here)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                     ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
+                     ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
                 params![
                     &account.id,
                     &account.name,
@@ -57,7 +58,8 @@ impl MessageCache {
                     &account.pop_use_tls,
                     &account.pop_leave_on_server,
                     &account.pop_remove_after_days,
-                    &account.sender_name
+                    &account.sender_name,
+                    &account.allow_deleting_here
                 ],
             )
             .map_err(|e| Error::Other(format!("Failed to save account: {}", e)))?;
@@ -74,7 +76,8 @@ impl MessageCache {
                     smtp_server, smtp_port, smtp_use_tls, username, password,
                     enabled, check_interval_minutes, provider, last_sync, color,
                     protocol, pop_server, pop_port, pop_use_tls,
-                    pop_leave_on_server, pop_remove_after_days, sender_name
+                    pop_leave_on_server, pop_remove_after_days, sender_name,
+                    allow_deleting_here
              FROM accounts
              ORDER BY created_at",
             )
@@ -119,6 +122,7 @@ impl MessageCache {
                         pop_leave_on_server: row.get(20)?,
                         pop_remove_after_days: row.get(21)?,
                         sender_name: row.get(22)?,
+                        allow_deleting_here: row.get(23)?,
                     },
                 ))
             })
@@ -260,6 +264,59 @@ mod tests {
         account.imap_server = "imap.example.com".to_string();
         account.smtp_server = "smtp.example.com".to_string();
         account
+    }
+
+    #[test]
+    fn test_whether_deleting_is_allowed_survives_a_trip_through_the_database() {
+        // Both ways round, deliberately. A column that always reads back as
+        // allowed is the defect this project has paid for six times: the field
+        // is built, nothing checks what comes back, and the answer somebody
+        // chose is quietly the other one.
+        let cache = a_cache("deleting_round_trip");
+        let mut yes = an_account("yes", "yes@example.com", "one");
+        yes.allow_deleting_here = true;
+        let mut no = an_account("no", "no@example.com", "two");
+        no.allow_deleting_here = false;
+
+        cache.save_account(&yes).expect("the first account saves");
+        cache.save_account(&no).expect("the second account saves");
+
+        let stored = cache.load_accounts().expect("the accounts load");
+        let find = |id: &str| {
+            stored
+                .iter()
+                .find(|a| a.id == id)
+                .unwrap_or_else(|| panic!("{id} was not stored"))
+                .allow_deleting_here
+        };
+        assert!(find("yes"), "an account that may delete came back refusing");
+        assert!(!find("no"), "an account that said no came back allowed");
+    }
+
+    #[test]
+    fn test_an_account_stored_before_this_setting_existed_may_still_delete_its_mail() {
+        // An older database has no column for it. Reading that as "no" would
+        // take away a delete from every account already set up, for a choice
+        // nobody was ever offered.
+        let cache = a_cache("deleting_older_database");
+        cache
+            .conn
+            .execute(
+                "INSERT INTO accounts
+                 (id, name, email, imap_server, imap_port, imap_use_tls,
+                  smtp_server, smtp_port, smtp_use_tls, username, password,
+                  enabled, check_interval_minutes, color, created_at, updated_at)
+                 VALUES ('old', 'Old', 'old@example.com', 'imap.example.com', '993', 1,
+                         'smtp.example.com', '465', 1, 'old@example.com', '',
+                         1, 5, '#4A90E2', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')",
+                [],
+            )
+            .expect("a row written the way an older version wrote one");
+
+        let stored = cache.load_accounts().expect("the accounts load");
+
+        let old = stored.iter().find(|a| a.id == "old").expect("the old row");
+        assert!(old.allow_deleting_here);
     }
 
     /// What the password column holds, straight out of the table.
@@ -631,6 +688,7 @@ mod tests {
             pop_use_tls: true,
             pop_leave_on_server: true,
             pop_remove_after_days: 0,
+            allow_deleting_here: true,
         };
 
         cache.save_account(&account).unwrap();
@@ -668,6 +726,7 @@ mod tests {
             pop_use_tls: true,
             pop_leave_on_server: true,
             pop_remove_after_days: 0,
+            allow_deleting_here: true,
         };
 
         cache.save_account(&account2).unwrap();

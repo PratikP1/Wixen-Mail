@@ -39,6 +39,24 @@ stated here rather than left to be discovered.
 Nothing else. There is no server belonging to this project, so there is nowhere for anything
 to go even by accident.
 
+## Reading your messages to mark suspicious ones
+
+On by default, in Settings, then Advanced, under "Checking whether a message is what it says
+it is". It is on by default because it sends nothing to anybody.
+
+Wixen Mail reads each message on your computer and marks it when something looks wrong: a link
+whose words and address disagree, an address made to look like somebody else's, or pressure to
+act at once. The reading happens entirely on your computer, over text that is already there.
+No account is needed and no network request is made. The most it does is put a word in the
+safety column and say it when you arrive on the message.
+
+Turning it off means those messages arrive with nothing said about them. It does not turn off
+what your mail provider already said about a message: that is read from the message's own
+headers, costs nothing, and is not a setting.
+
+This is a different setting from the one below, deliberately. This one sends nothing. The one
+below can put four bytes of a link on the wire, so it is off unless you ask for it.
+
 ## Link checking, if you switch it on
 
 Off by default, in Settings, then Advanced. Here is exactly what it does, because this is the

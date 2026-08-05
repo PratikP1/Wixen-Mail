@@ -100,6 +100,16 @@ pub struct Account {
     /// cleared eventually fills, and the alternative to this is somebody
     /// finding out when mail stops arriving.
     pub pop_remove_after_days: u32,
+
+    /// Whether Delete may take mail out of this account's folders here.
+    ///
+    /// On unless somebody turns it off. It never touches a server: mail on this
+    /// computer moves to the account's own Trash folder, and Shift+Delete takes
+    /// it off the machine. Somebody who has told the account to remove mail
+    /// from the POP server after downloading it has this computer as the only
+    /// copy, and turning this off is how they say Delete must not be the thing
+    /// that loses it.
+    pub allow_deleting_here: bool,
 }
 
 /// Everything about an account except its secrets.
@@ -234,6 +244,7 @@ impl Account {
             pop_use_tls: true,
             pop_leave_on_server: true,
             pop_remove_after_days: 0,
+            allow_deleting_here: true,
         }
     }
 
@@ -354,6 +365,7 @@ impl Account {
             pop_use_tls: true,
             pop_leave_on_server: true,
             pop_remove_after_days: 0,
+            allow_deleting_here: true,
         }
     }
 }
@@ -503,6 +515,17 @@ mod tests {
         assert!(account.enabled);
         assert_eq!(account.check_interval_minutes, 5);
         assert!(!account.use_oauth);
+    }
+
+    #[test]
+    fn test_a_new_account_may_delete_its_own_mail() {
+        // Deleting mail is what everybody expects Delete to do, so the answer
+        // for somebody who has never seen this setting is yes. It only ever
+        // moves mail between folders on this computer, so the cautious answer
+        // and the expected answer are the same one here.
+        let account = Account::new("Test".to_string(), "test@example.com".to_string());
+
+        assert!(account.allow_deleting_here);
     }
 
     #[test]
