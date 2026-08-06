@@ -852,8 +852,18 @@ impl CalendarEventItem {
 
     /// The stretch of calendar the list shows, counted from today.
     pub fn the_window_now() -> (chrono::NaiveDate, chrono::NaiveDate) {
+        Self::the_window_around(chrono::Utc::now().date_naive())
+    }
+
+    /// The same stretch, counted from a day handed in.
+    ///
+    /// Split from the clock the way `date_display::format_for_list` already
+    /// takes `now`, so the arithmetic can be held to an exact pair of dates by
+    /// a test with no clock in it. Reading the clock inside the thing under
+    /// test leaves only relative assertions available, and a relative
+    /// assertion cannot tell six months back from six months back and a day.
+    fn the_window_around(today: chrono::NaiveDate) -> (chrono::NaiveDate, chrono::NaiveDate) {
         use crate::application::occurrences::{HOW_FAR_BACK, HOW_FAR_FORWARD};
-        let today = chrono::Utc::now().date_naive();
         (
             today - chrono::Duration::days(HOW_FAR_BACK),
             today + chrono::Duration::days(HOW_FAR_FORWARD),
@@ -1573,6 +1583,54 @@ mod tests {
         // finds the event it belongs to.
         assert!(rows.iter().all(|row| row.id == "e1"));
         assert!(rows.iter().all(|row| row.repeats == "every week"));
+    }
+
+    #[test]
+    fn test_the_calendar_window_reaches_back_and_forward_around_today() {
+        // The stretch of days the calendar panel is built over. Nothing looked
+        // at it, and every way of getting it wrong ends in the same place: the
+        // panel is built, the list is empty, and nothing says why. Both ends
+        // at the same day gives a window one day wide in 1970. Counting
+        // forward at both ends hides today and the next five months and shows
+        // only what is at least half a year out. Counting back at both ends
+        // puts the far end before the near one and nothing can fall inside it.
+        //
+        // Deliberately relational rather than an exact pair of dates. Reading
+        // the clock a second time here would give a date a day apart whenever
+        // the two reads straddle midnight UTC, which is the middle of the
+        // working day in some places, and the test would flake there and
+        // nowhere else. The exact pair is pinned against a fixed date in
+        // `test_the_calendar_window_is_six_months_back_and_a_year_on`, which
+        // has no clock in it at all. Do not "improve" this one into that one.
+        let today = chrono::Utc::now().date_naive();
+
+        let (from, to) = CalendarEventItem::the_window_now();
+
+        assert_eq!(
+            (to - from).num_days(),
+            crate::application::occurrences::HOW_FAR_BACK
+                + crate::application::occurrences::HOW_FAR_FORWARD,
+            "the window is {from} to {to}"
+        );
+        assert!(
+            from < today,
+            "the window starts at {from}, not before today"
+        );
+        assert!(today < to, "the window ends at {to}, not after today");
+    }
+
+    #[test]
+    fn test_the_calendar_window_is_six_months_back_and_a_year_on() {
+        // The exact pair, worked out by hand from a fixed day rather than read
+        // back off the code. 2026 is not a leap year, so 180 days before
+        // 26 July is 27 January, and 365 days after it is the same date a year
+        // on.
+        let (from, to) = CalendarEventItem::the_window_around(
+            chrono::NaiveDate::from_ymd_opt(2026, 7, 26).expect("26 July 2026 is a real date"),
+        );
+
+        assert_eq!(from, chrono::NaiveDate::from_ymd_opt(2026, 1, 27).unwrap());
+        assert_eq!(to, chrono::NaiveDate::from_ymd_opt(2027, 7, 26).unwrap());
     }
 
     #[test]
