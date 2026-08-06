@@ -358,46 +358,66 @@ fn palette_for(setting: &str, system_is_dark: bool, high_contrast: bool) -> Opti
 fn windows_high_contrast() -> bool {
     #[cfg(target_os = "windows")]
     {
-        #[repr(C)]
-        struct HighContrast {
-            size: u32,
-            flags: u32,
-            scheme: *mut u16,
-        }
-        const SPI_GETHIGHCONTRAST: u32 = 0x0042;
-
-        #[link(name = "user32")]
-        unsafe extern "system" {
-            fn SystemParametersInfoW(
-                action: u32,
-                param: u32,
-                data: *mut core::ffi::c_void,
-                update: u32,
-            ) -> i32;
-        }
-
-        let mut info = HighContrast {
-            size: size_of::<HighContrast>() as u32,
-            flags: 0,
-            scheme: std::ptr::null_mut(),
-        };
-        // Safe: the struct is the shape the API documents, its size field is
-        // set as the API requires, and nothing is read back unless the call
-        // reported success.
-        let ok = unsafe {
-            SystemParametersInfoW(
-                SPI_GETHIGHCONTRAST,
-                size_of::<HighContrast>() as u32,
-                (&raw mut info).cast(),
-                0,
-            )
-        };
-        high_contrast_from(ok, info.flags)
+        let (ok, flags) = ask_windows_about_high_contrast();
+        high_contrast_from(ok, flags)
     }
     #[cfg(not(target_os = "windows"))]
     {
         false
     }
+}
+
+/// Put the question to Windows, and answer with what came back untouched.
+///
+/// Whether the call reported success, and the flags word it filled in. Holds no
+/// decision, the way `date_display::read_locale` holds none: the reading is
+/// [`high_contrast_from`], which is compiled and tested everywhere.
+///
+/// Split out so a test can say the call still works. Everything about this call
+/// that can be wrong is invisible from its answer: the struct has a pointer in
+/// it, so its size differs between 32 and 64 bit builds and the API rejects the
+/// call outright if the size field disagrees with what it was handed. A rejected
+/// call answers zero, [`high_contrast_from`] correctly reads that as "no
+/// answer", and the palette stays in charge forever. That is our colours painted
+/// over the colours of somebody who turned high contrast on because nothing else
+/// is legible to them, and it would look exactly like working code.
+#[cfg(target_os = "windows")]
+fn ask_windows_about_high_contrast() -> (i32, u32) {
+    #[repr(C)]
+    struct HighContrast {
+        size: u32,
+        flags: u32,
+        scheme: *mut u16,
+    }
+    const SPI_GETHIGHCONTRAST: u32 = 0x0042;
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn SystemParametersInfoW(
+            action: u32,
+            param: u32,
+            data: *mut core::ffi::c_void,
+            update: u32,
+        ) -> i32;
+    }
+
+    let mut info = HighContrast {
+        size: size_of::<HighContrast>() as u32,
+        flags: 0,
+        scheme: std::ptr::null_mut(),
+    };
+    // Safe: the struct is the shape the API documents, its size field is
+    // set as the API requires, and nothing is read back unless the call
+    // reported success.
+    let ok = unsafe {
+        SystemParametersInfoW(
+            SPI_GETHIGHCONTRAST,
+            size_of::<HighContrast>() as u32,
+            (&raw mut info).cast(),
+            0,
+        )
+    };
+    (ok, info.flags)
 }
 
 /// The one bit in that flags word that says high contrast is on.
@@ -491,6 +511,46 @@ mod tests {
         assert!(red > blue, "red {red:.2} is not above blue {blue:.2}");
     }
 
+    /// The neighbouring bit: a high contrast scheme is available, as opposed to
+    /// in use. Windows sets it on any desktop install and leaves it set when
+    /// somebody switches high contrast on.
+    const HCF_AVAILABLE: u32 = 0x0000_0002;
+
+    /// The question to Windows really is asked and really is answered.
+    ///
+    /// Everything that can be wrong with this call is invisible from its
+    /// answer. The struct carries a pointer, so it is a different size in a 32
+    /// and a 64 bit build, and Windows refuses the call outright when the size
+    /// field disagrees with the struct it was handed. A refused call answers
+    /// zero, which is correctly read as "no answer", and the palette then stays
+    /// in charge for good. Somebody running high contrast gets our colours
+    /// painted over theirs and nothing anywhere says so.
+    ///
+    /// This asserts the call succeeded and that Windows filled the word in. It
+    /// must never assert anything about `HCF_HIGHCONTRASTON`. That bit is the
+    /// state of the machine running the suite, so a test that reads it goes red
+    /// the moment Pratik switches high contrast on to do an accessibility pass,
+    /// which is the one time the suite must not be lying to him. `HCF_AVAILABLE`
+    /// is a different kind of fact: it says the platform has the feature, and it
+    /// stays set whether high contrast is on or off.
+    ///
+    /// What it does not prove: nothing at all about what a person running high
+    /// contrast sees. Only a pass with it switched on answers that.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_windows_still_answers_when_asked_about_high_contrast() {
+        let (ok, flags) = ask_windows_about_high_contrast();
+
+        assert!(
+            ok != 0,
+            "Windows refused the high contrast question, so we would never know it was on"
+        );
+        assert!(
+            flags & HCF_AVAILABLE != 0,
+            "the flags word came back as {flags:#010x}, which does not name a scheme as available"
+        );
+    }
+
     #[test]
     fn test_a_failed_question_to_windows_is_not_read_as_high_contrast() {
         // When the call reports failure the flags word was never filled in, so
@@ -506,7 +566,6 @@ mod tests {
         // available rather than in use. Reading the word as a whole, or with
         // the wrong operator, either paints over somebody's high contrast
         // colours or refuses to paint for everybody else.
-        const HCF_AVAILABLE: u32 = 0x0000_0002;
         assert!(!high_contrast_from(1, 0));
         assert!(!high_contrast_from(1, HCF_AVAILABLE));
         assert!(high_contrast_from(1, HCF_HIGHCONTRASTON | HCF_AVAILABLE));
