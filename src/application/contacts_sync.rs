@@ -3860,6 +3860,11 @@ mod tests {
         accepts_a_contact: bool,
         accepts_a_change: bool,
         the_account_is_read_only: bool,
+        /// The version marker Outlook puts on what it hands back, the way the
+        /// Google script hands back "etag-after". Nothing here gave one until
+        /// this existed, so both markers came back empty and no test could see
+        /// whether the one that arrived was kept.
+        the_version_it_gives_back: Option<String>,
         sent: std::cell::RefCell<Vec<MsGraphContact>>,
         changed: std::cell::RefCell<Vec<(String, MsGraphContact)>>,
     }
@@ -3889,6 +3894,7 @@ mod tests {
             }
             Ok(MsGraphContact {
                 id: "AAMkNew".to_string(),
+                odata_etag: self.the_version_it_gives_back.clone(),
                 ..contact.clone()
             })
         }
@@ -3912,6 +3918,7 @@ mod tests {
             }
             Ok(MsGraphContact {
                 id: provider_contact_id.to_string(),
+                odata_etag: self.the_version_it_gives_back.clone(),
                 ..contact.clone()
             })
         }
@@ -4679,6 +4686,453 @@ mod tests {
                 .and_then(|i| i.provider_version.as_deref()),
             Some("etag-after")
         );
+    }
+
+    #[tokio::test]
+    async fn test_a_google_sync_writes_down_the_marker_for_the_next_one() {
+        // Nothing read this back. Losing the marker turns every sync after it
+        // into a read of the whole address book, which is the thing the marker
+        // exists to avoid, and it is silent: the contacts still arrive.
+        let cache = a_cache("google_marker_written");
+        let google = ScriptedGoogle::default();
+
+        sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+            .await
+            .expect("a sync");
+
+        let state = cache
+            .get_sync_state(AN_ACCOUNT, CONTACTS_SYNC, GOOGLE_ADDRESS_BOOK)
+            .expect("the marker to be readable")
+            .expect("a marker to have been written down");
+        assert_eq!(state.sync_token.as_deref(), Some(A_MARKER_FOR_NEXT_TIME));
+        assert!(
+            state.last_full_sync.is_some(),
+            "a read of the whole address book was not recorded as one"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_outlook_sync_writes_down_the_marker_for_the_next_one() {
+        let cache = a_cache("microsoft_marker_written");
+        let microsoft = ScriptedMicrosoft::default();
+
+        sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        let state = cache
+            .get_sync_state(AN_ACCOUNT, CONTACTS_SYNC, MICROSOFT_ADDRESS_BOOK)
+            .expect("the marker to be readable")
+            .expect("a marker to have been written down");
+        assert_eq!(state.delta_link.as_deref(), Some(A_MARKER_FOR_NEXT_TIME));
+        assert!(
+            state.last_full_sync.is_some(),
+            "a read of the whole address book was not recorded as one"
+        );
+    }
+
+    // ── The real clients, reached through the trait a sync uses ─────────────
+    //
+    // Every sync test above hands the sync a script, which proves the deciding
+    // and nothing about the two impl blocks that join a sync to a real client.
+    // Those bodies are one line each and each line could be replaced by a
+    // constant without a single test going red.
+    //
+    // Both clients have inherent methods with these names and signatures, so
+    // `client.list_contacts(..)` resolves to the inherent one and never enters
+    // the body under test. Every call below names the trait outright, which is
+    // the only thing that reaches it.
+
+    #[tokio::test]
+    async fn test_the_google_address_book_a_sync_uses_really_reads_google() {
+        let (address, listening) = crate::common::answering::answering(
+            "200 OK",
+            "application/json",
+            "{\"connections\":[{\"resourceName\":\"people/c1\",\"etag\":\"\\\"e1\\\"\",\
+               \"names\":[{\"displayName\":\"Alice Smith\"}]}],\
+             \"nextSyncToken\":\"marker-9\"}"
+                .to_string(),
+        )
+        .await;
+        let client = GoogleApiClient::new().pointed_at(&format!("http://{address}"));
+
+        let (people, marker) =
+            <GoogleApiClient as GoogleContactBook>::list_contacts(&client, "a token", None)
+                .await
+                .expect("the address book to be read");
+
+        let request = crate::common::answering::heard(listening, "the contact list")
+            .await
+            .expect("a request");
+        assert!(
+            crate::common::answering::asked_for(&request)
+                .starts_with("GET /people/me/connections?"),
+            "{request}"
+        );
+        assert_eq!(people.len(), 1);
+        assert_eq!(people[0].resource_name, "people/c1");
+        assert_eq!(marker.as_deref(), Some("marker-9"));
+    }
+
+    #[tokio::test]
+    async fn test_the_google_address_book_a_sync_uses_really_sends_a_new_contact() {
+        let (address, listening) = crate::common::answering::answering(
+            "200 OK",
+            "application/json",
+            "{\"resourceName\":\"people/new-one\",\"etag\":\"\\\"e-created\\\"\"}".to_string(),
+        )
+        .await;
+        let client = GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}"));
+        let grace = GooglePerson {
+            names: vec![GoogleName {
+                display_name: "Grace Hopper".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let created =
+            <GoogleApiClient as GoogleContactBook>::create_contact(&client, "a token", &grace)
+                .await
+                .expect("the contact to be created");
+
+        let request = crate::common::answering::heard(listening, "a new contact")
+            .await
+            .expect("a request");
+        assert_eq!(
+            crate::common::answering::asked_for(&request),
+            "POST /people:createContact",
+            "{request}"
+        );
+        assert_eq!(created.resource_name, "people/new-one");
+        assert_eq!(created.etag, "\"e-created\"");
+    }
+
+    #[tokio::test]
+    async fn test_the_google_address_book_a_sync_uses_really_sends_a_change() {
+        let (address, listening) = crate::common::answering::answering(
+            "200 OK",
+            "application/json",
+            "{\"resourceName\":\"people/c1\",\"etag\":\"\\\"e-after\\\"\"}".to_string(),
+        )
+        .await;
+        let client = GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        let changed = <GoogleApiClient as GoogleContactBook>::update_contact(
+            &client,
+            "a token",
+            "people/c1",
+            &GooglePerson::default(),
+        )
+        .await
+        .expect("the change to be sent");
+
+        let request = crate::common::answering::heard(listening, "a change")
+            .await
+            .expect("a request");
+        assert!(
+            crate::common::answering::asked_for(&request)
+                .starts_with("PATCH /people/c1:updateContact?"),
+            "{request}"
+        );
+        assert_eq!(changed.resource_name, "people/c1");
+        assert_eq!(changed.etag, "\"e-after\"");
+    }
+
+    #[tokio::test]
+    async fn test_the_outlook_address_book_a_sync_uses_really_reads_outlook() {
+        let (address, listening) = crate::common::answering::answering(
+            "200 OK",
+            "application/json",
+            "{\"value\":[{\"id\":\"AAMkAGI2\",\"displayName\":\"Alice Smith\"}],\
+             \"@odata.deltaLink\":\"https://graph.example.com/delta?token=marker-9\"}"
+                .to_string(),
+        )
+        .await;
+        let client = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let (contacts, marker) =
+            <MsGraphClient as MicrosoftContactBook>::list_contacts(&client, "a token", None)
+                .await
+                .expect("the address book to be read");
+
+        let request = crate::common::answering::heard(listening, "the contact list")
+            .await
+            .expect("a request");
+        assert!(
+            crate::common::answering::asked_for(&request).starts_with("GET /me/contacts/delta?"),
+            "{request}"
+        );
+        assert_eq!(contacts.len(), 1);
+        assert_eq!(contacts[0].id, "AAMkAGI2");
+        assert_eq!(
+            marker.as_deref(),
+            Some("https://graph.example.com/delta?token=marker-9")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_outlook_address_book_a_sync_uses_really_sends_a_new_contact() {
+        let (address, listening) = crate::common::answering::answering(
+            "200 OK",
+            "application/json",
+            "{\"id\":\"AAMkNewOne\",\"@odata.etag\":\"W/\\\"v7\\\"\"}".to_string(),
+        )
+        .await;
+        let client = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+        let grace = MsGraphContact {
+            display_name: "Grace Hopper".to_string(),
+            ..Default::default()
+        };
+
+        let created =
+            <MsGraphClient as MicrosoftContactBook>::create_contact(&client, "a token", &grace)
+                .await
+                .expect("the contact to be created");
+
+        let request = crate::common::answering::heard(listening, "a new contact")
+            .await
+            .expect("a request");
+        assert_eq!(
+            crate::common::answering::asked_for(&request),
+            "POST /me/contacts",
+            "{request}"
+        );
+        assert_eq!(created.id, "AAMkNewOne");
+        assert_eq!(created.odata_etag.as_deref(), Some("W/\"v7\""));
+    }
+
+    #[tokio::test]
+    async fn test_the_outlook_address_book_a_sync_uses_really_sends_a_change() {
+        let (address, listening) = crate::common::answering::answering(
+            "200 OK",
+            "application/json",
+            "{\"id\":\"AAMkAGI2\",\"@odata.etag\":\"W/\\\"v8\\\"\"}".to_string(),
+        )
+        .await;
+        let client = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        let changed = <MsGraphClient as MicrosoftContactBook>::update_contact(
+            &client,
+            "a token",
+            "AAMkAGI2",
+            &MsGraphContact::default(),
+        )
+        .await
+        .expect("the change to be sent");
+
+        let request = crate::common::answering::heard(listening, "a change")
+            .await
+            .expect("a request");
+        assert_eq!(
+            crate::common::answering::asked_for(&request),
+            "PATCH /me/contacts/AAMkAGI2",
+            "{request}"
+        );
+        assert_eq!(changed.id, "AAMkAGI2");
+        assert_eq!(changed.odata_etag.as_deref(), Some("W/\"v8\""));
+    }
+
+    /// What one address book last said this contact's version was.
+    fn the_version_kept_for(
+        cache: &MessageCache,
+        name: &str,
+        address_book: AddressBook,
+    ) -> Option<String> {
+        the_contact_stored(cache, name)
+            .known_to
+            .iter()
+            .find(|identity| identity.address_book == address_book)
+            .and_then(|identity| identity.provider_version.clone())
+    }
+
+    #[tokio::test]
+    async fn test_the_version_outlook_gives_back_after_a_change_is_kept_for_the_next_one() {
+        // The twin of the Google one. Outlook's marker was written in four
+        // places and read back by no test, so all four could have stopped
+        // storing it without anything going red.
+        let cache = a_cache("fan_out_version_ms");
+        a_contact_both_address_books_know_was_changed_here(&cache);
+        let microsoft = ScriptedMicrosoft {
+            accepts_a_change: true,
+            the_version_it_gives_back: Some("W/\"v9\"".to_string()),
+            ..Default::default()
+        };
+
+        sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            HowFarAChangeGoes::ToEveryAddressBookThatKnowsThem,
+        )
+        .await
+        .expect("a sync");
+
+        assert_eq!(
+            the_version_kept_for(&cache, "Alice Smith", AddressBook::Microsoft).as_deref(),
+            Some("W/\"v9\"")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_version_outlook_leaves_blank_does_not_wipe_the_one_already_kept() {
+        // A blank marker is Outlook saying nothing, not saying "no version".
+        // Storing the blank throws away the only thing that could ever be used
+        // to refuse a change made somewhere else in the meantime.
+        let cache = a_cache("fan_out_blank_version_ms");
+        let mut contact = a_local_contact("Alice Smith", "alice@example.com");
+        contact.id = "local-blank-version".to_string();
+        contact.source_provider = Some(MICROSOFT_ADDRESS_BOOK.to_string());
+        contact.pending = true;
+        contact.known_to = vec![ProviderIdentity {
+            address_book: AddressBook::Microsoft,
+            provider_contact_id: "AAMkAGI2".to_string(),
+            provider_version: Some("W/\"v1\"".to_string()),
+            change_is_waiting: true,
+        }];
+        cache
+            .save_contact(&contact)
+            .expect("a contact to be stored");
+        let microsoft = ScriptedMicrosoft {
+            accepts_a_change: true,
+            the_version_it_gives_back: Some(String::new()),
+            ..Default::default()
+        };
+
+        sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            HowFarAChangeGoes::ToEveryAddressBookThatKnowsThem,
+        )
+        .await
+        .expect("a sync");
+
+        assert_eq!(
+            the_version_kept_for(&cache, "Alice Smith", AddressBook::Microsoft).as_deref(),
+            Some("W/\"v1\""),
+            "a blank answer wiped the version that was already kept"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_read_from_outlook_keeps_the_version_it_arrived_with() {
+        let cache = a_cache("pull_keeps_the_version_ms");
+        a_marker_from_the_last_run(&cache, MICROSOFT_ADDRESS_BOOK);
+        a_stored_contact(
+            &cache,
+            "Alice Smith",
+            "alice@example.com",
+            "AAMkAGI2",
+            MICROSOFT_ADDRESS_BOOK,
+        );
+        let arrived = MsGraphContact {
+            odata_etag: Some("W/\"v2\"".to_string()),
+            ..a_microsoft_contact("AAMkAGI2", "Alice Smith", "alice@example.com")
+        };
+        let microsoft = ScriptedMicrosoft {
+            contacts: vec![arrived],
+            ..Default::default()
+        };
+
+        sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        assert_eq!(
+            the_version_kept_for(&cache, "Alice Smith", AddressBook::Microsoft).as_deref(),
+            Some("W/\"v2\"")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_sent_to_outlook_keeps_the_version_outlook_gave_it() {
+        let cache = a_cache("push_keeps_the_version_ms");
+        let mut typed_here = a_local_contact("Grace Hopper", "grace@example.com");
+        typed_here.pending = true;
+        cache
+            .save_contact(&typed_here)
+            .expect("a contact to be stored");
+        let microsoft = ScriptedMicrosoft {
+            accepts_a_contact: true,
+            the_version_it_gives_back: Some("W/\"v3\"".to_string()),
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        assert_eq!(result.created_remote, 1);
+        assert_eq!(
+            the_version_kept_for(&cache, "Grace Hopper", AddressBook::Microsoft).as_deref(),
+            Some("W/\"v3\"")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_another_address_book_already_knows_is_not_written_into_outlook_too() {
+        // The gate on the whole-address-book push. Read the wrong way round it
+        // writes into somebody's real Outlook address book every contact
+        // another address book already holds, which is duplicates, and every
+        // address this program harvested out of a message header, which is
+        // their whole mail history. The existing test could not see either,
+        // because its contact was not waiting to be sent.
+        let cache = a_cache("microsoft_no_push_for_a_contact_google_knows");
+        let mut known_to_google = a_local_contact("Alice Smith", "alice@example.com");
+        known_to_google.id = "local-known-to-google".to_string();
+        known_to_google.pending = true;
+        known_to_google.source_provider = Some(GOOGLE_ADDRESS_BOOK.to_string());
+        known_to_google.known_to = vec![ProviderIdentity {
+            address_book: AddressBook::Google,
+            provider_contact_id: "people/c1".to_string(),
+            provider_version: None,
+            change_is_waiting: false,
+        }];
+        cache
+            .save_contact(&known_to_google)
+            .expect("a contact to be stored");
+        let microsoft = ScriptedMicrosoft {
+            accepts_a_contact: true,
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        assert!(
+            microsoft.sent.borrow().is_empty(),
+            "a contact Google already holds was written into Outlook as well: {:?}",
+            microsoft.sent.borrow()
+        );
+        assert_eq!(result.created_remote, 0);
     }
 
     fn the_contact_stored(cache: &MessageCache, name: &str) -> ContactEntry {
