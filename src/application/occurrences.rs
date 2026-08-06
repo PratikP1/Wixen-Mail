@@ -696,6 +696,37 @@ mod tests {
     }
 
     #[test]
+    fn test_every_weekday_a_rule_can_name_is_read_as_the_day_it_names() {
+        // Every one of the seven, both the day it lands on and the sentence.
+        // The start is the Monday for all seven rows on purpose: a weekday this
+        // stopped recognising makes the whole rule unreadable, and the event
+        // then falls back to its own start day, so a row asserting only the day
+        // would still pass for Monday. Asserting the sentence as well is what
+        // makes a dropped weekday visible.
+        for (named, day, said) in [
+            ("MO", "2026-03-02 09:00", "every week on Monday"),
+            ("TU", "2026-03-03 09:00", "every week on Tuesday"),
+            ("WE", "2026-03-04 09:00", "every week on Wednesday"),
+            ("TH", "2026-03-05 09:00", "every week on Thursday"),
+            ("FR", "2026-03-06 09:00", "every week on Friday"),
+            ("SA", "2026-03-07 09:00", "every week on Saturday"),
+            ("SU", "2026-03-08 09:00", "every week on Sunday"),
+        ] {
+            let event = an_event(
+                "2026-03-02 09:00",
+                "2026-03-02 09:15",
+                Some(&format!("FREQ=WEEKLY;BYDAY={named}")),
+            );
+            let (from, to) = between("2026-03-02", "2026-03-08");
+
+            let shown = falls_on(&event, from, to);
+
+            assert_eq!(starts(&shown), [day], "for {named}");
+            assert_eq!(shown.how_often, said, "for {named}");
+        }
+    }
+
+    #[test]
     fn test_every_other_week_skips_the_week_between() {
         let event = an_event(
             "2026-03-05 09:00",
@@ -762,6 +793,52 @@ mod tests {
         assert_eq!(
             starts(&shown),
             ["2026-07-30 09:00", "2026-08-27 09:00", "2026-09-24 09:00"]
+        );
+    }
+
+    #[test]
+    fn test_a_fifth_weekday_rule_skips_the_months_that_have_no_fifth_one() {
+        // Only three months of 2026 have a fifth Tuesday. The months without
+        // one are skipped, never allowed to run on into the next month, or a
+        // meeting set for the fifth Tuesday turns up on the first one instead.
+        let event = an_event(
+            "2026-03-31 09:00",
+            "2026-03-31 10:00",
+            Some("FREQ=MONTHLY;BYDAY=5TU"),
+        );
+        let (from, to) = between("2026-03-01", "2026-09-30");
+
+        let shown = falls_on(&event, from, to);
+
+        assert_eq!(
+            starts(&shown),
+            ["2026-03-31 09:00", "2026-06-30 09:00", "2026-09-29 09:00"]
+        );
+    }
+
+    #[test]
+    fn test_the_second_to_last_weekday_of_the_month_is_counted_back_from_the_last_one() {
+        // Second to last rather than last, because counting back from the last
+        // one is arithmetically the same as landing on it when the ordinal is
+        // -1: nothing is added either way. Only an ordinal of -2 or beyond can
+        // tell the counting back from the landing.
+        let event = an_event(
+            "2026-06-23 09:00",
+            "2026-06-23 10:00",
+            Some("FREQ=MONTHLY;BYDAY=-2TU"),
+        );
+        let (from, to) = between("2026-06-01", "2026-09-30");
+
+        let shown = falls_on(&event, from, to);
+
+        assert_eq!(
+            starts(&shown),
+            [
+                "2026-06-23 09:00",
+                "2026-07-21 09:00",
+                "2026-08-18 09:00",
+                "2026-09-22 09:00",
+            ]
         );
     }
 
@@ -887,6 +964,12 @@ mod tests {
             "FREQ=MONTHLY;BYSETPOS=2;BYDAY=TU",
             "FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=15",
             "not a rule at all",
+            // A weekday written the way somebody says it rather than the two
+            // letters a rule uses, and a list with one good name in it. Taking
+            // either as a weekday would put the series on days of somebody
+            // else's choosing.
+            "FREQ=WEEKLY;BYDAY=SUN",
+            "FREQ=WEEKLY;BYDAY=MO,XX",
         ] {
             let event = an_event("2026-03-05 09:00", "2026-03-05 09:15", Some(unreadable));
             let (from, to) = window();
