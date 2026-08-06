@@ -31,7 +31,19 @@ exclude_re = [
     "fn fmt\\(",
 ]
 
-# The suite runs in about four seconds, so a mutant that takes much longer than
-# the baseline is one that hung rather than one that is slow.
+# A mutant that takes much longer than the baseline is one that hung rather
+# than one that is slow.
+#
+# The suite takes about 46 seconds, measured on 2026-08-06 with nothing else
+# running, and 57 in that same run's own baseline with a build going alongside
+# it. It used to say four seconds here, which was true when it was written and
+# was out by a factor of ten by the time anybody read it again. That number is
+# what these two settings are read against, so it is worth re-measuring rather
+# than trusting: `cargo test --all-targets` prints it.
+#
+# The whole-tree run of 2026-08-05 reported 81 timeouts, all in one file,
+# including pure string builders with no loop in them at all. Those were the
+# machine being busy, not code hanging. Lowering the multiplier, or excluding
+# the file, would have hidden the same thing again next time.
 timeout_multiplier = 5.0
 minimum_test_timeout = 60
