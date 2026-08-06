@@ -682,6 +682,74 @@ mod tests {
     }
 
     #[test]
+    fn test_a_copy_kept_here_names_everybody_it_was_copied_to() {
+        // Who else saw the message is part of what the sent copy is for, and
+        // for somebody reading the list by ear it is the only way to find out.
+        // Both halves, because an empty string here is not the same as
+        // nothing: it reads back as a copy sent to a person with no address.
+        let (cache, account) = a_cache(true);
+        let raw = with_headers(&["Cc: her@example.com, him@example.com"]);
+
+        keeping(&Refusing, &cache, &account, false, &raw);
+
+        assert_eq!(
+            the_only_row(&cache).cc.as_deref(),
+            Some("her@example.com, him@example.com"),
+            "the copy does not say who else it went to"
+        );
+
+        let (plain, plain_account) = a_cache(true);
+        keeping(&Refusing, &plain, &plain_account, false, &a_message());
+        assert_eq!(
+            the_only_row(&plain).cc,
+            None,
+            "a message copied to nobody stored an empty list of people"
+        );
+    }
+
+    #[test]
+    fn test_a_copy_of_a_message_that_carried_a_file_says_it_carried_one() {
+        // The flag the message list announces the row with. Getting it wrong
+        // either way misleads: an attachment nobody is told about, or one
+        // announced on a message that has none.
+        let (cache, account) = a_cache(true);
+        let with_a_file = concat!(
+            "From: me@example.com\r\n",
+            "To: you@example.com\r\n",
+            "Subject: The quarterly figures\r\n",
+            "Date: Tue, 4 Aug 2026 10:00:00 +0000\r\n",
+            "Message-ID: <sent-2@example.com>\r\n",
+            "Content-Type: multipart/mixed; boundary=\"b\"\r\n",
+            "\r\n",
+            "--b\r\n",
+            "Content-Type: text/plain\r\n",
+            "\r\n",
+            "See attached.\r\n",
+            "--b\r\n",
+            "Content-Type: application/pdf; name=\"figures.pdf\"\r\n",
+            "Content-Disposition: attachment; filename=\"figures.pdf\"\r\n",
+            "\r\n",
+            "%PDF-1.4 not really\r\n",
+            "--b--\r\n",
+        )
+        .as_bytes();
+
+        keeping(&Refusing, &cache, &account, false, with_a_file);
+
+        assert!(
+            the_only_row(&cache).has_attachments,
+            "the copy of a message that carried a file says it carried none"
+        );
+
+        let (plain, plain_account) = a_cache(true);
+        keeping(&Refusing, &plain, &plain_account, false, &a_message());
+        assert!(
+            !the_only_row(&plain).has_attachments,
+            "a message with no attachment would be announced as carrying one"
+        );
+    }
+
+    #[test]
     fn test_nothing_extra_is_kept_here_when_nobody_asked_for_it() {
         // The setting is off by default, and off means the Sent folder lists
         // each message once, from the server, exactly as it did before.
