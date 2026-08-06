@@ -154,11 +154,17 @@ fn read_locale(lctype: u32) -> (i32, u16) {
 ///
 /// A locale that cannot be read at all falls back to month first rather than
 /// to whatever the untouched buffer happens to hold.
+///
+/// One condition, the same shape as [`clock_from_locale`]. It used to be three
+/// arms, two of which answered month first, and the second `written > 0` in
+/// the middle of them could never decide anything: everything it turned away
+/// reached the fallback and got the same answer. That is not a style point.
+/// A redundant test is one no test can hold to account, and the sweep found it
+/// exactly that way, as a comparison that could be loosened with nothing going
+/// red.
 #[cfg(target_os = "windows")]
 fn order_from_locale(written: i32, first: u16) -> DateOrder {
-    if written > 0 && first == b'0' as u16 {
-        DateOrder::MonthFirst
-    } else if written > 0 {
+    if written > 0 && first != b'0' as u16 {
         DateOrder::DayFirst
     } else {
         DateOrder::MonthFirst
