@@ -824,6 +824,13 @@ fn which_calendar_at_the_provider(_container: &CalendarContainer) -> Option<Stri
 }
 
 /// The identifier a container of this account has at the provider, if any.
+///
+/// `None` on every input today, because the function above returns `None` on
+/// every input today. The only thing this adds is that a calendar which cannot
+/// be read at all is reported rather than passed over, so it is not the same
+/// function as one that simply answers `None`, even though it gives the same
+/// answer. Mutation testing cannot tell them apart and should not be made to:
+/// no test can prove a difference in the answer while the stub above stands.
 fn at_the_provider(cache: &MessageCache, container_id: &str) -> Result<Option<String>> {
     Ok(cache
         .get_calendar(container_id)?
@@ -838,6 +845,15 @@ fn calendar_at_google(cache: &MessageCache, container_id: &str) -> Result<String
 }
 
 /// Which Outlook calendar to address, for a container of this account.
+///
+/// The answer today is the empty string on every input, and that is not a
+/// mistake: Graph has no name for somebody's main calendar and addresses it by
+/// leaving the calendar out of the address, so
+/// [`crate::service::microsoft_graph::THE_MAIN_CALENDAR`] is empty and the
+/// stub above hands back `None` every time. A test cannot tell this apart from
+/// a function that returns an empty string and nothing else, so do not write
+/// one that pretends to. The Google side differs only because its own constant
+/// is the word "primary".
 fn calendar_at_microsoft(cache: &MessageCache, container_id: &str) -> Result<String> {
     Ok(at_the_provider(cache, container_id)?
         .unwrap_or_else(|| crate::service::microsoft_graph::THE_MAIN_CALENDAR.to_string()))
@@ -990,12 +1006,6 @@ fn further_off_for(provider: &str) -> &'static str {
 
 // ── Conversion: Google ↔ Local ──────────────────────────────────────────────
 
-/// What a Google event becomes here, filed under a calendar somebody can open.
-///
-/// The calendar is an argument rather than something the caller sets afterwards.
-/// It used to be left blank with a comment saying the caller would fill it in,
-/// and no caller ever did, so every event Google sent was stored belonging to
-/// nothing. An argument the compiler insists on cannot be forgotten that way.
 /// The one line of a recurrence list that names a given property.
 ///
 /// Google sends the repeat rule, the days called off and the days added on as
@@ -1017,6 +1027,12 @@ fn only_the_line_naming(lines: &[String], property: &str) -> Option<String> {
         .cloned()
 }
 
+/// What a Google event becomes here, filed under a calendar somebody can open.
+///
+/// The calendar is an argument rather than something the caller sets afterwards.
+/// It used to be left blank with a comment saying the caller would fill it in,
+/// and no caller ever did, so every event Google sent was stored belonging to
+/// nothing. An argument the compiler insists on cannot be forgotten that way.
 pub fn google_event_to_local(
     event: &GoogleEvent,
     account_id: &str,
@@ -1764,6 +1780,76 @@ mod tests {
         assert_eq!(local.provider_event_id.as_deref(), Some("evt1"));
         assert!(!local.is_all_day);
         assert_eq!(local.source_provider.as_deref(), Some("gmail"));
+    }
+
+    #[test]
+    fn test_a_repeating_event_from_google_stores_the_rule_and_not_the_called_off_days() {
+        // Google sends the rule and the called-off days as lines of one list,
+        // in whatever order it likes. The called-off days are deliberately
+        // first here: taking whichever line came first used to store a list of
+        // dates as the repeat rule, and a rule that is not a rule repeats
+        // nothing, so the whole series vanished from the calendar.
+        let event = GoogleEvent {
+            id: "series-1".to_string(),
+            summary: Some("Tuesday stand-up".to_string()),
+            recurrence: vec![
+                "EXDATE:20260312T100000Z".to_string(),
+                "RRULE:FREQ=WEEKLY;BYDAY=TU".to_string(),
+            ],
+            ..Default::default()
+        };
+
+        let local = google_event_to_local(&event, "test@gmail.com", "cal-google");
+
+        assert_eq!(
+            local.recurrence_rule.as_deref(),
+            Some("RRULE:FREQ=WEEKLY;BYDAY=TU")
+        );
+        assert_eq!(
+            local.exception_dates.as_deref(),
+            Some("EXDATE:20260312T100000Z")
+        );
+    }
+
+    #[test]
+    fn test_an_event_that_repeats_on_nothing_stores_no_rule_rather_than_an_empty_one() {
+        let event = GoogleEvent {
+            id: "once".to_string(),
+            summary: Some("Lunch".to_string()),
+            ..Default::default()
+        };
+
+        let local = google_event_to_local(&event, "test@gmail.com", "cal-google");
+
+        assert_eq!(local.recurrence_rule, None);
+        assert_eq!(local.exception_dates, None);
+    }
+
+    #[test]
+    fn test_an_event_google_calls_tentative_is_not_stored_as_confirmed() {
+        // Whether an appointment is settled is the difference between going
+        // somewhere and not, and it is one of the few things a calendar row
+        // says out loud. The default only applies when Google said nothing.
+        let tentative = GoogleEvent {
+            id: "maybe".to_string(),
+            status: Some("tentative".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            google_event_to_local(&tentative, "test@gmail.com", "cal-google").status,
+            "tentative"
+        );
+
+        let unsaid = GoogleEvent {
+            id: "unsaid".to_string(),
+            status: None,
+            ..Default::default()
+        };
+        assert_eq!(
+            google_event_to_local(&unsaid, "test@gmail.com", "cal-google").status,
+            "confirmed",
+            "an event Google said nothing about is settled unless it says otherwise"
+        );
     }
 
     #[test]
@@ -3290,6 +3376,51 @@ mod tests {
     }
 
     #[test]
+    fn test_an_event_stored_with_a_zone_keeps_its_clock_face_and_names_the_zone() {
+        // An event that came from Graph is stored as a clock face with a zone
+        // name beside it, and that pair is what Google reads. Reading the clock
+        // face as a time on this machine instead sends the hour the calendar
+        // shows in whatever zone the machine happens to be in, which is a
+        // meeting at the wrong time for everybody who is not sitting here.
+        let event = CalendarEventEntry {
+            time_zone: Some("America/New_York".to_string()),
+            ..an_event_stored_here()
+        };
+
+        let start = local_to_google_event(&event)
+            .expect("a time Google could read")
+            .start
+            .expect("a start");
+
+        let moment = start.date_time.expect("a timed event carries a time");
+        assert_eq!(moment, "2026-03-06T09:00:00", "{moment:?}");
+        assert_eq!(start.time_zone.as_deref(), Some("America/New_York"));
+    }
+
+    #[test]
+    fn test_an_event_stored_with_no_zone_worth_the_name_is_sent_as_a_moment() {
+        // An empty zone names nothing. Sending the clock face beside it leaves
+        // Google with an hour and no way to know which one, so the time on this
+        // computer is what it is read as and the offset says which moment.
+        let event = CalendarEventEntry {
+            time_zone: Some(String::new()),
+            ..an_event_stored_here()
+        };
+
+        let start = local_to_google_event(&event)
+            .expect("a time Google could read")
+            .start
+            .expect("a start");
+
+        let moment = start.date_time.expect("a timed event carries a time");
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(&moment).is_ok(),
+            "a clock face with no zone beside it is an hour nobody named: {moment:?}"
+        );
+        assert_eq!(start.time_zone, None);
+    }
+
+    #[test]
     fn test_the_two_providers_are_given_the_same_hour_in_the_shape_each_one_reads() {
         // Written down so that nobody later tidies the two converters into one
         // shape. Graph reads its dateTime as a clock face and is contradicted
@@ -3881,6 +4012,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_an_event_deleted_here_is_deleted_at_outlook_and_the_note_is_forgotten() {
+        // The twin of the Google one. Without this, the whole Outlook deletion
+        // path could hand back success without asking Graph anything, and the
+        // note would be cleared on the strength of it: the appointment stays in
+        // somebody's real calendar and nothing is left saying it should not.
+        // The address carries no calendar segment because Graph names the main
+        // calendar by leaving it out.
+        let cache = temp_cache("push_ms_gone");
+        let going = a_pending_event_in(&cache, MICROSOFT, MICROSOFT_CALENDAR_NAME, Some("evt1"));
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the event to be deleted here");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{}".to_string(), "{}".to_string()],
+        )
+        .await;
+
+        sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a deletion").await.expect("two requests");
+        assert_eq!(
+            asked_for(&requests[0]),
+            "DELETE /me/events/evt1",
+            "{}",
+            requests[0]
+        );
+        assert!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the deletions")
+                .is_empty(),
+            "a deletion the provider carried out is still being asked for"
+        );
+    }
+
+    #[tokio::test]
     async fn test_an_event_that_never_reached_the_provider_leaves_no_request() {
         // Made here and deleted again before any sync, so there is nothing at
         // the other end to delete. The note is cleared rather than carried for
@@ -3917,6 +4093,154 @@ mod tests {
                 .expect("the deletions")
                 .is_empty(),
             "a note nobody can act on was kept for ever"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_google_calls_cancelled_is_taken_off_and_the_others_are_kept() {
+        // The one place a pull can delete somebody's appointments. Reading the
+        // test the wrong way round takes off every event that arrives and keeps
+        // the ones Google already called off, which empties a calendar and
+        // fills it with meetings that are not happening.
+        let cache = temp_cache("pull_google_cancelled");
+        let filed_under = cache
+            .ensure_provider_calendar("acct", GOOGLE, GOOGLE_CALENDAR_NAME)
+            .expect("the provider's calendar");
+        let mut already_here = an_event_stored_here();
+        already_here.calendar_id = Some(filed_under.id.clone());
+        already_here.provider_event_id = Some("called-off".to_string());
+        cache
+            .save_calendar_event(&already_here)
+            .expect("the event already here");
+
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                "{\"items\":[\
+                   {\"id\":\"called-off\",\"status\":\"cancelled\",\"etag\":\"\\\"e1\\\"\"},\
+                   {\"id\":\"still-on\",\"status\":\"confirmed\",\"summary\":\"Stand-up\",\
+                    \"etag\":\"\\\"e2\\\"\",\
+                    \"start\":{\"dateTime\":\"2026-03-06T09:00:00Z\"},\
+                    \"end\":{\"dateTime\":\"2026-03-06T09:15:00Z\"}}\
+                 ],\"nextSyncToken\":\"marker-1\"}"
+                    .to_string(),
+            ],
+        )
+        .await;
+
+        let result = sync_google_calendar(
+            &cache,
+            &GoogleApiClient::new().pointed_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        heard(listening, "the read").await.expect("one request");
+        assert_eq!(result.deleted, 1, "{result:?}");
+        assert_eq!(result.created, 1, "{result:?}");
+        assert!(
+            cache
+                .get_event_by_provider_id("acct", "called-off")
+                .expect("the calendar to be readable")
+                .is_none(),
+            "an event Google called off is still on the calendar"
+        );
+        let kept = cache
+            .get_event_by_provider_id("acct", "still-on")
+            .expect("the calendar to be readable")
+            .expect("an event that is still happening was taken off");
+        assert_eq!(kept.summary, "Stand-up");
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_in_the_other_providers_calendar_is_left_for_that_provider_to_carry_out()
+     {
+        // An account signed in to both runs the two passes moments apart. The
+        // Google pass must not touch a deletion out of an Outlook calendar, and
+        // "not touch" means not sending it and not clearing the note either:
+        // clearing it leaves nobody to send it, so the appointment stays in
+        // somebody's real Outlook calendar with nothing left saying it should
+        // not. That is the only thing here that loses data outright.
+        let cache = temp_cache("push_google_leaves_outlooks_deletion");
+        let going = a_pending_event_in(&cache, MICROSOFT, MICROSOFT_CALENDAR_NAME, Some("evt1"));
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the event to be deleted here");
+        let (address, listening) =
+            answering_several("200 OK", "application/json", vec!["{}".to_string()]).await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "only the read")
+            .await
+            .expect("one request");
+        assert_eq!(
+            requests.len(),
+            1,
+            "the Google pass acted on a deletion out of an Outlook calendar"
+        );
+        assert!(
+            asked_for(&requests[0]).starts_with("GET "),
+            "{}",
+            requests[0]
+        );
+        assert_eq!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the deletions")
+                .len(),
+            1,
+            "the note Outlook's own pass needs was thrown away by Google's"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_in_a_subscribed_calendar_is_not_carried_for_ever() {
+        // A feed is read and never written, so there is nothing at any provider
+        // to delete and no pass that will ever send this. Keeping the note
+        // means every sync from now on walks a queue that only grows.
+        let cache = temp_cache("push_google_forgets_a_feeds_deletion");
+        let going = a_pending_event_in(
+            &cache,
+            crate::application::calendar_source::FROM_A_FEED,
+            "A published feed",
+            Some("evt1"),
+        );
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the event to be deleted here");
+        let (address, listening) =
+            answering_several("200 OK", "application/json", vec!["{}".to_string()]).await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "only the read")
+            .await
+            .expect("one request");
+        assert_eq!(requests.len(), 1);
+        assert!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the deletions")
+                .is_empty(),
+            "a note no pass can ever act on is being carried for ever"
         );
     }
 
@@ -4098,6 +4422,37 @@ mod tests {
         let said = what_the_calendar_sync_did(&result);
         assert!(said.contains("Allow Changes"), "{said}");
         assert!(said.contains('2'), "{said}");
+    }
+
+    #[test]
+    fn test_a_quiet_calendar_sync_says_only_what_came_down() {
+        // The sentence is read aloud after every sync, so every clause in it
+        // has to be worth hearing. ", 0 sent" and ", 0 errors" on a sync where
+        // nothing went out and nothing failed are two clauses of nothing, and
+        // they teach somebody to stop listening to the one that matters.
+        let mut result = CalendarSyncResult {
+            created: 1,
+            updated: 0,
+            deleted: 0,
+            sent: 0,
+            waiting_on_the_setting: 0,
+            errors: Vec::new(),
+        };
+
+        let said = what_the_calendar_sync_did(&result);
+        assert!(
+            !said.contains("sent"),
+            "a sync that sent nothing counted the nothing: {said}"
+        );
+        assert!(
+            !said.contains("error"),
+            "a sync with nothing wrong counted the errors anyway: {said}"
+        );
+
+        // And when something did go wrong, the count is there to be heard.
+        result.errors.push("the server said no".to_string());
+        let said = what_the_calendar_sync_did(&result);
+        assert!(said.contains("1 errors"), "{said}");
     }
 
     #[test]
