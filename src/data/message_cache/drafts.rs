@@ -125,20 +125,12 @@ impl MessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
+    use crate::common::temp_home::TempHome;
 
-    fn a_cache(what_for: &str) -> MessageCache {
-        MessageCache::new(
-            env::temp_dir().join(format!(
-                "wixen_mail_test_drafts_{what_for}_{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .expect("a clock that has passed 1970")
-                    .as_nanos()
-            )),
-            None,
-        )
-        .expect("a cache to open")
+    fn a_cache(what_for: &str) -> TempHome<MessageCache> {
+        TempHome::named(what_for, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache to open")
+        })
     }
 
     #[test]
@@ -177,15 +169,10 @@ mod tests {
 
     #[test]
     fn test_a_draft_saved_before_there_was_a_conversation_still_opens() {
-        let folder = env::temp_dir().join(format!(
-            "wixen_mail_test_drafts_older_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("a clock that has passed 1970")
-                .as_nanos()
-        ));
+        let folder = tempfile::tempdir().expect("a temporary folder");
         {
-            let cache = MessageCache::new(folder.clone(), None).expect("a cache to open");
+            let cache =
+                MessageCache::new(folder.path().to_path_buf(), None).expect("a cache to open");
             cache
                 .save_draft(&CachedDraft {
                     id: "draft-old".to_string(),
@@ -209,7 +196,8 @@ mod tests {
             }
         }
 
-        let reopened = MessageCache::new(folder, None).expect("the older database to open again");
+        let reopened = MessageCache::new(folder.path().to_path_buf(), None)
+            .expect("the older database to open again");
         let back = reopened
             .load_draft("draft-old")
             .expect("the draft to load")
@@ -220,14 +208,8 @@ mod tests {
 
     #[test]
     fn test_draft_operations() {
-        let temp_dir = env::temp_dir().join(format!(
-            "wixen_mail_test_drafts_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("a clock that has passed 1970")
-                .as_nanos()
-        ));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let draft = CachedDraft {
             id: "draft-123".to_string(),
@@ -259,14 +241,8 @@ mod tests {
 
     #[test]
     fn test_draft_update() {
-        let temp_dir = env::temp_dir().join(format!(
-            "wixen_mail_test_draft_update_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("a clock that has passed 1970")
-                .as_nanos()
-        ));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let mut draft = CachedDraft {
             id: "draft-456".to_string(),

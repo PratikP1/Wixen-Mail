@@ -241,19 +241,15 @@ impl MessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
+    use crate::common::temp_home::TempHome;
 
     /// A cache in a folder of its own, so tests do not share a database.
-    fn a_cache(what_for: &str) -> MessageCache {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("a clock that has passed 1970")
-            .as_nanos();
-        MessageCache::new(
-            env::temp_dir().join(format!("wixen_mail_test_{what_for}_{nanos}")),
-            None,
-        )
-        .expect("a cache to open")
+    ///
+    /// The folder goes when the returned value does.
+    fn a_cache(what_for: &str) -> TempHome<MessageCache> {
+        TempHome::named(what_for, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache to open")
+        })
     }
 
     fn an_account(id: &str, email: &str, password: &str) -> crate::data::account::Account {
@@ -359,15 +355,10 @@ mod tests {
         // The column is added to a database that already exists, so an account
         // written by an older build has to read back with no name, which is
         // exactly what every message it sent carried.
-        let folder = env::temp_dir().join(format!(
-            "wixen_mail_test_older_db_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("a clock that has passed 1970")
-                .as_nanos()
-        ));
+        let folder = tempfile::tempdir().expect("a temporary folder");
         {
-            let cache = MessageCache::new(folder.clone(), None).expect("a cache to open");
+            let cache =
+                MessageCache::new(folder.path().to_path_buf(), None).expect("a cache to open");
             let account = an_account("acc-old", "grace@example.com", "hunter2");
             cache.save_account(&account).expect("the account to save");
             cache
@@ -376,7 +367,8 @@ mod tests {
                 .expect("the column to come off, making this an older database");
         }
 
-        let reopened = MessageCache::new(folder, None).expect("the older database to open again");
+        let reopened = MessageCache::new(folder.path().to_path_buf(), None)
+            .expect("the older database to open again");
         let loaded = reopened.load_accounts().expect("the accounts to load");
         let back = loaded.first().expect("the account to survive");
         assert_eq!(back.email, "grace@example.com");
@@ -651,14 +643,8 @@ mod tests {
 
     #[test]
     fn test_account_persistence() {
-        let temp_dir = env::temp_dir().join(format!(
-            "wixen_mail_test_accounts_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("a clock that has passed 1970")
-                .as_nanos()
-        ));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let account = crate::data::account::Account {
             id: "acc-1".to_string(),

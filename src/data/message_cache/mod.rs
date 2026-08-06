@@ -2156,18 +2156,11 @@ mod tests {
         assert_eq!(like_pattern(""), "%%");
     }
     use super::*;
-    use std::env;
 
     #[test]
     fn test_message_cache_creation() {
-        let temp_dir = env::temp_dir().join(format!(
-            "wixen_mail_test_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("a clock that has passed 1970")
-                .as_nanos()
-        ));
-        let cache = MessageCache::new(temp_dir, None);
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None);
         assert!(cache.is_ok());
     }
 
@@ -2185,15 +2178,8 @@ mod tests {
         // statement is rejected and the rest do not parse. What the check adds
         // is the names SQLite would accept, like one with a space in it. So it
         // is defence in depth, not the only thing standing here.
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("a clock that has passed 1970")
-            .as_nanos();
-        let cache = MessageCache::new(
-            env::temp_dir().join(format!("wixen_mail_test_identifier_{nanos}")),
-            None,
-        )
-        .expect("a cache to open");
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache to open");
 
         for (table, column) in [
             ("messages; DROP TABLE messages", "note"),

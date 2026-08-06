@@ -158,17 +158,11 @@ impl MessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn test_signature_operations() {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_signatures_{}", nanos));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let signature = Signature {
             id: "sig-work".to_string(),
@@ -209,12 +203,8 @@ mod tests {
 
     #[test]
     fn test_signature_default_switching() {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_sig_default_{}", nanos));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let sig1 = Signature {
             id: "sig-1".to_string(),

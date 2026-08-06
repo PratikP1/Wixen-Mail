@@ -485,17 +485,13 @@ impl MessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
     use crate::data::message_cache::MessageCache;
-    use std::env;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn temp_cache(label: &str) -> MessageCache {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_{}_{}", label, nanos));
-        MessageCache::new(temp_dir, None).unwrap()
+    fn temp_cache(label: &str) -> TempHome<MessageCache> {
+        TempHome::named(label, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).unwrap()
+        })
     }
 
     fn make_event(id: &str, account: &str, provider_id: &str, summary: &str) -> CalendarEventEntry {
@@ -949,14 +945,9 @@ mod tests {
         // The table gains one column. An existing database has to open, keep
         // every note in it, and read the new column as nothing rather than
         // refusing to open at all.
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("a clock that has passed 1970")
-            .as_nanos();
-        let dir = env::temp_dir().join(format!("wixen_mail_deletions_before_{nanos}"));
-        std::fs::create_dir_all(&dir).expect("a directory to write into");
-        let conn =
-            rusqlite::Connection::open(dir.join("message_cache.db")).expect("a database to open");
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let conn = rusqlite::Connection::open(dir.path().join("message_cache.db"))
+            .expect("a database to open");
         conn.execute(
             "CREATE TABLE deleted_calendar_events (
                 id TEXT PRIMARY KEY,
@@ -977,7 +968,8 @@ mod tests {
         .expect("a deletion written before this shipped");
         drop(conn);
 
-        let cache = MessageCache::new(dir, None).expect("the older database to open");
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
 
         let notes = cache.deleted_calendar_events("acct").expect("the notes");
         assert_eq!(
@@ -1000,14 +992,9 @@ mod tests {
         // The case every existing database is in, and the one a rebuild does
         // not cover: the table is already keyed the right way, so only the new
         // column is added. A row lost here is somebody's diary.
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("a clock that has passed 1970")
-            .as_nanos();
-        let dir = env::temp_dir().join(format!("wixen_mail_last_release_{nanos}"));
-        std::fs::create_dir_all(&dir).expect("a directory to write into");
-        let conn =
-            rusqlite::Connection::open(dir.join("message_cache.db")).expect("a database to open");
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let conn = rusqlite::Connection::open(dir.path().join("message_cache.db"))
+            .expect("a database to open");
         conn.execute(THE_EVENTS_TABLE_AS_THE_LAST_RELEASE_WROTE_IT, [])
             .expect("the events table as it was");
         conn.execute(
@@ -1024,7 +1011,8 @@ mod tests {
         .expect("an event written by the last release");
         drop(conn);
 
-        let cache = MessageCache::new(dir, None).expect("the older database to open");
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
 
         let stored = cache
             .get_event_by_id("evt-1")
@@ -1063,14 +1051,9 @@ mod tests {
         // The column added by this change. A database written before it has no
         // days called off, and reading nothing as "every day is called off"
         // would empty somebody's calendar of every series in it.
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("a clock that has passed 1970")
-            .as_nanos();
-        let dir = env::temp_dir().join(format!("wixen_mail_before_exdate_{nanos}"));
-        std::fs::create_dir_all(&dir).expect("a directory to write into");
-        let conn =
-            rusqlite::Connection::open(dir.join("message_cache.db")).expect("a database to open");
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let conn = rusqlite::Connection::open(dir.path().join("message_cache.db"))
+            .expect("a database to open");
         conn.execute(THE_EVENTS_TABLE_AS_THE_LAST_RELEASE_WROTE_IT, [])
             .expect("the events table as it was");
         conn.execute(
@@ -1087,7 +1070,8 @@ mod tests {
         .expect("a repeating event written by the last release");
         drop(conn);
 
-        let cache = MessageCache::new(dir, None).expect("the older database to open");
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
 
         let stored = cache
             .get_event_by_id("evt-r")
@@ -1124,15 +1108,13 @@ mod tests {
     }
 
     /// accounts they belong to.
-    fn a_directory_holding_events_before_calendars_existed(what_for: &str) -> std::path::PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("a clock that has passed 1970")
-            .as_nanos();
-        let dir = env::temp_dir().join(format!("wixen_mail_before_calendars_{what_for}_{nanos}"));
-        std::fs::create_dir_all(&dir).expect("a directory to write into");
-        let conn =
-            rusqlite::Connection::open(dir.join("message_cache.db")).expect("a database to open");
+    fn a_directory_holding_events_before_calendars_existed(what_for: &str) -> tempfile::TempDir {
+        let dir = tempfile::Builder::new()
+            .prefix(what_for)
+            .tempdir()
+            .expect("a temporary folder");
+        let conn = rusqlite::Connection::open(dir.path().join("message_cache.db"))
+            .expect("a database to open");
         conn.execute(THE_CALENDARS_TABLE_AS_IT_WAS, [])
             .expect("the older calendars table");
         conn.execute(THE_EVENTS_TABLE_AS_IT_WAS, [])
@@ -1175,7 +1157,8 @@ mod tests {
         // per calendar rather than per account, leaving them there would also
         // make the next refresh store each of them a second time.
         let dir = a_directory_holding_events_before_calendars_existed("filed");
-        let cache = MessageCache::new(dir.clone(), None).expect("the older database to open");
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
 
         let synced = cache
             .get_events_for_calendar("cal-gmail")
@@ -1218,7 +1201,8 @@ mod tests {
         // open, and it has to leave a database it has already dealt with
         // exactly as it found it.
         drop(cache);
-        let again = MessageCache::new(dir, None).expect("the same database a second time");
+        let again = MessageCache::new(dir.path().to_path_buf(), None)
+            .expect("the same database a second time");
         assert_eq!(
             again
                 .get_all_events_for_account("acct-1")
@@ -1387,13 +1371,12 @@ mod tests {
         // it fills is written out a third time. All three have to agree, and
         // they can drift. This is what notices.
         let was_there = a_directory_holding_events_before_calendars_existed("shape");
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("a clock that has passed 1970")
-            .as_nanos();
-        let brand_new = env::temp_dir().join(format!("wixen_mail_events_new_{nanos}"));
-        drop(MessageCache::new(was_there.clone(), None).expect("the older database to open"));
-        drop(MessageCache::new(brand_new.clone(), None).expect("a new database"));
+        let brand_new = tempfile::tempdir().expect("a temporary folder");
+        drop(
+            MessageCache::new(was_there.path().to_path_buf(), None)
+                .expect("the older database to open"),
+        );
+        drop(MessageCache::new(brand_new.path().to_path_buf(), None).expect("a new database"));
 
         let read_back = |dir: &std::path::Path| -> (Vec<String>, Vec<Vec<String>>) {
             let conn = rusqlite::Connection::open(dir.join("message_cache.db"))
@@ -1435,8 +1418,8 @@ mod tests {
             (columns, kept_apart_by)
         };
 
-        let (rebuilt_columns, rebuilt_keys) = read_back(&was_there);
-        let (fresh_columns, fresh_keys) = read_back(&brand_new);
+        let (rebuilt_columns, rebuilt_keys) = read_back(was_there.path());
+        let (fresh_columns, fresh_keys) = read_back(brand_new.path());
         assert_eq!(
             rebuilt_columns, fresh_columns,
             "the rebuilt events table is not shaped like a new one",

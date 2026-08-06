@@ -242,10 +242,12 @@ impl MessageCache {
 #[cfg(test)]
 mod keyword_tests {
     use super::super::{CachedFolder, IncomingMessage, MessageCache, Tag};
+    use crate::common::temp_home::TempHome;
 
-    fn cache() -> MessageCache {
-        let dir = std::env::temp_dir().join(format!("wixen_kw_{}", uuid::Uuid::new_v4()));
-        MessageCache::new(dir, None).expect("a cache")
+    fn cache() -> TempHome<MessageCache> {
+        TempHome::named("wixen_kw_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        })
     }
 
     fn a_message(cache: &MessageCache) -> i64 {
@@ -432,19 +434,11 @@ mod keyword_tests {
 mod tests {
     use super::*;
     use crate::data::message_cache::CachedFolder;
-    use std::env;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn test_tag_operations() {
-        let temp_dir = env::temp_dir().join(format!(
-            "wixen_mail_test_tags_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("a clock that has passed 1970")
-                .as_nanos()
-        ));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let tag = Tag {
             id: "tag-work".to_string(),
@@ -480,12 +474,8 @@ mod tests {
 
     #[test]
     fn test_message_tagging() {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_message_tags_{}", nanos));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let folder = CachedFolder {
             id: 0,

@@ -304,10 +304,12 @@ impl MessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
 
-    fn test_cache() -> MessageCache {
-        let dir = std::env::temp_dir().join(format!("wixen_cal_test_{}", uuid::Uuid::new_v4()));
-        MessageCache::new(dir, None).unwrap()
+    fn test_cache() -> TempHome<MessageCache> {
+        TempHome::named("wixen_cal_test_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).unwrap()
+        })
     }
 
     /// The calendars table as every database written before this change holds
@@ -339,14 +341,13 @@ mod tests {
     ///
     /// Every column that may be empty is filled on at least one of the three, so
     /// a rebuild that drops one has somewhere to show.
-    fn a_directory_holding_calendars_at_the_old_shape(what_for: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "wixen_cal_older_{what_for}_{}",
-            uuid::Uuid::new_v4()
-        ));
-        std::fs::create_dir_all(&dir).expect("a directory to write into");
-        let conn =
-            rusqlite::Connection::open(dir.join("message_cache.db")).expect("a database to open");
+    fn a_directory_holding_calendars_at_the_old_shape(what_for: &str) -> tempfile::TempDir {
+        let dir = tempfile::Builder::new()
+            .prefix(what_for)
+            .tempdir()
+            .expect("a temporary folder");
+        let conn = rusqlite::Connection::open(dir.path().join("message_cache.db"))
+            .expect("a database to open");
         conn.execute(THE_CALENDARS_TABLE_AS_IT_WAS, [])
             .expect("the older calendars table to be created");
         conn.execute(
@@ -378,7 +379,8 @@ mod tests {
         // mistake here, so every field of every row is read back one by one
         // rather than counting the rows and calling it done.
         let dir = a_directory_holding_calendars_at_the_old_shape("kept");
-        let cache = MessageCache::new(dir, None).expect("the older database to open");
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
 
         let held = cache
             .get_calendars_for_account("acct-1")
@@ -478,10 +480,12 @@ mod tests {
         // lists can drift apart from each other and from the table they have to
         // agree with. This is what notices.
         let was_there = a_directory_holding_calendars_at_the_old_shape("shape");
-        let brand_new =
-            std::env::temp_dir().join(format!("wixen_cal_new_{}", uuid::Uuid::new_v4()));
-        drop(MessageCache::new(was_there.clone(), None).expect("the older database to open"));
-        drop(MessageCache::new(brand_new.clone(), None).expect("a new database"));
+        let brand_new = tempfile::tempdir().expect("a temporary folder");
+        drop(
+            MessageCache::new(was_there.path().to_path_buf(), None)
+                .expect("the older database to open"),
+        );
+        drop(MessageCache::new(brand_new.path().to_path_buf(), None).expect("a new database"));
 
         let columns_of = |dir: &std::path::Path| -> Vec<String> {
             let conn = rusqlite::Connection::open(dir.join("message_cache.db"))
@@ -495,12 +499,12 @@ mod tests {
                 .expect("every column name")
         };
         assert_eq!(
-            columns_of(&was_there),
-            columns_of(&brand_new),
+            columns_of(was_there.path()),
+            columns_of(brand_new.path()),
             "the rebuilt calendars table is not shaped like a new one",
         );
 
-        let conn = rusqlite::Connection::open(was_there.join("message_cache.db"))
+        let conn = rusqlite::Connection::open(was_there.path().join("message_cache.db"))
             .expect("the database to read back");
         let mut stmt = conn
             .prepare("PRAGMA index_list(calendars)")

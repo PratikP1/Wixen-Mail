@@ -267,10 +267,12 @@ impl MessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
 
-    fn test_cache() -> MessageCache {
-        let dir = std::env::temp_dir().join(format!("wixen_note_test_{}", uuid::Uuid::new_v4()));
-        MessageCache::new(dir, None).unwrap()
+    fn test_cache() -> TempHome<MessageCache> {
+        TempHome::named("wixen_note_test_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).unwrap()
+        })
     }
 
     #[test]

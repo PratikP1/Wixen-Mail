@@ -1185,6 +1185,7 @@ impl MessageCache {
 
 #[cfg(test)]
 mod tests {
+    use crate::common::temp_home::TempHome;
 
     fn incoming(folder_id: i64, uid: u32, subject: &str) -> super::IncomingMessage {
         super::IncomingMessage {
@@ -1255,18 +1256,10 @@ mod tests {
         assert_eq!(found.len(), 2, "{found:#?}");
     }
 
-    fn fresh(name: &str) -> super::super::MessageCache {
-        super::super::MessageCache::new(
-            std::env::temp_dir().join(format!(
-                "wixen_{name}_{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
-            )),
-            None,
-        )
-        .unwrap()
+    fn fresh(name: &str) -> TempHome<super::super::MessageCache> {
+        TempHome::named(name, |dir| {
+            super::super::MessageCache::new(dir.to_path_buf(), None).unwrap()
+        })
     }
 
     #[test]
@@ -1508,9 +1501,10 @@ mod tests {
         // database has no such column, and every row in it reads as a message
         // that came from a server, which is the truthful answer: nothing wrote
         // a row of the other kind before this existed.
-        let dir = std::env::temp_dir().join(format!("wixen_older_db_{}", uuid::Uuid::new_v4()));
+        let dir = tempfile::tempdir().expect("a temporary folder");
         let (before, row) = {
-            let cache = super::super::MessageCache::new(dir.clone(), None).expect("a cache");
+            let cache =
+                super::super::MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
             let sent = folder(&cache, "Sent");
             let row = cache
                 .upsert_message(&incoming(sent, 4, "Written by the older build"))
@@ -1525,8 +1519,8 @@ mod tests {
             (sent, row)
         };
 
-        let reopened =
-            super::super::MessageCache::new(dir, None).expect("the older database to open again");
+        let reopened = super::super::MessageCache::new(dir.path().to_path_buf(), None)
+            .expect("the older database to open again");
 
         let listed = reopened.get_message_list(before, "acc").unwrap();
         assert_eq!(listed.len(), 1, "the mail already stored was lost");
@@ -1970,17 +1964,8 @@ mod tests {
         // A message read on a phone is read. Before this the header fetch only
         // asked about messages the cache did not have, so a message already
         // held stayed unread here for as long as the account existed.
-        let cache = super::super::MessageCache::new(
-            std::env::temp_dir().join(format!(
-                "wixen_flags_{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
-            )),
-            None,
-        )
-        .unwrap();
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = super::super::MessageCache::new(dir.path().to_path_buf(), None).unwrap();
         let folder_id = cache
             .save_folder(&super::super::CachedFolder {
                 id: 0,
@@ -2050,17 +2035,8 @@ mod tests {
         // here. Treating an absent flag as "leave it alone" would make every
         // change one way, and a message marked unread on a phone would stay
         // read in this list.
-        let cache = super::super::MessageCache::new(
-            std::env::temp_dir().join(format!(
-                "wixen_unflag_{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
-            )),
-            None,
-        )
-        .unwrap();
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = super::super::MessageCache::new(dir.path().to_path_buf(), None).unwrap();
         let folder_id = cache
             .save_folder(&super::super::CachedFolder {
                 id: 0,
@@ -2519,14 +2495,10 @@ mod tests {
     // the snippet, the size, and whether there are attachments, and it must
     // not drag body text through SQLite to show a subject line.
 
-    fn listing_cache() -> (MessageCache, i64) {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let dir = env::temp_dir().join(format!("wixen_mail_listing_{}", nanos));
-        let cache = MessageCache::new(dir, None).unwrap();
+    fn listing_cache() -> (TempHome<MessageCache>, i64) {
+        let cache = TempHome::named("wixen_mail_listing_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).unwrap()
+        });
         let folder_id = cache
             .save_folder(&CachedFolder {
                 id: 0,
@@ -2718,18 +2690,11 @@ mod tests {
     }
     use super::*;
     use crate::data::message_cache::CachedFolder;
-    use std::env;
 
     #[test]
     fn test_message_operations() {
-        let temp_dir = env::temp_dir().join(format!(
-            "wixen_mail_test_messages_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("a clock that has passed 1970")
-                .as_nanos()
-        ));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let folder = CachedFolder {
             id: 0,
@@ -2771,13 +2736,8 @@ mod tests {
 
     #[test]
     fn test_account_data_isolation() {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_isolation_{}", nanos));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let folder1 = CachedFolder {
             id: 0,
@@ -2847,13 +2807,8 @@ mod tests {
 
     #[test]
     fn test_delete_message_marks_deleted() {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_delete_{}", nanos));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let folder = CachedFolder {
             id: 0,
@@ -2891,13 +2846,8 @@ mod tests {
 
     #[test]
     fn test_update_message_flags_marks_read_starred() {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_flags_{}", nanos));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let folder = CachedFolder {
             id: 0,

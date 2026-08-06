@@ -183,17 +183,12 @@ impl MessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use crate::common::temp_home::TempHome;
 
     #[test]
     fn test_offline_outbox_queue_operations() {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_outbox_{}", nanos));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let item = QueuedOutboxMessage {
             id: "outbox-1".to_string(),
@@ -229,16 +224,10 @@ mod tests {
         assert!(empty.is_empty());
     }
 
-    fn a_cache(what_for: &str) -> MessageCache {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("a clock that has passed 1970")
-            .as_nanos();
-        MessageCache::new(
-            env::temp_dir().join(format!("wixen_mail_test_outbox_{what_for}_{nanos}")),
-            None,
-        )
-        .expect("a cache to open")
+    fn a_cache(what_for: &str) -> TempHome<MessageCache> {
+        TempHome::named(what_for, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache to open")
+        })
     }
 
     fn queued(id: &str, account_id: &str, subject: &str, created_at: &str) -> QueuedOutboxMessage {
@@ -411,14 +400,8 @@ mod tests {
         // recipients", the draft keeps them, and then the queue had nowhere to
         // put them and only the To addresses were sent. Nothing said so, and
         // there is no copy in Sent to notice it in afterwards.
-        let temp_dir = env::temp_dir().join(format!(
-            "wixen_mail_test_outbox_cc_{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         cache
             .queue_outbox_message(&QueuedOutboxMessage {
@@ -479,15 +462,9 @@ mod tests {
     fn test_a_message_queued_before_there_was_a_conversation_still_sends() {
         // The columns arrive on a database that already exists, so a message
         // queued by an older build reads as no reply, which is what it was.
-        let folder = env::temp_dir().join(format!(
-            "wixen_mail_test_outbox_older_{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let folder = tempfile::tempdir().expect("a temporary folder");
         {
-            let cache = MessageCache::new(folder.clone(), None).unwrap();
+            let cache = MessageCache::new(folder.path().to_path_buf(), None).unwrap();
             cache
                 .queue_outbox_message(&queued("old-1", "acc-1", "Sent long ago", "2026-01-01"))
                 .unwrap();
@@ -502,7 +479,8 @@ mod tests {
             }
         }
 
-        let reopened = MessageCache::new(folder, None).expect("the older database to open again");
+        let reopened = MessageCache::new(folder.path().to_path_buf(), None)
+            .expect("the older database to open again");
         let loaded = reopened.load_outbox_messages("acc-1").unwrap();
         assert_eq!(loaded.len(), 1, "the queued message did not survive");
         assert_eq!(loaded[0].subject, "Sent long ago");

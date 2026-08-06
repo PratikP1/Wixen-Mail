@@ -443,10 +443,12 @@ impl MessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
 
-    fn test_cache() -> MessageCache {
-        let dir = std::env::temp_dir().join(format!("wixen_task_test_{}", uuid::Uuid::new_v4()));
-        MessageCache::new(dir, None).unwrap()
+    fn test_cache() -> TempHome<MessageCache> {
+        TempHome::named("wixen_task_test_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).unwrap()
+        })
     }
 
     /// A task list to hang the two-connection tests on.
@@ -497,13 +499,16 @@ mod tests {
         //
         // Two connections writing one after another never contend, so the
         // lock has to be held while the other one tries.
-        let dir = std::env::temp_dir().join(format!("wixen_busy_{}", uuid::Uuid::new_v4()));
-        let waiter = MessageCache::new(dir.clone(), None).expect("the waiting connection");
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let held_by_the_other_thread = dir.path().to_path_buf();
+        let waiter =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the waiting connection");
         waiter.save_task_list(&shared_list()).expect("a list");
 
         let (locked, is_locked) = std::sync::mpsc::channel();
         let holder = std::thread::spawn(move || {
-            let held = MessageCache::new(dir, None).expect("the holding connection");
+            let held =
+                MessageCache::new(held_by_the_other_thread, None).expect("the holding connection");
             held.conn
                 .execute_batch("BEGIN IMMEDIATE")
                 .expect("to take the write lock");
@@ -531,8 +536,8 @@ mod tests {
         // comes from rusqlite rather than from this application, so this is
         // what notices if that default ever moves. Without it the failure is
         // a duplicate task on somebody's phone, a long way from the cause.
-        let dir = std::env::temp_dir().join(format!("wixen_pragma_{}", uuid::Uuid::new_v4()));
-        let cache = MessageCache::new(dir, None).expect("a cache");
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
 
         let waits: i64 = cache
             .conn

@@ -1049,21 +1049,16 @@ impl MessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, CachedMessage};
-    use std::env;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     /// A cache in a folder of its own, so tests do not share a database.
-    fn a_cache(what_for: &str) -> MessageCache {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("a clock that has passed 1970")
-            .as_nanos();
-        MessageCache::new(
-            env::temp_dir().join(format!("wixen_mail_test_{what_for}_{nanos}")),
-            None,
-        )
-        .expect("a cache to open")
+    ///
+    /// The folder goes when the returned value does.
+    fn a_cache(what_for: &str) -> TempHome<MessageCache> {
+        TempHome::named(what_for, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache to open")
+        })
     }
 
     /// A contact with nothing filled in but a name, so a test says only what
@@ -1174,13 +1169,10 @@ mod tests {
         out
     }
 
-    fn fuzz_cache() -> MessageCache {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let dir = env::temp_dir().join(format!("wixen_vcard_fuzz_{}", nanos));
-        MessageCache::new(dir, None).expect("cache")
+    fn fuzz_cache() -> TempHome<MessageCache> {
+        TempHome::named("wixen_vcard_fuzz_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("cache")
+        })
     }
 
     #[test]
@@ -1518,12 +1510,8 @@ mod tests {
 
     #[test]
     fn test_contact_operations() {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_contacts_{}", nanos));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let contact = ContactEntry {
             id: "contact-1".to_string(), account_id: "test@example.com".to_string(),
@@ -1679,16 +1667,14 @@ mod tests {
 
     /// A directory holding a database at the old shape, with three contacts in
     /// it: one Google gave, one Microsoft gave, and one somebody typed here.
-    fn a_directory_holding_an_older_database(what_for: &str) -> std::path::PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("a clock that has passed 1970")
-            .as_nanos();
-        let dir = env::temp_dir().join(format!("wixen_mail_older_{what_for}_{nanos}"));
-        std::fs::create_dir_all(&dir).expect("a directory to write into");
+    fn a_directory_holding_an_older_database(what_for: &str) -> tempfile::TempDir {
+        let dir = tempfile::Builder::new()
+            .prefix(what_for)
+            .tempdir()
+            .expect("a temporary folder");
 
-        let conn =
-            rusqlite::Connection::open(dir.join("message_cache.db")).expect("a database to open");
+        let conn = rusqlite::Connection::open(dir.path().join("message_cache.db"))
+            .expect("a database to open");
         conn.execute(THE_CONTACTS_TABLE_AS_IT_WAS, [])
             .expect("the older contacts table to be created");
         let add = |id: &str,
@@ -1742,8 +1728,8 @@ mod tests {
         // worst kind: the database never opens again, and there is no way back
         // to the version that could open it.
         let dir = a_directory_holding_an_older_database("shared_identifier");
-        let conn =
-            rusqlite::Connection::open(dir.join("message_cache.db")).expect("a database to open");
+        let conn = rusqlite::Connection::open(dir.path().join("message_cache.db"))
+            .expect("a database to open");
         conn.execute(
             "INSERT INTO contacts
              (id, account_id, name, email, provider_contact_id, source_provider,
@@ -1755,7 +1741,8 @@ mod tests {
         .expect("a second row carrying the same identifier");
         drop(conn);
 
-        let cache = MessageCache::new(dir, None).expect("the older database to open");
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
 
         let stored = cache
             .get_contacts_for_account("test@example.com")
@@ -1768,7 +1755,8 @@ mod tests {
     fn test_an_existing_database_of_contacts_still_has_every_contact_after_it_is_opened() {
         let dir = a_directory_holding_an_older_database("every_contact");
 
-        let cache = MessageCache::new(dir, None).expect("the older database to open");
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
 
         let stored = cache
             .get_contacts_for_account("test@example.com")
@@ -1807,7 +1795,8 @@ mod tests {
     #[test]
     fn test_an_older_database_can_take_a_second_contact_with_no_email_address() {
         let dir = a_directory_holding_an_older_database("no_address");
-        let cache = MessageCache::new(dir, None).expect("the older database to open");
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
 
         cache
             .save_contact(&a_contact("phone-only-1", "Phone Only Person"))
@@ -1826,7 +1815,8 @@ mod tests {
     fn test_a_contact_stored_before_keeps_the_address_book_that_gave_it() {
         let dir = a_directory_holding_an_older_database("address_books");
 
-        let cache = MessageCache::new(dir, None).expect("the older database to open");
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
 
         let stored = cache
             .get_contacts_for_account("test@example.com")
@@ -2001,17 +1991,13 @@ mod tests {
     /// A database at the shape the last build left behind: contacts already
     /// keyed by the contact, identities already in their own table, and
     /// neither carrying any of the columns this change adds.
-    fn a_directory_holding_the_shape_before_changes_were_sent(
-        what_for: &str,
-    ) -> std::path::PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("a clock that has passed 1970")
-            .as_nanos();
-        let dir = env::temp_dir().join(format!("wixen_mail_before_sending_{what_for}_{nanos}"));
-        std::fs::create_dir_all(&dir).expect("a directory to write into");
-        let conn =
-            rusqlite::Connection::open(dir.join("message_cache.db")).expect("a database to open");
+    fn a_directory_holding_the_shape_before_changes_were_sent(what_for: &str) -> tempfile::TempDir {
+        let dir = tempfile::Builder::new()
+            .prefix(what_for)
+            .tempdir()
+            .expect("a temporary folder");
+        let conn = rusqlite::Connection::open(dir.path().join("message_cache.db"))
+            .expect("a database to open");
         conn.execute(
             "CREATE TABLE contacts (
                 id TEXT PRIMARY KEY,
@@ -2066,7 +2052,8 @@ mod tests {
     fn test_a_database_from_the_build_before_changes_were_sent_keeps_every_field() {
         let dir = a_directory_holding_the_shape_before_changes_were_sent("every_field");
 
-        let cache = MessageCache::new(dir, None).expect("the older database to open");
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
 
         let stored = cache
             .get_contacts_for_account("test@example.com")
@@ -2134,7 +2121,8 @@ mod tests {
     fn test_a_database_from_before_the_name_parts_existed_still_opens_and_keeps_its_rows() {
         let dir = a_directory_holding_an_older_database("older_name_parts");
 
-        let cache = MessageCache::new(dir, None).expect("the older database to open");
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
 
         let stored = cache
             .get_contacts_for_account("test@example.com")
@@ -2157,7 +2145,8 @@ mod tests {
         // nothing to anybody's address book.
         let dir = a_directory_holding_an_older_database("older_pending");
 
-        let cache = MessageCache::new(dir, None).expect("the older database to open");
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
 
         let stored = cache
             .get_contacts_for_account("test@example.com")
@@ -2247,9 +2236,12 @@ mod tests {
     #[test]
     fn test_opening_an_older_database_twice_keeps_its_contacts() {
         let dir = a_directory_holding_an_older_database("opened_twice");
-        drop(MessageCache::new(dir.clone(), None).expect("the older database to open"));
+        drop(
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open"),
+        );
 
-        let cache = MessageCache::new(dir, None).expect("the database to open again");
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the database to open again");
 
         assert_eq!(
             cache
@@ -2262,12 +2254,8 @@ mod tests {
 
     #[test]
     fn test_vcard_import_export() {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_vcard_{}", nanos));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let vcard = "BEGIN:VCARD
 VERSION:3.0
@@ -2300,12 +2288,8 @@ END:VCARD";
 
     #[test]
     fn test_auto_import_contacts_from_messages() {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_dir = env::temp_dir().join(format!("wixen_mail_test_auto_import_{}", nanos));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let folder = CachedFolder {
             id: 0,

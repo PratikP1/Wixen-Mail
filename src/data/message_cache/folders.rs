@@ -272,18 +272,12 @@ impl MessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
+    use crate::common::temp_home::TempHome;
 
     #[test]
     fn test_folder_operations() {
-        let temp_dir = env::temp_dir().join(format!(
-            "wixen_mail_test_folders_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("a clock that has passed 1970")
-                .as_nanos()
-        ));
-        let cache = MessageCache::new(temp_dir, None).unwrap();
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         let folder = CachedFolder {
             id: 0,
@@ -303,13 +297,10 @@ mod tests {
         assert_eq!(retrieved.unwrap().name, "INBOX");
     }
 
-    fn fresh(name: &str) -> MessageCache {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        MessageCache::new(env::temp_dir().join(format!("wixen_{name}_{nanos}")), None).unwrap()
+    fn fresh(name: &str) -> TempHome<MessageCache> {
+        TempHome::named(name, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).unwrap()
+        })
     }
 
     fn inbox() -> CachedFolder {
@@ -490,16 +481,8 @@ mod tests {
     fn test_the_tree_lists_the_inbox_first_and_ordinary_folders_last() {
         // Alphabetical order alone means arrowing past Archive and Drafts to
         // reach the inbox, every time.
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let cache = MessageCache::new(
-            env::temp_dir().join(format!("wixen_folder_order_{nanos}")),
-            None,
-        )
-        .unwrap();
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(folder.path().to_path_buf(), None).unwrap();
 
         for (name, folder_type) in [
             ("Zebra project", "Custom"),

@@ -1136,14 +1136,16 @@ mod permission_tests {
         // A setting that reads back as the default after a restart is a setting
         // nobody can turn on, and the only sign is sent mail quietly not being
         // where they put it.
-        let dir = std::env::temp_dir().join(format!("wixen_sent_setting_{}", uuid::Uuid::new_v4()));
+        let dir = tempfile::tempdir().expect("a temporary folder");
         {
-            let mut manager = ConfigManager::in_dir(dir.clone()).expect("a config folder");
+            let mut manager =
+                ConfigManager::in_dir(dir.path().to_path_buf()).expect("a config folder");
             manager.app_config_mut().keep_sent_mail_on_this_computer = true;
             manager.save().expect("the settings to save");
         }
 
-        let mut reopened = ConfigManager::in_dir(dir).expect("the settings to open again");
+        let mut reopened =
+            ConfigManager::in_dir(dir.path().to_path_buf()).expect("the settings to open again");
         reopened.load().expect("the settings to read back");
 
         assert!(reopened.app_config().keep_sent_mail_on_this_computer);
