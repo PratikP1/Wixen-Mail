@@ -736,7 +736,7 @@ pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Opti
         status,
         time_zone: ical_parameter(block, "DTSTART", TIME_ZONE_PARAMETER),
         recurrence_rule: extract_ical_property(block, "RRULE"),
-        exception_dates: every_ical_property(block, "EXDATE"),
+        exception_dates: every_ical_property(block.lines(), "EXDATE"),
     })
 }
 
@@ -769,27 +769,34 @@ fn extract_xml_value(xml: &str, tag: &str) -> Option<String> {
     if value.is_empty() { None } else { Some(value) }
 }
 
+/// What one line carries for a property, or nothing if it is another property.
+///
+/// A property name is followed by ':' or by ';' introducing parameters, as in
+/// `DTSTART;VALUE=DATE:20260305`. Without that check a request for SUMMARY is
+/// also satisfied by a crafted SUMMARYX line. The name is matched whatever case
+/// it is written in, which is what the calendar standard asks for.
+///
+/// Everything up to the first colon is the name and its parameters, and the
+/// value is what follows. Taking the value off here rather than at each caller
+/// is what keeps a parameter out of the value: a zone name is allowed a digit,
+/// `Etc/GMT+5`, and a reader that keeps the parameters has to know that.
+fn value_named_on<'a>(line: &'a str, property: &str) -> Option<&'a str> {
+    let (name, rest) = line.trim().split_at_checked(property.len())?;
+    if !name.eq_ignore_ascii_case(property) {
+        return None;
+    }
+    if !rest.starts_with(':') && !rest.starts_with(';') {
+        return None;
+    }
+    let value = rest[rest.find(':')? + 1..].trim();
+    (!value.is_empty()).then_some(value)
+}
+
 /// Extract an iCalendar property value from VEVENT data.
 fn extract_ical_property(ical: &str, property: &str) -> Option<String> {
-    for line in ical.lines() {
-        let line = line.trim();
-        let Some(rest) = line.strip_prefix(property) else {
-            continue;
-        };
-        // A property name is followed by ':' or by ';' introducing parameters,
-        // as in DTSTART;VALUE=DATE:20260305. Without this check a request for
-        // SUMMARY is also satisfied by a crafted SUMMARYX line.
-        if !rest.starts_with(':') && !rest.starts_with(';') {
-            continue;
-        }
-        if let Some(colon) = rest.find(':') {
-            let value = rest[colon + 1..].trim();
-            if !value.is_empty() {
-                return Some(value.to_string());
-            }
-        }
-    }
-    None
+    ical.lines()
+        .find_map(|line| value_named_on(line, property))
+        .map(str::to_string)
 }
 
 /// Every value a property carries, joined by commas, or nothing if it has none.
@@ -798,23 +805,20 @@ fn extract_ical_property(ical: &str, property: &str) -> Option<String> {
 /// series calls off are written either as one line with commas or as a line
 /// each, and both mean the same thing, so keeping only the first line loses
 /// every cancelled day but one.
-fn every_ical_property(ical: &str, property: &str) -> Option<String> {
-    let mut found: Vec<String> = Vec::new();
-    for line in ical.lines() {
-        let line = line.trim();
-        let Some(rest) = line.strip_prefix(property) else {
-            continue;
-        };
-        if !rest.starts_with(':') && !rest.starts_with(';') {
-            continue;
-        }
-        if let Some(colon) = rest.find(':') {
-            let value = rest[colon + 1..].trim();
-            if !value.is_empty() {
-                found.push(value.to_string());
-            }
-        }
-    }
+///
+/// Lines rather than a document, because the other source of these is Google,
+/// which sends the repeat rule and the called-off days as separate strings of
+/// one list instead of as a calendar document. Both are property lines and both
+/// end up in the same column, so they are read by this one function and the two
+/// paths cannot drift into storing two shapes.
+pub(crate) fn every_ical_property<'a>(
+    lines: impl IntoIterator<Item = &'a str>,
+    property: &str,
+) -> Option<String> {
+    let found: Vec<&str> = lines
+        .into_iter()
+        .filter_map(|line| value_named_on(line, property))
+        .collect();
     (!found.is_empty()).then(|| found.join(","))
 }
 
@@ -1494,6 +1498,28 @@ mod tests {
             event.exception_dates.as_deref(),
             Some("20260312T090000Z,20260326T090000"),
             "every line, not the first one only"
+        );
+    }
+
+    #[test]
+    fn test_a_server_that_writes_its_property_names_in_lower_case_is_still_read() {
+        // The calendar standard says a property name is case-insensitive.
+        // Almost every server writes them in capitals, so a server that does
+        // not would have had its events read as having no summary, no rule and
+        // no cancelled days, silently, with no way to tell from the calendar.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nuid:series-2\r\n\
+                    summary:Standup\r\ndtstart:20260305T090000Z\r\n\
+                    rrule:FREQ=WEEKLY\r\nexdate:20260312T090000Z\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(event.summary, "Standup");
+        assert_eq!(event.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+        assert_eq!(
+            event.exception_dates.as_deref(),
+            Some("20260312T090000Z"),
+            "a cancelled day is cancelled whatever case the name was written in"
         );
     }
 

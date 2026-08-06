@@ -231,18 +231,37 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
-- **A day you cancelled out of a repeating Google event stays cancelled.** When
-  a repeating event has a time zone on it, which most do, Google writes the zone
-  into the line naming the days called off. That shape was not recognised, so
-  the called-off days were dropped as the event was stored, the occurrence came
-  back, and a meeting you had cancelled was announced again on the day you
-  cancelled it for. The line is now read with or without a zone on it.
+- **A day you cancelled out of a repeating Google event stays cancelled.** Three
+  separate faults dropped the days you had called off. Each one had the same
+  result: the occurrence came back, and a meeting you had cancelled was
+  announced again on the day you cancelled it for.
+
+  When a repeating event has a time zone on it, which most do, Google writes the
+  zone into the line naming the days called off, and that shape was not
+  recognised at all. An event is also allowed to name its called-off days on
+  more than one line, and only the first line was kept, so every day you
+  cancelled after the first came back. Lastly, a zone whose name has a digit in
+  it, such as `Etc/GMT+5`, put that digit on the front of the date, which then
+  read as no date at all and was passed over without a word.
+
+  All three are fixed. The days a Google event calls off are now read by the
+  same code that reads them from a calendar server, so the two arrive stored the
+  same way, and the part that works out which days a series falls on no longer
+  depends on which of them stored it.
 
   Events already stored keep the blank they were saved with until Google sends
   that event again, which it does when the event next changes or when the whole
   calendar is read afresh. So a series nobody has touched since keeps showing
   the day you cancelled, and there is no way to ask for a fresh read from the
   product today.
+
+- **A calendar server that writes its property names in small letters is now
+  read.** The calendar standard says the name of a property, such as `SUMMARY`,
+  means the same whichever case it is written in. Only capitals were recognised,
+  so an event from a server that writes them in small letters would have been
+  read as having no summary, no repeat rule and no cancelled days, with nothing
+  said about why. Almost every server writes them in capitals, so this may never
+  have reached anybody.
 
 - **An event repeating on a weekday no month has is now shown once, and says
   so.** A monthly repeat can name which weekday of the month it falls on, such

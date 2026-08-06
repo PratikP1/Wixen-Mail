@@ -1013,15 +1013,18 @@ fn further_off_for(provider: &str) -> &'static str {
 /// whichever line came first stored a list of called-off days as the rule, and
 /// a rule that is not a rule repeats nothing.
 ///
+/// One line is the right answer for the repeat rule, which an event has at most
+/// one of. It is the wrong answer for the days called off, which an event may
+/// name on as many lines as it likes, so those go through
+/// `service::caldav::every_ical_property` instead.
+///
 /// The property name is kept on the value rather than stripped, because a
 /// calendar server's rule arrives without one and both shapes end up in the
 /// same column, so whatever reads it has to cope with both anyway.
 ///
 /// A property name can carry parameters, which are written after a semicolon
-/// and before the colon: Google sends `EXDATE;TZID=Europe/London:...` whenever
-/// the series has a zone, which is most of them. So the name has to end at
-/// either mark, and looking only for the colon dropped the called-off days of
-/// every zoned series.
+/// and before the colon. So the name has to end at either mark, and looking
+/// only for the colon dropped the rule of a series that had any.
 fn only_the_line_naming(lines: &[String], property: &str) -> Option<String> {
     lines
         .iter()
@@ -1138,7 +1141,14 @@ pub fn google_event_to_local(
         // sends the called-off days and the extra days in the same list, and
         // storing one of those as the rule would repeat nothing at all.
         recurrence_rule: only_the_line_naming(&event.recurrence, "RRULE"),
-        exception_dates: only_the_line_naming(&event.recurrence, "EXDATE"),
+        // Every called-off line, read by the same function a calendar server's
+        // days go through, so both sources leave the one column in one shape.
+        // An event may name its called-off days on as many lines as it likes,
+        // and keeping the first left every later cancellation on the calendar.
+        exception_dates: crate::service::caldav::every_ical_property(
+            event.recurrence.iter().map(String::as_str),
+            "EXDATE",
+        ),
         categories: String::new(),
         source_provider: Some("gmail".to_string()),
         etag: Some(event.etag.clone()),
@@ -1814,7 +1824,8 @@ mod tests {
         );
         assert_eq!(
             local.exception_dates.as_deref(),
-            Some("EXDATE:20260312T100000Z")
+            Some("20260312T100000Z"),
+            "the called-off day is stored in the shape a calendar server's is"
         );
     }
 
@@ -1825,6 +1836,11 @@ mod tests {
         // colon missed that shape entirely, so the called-off day was dropped,
         // the occurrence came back, and a meeting somebody had cancelled was
         // announced again on the day it was cancelled for.
+        //
+        // The zone comes off with the rest of the parameters, as it does for a
+        // calendar server's days: only the day is kept, and matching to the
+        // second would leave a cancelled meeting on the calendar of anyone
+        // whose server wrote the seconds differently.
         let event = GoogleEvent {
             id: "series-2".to_string(),
             summary: Some("Tuesday stand-up".to_string()),
@@ -1837,14 +1853,98 @@ mod tests {
 
         let local = google_event_to_local(&event, "test@gmail.com", "cal-google");
 
-        assert_eq!(
-            local.exception_dates.as_deref(),
-            Some("EXDATE;TZID=Europe/London:20260312T100000")
-        );
+        assert_eq!(local.exception_dates.as_deref(), Some("20260312T100000"));
         assert_eq!(
             local.recurrence_rule.as_deref(),
             Some("RRULE:FREQ=WEEKLY;BYDAY=TU"),
             "the zone on the called-off day was read as the rule"
+        );
+    }
+
+    #[test]
+    fn test_every_called_off_day_google_sends_is_kept_not_only_the_first() {
+        // The calendar standard lets an event name its called-off days on as
+        // many lines as it likes, and Google writes a line each when they are
+        // added one at a time. Keeping whichever line came first kept one
+        // cancelled day and threw the rest away, so every meeting called off
+        // after the first was announced on the day it was called off for.
+        let event = GoogleEvent {
+            id: "series-3".to_string(),
+            summary: Some("Tuesday stand-up".to_string()),
+            recurrence: vec![
+                "RRULE:FREQ=WEEKLY;BYDAY=TU".to_string(),
+                "EXDATE;TZID=Europe/London:20260312T100000".to_string(),
+                "EXDATE;TZID=Europe/London:20260319T100000".to_string(),
+            ],
+            ..Default::default()
+        };
+
+        let local = google_event_to_local(&event, "test@gmail.com", "cal-google");
+
+        assert_eq!(
+            local.exception_dates.as_deref(),
+            Some("20260312T100000,20260319T100000")
+        );
+    }
+
+    #[test]
+    fn test_a_called_off_line_named_in_lower_case_is_still_read() {
+        // The calendar standard says a property name is case-insensitive, and
+        // the reader this path used before did fold the case. Keeping that is
+        // the difference between a cancelled meeting staying cancelled and it
+        // coming back on the day it was called off for.
+        let event = GoogleEvent {
+            id: "series-5".to_string(),
+            recurrence: vec![
+                "RRULE:FREQ=WEEKLY;BYDAY=TU".to_string(),
+                "exdate;tzid=Europe/London:20260312T100000".to_string(),
+            ],
+            ..Default::default()
+        };
+
+        let local = google_event_to_local(&event, "test@gmail.com", "cal-google");
+
+        assert_eq!(local.exception_dates.as_deref(), Some("20260312T100000"));
+    }
+
+    #[test]
+    fn test_a_cancelled_meeting_google_named_in_a_zone_with_a_digit_is_not_announced() {
+        // The whole harm, end to end: what the converter stores is what works
+        // out the days, so a shape one of them copes with and the other does
+        // not is a cancelled meeting on somebody's calendar. `Etc/GMT+5` is an
+        // ordinary zone name and its digit used to be read as part of the date.
+        let event = GoogleEvent {
+            id: "series-4".to_string(),
+            summary: Some("Tuesday stand-up".to_string()),
+            start: Some(GoogleEventDateTime {
+                date_time: Some("2026-03-03T10:00:00Z".to_string()),
+                ..Default::default()
+            }),
+            end: Some(GoogleEventDateTime {
+                date_time: Some("2026-03-03T10:15:00Z".to_string()),
+                ..Default::default()
+            }),
+            recurrence: vec![
+                "RRULE:FREQ=WEEKLY;BYDAY=TU".to_string(),
+                "EXDATE;TZID=Etc/GMT+5:20260310T100000".to_string(),
+                "EXDATE;TZID=Etc/GMT+5:20260317T100000".to_string(),
+            ],
+            ..Default::default()
+        };
+
+        let local = google_event_to_local(&event, "test@gmail.com", "cal-google");
+        let read = |d: &str| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").expect("a date");
+        let shown = crate::application::occurrences::falls_on(
+            &local,
+            read("2026-03-01"),
+            read("2026-03-24"),
+        );
+
+        let days: Vec<_> = shown.days.iter().map(|d| d.start.as_str()).collect();
+        assert_eq!(
+            days,
+            ["2026-03-03T10:00:00Z", "2026-03-24T10:00:00Z"],
+            "a meeting called off is still being shown"
         );
     }
 

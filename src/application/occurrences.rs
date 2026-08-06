@@ -160,10 +160,28 @@ fn days_called_off(written: Option<&str>) -> std::collections::HashSet<chrono::N
     written
         .split(',')
         .filter_map(|one| {
-            let stamp: String = one.trim().chars().filter(char::is_ascii_digit).collect();
+            let stamp: String = without_the_name_and_parameters(one.trim())
+                .chars()
+                .filter(char::is_ascii_digit)
+                .collect();
             chrono::NaiveDate::parse_from_str(stamp.get(..8)?, "%Y%m%d").ok()
         })
         .collect()
+}
+
+/// One called-off day without the property name and parameters, if it has them.
+///
+/// Both readers that fill this column take them off, so most stored values
+/// arrive bare. This does not rely on that. The digits are read out of whatever
+/// is left, and a parameter is allowed to contain a digit: `Etc/GMT+5` is an
+/// ordinary zone name, and its 5 was read as the first figure of the date. That
+/// gave "52026031", which is not a date, so the day was quietly not called off
+/// and the cancelled meeting was announced on the day it was cancelled for.
+///
+/// The name and its parameters end at the first colon, which a date never
+/// contains, so a value that arrived bare is handed back untouched.
+fn without_the_name_and_parameters(one: &str) -> &str {
+    one.split_once(':').map_or(one, |(_, value)| value)
 }
 
 /// How often a rule comes round, at the coarseness a day can show.
@@ -1151,6 +1169,51 @@ mod tests {
             starts(&falls_on(&event, from, to)),
             ["2026-03-05 09:00", "2026-03-19 09:00"]
         );
+    }
+
+    #[test]
+    fn test_an_excluded_day_still_carrying_its_property_name_is_still_excluded() {
+        // Google sends whole property lines, and what is stored is whichever
+        // shape the source used, so this reader has to cope with the name and
+        // its parameters still being on the front. Reading the digits out of
+        // the whole line works only while no parameter has a digit in it.
+        let mut event = an_event("2026-03-05 09:00", "2026-03-05 09:15", Some("FREQ=WEEKLY"));
+        event.exception_dates = Some("EXDATE;TZID=Europe/London:20260312T090000".to_string());
+        let (from, to) = between("2026-03-01", "2026-03-20");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            ["2026-03-05 09:00", "2026-03-19 09:00"]
+        );
+    }
+
+    #[test]
+    fn test_a_zone_with_a_digit_in_its_name_does_not_lose_the_called_off_day() {
+        // `Etc/GMT+5` is an ordinary zone name. Its digit was read as part of
+        // the date, "52026031" is not a date, and the exclusion was dropped
+        // without a word: the cancelled meeting came back and was announced on
+        // the day it had been called off for.
+        let mut event = an_event("2026-03-05 09:00", "2026-03-05 09:15", Some("FREQ=WEEKLY"));
+        event.exception_dates = Some("EXDATE;TZID=Etc/GMT+5:20260312T090000".to_string());
+        let (from, to) = between("2026-03-01", "2026-03-20");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            ["2026-03-05 09:00", "2026-03-19 09:00"]
+        );
+    }
+
+    #[test]
+    fn test_every_called_off_day_on_one_line_is_read_when_the_name_is_still_there() {
+        // The name sits on the front of the first value only. The rest follow
+        // the commas bare, so a reader that strips the front once and a reader
+        // that strips it per value have to agree on both.
+        let mut event = an_event("2026-03-05 09:00", "2026-03-05 09:15", Some("FREQ=WEEKLY"));
+        event.exception_dates =
+            Some("EXDATE;TZID=Etc/GMT+5:20260312T090000,20260319T090000".to_string());
+        let (from, to) = between("2026-03-01", "2026-03-20");
+
+        assert_eq!(starts(&falls_on(&event, from, to)), ["2026-03-05 09:00"]);
     }
 
     #[test]
