@@ -251,7 +251,11 @@ impl HtmlRenderer {
                 html_escape::encode_text(text)
             ),
         };
-        self.wrap_prepared(&content, "Back to message list (Escape)")
+        self.wrap_prepared(
+            &content,
+            "Back to message list (Escape)",
+            document_language().as_deref(),
+        )
     }
 
     /// Put the document shell around markup that is already safe.
@@ -268,8 +272,19 @@ impl HtmlRenderer {
     /// sits beside the message list and goes back to it; the reading window is
     /// a window and closes. One label for both told half of everybody something
     /// that was not true about the button they were on.
-    fn wrap_prepared(&self, content: &str, way_out: &str) -> String {
-        let language = language_attribute(document_language().as_deref());
+    ///
+    /// `machine_language` is handed in rather than fetched here so a test can
+    /// render a document in a named language and read the tag that came out.
+    /// While this function fetched its own, the only assertion available was
+    /// one that called the same two functions the document did, which moves
+    /// both sides together and can never fail.
+    fn wrap_prepared(
+        &self,
+        content: &str,
+        way_out: &str,
+        machine_language: Option<&str>,
+    ) -> String {
+        let language = language_attribute(machine_language);
         format!(
             r#"<!DOCTYPE html>
 <html{language}><head><meta charset="utf-8"><style>
@@ -379,7 +394,11 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
         // already been through the sanitiser, and sanitising the assembled
         // document again would escape the headings this whole surface exists
         // to produce whenever the plain-text setting is on.
-        self.wrap_prepared(&body, "Close this window (Escape)")
+        self.wrap_prepared(
+            &body,
+            "Close this window (Escape)",
+            document_language().as_deref(),
+        )
     }
 
     /// The only URLs this application will hand to the operating system.
@@ -483,17 +502,58 @@ mod tests {
         // while reading like a test of the code. What is this code's to get
         // right is that the answer worked out is the answer that lands in the
         // tag.
+        //
+        // The expected side reads the machine through `system_language`, not
+        // through `document_language`. It used to call `document_language`,
+        // which is the same function the document calls, so a wrong answer
+        // moved both sides of the assertion together and the test stayed
+        // green through it.
         let renderer = HtmlRenderer::new();
         let html = renderer.wrap_body(&MessageBody::Plain("Hello".into()));
         let expected = format!(
             "<html{}>",
-            language_attribute(document_language().as_deref())
+            language_attribute(crate::service::spellcheck::system_language().as_deref())
         );
 
         assert!(
             html.contains(&expected),
             "{expected} is not in the document"
         );
+    }
+
+    #[test]
+    fn test_the_document_language_is_the_machines_language_and_not_a_substitute() {
+        // The source of the language, pinned on its own. `document_language`
+        // memoises `system_language` and is allowed to do nothing else: not
+        // answer a default, not answer a blank, not answer a language nobody
+        // asked for. A wrong answer here reaches a live reader as a claim
+        // about a whole message, which is worse than saying nothing (3.1.1).
+        //
+        // What this kills, and where. A substituted blank or a made-up tag
+        // dies on any machine, because `system_language` answers `None` rather
+        // than `Some("")` when Windows writes nothing. A substituted `None`
+        // dies only on a machine that will name its language, which is Windows
+        // CI and a normal desktop. On a machine that will not, that one
+        // survives and this test still passes.
+        assert_eq!(
+            document_language(),
+            crate::service::spellcheck::system_language()
+        );
+    }
+
+    #[test]
+    fn test_a_document_carries_the_language_it_was_handed_into_its_opening_tag() {
+        // A real document, rendered twice, read for the tag that came out.
+        // Nothing here calls the machine, so it says the same thing on every
+        // machine and there is no shared function on both sides of it.
+        let renderer = HtmlRenderer::new();
+
+        let german = renderer.wrap_prepared("<p>Hallo</p>", "Escape", Some("de-DE"));
+        let unknown = renderer.wrap_prepared("<p>Hello</p>", "Escape", None);
+
+        assert!(german.contains("<html lang=\"de-DE\">"), "{german}");
+        assert!(unknown.contains("<html>"), "{unknown}");
+        assert!(!unknown.contains("lang="), "{unknown}");
     }
 
     #[test]
