@@ -249,8 +249,10 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   same way, and the part that works out which days a series falls on no longer
   depends on which of them stored it.
 
-  Events already stored keep the blank they were saved with until Google sends
-  that event again, which it does when the event next changes or when the whole
+  The last of the three is put right as the calendar is read, so events already
+  stored need nothing. The first two are not: what was thrown away was thrown
+  away before the event was saved, and it comes back only when Google sends that
+  event again, which it does when the event next changes or when the whole
   calendar is read afresh. So a series nobody has touched since keeps showing
   the day you cancelled, and there is no way to ask for a fresh read from the
   product today.
