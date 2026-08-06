@@ -367,3 +367,144 @@ fn test_the_check_is_looking_at_the_whole_project() {
         "the documents are not being checked"
     );
 }
+
+/// Whether a line hands itself a temporary folder by building the path.
+///
+/// `temp_dir()` on its own is fine and three places in the running program use
+/// it correctly. What is not fine is joining a name onto it, because that names
+/// a folder nothing owns: it gets created, it gets a database opened inside it,
+/// and it is still there when the test ends.
+fn builds_its_own_temp_folder(line: &str) -> bool {
+    line.split_once("temp_dir()")
+        .is_some_and(|(_, after)| after.contains(".join("))
+}
+
+/// The files whose test halves this checks.
+///
+/// `tests/house_style.rs` is left out of its own walk. The check below is only
+/// worth having if something proves it can see, and the only way to prove that
+/// is to write the offending line out in full, in this file. The em-dash rule
+/// two hundred lines up hit the same wall and solved it by building the
+/// characters from code points. That does not work here: the thing being
+/// searched for is the literal text of the examples, so there is nothing to
+/// disguise. Excluding the file is the honest version. Anything that walks past
+/// this comment and "fixes" a failure by loosening `builds_its_own_temp_folder`
+/// has turned a check into decoration.
+fn test_sources() -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    collect(Path::new("src"), &["rs"], &mut found);
+    collect(Path::new("tests"), &["rs"], &mut found);
+    found.retain(|path| !path.ends_with("house_style.rs"));
+    found
+}
+
+/// The line numbers in one file where a test builds its own temporary folder.
+///
+/// Only the test half of a source file is read. The split is on the first
+/// `#[cfg(test)]`, the same way `calendar.rs` tells the running program apart
+/// from its tests. Everything under `tests/` is test code all the way down.
+fn hand_built_temp_folders_in(path: &Path, text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut reading_test_code = path.starts_with("tests");
+
+    for (number, line) in text.lines().enumerate() {
+        if line.trim_start().starts_with("#[cfg(test)]") {
+            reading_test_code = true;
+        }
+        if reading_test_code && builds_its_own_temp_folder(line) {
+            found.push(format!(
+                "{}:{}: {}",
+                path.display(),
+                number + 1,
+                line.trim()
+            ));
+        }
+    }
+    found
+}
+
+#[test]
+fn test_no_test_builds_its_own_temp_folder() {
+    // A test that joins a name onto the system temporary folder has to remove
+    // that folder itself, and none of them did. Seventy-six sites left 390
+    // folders behind on every `cargo test --lib`, the commit hook runs the
+    // suite on every commit, and `scripts/mutants.sh` runs it once per mutant.
+    // The disk filled.
+    //
+    // `tempfile::tempdir()` removes the folder when the value is dropped, so
+    // the folder belongs to something. Bind it before whatever opens a database
+    // inside it, or put both in one guard with the folder declared second, and
+    // drop order does the rest.
+    let mut hand_built = Vec::new();
+
+    for path in test_sources() {
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        hand_built.extend(hand_built_temp_folders_in(&path, &text));
+    }
+
+    assert!(
+        hand_built.is_empty(),
+        "{} tests build a temporary folder nothing removes:\n  {}",
+        hand_built.len(),
+        hand_built.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_temp_folder_check_can_tell_the_two_apart() {
+    // Without this the check above passes by seeing nothing, which is how a
+    // scan reporting success while scanning nothing gets believed. Every line
+    // here is copied from the tree rather than invented, so it cannot drift
+    // into testing a shape the project does not have.
+    assert!(builds_its_own_temp_folder(
+        r#"let dir = env::temp_dir().join(format!("wixen_mail_deletions_before_{nanos}"));"#
+    ));
+    assert!(builds_its_own_temp_folder(
+        r#"std::env::temp_dir().join(format!("wixen_caldav_{label}_{nanos}"))"#
+    ));
+
+    // The assertion in `help_page.rs` that the running program puts its help
+    // under the temporary folder. It names no folder of its own, and a check
+    // matching a bare `temp_dir()` would call it a leak.
+    assert!(!builds_its_own_temp_folder(
+        r#"assert!(into.starts_with(std::env::temp_dir()), "{}", into.display());"#
+    ));
+    // What all of them were changed to.
+    assert!(!builds_its_own_temp_folder(
+        "let dir = tempfile::tempdir().expect(\"temp dir\");"
+    ));
+
+    // `logging.rs` really does join a name on, and is right to: it is the
+    // running program's own log folder, not a test's. Nothing but the split at
+    // the first `#[cfg(test)]` keeps it out, so that split is tested directly.
+    let production_line =
+        r#"        .unwrap_or_else(|_| std::env::temp_dir().join("wixen-mail").join("logs"))"#;
+    assert!(builds_its_own_temp_folder(production_line));
+    let logging =
+        format!("fn where_logs_go() {{\n{production_line}\n}}\n#[cfg(test)]\nmod tests {{}}\n");
+    assert!(
+        hand_built_temp_folders_in(Path::new("src/common/logging.rs"), &logging).is_empty(),
+        "the running program's half of a source file is being read as test code"
+    );
+
+    // And the same line below a `#[cfg(test)]` is a leak, so the split is not
+    // simply switched off.
+    let in_a_test = format!("#[cfg(test)]\nmod tests {{\n{production_line}\n}}\n");
+    assert_eq!(
+        hand_built_temp_folders_in(Path::new("src/common/logging.rs"), &in_a_test).len(),
+        1,
+        "the test half of a source file is not being read"
+    );
+
+    assert!(
+        test_sources().len() > 100,
+        "only {} files checked, so the walk is broken",
+        test_sources().len()
+    );
+    assert!(
+        test_sources().iter().any(|f| f.ends_with("bodies.rs")),
+        "the module this rule was written for is not being checked"
+    );
+}
