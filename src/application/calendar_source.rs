@@ -769,6 +769,28 @@ mod tests {
     }
 
     #[test]
+    fn test_a_calendar_the_server_did_not_name_is_offered_by_the_last_part_of_its_address() {
+        // The exact line, not just that two of them differ. A picker line that
+        // came out blank, or as "Calendar at " with nothing after it, is read
+        // aloud as silence and there is nothing to tell somebody what they are
+        // about to add.
+        let offers = offered(&[discovered("", "https://cal.example.com/dav/work/")]);
+
+        assert_eq!(offers.len(), 1);
+        assert_eq!(offers[0].name, "Calendar at work");
+    }
+
+    #[test]
+    fn test_a_calendar_the_server_called_untitled_is_offered_by_its_address_too() {
+        // "Untitled" is what the reader puts on a calendar with no name, so it
+        // arrives here looking named and carries no more meaning than a blank.
+        let offers = offered(&[discovered("Untitled", "https://cal.example.com/dav/work/")]);
+
+        assert_eq!(offers.len(), 1);
+        assert_eq!(offers[0].name, "Calendar at work");
+    }
+
+    #[test]
     fn test_a_calendar_with_no_address_is_not_offered() {
         // Nothing can be synced from an empty address, and a line somebody can
         // pick that then does nothing is worse than a line that is not there.
@@ -818,6 +840,22 @@ mod tests {
         // And an answer nobody wrote an arm for is still a sentence.
         let other = what_went_wrong(&crate::common::Error::Other("boom".to_string()));
         assert!(other.ends_with('.'), "{other}");
+    }
+
+    #[test]
+    fn test_a_server_fault_says_to_try_again_rather_than_to_check_what_was_typed() {
+        // A 500 is the server's problem, not the address and not the sign-in.
+        // Falling through to the catch-all sends somebody off to check details
+        // that are already right, which is the one instruction that cannot help.
+        let said = what_went_wrong(&api(500));
+
+        assert!(said.contains("could not answer just now"), "{said}");
+        assert!(said.contains("Try again"), "{said}");
+        assert_ne!(
+            said,
+            what_went_wrong(&crate::common::Error::Other("boom".to_string())),
+            "a server fault is told in the same words as an answer nobody wrote an arm for"
+        );
     }
 
     #[test]
