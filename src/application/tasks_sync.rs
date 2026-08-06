@@ -1108,19 +1108,17 @@ pub(crate) async fn sync_microsoft_tasks<S: TaskService>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
     use crate::data::message_cache::TaskListEntry;
 
     /// A cache of its own, in a directory nothing else writes to.
     ///
     /// Two tests sharing a database file make each other pass, which is how a
     /// whole suite comes to prove nothing.
-    fn a_cache(name: &str) -> MessageCache {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("wixen_tasks_sync_{name}_{nanos}"));
-        MessageCache::new(dir, None).expect("a cache")
+    fn a_cache(name: &str) -> TempHome<MessageCache> {
+        TempHome::named(name, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        })
     }
 
     /// A task service that answers from a script rather than a socket.

@@ -566,6 +566,7 @@ pub fn local_to_caldav_event(local: &CalendarEventEntry) -> CalDavEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
 
     #[test]
     fn test_caldav_event_to_local() {
@@ -644,13 +645,10 @@ mod tests {
 
     use crate::common::answering::answering;
 
-    fn temp_cache(label: &str) -> MessageCache {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("a clock set later than 1970")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("wixen_caldav_{label}_{nanos}"));
-        MessageCache::new(dir, None).expect("a cache in a directory of its own")
+    fn temp_cache(label: &str) -> TempHome<MessageCache> {
+        TempHome::named(label, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache in a directory of its own")
+        })
     }
 
     fn container(id: &str, account_id: &str) -> CalendarContainer {

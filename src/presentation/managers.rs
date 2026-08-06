@@ -1608,11 +1608,12 @@ fn draft_label(draft: &crate::data::message_cache::CachedDraft) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
 
-    fn test_cache() -> MessageCache {
-        let dir =
-            std::env::temp_dir().join(format!("wixen_managers_test_{}", uuid::Uuid::new_v4()));
-        MessageCache::new(dir, None).expect("a cache to test against")
+    fn test_cache() -> TempHome<MessageCache> {
+        TempHome::named("wixen_managers_test_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache to test against")
+        })
     }
 
     /// A form with only the title filled in, which is what the old prompt
@@ -2841,9 +2842,8 @@ mod deletion_wiring {
 #[cfg(test)]
 mod group_wiring {
     use super::*;
+    use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{ContactEntry, ContactGroup};
-    use std::env;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     /// A cache in a folder of its own, so tests do not share a database.
     ///
@@ -2851,16 +2851,10 @@ mod group_wiring {
     /// fixture that says only what one test needs is one that does not change
     /// when something else does, and two tests writing one file report every
     /// mutant as caught.
-    fn a_cache(what_for: &str) -> MessageCache {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("a clock that has passed 1970")
-            .as_nanos();
-        MessageCache::new(
-            env::temp_dir().join(format!("wixen_mail_group_{what_for}_{nanos}")),
-            None,
-        )
-        .expect("a cache to open")
+    fn a_cache(what_for: &str) -> TempHome<MessageCache> {
+        TempHome::named(what_for, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache to open")
+        })
     }
 
     /// A contact with a name and an address and nothing else.

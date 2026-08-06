@@ -735,6 +735,7 @@ pub fn folders_to_sync<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
     use crate::common::types::EmailAddress;
 
     /// A rule written by somebody, on a message that has just arrived.
@@ -748,8 +749,8 @@ mod tests {
         use crate::application::filters::FilterEngine;
         use crate::data::message_cache::MessageFilterRule;
 
-        let dir = std::env::temp_dir().join(format!("wixen_filter_{}", uuid::Uuid::new_v4()));
-        let cache = MessageCache::new(dir, None).expect("a cache");
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
         let folder_id = cache
             .save_folder(&CachedFolder {
                 id: 0,
@@ -833,8 +834,8 @@ mod tests {
         use crate::application::filters::FilterEngine;
         use crate::data::message_cache::MessageFilterRule;
 
-        let dir = std::env::temp_dir().join(format!("wixen_filter_{}", uuid::Uuid::new_v4()));
-        let cache = MessageCache::new(dir, None).expect("a cache");
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
         let folder_id = cache
             .save_folder(&CachedFolder {
                 id: 0,
@@ -917,8 +918,8 @@ mod tests {
         use crate::application::filters::FilterEngine;
         use crate::data::message_cache::MessageFilterRule;
 
-        let dir = std::env::temp_dir().join(format!("wixen_filter_{}", uuid::Uuid::new_v4()));
-        let cache = MessageCache::new(dir, None).expect("a cache");
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
         let folder_id = cache
             .save_folder(&CachedFolder {
                 id: 0,
@@ -1083,9 +1084,10 @@ mod tests {
         }
     }
 
-    fn a_cache() -> (MessageCache, i64, ImapFolder) {
-        let dir = std::env::temp_dir().join(format!("wixen_sync_{}", uuid::Uuid::new_v4()));
-        let cache = MessageCache::new(dir, None).expect("a cache");
+    fn a_cache() -> (TempHome<MessageCache>, i64, ImapFolder) {
+        let cache = TempHome::named("wixen_sync_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        });
         let folder_id = cache
             .save_folder(&CachedFolder {
                 id: 0,
@@ -1142,8 +1144,8 @@ mod tests {
         // folder holds every message, and whether anybody subscribed to it.
         // Losing either turns the window that asks which folders to sync into a
         // window offering a different default from the one the sync uses.
-        let dir = std::env::temp_dir().join(format!("wixen_folders_{}", uuid::Uuid::new_v4()));
-        let cache = MessageCache::new(dir, None).expect("a cache");
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
         let everything = ImapFolder {
             holds_all_mail: true,
             subscribed: false,
@@ -1177,8 +1179,8 @@ mod tests {
         // messages it holds, is told none of them, and deletes every one of
         // them and its stored body. For a sent copy, a draft, or a whole POP
         // mailbox, that is the only copy there was.
-        let dir = std::env::temp_dir().join(format!("wixen_reserved_{}", uuid::Uuid::new_v4()));
-        let cache = MessageCache::new(dir, None).expect("a cache");
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
         let here =
             crate::application::local_folders::local_sent(crate::common::types::Protocol::Pop3)
                 .expect("a folder on this computer");
@@ -1630,9 +1632,10 @@ mod tests {
 
     /// A Sent folder holding a copy of one message that was kept here, plus
     /// however many the server has in it.
-    fn a_sent_folder_with_a_copy_kept_here() -> (MessageCache, i64, ImapFolder, i64) {
-        let dir = std::env::temp_dir().join(format!("wixen_sent_sync_{}", uuid::Uuid::new_v4()));
-        let cache = MessageCache::new(dir, None).expect("a cache");
+    fn a_sent_folder_with_a_copy_kept_here() -> (TempHome<MessageCache>, i64, ImapFolder, i64) {
+        let cache = TempHome::named("wixen_sent_sync_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        });
         let folder_id = cache
             .save_folder(&CachedFolder {
                 id: 0,

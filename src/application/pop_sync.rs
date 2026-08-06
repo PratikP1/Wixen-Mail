@@ -382,6 +382,7 @@ fn reference_chain(parsed: &crate::service::mime::ParsedMessage) -> Option<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
     use crate::common::types::EmailAddress;
     use crate::data::message_cache::{CachedFolder, MessageCache};
     use chrono::{Duration, Utc};
@@ -473,9 +474,10 @@ mod tests {
     }
 
     /// An empty cache in its own directory, and the inbox inside it.
-    fn a_cache() -> (MessageCache, i64) {
-        let dir = std::env::temp_dir().join(format!("wixen_pop_{}", uuid::Uuid::new_v4()));
-        let cache = MessageCache::new(dir, None).expect("a cache");
+    fn a_cache() -> (TempHome<MessageCache>, i64) {
+        let cache = TempHome::named("wixen_pop_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        });
         let folder_id = cache
             .save_folder(&CachedFolder {
                 id: 0,

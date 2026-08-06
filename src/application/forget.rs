@@ -240,6 +240,7 @@ fn stored_identities(
 mod tests {
     use super::*;
     use crate::common::paths::AppPaths;
+    use crate::common::temp_home::TempHome;
     use crate::data::MessageCache;
     use crate::data::message_cache::CalendarContainer;
 
@@ -250,12 +251,8 @@ mod tests {
     }
 
     /// A data folder of this test's own, named so no two tests share one.
-    fn paths_for(label: &str) -> AppPaths {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("a clock set later than 1970")
-            .as_nanos();
-        AppPaths::under(std::env::temp_dir().join(format!("wixen_forget_{label}_{nanos}")))
+    fn paths_for(label: &str) -> TempHome<AppPaths> {
+        TempHome::named(label, |dir| AppPaths::under(dir.to_path_buf()))
     }
 
     fn calendar(id: &str, account_id: &str, source_provider: &str) -> CalendarContainer {

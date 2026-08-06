@@ -884,8 +884,8 @@ fn test_a_note_written_in_markdown_is_read_back_with_its_structure() {
     use wixen_mail::presentation::read_aloud::{ReadAloud, Reading};
     use wixen_mail::presentation::ui_types::NoteItem;
 
-    let dir = std::env::temp_dir().join(format!("wixen_md_note_{}", uuid::Uuid::new_v4()));
-    let cache = MessageCache::new(dir, None).expect("a cache");
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
     cache
         .save_note(&NoteEntry {
             id: "n-md".to_string(),

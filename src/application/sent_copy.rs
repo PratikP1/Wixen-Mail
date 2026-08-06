@@ -394,6 +394,7 @@ impl FilesACopy for ServerCopy<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, MessageCache};
 
     /// A place to file a copy that always refuses.
@@ -418,9 +419,10 @@ mod tests {
         }
     }
 
-    fn a_cache(sent: bool) -> (MessageCache, crate::data::account::Account) {
-        let dir = std::env::temp_dir().join(format!("wixen_sent_{}", uuid::Uuid::new_v4()));
-        let cache = MessageCache::new(dir, None).expect("a cache");
+    fn a_cache(sent: bool) -> (TempHome<MessageCache>, crate::data::account::Account) {
+        let cache = TempHome::named("wixen_sent_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        });
         let mut account =
             crate::data::account::Account::new("Work".into(), "me@example.com".into());
         account.id = "acct".to_string();
@@ -744,8 +746,8 @@ mod tests {
         // There is no server folder to offer it to, so the copy here is the
         // only one there will ever be, and it is numbered from the bottom
         // because no server numbers that folder.
-        let dir = std::env::temp_dir().join(format!("wixen_sent_pop_{}", uuid::Uuid::new_v4()));
-        let cache = MessageCache::new(dir, None).expect("a cache");
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
         let mut account =
             crate::data::account::Account::new("Home".into(), "me@example.com".into());
         account.id = "acct".to_string();
@@ -783,8 +785,8 @@ mod tests {
         // A POP account whose folders have never been made: there is a path to
         // file the copy under and no folder behind it. The person is owed the
         // reason, because on this account there is no other copy anywhere.
-        let dir = std::env::temp_dir().join(format!("wixen_sent_nofold_{}", uuid::Uuid::new_v4()));
-        let cache = MessageCache::new(dir, None).expect("a cache");
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
         let mut account =
             crate::data::account::Account::new("Home".into(), "me@example.com".into());
         account.id = "acct".to_string();

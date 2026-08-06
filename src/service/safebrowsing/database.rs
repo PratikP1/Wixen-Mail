@@ -415,14 +415,8 @@ mod tests {
 
     #[test]
     fn test_a_list_survives_a_trip_through_a_real_file() {
-        let dir = std::env::temp_dir().join(format!(
-            "wixen_mail_sb_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
-        let path = dir.join("social.bin");
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let path = dir.path().join("social.bin");
         let mut set = PrefixSet::from_prefixes([7, 8, 9]);
         set.state = "abc".to_string();
 
@@ -430,6 +424,5 @@ mod tests {
         let back = PrefixSet::load(&path);
 
         assert_eq!(back, set);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

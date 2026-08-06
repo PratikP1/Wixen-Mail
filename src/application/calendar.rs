@@ -1628,6 +1628,7 @@ fn reminder_lead_minutes(event: &CalendarEventEntry) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
 
     use crate::application::occurrences;
 
@@ -2266,13 +2267,10 @@ mod tests {
     }
 
     /// A cache in a directory of its own, named after the test using it.
-    fn temp_cache(label: &str) -> MessageCache {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("a clock set later than 1970")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("wixen_calendar_{label}_{nanos}"));
-        MessageCache::new(dir, None).expect("a cache in a directory of its own")
+    fn temp_cache(label: &str) -> TempHome<MessageCache> {
+        TempHome::named(label, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache in a directory of its own")
+        })
     }
 
     #[test]

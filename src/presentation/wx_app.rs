@@ -10032,6 +10032,7 @@ pub(crate) fn ask_for_a_name(frame: &Frame, asking: Asking) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{Deleting, ServerChange};
+    use crate::common::temp_home::TempHome;
     use crate::presentation::panes::{Holding, Pane};
     use crate::presentation::ui_types::{MessageItem, PimModule};
 
@@ -10043,7 +10044,7 @@ mod tests {
         use crate::data::message_cache::ContactGroup;
         use crate::presentation::ui_types::UIUpdate;
 
-        let (_dir, cache) = test_cache();
+        let cache = test_cache();
         cache
             .as_ref()
             .expect("a cache")
@@ -10432,7 +10433,7 @@ mod tests {
         // Threading that is computed and never applied is threading that does
         // not exist: the Thread column stays blank and Enter never opens a
         // conversation.
-        let (_dir, cache) = test_cache();
+        let cache = test_cache();
         let (tx, rx) = async_channel::unbounded();
         let folder_id = cache
             .as_ref()
@@ -10503,7 +10504,7 @@ mod tests {
     fn test_a_message_alone_reports_no_thread_at_all() {
         // A conversation of one is not a conversation. Reporting one would put
         // a thread indicator and an earcon on every ordinary message.
-        let (_dir, cache) = test_cache();
+        let cache = test_cache();
         let (tx, rx) = async_channel::unbounded();
         let folder_id = cache
             .as_ref()
@@ -10748,11 +10749,18 @@ mod tests {
     // MessageCache wraps a rusqlite connection and is not Sync, so the Arc
     // buys sharing between closures on the UI thread rather than thread
     // safety. Production holds it the same way; this mirrors it deliberately.
+    //
+    // The folder is inside the returned value rather than beside it. It used
+    // to be the first half of a pair, which was correct only because a tuple
+    // drops left to right and the folder happened to be written first.
+    // Nothing said so, and swapping the two would have leaked a folder per
+    // test in silence. `TempHome` keeps the order in one place.
     #[allow(clippy::arc_with_non_send_sync)]
-    fn test_cache() -> (tempfile::TempDir, Option<Arc<MessageCache>>) {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("cache");
-        (dir, Some(Arc::new(cache)))
+    fn test_cache() -> TempHome<Option<Arc<MessageCache>>> {
+        TempHome::named("wixen_wx_app_", |dir| {
+            let cache = MessageCache::new(dir.to_path_buf(), None).expect("cache");
+            Some(Arc::new(cache))
+        })
     }
 
     fn drain(rx: &async_channel::Receiver<UIUpdate>) -> Vec<UIUpdate> {
@@ -10765,7 +10773,7 @@ mod tests {
 
     #[test]
     fn test_notes_module_sends_its_records_to_the_ui() {
-        let (_dir, cache) = test_cache();
+        let cache = test_cache();
         let (tx, rx) = async_channel::unbounded();
         let account = "acct-1";
 
@@ -10818,7 +10826,7 @@ mod tests {
 
     #[test]
     fn test_tasks_module_sends_lists_and_their_counts() {
-        let (_dir, cache) = test_cache();
+        let cache = test_cache();
         let (tx, rx) = async_channel::unbounded();
         let account = "acct-1";
         let list = cache
@@ -10865,7 +10873,7 @@ mod tests {
 
     #[test]
     fn test_reminders_module_sends_its_records() {
-        let (_dir, cache) = test_cache();
+        let cache = test_cache();
         let (tx, rx) = async_channel::unbounded();
         let account = "acct-1";
         cache
@@ -10899,7 +10907,7 @@ mod tests {
     fn test_calendar_module_creates_a_default_calendar_for_a_new_account() {
         // A brand new account has no containers, so without this the sidebar
         // stays empty however much else is wired.
-        let (_dir, cache) = test_cache();
+        let cache = test_cache();
         let (tx, rx) = async_channel::unbounded();
 
         load_module_data(PimModule::Calendar, &cache, Some("fresh".to_string()), &tx);
@@ -10915,7 +10923,7 @@ mod tests {
     fn test_opening_mail_loads_its_folders() {
         // The handler for FoldersLoaded existed and nothing ever sent one, so
         // the folder tree was empty in every build no matter what was stored.
-        let (_dir, cache) = test_cache();
+        let cache = test_cache();
         let (tx, rx) = async_channel::unbounded();
         if let Some(cache) = cache.as_ref() {
             cache
@@ -10955,7 +10963,7 @@ mod tests {
         // Selecting a folder used to set the status to "Loading INBOX..." and
         // then load nothing at all, so the list only ever filled from the
         // sample data on the Help menu.
-        let (_dir, cache) = test_cache();
+        let cache = test_cache();
         let (tx, rx) = async_channel::unbounded();
         let folder_id = cache
             .as_ref()
@@ -11003,7 +11011,7 @@ mod tests {
     #[test]
     fn test_a_folder_with_no_id_yet_loads_nothing_rather_than_panicking() {
         // The tree can be clicked before the ids have arrived.
-        let (_dir, cache) = test_cache();
+        let cache = test_cache();
         let (tx, rx) = async_channel::unbounded();
         load_folder_messages(&cache, None, Some("acct-1".to_string()), &tx);
         assert!(drain(&rx).is_empty());
@@ -11011,7 +11019,7 @@ mod tests {
 
     #[test]
     fn test_no_account_means_no_updates_rather_than_a_panic() {
-        let (_dir, cache) = test_cache();
+        let cache = test_cache();
         let (tx, rx) = async_channel::unbounded();
         load_module_data(PimModule::Notes, &cache, None, &tx);
         assert!(drain(&rx).is_empty());

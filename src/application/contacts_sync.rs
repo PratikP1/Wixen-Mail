@@ -1528,6 +1528,7 @@ fn contact_to_ms_contact(contact: &ContactEntry) -> MsGraphContact {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{EmailEntry, PhoneEntry};
 
     /// A local contact with every optional field empty. Each test sets only the
@@ -3713,13 +3714,10 @@ mod tests {
     ///
     /// Two tests sharing a database file make each other pass, which is how a
     /// whole suite comes to prove nothing.
-    fn a_cache(label: &str) -> MessageCache {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("wixen_contacts_sync_{label}_{nanos}"));
-        MessageCache::new(dir, None).expect("a cache")
+    fn a_cache(label: &str) -> TempHome<MessageCache> {
+        TempHome::named(label, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        })
     }
 
     /// The marker a scripted address book hands back for the next run.

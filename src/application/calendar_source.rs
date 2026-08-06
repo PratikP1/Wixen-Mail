@@ -497,6 +497,7 @@ pub fn add_from_a_feed(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
     use crate::data::message_cache::MessageCache;
     use crate::service::caldav::{CalDavCalendar, sign_in};
 
@@ -1114,13 +1115,10 @@ mod tests {
 
     use crate::common::answering::{answering, heard};
 
-    fn temp_cache(label: &str) -> MessageCache {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("a clock set later than 1970")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("wixen_add_cal_{label}_{nanos}"));
-        MessageCache::new(dir, None).expect("a cache in a directory of its own")
+    fn temp_cache(label: &str) -> TempHome<MessageCache> {
+        TempHome::named(label, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache in a directory of its own")
+        })
     }
 
     fn one_calendar_offered() -> String {

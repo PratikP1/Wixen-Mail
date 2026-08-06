@@ -129,21 +129,16 @@ mod tests {
     use crate::application::destinations::Deleting;
     use crate::application::local_delete::perform;
     use crate::application::local_folders::{self, LOCAL_PREFIX};
+    use crate::common::temp_home::TempHome;
     use crate::common::types::Protocol;
     use crate::data::account::Account;
     use crate::data::message_cache::{CachedFolder, IncomingMessage, MessageCache};
 
     /// A cache in a directory of its own, so tests do not share a database.
-    fn a_cache(what_for: &str) -> MessageCache {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("a clock that has passed 1970")
-            .as_nanos();
-        MessageCache::new(
-            std::env::temp_dir().join(format!("wixen_local_delete_{what_for}_{nanos}")),
-            None,
-        )
-        .expect("a cache to open")
+    fn a_cache(what_for: &str) -> TempHome<MessageCache> {
+        TempHome::named(what_for, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache to open")
+        })
     }
 
     fn a_pop_account() -> Account {

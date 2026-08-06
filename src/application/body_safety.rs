@@ -91,6 +91,7 @@ pub fn merge_into(
 #[cfg(test)]
 mod tests {
     use super::{LOOKING_AT_THE_MESSAGE_ITSELF, from_body};
+    use crate::common::temp_home::TempHome;
     use crate::service::safety::{Safety, Verdict};
 
     /// A message whose visible link text and actual address disagree, sent with
@@ -274,16 +275,11 @@ mod tests {
     }
 
     /// A cache in a directory of its own.
-    fn a_cache(what_for: &str) -> crate::data::message_cache::MessageCache {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("a clock that has passed 1970")
-            .as_nanos();
-        crate::data::message_cache::MessageCache::new(
-            std::env::temp_dir().join(format!("wixen_body_safety_{what_for}_{nanos}")),
-            None,
-        )
-        .expect("a cache to open")
+    fn a_cache(what_for: &str) -> TempHome<crate::data::message_cache::MessageCache> {
+        TempHome::named(what_for, |dir| {
+            crate::data::message_cache::MessageCache::new(dir.to_path_buf(), None)
+                .expect("a cache to open")
+        })
     }
 
     /// One stored message already carrying a verdict.
