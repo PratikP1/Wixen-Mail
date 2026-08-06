@@ -296,6 +296,52 @@ mod tests {
     }
 
     #[test]
+    fn test_the_trash_made_on_the_first_delete_is_called_trash_and_stays_off_the_network() {
+        // The path alone is not enough. The row also carries the name the
+        // folder tree reads out and the type everything else switches on, and
+        // taking the wrong entry from the list of local folders gives a second
+        // folder announced as Inbox that holds the deleted mail. The facts say
+        // it is never opened at a server, which is what stops a sync trying.
+        let cache = a_cache("names_the_trash");
+        let account = a_pop_account();
+        let inbox = a_folder(
+            &cache,
+            &account.id,
+            &format!("{LOCAL_PREFIX}/Inbox"),
+            "Inbox",
+        );
+        let row = a_message(&cache, inbox, "The first one");
+
+        perform(&cache, &account, row, Deleting::ToTrash)
+            .expect("the delete runs")
+            .expect("a message on this computer is this path's business");
+
+        let path = format!("{LOCAL_PREFIX}/Trash");
+        let made = cache
+            .get_folders_for_account(&account.id)
+            .expect("the folder list")
+            .into_iter()
+            .find(|folder| folder.path == path)
+            .expect("the trash was made");
+        assert_eq!(
+            made.name, "Trash",
+            "the folder tree would announce it wrong"
+        );
+        assert_eq!(
+            made.folder_type,
+            crate::common::types::FolderType::Trash.as_str()
+        );
+        assert_eq!(
+            cache
+                .folder_server_facts(&account.id)
+                .expect("the facts")
+                .get(&path),
+            Some(&(false, true)),
+            "a folder on this computer was left looking like one to open at the server"
+        );
+    }
+
+    #[test]
     fn test_an_account_with_deleting_switched_off_is_told_the_real_reason() {
         // What was said before named an IMAP port, which a POP account does not
         // have and never needed, and then claimed the change had been undone
