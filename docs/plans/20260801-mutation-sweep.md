@@ -302,6 +302,96 @@ recognised by reading.
 Four in `ical_subscription`, which is an HTTP fetch. Same pile as the rest of
 the network.
 
+## What `presentation` left standing, and why
+
+Seventeen misses, from the narrower run of 2026-08-05 that covered
+`src/application` and `src/presentation` only. Thirteen are closed. Four stay,
+and this section exists because the last pass over this area reported its
+reasons to a person and wrote none of them down. That is why the same
+seventeen were triaged twice. Anything left standing belongs here, in the tree,
+next to `data`'s twelve.
+
+Two of the four kinds from `data` show up again, and one new one.
+
+**A test that moves with the thing it tests.** The preview document's language
+looked covered. The test built the string it expected by calling the same two
+functions the document calls, so any wrong answer moved both sides of the
+assertion at once and it stayed green through all three mutations. It is a
+sharper version of "a test that names the thing it does not check": this one
+names it, calls it, and still cannot fail. Reading the machine through the
+other function that answers the same question was the whole fix.
+
+**A redundant condition is a condition no test can reach.** In
+`order_from_locale`, three arms answered month first twice, and the guard in
+the middle of them turned away nothing that did not get the same answer from
+the fallback. Loosening it changed no answer for any input, so the mutant was
+genuinely equivalent and no test could have killed it. The fix is not a test,
+it is deleting the redundancy: as one condition the same mutation fails an
+assertion that was already there. Worth recognising by shape. A comparison
+whose every rejection lands somewhere that agrees with it is unreachable, not
+untested.
+
+**Arithmetic at a boundary, again, and this one empties a panel.** All three
+`the_window_now` mutants end with the calendar list built and nothing in it.
+Both call sites are in files this sweep excludes, so nothing downstream could
+have caught them either. When a function reads the clock, split the arithmetic
+out and hand the day in, the way `date_display::format_for_list` already takes
+`now`. Otherwise the only assertions available are relative ones, and a
+relative assertion cannot tell six months back from six months back and a day.
+
+Four are left, and each for a stated reason:
+
+- **`theme::current`, answering nothing.** It calls `wxdragon::is_system_dark_mode()`
+  and the high contrast question, and its only caller is in `wx_app.rs`, which
+  is excluded on purpose. There is no wxWidgets test harness in this tree and
+  building one is not mutation triage. The decision it carries is already split
+  into `palette_for` and tested three ways.
+- **`theme::windows_high_contrast`, answering off.** Killing it means
+  `assert!(!windows_high_contrast())`, which is a test of whether the machine
+  running the suite has high contrast switched off. It goes red the moment
+  somebody turns high contrast on to do an accessibility pass, which is the one
+  time the suite must not be lying. Do not close it this way.
+- **`theme::windows_high_contrast`, answering on.** Killing it means calling
+  `SystemParametersInfoW` with `SPI_SETHIGHCONTRAST` against the live desktop of
+  whoever runs the suite. Same class of mistake as the credentials one above,
+  which left a real account behind in somebody's Windows Credential Manager.
+- **`theme::paint`, doing nothing.** Two calls on a wxWidgets control, reached
+  from three places in `wx_app.rs` and nowhere else. No test in this tree
+  constructs a widget. There is no pure part left to split: the rule that a
+  background never travels without the text colour tested against it is carried
+  by the `Surface` type and is pinned.
+
+The first and the last are not holes in the tests, they are the shape of the
+feature. `theme::current` is called once, at window construction, which is the
+whole reason a theme change waits for a restart, and `paint` reaches exactly
+the three controls the `REACH` sentence already names. Whoever picks that work
+up should read it as wiring rather than testing, and the verification after the
+wiring is still a person looking at the window.
+
+What did move on the high contrast side is the question itself. Nothing had
+ever checked that Windows answers it. The struct carries a pointer, so it is a
+different size in a 32 and a 64 bit build, and Windows refuses the call when
+the size field disagrees with what it was handed. A refused call answers zero,
+that is correctly read as "no answer", and our palette then stays in charge
+forever over the colours of somebody who cannot read anything else. The call is
+now split out and a Windows-only test says it succeeded. That test asserts
+`HCF_AVAILABLE`, which says the platform has the feature and stays set either
+way. It must never assert `HCF_HIGHCONTRASTON`, for the reason two bullets up.
+
+Two things for Pratik rather than for the next sweep:
+
+- `palette_for(setting, system_is_dark, high_contrast)` takes two bare `bool`s
+  in a row. Swapping them at the one call site compiles and every test stays
+  green, and because `is_system_dark_mode()` always answers false here the swap
+  would feed `false` into the high contrast override and hand our palette to
+  somebody running high contrast. That is a type, not a test.
+- `LOCALE_IDATE` answers 2 for the year first locales: Hungarian, Lithuanian,
+  Japanese, Chinese, Korean and others. `order_from_locale` sends anything that
+  is not 0 to day first, so those machines get "26 July 2026". `DateOrder` has
+  two variants, so there is no right answer available in the current types.
+  Either a note beside `ENGLISH_ONLY` or a third variant, and the second is a
+  feature.
+
 ## Progress
 
 | Area | Result | Done |
@@ -312,7 +402,8 @@ the network.
 | `data` | Done. 510 mutants, 405 caught, 12 missed, 93 unviable, checked on a clean run after the work. The 12 are the ones left on purpose, listed above. First run void, second found 53 | 2026-08-01 |
 | `application` (rest) | 1,440 mutants on the confirming run, 1,099 caught, 171 missed, 165 unviable, 5 timeouts. 115 of the 171 then closed, 56 reported: 21 dead code in the four manager modules, 20 behind the provider clients' fixed host, the rest equivalent or unreachable | 2026-08-04 |
 | `service` | 1,296 mutants, 629 caught, 483 missed, 183 unviable. Closed in the pure modules: safe browsing URLs, attachment names, security, OAuth credentials, spelling, mime, safety. About half the remainder is socket code and stays, see above | 2026-08-02 |
-| `presentation` (not the window) | 952 mutants, 665 caught, 186 missed, 101 unviable. 145 closed, 41 reported. About 11 of those genuinely wait on a screen reader pass rather than on code | 2026-08-03 |
+| `presentation` (not the window) | 952 mutants, 665 caught, 186 missed, 101 unviable. 145 closed, 41 reported. About 11 of those genuinely wait on a screen reader pass rather than on code. The reasons for the 41 were reported to a person and never written down, so the next run triaged them again from scratch | 2026-08-03 |
+| `presentation`, the 17 the narrower run still had | 13 closed, 4 left on purpose and now listed above. Of the 13, six are the locale question, three the document language, three the calendar window, one an equivalent mutant closed by deleting the redundancy rather than by a test | 2026-08-06 |
 
 ## Two things this sweep got wrong about itself
 
