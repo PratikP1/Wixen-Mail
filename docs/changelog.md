@@ -231,6 +231,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A day you cancelled out of a repeating Google event stays cancelled.** When
+  a repeating event has a time zone on it, which most do, Google writes the zone
+  into the line naming the days called off. That shape was not recognised, so
+  the called-off days were dropped as the event was stored, the occurrence came
+  back, and a meeting you had cancelled was announced again on the day you
+  cancelled it for. The line is now read with or without a zone on it.
+
+  Events already stored keep the blank they were saved with until Google sends
+  that event again, which it does when the event next changes or when the whole
+  calendar is read afresh. So a series nobody has touched since keeps showing
+  the day you cancelled, and there is no way to ask for a fresh read from the
+  product today.
+
 - **An event repeating on a weekday no month has is now shown once, and says
   so.** A monthly repeat can name which weekday of the month it falls on, such
   as the second Thursday. No month has a sixth Monday, but a rule could still

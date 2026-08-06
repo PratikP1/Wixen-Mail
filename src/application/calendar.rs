@@ -1016,13 +1016,20 @@ fn further_off_for(provider: &str) -> &'static str {
 /// The property name is kept on the value rather than stripped, because a
 /// calendar server's rule arrives without one and both shapes end up in the
 /// same column, so whatever reads it has to cope with both anyway.
+///
+/// A property name can carry parameters, which are written after a semicolon
+/// and before the colon: Google sends `EXDATE;TZID=Europe/London:...` whenever
+/// the series has a zone, which is most of them. So the name has to end at
+/// either mark, and looking only for the colon dropped the called-off days of
+/// every zoned series.
 fn only_the_line_naming(lines: &[String], property: &str) -> Option<String> {
     lines
         .iter()
         .find(|line| {
             line.trim()
                 .to_ascii_uppercase()
-                .starts_with(&format!("{property}:"))
+                .strip_prefix(property)
+                .is_some_and(|rest| rest.starts_with(':') || rest.starts_with(';'))
         })
         .cloned()
 }
@@ -1808,6 +1815,36 @@ mod tests {
         assert_eq!(
             local.exception_dates.as_deref(),
             Some("EXDATE:20260312T100000Z")
+        );
+    }
+
+    #[test]
+    fn test_a_called_off_day_with_a_zone_on_it_is_still_a_called_off_day() {
+        // Google writes the zone into the property name whenever the series has
+        // one, which is most of them. Looking only for the name followed by a
+        // colon missed that shape entirely, so the called-off day was dropped,
+        // the occurrence came back, and a meeting somebody had cancelled was
+        // announced again on the day it was cancelled for.
+        let event = GoogleEvent {
+            id: "series-2".to_string(),
+            summary: Some("Tuesday stand-up".to_string()),
+            recurrence: vec![
+                "RRULE:FREQ=WEEKLY;BYDAY=TU".to_string(),
+                "EXDATE;TZID=Europe/London:20260312T100000".to_string(),
+            ],
+            ..Default::default()
+        };
+
+        let local = google_event_to_local(&event, "test@gmail.com", "cal-google");
+
+        assert_eq!(
+            local.exception_dates.as_deref(),
+            Some("EXDATE;TZID=Europe/London:20260312T100000")
+        );
+        assert_eq!(
+            local.recurrence_rule.as_deref(),
+            Some("RRULE:FREQ=WEEKLY;BYDAY=TU"),
+            "the zone on the called-off day was read as the rule"
         );
     }
 
