@@ -231,6 +231,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **An event repeating on a weekday no month has is now shown once, and says
+  so.** A monthly repeat can name which weekday of the month it falls on, such
+  as the second Thursday. No month has a sixth Monday, but a rule could still
+  ask for one, and an event asking for one appeared on no day at all: the
+  calendar simply did not show it. With some of the numbers a calendar server or
+  a provider can send, it was worse, and the whole calendar list stopped being
+  built. Such an event is now shown once, on its own start day, with the same
+  sentence used for every other repeat that cannot be worked out.
+
 - **A repeating event with an impossible gap between occurrences no longer lands
   on days it is not on.** A calendar server or a provider can send a repeat rule
   saying something like "every 4294967295 weeks". The gap from one occurrence to

@@ -520,7 +520,19 @@ fn one_weekday_of_the_month(named: &str) -> Option<(i32, chrono::Weekday)> {
     let weekday = weekday_named(day)?;
     // A bare weekday on a monthly rule means every one of them in the month,
     // which is a different rule and not one this works out.
-    let nth: i32 = ordinal.parse().ok().filter(|n| *n != 0)?;
+    //
+    // Five is as many of one weekday as any month can hold, counted from either
+    // end, so anything outside that names a day no month has. It was let
+    // through, and it went two ways: a sixth Monday fell on nothing, every
+    // month, so the event was shown on no day at all, and a number near the top
+    // of its own width ran the date arithmetic off the end of the calendar and
+    // took the calendar list down with it. Refused here, the event is shown once
+    // and says why, which is what this module does with every rule it cannot
+    // work out.
+    let nth: i32 = ordinal
+        .parse()
+        .ok()
+        .filter(|n| (-5..=5).contains(n) && *n != 0)?;
     Some((nth, weekday))
 }
 
@@ -868,6 +880,30 @@ mod tests {
                 "2026-09-22 09:00",
             ]
         );
+    }
+
+    #[test]
+    fn test_a_monthly_rule_naming_a_weekday_no_month_has_is_shown_once_and_says_so() {
+        // No month has a sixth Monday, so a rule asking for one falls on no day
+        // ever, and the event was shown on none. The two large ordinals are
+        // worse than that: the date arithmetic ran off the end of the calendar
+        // and took the whole calendar list down with it. Both arrive here as
+        // they were written, because nothing between a calendar server and this
+        // code looks at what BYDAY says.
+        for impossible in [
+            "FREQ=MONTHLY;BYDAY=6MO",
+            "FREQ=MONTHLY;BYDAY=-6MO",
+            "FREQ=MONTHLY;BYDAY=2147483647MO",
+            "FREQ=MONTHLY;BYDAY=-2147483648MO",
+        ] {
+            let event = an_event("2026-03-05 09:00", "2026-03-05 09:15", Some(impossible));
+            let (from, to) = window();
+
+            let shown = falls_on(&event, from, to);
+
+            assert_eq!(starts(&shown), ["2026-03-05 09:00"], "for {impossible}");
+            assert_eq!(shown.how_often, CANNOT_BE_READ, "for {impossible}");
+        }
     }
 
     #[test]
