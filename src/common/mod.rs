@@ -6,6 +6,9 @@ pub mod answering;
 pub mod error;
 pub mod logging;
 pub mod paths;
+/// A value and the temporary folder it lives in, removed together.
+#[cfg(test)]
+pub mod temp_home;
 pub mod types;
 pub mod version;
 

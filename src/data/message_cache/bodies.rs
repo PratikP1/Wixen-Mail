@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_saving_a_body_fills_the_snippet_on_the_message() {
-        let (cache, _dir) = body_test_cache();
+        let cache = body_test_cache();
         let id = cache.save_message(&cached(1, "Quarterly report")).unwrap();
         cache
             .save_message_body(id, Some("The numbers are attached. Ada"), None)
@@ -337,7 +337,7 @@ mod tests {
     fn test_an_html_only_body_still_gives_a_snippet() {
         // Plenty of mail has no plain part at all. Falling back to the HTML
         // means the column is not silently empty for half a mailbox.
-        let (cache, _dir) = body_test_cache();
+        let cache = body_test_cache();
         let id = cache.save_message(&cached(2, "Newsletter")).unwrap();
         cache
             .save_message_body(id, None, Some("<p>Hello <b>there</b></p>"))
@@ -364,12 +364,13 @@ mod tests {
             ""
         );
     }
+    use crate::common::temp_home::TempHome;
     use crate::data::message_cache::CachedMessage;
-    use tempfile::TempDir;
 
-    fn body_test_cache() -> (MessageCache, TempDir) {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("cache");
+    fn body_test_cache() -> TempHome<MessageCache> {
+        let cache = TempHome::named("wixen_bodies_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("cache")
+        });
         cache
             .conn
             .execute(
@@ -378,7 +379,31 @@ mod tests {
                 [],
             )
             .expect("seed folder");
-        (cache, dir)
+        cache
+    }
+
+    #[test]
+    fn test_the_test_cache_takes_its_folder_with_it() {
+        // This helper used to hand back `(MessageCache, TempDir)`, and every
+        // test unpacked it as `let (cache, _dir) = ...`. A tuple drops left to
+        // right, so the folder went first, while the cache still had SQLite
+        // holding `message_cache.db` open. Windows refuses to unlink an open
+        // file, `TempDir::drop` throws the error away, and seventeen tests in
+        // this one module left fourteen folders behind on every run with
+        // nothing to show for it in the output.
+        //
+        // Take the ordering comment off the fields in `TempHome` and this goes
+        // red. Nothing else here would.
+        let left_behind = {
+            let cache = body_test_cache();
+            cache.path().to_path_buf()
+        };
+
+        assert!(
+            !left_behind.exists(),
+            "the folder outlived the cache: {}",
+            left_behind.display()
+        );
     }
 
     // ── Bodies live outside the messages table ──────────────────────────
@@ -408,7 +433,7 @@ mod tests {
 
     #[test]
     fn test_body_round_trips_through_its_own_table() {
-        let (cache, _dir) = body_test_cache();
+        let cache = body_test_cache();
         let id = cache.save_message(&cached(1, "Quarterly report")).unwrap();
 
         cache
@@ -423,7 +448,7 @@ mod tests {
     #[test]
     fn test_listing_messages_does_not_carry_bodies() {
         // The whole point: a folder listing must not pull body text through.
-        let (cache, _dir) = body_test_cache();
+        let cache = body_test_cache();
         let id = cache.save_message(&cached(1, "Quarterly report")).unwrap();
         cache
             .save_message_body(id, Some("a very long body"), None)
@@ -439,14 +464,14 @@ mod tests {
 
     #[test]
     fn test_missing_body_reads_as_absent_not_as_an_error() {
-        let (cache, _dir) = body_test_cache();
+        let cache = body_test_cache();
         let id = cache.save_message(&cached(1, "No body yet")).unwrap();
         assert!(cache.get_message_body(id).unwrap().is_none());
     }
 
     #[test]
     fn test_saving_a_body_twice_replaces_it() {
-        let (cache, _dir) = body_test_cache();
+        let cache = body_test_cache();
         let id = cache.save_message(&cached(1, "Draft")).unwrap();
         cache.save_message_body(id, Some("first"), None).unwrap();
         cache.save_message_body(id, Some("second"), None).unwrap();
@@ -458,7 +483,7 @@ mod tests {
 
     #[test]
     fn test_cached_bytes_tracks_what_is_stored() {
-        let (cache, _dir) = body_test_cache();
+        let cache = body_test_cache();
         let a = cache.save_message(&cached(1, "One")).unwrap();
         let b = cache.save_message(&cached(2, "Two")).unwrap();
         cache.save_message_body(a, Some("12345"), None).unwrap();
@@ -470,7 +495,7 @@ mod tests {
 
     #[test]
     fn test_eviction_drops_least_recently_read_first() {
-        let (cache, _dir) = body_test_cache();
+        let cache = body_test_cache();
         let old = cache.save_message(&cached(1, "Old")).unwrap();
         let new = cache.save_message(&cached(2, "New")).unwrap();
 
@@ -498,7 +523,7 @@ mod tests {
         // recorded. Without that, opening the same message every day is no
         // protection: it is dropped as though it had never been looked at, and
         // has to be downloaded again.
-        let (cache, _dir) = body_test_cache();
+        let cache = body_test_cache();
         let first = cache.save_message(&cached(1, "First")).unwrap();
         let second = cache.save_message(&cached(2, "Second")).unwrap();
         cache
@@ -525,7 +550,7 @@ mod tests {
         // after one and leaves the cache over its limit, which is a folder
         // that grows without bound on a machine somebody chose this client for
         // because it was meant to be light.
-        let (cache, _dir) = body_test_cache();
+        let cache = body_test_cache();
         let mut ids = Vec::new();
         for n in 1..=3 {
             let id = cache.save_message(&cached(n, "Body")).unwrap();
@@ -571,7 +596,7 @@ mod tests {
         // only copy and there is no server holding another. Nothing calls this
         // yet, and wiring it as it was written would have deleted the only copy
         // of every message of both kinds.
-        let (cache, _dir) = body_test_cache();
+        let cache = body_test_cache();
         let ordinary = cache.save_message(&cached(1, "From the server")).unwrap();
         let second = cache
             .save_message(&cached(2, "Also from the server"))
@@ -618,7 +643,7 @@ mod tests {
 
     #[test]
     fn test_eviction_under_budget_does_nothing() {
-        let (cache, _dir) = body_test_cache();
+        let cache = body_test_cache();
         let id = cache.save_message(&cached(1, "Small")).unwrap();
         cache.save_message_body(id, Some("tiny"), None).unwrap();
         assert_eq!(cache.evict_bodies_over(1_000_000).unwrap(), 0);
@@ -630,7 +655,7 @@ mod tests {
         // Deletion is soft, matching IMAP's deleted flag, so nothing cascades.
         // The body still has to go: nobody reads a deleted message, and it can
         // be fetched again if it comes back.
-        let (cache, _dir) = body_test_cache();
+        let cache = body_test_cache();
         let id = cache.save_message(&cached(1, "Doomed")).unwrap();
         cache.save_message_body(id, Some("body"), None).unwrap();
         cache.delete_message(id).unwrap();
@@ -641,7 +666,7 @@ mod tests {
     fn test_existing_inline_bodies_are_migrated_not_lost() {
         // Databases in the field hold bodies in the messages table. Opening one
         // must move them across rather than orphan them.
-        let (cache, _dir) = body_test_cache();
+        let cache = body_test_cache();
         let id = cache.save_message(&cached(1, "Legacy")).unwrap();
         cache
             .conn
