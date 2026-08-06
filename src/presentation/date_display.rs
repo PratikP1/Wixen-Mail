@@ -109,6 +109,20 @@ const MONTHS: [&str; 12] = [
     "December",
 ];
 
+/// Which way round this machine writes a date. 0 means month first, 1 day
+/// first, 2 year first.
+///
+/// Named here rather than inside the one function that reads it so a test can
+/// ask Windows the same question the application asks, rather than a question
+/// of its own that happens to have the same answer.
+#[cfg(target_os = "windows")]
+const LOCALE_IDATE: u32 = 0x0000_0021;
+
+/// Which clock this machine keeps. 0 means twelve hour, 1 means twenty four.
+/// Named here for the same reason as [`LOCALE_IDATE`].
+#[cfg(target_os = "windows")]
+const LOCALE_ITIME: u32 = 0x0000_0023;
+
 /// Ask Windows one thing about the user's locale.
 ///
 /// Answers how many characters were written and the first of them, which is
@@ -201,8 +215,6 @@ impl DateOrder {
     /// The order this machine uses.
     #[cfg(target_os = "windows")]
     pub fn from_system() -> Self {
-        // LOCALE_IDATE: 0 means month first.
-        const LOCALE_IDATE: u32 = 0x00000021;
         let (written, first) = read_locale(LOCALE_IDATE);
         order_from_locale(written, first)
     }
@@ -248,8 +260,6 @@ impl Clock {
     /// The clock this machine keeps.
     #[cfg(target_os = "windows")]
     pub fn from_system() -> Self {
-        // LOCALE_ITIME: 0 means the twelve hour clock.
-        const LOCALE_ITIME: u32 = 0x00000023;
         let (written, first) = read_locale(LOCALE_ITIME);
         clock_from_locale(written, first)
     }
@@ -941,6 +951,46 @@ mod tests {
         // And a locale that does answer is obeyed both ways.
         assert_eq!(order_from_locale(1, b'0' as u16), DateOrder::MonthFirst);
         assert_eq!(order_from_locale(1, b'1' as u16), DateOrder::DayFirst);
+    }
+
+    /// The other half: that the call really reaches Windows and comes back
+    /// with a locale digit in it.
+    ///
+    /// What it does not prove. Not that the digit agrees with what is set in
+    /// Region settings, because nothing here can read that independently. Not
+    /// that any date was spoken correctly, which only a screen reader pass
+    /// answers. What it does prove is that `GetLocaleInfoW` was asked the
+    /// question this application means to ask and answered it, which is what
+    /// nothing checked: an application that silently gets no answer falls back
+    /// to month first and a twelve hour clock everywhere, and looks like a
+    /// choice rather than a broken call.
+    ///
+    /// The assertions are what Microsoft documents, not what this machine
+    /// answers, so a future build image cannot turn this red without the code
+    /// changing. The count includes the terminator, so one digit is 2.
+    /// `LOCALE_IDATE` is documented as 0, 1 or 2 and `LOCALE_ITIME` as 0 or 1.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_the_locale_answer_is_a_digit_windows_actually_wrote() {
+        let (written, first) = read_locale(LOCALE_IDATE);
+        assert!(
+            written >= 2,
+            "Windows wrote {written} characters for the date order"
+        );
+        assert!(
+            (b'0' as u16..=b'2' as u16).contains(&first),
+            "the date order came back as {first}, which is not a documented one"
+        );
+
+        let (written, first) = read_locale(LOCALE_ITIME);
+        assert!(
+            written >= 2,
+            "Windows wrote {written} characters for the clock"
+        );
+        assert!(
+            (b'0' as u16..=b'1' as u16).contains(&first),
+            "the clock came back as {first}, which is not a documented one"
+        );
     }
 
     #[cfg(target_os = "windows")]
