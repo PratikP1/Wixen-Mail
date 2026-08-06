@@ -363,14 +363,20 @@ impl Rule {
     }
 
     /// The next block after this one.
+    ///
+    /// The gap is worked out wider than the interval was read in. INTERVAL has
+    /// no upper limit in the standard and none in the parser, and at the top of
+    /// its own width a week count overflows. A month count that wrapped would
+    /// be worse than a crash: it is no longer a whole number of years, so a
+    /// yearly rule would step to a month it never named, and every day worked
+    /// out from there belongs to a rule nobody wrote.
     fn step(&self, cursor: chrono::NaiveDate) -> Option<chrono::NaiveDate> {
+        let every = i64::from(self.every);
         match self.how {
-            How::Daily => cursor.checked_add_signed(chrono::Duration::days(self.every.into())),
-            How::Weekly => {
-                cursor.checked_add_signed(chrono::Duration::days((self.every * 7).into()))
-            }
-            How::Monthly => months_after(cursor, self.every),
-            How::Yearly => months_after(cursor, self.every * 12),
+            How::Daily => cursor.checked_add_signed(chrono::Duration::days(every)),
+            How::Weekly => cursor.checked_add_signed(chrono::Duration::days(every * 7)),
+            How::Monthly => months_after(cursor, every),
+            How::Yearly => months_after(cursor, every * 12),
         }
     }
 }
@@ -452,9 +458,9 @@ fn weekday_called(day: &chrono::Weekday) -> &'static str {
 }
 
 /// The first of the month a number of months after this one.
-fn months_after(date: chrono::NaiveDate, months: u32) -> Option<chrono::NaiveDate> {
+fn months_after(date: chrono::NaiveDate, months: i64) -> Option<chrono::NaiveDate> {
     use chrono::Datelike;
-    let counted = date.year() as i64 * 12 + i64::from(date.month()) - 1 + i64::from(months);
+    let counted = date.year() as i64 * 12 + i64::from(date.month()) - 1 + months;
     let year = i32::try_from(counted.div_euclid(12)).ok()?;
     let month = u32::try_from(counted.rem_euclid(12)).ok()? + 1;
     chrono::NaiveDate::from_ymd_opt(year, month, 1)
@@ -741,6 +747,28 @@ mod tests {
             starts(&shown),
             ["2026-03-05 09:00", "2026-03-19 09:00", "2026-04-02 09:00"]
         );
+    }
+
+    #[test]
+    fn test_an_interval_no_calendar_could_mean_shows_the_first_day_and_stops() {
+        // INTERVAL has no upper limit in the standard and none in the parser,
+        // and the step used to work the gap out in the width the interval was
+        // read in. A week count that wide overflows, and a month count that
+        // wraps is no longer a whole number of years, which lands the cursor in
+        // a month the rule never named. The first day is still the first day,
+        // so it is shown, and the step then runs off the end of the calendar
+        // and stops.
+        for absurd in [
+            "FREQ=WEEKLY;INTERVAL=4294967295",
+            "FREQ=YEARLY;INTERVAL=400000000",
+        ] {
+            let event = an_event("2026-03-05 09:00", "2026-03-05 09:15", Some(absurd));
+            let (from, to) = window();
+
+            let shown = falls_on(&event, from, to);
+
+            assert_eq!(starts(&shown), ["2026-03-05 09:00"], "for {absurd}");
+        }
     }
 
     #[test]

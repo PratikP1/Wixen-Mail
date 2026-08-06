@@ -231,6 +231,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A repeating event with an impossible gap between occurrences no longer lands
+  on days it is not on.** A calendar server or a provider can send a repeat rule
+  saying something like "every 4294967295 weeks". The gap from one occurrence to
+  the next was counted in a size too small to hold a number that big, so it came
+  out as some other, much smaller gap and the event appeared on days nothing had
+  asked for. Worse for a yearly rule, where the wrong gap was no longer a whole
+  number of years, so the event moved to a different month and stayed there. The
+  gap is now counted at full size. A rule whose next occurrence falls off the end
+  of the calendar shows its first day and stops.
+
 - **Deleting a contact group no longer offers to delete the people in it.** The
   question said "Delete the contact group "Team A" and the 3 contacts in it?
   This cannot be undone." It never touched the contacts. It now says the people
