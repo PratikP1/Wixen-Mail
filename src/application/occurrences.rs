@@ -43,9 +43,10 @@ const MOST_DAYS_ONE_SERIES_SHOWS: usize = 800;
 
 /// The most times a rule is stepped forward before giving up.
 ///
-/// A series set up years ago is stepped from its first day, so the count has to
-/// cover the years before the window as well as the window itself. It is a
-/// guard against a step that fails to move rather than a limit anybody meets.
+/// The window ends the stepping for anything that reaches it, so this is the
+/// backstop for what does not: a series set up long before the window is
+/// stepped from its own first day, and has to be carried across the years in
+/// between. It is a guard rather than a limit anybody meets.
 const MOST_STEPS: usize = 40_000;
 
 /// The days an event falls on between two dates.
@@ -258,6 +259,21 @@ impl Rule {
         from: chrono::NaiveDate,
         to: chrono::NaiveDate,
     ) -> Vec<chrono::NaiveDate> {
+        self.days_and_blocks(first, from, to).0
+    }
+
+    /// The same days, and how many blocks were looked at to find them.
+    ///
+    /// The count is here so a test can watch it. What has to hold about this
+    /// loop is a bound on the work it does, and a bound nothing can see is a
+    /// bound nothing would notice the loss of. Timing it instead would be a
+    /// flaky check measuring the machine rather than the code.
+    fn days_and_blocks(
+        &self,
+        first: chrono::NaiveDate,
+        from: chrono::NaiveDate,
+        to: chrono::NaiveDate,
+    ) -> (Vec<chrono::NaiveDate>, usize) {
         use crate::application::repeating::Until;
 
         let stop_on = match &self.stops {
@@ -271,41 +287,53 @@ impl Rule {
 
         let mut found = Vec::new();
         let mut counted = 0usize;
+        let mut blocks = 0usize;
         let mut cursor = self.opening(first);
-        for _ in 0..MOST_STEPS {
+        'stepping: for _ in 0..MOST_STEPS {
+            // Every day a block falls on is at or after the block's own
+            // opening: a weekly block opens on its Monday and reaches the
+            // Sunday, a monthly one opens on the first and stays inside the
+            // month, a yearly one opens on the first of January and stays
+            // inside the year. So once the cursor is past the end of the
+            // window, nothing still to come can be inside it. Without this the
+            // only thing that ends a rule falling on no day is MOST_STEPS.
+            if cursor > to {
+                break;
+            }
             for day in self.days_at(cursor, first) {
                 if day < first {
                     continue;
                 }
                 if stop_on.is_some_and(|end| day > end) {
-                    return found;
+                    break 'stepping;
                 }
                 counted += 1;
                 if most_times.is_some_and(|most| counted > most) {
-                    return found;
+                    break 'stepping;
                 }
                 if day > to {
-                    return found;
+                    break 'stepping;
                 }
                 if day >= from {
                     found.push(day);
                     if found.len() >= MOST_DAYS_ONE_SERIES_SHOWS {
-                        return found;
+                        break 'stepping;
                     }
                 }
             }
+            blocks += 1;
             let Some(next) = self.step(cursor) else {
-                return found;
+                break;
             };
             // A step that does not move is a rule that would be worked out for
             // ever. Nothing known produces one; this is what stops the one
             // nobody thought of from hanging the panel.
             if next <= cursor {
-                return found;
+                break;
             }
             cursor = next;
         }
-        found
+        (found, blocks)
     }
 
     /// Where the stepping starts, which is the block the first day sits in
@@ -1015,6 +1043,35 @@ mod tests {
 
         assert_eq!(shown.days[1].start, "2026-03-12 09:00");
         assert_eq!(shown.days[1].end, "2026-03-14 17:00");
+    }
+
+    #[test]
+    fn test_a_rule_that_falls_on_no_day_is_not_stepped_past_the_window() {
+        // A rule that lands on nothing gives the inner loop nothing to notice,
+        // so the stepping used to run to its own backstop: forty thousand
+        // months, three thousand years past a five week window, every time the
+        // calendar panel was built.
+        //
+        // Built by hand rather than parsed, because the parser now refuses a
+        // sixth Monday, and what is under test here is the stepping rather than
+        // the parse. Any rule that falls on nothing would do.
+        let rule = Rule {
+            how: How::Monthly,
+            every: 1,
+            weekdays: Vec::new(),
+            nth_weekday: Some((6, chrono::Weekday::Mon)),
+            stops: crate::application::repeating::Until::Forever,
+        };
+        let first = between("2026-03-05", "2026-03-05").0;
+        let (from, to) = window();
+
+        let (days, blocks) = rule.days_and_blocks(first, from, to);
+
+        assert!(days.is_empty(), "{days:?}");
+        assert!(
+            blocks <= 3,
+            "stepped {blocks} blocks to cover a window five weeks wide"
+        );
     }
 
     #[test]
