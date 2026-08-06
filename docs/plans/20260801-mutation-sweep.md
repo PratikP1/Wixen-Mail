@@ -311,6 +311,20 @@ reasons to a person and wrote none of them down. That is why the same
 seventeen were triaged twice. Anything left standing belongs here, in the tree,
 next to `data`'s twelve.
 
+A scoped re-run says so, per the closing rule below. 34 mutants over the four
+files touched, cut to the functions involved: 29 caught, 3 that will not
+compile, 2 missed. The 2 are the pair named below that cannot be killed
+honestly. Every one of the 13 came back caught, and so did the eleven new
+mutants the work itself created, six of them on the high contrast call that was
+split out. Splitting a call out to test it usually trades old survivors for new
+ones on the new leaf; here it did not, because the assertions exclude every
+value the replacements can take.
+
+Two of the four left standing, `theme::current` and `theme::paint`, were
+outside that re-run's filter and are unmeasured since 2026-08-05. Nothing
+touched them, and the reasons below are why no test would have reached them
+anyway.
+
 Two of the four kinds from `data` show up again, and one new one.
 
 **A test that moves with the thing it tests.** The preview document's language
@@ -403,7 +417,7 @@ Two things for Pratik rather than for the next sweep:
 | `application` (rest) | 1,440 mutants on the confirming run, 1,099 caught, 171 missed, 165 unviable, 5 timeouts. 115 of the 171 then closed, 56 reported: 21 dead code in the four manager modules, 20 behind the provider clients' fixed host, the rest equivalent or unreachable | 2026-08-04 |
 | `service` | 1,296 mutants, 629 caught, 483 missed, 183 unviable. Closed in the pure modules: safe browsing URLs, attachment names, security, OAuth credentials, spelling, mime, safety. About half the remainder is socket code and stays, see above | 2026-08-02 |
 | `presentation` (not the window) | 952 mutants, 665 caught, 186 missed, 101 unviable. 145 closed, 41 reported. About 11 of those genuinely wait on a screen reader pass rather than on code. The reasons for the 41 were reported to a person and never written down, so the next run triaged them again from scratch | 2026-08-03 |
-| `presentation`, the 17 the narrower run still had | 13 closed, 4 left on purpose and now listed above. Of the 13, six are the locale question, three the document language, three the calendar window, one an equivalent mutant closed by deleting the redundancy rather than by a test | 2026-08-06 |
+| `presentation`, the 17 the narrower run still had | 13 closed, 4 left on purpose and now listed above. Of the 13, six are the locale question, three the document language, three the calendar window, one an equivalent mutant closed by deleting the redundancy rather than by a test. Confirmed by a scoped re-run: 34 mutants, 29 caught, 3 unviable, 2 missed, and the 2 are the pair that cannot be killed honestly | 2026-08-06 |
 
 ## Two things this sweep got wrong about itself
 
