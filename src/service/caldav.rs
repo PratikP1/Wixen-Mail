@@ -2365,6 +2365,33 @@ mod tests {
     }
 
     #[test]
+    fn test_a_line_broken_inside_an_indented_document_can_be_read_as_a_property_of_its_own() {
+        // The sharper edge of the same trade, pinned so it is known rather than
+        // discovered. Once the layout is taken off, the second half of a broken
+        // line stands on its own, and where it happens to begin with a property
+        // name and a colon it is read as that property. The first line carrying
+        // a name wins, so a fragment beats the real property further down.
+        //
+        // Not fixed, and the changelog says so: telling such a fragment from a
+        // real property means guessing at what reads like one, which is the
+        // guesswork the layout rule exists to avoid.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\n\x20\x20UID:p10\r\n\
+                    \x20\x20DTSTART:20260305T090000Z\r\n\
+                    \x20\x20DESCRIPTION:Bring the slides and meet outside first\\n\r\n\
+                    \x20Location: the car park\r\n\
+                    \x20\x20LOCATION:Room 12\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(
+            event.location.as_deref(),
+            Some("the car park"),
+            "the fragment no longer reads as a property, so this limitation is closed \
+             and the changelog entry about it should go"
+        );
+    }
+
+    #[test]
     fn test_a_carried_on_line_that_reads_like_a_property_is_still_carried_on() {
         // The layout rule must not widen into "anything that reads like a
         // property is one". A note carried on with "Note: bring the numbers"
