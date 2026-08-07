@@ -1155,14 +1155,14 @@ mod tests {
     fn every_callback_page() -> Vec<(&'static str, String)> {
         vec![
             (
-                "the provider refused",
+                "provider refused",
                 Callback::Refused {
                     error: "access_denied".to_string(),
                     description: "The user denied the request".to_string(),
                 }
                 .page(),
             ),
-            ("the state did not match", Callback::Mismatched.page()),
+            ("state did not match", Callback::Mismatched.page()),
             ("still waiting", Callback::NotIt.page()),
             ("signed in", Callback::Code("code-123".to_string()).page()),
         ]
@@ -1209,6 +1209,32 @@ mod tests {
                 page.contains("<h1>") && page.contains("</h1>"),
                 "the {which} page has no heading:\n{page}"
             );
+        }
+    }
+
+    #[test]
+    fn test_what_every_callback_page_says_reads_as_sentences() {
+        // Each message is written across several source lines and joined with
+        // a trailing backslash, which keeps the space before it and drops the
+        // indent after it. Leave that space out and two words run together in
+        // the middle of what somebody is reading, and nothing else here would
+        // notice.
+        for (which, page) in every_callback_page() {
+            let Some(said) = page
+                .split("<p>")
+                .nth(1)
+                .and_then(|rest| rest.split("</p>").next())
+            else {
+                panic!("the {which} page has nothing to read");
+            };
+            assert!(!said.contains("  "), "the {which} page says: {said}");
+            let characters: Vec<char> = said.chars().collect();
+            for pair in characters.windows(2) {
+                assert!(
+                    !(matches!(pair[0], '.' | ',') && pair[1] != ' '),
+                    "the {which} page runs two words together: {said}"
+                );
+            }
         }
     }
 
