@@ -1190,8 +1190,19 @@ mod tests {
 
     /// The real window, 180 days back and 365 forward, held still at a date
     /// rather than read from the clock so the numbers in these tests stay put.
+    ///
+    /// Written out as two dates and then checked against the two constants,
+    /// because the counts asserted against it are written out as well. Widen
+    /// the window and this says so, instead of these tests going on measuring
+    /// a window the product no longer shows.
     fn the_real_window_width() -> (chrono::NaiveDate, chrono::NaiveDate) {
-        between("2026-02-07", "2027-08-06")
+        let (from, to) = between("2026-02-07", "2027-08-06");
+        assert_eq!(
+            (to - from).num_days(),
+            HOW_FAR_BACK + HOW_FAR_FORWARD,
+            "{from} to {to} was the real window when it was written down"
+        );
+        (from, to)
     }
 
     /// Where two answers first disagree, said in a line.
