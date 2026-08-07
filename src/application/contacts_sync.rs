@@ -7758,6 +7758,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_deletion_says_what_went_with_it_whatever_the_contact_says_of_itself() {
+        // The third way of reading the deletion question wrong, and the only
+        // one nothing was watching. Reading the address books' flags but not
+        // the contact's own is caught by the two tests above; reading the
+        // contact's own flag and not the address books' is not, because in
+        // every other test here the two agree.
+        //
+        // They agree because `told` recomputes the contact's flag from the
+        // address books' every time, and no write path today lowers one while
+        // raising the other. That is an invariant kept in another file, and
+        // this question must not lean on it: deleting the row throws away work
+        // nobody can get back, and "your change went with it" is the only word
+        // anybody gets. Pinned here at the deletion rather than only at the
+        // question, because it is the call that has to ask the wide way.
+        //
+        // The same shape one layer down is
+        // `test_an_address_book_left_waiting_is_work_here_whatever_the_contact_says_of_itself`.
+        let cache = a_cache("google_deletes_a_contact_whose_own_flag_is_down");
+        let mut in_both_books = a_contact_both_address_books_know(&cache, AddressBook::Microsoft);
+        in_both_books.pending = false;
+        cache
+            .save_contact(&in_both_books)
+            .expect("a contact whose own flag is down and whose address book is still owed");
+
+        let google = ScriptedGoogle {
+            people: vec![a_person_google_deleted(GOOGLES_NAME_FOR_HER)],
+            ..Default::default()
+        };
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
+
+        assert_eq!(result.deleted_local.count(), 1, "{result:?}");
+        assert_eq!(
+            result.deleted_with_a_change_waiting.count(),
+            1,
+            "the row went and took the edit Outlook was still owed with it, and the \
+             sync read the contact's own flag rather than Outlook's: {result:?}"
+        );
+        assert!(
+            what_the_contacts_sync_did(&result).contains("A contact you had changed was deleted"),
+            "counting the loss and never saying it leaves the edit as silently gone \
+             as it was before it was counted: {}",
+            what_the_contacts_sync_did(&result)
+        );
+        assert!(the_names_stored(&cache).is_empty());
+    }
+
+    #[tokio::test]
     async fn test_the_change_sent_to_outlook_carries_the_marker_outlook_last_gave() {
         // Pins the application half of what stops two devices editing the same
         // Outlook contact from silently overwriting each other. The marker
