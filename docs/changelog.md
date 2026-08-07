@@ -231,6 +231,33 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A long line from a calendar server is no longer read half of.** The calendar
+  standard makes a server break any line longer than 75 characters and carry the
+  rest on the next one. Reading an event, this counted the carried-on part as
+  something it did not recognise and passed over it, so every property long
+  enough to be broken up was read as far as the break and no further.
+
+  What that cost, in the order it matters. A repeating event that has had days
+  cancelled out of it names them on one line, and five cancelled datetimes is
+  already past the limit, so the last of them was thrown away: a meeting you had
+  cancelled was announced again on the day you cancelled it for. A long title
+  came back cut mid-word, which is the title read out. A repeat rule ending on a
+  given date could lose that date, and a series that was meant to stop then
+  never stopped. A long note or a long place came back cut in the same way, and
+  a start time could lose its own digits.
+
+  The same applies to a published calendar you subscribed to, which is written
+  by somebody else's software and broken up the same way.
+
+  Lines are now put back together before the event is read, which is what the
+  half of this program that sends a change has always done before reading the
+  document it is changing. Guests, alarms and everything else this program
+  passes through untouched were never read here and are unaffected.
+
+  Nothing was lost for good. The server keeps the document and every sync reads
+  the whole of it afresh, so an event already stored here is put right the next
+  time that calendar syncs, with nothing to ask for and nothing to press.
+
 - **A repeating event first dated a very long time ago no longer stops halfway
   through the calendar.** An event that repeats every day and carries a first
   date more than about a hundred years back was shown for the first few months

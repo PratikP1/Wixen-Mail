@@ -132,6 +132,36 @@ END:VCALENDAR"#;
     }
 
     #[test]
+    fn test_a_feed_whose_lines_the_publisher_broke_in_two_still_splits_into_whole_events() {
+        // A published feed is written by somebody else's software, which
+        // breaks any line over 75 octets and carries the rest on the next one
+        // behind a space. Putting those back together must not move where one
+        // event ends and the next begins.
+        let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n\
+                   BEGIN:VEVENT\r\nUID:feed-1\r\n\
+                   SUMMARY:Bank holiday, and the Monday after it, across England and\r\n\
+                   \x20 Wales\r\nDTSTART:20260305T090000Z\r\n\
+                   RRULE:FREQ=WEEKLY;WKST=MO;INTERVAL=1;BYDAY=TH;UNTIL=20261231T2359\r\n\
+                   \x2059Z\r\nEND:VEVENT\r\n\
+                   BEGIN:VEVENT\r\nUID:feed-2\r\nSUMMARY:Second event\r\n\
+                   DTSTART:20260306T090000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let events = parse_ics(ics).expect("a feed to read");
+
+        assert_eq!(events.len(), 2, "one event, then the next");
+        assert_eq!(
+            events[0].summary,
+            "Bank holiday, and the Monday after it, across England and Wales"
+        );
+        assert_eq!(
+            events[0].recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;WKST=MO;INTERVAL=1;BYDAY=TH;UNTIL=20261231T235959Z")
+        );
+        assert_eq!(events[1].uid, "feed-2");
+        assert_eq!(events[1].summary, "Second event");
+    }
+
+    #[test]
     fn test_parse_ics_empty() {
         let ics = "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR";
         let events = parse_ics(ics).unwrap();

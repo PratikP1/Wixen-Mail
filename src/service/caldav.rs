@@ -701,12 +701,22 @@ fn parse_report_events(xml: &str, calendar_url: &str) -> Result<Vec<CalDavEvent>
 
 /// Parse a single VEVENT from iCalendar data.
 pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Option<CalDavEvent> {
+    // Put the lines the server broke up back together first, the way the
+    // write path already does before it reads the document it is changing. A
+    // line over 75 octets is broken across two, and a reader that takes them
+    // one at a time sees a property cut short followed by something that is
+    // not a property at all, which it passes over. Five called-off datetimes
+    // is 88 octets, so this is the ordinary case and not a rare one: it lost
+    // cancelled days, cut titles mid-word, and took the stop date off a
+    // series so it never ended.
+    let document = unfolded(ical_data).join("\r\n");
+
     // Only the event's own lines. A calendar server sends its timezone rules
     // in the same document, and those rules carry a start date and a repeat
     // rule of their own for when the clocks change, so reading the document
     // whole gave every appointment on a calendar outside UTC the date the
     // clocks last changed rather than the date it is on.
-    let block = vevent_block(ical_data);
+    let block = vevent_block(&document);
 
     let uid = extract_ical_property(block, "UID")?;
     let summary = extract_ical_property(block, "SUMMARY").unwrap_or_default();
@@ -1520,6 +1530,190 @@ mod tests {
             event.exception_dates.as_deref(),
             Some("20260312T090000Z"),
             "a cancelled day is cancelled whatever case the name was written in"
+        );
+    }
+
+    // ── Lines a server broke in two ─────────────────────────────────────
+    //
+    // The calendar standard makes a server break any line longer than 75
+    // octets, carrying the rest on the next line behind a space or a tab.
+    // Read a line at a time, the carried-on part is not a property, so it is
+    // passed over and the property it belongs to is left cut short. Five
+    // called-off datetimes is 88 octets, so this is what a real server sends.
+
+    #[test]
+    fn test_every_called_off_day_survives_a_line_the_server_broke_in_two() {
+        // Five days written, and before this four came back: the fifth was on
+        // the carried-on part of the line. A day dropped here is a meeting
+        // that was cancelled being announced on the day it was cancelled for.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:folded-1\r\n\
+                    SUMMARY:Standing meeting\r\nDTSTART:20260305T090000Z\r\n\
+                    DTEND:20260305T100000Z\r\nRRULE:FREQ=WEEKLY;BYDAY=TH\r\n\
+                    EXDATE:20260312T090000Z,20260319T090000Z,20260326T090000Z,20260402T0900\r\n\
+                    \x2000Z,20260409T090000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(
+            event.exception_dates.as_deref(),
+            Some(
+                "20260312T090000Z,20260319T090000Z,20260326T090000Z,\
+                 20260402T090000Z,20260409T090000Z"
+            ),
+            "all five cancelled days, including the one the fold split"
+        );
+    }
+
+    #[test]
+    fn test_a_title_the_server_broke_in_two_is_read_whole() {
+        // A title cut mid-word is the title a screen reader reads out.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:folded-2\r\n\
+                    SUMMARY:Quarterly planning review with the whole product and support\r\n\
+                    \x20 team, room four\r\nDTSTART:20260305T090000Z\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(
+            event.summary,
+            "Quarterly planning review with the whole product and support team, room four"
+        );
+    }
+
+    #[test]
+    fn test_a_repeat_rule_broken_in_two_keeps_the_date_the_series_stops() {
+        // The end date is the last thing on the line, so it is the first thing
+        // a fold takes. Losing it turns a series that ends into one that never
+        // does, and losing part of it leaves a date no reader can act on.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:folded-3\r\n\
+                    SUMMARY:Standup\r\nDTSTART:20260305T090000Z\r\n\
+                    RRULE:FREQ=WEEKLY;WKST=MO;INTERVAL=1;BYDAY=MO,TU,WE,TH,FR;UNTIL=20261231T2359\r\n\
+                    \x2059Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(
+            event.recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;WKST=MO;INTERVAL=1;BYDAY=MO,TU,WE,TH,FR;UNTIL=20261231T235959Z"),
+            "the whole stop date, not the digits that fitted on the first line"
+        );
+    }
+
+    #[test]
+    fn test_a_line_carried_on_behind_a_tab_reads_the_same_as_behind_a_space() {
+        // The standard allows either mark, and a server picks one. Only the
+        // mark itself is dropped, so a break lands wherever the octet count
+        // ran out and not politely between words.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:folded-4\r\n\
+                    SUMMARY:Retrospective for the quarter that has just fini\r\n\
+                    \tshed\r\nDTSTART:20260305T090000Z\r\n\
+                    EXDATE:20260312T090000Z,20260319T0900\r\n\t00Z\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(
+            event.summary,
+            "Retrospective for the quarter that has just finished"
+        );
+        assert_eq!(
+            event.exception_dates.as_deref(),
+            Some("20260312T090000Z,20260319T090000Z")
+        );
+    }
+
+    #[test]
+    fn test_a_note_the_server_broke_in_two_is_read_whole() {
+        // A note is prose, so it is the property most likely to be long enough
+        // to be broken up, and it is read out as the details of the event.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:folded-5\r\n\
+                    SUMMARY:Standup\r\nDTSTART:20260305T090000Z\r\n\
+                    DESCRIPTION:Bring the numbers for last month and the three questions\r\n\
+                    \x20 that came out of the last one\r\n\
+                    LOCATION:Building two\\, fourth floor\\, the room at the far\r\n\
+                    \x20 end of the corridor\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(
+            event.description.as_deref(),
+            Some(
+                "Bring the numbers for last month and the three questions \
+                 that came out of the last one"
+            )
+        );
+        assert_eq!(
+            event.location.as_deref(),
+            Some("Building two\\, fourth floor\\, the room at the far end of the corridor")
+        );
+    }
+
+    #[test]
+    fn test_a_start_time_broken_in_two_keeps_its_date_and_its_zone() {
+        // A zone name can be long enough on its own to push the time past the
+        // fold, and a start time read short is an event on no day at all.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:folded-6\r\n\
+                    SUMMARY:Standup\r\n\
+                    DTSTART;TZID=America/Argentina/Buenos_Aires:2026030\r\n\x205T090000\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(event.dtstart, "2026-03-05T09:00:00");
+        assert_eq!(
+            event.time_zone.as_deref(),
+            Some("America/Argentina/Buenos_Aires")
+        );
+        assert!(!event.is_all_day, "a time is not a whole day");
+    }
+
+    #[test]
+    fn test_finding_the_event_still_ignores_the_timezone_rules_when_lines_are_broken() {
+        // Putting the lines back together must not move where the event starts
+        // and ends, or the clock-change rule is read as the event's own.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:Europe/London\r\n\
+                    BEGIN:DAYLIGHT\r\nDTSTART:19700329T010000\r\n\
+                    RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU;WKST=MO;INTERVAL=1;UNTIL=20301231\r\n\
+                    \x20T235959Z\r\nEND:DAYLIGHT\r\nEND:VTIMEZONE\r\n\
+                    BEGIN:VEVENT\r\nUID:folded-7\r\nSUMMARY:Standup\r\n\
+                    DTSTART;TZID=Europe/London:20260305T090000\r\n\
+                    RRULE:FREQ=WEEKLY;BYDAY=TH\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(event.dtstart, "2026-03-05T09:00:00");
+        assert_eq!(
+            event.recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;BYDAY=TH")
+        );
+    }
+
+    #[test]
+    fn test_a_document_with_nothing_broken_in_two_reads_as_it_always_did() {
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:plain-1\r\nSUMMARY:Lunch\r\n\
+                    DESCRIPTION:A short note\r\nLOCATION:The kitchen\r\n\
+                    DTSTART;TZID=Europe/London:20260305T120000\r\n\
+                    DTEND;TZID=Europe/London:20260305T130000\r\nSTATUS:TENTATIVE\r\n\
+                    RRULE:FREQ=WEEKLY\r\nEXDATE:20260312T120000\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", Some("\"e1\""))
+            .expect("an event");
+
+        assert_eq!(event.uid, "plain-1");
+        assert_eq!(event.summary, "Lunch");
+        assert_eq!(event.description.as_deref(), Some("A short note"));
+        assert_eq!(event.location.as_deref(), Some("The kitchen"));
+        assert_eq!(event.dtstart, "2026-03-05T12:00:00");
+        assert_eq!(event.dtend.as_deref(), Some("2026-03-05T13:00:00"));
+        assert_eq!(event.status, "TENTATIVE");
+        assert_eq!(event.time_zone.as_deref(), Some("Europe/London"));
+        assert_eq!(event.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+        assert_eq!(event.exception_dates.as_deref(), Some("20260312T120000"));
+        assert!(!event.is_all_day);
+        assert_eq!(
+            event.ical_data, ical,
+            "the document is kept as it arrived, because a change is written over it"
         );
     }
 
