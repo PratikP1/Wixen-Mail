@@ -400,6 +400,16 @@ impl Rule {
         // after so many times is walked from there. Started anywhere else the
         // count would begin part way through, and a series that ran out in 1918
         // would go on showing today.
+        //
+        // What that leaves, said plainly rather than left to be found: a
+        // counted series still meets MOST_STEPS the way every series used to.
+        // A daily one first dated 1917, carrying a count big enough to still be
+        // running now, is shown on 151 of the 546 days the window holds, which
+        // is the fault above on a narrower shape. Reaching it takes a count in
+        // the tens of thousands, which nothing writes by hand. Closing it means
+        // working out how many occurrences were skipped as well as where to
+        // start, and that is only closed form for the daily and weekly rules,
+        // so it was left rather than half done.
         if matches!(
             self.stops,
             crate::application::repeating::Until::AfterTimes(_)
