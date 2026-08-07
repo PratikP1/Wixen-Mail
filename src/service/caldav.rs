@@ -974,26 +974,33 @@ fn extract_xml_value(xml: &str, tag: &str) -> Option<String> {
     if value.is_empty() { None } else { Some(value) }
 }
 
+/// Whether a line carries that property, whatever case it is written in.
+///
+/// The one answer to "is this line a SUMMARY", asked by everything that reads a
+/// property off a line and by the writer deciding which of the server's lines
+/// to take out. Two answers is the split this whole file is a record of: the
+/// writer read `SUMMARY ` as a different name from `SUMMARY` and left the
+/// server's own title in the document, then wrote the new one beside it, and
+/// two titles went to the calendar.
+fn names_the_property(line: &str, property: &str) -> bool {
+    property_name(line).is_some_and(|name| name.eq_ignore_ascii_case(property))
+}
+
 /// What one line carries for a property, or nothing if it is another property.
 ///
-/// A property name is followed by ':' or by ';' introducing parameters, as in
-/// `DTSTART;VALUE=DATE:20260305`. Without that check a request for SUMMARY is
-/// also satisfied by a crafted SUMMARYX line. The name is matched whatever case
-/// it is written in, which is what the calendar standard asks for.
+/// The name has to be the whole name: without that check a request for SUMMARY
+/// is also satisfied by a crafted SUMMARYX line. It is matched whatever case it
+/// is written in, which is what the calendar standard asks for.
 ///
 /// Everything up to the first colon is the name and its parameters, and the
 /// value is what follows. Taking the value off here rather than at each caller
 /// is what keeps a parameter out of the value: a zone name is allowed a digit,
 /// `Etc/GMT+5`, and a reader that keeps the parameters has to know that.
 fn value_named_on<'a>(line: &'a str, property: &str) -> Option<&'a str> {
-    let (name, rest) = line.trim().split_at_checked(property.len())?;
-    if !name.eq_ignore_ascii_case(property) {
+    if !names_the_property(line, property) {
         return None;
     }
-    if !rest.starts_with(':') && !rest.starts_with(';') {
-        return None;
-    }
-    let value = rest[rest.find(':')? + 1..].trim();
+    let value = line[line.find(':')? + 1..].trim();
     (!value.is_empty()).then_some(value)
 }
 
@@ -1072,19 +1079,26 @@ fn says_utc(written: &str) -> bool {
 /// a zone, so the next change took the zone off the server's copy as well.
 ///
 /// A quoted value is handed back without its quote marks. See [`unquoted`].
+///
+/// Which lines are this property's is asked at [`names_the_property`], the same
+/// as everything else here. Asked its own way, this was a third reading of a
+/// property name in a file whose defects all come from there being more than
+/// one.
 fn ical_parameter(ical: &str, property: &str, parameter: &str) -> Option<String> {
     for line in ical.lines() {
         let line = line.trim();
-        let Some((name, rest)) = line.split_at_checked(property.len()) else {
-            continue;
-        };
-        if !name.eq_ignore_ascii_case(property) || !rest.starts_with(';') {
+        if !names_the_property(line, property) {
             continue;
         }
-        let Some(colon) = rest.find(':') else {
+        // Parameters sit between the name and the first colon, so a line whose
+        // first punctuation is the colon carries none.
+        let (Some(semicolon), Some(colon)) = (line.find(';'), line.find(':')) else {
             continue;
         };
-        for part in rest[1..colon].split(';') {
+        if semicolon > colon {
+            continue;
+        }
+        for part in line[semicolon + 1..colon].split(';') {
             let Some((named, value)) = part.split_once('=') else {
                 continue;
             };
@@ -1376,7 +1390,11 @@ impl std::fmt::Display for WhyTheChangeWasNotMade {
 /// routine, not here. Nor can it see a line neither side recognises as a
 /// property: a `SUMMARY` the server wrote in a shape [`property_name`] does not
 /// read is not taken out and not counted here either, so the document goes out
-/// carrying two of them.
+/// carrying two of them. White space around the name was one such shape and is
+/// read now, so that one is closed; a name a server wrapped in quote marks, or
+/// anything else nothing here has met, is not. The check cannot close that
+/// class, because it asks the same routine that missed the line in the first
+/// place.
 ///
 /// **What it does see.** The change spliced somewhere no reader will look, the
 /// change landing inside a nested block, a line lost or doubled between
@@ -1536,12 +1554,13 @@ fn holds_the_event(lines: &[String], its: &EventLines, uid: &str) -> bool {
 }
 
 /// Whether a line carries one of the properties a change replaces.
+///
+/// Asked through the same routine the readers ask, so a line the reader takes a
+/// title off is a line the writer takes out.
 fn a_change_replaces(line: &str) -> bool {
-    property_name(line).is_some_and(|name| {
-        PROPERTIES_A_CHANGE_REPLACES
-            .iter()
-            .any(|owned| owned.eq_ignore_ascii_case(name))
-    })
+    PROPERTIES_A_CHANGE_REPLACES
+        .iter()
+        .any(|owned| names_the_property(line, owned))
 }
 
 /// This program's properties, plus the two that say which copy is newer.
@@ -1723,9 +1742,21 @@ fn opens_or_closes_a_component(line: &str) -> bool {
 ///
 /// The name runs to the first `;` or `:`, so `DTSTART;TZID=Europe/London:...`
 /// is a DTSTART. A line with neither is not a property.
+///
+/// White space around the name is not part of it. RFC 5545 section 3.1 allows
+/// none there, so `SUMMARY :Quarterly review` is a line no calendar program
+/// should have written, and this program reads it as a title rather than
+/// refusing the document. That is a decision and it is worth saying why: the
+/// alternative is refusing to change any event whose stored copy carries such a
+/// line, for ever, over punctuation nobody can see. What is not on offer is
+/// reading it here and not there. Read by one side only, the server's own title
+/// stayed in the document, the new one was written beside it, two titles went
+/// to the calendar and which one shows is up to the calendar program.
 fn property_name(line: &str) -> Option<&str> {
-    let end = line.find([';', ':'])?;
-    (end > 0).then(|| &line[..end])
+    let named = line.trim_start();
+    let end = named.find([';', ':'])?;
+    let name = named[..end].trim_end();
+    (!name.is_empty()).then_some(name)
 }
 
 /// Text somebody typed, written so a document reads it as one value.
@@ -3524,6 +3555,35 @@ pub(crate) mod writing_tests {
         format!("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n{event}END:VCALENDAR\r\n")
     }
 
+    /// The document with the stamp saying when the change was made replaced by
+    /// a fixed word.
+    ///
+    /// Everything else a change writes is worked out from the document and the
+    /// event, so with this one line pinned a test can name the whole document
+    /// the writer produced instead of picking lines out of it. That difference
+    /// matters: a test that asks whether some line is *present* is answered by
+    /// the document the writer copied through untouched, and one that names the
+    /// whole document is not.
+    pub(crate) fn with_the_moment_the_change_was_made_fixed(document: &str) -> String {
+        let stamps = document
+            .split("\r\n")
+            .filter(|line| line.starts_with("DTSTAMP:"))
+            .count();
+        assert_eq!(
+            stamps, 1,
+            "a change says once when it was made, and this document says it \
+             {stamps} times:\n{document}"
+        );
+        document
+            .split("\r\n")
+            .map(|line| match line.starts_with("DTSTAMP:") {
+                true => "DTSTAMP:<the moment the change was made>",
+                false => line,
+            })
+            .collect::<Vec<&str>>()
+            .join("\r\n")
+    }
+
     #[test]
     fn test_the_change_has_to_come_back_out_of_the_document_going_out() {
         // The one claim this program makes about a change it sends is that the
@@ -3532,62 +3592,98 @@ pub(crate) mod writing_tests {
         // reader will use on it, and the lines the writer meant to put in have
         // to be the lines that come out: all of them, in that order, once each,
         // among the event's own lines, under the same identity.
-        let meant = [
-            "SUMMARY:Quarterly review".to_string(),
-            "DTSTART:20260305T090000Z".to_string(),
-            "SEQUENCE:4".to_string(),
-        ];
-        let whole = "BEGIN:VEVENT\r\nUID:e-1\r\nSUMMARY:Quarterly review\r\n\
-                     DTSTART:20260305T090000Z\r\nSEQUENCE:4\r\nEND:VEVENT\r\n";
+        //
+        // The fixture carries every property a change replaces, and that is
+        // load-bearing rather than thoroughness for its own sake. This check
+        // compares the lines it takes back out of the document with the lines
+        // it meant to put in, so a name missing from PROPERTIES_A_CHANGE_REPLACES
+        // shows up only when the document in front of it happens to carry that
+        // property. Three properties in the fixture and EXDATE could be dropped
+        // from that list, leaving the server's old cancelled days sitting beside
+        // the new ones, with this test green.
+        let meant: Vec<String> = [
+            "SUMMARY:Quarterly review",
+            "DESCRIPTION:A note",
+            "LOCATION:Room 12",
+            "DTSTART:20260305T090000Z",
+            "DTEND:20260305T100000Z",
+            "RRULE:FREQ=WEEKLY;COUNT=10",
+            "EXDATE:20260312T090000Z",
+            "STATUS:CONFIRMED",
+            "SEQUENCE:4",
+            "DTSTAMP:20260101T000000Z",
+        ]
+        .iter()
+        .map(|line| (*line).to_string())
+        .collect();
+
+        assert_eq!(
+            meant.len(),
+            PROPERTIES_A_CHANGE_REPLACES.len(),
+            "the fixture carries one line per property a change replaces, and \
+             it no longer does, so this check is back to covering only the \
+             properties somebody remembered"
+        );
+        for owned in PROPERTIES_A_CHANGE_REPLACES {
+            assert!(
+                meant
+                    .iter()
+                    .filter_map(|line| property_name(line))
+                    .any(|name| name.eq_ignore_ascii_case(owned)),
+                "a change replaces {owned} and the fixture carries no {owned} \
+                 line, so taking {owned} off that list would leave this green"
+            );
+        }
+
+        let whole = format!(
+            "BEGIN:VEVENT\r\nUID:e-1\r\n{}\r\nEND:VEVENT\r\n",
+            meant.join("\r\n")
+        );
 
         assert!(
-            the_change_came_back_out(&a_document_carrying(whole), "e-1", &meant),
+            the_change_came_back_out(&a_document_carrying(&whole), "e-1", &meant),
             "a document really carrying the change was refused, so nobody \
              could ever save anything"
         );
 
         for (going_out, what_went_wrong) in [
             (
-                "BEGIN:VEVENT\r\nUID:e-1\r\nSUMMARY:Quarterly review\r\n\
-                 SEQUENCE:4\r\nEND:VEVENT\r\n",
+                whole.replace("EXDATE:20260312T090000Z\r\n", ""),
                 "a line the writer meant to put in never reached the document",
             ),
             (
-                "BEGIN:VEVENT\r\nUID:e-1\r\nSUMMARY:Last quarter\r\n\
-                 SUMMARY:Quarterly review\r\nDTSTART:20260305T090000Z\r\n\
-                 SEQUENCE:4\r\nEND:VEVENT\r\n",
+                whole.replace(
+                    "SUMMARY:Quarterly review",
+                    "SUMMARY:Last quarter\r\nSUMMARY:Quarterly review",
+                ),
                 "the server's own line was left sitting beside the new one, \
                  which for a start date is an appointment on two days",
             ),
             (
-                "BEGIN:VEVENT\r\nUID:somebody-else\r\nSUMMARY:Quarterly review\r\n\
-                 DTSTART:20260305T090000Z\r\nSEQUENCE:4\r\nEND:VEVENT\r\n",
+                whole.replace("UID:e-1", "UID:somebody-else"),
                 "the change was written into somebody else's appointment",
             ),
             (
-                "BEGIN:VEVENT\r\nUID:e-1\r\nEND:VEVENT\r\n\
-                 SUMMARY:Quarterly review\r\nDTSTART:20260305T090000Z\r\n\
-                 SEQUENCE:4\r\n",
+                whole.replace("UID:e-1\r\n", "UID:e-1\r\nEND:VEVENT\r\n"),
                 "the change landed outside the event, where no reader looks",
             ),
             (
-                "BEGIN:VEVENT\r\nUID:e-1\r\nSUMMARY:Quarterly review\r\n\
-                 DTSTART:20260305T090000Z\r\nSEQUENCE:4\r\n",
+                whole.replace("\r\nEND:VEVENT\r\n", "\r\n"),
                 "the event is never closed, so where it ends is a guess",
             ),
             (
-                "BEGIN:VEVENT\r\nUID:e-1\r\nSUMMARY:Quarterly review\r\n\
-                 BEGIN:VALARM\r\nDTSTART:20260305T090000Z\r\nSEQUENCE:4\r\n\
-                 END:VALARM\r\nEND:VEVENT\r\n",
+                whole
+                    .replace("DESCRIPTION:A note", "BEGIN:VALARM\r\nDESCRIPTION:A note")
+                    .replace("\r\nEND:VEVENT\r\n", "\r\nEND:VALARM\r\nEND:VEVENT\r\n"),
                 "the change landed inside the alarm rather than on the event",
             ),
             (
-                "VERSION:2.0\r\n",
+                "VERSION:2.0\r\n".to_string(),
                 "there is no event in the document at all",
             ),
         ] {
             assert!(
-                !the_change_came_back_out(&a_document_carrying(going_out), "e-1", &meant),
+                !the_change_came_back_out(&a_document_carrying(&going_out), "e-1", &meant),
                 "{what_went_wrong}, and the document was handed out to be sent \
                  anyway"
             );
@@ -4010,6 +4106,78 @@ pub(crate) mod writing_tests {
         );
     }
 
+    /// A document whose title and start carry the white space RFC 5545 does not
+    /// allow in front of the punctuation after a property name.
+    fn a_document_spaced_out_where_the_standard_allows_none(uid: &str) -> String {
+        format!(
+            "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:{uid}\r\n\
+             SUMMARY :Quarterly review\r\n\
+             DTSTART ;TZID=Europe/London:20260305T090000\r\n\
+             END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+    }
+
+    #[test]
+    fn test_a_property_spaced_out_where_the_standard_allows_none_is_still_read() {
+        // RFC 5545 has no white space between a property name and the ':' or
+        // ';' after it, so a server sending `SUMMARY :Quarterly review` is
+        // sending a malformed line. This program reads it rather than refusing
+        // it, and it has to, because the writer beside the reader takes such a
+        // line out: a reader that skipped it and a writer that did not is the
+        // split every defect in this file came from.
+        let held = a_document_spaced_out_where_the_standard_allows_none("e-1");
+
+        let read = parse_ical_vevent(&held, "https://example.test/e-1.ics", None)
+            .expect("an event to read");
+
+        assert_eq!(
+            read.summary, "Quarterly review",
+            "the title was skipped and the row came back with no title at all"
+        );
+        assert_eq!(
+            read.time_zone.as_deref(),
+            Some("Europe/London"),
+            "the zone was skipped, so a nine o'clock London meeting reads in \
+             whatever zone this machine keeps"
+        );
+        assert_eq!(read.dtstart, "2026-03-05T09:00:00");
+    }
+
+    #[test]
+    fn test_a_title_spaced_out_where_the_standard_allows_none_does_not_go_back_as_two_titles() {
+        // The writer's half of the same line. `property_name` read the name as
+        // everything before the punctuation, space and all, so `SUMMARY ` was
+        // not `SUMMARY` and the server's own title was copied through with the
+        // new one written beside it. Two titles went to the server, and the
+        // read-back check recognised neither of them as a title so it agreed
+        // the change was in the document, the PUT went out, and the row stopped
+        // waiting.
+        let held = a_document_spaced_out_where_the_standard_allows_none("e-1");
+        let moved = CalDavEvent {
+            summary: "Moved".to_string(),
+            ..an_event("e-1")
+        };
+
+        let changed =
+            ical_with_the_event_changed(&held, &moved).expect("the event to be found and changed");
+
+        assert!(
+            changed.contains("SUMMARY:Moved"),
+            "the change never reached the document:\n{changed}"
+        );
+        assert!(
+            !changed.contains("Quarterly review"),
+            "the server's own title went back beside the new one, so two titles \
+             reached the calendar and which one shows is up to the calendar \
+             program:\n{changed}"
+        );
+        assert!(
+            !changed.contains("20260305T090000"),
+            "the server's own start went back beside the new one, which is an \
+             appointment on two days:\n{changed}"
+        );
+    }
+
     #[test]
     fn test_a_change_reaches_an_event_in_a_document_somebody_laid_out_by_hand() {
         // The reader and the writer have to agree about where an event begins,
@@ -4112,6 +4280,27 @@ pub(crate) mod writing_tests {
         // the nothing the reader found. What goes to the server has no RRULE,
         // no EXDATE and no DESCRIPTION, the server takes it, and the series is
         // gone for good with nothing retrying.
+        //
+        // The whole document is named rather than a few lines of it, and that
+        // is the point of this version. Where the event ends is now one
+        // routine, [`events_in`], asked by the reader and the writer both, so
+        // the ASYMMETRIC failure this test was written for cannot happen again
+        // and the test could not see the symmetric one that replaced it: with
+        // both sides stopping at the note, the writer splices its lines above
+        // the note and copies the note, the rule and the cancelled day through
+        // below it untouched, so every "is this line present" question is
+        // answered yes by lines the writer never wrote. Naming the document
+        // catches it, because those lines are then in the document twice and in
+        // the wrong place.
+        //
+        // What this now catches: a boundary both sides agree on and both have
+        // wrong, a property written where no reader will look, a property
+        // doubled, a property dropped, a value written in a shape the server
+        // would refuse, and any change to what a change replaces. What it still
+        // cannot catch is a defect that reaches this exact document by another
+        // route, and anything about a shape not in this fixture: there is no
+        // alarm here, no timezone block, no folded line and no second event.
+        // Those are named by the tests beside this one.
         let held = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:note-2\r\n\
                     SUMMARY:Old title\r\nDTSTART:20260305T090000Z\r\n\
                     DESCRIPTION:Say END:VEVENT when you are done\r\n\
@@ -4127,21 +4316,20 @@ pub(crate) mod writing_tests {
         let changed =
             ical_with_the_event_changed(held, &renamed).expect("the event to be found and changed");
 
-        assert!(
-            changed.contains("RRULE:FREQ=WEEKLY;COUNT=10"),
-            "the repeat rule is gone from what would go to the server:\n{changed}"
-        );
-        assert!(
-            changed.contains("EXDATE:20260312T090000Z"),
-            "the cancelled day is gone from what would go to the server:\n{changed}"
-        );
-        assert!(
-            changed.contains("Say END:VEVENT when you are done"),
-            "the note somebody typed is gone from what would go to the server:\n{changed}"
-        );
-        assert!(
-            changed.contains("SUMMARY:New title"),
-            "the change never reached the document:\n{changed}"
+        assert_eq!(
+            with_the_moment_the_change_was_made_fixed(&changed),
+            "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:note-2\r\n\
+             SUMMARY:New title\r\n\
+             DESCRIPTION:Say END:VEVENT when you are done\r\n\
+             DTSTART:20260305T090000Z\r\n\
+             RRULE:FREQ=WEEKLY;COUNT=10\r\n\
+             EXDATE:20260312T090000Z\r\n\
+             STATUS:CONFIRMED\r\n\
+             SEQUENCE:1\r\n\
+             DTSTAMP:<the moment the change was made>\r\n\
+             END:VEVENT\r\nEND:VCALENDAR\r\n",
+            "this is not the document a change to the title should have \
+             produced"
         );
     }
 

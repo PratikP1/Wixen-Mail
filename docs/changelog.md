@@ -241,6 +241,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **An appointment whose title a calendar server wrote with a stray space no
+  longer reaches the calendar twice.** The calendar standard puts no space
+  between a property name and the punctuation after it, so a server holding
+  `SUMMARY :Quarterly review` is holding a line it should never have written.
+  This program used to read past such a line and then leave it in place when it
+  sent your change, so the server ended up with two titles on one appointment
+  and which one you saw was up to whichever calendar program you looked in. The
+  same went for the start date, where two of them is an appointment on two days.
+
+  Both halves of the program now read such a line the same way. It is read
+  rather than refused, so the title shows here instead of the appointment coming
+  through with no title at all, and it is replaced rather than left beside your
+  change when the change goes out. The zone a start date is written in is read
+  the same way too, so a nine o'clock London meeting no longer arrives with no
+  zone on it.
+
+  Known limitation: this covers space around the name and nothing else. A line
+  mangled some other way is still copied through untouched, and this program has
+  no way to notice, because the check that reads a change back out asks the same
+  reader that missed the line.
+
 - **An appointment further ahead than a sync asks about is no longer deleted
   from this computer.** When this program reads a calendar from a calendar
   server it asks for six months back to a year forward, because asking for

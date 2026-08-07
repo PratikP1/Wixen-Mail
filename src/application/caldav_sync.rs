@@ -2000,22 +2000,29 @@ mod tests {
             .await
             .expect("three requests");
         assert_eq!(asked_for(&requests[1]), "PUT /cal/e-1.ics");
-        let sent = body_of(&requests[1]);
-        assert!(
-            sent.contains("RRULE:FREQ=WEEKLY;COUNT=10"),
-            "the repeat rule was taken off the server's copy: {sent}"
-        );
-        assert!(
-            sent.contains("EXDATE:20260312T090000Z"),
-            "the cancelled day was taken off the server's copy: {sent}"
-        );
-        assert!(
-            sent.contains("Say END:VEVENT when you are done"),
-            "the note somebody typed was taken off the server's copy: {sent}"
-        );
-        assert!(
-            sent.contains("SUMMARY:Quarterly review\\, moved"),
-            "what was typed here did not go out: {sent}"
+        // The whole of what went out, rather than four questions about whether
+        // some line is in it. Where an event ends is one routine now, asked by
+        // the reader and the writer both, so the asymmetric failure this test
+        // was written for cannot come back and the questions could not see the
+        // symmetric one that could: both sides stopping at the note leaves the
+        // note, the rule and the cancelled day copied through below the change,
+        // which answers every "is it there" yes while the document is wrong.
+        assert_eq!(
+            crate::service::caldav::writing_tests::with_the_moment_the_change_was_made_fixed(
+                body_of(&requests[1])
+            ),
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:e-1\r\n\
+             SUMMARY:Quarterly review\\, moved\r\n\
+             DESCRIPTION:Say END:VEVENT when you are done\r\n\
+             DTSTART:20260305T090000Z\r\n\
+             DTEND:20260305T100000Z\r\n\
+             RRULE:FREQ=WEEKLY;COUNT=10\r\n\
+             EXDATE:20260312T090000Z\r\n\
+             STATUS:CONFIRMED\r\n\
+             SEQUENCE:1\r\n\
+             DTSTAMP:<the moment the change was made>\r\n\
+             END:VEVENT\r\nEND:VCALENDAR\r\n",
+            "this is not the document that should have gone to the server"
         );
         assert_eq!(result.sent, 1);
         assert!(result.errors.is_empty(), "{:?}", result.errors);
@@ -2070,9 +2077,21 @@ mod tests {
             "a document for another event was written into and sent back"
         );
         assert_eq!(result.sent, 0);
+        // Which refusal, not just that there was one. Nothing goes out of this
+        // sync unless the change came back out of the document, and a document
+        // for another event fails that check too, under a different name. So
+        // "no PUT and an error" stayed true with the identity guard taken out
+        // altogether, and this test went on passing for the wrong reason. The
+        // sentence somebody is shown is the one thing that tells the two apart:
+        // a wrong address is theirs to fix, a change that will not come back
+        // out of a document is this program's.
+        let why = crate::service::caldav::WhyTheChangeWasNotMade::TheDocumentIsForAnotherEvent
+            .to_string();
         assert!(
-            !result.errors.is_empty(),
-            "writing into somebody else's appointment was reported as nothing happening"
+            result.errors.iter().any(|said| said.contains(&why)),
+            "writing into somebody else's appointment was refused for some other \
+             reason, so nothing here says the identity was ever checked: {:?}",
+            result.errors
         );
         let stored = cache
             .get_event_by_id(&waiting.id)
