@@ -7245,10 +7245,19 @@ mod tests {
     #[tokio::test]
     async fn test_a_change_only_outlook_still_needs_survives_a_google_read_that_moved_nothing() {
         // The same state, with Google's copy standing still. Nothing has moved
-        // anywhere, so there is nothing to take, nothing to say and nothing to
-        // count: the contact is left alone and Outlook is still owed the edit.
+        // anywhere, so there is nothing to take and nothing to say about a
+        // loss: the contact is left alone and Outlook is still owed the edit.
         // Google's copy is given different words from the stored one so that
         // the two outcomes can be told apart at all.
+        //
+        // "Left alone" and "settled" are not the same word here, and telling
+        // them apart is the whole reason this test asks about the sentence as
+        // well as the counts. Asked the narrow way, Google's own flag says
+        // nothing is waiting, so the contact reaches the arm for one neither
+        // side moved and is read out as unchanged. Both arms write nothing and
+        // both leave every other count at nought, so without the unchanged
+        // count and the sentence built from it this test cannot tell the
+        // narrow question from the wide one at all.
         let cache = a_cache("google_read_moved_nothing");
         let in_both_books = a_contact_both_address_books_know(&cache, AddressBook::Microsoft);
         let google = ScriptedGoogle {
@@ -7280,6 +7289,18 @@ mod tests {
         assert!(
             !what_the_contacts_sync_did(&result).contains("replaced"),
             "nothing was lost and somebody was told they had lost a change: {}",
+            what_the_contacts_sync_did(&result)
+        );
+        assert_eq!(
+            result.unchanged.count(),
+            0,
+            "a contact still owing Outlook an edit was counted as one neither \
+             side had touched: {result:?}"
+        );
+        assert!(
+            !what_the_contacts_sync_did(&result).contains("unchanged"),
+            "an edit is still waiting to reach Outlook and the sync called the \
+             contact unchanged: {}",
             what_the_contacts_sync_did(&result)
         );
         assert!(
@@ -7340,7 +7361,8 @@ mod tests {
     #[tokio::test]
     async fn test_a_change_only_google_still_needs_survives_an_outlook_read_that_moved_nothing() {
         // The Microsoft sync's half of the rule above, and read with the same
-        // note about the two copies being given different words.
+        // note about the two copies being given different words and the same
+        // note about why the unchanged count and its sentence are asked for.
         let cache = a_cache("outlook_read_moved_nothing");
         let in_both_books = a_contact_both_address_books_know(&cache, AddressBook::Google);
         let microsoft = ScriptedMicrosoft {
@@ -7377,6 +7399,18 @@ mod tests {
         assert!(
             !what_the_contacts_sync_did(&result).contains("replaced"),
             "nothing was lost and somebody was told they had lost a change: {}",
+            what_the_contacts_sync_did(&result)
+        );
+        assert_eq!(
+            result.unchanged.count(),
+            0,
+            "a contact still owing Google an edit was counted as one neither \
+             side had touched: {result:?}"
+        );
+        assert!(
+            !what_the_contacts_sync_did(&result).contains("unchanged"),
+            "an edit is still waiting to reach Google and the sync called the \
+             contact unchanged: {}",
             what_the_contacts_sync_did(&result)
         );
         assert!(
