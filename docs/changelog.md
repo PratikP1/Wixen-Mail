@@ -588,11 +588,11 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   It does not cover a wrong answer from the one routine that decides where an
   event begins and ends. Both halves ask that routine, so a wrong answer looks
   right to both of them and this check cannot see it. What closes that class is
-  there being one routine rather than two, which is the entry above about small
-  letters, and not this check. Nor does it cover a line neither half recognises
-  as a property at all: a title the server wrote in a shape this program does
-  not read is not taken out and not counted, so the document goes out carrying
-  two of them.
+  there being one routine rather than two, which is the first entry in this
+  section, about a note that mentions the end of an event, and not this check.
+  Nor does it cover a line neither half recognises as a property at all: a
+  title the server wrote in a shape this program does not read is not taken out
+  and not counted, so the document goes out carrying two of them.
 
 - **The timezone on a meeting is read whether the server writes it in capitals
   or not, and quote marks around it are no longer part of it.** The zone a time
