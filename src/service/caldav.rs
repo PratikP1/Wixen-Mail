@@ -1180,13 +1180,21 @@ const PROPERTIES_A_CHANGE_REPLACES: [&str; 10] = [
 /// ever move. Here the merge happens on this side against what the server held
 /// one round trip ago, and `If-Match` is what turns that window into a refusal
 /// rather than a silent overwrite.
-pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> String {
+///
+/// Nothing at all is handed back when the change was not made, which is a
+/// document with no event this could write into. Handing back the document
+/// unchanged is what made the case defect above cost somebody an edit: what
+/// goes out then is the server's own words, and the server takes them, so the
+/// sync counts a success and the change stops waiting. Whatever the reason the
+/// change was not made, a caller with nothing in its hand cannot send one.
+pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> Option<String> {
     let ours = the_properties_this_program_owns(event);
     let mut written: Vec<String> = Vec::new();
     let mut where_ours_go: Option<usize> = None;
     let mut inside_the_event = false;
     let mut depth_below_the_event = 0_usize;
     let mut numbered = 0_u64;
+    let mut ours_are_in = false;
 
     for line in unfolded(held) {
         // A block inside the event belongs to something else: an alarm has a
@@ -1211,6 +1219,11 @@ pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> String {
             if opens_with_ignoring_case(&line, "END:VEVENT") {
                 let at = where_ours_go.unwrap_or(written.len());
                 written.splice(at..at, said_again(&ours, numbered));
+                // Written here rather than where the event opens. An event that
+                // opens and never closes never reaches this line, and a
+                // document sent back from there carries none of the change
+                // either.
+                ours_are_in = true;
                 inside_the_event = false;
                 written.push(line);
                 continue;
@@ -1237,9 +1250,12 @@ pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> String {
         written.push(line);
     }
 
+    if !ours_are_in {
+        return None;
+    }
     let mut document = written.join("\r\n");
     document.push_str("\r\n");
-    document
+    Some(document)
 }
 
 /// This program's properties, plus the two that say which copy is newer.
@@ -2429,7 +2445,8 @@ pub(crate) mod writing_tests {
         // is least likely to notice missing and least able to put back.
         let held = a_document_the_server_holds("e-1");
 
-        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"));
+        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"))
+            .expect("the event to be found and changed");
 
         for kept in [
             "ATTENDEE;CN=Sam;PARTSTAT=ACCEPTED:mailto:sam@example.com",
@@ -2475,7 +2492,8 @@ pub(crate) mod writing_tests {
         let changed = ical_with_the_event_changed(
             &a_document_the_server_holds("e-1"),
             &as_it_was_changed_here("e-1"),
-        );
+        )
+        .expect("the event to be found and changed");
 
         assert!(changed.contains("SEQUENCE:4"), "{changed}");
         assert!(!changed.contains("SEQUENCE:3"), "{changed}");
@@ -2497,7 +2515,8 @@ pub(crate) mod writing_tests {
     fn test_an_event_the_server_has_never_numbered_is_numbered_from_the_start() {
         let held = a_document_the_server_holds("e-1").replace("SEQUENCE:3\r\n", "");
 
-        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"));
+        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"))
+            .expect("the event to be found and changed");
 
         assert!(changed.contains("SEQUENCE:1"), "{changed}");
     }
@@ -2516,7 +2535,8 @@ pub(crate) mod writing_tests {
             ..as_it_was_changed_here("e-1")
         };
 
-        let changed = ical_with_the_event_changed(&held, &emptied);
+        let changed = ical_with_the_event_changed(&held, &emptied)
+            .expect("the event to be found and changed");
 
         assert!(
             !holds_a_line_starting(&changed, "DESCRIPTION:The first"),
@@ -2547,7 +2567,8 @@ pub(crate) mod writing_tests {
         let changed = ical_with_the_event_changed(
             &a_document_the_server_holds("e-1"),
             &as_it_was_changed_here("e-1"),
-        );
+        )
+        .expect("the event to be found and changed");
 
         let alarm = changed
             .split_once("BEGIN:VALARM")
@@ -2571,7 +2592,8 @@ pub(crate) mod writing_tests {
             "STATUS:CONFIRMED\r\nRRULE:FREQ=WEEKLY\r\nEXDATE:20260312T090000Z\r\n",
         );
 
-        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"));
+        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"))
+            .expect("the event to be found and changed");
 
         assert!(
             !holds_a_line_starting(&changed, "RRULE:FREQ=WEEKLY"),
@@ -2612,6 +2634,36 @@ pub(crate) mod writing_tests {
     }
 
     #[test]
+    fn test_a_document_with_no_event_in_it_produces_no_document_to_send() {
+        // The safety net under the whole of this. Handing the document back
+        // unchanged is what let the case defect cost somebody an edit: the
+        // server takes its own words, answers success, and the change stops
+        // waiting. With nothing in hand there is nothing to send, whatever the
+        // reason the change could not be made.
+        let held = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VTIMEZONE\r\n\
+                    TZID:Europe/London\r\nEND:VTIMEZONE\r\nEND:VCALENDAR\r\n";
+
+        assert_eq!(
+            ical_with_the_event_changed(held, &as_it_was_changed_here("e-1")),
+            None
+        );
+    }
+
+    #[test]
+    fn test_an_event_that_opens_and_never_closes_produces_no_document_to_send() {
+        // The change is written where the event closes, so a document that
+        // never closes one carries none of it. Handed back, it is the same
+        // silent loss by another route.
+        let held = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:e-1\r\n\
+                    SUMMARY:Quarterly review\r\nDTSTART:20260305T090000Z\r\n";
+
+        assert_eq!(
+            ical_with_the_event_changed(held, &as_it_was_changed_here("e-1")),
+            None
+        );
+    }
+
+    #[test]
     fn test_a_change_to_an_event_written_in_small_letters_reaches_the_document() {
         // The one the brief names. Read and edited, then written back with the
         // old title still on it and marked as sent.
@@ -2623,7 +2675,8 @@ pub(crate) mod writing_tests {
             ..read
         };
 
-        let changed = ical_with_the_event_changed(held, &renamed);
+        let changed =
+            ical_with_the_event_changed(held, &renamed).expect("the event to be found and changed");
 
         assert!(
             changed.contains("SUMMARY:New title"),
@@ -2644,7 +2697,8 @@ pub(crate) mod writing_tests {
         // the alarm's.
         let held = the_same_document_in_small_letters("e-1");
 
-        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"));
+        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"))
+            .expect("the event to be found and changed");
 
         for kept in [
             "attendee;CN=Sam;PARTSTAT=ACCEPTED:mailto:sam@example.com",
@@ -2705,7 +2759,8 @@ pub(crate) mod writing_tests {
         // program picking the higher one believes the copy this replaced.
         let held = the_same_document_in_small_letters("e-1");
 
-        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"));
+        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"))
+            .expect("the event to be found and changed");
 
         assert!(changed.contains("SEQUENCE:4"), "{changed}");
         assert!(

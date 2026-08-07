@@ -400,6 +400,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   recognised as a block of its own, which would have moved the alert to the
   appointment's time and made it read out the appointment's title.
 
+- **A change that did not get made is no longer sent and counted as saved.** The
+  bug above was able to lose an edit because of what happened after it: a
+  document with the change not in it was still sent, the server accepted it,
+  and the change stopped waiting to be sent, so nothing ever tried again.
+
+  A change is now only sent when it is really in the document going out. If it
+  is not, for any reason, nothing is sent, the sync says so instead of counting
+  a success, and the change stays waiting so the next sync tries again. This is
+  the guard that would have caught the bug above without anybody knowing what
+  caused it, and it will catch the next mistake of that shape.
+
 - **The timezone on a meeting is read whether the server writes it in capitals
   or not, and quote marks around it are no longer part of it.** The zone a time
   is named in arrives as `DTSTART;TZID=Europe/London:...`, and that was matched

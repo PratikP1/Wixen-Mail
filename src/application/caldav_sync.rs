@@ -167,7 +167,23 @@ async fn send_one_change(
             // inside what the server holds this moment rather than in a
             // document built from nothing.
             let held = caldav.fetch_event(&at, username, password).await?;
-            going.ical_data = ical_with_the_event_changed(&held.document, &going);
+            // Nothing goes out unless the change is really in it. Sent a
+            // document the change was never written into, the server takes its
+            // own words back, answers success, and settled_here below stops the
+            // change waiting: the edit is gone and nobody is told. That is what
+            // a reader and a writer disagreeing about letter case cost once,
+            // and the next mistake of that shape stops here instead.
+            let Some(document) = ical_with_the_event_changed(&held.document, &going) else {
+                return Err(crate::common::Error::Other(
+                    "This change was not sent: the document the calendar server \
+                     holds for this event has no event in it that could be \
+                     changed, so sending it would have put the server's own \
+                     copy back over the change. The change is still waiting and \
+                     will be tried again at the next sync."
+                        .to_string(),
+                ));
+            };
+            going.ical_data = document;
             let changed = caldav
                 .update_event(&at, username, password, &going, held.tag.as_deref())
                 .await?;
@@ -1241,6 +1257,84 @@ mod tests {
         );
         assert_eq!(result.sent, 1);
         assert!(result.errors.is_empty(), "{:?}", result.errors);
+    }
+
+    #[tokio::test]
+    async fn test_a_change_that_found_no_event_to_change_is_not_sent_and_keeps_waiting() {
+        // The shape the case-folding defect took, without the case. A change is
+        // made against the document the server just handed back, and if no
+        // event is found in it every line is copied through and the server is
+        // sent its own words back. The server accepts them, so the sync counts
+        // a success and the change stops waiting, and the words somebody typed
+        // are gone with nothing said.
+        //
+        // Nothing may be sent unless the change is really in what is going out,
+        // whatever the reason it is not: a document for the wrong resource, a
+        // marker this program cannot read, or the next mistake of this shape
+        // that nobody has thought of yet.
+        let cache = temp_cache("push_no_event");
+        let mut calendar = container("cal-no-event", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::tagged(
+                    "\"v7\"",
+                    "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VTIMEZONE\r\n\
+                     TZID:Europe/London\r\nEND:VTIMEZONE\r\nEND:VCALENDAR\r\n"
+                        .to_string(),
+                ),
+                Answer::plain(multi_status(&["e-1"])),
+            ],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let waiting = a_change_waiting_in(
+            &cache,
+            &calendar,
+            Some("e-1"),
+            Some(format!("http://{address}/cal/e-1.ics")),
+        );
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a read and the calendar").await.expect(
+            "two requests: the document being read, and the calendar. A third \
+             means the change went out anyway",
+        );
+        assert_eq!(asked_for(&requests[0]), "GET /cal/e-1.ics");
+        assert_eq!(
+            asked_for(&requests[1]),
+            "REPORT /cal/",
+            "the server was sent a document with the change not in it"
+        );
+        assert_eq!(result.sent, 0);
+        assert!(
+            !result.errors.is_empty(),
+            "a change that could not be made was reported as nothing happening"
+        );
+        let stored = cache
+            .get_event_by_id(&waiting.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert!(
+            stored.pending,
+            "the change stopped waiting without ever reaching the server, so \
+             nothing will try again and the words somebody typed are gone"
+        );
+        assert_eq!(
+            stored.summary, "Quarterly review, moved",
+            "the words somebody typed were replaced by the server's"
+        );
     }
 
     #[tokio::test]
