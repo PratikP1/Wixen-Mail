@@ -324,6 +324,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   `TELEPHONE` line no longer fills in a phone number, and a photo carried in the
   card is recognised in both of the ways clients write it rather than only one.
 
+  Known limitation, and it is about which details a card carries rather than how
+  they are written. Reading a card and writing one still disagree about three of
+  them. The two parts of a name are neither written into a card nor read from
+  one, so a card holding "Grace" and "van der Berg" separately imports with both
+  boxes empty, and exporting a contact who has them writes only the whole name.
+  A relationship is written into a card and never read back. A department is
+  written only for a contact with no company, and it is read back as the company
+  with a stray semicolon in front of it. Export a contact, import it again, and
+  those are what is different. None of it changed here.
+
 - **The sign-in pages your browser shows are readable pages now.** When you sign
   in to Gmail or Outlook, the provider sends your browser back to a page this
   program serves, and that page is the one part of signing in you meet as a web
@@ -589,9 +599,14 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   the same routine that reads a calendar arriving, and the change has to come
   out of it: every line the change is made of, once each, among the event's own
   lines rather than an alarm's, under the same identifier. If it does not come
-  back out, nothing is sent, the sync says which of four things went wrong
-  instead of counting a success, and the change stays waiting so the next sync
-  tries again.
+  back out, nothing is sent, the change stays waiting so the next sync tries
+  again, and the sync counts a failure where it used to count a success.
+
+  Which of the four things went wrong is written to the log file, and the screen
+  shows only the count of errors, so you learn that something failed and not
+  what. That is how every calendar sync failure has always been reported here
+  and nothing about it changed. If a change of yours keeps waiting sync after
+  sync, the log is where the reason is.
 
   What that covers, and what it does not, because the difference is the whole
   value of it. It covers the change being written somewhere no reader will look,
@@ -890,7 +905,6 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   writes them, even where you changed something else on the event and not them.
   That is the same words and not always the same characters; the entry above
   about a comma in a title says exactly which characters can move.
-
 
   **If somebody else changed the same event first**, from a phone or another
   program, the change is refused rather than written over theirs, and the sync
