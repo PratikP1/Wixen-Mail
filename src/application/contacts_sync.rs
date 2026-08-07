@@ -1047,6 +1047,11 @@ impl MicrosoftContactBook for MsGraphClient {
 ///
 /// Every number here is a number of contacts. A person in two address books is
 /// one person, whatever each address book did with its own copy of her.
+///
+/// Every number but the errors, which count what went wrong. Two address books
+/// refusing the same contact is two things to look at, and some of what goes
+/// wrong is not about a contact at all: a list of waiting changes that will not
+/// read is one error and no contacts.
 pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
     let created = result.created_local.and(&result.created_remote);
     let untouched = result
