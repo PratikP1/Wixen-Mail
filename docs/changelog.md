@@ -244,7 +244,10 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   came back cut mid-word, which is the title read out. A repeat rule ending on a
   given date could lose that date, and a series that was meant to stop then
   never stopped. A long note or a long place came back cut in the same way, and
-  a start time could lose its own digits.
+  a start time could lose its own digits. Worst of all, the identifier a server
+  gives an event is often long enough to be broken up, and half an identifier is
+  a different event: the copy already on this computer would be taken as gone
+  from the server and removed, and a second copy made beside it, on every sync.
 
   The same applies to a published calendar you subscribed to, which is written
   by somebody else's software and broken up the same way.

@@ -1668,6 +1668,33 @@ mod tests {
     }
 
     #[test]
+    fn test_an_identifier_broken_in_two_names_the_same_event_it_did_before() {
+        // Worse than a cut title. The identifier is how a sync recognises an
+        // event it has already stored, so half of one is a different event:
+        // the copy already here is not seen in the answer and is deleted, and
+        // the half-named one is created beside it. A server's identifier is
+        // routinely long enough to be broken up. The end time and the state
+        // are read by the same code and pinned here with it.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\n\
+                    UID:040000008200E00074C5B7101A82E00800000000B0D1C4E6F2A9DB01000000\r\n\
+                    \x2000000000010000000C1A4E2F8B3D5470A9E7C2F1D8B64E93\r\n\
+                    SUMMARY:Standup\r\nDTSTART:20260305T090000Z\r\n\
+                    DTEND:20260305T100000Z\r\nSTATUS:TENTA\r\n\x20TIVE\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(
+            event.uid,
+            "040000008200E00074C5B7101A82E00800000000B0D1C4E6F2A9DB01000000\
+             00000000010000000C1A4E2F8B3D5470A9E7C2F1D8B64E93",
+            "the whole identifier, or the sync deletes the event and makes a second one"
+        );
+        assert_eq!(event.dtend.as_deref(), Some("2026-03-05T10:00:00Z"));
+        assert_eq!(event.status, "TENTATIVE");
+    }
+
+    #[test]
     fn test_finding_the_event_still_ignores_the_timezone_rules_when_lines_are_broken() {
         // Putting the lines back together must not move where the event starts
         // and ends, or the clock-change rule is read as the event's own.
