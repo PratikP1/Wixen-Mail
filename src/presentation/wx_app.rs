@@ -9206,53 +9206,12 @@ fn spawn_mail_sync(
             )) {
                 Ok(result) => {
                     fetched += result.fetched;
-                    // Messages that went away and a mailbox the server
-                    // renumbered are both things the reader will notice as rows
-                    // disappearing. Saying so turns that from unexplained into
-                    // expected.
-                    // How many are held, not how many arrived this round. On
-                    // a forty thousand message inbox "500 messages" reads as a
-                    // complete answer and is not one.
-                    let mut report = format!(
-                        "{}: {} of {} messages downloaded",
-                        result.folder, result.held, result.total_on_server
-                    );
-                    if crate::application::mail_sync::more_to_fetch(
-                        result.held,
-                        result.total_on_server,
-                    ) {
-                        report.push_str(", Shift+F9 for older");
-                    }
-                    if result.flags_updated > 0 {
-                        // What changed on another device. Worth saying because
-                        // rows quietly turning read is otherwise unexplained,
-                        // and because a mailbox somebody also reads on a phone
-                        // that never reports any is one where this is broken.
-                        report.push_str(&format!(", {} changed elsewhere", result.flags_updated));
-                    }
-                    if result.forgotten > 0 {
-                        report.push_str(&format!(", {} removed elsewhere", result.forgotten));
-                    }
-                    if result.renumbered {
-                        report.push_str(", read again after the server renumbered it");
-                    }
-                    if result.filtered.changed > 0 {
-                        report.push_str(&format!(
-                            ", {} sorted by your rules",
-                            result.filtered.changed
-                        ));
-                    }
-                    if result.filtered.held_back > 0 {
-                        // Said, not passed over. A rule that files invoices
-                        // into a folder and does not is a rule somebody
-                        // believes is working, and the reason is a setting
-                        // they can change.
-                        report.push_str(&format!(
-                            ", {} left alone because changing mail is not allowed",
-                            result.filtered.held_back
-                        ));
-                    }
-                    say(UIUpdate::StatusUpdated(report));
+                    // The words are worked out where they can be tested. Built
+                    // here, they were inside this closure with its own cache on
+                    // a background thread, which nothing could reach.
+                    say(UIUpdate::StatusUpdated(
+                        crate::application::mail_sync::what_the_folder_sync_did(&result),
+                    ));
                 }
                 // One folder that will not open is not a reason to abandon the
                 // rest, and naming it is the difference between a fixable

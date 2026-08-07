@@ -258,8 +258,10 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   ran two sentences together at "them.. Term dates", and in the task sync, where
   the count of problems was hung on the end of "Sign in to this account again to
   send task changes" with a comma, so it was heard as part of the instruction.
-  All three now read as sentences. The mail sync says one line with no optional
-  parts and never had this.
+  All three now read as sentences. The line after a mail check is a list of
+  counts with no sentence in it, so it never had this; it is now built the same
+  way, and is worked out where it can be checked rather than inside the window,
+  so the first sentence somebody adds to it cannot start the fault off again.
 
   Known limitation: none of these sentences has been heard with a screen reader.
 

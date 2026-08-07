@@ -11,6 +11,7 @@
 //! which is where the tests are. The driver underneath moves bytes.
 
 use crate::application::mail_controller::MailController;
+use crate::application::summing_up::SummingUp;
 use crate::common::{Result, types::FolderType};
 use crate::data::message_cache::{CachedFolder, CachedMessage, IncomingMessage, MessageCache};
 use crate::service::protocols::imap::{
@@ -71,6 +72,56 @@ pub struct FolderSync {
     pub renumbered: bool,
     /// What the rules did to the mail that just arrived.
     pub filtered: Filtered,
+}
+
+/// What one folder's sync did, in the words the status line uses.
+///
+/// Named here rather than built where it is shown, for the reason the contacts
+/// and calendar summaries were: a sentence assembled at the call site cannot be
+/// argued about in a test, and this one was assembled inside a closure on a
+/// background thread where nothing could reach it.
+///
+/// Every part of it is a count, so they are all items in one list. It says how
+/// many are held rather than how many arrived, because "500 messages" after a
+/// sync of a forty thousand message inbox reads as a complete answer and is
+/// not one.
+pub fn what_the_folder_sync_did(result: &FolderSync) -> String {
+    let mut said = SummingUp::opening(format!(
+        "{}: {} of {} messages downloaded",
+        result.folder, result.held, result.total_on_server
+    ));
+    if more_to_fetch(result.held, result.total_on_server) {
+        said.count("Shift+F9 for older");
+    }
+    if result.flags_updated > 0 {
+        // What changed on another device. Worth saying because rows quietly
+        // turning read is otherwise unexplained, and because a mailbox somebody
+        // also reads on a phone that never reports any is one where this is
+        // broken.
+        said.count(format!("{} changed elsewhere", result.flags_updated));
+    }
+    if result.forgotten > 0 {
+        said.count(format!("{} removed elsewhere", result.forgotten));
+    }
+    if result.renumbered {
+        // Messages that went away and a mailbox the server renumbered are both
+        // things the reader will notice as rows disappearing. Saying so turns
+        // that from unexplained into expected.
+        said.count("read again after the server renumbered it");
+    }
+    if result.filtered.changed > 0 {
+        said.count(format!("{} sorted by your rules", result.filtered.changed));
+    }
+    if result.filtered.held_back > 0 {
+        // Said, not passed over. A rule that files invoices into a folder and
+        // does not is a rule somebody believes is working, and the reason is a
+        // setting they can change.
+        said.count(format!(
+            "{} left alone because changing mail is not allowed",
+            result.filtered.held_back
+        ));
+    }
+    said.spoken()
 }
 
 /// The rules to run on arriving mail, and what may be done as a result.
@@ -1851,6 +1902,53 @@ mod tests {
     #[test]
     fn test_an_empty_mailbox_forgets_everything_that_was_in_it() {
         assert_eq!(uids_to_forget(&[], &[1, 2]), vec![1, 2]);
+    }
+
+    #[test]
+    fn test_a_quiet_folder_sync_says_only_how_much_of_it_is_here() {
+        // Every other clause is worth hearing only when it happened. A line
+        // that counts the nothings teaches somebody to stop listening to the
+        // one that matters.
+        let said = what_the_folder_sync_did(&FolderSync {
+            folder: "Inbox".to_string(),
+            held: 500,
+            total_on_server: 500,
+            ..FolderSync::default()
+        });
+
+        assert_eq!(said, "Inbox: 500 of 500 messages downloaded");
+    }
+
+    #[test]
+    fn test_every_clause_at_once_is_still_one_list() {
+        // The mail sync's parts are all counts, so this one had nothing to
+        // collide: the fault the contacts, calendar and task summaries had
+        // needs a clause carrying its own full stop. It is built as a list
+        // here so that the first clause somebody writes as a sentence cannot
+        // start it off.
+        let said = what_the_folder_sync_did(&FolderSync {
+            folder: "Inbox".to_string(),
+            held: 500,
+            total_on_server: 40_000,
+            forgotten: 2,
+            flags_updated: 3,
+            renumbered: true,
+            filtered: Filtered {
+                changed: 4,
+                held_back: 5,
+            },
+            ..FolderSync::default()
+        });
+
+        assert!(!said.contains(".."), "a stop spoken twice: {said}");
+        assert!(!said.contains("., "), "a fragment after a stop: {said}");
+        assert_eq!(
+            said,
+            "Inbox: 500 of 40000 messages downloaded, Shift+F9 for older, \
+             3 changed elsewhere, 2 removed elsewhere, read again after the \
+             server renumbered it, 4 sorted by your rules, 5 left alone \
+             because changing mail is not allowed"
+        );
     }
 
     #[test]
