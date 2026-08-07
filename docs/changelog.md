@@ -241,6 +241,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A change an address book replaced is now said once, not on every sync after
+  it.** Where your copy and the address book's copy have both moved, the address
+  book wins and the line after the sync says your change was replaced, so a lost
+  edit is not silently gone. While your other address book was still owed that
+  contact, every later sync where the first one moved again said it over again,
+  for ever, about an edit that was lost once.
+
+  What was waiting after the first time was not your edit any more, it was the
+  copy that survived, on its way to the other address book. A sync can tell
+  those apart from what it already keeps, so the second one is now an ordinary
+  update and says nothing. Nothing new is stored to do it.
+
 - **A change kept from your other address book by a setting now says so.** When
   "Send a change to a contact to every address book that has that contact" is
   off, a change goes only to the address book the contact came from. That is

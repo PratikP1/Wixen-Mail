@@ -63,6 +63,12 @@
 //! exist for that, and [`what_the_contacts_sync_did`] puts both into words. An
 //! edit that disappears with nothing said is indistinguishable from a change
 //! that never saved.
+//!
+//! Said once, though. While one address book is owed a change it cannot have,
+//! the copy waiting for it is whatever survived the last tie, and after the
+//! first loss that is the other address book's own copy rather than anybody's
+//! work. `the_copy_here_was_written_here` is the difference, and without it the
+//! same lost edit was announced on every sync from then on, for ever.
 
 use crate::application::summing_up::SummingUp;
 use crate::common::{Error, Result};
@@ -800,6 +806,22 @@ fn say_if_a_change_went_too(local: &ContactEntry, result: &mut SyncResult) {
     }
 }
 
+/// Whether what is stored here was written here, rather than taken from an
+/// address book.
+///
+/// `last_synced_at` carries the answer already. It is written from the address
+/// book's copy every time one is folded in, and the one path an edit takes
+/// leaves it empty, so nothing there is the record of a copy nobody has taken
+/// from an address book since somebody typed it.
+///
+/// This is what tells your edit from the copy that survived an earlier tie and
+/// is still waiting to reach the other address book. Both hold a change nobody
+/// has sent, `the_copy_here_holds_work_nobody_has_sent` says yes to both, and
+/// only the first is anybody's work.
+fn the_copy_here_was_written_here(contact: &ContactEntry) -> bool {
+    contact.last_synced_at.is_none()
+}
+
 /// Count an edit this address book's copy has just replaced, and stop queuing
 /// it to be sent there.
 ///
@@ -812,8 +834,17 @@ fn say_if_a_change_went_too(local: &ContactEntry, result: &mut SyncResult) {
 /// the status line as one of yours sent, which is not true and would overwrite
 /// anything that had moved there since. Any other address book still owed the
 /// change keeps waiting and is sent the copy that survived.
+///
+/// Counted only where the copy about to go was written here. That copy is what
+/// the answer was decided about, so the question is asked of it and not of the
+/// merge that replaces it. While one address book is owed a change it cannot
+/// have, the copy waiting for it is the one an earlier sync took from the other
+/// address book: replacing that again loses nothing, and saying so again is
+/// telling somebody a second time about an edit that went once. Left ungated,
+/// the warning came back on every sync from then on, for ever.
 fn a_change_here_that_lost(
     merged: ContactEntry,
+    the_copy_it_replaces: &ContactEntry,
     address_book: &AddressBook,
     answer: WhoseCopyWins,
     result: &mut SyncResult,
@@ -821,7 +852,9 @@ fn a_change_here_that_lost(
     if answer != WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere {
         return merged;
     }
-    result.replaced.note(&merged.id);
+    if the_copy_here_was_written_here(the_copy_it_replaces) {
+        result.replaced.note(&merged.id);
+    }
     let version = version_given_by(&merged, address_book);
     merged.told(address_book, version.as_deref())
 }
@@ -1370,6 +1403,7 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                 );
                 cache.save_contact(&a_change_here_that_lost(
                     merged,
+                    local,
                     &AddressBook::Google,
                     answer,
                     &mut result,
@@ -1535,6 +1569,7 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                 );
                 cache.save_contact(&a_change_here_that_lost(
                     merged,
+                    local,
                     &AddressBook::Microsoft,
                     answer,
                     &mut result,
@@ -7446,6 +7481,73 @@ mod tests {
             "Contacts sync: 0 created, 1 updated, 0 deleted, 1 of your change replaced \
              by the address book. 1 change is waiting here: turn on Allow Changes for \
              this account to send it."
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_edit_an_address_book_replaced_is_said_once_and_not_on_every_later_sync() {
+        // What the first loss leaves behind: the copy stored here is Google's,
+        // Outlook is still owed it, and nothing here was written here any more.
+        // Every later sync where Google moved its own copy again said "1 of
+        // your change replaced by the address book" over again, for ever, about
+        // an edit that was lost once. A warning that repeats after it stops
+        // being true is a warning somebody learns to ignore.
+        let cache = a_cache("a_loss_is_said_once");
+        a_contact_both_address_books_are_owed(&cache);
+        let google_moved = ScriptedGoogle {
+            people: vec![a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "etag-2",
+            )],
+            the_account_is_read_only: true,
+            ..Default::default()
+        };
+        let google_moved_again = ScriptedGoogle {
+            people: vec![a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                "Alice Smith-Brown",
+                "etag-3",
+            )],
+            the_account_is_read_only: true,
+            ..Default::default()
+        };
+
+        let first = sync_google_contacts(
+            &cache,
+            &google_moved,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+        let later = sync_google_contacts(
+            &cache,
+            &google_moved_again,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a later sync");
+
+        assert_eq!(
+            first.replaced.count(),
+            1,
+            "an edit was thrown away and nothing counted it: {first:?}"
+        );
+        assert_eq!(
+            what_the_contacts_sync_did(&later),
+            "Contacts sync: 0 created, 1 updated, 0 deleted",
+            "the edit was lost once, and this is somebody being told a second time"
+        );
+        assert!(
+            still_owed_the_change(
+                &the_contact_under(&cache, "local-in-both-books"),
+                &AddressBook::Microsoft
+            ),
+            "Outlook is no longer owed anything, so the copy that survived never reaches it"
         );
     }
 
