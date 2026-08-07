@@ -59,11 +59,14 @@ impl ICalSubscriptionClient {
 fn parse_ics(ical_data: &str) -> Result<Vec<CalDavEvent>> {
     let mut events = Vec::new();
 
-    // Split by VEVENT blocks
+    // Split by VEVENT blocks. The markers are matched whatever case they are
+    // written in, the same as the property names inside them, or a feed written
+    // in small letters throughout splits into no events and shows as an empty
+    // calendar with nothing said about why.
     let mut remaining = ical_data;
-    while let Some(start) = remaining.find("BEGIN:VEVENT") {
+    while let Some(start) = crate::service::caldav::found_ignoring_case(remaining, "BEGIN:VEVENT") {
         let after = &remaining[start..];
-        if let Some(end) = after.find("END:VEVENT") {
+        if let Some(end) = crate::service::caldav::found_ignoring_case(after, "END:VEVENT") {
             let vevent_block = &after[..end + "END:VEVENT".len()];
             // Wrap in VCALENDAR for the parser
             let full_ical = format!("BEGIN:VCALENDAR\r\n{}\r\nEND:VCALENDAR", vevent_block);
@@ -159,6 +162,26 @@ END:VCALENDAR"#;
         );
         assert_eq!(events[1].uid, "feed-2");
         assert_eq!(events[1].summary, "Second event");
+    }
+
+    #[test]
+    fn test_a_feed_in_small_letters_throughout_still_splits_into_its_events() {
+        // The calendar standard says the markers that open and close an event
+        // mean the same in any case. Matched in capitals only, a feed written
+        // in small letters was split into no events at all: the calendar was
+        // simply empty, and nothing said why.
+        let ics = "begin:vcalendar\r\nversion:2.0\r\n\
+                   begin:vevent\r\nuid:feed-1\r\nsummary:First\r\n\
+                   dtstart:20260101T090000Z\r\nend:vevent\r\n\
+                   begin:vevent\r\nuid:feed-2\r\nsummary:Second\r\n\
+                   dtstart:20260102T090000Z\r\nend:vevent\r\nend:vcalendar\r\n";
+
+        let events = parse_ics(ics).expect("a feed to read");
+
+        assert_eq!(events.len(), 2, "one event, then the next");
+        assert_eq!(events[0].uid, "feed-1");
+        assert_eq!(events[1].uid, "feed-2");
+        assert_eq!(events[1].summary, "Second");
     }
 
     #[test]

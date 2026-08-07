@@ -322,13 +322,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   the day you cancelled, and there is no way to ask for a fresh read from the
   product today.
 
-- **A calendar server that writes its property names in small letters is now
-  read.** The calendar standard says the name of a property, such as `SUMMARY`,
-  means the same whichever case it is written in. Only capitals were recognised,
-  so an event from a server that writes them in small letters would have been
-  read as having no summary, no repeat rule and no cancelled days, with nothing
-  said about why. Almost every server writes them in capitals, so this may never
-  have reached anybody.
+- **A calendar written in small letters is now read.** The calendar standard
+  says that a property name such as `SUMMARY`, and the `BEGIN:VEVENT` that opens
+  an event, mean the same whichever case they are written in. Only capitals were
+  matched.
+
+  An event from a server that writes them in small letters never reached the
+  calendar at all. It was not read with pieces missing: the identifier and the
+  start time are the two things an event cannot be read without, so the whole
+  appointment was dropped as it arrived, with nothing said about why. A
+  subscribed feed written the same way was split into no events and showed as an
+  empty calendar.
+
+  Both are now read, property names and the lines that open and close an event
+  alike. Almost every server and every publisher writes these in capitals, so
+  this may never have reached anybody. Nothing was lost for good: the server
+  keeps the document and every sync reads the whole of it afresh.
 
 - **An event repeating on a weekday no month has is now shown once, and says
   so.** A monthly repeat can name which weekday of the month it falls on, such

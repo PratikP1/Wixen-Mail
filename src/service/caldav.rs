@@ -756,14 +756,34 @@ pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Opti
 /// rules. A document with no event in it is handed back whole, so a fragment
 /// carrying bare property lines still reads.
 fn vevent_block(ical: &str) -> &str {
-    let Some(opening) = ical.find("BEGIN:VEVENT") else {
+    let Some(opening) = found_ignoring_case(ical, "BEGIN:VEVENT") else {
         return ical;
     };
     let after = &ical[opening..];
-    match after.find("END:VEVENT") {
+    match found_ignoring_case(after, "END:VEVENT") {
         Some(closing) => &after[..closing],
         None => after,
     }
+}
+
+/// Where a marker sits in a document, whatever case it is written in.
+///
+/// The calendar standard makes `BEGIN:VEVENT` mean the same however it is
+/// written, the same as the property names inside it, and matching only capitals
+/// meant a document in small letters throughout had no event to find. A calendar
+/// server's document was then read whole, so an appointment took the start date
+/// and the repeat rule out of the timezone rules; a subscribed feed was split
+/// into no events at all.
+///
+/// The marker is a literal written in this file, never anything a server sends,
+/// and it is all ASCII. So the position handed back is always the start of a
+/// character: a byte inside a longer UTF-8 character is never an ASCII one.
+pub(crate) fn found_ignoring_case(document: &str, marker: &str) -> Option<usize> {
+    let marker = marker.as_bytes();
+    document
+        .as_bytes()
+        .windows(marker.len())
+        .position(|window| window.eq_ignore_ascii_case(marker))
 }
 
 /// Extract a simple XML element value like <tag>value</tag>.
@@ -1531,6 +1551,28 @@ mod tests {
             Some("20260312T090000Z"),
             "a cancelled day is cancelled whatever case the name was written in"
         );
+    }
+
+    #[test]
+    fn test_a_document_in_small_letters_throughout_still_reads_the_event_and_not_the_zone() {
+        // Property names fold case and the two markers that divide a document
+        // did not, so a document written in small letters throughout had no
+        // event block to find and was read whole. The timezone rules are in
+        // that whole, and they carry a start date and a repeat rule of their
+        // own: a weekly stand-up on the 5th of March came back as a yearly
+        // event on the 29th of March 1970, the day the clocks last changed.
+        let ical = "begin:vcalendar\r\nbegin:vtimezone\r\ntzid:Europe/London\r\n\
+                    begin:daylight\r\ndtstart:19700329T010000\r\n\
+                    rrule:FREQ=YEARLY;BYMONTH=3\r\nend:daylight\r\nend:vtimezone\r\n\
+                    begin:vevent\r\nuid:series-9\r\nsummary:Standup\r\n\
+                    dtstart:20260305T090000Z\r\nrrule:FREQ=WEEKLY\r\n\
+                    end:vevent\r\nend:vcalendar";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(event.dtstart, "2026-03-05T09:00:00Z");
+        assert_eq!(event.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+        assert_eq!(event.summary, "Standup");
     }
 
     // ── Lines a server broke in two ─────────────────────────────────────
