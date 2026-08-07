@@ -1843,6 +1843,11 @@ live account or a live calendar server:
   one, this application reads neither, and a contact sent to either one goes
   without it.
 
+  Superseded in an unreleased change, and only half of it. A postal address now
+  goes out to both, and one held at Outlook now comes back, under Home and Work.
+  One held at Google is still not read: it arrives in the reply and nothing
+  stores it, so a postal address typed in Gmail does not appear here.
+
 - **One word for a finished task, and only the words that tell you something.**
   Pressing Space on a task said "done", pressing it again said "Completed", and
   the column beside it said "Done": one state with three names. It is "Done"
@@ -2029,8 +2034,11 @@ live account or a live calendar server:
   above the message counts, so somebody quoting one of those lines in what they
   wrote cannot decide how their own message is marked.
 
-  Nothing on this path has run against a live POP server. The second check, the
-  one that reads the message text itself, still does not run on POP accounts.
+  Nothing on this path has run against a live POP server.
+
+  Superseded in an unreleased change: the second check, the one that reads the
+  message text itself, runs on POP accounts too now. The entry about reading
+  POP mail for signs of an impersonation, further up, is the whole of it.
 
 - **Mail collected over POP now says how big each message is.** The size column
   was blank on every message from a POP account, and sorting by size heaped them
@@ -2291,6 +2299,16 @@ live account or a live calendar server:
   broken application. A test now compares the document against the code both
   ways, so a key can no longer be written down without being bound or bound
   without being written down.
+
+- **Open Draft is `Ctrl+Shift+O`, and the shortcuts document now says so
+  everywhere.** One table said `Ctrl+D`, which nothing has ever bound, so
+  somebody who read that table and pressed it heard nothing. It is the third
+  documented key found dead, and it got past the check written for the first
+  two: that check asked whether the key appeared after a tab anywhere in the
+  source, and `Ctrl+D` is the first six characters of the `Ctrl+Down` that
+  moves to the next message in a conversation. The check now requires the key
+  to end where it is found, so a key name sitting inside a longer one no longer
+  passes for it.
 
 - **The accessibility check now measures the names this application sets.** It
   scanned the UI Automation tree, and for an edit box or a button Windows puts
@@ -2592,7 +2610,7 @@ its address, and an event read aloud says its category.
   The whole message is kept rather than a link back to it, because a message can be deleted, moved by a filter or renumbered by the server, and then a link means nothing. A message with no subject gets a title saying so rather than an empty row, which in a list read aloud announces nothing at all.
 
 - **The menu key works on every list and every sidebar.** The Applications key, or `Shift+F10`, on a message, a contact, an event, a reminder, a task, a note, a mail folder, a calendar, a task list, a note folder or a contact group. It offers what can be done with the thing you are on, which for somebody who cannot see a toolbar is the way to find that out without leaving the thing to go hunting through the menu bar.
-  Only commands that work are on it. Rename, move to another list, mark a whole folder read and empty a folder are the obvious absences, and none of them is implemented, so none of them is offered. A menu line that does nothing is worse than one that is not there: it is a stop you land on, hear, and learn nothing from.
+  Only commands that work are on it. Mark a whole folder read and empty a folder are the obvious absences, and neither is implemented, so neither is offered. A menu line that does nothing is worse than one that is not there: it is a stop you land on, hear, and learn nothing from. Rename and move to another list were absent for the same reason when this was written, and both are on the menu now: rename on a contact group, which is the one container that has a rename written, and move on an event, a task or a note.
   The reminders sidebar has no menu, because it holds buckets rather than things you made, and there is nothing to do to one.
 
 - **Making an event, task, reminder or note asks for what it actually is.** All four used to be a title in a box, and everything else was invented: an event an hour from now in no calendar, a task with no due date and no priority, a reminder with no time so it never went off, a note with an empty body in no folder. Every one of those columns was already in the database and nothing put anything in them.
@@ -2679,7 +2697,7 @@ its address, and an event read aloud says its category.
 
 - **Creating an event, reminder, task or note now keeps it.** The dialog took a title, wrote a line to the log, announced "created" and threw the item away. Four of the six New commands looked like they worked and none of them stored anything. They store it now, in the right account, and the panel refreshes so you can see it.
 - **Drafts save themselves while you write.** Settings has a box for how often, in minutes, from nought to ten, stepped with the arrow keys. Nought means never. It defaults to every two minutes, on, because the people it protects most are the ones who would never go looking for the setting. Every save updates the same draft rather than leaving a trail of near-identical ones, and the status line says when it happens. The checkbox that used to sit there said "auto-save drafts every 60 seconds", was ticked, was never read back, and nothing saved anything.
-- **Saved drafts can be reopened.** File, Open Draft, or `Ctrl+D`, lists what you have saved by subject, recipient and date, and opens the one you pick with its fields filled. Saving it again updates that draft rather than leaving a second copy beside it. Until now a draft went into the database and was never seen again, which is worse than not saving it, because it looks like it worked.
+- **Saved drafts can be reopened.** File, Open Draft, or `Ctrl+Shift+O`, lists what you have saved by subject, recipient and date, and opens the one you pick with its fields filled. Saving it again updates that draft rather than leaving a second copy beside it. Until now a draft went into the database and was never seen again, which is worse than not saving it, because it looks like it worked.
 - **Save Draft saves the draft.** It answered "Draft saving is not implemented" while the button sat there and the storage waited unused. A draft with no recipient is kept too, because a draft is unfinished by definition and refusing one for having no address yet loses exactly the work somebody was trying to protect.
 - **Calendars, task lists, note folders and contact groups can be created**, which they could not before: the controls opened the same discarding dialog the items used, so a name was typed, logged and lost while the application said it had been created. A container is filed wherever the things it holds are filed, so a calendar and its events can never end up in different accounts.
 
@@ -2735,7 +2753,7 @@ its address, and an event read aloud says its category.
 - **Tasks come down from Google Tasks and Microsoft To Do.** Tools then Sync Tasks. Your lists and the tasks in them appear in the Tasks module, with due dates, completion and, on Microsoft, priority. A task you make on a Gmail or Outlook account is now filed under that account rather than on this computer, so it sits in the same list the sync fills.
   **It goes both ways.** A task you make, tick off or delete here reaches your provider on the next sync, so it turns up on your phone and the web page. Google's deletions are honoured in the other direction, so a task ticked off on your phone does not reappear here. A task the provider has not touched since the last sync is left alone rather than rewritten, so the count after a sync says what actually changed instead of how many tasks you have.
   **When the same task changed in both places, your provider's version wins**, and you are told: the line after a sync says how many of your changes were replaced by the server. Its copy is what your phone and the web page already agree on, so it is the one you most likely looked at last. A change lost that way can be made again; a change made on your phone and overwritten by a stale copy from this computer cannot, because nobody would find out. A change that cannot be sent keeps waiting and is tried again next time rather than being dropped.
-  A task you make goes into your account's first list, which is the one your provider treats as the default: "My Tasks" on Google Tasks, "Tasks" on Microsoft To Do. There is no list picker yet, so to file it elsewhere, move it on your phone after the next sync.
+  A task you make goes into your account's first list, which is the one your provider treats as the default: "My Tasks" on Google Tasks, "Tasks" on Microsoft To Do. There was no list picker when this was written, and there is one now: the New Task form asks which list, and the entry about the four item forms, further up, is where that landed.
   One case still stays here: a task made on an account that has never synced has no provider list to go in, so it goes into a local list and the sync says "1 kept on this computer" rather than trying to send it to a list your provider has never heard of on every sync forever. Sync first and it will not happen.
   **Sending tasks up needs more permission than reading them**, so an account signed in before this version will keep syncing downwards and hold your changes until you sign in again. Open the account, switch the browser sign-in off and back on, and approve the permissions. [Setting up your provider](PROVIDER_SETUP.md) says which permission and why.
   **Notes and reminders stay on this computer.** Google Keep's API is only available to Workspace accounts, so a consumer Gmail account cannot use it. OneNote could carry notes and has not been written, because a OneNote page is an HTML document inside a section inside a notebook rather than a title and a body, and that mapping is a decision rather than an afternoon. A standalone reminder is not a thing either provider has: Outlook makes a reminder a property of an event or a task, and Google folded Reminders into Tasks in 2023.
@@ -2748,7 +2766,7 @@ its address, and an event read aloud says its category.
 
 - **Wixen has a logo.** A fox's head with a band across its eyes, in burnt orange, ears up and forward. It belongs to the family rather than to this application, so Wixen Chat and whatever follows use the same mark, and each application keeps its own icon built the same way: a coloured field, a cream figure, and the detail in ink. The three colours are held to WCAG contrast floors by tests, the type decision is that Wixen ships no typeface and honours the system font at the size you chose, and every asset comes with the alt text it was designed against. [the Wixen family mark](brand.md) has the reasoning, including why the ears are the size they are.
 
-- **Older mail can be fetched.** A sync brings down the newest five hundred messages in a folder and used to stop there, with no way back and nothing saying there was more. `Ctrl+Shift+G`, or File then Get Older Messages, brings down the next page. The status line now says how many are downloaded out of how many the folder holds, so "500 of 40,000" reads as the incomplete answer it is rather than as a complete one, and it names the key while there is still more to get.
+- **Older mail can be fetched.** A sync brings down the newest five hundred messages in a folder and used to stop there, with no way back and nothing saying there was more. `Shift+F9`, or File then Get Older Messages, brings down the next page. The status line now says how many are downloaded out of how many the folder holds, so "500 of 40,000" reads as the incomplete answer it is rather than as a complete one, and it names the key while there is still more to get.
 - **Wixen Mail has an icon.** The executable had none, so Windows drew the generic one in the taskbar, in Alt+Tab, on the shortcut and in Apps and Features. It is an envelope whose flap is a W, which is the one thing that makes it this application's envelope, and it still reads as a flap at sixteen pixels.
 - **The theme setting paints three parts of the window.** It was stored, read back into the Settings dialog, and applied to nothing at all. Picking Light or Dark now colours the folder list, the message list and the side panel. Everything else follows Windows, and the Settings dialog says so under the Theme setting, because a setting that changes less than you expect is one you read as broken. Three things are worth knowing before you try it:
   - A change takes effect the next time Wixen Mail starts, not while the dialog is open.
@@ -2759,7 +2777,7 @@ its address, and an event read aloud says its category.
 
   **Still to be confirmed with a screen reader and on a screen.** Nobody has looked at the dark theme at real size and real magnification. The message list keeps its column header in the Windows colours, because that header is a control of its own, and whether the selection highlight, the expand arrows and the focus rectangle in the folder list still read against a dark background is the sort of thing only looking answers. The note in Settings is written where a screen reader can find it, and whether it is actually read out when you land on the Theme setting is not something the tests here can tell you.
 - **`Ctrl+N` makes whatever the area you are in is for**: a message in Mail, a contact in Contacts, an event in Calendar, and the same in Reminders, Tasks and Notes. It used to be New Message everywhere, which was the wrong answer in five of the six.
-- **Six keys that make one particular thing from anywhere**, so you never have to switch module first: `Ctrl+Shift+M` message, `Ctrl+Shift+C` contact, `Ctrl+Shift+E` event, `Ctrl+Shift+D` reminder, `Ctrl+Shift+T` task, `Ctrl+Shift+N` note. Reminder takes `D` for due, because `Ctrl+Shift+R` is Reply All here as it is in every other mail client, and that is not worth making anybody relearn. Three keys moved to make room: Mute Message Reading to `Ctrl+M`, Next and Previous Unread to `Ctrl+]` and `Ctrl+[`.
+- **Six keys that make one particular thing from anywhere**, so you never have to switch module first: `Ctrl+Shift+M` message, `Ctrl+Shift+C` contact, `Ctrl+Shift+E` event, `Ctrl+Shift+D` reminder, `Ctrl+Shift+T` task, `Ctrl+Shift+N` note. Reminder takes `D` for due, because `Ctrl+Shift+R` is Reply All here as it is in every other mail client, and that is not worth making anybody relearn. Three keys moved to make room: Mute Message Reading to `Ctrl+M`, Next and Previous Unread to `Ctrl+U` and `Ctrl+Shift+U`. Those two were written down as `Ctrl+]` and `Ctrl+[` for a while and nothing ever bound either; the entry about the shortcuts document, further up, is where that was put right.
 - **New items go somewhere, and Wixen Mail says where.** Your default account when it can hold that kind of thing, and this computer when it cannot. A plain mail account holds mail and nothing else, so a contact made while one is the default is kept here rather than filed into an account that will never sync it. Your first account becomes the default on its own; change it with Set as Default in the accounts dialog. Items kept on this computer show up in the panels alongside your account's own.
 
 - **Wixen Mail tells you when a message is spam or a phishing attempt.** The verdict comes from the filter your provider already ran: SpamAssassin's headers, Microsoft's confidence levels, what the receiving server made of the sender's anti-forgery records, and, for Gmail, the junk folder, which is the whole of what Gmail tells a mail application. Nothing is sent anywhere to work this out. DMARC failing counts as impersonation, because it is the sender's own published records saying the message did not come from them; SPF failing on its own does not, because forwarding and mailing lists break it routinely and a warning that fires on half an inbox is one people learn to ignore.
@@ -2827,7 +2845,7 @@ its address, and an event read aloud says its category.
 - **`Enter` on a message in a conversation opens a tree**, on a native tree control so the screen reader announces the level itself. `Enter` on the first row opens the whole conversation as one document; `Enter` on a message opens that message. The first row is labelled "Whole conversation, 5 messages" rather than repeating the subject, because `Enter` does two things there and the row has to say which. `Escape` goes back to the list with focus on the row it came from. A message with no conversation opens straight into the preview, with no tree in the way.
 - **A whole conversation renders as one document**, each message introduced by a heading so `H` moves between them. Levels cap at `h6` and never skip: skipping a heading level is a structure violation in its own right, and conversations go deeper than six, so the real depth moves into the heading text as "Reply, level 8". Bodies are sanitized exactly as they are anywhere else; being part of a thread does not make a stranger's HTML safer.
 - **A conversation of one is not reported as a conversation**, so an ordinary message carries no thread indicator and raises no earcon.
-- **Next and previous unread** on `Ctrl+Shift+N` and `Ctrl+Shift+P`. They wrap at the ends, and say "no unread messages" rather than doing nothing, because a key that silently does nothing is indistinguishable from a key that is broken.
+- **Next and previous unread** on `Ctrl+U` and `Ctrl+Shift+U`. They wrap at the ends, and say "no unread messages" rather than doing nothing, because a key that silently does nothing is indistinguishable from a key that is broken. They were on `Ctrl+Shift+N` and `Ctrl+Shift+P` when this was written, and both of those went to the six keys that make one particular thing from anywhere.
 - **Flag a message** with `Ctrl+Shift+S`, which writes through to the cache.
 - **`F5` reads the current folder again** and `F6` moves between the folder, message, and preview panes, skipping the preview when it is hidden rather than focusing something invisible.
 - **Space reads the item under the cursor, in all six modules.** A list row is read as its visible columns and nothing else, so a task's description, a contact's phone number, or a message's recipients were invisible until you opened the item. `Space` reads the short form, pressing it again reads everything the record holds, and a third press goes back. `Shift+Space` reads everything outright. Moving to another row starts again at the short form. There is no double-press timing window: the second press does the second thing however long you took, because a timing window locks out anyone who types slowly.
@@ -2880,7 +2898,7 @@ its address, and an event read aloud says its category.
 - **The folder tree is one flat level.** Nested mailboxes are listed by their full path, so `Archive/2026` reads as itself rather than as a second folder called `2026`. A real hierarchy is a separate piece of work.
 - **Browser sign-in with Google is limited until the application passes Google's security assessment.** Reading mail is a restricted scope, so an unverified client can only be used by people added by hand to a list capped at 100, and Google expires their sign-in after seven days: each of them re-authorises about once a week. That is Google policy and not something this application can work around. An app password has neither limit, which is why Gmail defaults to one. Microsoft does not apply the seven-day rule.
 - **Opening a message opens its own connection.** Bodies are fetched one at a time with a fresh sign-in each, which is simple and slower than it should be, and some providers rate-limit sign-ins. Holding one connection open needs reconnect handling that is not built. Saving an attachment opens its own connection too, for the same reason.
-- **Attachments cannot be opened, only saved.** Handing a file from a stranger to whatever Windows has registered for it is the step most worth thinking about before building, so it is not built yet. Save it and open it yourself, where you can see what it is first.
+- **An attachment is never handed to Windows.** Opening a file from a stranger with whatever program Windows has registered for it is the step most worth thinking about before building, so it is not built. Save it and open it yourself, where you can see what it is first. A PDF is the exception and is read inside Wixen Mail's own reader, which hands nothing to another program.
 - **An older cache may list an attachment twice.** Before this version, downloading a message body a second time appended a second copy of its attachment list rather than replacing it, so a database from an earlier build can show duplicates whose extra rows fail to save. Downloading that message again repairs it. New databases cannot get into that state.
 - **None of this has been tested against a live server yet.** It is built and reachable from `F9`; the parsing is covered by tests and the transport is not. Treat the first run against a real account as the test.
 
@@ -2900,7 +2918,7 @@ its address, and an event read aloud says its category.
 - **Crash log** at `crash.log` under the local app data directory. Panics and startup failures also show a message box.
 - **Accessibility CI**: a non-blocking Axe.Windows UI Automation scan on every pull request. It covers roughly half of WCAG and does not replace NVDA testing.
 - **Announcements are paced.** The queue drops repeats, lets a progress counter supersede its own earlier steps, caps how many announcements can be waiting, and caps how many are spoken per second. Urgent announcements are never held back. Anything dropped is counted and reported rather than vanishing silently.
-- **Mute for message reading** (`Ctrl+Shift+M`, also under View). Stops message text being read aloud without silencing status and error announcements, so muting before a screen share does not cost you your error messages.
+- **Mute for message reading** (`Ctrl+M`, also under View). Stops message text being read aloud without silencing status and error announcements, so muting before a screen share does not cost you your error messages. It was `Ctrl+Shift+M` when this was written, and that key is New Message now.
 
 - **Message bodies moved out of the messages table.** They used to sit inline, so every folder listing dragged body text through SQLite to render a subject line, and a mailbox of a few hundred thousand messages would have been tens of gigabytes in one file. Bodies now live in their own table, are read only when a message is opened, and can be evicted least-recently-read against a size budget. Databases written by earlier versions have their inline bodies moved across on first open, and the space is reclaimed.
 
@@ -2936,9 +2954,13 @@ its address, and an event read aloud says its category.
 
 ### Known limitations
 
-- **Receiving mail is not implemented.** The IMAP and POP3 modules perform no network I/O; every call returns fabricated data. Nothing in the window is wired to them, deliberately, because showing invented folders and messages as your own mail would be worse than showing none. Sending works; receiving does not.
-- Sending does not support OAuth accounts. The SMTP layer authenticates with a password and has no XOAUTH2 support, so a Gmail or Outlook account configured for OAuth is refused with a message saying so rather than failing at the server.
-- Threaded view appears in the View menu and is disabled, because threading is not implemented. It is left visible so its absence is discoverable rather than silently missing.
+These three were true when they were written and are not true now. They are kept
+because the entries above them describe a client that could not fetch mail, and
+taking them out would leave those entries reading as though it could.
+
+- **Receiving mail is not implemented.** The IMAP and POP3 modules perform no network I/O; every call returns fabricated data. Nothing in the window is wired to them, deliberately, because showing invented folders and messages as your own mail would be worse than showing none. Sending works; receiving does not. **Closed further up this same release:** both modules open real connections now, `F9` fetches real mail, and a POP account has a real client behind it.
+- Sending does not support OAuth accounts. The SMTP layer authenticates with a password and has no XOAUTH2 support, so a Gmail or Outlook account configured for OAuth is refused with a message saying so rather than failing at the server. **Closed further up this same release:** IMAP and SMTP both sign in with XOAUTH2 from the token in the Windows credential store.
+- Threaded view appears in the View menu and is disabled, because threading is not implemented. It is left visible so its absence is discoverable rather than silently missing. **Half closed further up this same release:** threading is built, and conversations are reached with `Enter` on a message. What is still not built is collapsing the message list to one row per conversation, which is what the disabled menu item offers, and it now says so when you land on it.
 - Five accessibility scan findings remain, all inside WebView2's own accessibility tree (`Chrome_WidgetWin_1`, `BrowserRootView`, and three container views). They are not this application's controls and cannot be named or positioned from here.
 
 ## [0.1.0-alpha.9] - 2026-03-05

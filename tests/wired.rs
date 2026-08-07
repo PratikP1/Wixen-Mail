@@ -630,6 +630,12 @@ fn test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of() {
 /// tooltip that read "(Alt+Shift+R)", and bound to nothing, so the key did
 /// nothing and this check said it was fine. That is the second documented key
 /// to be dead, so the check now asks the question it was written for.
+///
+/// The key has to end where the accelerator ends. Matching it as a prefix let a
+/// third documented key be dead: the document said `Ctrl+D` opens a draft, the
+/// menu binds `Ctrl+Shift+O`, and `Ctrl+D` matched the `Ctrl+Down` on the
+/// reader's Next Message item. `Ctrl+Shift+S` sitting inside `Ctrl+Shift+Space`
+/// would be the same mistake in the other direction.
 fn bound_somewhere(key: &str, code: &str, stated: &str) -> bool {
     if let Some(letter) = key.strip_prefix("Alt+")
         && letter.chars().count() == 1
@@ -642,9 +648,27 @@ fn bound_somewhere(key: &str, code: &str, stated: &str) -> bool {
     // `\t` as two characters, because that is how it is written in the source
     // of a menu label: `"Reply &All\tCtrl+Shift+R"`. A few labels carry a real
     // tab instead, which is the same thing to Windows.
-    code.contains(&format!(r"\t{key}"))
-        || code.contains(&format!("\t{key}"))
-        || stated.contains(key)
+    whole_key_appears_after(r"\t", key, code)
+        || whole_key_appears_after("\t", key, code)
+        || whole_key_appears_after("\n", key, stated)
+}
+
+/// Whether `key` follows `opener` somewhere in `text` and ends there.
+///
+/// Ends there means the next character is not one a key name can carry, so
+/// `Ctrl+D` does not match the start of `Ctrl+Down`.
+fn whole_key_appears_after(opener: &str, key: &str, text: &str) -> bool {
+    let looking_for = format!("{opener}{key}");
+    let mut from = 0;
+    while let Some(at) = text[from..].find(&looking_for) {
+        let ends = from + at + looking_for.len();
+        match text[ends..].chars().next() {
+            None => return true,
+            Some(next) if !next.is_ascii_alphanumeric() && next != '+' => return true,
+            _ => from = ends,
+        }
+    }
+    false
 }
 
 /// The keys nothing binds with a menu accelerator, and what does bind them.
@@ -676,14 +700,21 @@ fn bound_by_a_handler_rather_than_a_menu() -> Vec<&'static str> {
 /// Only the modified ones. A bare `Space` or `Home` in the document is a key
 /// this reads no meaning into, and looking for the word "Space" in the source
 /// would match anything.
+///
+/// Modifiers on their own are not combinations either. The document writes "the
+/// six `Ctrl+Shift` keys" and "the heading keys use `Ctrl+Alt`", which name a
+/// family rather than a key, and there is nothing for a menu to bind.
 fn documented_combinations(doc: &str) -> Vec<String> {
+    const MODIFIERS: [&str; 3] = ["Ctrl", "Alt", "Shift"];
     let mut found = Vec::new();
     for piece in doc.split('`').skip(1).step_by(2) {
         let piece = piece.trim();
         let modified = piece.starts_with("Ctrl+") || piece.starts_with("Alt+");
+        let all_modifiers = piece.split('+').all(|part| MODIFIERS.contains(&part));
         // One combination, not a sentence that happens to contain one, and not
         // a sequence like "Ctrl+N, M" whose halves are pressed separately.
         if modified
+            && !all_modifiers
             && !piece.contains(' ')
             && !piece.contains(',')
             && !found.contains(&piece.to_string())
