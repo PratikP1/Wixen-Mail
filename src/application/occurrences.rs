@@ -43,10 +43,12 @@ const MOST_DAYS_ONE_SERIES_SHOWS: usize = 800;
 
 /// The most times a rule is stepped forward before giving up.
 ///
-/// The window ends the stepping for anything that reaches it, so this is the
-/// backstop for what does not: a series set up long before the window is
-/// stepped from its own first day, and has to be carried across the years in
-/// between. It is a guard rather than a limit anybody meets.
+/// The window ends the stepping for anything that reaches it, and the stepping
+/// now starts at the block the window opens in, so a rule that falls on a day
+/// takes about as many steps as the window is wide. This is the backstop for
+/// what neither of those covers: a rule that falls on no day at all, and a
+/// series counting its way to an ending, which has to be counted from its own
+/// first day and so is still walked from there.
 const MOST_STEPS: usize = 40_000;
 
 /// The days an event falls on between two dates.
@@ -268,9 +270,9 @@ impl Rule {
 
     /// Every day the series falls on inside the window.
     ///
-    /// Stepped from the day the series starts rather than from the window,
-    /// because a count counts from the start: counted from the window, a series
-    /// that ran out last month would go on showing.
+    /// The days are the series' own, never the window's: the arithmetic is
+    /// always done on the rule's own blocks, so a weekly meeting keeps its
+    /// weekday and a monthly one its date whatever window it is asked about.
     fn days_between(
         &self,
         first: chrono::NaiveDate,
@@ -292,6 +294,23 @@ impl Rule {
         from: chrono::NaiveDate,
         to: chrono::NaiveDate,
     ) -> (Vec<chrono::NaiveDate>, usize) {
+        self.days_stepping_from(self.where_to_start_stepping(first, from), first, from, to)
+    }
+
+    /// The same again, from a block named by the caller.
+    ///
+    /// Split out so a test can hold the answer from the block the window opens
+    /// in against the answer from the series' own first day, which is where
+    /// this used to start. Those two have to name the same days for every
+    /// series the old way could still reach, and that is the whole claim: the
+    /// fix is only allowed to end the truncation, never to shift a day.
+    fn days_stepping_from(
+        &self,
+        start: chrono::NaiveDate,
+        first: chrono::NaiveDate,
+        from: chrono::NaiveDate,
+        to: chrono::NaiveDate,
+    ) -> (Vec<chrono::NaiveDate>, usize) {
         use crate::application::repeating::Until;
 
         let stop_on = match &self.stops {
@@ -306,7 +325,7 @@ impl Rule {
         let mut found = Vec::new();
         let mut counted = 0usize;
         let mut blocks = 0usize;
-        let mut cursor = self.opening(first);
+        let mut cursor = start;
         'stepping: for _ in 0..MOST_STEPS {
             // Every day a block falls on is at or after the block's own
             // opening: a weekly block opens on its Monday and reaches the
@@ -340,7 +359,7 @@ impl Rule {
                 }
             }
             blocks += 1;
-            let Some(next) = self.step(cursor) else {
+            let Some(next) = self.blocks_on(cursor, 1) else {
                 break;
             };
             // A step that does not move is a rule that would be worked out for
@@ -352,6 +371,52 @@ impl Rule {
             cursor = next;
         }
         (found, blocks)
+    }
+
+    /// Which block the stepping starts at, so a series of any age reaches the
+    /// window in about as many steps as the window is wide.
+    ///
+    /// Walked from its own first day, a series costs one step per interval
+    /// since that day. Forty thousand daily steps is a hundred and nine years,
+    /// so a daily series first dated 1917 ran out of steps five months into a
+    /// window eighteen months wide, and one dated 1900 never reached the window
+    /// at all. The half-shown one is the worse of the two, because nothing
+    /// looks wrong: somebody scrolls forward and their standing appointment has
+    /// quietly stopped existing.
+    ///
+    /// Blocks are evenly spaced, so the one the window opens in is worked out
+    /// rather than counted to. Every day a block falls on is at or after that
+    /// block's own opening and before the next block's, so the last block
+    /// opening at or before `from` is the earliest one that can hold a day
+    /// inside the window, and starting there leaves the days shown exactly as
+    /// they were for every series the walking could already reach.
+    fn where_to_start_stepping(
+        &self,
+        first: chrono::NaiveDate,
+        from: chrono::NaiveDate,
+    ) -> chrono::NaiveDate {
+        let opening = self.opening(first);
+        // A count counts from the series' own first day, so a series that stops
+        // after so many times is walked from there. Started anywhere else the
+        // count would begin part way through, and a series that ran out in 1918
+        // would go on showing today.
+        if matches!(
+            self.stops,
+            crate::application::repeating::Until::AfterTimes(_)
+        ) {
+            return opening;
+        }
+        // Whole blocks between the two, at an interval of one. Dividing by the
+        // interval after is the same answer as dividing by the two together,
+        // and it keeps each unit in one place.
+        let apart = match self.how {
+            How::Daily => (from - opening).num_days(),
+            How::Weekly => (from - opening).num_days().div_euclid(7),
+            How::Monthly => months_apart(opening, from),
+            How::Yearly => months_apart(opening, from).div_euclid(12),
+        };
+        let steps = apart.max(0) / i64::from(self.every);
+        self.blocks_on(opening, steps).unwrap_or(opening)
     }
 
     /// Where the stepping starts, which is the block the first day sits in
@@ -408,7 +473,16 @@ impl Rule {
         }
     }
 
-    /// The next block after this one.
+    /// The block a number of steps on from this one, one step being the
+    /// interval the rule names.
+    ///
+    /// One place knows how far apart a rule's blocks are, and both the stepping
+    /// and the working out of where to start it come here, so the two cannot
+    /// disagree about where a block lands.
+    ///
+    /// Days for the rules that count in days and months for the ones that count
+    /// in months, because a month is not a fixed number of days and counting a
+    /// monthly rule in days would land it on the wrong month.
     ///
     /// The gap is worked out wider than the interval was read in. INTERVAL has
     /// no upper limit in the standard and none in the parser, and at the top of
@@ -416,13 +490,15 @@ impl Rule {
     /// be worse than a crash: it is no longer a whole number of years, so a
     /// yearly rule would step to a month it never named, and every day worked
     /// out from there belongs to a rule nobody wrote.
-    fn step(&self, cursor: chrono::NaiveDate) -> Option<chrono::NaiveDate> {
-        let every = i64::from(self.every);
+    fn blocks_on(&self, block: chrono::NaiveDate, steps: i64) -> Option<chrono::NaiveDate> {
+        let moved = steps.checked_mul(i64::from(self.every))?;
         match self.how {
-            How::Daily => cursor.checked_add_signed(chrono::Duration::days(every)),
-            How::Weekly => cursor.checked_add_signed(chrono::Duration::days(every * 7)),
-            How::Monthly => months_after(cursor, every),
-            How::Yearly => months_after(cursor, every * 12),
+            How::Daily => block.checked_add_signed(chrono::TimeDelta::try_days(moved)?),
+            How::Weekly => {
+                block.checked_add_signed(chrono::TimeDelta::try_days(moved.checked_mul(7)?)?)
+            }
+            How::Monthly => months_after(block, moved),
+            How::Yearly => months_after(block, moved.checked_mul(12)?),
         }
     }
 }
@@ -501,6 +577,16 @@ fn weekday_called(day: &chrono::Weekday) -> &'static str {
         chrono::Weekday::Sat => "Saturday",
         chrono::Weekday::Sun => "Sunday",
     }
+}
+
+/// How many whole months lie between the months two dates fall in.
+///
+/// Negative when the later date is the first one, which is what says a series
+/// starts after the window rather than before it.
+fn months_apart(from: chrono::NaiveDate, to: chrono::NaiveDate) -> i64 {
+    use chrono::Datelike;
+    (i64::from(to.year()) - i64::from(from.year())) * 12 + i64::from(to.month())
+        - i64::from(from.month())
 }
 
 /// The first of the month a number of months after this one.
@@ -1090,6 +1176,260 @@ mod tests {
             blocks <= 3,
             "stepped {blocks} blocks to cover a window five weeks wide"
         );
+    }
+
+    /// The real window, 180 days back and 365 forward, held still at a date
+    /// rather than read from the clock so the numbers in these tests stay put.
+    fn the_real_window_width() -> (chrono::NaiveDate, chrono::NaiveDate) {
+        between("2026-02-07", "2027-08-06")
+    }
+
+    /// Where two answers first disagree, said in a line.
+    ///
+    /// Printing both lists whole is eighteen months of dates twice over, which
+    /// nobody reads. The day they part company is the thing worth seeing.
+    fn where_they_differ(one: &[chrono::NaiveDate], other: &[chrono::NaiveDate]) -> Option<String> {
+        if one == other {
+            return None;
+        }
+        let at = one
+            .iter()
+            .zip(other)
+            .position(|(here, there)| here != there)
+            .unwrap_or_else(|| one.len().min(other.len()));
+        Some(format!(
+            "{} days against {}, first parting at number {at}, {:?} against {:?}",
+            one.len(),
+            other.len(),
+            one.get(at),
+            other.get(at)
+        ))
+    }
+
+    #[test]
+    fn test_the_old_dates_a_real_calendar_carries_still_come_round() {
+        // A daily series first dated 1917 is nobody's diary. These are: a
+        // birthday or an anniversary imported with a year of birth on it, and
+        // an import that lost its start and left the epoch behind. Whatever
+        // year the first date carries, the next day the series falls on is
+        // still worked out.
+        let (from, to) = the_real_window_width();
+        for (what, start, rule, expected) in [
+            (
+                "a birthday kept with a date of birth in the thirties",
+                "1935-06-15 00:00",
+                "FREQ=YEARLY",
+                vec!["2026-06-15 00:00", "2027-06-15 00:00"],
+            ),
+            (
+                "a wedding anniversary from 1952",
+                "1952-09-27 00:00",
+                "FREQ=YEARLY",
+                vec!["2026-09-27 00:00"],
+            ),
+            (
+                "a monthly reminder whose import left the epoch behind",
+                "1970-01-01 08:00",
+                "FREQ=MONTHLY",
+                vec![
+                    "2026-03-01 08:00",
+                    "2026-04-01 08:00",
+                    "2026-05-01 08:00",
+                    "2026-06-01 08:00",
+                    "2026-07-01 08:00",
+                    "2026-08-01 08:00",
+                    "2026-09-01 08:00",
+                    "2026-10-01 08:00",
+                    "2026-11-01 08:00",
+                    "2026-12-01 08:00",
+                    "2027-01-01 08:00",
+                    "2027-02-01 08:00",
+                    "2027-03-01 08:00",
+                    "2027-04-01 08:00",
+                    "2027-05-01 08:00",
+                    "2027-06-01 08:00",
+                    "2027-07-01 08:00",
+                    "2027-08-01 08:00",
+                ],
+            ),
+        ] {
+            let event = an_event(start, start, Some(rule));
+
+            let shown = falls_on(&event, from, to);
+
+            assert_eq!(starts(&shown), expected, "{what}");
+        }
+    }
+
+    #[test]
+    fn test_a_daily_series_first_dated_a_century_ago_is_shown_across_the_whole_window() {
+        // The window holds 546 days and a daily series falls on all of them,
+        // whatever year it was first dated. Carried to the window one step at a
+        // time, a series dated 1917 ran out of steps partway through: it showed
+        // for the first five months and then stopped, and a series dated 1900
+        // never reached the window at all.
+        //
+        // Half a window shown is worse than none, because nothing looks wrong.
+        // Somebody scrolls forward and their standing appointment has quietly
+        // stopped existing.
+        let (from, to) = the_real_window_width();
+        for year in [1900, 1917, 1930, 1970, 1990, 2015] {
+            let event = an_event(
+                &format!("{year}-01-01 09:00"),
+                &format!("{year}-01-01 09:15"),
+                Some("FREQ=DAILY"),
+            );
+
+            let shown = falls_on(&event, from, to);
+
+            assert_eq!(shown.days.len(), 546, "a daily series first dated {year}");
+            assert_eq!(
+                shown.days.first().map(|day| day.start.as_str()),
+                Some("2026-02-07 09:00"),
+                "a daily series first dated {year}"
+            );
+            assert_eq!(
+                shown.days.last().map(|day| day.start.as_str()),
+                Some("2027-08-06 09:00"),
+                "a daily series first dated {year}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_old_series_is_not_carried_to_the_window_one_step_at_a_time() {
+        // The days are only half of it. Even where the stepping did reach the
+        // window it walked every day in between, so opening the calendar panel
+        // stepped a series dated 1970 twenty thousand times, per event, per
+        // build. The work has to be bounded by the width of the window rather
+        // than by the age of the series.
+        let rule = Rule::read("FREQ=DAILY").expect("a rule this can read");
+        let (from, to) = the_real_window_width();
+
+        for year in [1900, 1917, 1970, 2015] {
+            let first = between(&format!("{year}-01-01"), "2026-01-01").0;
+
+            let (days, blocks) = rule.days_and_blocks(first, from, to);
+
+            assert_eq!(days.len(), 546, "a daily series first dated {year}");
+            assert!(
+                blocks <= 600,
+                "stepped {blocks} blocks over a window 546 days wide, for a series first dated {year}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_series_that_has_not_begun_yet_is_not_stepped_at_all() {
+        // The other end of the same arithmetic. Working out where the window is
+        // has to answer "at the series' own first block" for a series that
+        // starts after the window, not step backwards to meet it: the days
+        // would come out the same, because a day before the series began is
+        // passed over anyway, but the panel would walk the whole window to
+        // find nothing.
+        let (from, to) = the_real_window_width();
+
+        for written in [
+            "FREQ=DAILY",
+            "FREQ=WEEKLY;BYDAY=TU",
+            "FREQ=MONTHLY",
+            "FREQ=YEARLY",
+        ] {
+            let rule = Rule::read(written).expect("a rule this can read");
+            let first = between("2031-05-04", "2031-05-04").0;
+
+            let (days, blocks) = rule.days_and_blocks(first, from, to);
+
+            assert!(days.is_empty(), "{written}: {days:?}");
+            assert_eq!(blocks, 0, "stepped {blocks} blocks for {written}");
+        }
+    }
+
+    #[test]
+    fn test_starting_at_the_window_names_the_same_days_as_walking_from_the_first_day() {
+        // The test that matters most here, and the one the fix had to earn.
+        // Ending the truncation is worth nothing if the entry point shifts a
+        // series that already worked, and a shifted series is the worse fault
+        // of the two: every occurrence lands on a day nobody wrote, and the
+        // calendar looks perfectly healthy while it does it.
+        //
+        // So the two are held against each other, over every shape where the
+        // step is not a fixed number of days: weekday lists, weekday ordinals
+        // counted from both ends, monthly dates no month has, intervals, and
+        // the two endings. Each row also proves the walk it is held against
+        // was a fair one, by asserting it never reached the backstop.
+        let rules = [
+            "FREQ=DAILY",
+            "FREQ=DAILY;INTERVAL=2",
+            "FREQ=DAILY;INTERVAL=7",
+            "FREQ=WEEKLY",
+            "FREQ=WEEKLY;INTERVAL=2",
+            "FREQ=WEEKLY;INTERVAL=3",
+            "FREQ=WEEKLY;BYDAY=MO,WE,FR",
+            "FREQ=WEEKLY;BYDAY=SA,SU",
+            "FREQ=WEEKLY;BYDAY=TU;INTERVAL=2",
+            "FREQ=MONTHLY",
+            "FREQ=MONTHLY;INTERVAL=3",
+            "FREQ=MONTHLY;BYDAY=1MO",
+            "FREQ=MONTHLY;BYDAY=3WE",
+            "FREQ=MONTHLY;BYDAY=5MO",
+            "FREQ=MONTHLY;BYDAY=-1FR",
+            "FREQ=MONTHLY;BYDAY=-2TH",
+            "FREQ=YEARLY",
+            "FREQ=YEARLY;INTERVAL=4",
+            "FREQ=DAILY;COUNT=10",
+            "FREQ=WEEKLY;COUNT=500",
+            "FREQ=DAILY;UNTIL=20261231T235959Z",
+            "FREQ=MONTHLY;BYDAY=2TU;UNTIL=20270101T000000Z",
+        ];
+        let windows = [
+            the_real_window_width(),
+            // Opening part way through a week and part way through a month, so
+            // the block it opens in holds days on both sides of the opening.
+            between("2026-02-18", "2026-05-20"),
+            // Narrower than one monthly block, and narrower than one week.
+            between("2026-03-10", "2026-03-14"),
+        ];
+        // Two leap years among them, and days no month has, so a rule that
+        // skips a block meets the skipping on both sides of the comparison.
+        let first_days = [
+            (1984, 1, 1),
+            (1984, 2, 29),
+            (1984, 8, 30),
+            (2005, 1, 31),
+            (2005, 5, 29),
+            (2005, 11, 4),
+            (2020, 2, 29),
+            (2020, 3, 15),
+            (2020, 12, 31),
+            (2026, 1, 1),
+            (2026, 3, 31),
+            (2026, 7, 4),
+            (2031, 2, 28),
+            (2031, 9, 30),
+        ];
+
+        for written in rules {
+            let rule = Rule::read(written).expect("a rule this can read");
+            for (year, month, day) in first_days {
+                let first =
+                    chrono::NaiveDate::from_ymd_opt(year, month, day).expect("a day of the year");
+                for (from, to) in windows {
+                    let (walked, blocks) =
+                        rule.days_stepping_from(rule.opening(first), first, from, to);
+
+                    assert!(
+                        blocks < MOST_STEPS,
+                        "{written} first dated {first} reached the backstop, \
+                         so there is nothing here to hold the answer against"
+                    );
+                    let started_at_the_window = rule.days_between(first, from, to);
+                    if let Some(difference) = where_they_differ(&started_at_the_window, &walked) {
+                        panic!("{written}, first dated {first}, over {from} to {to}: {difference}");
+                    }
+                }
+            }
+        }
     }
 
     #[test]

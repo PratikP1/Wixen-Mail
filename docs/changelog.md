@@ -231,6 +231,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A repeating event first dated a very long time ago no longer stops halfway
+  through the calendar.** An event that repeats every day and carries a first
+  date more than about a hundred years back was shown for the first few months
+  of the calendar and then simply stopped, with no gap, no warning and nothing
+  to look wrong. Scroll forward and the appointment had quietly ceased to exist.
+  Older still, and it never appeared at all.
+
+  The cause was that the days were worked out by counting forward from the
+  series' own first date, one repeat at a time, with a cap on how far that
+  counting would go. A daily series starting in 1917 used the whole cap getting
+  to today and ran out part way through the year ahead.
+
+  The days are now worked out from the part of the calendar you are looking at,
+  so how old the event is makes no difference to whether it appears. The days it
+  falls on are exactly the days it fell on before for every series that already
+  worked: only the ones that were being cut short have changed. Opening the
+  calendar is also quicker where old repeating events are stored, because the
+  years in between are no longer walked through one day at a time.
+
+  A daily event dated 1917 now shows on all 546 days of the calendar instead of
+  151, and one dated 1900 on all 546 instead of none.
+
 - **A day you cancelled out of a repeating Google event stays cancelled.** Three
   separate faults dropped the days you had called off. Each one had the same
   result: the occurrence came back, and a meeting you had cancelled was
