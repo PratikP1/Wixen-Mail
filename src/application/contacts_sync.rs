@@ -7490,6 +7490,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_change_two_settings_hold_back_names_both_of_them() {
+        // The same one contact and one edit, with a change goes only to the
+        // address book it came from. Google is owed it and cannot have it until
+        // Allow Changes is on; Outlook is owed it and will not get it while
+        // this setting is off. Both sentences are said because they have
+        // different answers, and the second one used to be said nowhere.
+        let cache = a_cache("two_settings_hold_one_change");
+        a_contact_both_address_books_are_owed(&cache);
+        let google = ScriptedGoogle {
+            people: vec![a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "etag-2",
+            )],
+            the_account_is_read_only: true,
+            ..Default::default()
+        };
+        let microsoft = ScriptedMicrosoft {
+            contacts: vec![a_microsoft_contact_at_version(
+                OUTLOOKS_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "W/\"2\"",
+            )],
+            the_account_is_read_only: true,
+            ..Default::default()
+        };
+        let only = HowFarAChangeGoes::OnlyToWhereItCameFrom;
+
+        let mut total = SyncResult::default();
+        total.absorb(
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, only)
+                .await
+                .expect("a Google sync"),
+        );
+        total.absorb(
+            sync_microsoft_contacts(&cache, &microsoft, "a token", AN_ACCOUNT, only)
+                .await
+                .expect("a Microsoft sync"),
+        );
+
+        assert_eq!(
+            what_the_contacts_sync_did(&total),
+            "Contacts sync: 0 created, 1 updated, 0 deleted, 1 of your change replaced \
+             by the address book. 1 change is waiting here: turn on Allow Changes for \
+             this account to send it. 1 change is not going to your other address book: \
+             turn on sending a change to every address book that has the contact."
+        );
+    }
+
+    #[tokio::test]
     async fn test_an_edit_an_address_book_replaced_is_said_once_and_not_on_every_later_sync() {
         // What the first loss leaves behind: the copy stored here is Google's,
         // Outlook is still owed it, and nothing here was written here any more.
