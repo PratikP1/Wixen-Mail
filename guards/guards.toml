@@ -186,6 +186,17 @@ red = [
     "application::calendar::tests::test_every_clause_at_once_is_still_read_as_sentences",
 ]
 
+# ── A clause never decides how it joins to its neighbours ───────────────────
+
+[[guard]]
+name = "a clause is joined without a space of its own"
+file = "src/application/summing_up.rs"
+before = """    part.trim().trim_end_matches('.').trim_end()"""
+after = """    part.trim_end().trim_end_matches('.').trim_end()"""
+red = [
+    "application::summing_up::tests::test_a_part_written_with_a_space_in_front_of_it_is_not_spoken_with_two",
+]
+
 # ── A count and the thing it counts ─────────────────────────────────────────
 #
 # Five modules used to answer this question in their own words and two of them
