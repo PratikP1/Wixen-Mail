@@ -251,11 +251,7 @@ impl HtmlRenderer {
                 html_escape::encode_text(text)
             ),
         };
-        self.wrap_prepared(
-            &content,
-            "Back to message list (Escape)",
-            document_language().as_deref(),
-        )
+        self.wrap_prepared(&content, "Back to message list (Escape)")
     }
 
     /// Put the document shell around markup that is already safe.
@@ -273,12 +269,30 @@ impl HtmlRenderer {
     /// a window and closes. One label for both told half of everybody something
     /// that was not true about the button they were on.
     ///
-    /// `machine_language` is handed in rather than fetched here so a test can
-    /// render a document in a named language and read the tag that came out.
-    /// While this function fetched its own, the only assertion available was
-    /// one that called the same two functions the document did, which moves
-    /// both sides together and can never fail.
-    fn wrap_prepared(
+    /// The document's language is fetched here and is not a parameter, so a
+    /// caller cannot leave it out. It was a parameter for one release and the
+    /// reading window was handed `None` by hand; see
+    /// [`Self::wrap_prepared_in_language`].
+    fn wrap_prepared(&self, content: &str, way_out: &str) -> String {
+        self.wrap_prepared_in_language(content, way_out, document_language().as_deref())
+    }
+
+    /// The same shell, built in a language the caller names.
+    ///
+    /// This exists for tests. A test that renders in a language it chose can
+    /// read the tag that came out; while the shell fetched its own language,
+    /// the only assertion available called the same two functions the document
+    /// did, which moves both sides together and can never fail.
+    ///
+    /// Nothing outside tests calls it, and that is the point. When every call
+    /// site had to hand the language in, one of the two was read by a test and
+    /// the other was not, and the conversation document went out with no `lang`
+    /// attribute at all while the whole suite stayed green. A document with no
+    /// language is WCAG 3.1.1 failing on the one surface in this product built
+    /// for reading a conversation by heading. Take the language from
+    /// [`Self::wrap_prepared`] instead, which is not offered the question and
+    /// so cannot answer it wrongly.
+    fn wrap_prepared_in_language(
         &self,
         content: &str,
         way_out: &str,
@@ -394,11 +408,7 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
         // already been through the sanitiser, and sanitising the assembled
         // document again would escape the headings this whole surface exists
         // to produce whenever the plain-text setting is on.
-        self.wrap_prepared(
-            &body,
-            "Close this window (Escape)",
-            document_language().as_deref(),
-        )
+        self.wrap_prepared(&body, "Close this window (Escape)")
     }
 
     /// The only URLs this application will hand to the operating system.
@@ -522,12 +532,41 @@ mod tests {
     }
 
     #[test]
-    fn test_the_document_language_is_the_machines_language_and_not_a_substitute() {
-        // The source of the language, pinned on its own. `document_language`
-        // memoises `system_language` and is allowed to do nothing else: not
-        // answer a default, not answer a blank, not answer a language nobody
-        // asked for. A wrong answer here reaches a live reader as a claim
-        // about a whole message, which is worse than saying nothing (3.1.1).
+    fn test_a_conversation_document_declares_the_language_worked_out_for_it() {
+        // The same claim as the preview test above, made about the other
+        // surface, because the two documents are built by different functions
+        // and only one of them was ever read for its opening tag. This is the
+        // headings surface a screen reader user moves through with H, so it is
+        // the last document in the product that should be handed to a reader
+        // with no language on it (3.1.1).
+        //
+        // Read the same way as the preview test: the expected side asks the
+        // machine through `system_language`, so nothing here reports on the
+        // build agent's locale, and on a machine that will not name its
+        // language both sides are empty and this test cannot fail. What it
+        // pins is that whatever was worked out is what lands in the tag.
+        let renderer = HtmlRenderer::new();
+        let html = renderer.render_thread("Quarterly report", &[part("Ada", 0, "Body")]);
+        let expected = format!(
+            "<html{}>",
+            language_attribute(crate::service::spellcheck::system_language().as_deref())
+        );
+
+        assert!(
+            html.contains(&expected),
+            "{expected} is not in the document"
+        );
+    }
+
+    #[test]
+    fn test_the_language_lookup_answers_the_machines_own_answer_and_not_a_substitute() {
+        // No document here, on purpose. This reads the lookup on its own:
+        // `document_language` memoises `system_language` and is allowed to do
+        // nothing else, not answer a default, not answer a blank, not answer a
+        // language nobody asked for. A wrong answer here reaches a live reader
+        // as a claim about a whole message, which is worse than saying nothing
+        // (3.1.1). What a rendered document does with the answer is the two
+        // tests above, one per surface.
         //
         // What this kills, and where. A substituted blank or a made-up tag
         // dies on any machine, because `system_language` answers `None` rather
@@ -548,8 +587,8 @@ mod tests {
         // machine and there is no shared function on both sides of it.
         let renderer = HtmlRenderer::new();
 
-        let german = renderer.wrap_prepared("<p>Hallo</p>", "Escape", Some("de-DE"));
-        let unknown = renderer.wrap_prepared("<p>Hello</p>", "Escape", None);
+        let german = renderer.wrap_prepared_in_language("<p>Hallo</p>", "Escape", Some("de-DE"));
+        let unknown = renderer.wrap_prepared_in_language("<p>Hello</p>", "Escape", None);
 
         assert!(german.contains("<html lang=\"de-DE\">"), "{german}");
         assert!(unknown.contains("<html>"), "{unknown}");
