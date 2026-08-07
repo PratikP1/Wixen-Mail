@@ -64,6 +64,7 @@
 //! edit that disappears with nothing said is indistinguishable from a change
 //! that never saved.
 
+use crate::application::summing_up::SummingUp;
 use crate::common::{Error, Result};
 use crate::data::message_cache::{
     AddressBook, AddressEntry, ContactEntry, EmailEntry, MessageCache, PhoneEntry,
@@ -904,29 +905,32 @@ impl MicrosoftContactBook for MsGraphClient {
 /// one. It names the setting, because "nothing happened" sends somebody
 /// looking for a broken account.
 pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
-    let mut said = format!(
+    let mut said = SummingUp::opening(format!(
         "Contacts sync: {} created, {} updated, {} deleted",
         result.created_local + result.created_remote,
         result.updated_local,
         result.deleted_local + result.deleted_remote
-    );
+    ));
     if result.updated_remote > 0 {
-        said.push_str(&format!(", {} sent", result.updated_remote));
+        said.count(format!("{} sent", result.updated_remote));
     }
     if result.replaced > 0 {
         // Named as a loss rather than folded into the count of contacts
         // updated, because it is one, and because the person is the only one
         // who can decide whether to make the change again.
-        said.push_str(&format!(
-            ", {} of your change{} replaced by the address book",
+        said.count(format!(
+            "{} of your change{} replaced by the address book",
             result.replaced,
             if result.replaced == 1 { "" } else { "s" }
         ));
     }
+    if !result.errors.is_empty() {
+        said.count(format!("{} errors", result.errors.len()));
+    }
     if result.waiting_on_the_setting > 0 {
-        said.push_str(&format!(
-            ". {} changes are waiting here: turn on Allow Changes for this \
-             account to send them.",
+        said.sentence(format!(
+            "{} changes are waiting here: turn on Allow Changes for this \
+             account to send them",
             result.waiting_on_the_setting
         ));
     }
@@ -936,22 +940,19 @@ pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
         // decode a count. Two sentences written out rather than one built from
         // parts: three words have to agree in number and a sentence assembled
         // from fragments reads like one.
-        said.push_str(&if result.deleted_with_a_change_waiting == 1 {
-            ". A contact you had changed was deleted in your address book, and your \
-             change went with it."
+        said.sentence(if result.deleted_with_a_change_waiting == 1 {
+            "A contact you had changed was deleted in your address book, and your \
+             change went with it"
                 .to_string()
         } else {
             format!(
-                ". {} contacts you had changed were deleted in your address book, and \
-                 your changes went with them.",
+                "{} contacts you had changed were deleted in your address book, and \
+                 your changes went with them",
                 result.deleted_with_a_change_waiting
             )
         });
     }
-    if !result.errors.is_empty() {
-        said.push_str(&format!(", {} errors", result.errors.len()));
-    }
-    said
+    said.spoken()
 }
 
 // ── Sending a change back out ───────────────────────────────────────────────
@@ -5029,6 +5030,38 @@ mod tests {
         assert_eq!(said, "Contacts sync: 0 created, 0 updated, 0 deleted");
     }
 
+    #[test]
+    fn test_every_clause_at_once_is_still_read_as_sentences() {
+        // This string is spoken, and a screen reader stops at every full stop.
+        // Clauses pushed on to the end of each other gave "send them.. 2
+        // contacts" and "went with them., 2 errors": a stutter, then a
+        // fragment. Each clause is an item in a list here and the list is
+        // punctuated once, so a clause added later cannot bring it back.
+        let said = what_the_contacts_sync_did(&SyncResult {
+            created_local: 1,
+            updated_local: 1,
+            updated_remote: 1,
+            deleted_local: 2,
+            replaced: 1,
+            waiting_on_the_setting: 2,
+            deleted_with_a_change_waiting: 2,
+            errors: vec!["the address book said no".to_string()],
+            ..Default::default()
+        });
+
+        assert!(!said.contains(".."), "a stop spoken twice: {said}");
+        assert!(!said.contains("., "), "a fragment after a stop: {said}");
+        assert!(!said.contains(" ,"), "a pause before a pause: {said}");
+        assert_eq!(
+            said,
+            "Contacts sync: 1 created, 1 updated, 2 deleted, 1 sent, \
+             1 of your change replaced by the address book, 1 errors. \
+             2 changes are waiting here: turn on Allow Changes for this account \
+             to send them. 2 contacts you had changed were deleted in your \
+             address book, and your changes went with them."
+        );
+    }
+
     #[tokio::test]
     async fn test_an_address_harvested_from_a_message_is_not_written_into_a_real_address_book() {
         // Auto-import mints a contact for every address seen in a message
@@ -5263,6 +5296,12 @@ mod tests {
             result.errors.is_empty(),
             "one refusal per contact on every sync is how a warning stops being read: {:?}",
             result.errors
+        );
+        assert!(
+            what_the_contacts_sync_did(&result).contains("Allow Changes"),
+            "reported as a setting means the setting is named where somebody hears \
+             it, not counted in a field nobody is shown: {}",
+            what_the_contacts_sync_did(&result)
         );
         let still = the_contact_stored(&cache, "Alice Smith");
         assert!(still.pending, "the change is kept, waiting on the setting");
@@ -6305,6 +6344,12 @@ mod tests {
         );
         assert_eq!(result.updated_local, 1, "{result:?}");
         assert!(
+            what_the_contacts_sync_did(&result).contains("1 of your change replaced by the"),
+            "counting the loss and never saying it leaves the edit as silently gone \
+             as it was before it was counted: {}",
+            what_the_contacts_sync_did(&result)
+        );
+        assert!(
             !still_owed_the_change(&stored, &AddressBook::Google),
             "the change Google replaced is still queued to be sent to Google, which \
              would push Google's own copy back at it and count as one of yours sent"
@@ -6346,6 +6391,12 @@ mod tests {
             "an edit was thrown away and nothing counted it: {result:?}"
         );
         assert_eq!(result.updated_local, 1, "{result:?}");
+        assert!(
+            what_the_contacts_sync_did(&result).contains("1 of your change replaced by the"),
+            "counting the loss and never saying it leaves the edit as silently gone \
+             as it was before it was counted: {}",
+            what_the_contacts_sync_did(&result)
+        );
         assert!(
             !still_owed_the_change(&stored, &AddressBook::Microsoft),
             "the change Outlook replaced is still queued to be sent to Outlook"
@@ -6517,6 +6568,12 @@ mod tests {
         assert_eq!(
             result.replaced, 1,
             "the words somebody typed were replaced and nothing counted it: {result:?}"
+        );
+        assert!(
+            what_the_contacts_sync_did(&result).contains("1 of your change replaced by the"),
+            "the word this test is named for: a count nobody is shown is a count \
+             nobody gets: {}",
+            what_the_contacts_sync_did(&result)
         );
         assert!(
             !stored.pending,
@@ -6758,6 +6815,11 @@ mod tests {
         );
         assert_eq!(result.replaced, 0, "nothing was lost: {result:?}");
         assert!(
+            !what_the_contacts_sync_did(&result).contains("replaced"),
+            "nothing was lost and somebody was told they had lost a change: {}",
+            what_the_contacts_sync_did(&result)
+        );
+        assert!(
             still_owed_the_change(&stored, &AddressBook::Microsoft),
             "the change stopped waiting without ever reaching Outlook"
         );
@@ -6847,6 +6909,11 @@ mod tests {
             "a contact that was left alone was counted as changed: {result:?}"
         );
         assert_eq!(result.replaced, 0, "nothing was lost: {result:?}");
+        assert!(
+            !what_the_contacts_sync_did(&result).contains("replaced"),
+            "nothing was lost and somebody was told they had lost a change: {}",
+            what_the_contacts_sync_did(&result)
+        );
         assert!(
             still_owed_the_change(&stored, &AddressBook::Google),
             "the change stopped waiting without ever reaching Google"

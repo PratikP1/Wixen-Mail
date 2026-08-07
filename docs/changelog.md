@@ -241,6 +241,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The sentence said after a sync no longer stutters or trails off.** When a
+  sync had more than one thing to tell you, the parts were pushed on to the end
+  of each other and their punctuation collided. A contacts sync with changes
+  waiting, a contact deleted with your change still in it, and something that
+  failed, all at once, said "turn on Allow Changes for this account to send
+  them.. 2 contacts you had changed were deleted in your address book, and your
+  changes went with them., 2 errors". On screen that is a typo. Read aloud it is
+  not: a screen reader stops at every full stop, so you heard a stutter, then
+  the sentence, then a fragment hanging off the end of it.
+
+  The parts of the sentence are now collected and punctuated in one place. The
+  counts go in the opening list, each whole sentence follows with one stop at
+  each end, and a count worked out last no longer lands behind a full stop. The
+  same fault was in the calendar sync, which said "to send them., 1 errors" and
+  ran two sentences together at "them.. Term dates", and in the task sync, where
+  the count of problems was hung on the end of "Sign in to this account again to
+  send task changes" with a comma, so it was heard as part of the instruction.
+  All three now read as sentences. The mail sync says one line with no optional
+  parts and never had this.
+
+  Known limitation: none of these sentences has been heard with a screen reader.
+
 - **A contact you changed is no longer quietly replaced by your address book's
   older copy.** Change a contact here, and the next contacts sync wrote Google's
   or Outlook's copy of that contact straight over your change: the name, the

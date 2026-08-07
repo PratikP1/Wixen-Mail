@@ -28,6 +28,7 @@
 //!
 //! None of this has run against a live calendar.
 
+use crate::application::summing_up::SummingUp;
 use crate::common::Result;
 use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache, SyncState};
 use crate::service::google_api::{
@@ -240,30 +241,32 @@ impl CalendarManager {
 /// one. It names the setting, because "nothing happened" sends somebody looking
 /// for a broken account.
 pub fn what_the_calendar_sync_did(result: &CalendarSyncResult) -> String {
-    let mut said = format!(
+    let mut said = SummingUp::opening(format!(
         "Calendar sync: {} created, {} updated, {} deleted",
         result.created, result.updated, result.deleted
-    );
+    ));
     if result.sent > 0 {
-        said.push_str(&format!(", {} sent", result.sent));
+        said.count(format!("{} sent", result.sent));
+    }
+    if !result.errors.is_empty() {
+        said.count(format!("{} errors", result.errors.len()));
     }
     if result.waiting_on_the_setting > 0 {
-        said.push_str(&format!(
-            ". {} changes are waiting here: turn on Allow Changes for this \
-             account to send them.",
+        said.sentence(format!(
+            "{} changes are waiting here: turn on Allow Changes for this \
+             account to send them",
             result.waiting_on_the_setting
         ));
     }
-    if !result.errors.is_empty() {
-        said.push_str(&format!(", {} errors", result.errors.len()));
-    }
     // Whole sentences, because the calendar's name and what to do instead are
     // the useful part and a count carries neither. One per calendar, so a
-    // person with one subscribed feed hears one extra sentence.
+    // person with one subscribed feed hears one extra sentence. Written where
+    // the calendar is known, so they arrive with a full stop already on them
+    // and the list takes it off.
     for cannot in &result.changes_that_cannot_be_saved {
-        said.push_str(&format!(". {cannot}"));
+        said.sentence(cannot);
     }
-    said
+    said.spoken()
 }
 
 // ── Sending what was changed here ───────────────────────────────────────────
@@ -4765,6 +4768,49 @@ mod tests {
             !said.contains("errors"),
             "a change that can never be sent was counted as a failure: {said}"
         );
+    }
+
+    #[test]
+    fn test_every_clause_at_once_is_still_read_as_sentences() {
+        // Same fault as the contacts sync had, copied along with the shape of
+        // the sentence: the errors count was pushed on behind the waiting
+        // sentence's full stop, and a calendar's own sentence behind that one's
+        // as well. Read aloud that is "send them., 1 errors" and "them.. Term
+        // dates", a fragment and a stutter, in the announcement that was worth
+        // interrupting somebody for.
+        let said = what_the_calendar_sync_did(&CalendarSyncResult {
+            created: 1,
+            updated: 1,
+            deleted: 0,
+            sent: 2,
+            waiting_on_the_setting: 3,
+            changes_that_cannot_be_saved: vec![
+                "Term dates: 1 change made here cannot be saved, because this \
+                 is a calendar this program can only read."
+                    .to_string(),
+            ],
+            errors: vec!["the server said no".to_string()],
+        });
+
+        assert!(!said.contains(".."), "a stop spoken twice: {said}");
+        assert!(!said.contains("., "), "a fragment after a stop: {said}");
+        assert_eq!(
+            said,
+            "Calendar sync: 1 created, 1 updated, 0 deleted, 2 sent, 1 errors. \
+             3 changes are waiting here: turn on Allow Changes for this account \
+             to send them. Term dates: 1 change made here cannot be saved, \
+             because this is a calendar this program can only read."
+        );
+
+        // And with nothing wrong, so the two sentences meet each other rather
+        // than the errors count. That is the stutter.
+        let said = what_the_calendar_sync_did(&CalendarSyncResult {
+            waiting_on_the_setting: 3,
+            changes_that_cannot_be_saved: vec!["Term dates: 1 change cannot be saved.".to_string()],
+            ..CalendarSyncResult::default()
+        });
+
+        assert!(!said.contains(".."), "a stop spoken twice: {said}");
     }
 
     #[test]

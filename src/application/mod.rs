@@ -47,6 +47,7 @@ pub mod search;
 pub mod sent_copy;
 pub mod sign_off;
 pub mod spell_session;
+pub mod summing_up;
 pub mod tagging;
 pub mod tasks;
 pub mod tasks_sync;

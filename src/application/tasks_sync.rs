@@ -65,6 +65,7 @@
 //! moves to a surviving list and keeps waiting to be sent. Where there is no
 //! surviving list to move it to, the list stays and the reason is said.
 
+use crate::application::summing_up::SummingUp;
 use crate::common::{Error, Result};
 use crate::data::message_cache::{MessageCache, TaskEntry};
 use crate::service::tasks_api::{
@@ -154,67 +155,68 @@ impl TaskSyncResult {
 
     /// What the status line says afterwards.
     pub fn summary(&self) -> String {
-        let mut said = format!(
+        let mut said = SummingUp::opening(format!(
             "{} task{} in {} list{}",
             self.stored,
             if self.stored == 1 { "" } else { "s" },
             self.lists,
             if self.lists == 1 { "" } else { "s" }
-        );
+        ));
         if self.unchanged > 0 {
-            said.push_str(&format!(", {} unchanged", self.unchanged));
+            said.count(format!("{} unchanged", self.unchanged));
         }
         if self.deleted > 0 {
-            said.push_str(&format!(", {} removed", self.deleted));
+            said.count(format!("{} removed", self.deleted));
         }
         if self.sent > 0 {
-            said.push_str(&format!(", {} of yours sent", self.sent));
+            said.count(format!("{} of yours sent", self.sent));
         }
         if self.lists_removed > 0 {
-            said.push_str(&format!(
-                ", {} list{} removed",
+            said.count(format!(
+                "{} list{} removed",
                 self.lists_removed,
                 if self.lists_removed == 1 { "" } else { "s" }
             ));
         }
         if self.kept_elsewhere > 0 {
-            said.push_str(&format!(
-                ", {} of yours moved to another list",
+            said.count(format!(
+                "{} of yours moved to another list",
                 self.kept_elsewhere
             ));
         }
         if self.local_only > 0 {
-            said.push_str(&format!(", {} kept on this computer", self.local_only));
+            said.count(format!("{} kept on this computer", self.local_only));
         }
         if self.replaced > 0 {
             // Named as a loss rather than as a number in a list, because it
             // is one, and because the person is the only one who can decide
             // whether to make the change again.
-            said.push_str(&format!(
-                ", {} of your change{} replaced by the server",
+            said.count(format!(
+                "{} of your change{} replaced by the server",
                 self.replaced,
                 if self.replaced == 1 { "" } else { "s" }
+            ));
+        }
+        if !self.errors.is_empty() {
+            // The count, not the text. The messages are in the log, and a
+            // status line that grows with the number of failures pushes
+            // everything else off it.
+            said.count(format!(
+                "{} problem{}",
+                self.errors.len(),
+                if self.errors.len() == 1 { "" } else { "s" }
             ));
         }
         if self.needs_sign_in {
             // Said rather than counted. An account signed in before this
             // application could change tasks keeps refreshing its token and
             // keeps being refused, so without this it is "1 problem" every
-            // sync, forever, with nothing saying what to do about it.
-            said.push_str(". ");
-            said.push_str(crate::service::tasks_api::NEEDS_SIGN_IN);
+            // sync, forever, with nothing saying what to do about it. A
+            // sentence rather than another count, so it is closed at both ends
+            // and nothing else is heard as part of the instruction.
+            said.sentence(crate::service::tasks_api::NEEDS_SIGN_IN);
         }
-        if !self.errors.is_empty() {
-            // The count, not the text. The messages are in the log, and a
-            // status line that grows with the number of failures pushes
-            // everything else off it.
-            said.push_str(&format!(
-                ", {} problem{}",
-                self.errors.len(),
-                if self.errors.len() == 1 { "" } else { "s" }
-            ));
-        }
-        said
+        said.spoken()
     }
 }
 
@@ -1567,6 +1569,38 @@ mod tests {
     }
 
     #[test]
+    fn test_every_clause_at_once_is_still_read_as_sentences() {
+        // The same fault the contacts and calendar summaries had, in the shape
+        // this module copied: the count of problems was pushed on behind the
+        // sign-in sentence, so the sentence never closed and the count was
+        // heard as part of the instruction, "to send task changes, 1 problem".
+        // The counts belong in the opening list and the instruction is a
+        // sentence of its own.
+        let result = TaskSyncResult {
+            lists: 2,
+            stored: 17,
+            sent: 3,
+            needs_sign_in: true,
+            errors: vec!["the server said no".to_string()],
+            ..Default::default()
+        };
+
+        let said = result.summary();
+
+        assert!(!said.contains(".."), "a stop spoken twice: {said}");
+        assert!(!said.contains("., "), "a fragment after a stop: {said}");
+        assert!(
+            !said.contains("task changes,"),
+            "a count was heard as part of the instruction: {said}"
+        );
+        assert_eq!(
+            said,
+            "17 tasks in 2 lists, 3 of yours sent, 1 problem. \
+             Sign in to this account again to send task changes."
+        );
+    }
+
+    #[test]
     fn test_an_ordinary_sync_says_nothing_about_signing_in() {
         let result = TaskSyncResult {
             lists: 1,
@@ -1656,11 +1690,19 @@ mod tests {
     }
 
     #[test]
-    fn test_when_both_changed_the_provider_wins_and_it_is_said_out_loud() {
+    fn test_when_both_changed_the_provider_wins_as_its_own_outcome_and_not_as_a_plain_take() {
         // The decision, and the honest half of it. The provider's copy is what
         // the phone and the web application agree on, so it wins. But an edit
         // made here is being discarded, and an edit that disappears with
-        // nothing said is indistinguishable from one that never saved.
+        // nothing said is indistinguishable from one that never saved, so the
+        // loss is a separate answer rather than an ordinary take.
+        //
+        // This one pins the decision and nothing further. It was named for
+        // being said out loud and asserted only the answer, so suppressing the
+        // sentence left it green. Counting the loss is pinned by
+        // `test_a_change_the_server_replaced_is_counted_as_a_loss_as_well_as_stored`
+        // and the words by `test_a_lost_change_is_said_rather_than_just_done`,
+        // both of which now call `summary`.
         assert_eq!(
             resolve(
                 true,
@@ -2597,6 +2639,12 @@ mod tests {
 
         assert_eq!(result.deleted, 1, "a real removal stopped being counted");
         assert!(
+            result.summary().contains("1 removed"),
+            "a task disappearing from a list without a word is indistinguishable \
+             from one that was never there: {}",
+            result.summary()
+        );
+        assert!(
             cache.find_task("google:t1").expect("a lookup").is_none(),
             "the task the provider says is gone is still here"
         );
@@ -3438,6 +3486,14 @@ mod tests {
         take_or_skip(&cache, std::slice::from_ref(&held), arriving, &mut result);
 
         assert_eq!(result.replaced, 1, "a lost edit was not counted");
+        assert!(
+            result
+                .summary()
+                .contains("1 of your change replaced by the server"),
+            "counting the loss and never saying it leaves the edit as silently gone \
+             as it was before it was counted: {}",
+            result.summary()
+        );
         assert_eq!(result.stored, 1);
         let now = cache.find_task("ms:a").expect("a lookup").expect("the row");
         assert_eq!(now.title, "Ring the surgery");
