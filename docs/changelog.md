@@ -267,6 +267,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   provider, and no part of signing in has ever been run against either. The
   reason it has not been narrowed is written beside the code.
 
+- **A mail provider that refuses a sign-in can no longer read a page of text at
+  you.** There are two ways a provider can refuse. One is on the page it sends
+  your browser back to, and what that one says has been cut to a single short
+  line since the change above. The other is the request this program makes for
+  your access token, and that one was not cut at all: whatever the provider put
+  in its explanation went whole into the account screen's status line, which a
+  screen reader reads out. A five thousand character explanation was five
+  thousand characters read aloud, with no way to stop it short of leaving the
+  screen. Both ways now go through the same limit, so there is one rule rather
+  than two.
+
 - **A long line from a calendar server is no longer read half of.** The calendar
   standard makes a server break any line longer than 75 characters and carry the
   rest on the next one. Reading an event, this counted the carried-on part as

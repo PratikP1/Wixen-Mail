@@ -839,6 +839,28 @@ impl AuthManager {
 
 // ── Shared Helpers ──────────────────────────────────────────────────────────
 
+/// What a token endpoint's refusal says, in words a status line can hold.
+///
+/// The words are the endpoint's own and they end up in the same label as a
+/// refused redirect, at `presentation::wx_account_manager`, which a screen
+/// reader reads out. So they go through the one bound both ways in share:
+/// [`as_one_short_line`]. Without it an endpoint answering with five thousand
+/// characters of description put five thousand characters in that label and
+/// they were all read out.
+///
+/// Separate from the request so it can be argued about in a test without
+/// opening a port, which is the only reason this path had none.
+fn refusal_from_a_token_endpoint(status: reqwest::StatusCode, body: &str) -> Error {
+    if let Ok(refusal) = serde_json::from_str::<TokenErrorResponse>(body) {
+        let said = refusal
+            .error_description
+            .or(refusal.error)
+            .unwrap_or_else(|| format!("HTTP {}", status));
+        return Error::Authentication(as_one_short_line(&said));
+    }
+    Error::Authentication(format!("Token endpoint returned HTTP {}", status))
+}
+
 /// HTTP POST to a token endpoint, parsing the JSON response.
 async fn post_token_request(url: &str, params: &[(&str, &str)]) -> Result<OAuthTokenSet> {
     let client = reqwest::Client::builder()
@@ -860,16 +882,7 @@ async fn post_token_request(url: &str, params: &[(&str, &str)]) -> Result<OAuthT
         .map_err(|e| Error::Network(format!("Failed to read response: {}", e)))?;
 
     if !status.is_success() {
-        if let Ok(err) = serde_json::from_str::<TokenErrorResponse>(&body) {
-            let msg = err
-                .error_description
-                .unwrap_or_else(|| err.error.unwrap_or_else(|| format!("HTTP {}", status)));
-            return Err(Error::Authentication(msg));
-        }
-        return Err(Error::Authentication(format!(
-            "Token endpoint returned HTTP {}",
-            status
-        )));
+        return Err(refusal_from_a_token_endpoint(status, &body));
     }
 
     let token: TokenResponse = serde_json::from_str(&body)
@@ -1375,6 +1388,44 @@ mod tests {
     }
 
     // ── Reading one reply off the listener ──────────────────────────────
+
+    #[test]
+    fn test_what_a_token_endpoint_refuses_with_reaches_the_status_line_as_one_short_line() {
+        // The other way into the same label. A refused redirect was bounded and
+        // a refused token request was not, so a token endpoint answering with
+        // five thousand characters of description put five thousand characters
+        // in a label a screen reader reads out. One bound, not two.
+        let flood = "y".repeat(5000);
+        let body =
+            format!(r#"{{"error":"invalid_grant","error_description":"bad\r\nthing {flood}"}}"#);
+
+        let refused = refusal_from_a_token_endpoint(
+            reqwest::StatusCode::from_u16(400).expect("a status"),
+            &body,
+        );
+        let said = refused.to_string();
+
+        assert!(!said.contains('\n') && !said.contains('\r'), "{said}");
+        assert!(!said.chars().any(char::is_control), "{said}");
+        assert!(said.contains("bad thing"), "{said}");
+        assert!(
+            said.chars().count() < 400,
+            "a reply of {} characters reached the status line whole",
+            said.chars().count()
+        );
+    }
+
+    #[test]
+    fn test_a_token_endpoint_that_said_nothing_readable_is_named_by_its_status() {
+        // Nothing to quote, so the status is what there is to say. Saying
+        // nothing at all sends somebody looking for a broken account.
+        let refused = refusal_from_a_token_endpoint(
+            reqwest::StatusCode::from_u16(503).expect("a status"),
+            "<html>Service Unavailable</html>",
+        );
+
+        assert!(refused.to_string().contains("503"), "{refused}");
+    }
 
     #[test]
     fn test_the_code_is_read_off_the_redirect() {
