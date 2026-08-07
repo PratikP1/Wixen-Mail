@@ -398,17 +398,13 @@ pub enum UIUpdate {
     OutboxQueueCount(usize),
     /// Queue flush completed (sent_count, failed_count)
     OutboxFlushComplete(usize, usize),
-    /// Contacts sync completed
-    ContactsSyncComplete {
-        created: usize,
-        updated: usize,
-        deleted: usize,
-        /// Changes made here that an address book has now been told about.
-        sent: usize,
-        /// Changes still here because the account is open for reading only.
-        waiting_on_the_setting: usize,
-        errors: Vec<String>,
-    },
+    /// Contacts sync completed.
+    ///
+    /// The sync's own result, carried whole rather than copied field by field
+    /// into a shape of this module's own. Copied, four of its counts were
+    /// named here and the rest were left behind, so a count the sync had
+    /// gathered could never reach the sentence built from it.
+    ContactsSyncComplete(crate::application::contacts_sync::SyncResult),
     /// Calendar events loaded for display
     CalendarEventsLoaded(Vec<CalendarEventItem>),
     /// Calendar sync completed

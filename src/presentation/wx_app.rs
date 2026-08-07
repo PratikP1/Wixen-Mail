@@ -6537,28 +6537,11 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 );
             }
         }
-        UIUpdate::ContactsSyncComplete {
-            created,
-            updated,
-            deleted,
-            sent,
-            waiting_on_the_setting,
-            errors,
-        } => {
-            let msg = crate::application::contacts_sync::what_the_contacts_sync_did(
-                &crate::application::contacts_sync::SyncResult {
-                    created_local: *created,
-                    updated_local: *updated,
-                    deleted_local: *deleted,
-                    updated_remote: *sent,
-                    waiting_on_the_setting: *waiting_on_the_setting,
-                    errors: errors.clone(),
-                    ..Default::default()
-                },
-            );
+        UIUpdate::ContactsSyncComplete(result) => {
+            let msg = crate::application::contacts_sync::what_the_contacts_sync_did(result);
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce(&msg, Priority::Normal);
-            for err in errors {
+            for err in &result.errors {
                 tracing::warn!("Contacts sync error: {}", err);
             }
         }
@@ -9335,12 +9318,11 @@ fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
             }
         };
 
-        let mut total_created = 0usize;
-        let mut total_updated = 0usize;
-        let mut total_deleted = 0usize;
-        let mut total_sent = 0usize;
-        let mut total_waiting_on_the_setting = 0usize;
-        let mut total_errors = Vec::new();
+        // One running total of the sync's own type, folded by `absorb`. Adding
+        // the counts up by hand here named four of them and dropped the rest,
+        // so anything the sync worked out beyond those four could never be
+        // shown.
+        let mut total = crate::application::contacts_sync::SyncResult::default();
 
         // How far a change travels, from the setting. Read once here rather
         // than inside the sync, so the decision can be argued about in a test
@@ -9369,18 +9351,11 @@ fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
                         aid,
                         how_far,
                     )) {
-                        Ok(result) => {
-                            total_created += result.created_local + result.created_remote;
-                            total_updated += result.updated_local;
-                            total_deleted += result.deleted_local + result.deleted_remote;
-                            total_sent += result.updated_remote;
-                            total_waiting_on_the_setting += result.waiting_on_the_setting;
-                            total_errors.extend(result.errors);
-                        }
-                        Err(e) => total_errors.push(format!("Google contacts: {}", e)),
+                        Ok(result) => total.absorb(result),
+                        Err(e) => total.errors.push(format!("Google contacts: {}", e)),
                     }
                 }
-                Err(e) => total_errors.push(format!("Google auth: {}", e)),
+                Err(e) => total.errors.push(format!("Google auth: {}", e)),
             }
         }
 
@@ -9400,32 +9375,16 @@ fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
                             &cache, &ms_client, &token, aid, how_far,
                         ),
                     ) {
-                        Ok(result) => {
-                            total_created += result.created_local + result.created_remote;
-                            total_updated += result.updated_local;
-                            total_deleted += result.deleted_local + result.deleted_remote;
-                            total_sent += result.updated_remote;
-                            total_waiting_on_the_setting += result.waiting_on_the_setting;
-                            total_errors.extend(result.errors);
-                        }
-                        Err(e) => total_errors.push(format!("Microsoft contacts: {}", e)),
+                        Ok(result) => total.absorb(result),
+                        Err(e) => total.errors.push(format!("Microsoft contacts: {}", e)),
                     }
                 }
-                Err(e) => total_errors.push(format!("Microsoft auth: {}", e)),
+                Err(e) => total.errors.push(format!("Microsoft auth: {}", e)),
             }
         }
 
         handle.block_on(async {
-            let _ = tx
-                .send(UIUpdate::ContactsSyncComplete {
-                    created: total_created,
-                    updated: total_updated,
-                    deleted: total_deleted,
-                    sent: total_sent,
-                    waiting_on_the_setting: total_waiting_on_the_setting,
-                    errors: total_errors,
-                })
-                .await;
+            let _ = tx.send(UIUpdate::ContactsSyncComplete(total)).await;
         });
     });
 }

@@ -241,6 +241,47 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A contact you changed is no longer quietly replaced by your address book's
+  older copy.** Change a contact here, and the next contacts sync wrote Google's
+  or Outlook's copy of that contact straight over your change: the name, the
+  email addresses, the phone numbers, the company, the job title, the notes and
+  every other field either address book holds. Your edit went, and the status
+  line called it an ordinary update. With Allow Changes turned off, which is
+  what a new account starts with, this happened to every contact you edited,
+  every time, because the change could never be sent and so was never anything
+  but the newer copy.
+
+  A sync now works out whether your address book has actually touched its own
+  copy since it was last read, using the version marker the address book gives
+  out with a contact.
+
+  - If your address book has not touched it, your change stays and is sent when
+    it can be.
+  - If both of you changed the contact, the address book's copy wins, and the
+    status line says so: "1 of your change replaced by the address book". The
+    address book wins because its copy is the one your phone and the web page
+    already agree on, and because it refuses a change that does not carry its
+    current version marker, so a copy kept here would be stuck being refused for
+    ever with nothing to break the deadlock.
+
+  Two related losses are fixed with it. A contact you typed here that your
+  address book turned out to already hold, matched by its email address, was
+  replaced the same way and left marked as having something to send, with
+  nothing left to send it; it is now replaced openly, counted, and no longer
+  left waiting for ever. And a contact deleted in your address book while you
+  had an unsent change on it now says what happened rather than counting as one
+  more deletion: "A contact you had changed was deleted in your address book,
+  and your change went with it."
+
+  Known limitations: none of this has run against a real Google or Outlook
+  account. Whether a screen reader announces the new sentences well has not been
+  checked with a screen reader. Where an address book gives no version marker at
+  all, a sync cannot tell whether it changed its copy, so it treats it as
+  changed and your edit loses; it is counted and said rather than silent, and
+  both address books this program talks to do give markers. Losing a change is
+  still losing a change: nothing keeps a copy of what was replaced, so the only
+  way back is to make the change again.
+
 - **A contact exported to a file and imported back is now the contact it was.**
   Exporting your contacts to a `.vcf` file and importing that file, which is how
   you move an address book to another machine or keep a copy of one, used to
