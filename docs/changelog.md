@@ -282,6 +282,40 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   still losing a change: nothing keeps a copy of what was replaced, so the only
   way back is to make the change again.
 
+- **A change that reached one of your address books is no longer thrown away by
+  the other.** A person can be in both Google and Outlook, and a change you make
+  reaches both. Between one sync and the next it can have reached one of them
+  and still be owed to the other, which is where you are left when one of the
+  two pushes fails, and where you always are if you have set changes to go only
+  to the address book a contact came from.
+
+  In that state, syncing the address book that already had your change wrote its
+  copy of the contact over everything stored here. If that address book had
+  changed the contact since, the edit the other one was still owed went with it,
+  nothing counted it, and the status line said "1 updated".
+
+  A sync now asks whether the contact stored here holds work that has not
+  reached everywhere it belongs, rather than asking one address book about its
+  own copy. Your change stays until every address book that knows the contact
+  has it. If the address book you are syncing has moved its own copy in the
+  meantime, its copy still wins, but now the loss is counted and said the same
+  way as any other: "1 of your change replaced by the address book".
+
+  The same mistake made deletions silent. Deleting a contact here removes it and
+  everything waiting to be sent with it, whichever address book was still owed
+  it, so a contact deleted in Google while Outlook was owed your change went
+  without a word. It is now counted and said.
+
+  Known limitations: none of this has run against a real account. What survives
+  is still the address book's copy, not yours; nothing keeps what was replaced,
+  so the only way back is to make the change again. When the address book's copy
+  wins, that copy is then sent on to the other address book, which is what keeps
+  the two agreeing, and the status line counts it as one of your changes sent.
+  It is not one of yours, and the count says more than it should. For the same
+  reason, while one address book is still owed a change it cannot get, every
+  later change made in the other one is reported as replacing your change again,
+  although it was only lost once.
+
 - **A contact exported to a file and imported back is now the contact it was.**
   Exporting your contacts to a `.vcf` file and importing that file, which is how
   you move an address book to another machine or keep a copy of one, used to

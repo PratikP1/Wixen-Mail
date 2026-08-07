@@ -34,6 +34,23 @@
 //! change somebody makes can be sent. A calendar event carries no such marker,
 //! which is why that module could decide the other way.
 //!
+//! # Two questions that look like one
+//!
+//! A contact can be in both address books, so a change can have reached one of
+//! them and still be owed to the other. That is ordinary: one push landing
+//! while the other fails leaves exactly that, and so does the setting that
+//! sends a change only to the address book the contact came from.
+//!
+//! Whether to send a change to an address book is that address book's own
+//! question, and `this_address_book_is_still_owed_the_change` answers it.
+//! Whether to keep what is stored here is a question about the whole record,
+//! because a merge rewrites every field the address books share and a deletion
+//! takes the row and every waiting change in it;
+//! `the_copy_here_holds_work_nobody_has_sent` answers that one. Asking the
+//! first where the second belongs is how an edit that had reached Google was
+//! written over by Google's own copy while Outlook was still owed it, counted
+//! as an ordinary update, and never said.
+//!
 //! Only a tie is decided this way. A change made here that the address book has
 //! not touched since is kept, and the next push sends it. That is the ordinary
 //! case and it used to be lost: every named field was taken from the address
@@ -575,12 +592,17 @@ pub enum WhoseCopyWins {
 /// just arrived. Comparing those two rather than comparing clocks avoids every
 /// question about whose clock is right, which is the usual way this kind of
 /// code goes wrong.
+///
+/// `work_here_nobody_has_sent` is asked of the whole stored contact and not of
+/// the address book being synced, because what this decides is whether to
+/// rewrite that whole contact. `the_copy_here_holds_work_nobody_has_sent` is
+/// what answers it.
 pub fn whose_copy_wins(
-    a_change_is_waiting_here: bool,
+    work_here_nobody_has_sent: bool,
     version_now: Option<&str>,
     version_last_seen: Option<&str>,
 ) -> WhoseCopyWins {
-    if !a_change_is_waiting_here {
+    if !work_here_nobody_has_sent {
         return WhoseCopyWins::TakeTheAddressBooks;
     }
     if the_address_book_moved(version_now, version_last_seen) {
@@ -603,24 +625,53 @@ fn the_address_book_moved(version_now: Option<&str>, version_last_seen: Option<&
     }
 }
 
-/// Whether this computer holds a change to a contact that one address book has
-/// not been told about.
+// ── Two questions that look like one ────────────────────────────────────────
+//
+// Told apart at the top of this file, and each of these says which decision it
+// serves. They are next to each other so that nobody reaches for one meaning to
+// ask the other.
+
+/// Whether this one address book has yet to be told about a change made here.
 ///
-/// Two ways that happens, and both mean the copy here is the newer one. The
-/// address book knows the contact and is still owed the change, which is the
-/// ordinary case. Or it does not know the contact at all and the contact was
-/// made or changed here, which is what a contact matched by its email address
-/// rather than by an identifier is: nothing in that contact came from this
-/// address book, so there is no earlier copy of it here to be out of date.
-fn a_change_here_is_waiting_for(contact: &ContactEntry, address_book: &AddressBook) -> bool {
-    match contact
+/// The question for deciding what to send: a change goes to an address book
+/// that has not had it and to no other. Never the question for deciding what to
+/// keep, because what is kept is the whole stored contact and every address book
+/// shares its fields.
+///
+/// An address book that does not know the contact is owed no change to it. It
+/// may be owed the contact itself, which is a different path and a create rather
+/// than a change.
+fn this_address_book_is_still_owed_the_change(
+    contact: &ContactEntry,
+    address_book: &AddressBook,
+) -> bool {
+    contact
         .known_to
         .iter()
-        .find(|identity| &identity.address_book == address_book)
-    {
-        Some(identity) => identity.change_is_waiting,
-        None => contact.pending,
-    }
+        .any(|identity| &identity.address_book == address_book && identity.change_is_waiting)
+}
+
+/// Whether the copy of a contact stored here holds work that has not reached
+/// every address book it belongs in.
+///
+/// The question for deciding what to keep, and for deciding whether a deletion
+/// is worth a sentence. Both act on the whole stored contact: a merge rewrites
+/// every field the address books share, and a deletion takes the row and every
+/// address book's waiting change with it. Either one destroys work owed to an
+/// address book that is not the one being synced, so neither may ask about one
+/// address book's own flag.
+///
+/// `pending` is not merely a summary of the flags. A contact made or changed
+/// here that no address book knows yet has it set and no flags at all, and so
+/// does one matched to an address book by its email address alone: nothing in
+/// that contact came from that address book, so there is no earlier copy of it
+/// here to be out of date.
+fn the_copy_here_holds_work_nobody_has_sent(contact: &ContactEntry) -> bool {
+    contact.pending
+        || contact
+            .known_to
+            .iter()
+            .any(|identity| identity.change_is_waiting)
 }
 
 /// Note a contact about to be removed that still holds work nobody has sent.
@@ -631,15 +682,12 @@ fn a_change_here_is_waiting_for(contact: &ContactEntry, address_book: &AddressBo
 /// address book wins. What it must not be is quiet: the summary saying "3
 /// deleted" tells nobody whether one of the three was carrying their work.
 ///
-/// Only a contact this address book knows can reach here, because the deletion
-/// is matched by the identifier the address book gave. So a contact made here
-/// and never sent anywhere is never removed by this, and never counted.
-fn say_if_a_change_went_too(
-    local: &ContactEntry,
-    address_book: &AddressBook,
-    result: &mut SyncResult,
-) {
-    if a_change_here_is_waiting_for(local, address_book) {
+/// Asked of the whole stored contact rather than of the address book doing the
+/// deleting, because `delete_contact` takes the row and every other address
+/// book's waiting change with it. Asked the narrow way, a change owed to
+/// Outlook went silently when Google deleted the contact.
+fn say_if_a_change_went_too(local: &ContactEntry, result: &mut SyncResult) {
+    if the_copy_here_holds_work_nobody_has_sent(local) {
         result.deleted_with_a_change_waiting += 1;
     }
 }
@@ -924,9 +972,11 @@ fn write_down(cache: &MessageCache, contact: &ContactEntry, result: &mut SyncRes
 /// Every change waiting for one address book, with that address book's own
 /// name for the contact.
 ///
-/// Whether a change is waiting is asked of the address book's own identity and
-/// not of the contact, so a push refused by one address book is still owed to
-/// that one and not to the other.
+/// The one decision that asks the narrow question, and the reason the narrow
+/// question exists: a push refused by one address book is still owed to that
+/// one and not to the other. Asked the wide way, an address book that had
+/// already taken the change would be sent its own copy back and told it was
+/// one of yours.
 fn changes_waiting_for(
     cache: &MessageCache,
     account_id: &str,
@@ -946,13 +996,13 @@ fn changes_waiting_for(
     contacts
         .into_iter()
         .filter_map(|contact| {
+            if !this_address_book_is_still_owed_the_change(&contact, address_book) {
+                return None;
+            }
             let identity = contact
                 .known_to
                 .iter()
                 .find(|identity| &identity.address_book == address_book)?;
-            if !identity.change_is_waiting {
-                return None;
-            }
             if how_far == HowFarAChangeGoes::OnlyToWhereItCameFrom
                 && contact.source_provider.as_deref() != Some(address_book.as_stored())
             {
@@ -1111,7 +1161,7 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                 .iter()
                 .find(|c| c.id_in(&AddressBook::Google) == Some(person.resource_name.as_str()))
             {
-                say_if_a_change_went_too(local, &AddressBook::Google, &mut result);
+                say_if_a_change_went_too(local, &mut result);
                 cache.delete_contact(&local.id)?;
                 result.deleted_local += 1;
             }
@@ -1131,7 +1181,7 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                 let arrived_at = version_marker(&person.etag);
                 let last_seen = version_given_by(local, &AddressBook::Google);
                 let answer = whose_copy_wins(
-                    a_change_here_is_waiting_for(local, &AddressBook::Google),
+                    the_copy_here_holds_work_nobody_has_sent(local),
                     arrived_at.as_deref(),
                     last_seen.as_deref(),
                 );
@@ -1176,11 +1226,20 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                 let person = contact_to_google_person(local);
                 match google.create_contact(token, &person).await {
                     Ok(created) => {
-                        let mut updated = local.also_known_to(
-                            AddressBook::Google,
-                            &created.resource_name,
-                            version_marker(&created.etag).as_deref(),
-                        );
+                        let marker = version_marker(&created.etag);
+                        let mut updated = local
+                            .also_known_to(
+                                AddressBook::Google,
+                                &created.resource_name,
+                                marker.as_deref(),
+                            )
+                            // Google now has it, and no other address book is
+                            // owed it: a create only happens for a contact no
+                            // address book knew. Left marked as waiting, the
+                            // next read counts Google's own copy as having
+                            // replaced an edit and says somebody lost work
+                            // they still have.
+                            .told(&AddressBook::Google, marker.as_deref());
                         updated.source_provider = Some(GOOGLE_ADDRESS_BOOK.to_string());
                         updated.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
                         // Never `?`. Google has already made the contact, so
@@ -1262,7 +1321,7 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                 .iter()
                 .find(|c| c.id_in(&AddressBook::Microsoft) == Some(ms_contact.id.as_str()))
             {
-                say_if_a_change_went_too(local, &AddressBook::Microsoft, &mut result);
+                say_if_a_change_went_too(local, &mut result);
                 cache.delete_contact(&local.id)?;
                 result.deleted_local += 1;
             }
@@ -1282,7 +1341,7 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                 let arrived_at = ms_contact.odata_etag.as_deref().filter(|m| !m.is_empty());
                 let last_seen = version_given_by(local, &AddressBook::Microsoft);
                 let answer = whose_copy_wins(
-                    a_change_here_is_waiting_for(local, &AddressBook::Microsoft),
+                    the_copy_here_holds_work_nobody_has_sent(local),
                     arrived_at,
                     last_seen.as_deref(),
                 );
@@ -1322,11 +1381,11 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                 let ms_contact = contact_to_ms_contact(local);
                 match ms_client.create_contact(token, &ms_contact).await {
                     Ok(created) => {
-                        let mut updated = local.also_known_to(
-                            AddressBook::Microsoft,
-                            &created.id,
-                            created.odata_etag.as_deref().filter(|m| !m.is_empty()),
-                        );
+                        let marker = created.odata_etag.as_deref().filter(|m| !m.is_empty());
+                        let mut updated = local
+                            .also_known_to(AddressBook::Microsoft, &created.id, marker)
+                            // Told, for the reason written on the Google side.
+                            .told(&AddressBook::Microsoft, marker);
                         updated.source_provider = Some(MICROSOFT_ADDRESS_BOOK.to_string());
                         updated.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
                         // Never `?`, for the reason written on the Google side.
@@ -4578,6 +4637,121 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_contact_created_at_google_is_not_called_a_change_google_replaced() {
+        // A contact typed here and sent to Google for the first time has
+        // nothing left waiting to go anywhere. Left marked as waiting, the next
+        // sync reads Google's own copy of it as a replacement for an edit
+        // nobody has sent and says so, which is a loss reported to somebody who
+        // has not lost anything.
+        let cache = a_cache("google_created_then_read_back");
+        let mut typed_here = a_local_contact("Grace Hopper", "grace@example.com");
+        typed_here.id = "local-typed-here".to_string();
+        typed_here.pending = true;
+        cache
+            .save_contact(&typed_here)
+            .expect("a contact to be stored");
+        let google = ScriptedGoogle {
+            accepts_a_contact: true,
+            ..Default::default()
+        };
+        sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+            .await
+            .expect("the first sync");
+
+        let stored = the_contact_under(&cache, &typed_here.id);
+        assert!(
+            !stored.pending,
+            "the contact still says it has a change to send, and no address book is owed one"
+        );
+
+        let google_later = ScriptedGoogle {
+            people: vec![a_google_person_at_version(
+                "people/new",
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "etag-2",
+            )],
+            ..Default::default()
+        };
+        let result = sync_google_contacts(
+            &cache,
+            &google_later,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("the second sync");
+
+        assert_eq!(
+            result.replaced, 0,
+            "the contact reached Google, so nothing of anybody's was replaced: {result:?}"
+        );
+        assert!(
+            !what_the_contacts_sync_did(&result).contains("replaced"),
+            "{}",
+            what_the_contacts_sync_did(&result)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_created_at_outlook_is_not_called_a_change_outlook_replaced() {
+        let cache = a_cache("outlook_created_then_read_back");
+        let mut typed_here = a_local_contact("Grace Hopper", "grace@example.com");
+        typed_here.id = "local-typed-here".to_string();
+        typed_here.pending = true;
+        cache
+            .save_contact(&typed_here)
+            .expect("a contact to be stored");
+        let microsoft = ScriptedMicrosoft {
+            accepts_a_contact: true,
+            ..Default::default()
+        };
+        sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("the first sync");
+
+        let stored = the_contact_under(&cache, &typed_here.id);
+        assert!(
+            !stored.pending,
+            "the contact still says it has a change to send, and no address book is owed one"
+        );
+
+        let outlook_later = ScriptedMicrosoft {
+            contacts: vec![a_microsoft_contact_at_version(
+                "AAMkNew",
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "W/\"2\"",
+            )],
+            ..Default::default()
+        };
+        let result = sync_microsoft_contacts(
+            &cache,
+            &outlook_later,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("the second sync");
+
+        assert_eq!(
+            result.replaced, 0,
+            "the contact reached Outlook, so nothing of anybody's was replaced: {result:?}"
+        );
+        assert!(
+            !what_the_contacts_sync_did(&result).contains("replaced"),
+            "{}",
+            what_the_contacts_sync_did(&result)
+        );
+    }
+
+    #[tokio::test]
     async fn test_a_contact_the_other_address_book_holds_is_not_sent_to_google() {
         let cache = a_cache("google_no_push");
         a_stored_contact(
@@ -5871,6 +6045,47 @@ mod tests {
         contact
     }
 
+    /// What each address book calls the one person both of them know, and the
+    /// marker each gave for its own copy of her at the end of the last sync.
+    const GOOGLES_NAME_FOR_HER: &str = "people/g1";
+    const OUTLOOKS_NAME_FOR_HER: &str = "AAMk1";
+    const THE_GOOGLE_MARKER_LAST_SEEN: &str = "etag-1";
+    const THE_OUTLOOK_MARKER_LAST_SEEN: &str = "W/\"1\"";
+
+    /// A contact both address books know, changed here, where the change has
+    /// reached one of them and is still owed to the other.
+    ///
+    /// Ordinary rather than exotic: one push succeeding while the other fails
+    /// leaves exactly this, and so does the setting that sends a change only to
+    /// the address book the contact came from. `still_owed` is the address book
+    /// that has not been told yet.
+    fn a_contact_both_address_books_know(
+        cache: &MessageCache,
+        still_owed: AddressBook,
+    ) -> ContactEntry {
+        let mut contact = a_local_contact(THE_WORDS_TYPED_HERE, "alice@example.com");
+        contact.id = "local-in-both-books".to_string();
+        contact.pending = true;
+        contact.known_to = vec![
+            ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: GOOGLES_NAME_FOR_HER.to_string(),
+                provider_version: Some(THE_GOOGLE_MARKER_LAST_SEEN.to_string()),
+                change_is_waiting: still_owed == AddressBook::Google,
+            },
+            ProviderIdentity {
+                address_book: AddressBook::Microsoft,
+                provider_contact_id: OUTLOOKS_NAME_FOR_HER.to_string(),
+                provider_version: Some(THE_OUTLOOK_MARKER_LAST_SEEN.to_string()),
+                change_is_waiting: still_owed == AddressBook::Microsoft,
+            },
+        ];
+        cache
+            .save_contact(&contact)
+            .expect("a contact to be stored");
+        contact
+    }
+
     /// Google's copy of a person under a version marker of its own.
     fn a_google_person_at_version(resource_name: &str, name: &str, version: &str) -> GooglePerson {
         GooglePerson {
@@ -5970,10 +6185,7 @@ mod tests {
         let mut typed_here = a_local_contact("Alice Smith", "alice@example.com");
         typed_here.pending = true;
 
-        assert!(a_change_here_is_waiting_for(
-            &typed_here,
-            &AddressBook::Google
-        ));
+        assert!(the_copy_here_holds_work_nobody_has_sent(&typed_here));
     }
 
     #[test]
@@ -5983,10 +6195,7 @@ mod tests {
         // not somebody's edit and must not win anything.
         let harvested = a_local_contact("Somebody Who Wrote", "stranger@example.com");
 
-        assert!(!a_change_here_is_waiting_for(
-            &harvested,
-            &AddressBook::Google
-        ));
+        assert!(!the_copy_here_holds_work_nobody_has_sent(&harvested));
     }
 
     #[test]
@@ -6008,11 +6217,11 @@ mod tests {
             },
         ];
 
-        assert!(!a_change_here_is_waiting_for(
+        assert!(!this_address_book_is_still_owed_the_change(
             &contact,
             &AddressBook::Google
         ));
-        assert!(a_change_here_is_waiting_for(
+        assert!(this_address_book_is_still_owed_the_change(
             &contact,
             &AddressBook::Microsoft
         ));
@@ -6161,6 +6370,11 @@ mod tests {
             "the contact and the unsent change in it both went and the sync called \
              it an ordinary deletion: {result:?}"
         );
+        assert!(
+            what_the_contacts_sync_did(&result).contains("A contact you had changed was deleted"),
+            "{}",
+            what_the_contacts_sync_did(&result)
+        );
         assert!(the_names_stored(&cache).is_empty());
     }
 
@@ -6190,6 +6404,11 @@ mod tests {
             "the contact and the unsent change in it both went and the sync called \
              it an ordinary deletion: {result:?}"
         );
+        assert!(
+            what_the_contacts_sync_did(&result).contains("A contact you had changed was deleted"),
+            "{}",
+            what_the_contacts_sync_did(&result)
+        );
         assert!(the_names_stored(&cache).is_empty());
     }
 
@@ -6215,6 +6434,11 @@ mod tests {
 
         assert_eq!(result.deleted_local, 1);
         assert_eq!(result.deleted_with_a_change_waiting, 0, "{result:?}");
+        assert!(
+            !what_the_contacts_sync_did(&result).contains("you had changed"),
+            "{}",
+            what_the_contacts_sync_did(&result)
+        );
     }
 
     #[test]
@@ -6383,5 +6607,307 @@ mod tests {
             still_owed_the_change(&stored, &AddressBook::Microsoft),
             "the change stopped waiting without ever reaching Outlook"
         );
+    }
+
+    // ── A change that reached one address book and not the other ────────────
+    //
+    // The state a contact is ordinarily in between one push landing and the
+    // next: known to both, changed here, one of them told. The merge rewrites
+    // every field the two address books share, so the question the merge has
+    // to ask is about the stored copy and not about one address book's own
+    // flag. The tests below pin the two questions apart and then pin each
+    // sync's use of them, because a sync that reads its own provider leaves
+    // the other's test green when it breaks.
+
+    #[test]
+    fn test_a_change_one_address_book_has_taken_is_still_work_the_copy_here_carries() {
+        let mut contact = a_local_contact(THE_WORDS_TYPED_HERE, "alice@example.com");
+        contact.pending = true;
+        contact.known_to = vec![
+            ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: GOOGLES_NAME_FOR_HER.to_string(),
+                provider_version: Some(THE_GOOGLE_MARKER_LAST_SEEN.to_string()),
+                change_is_waiting: false,
+            },
+            ProviderIdentity {
+                address_book: AddressBook::Microsoft,
+                provider_contact_id: OUTLOOKS_NAME_FOR_HER.to_string(),
+                provider_version: Some(THE_OUTLOOK_MARKER_LAST_SEEN.to_string()),
+                change_is_waiting: true,
+            },
+        ];
+
+        assert!(
+            !this_address_book_is_still_owed_the_change(&contact, &AddressBook::Google),
+            "Google has been told, so sending it the change again would push its own \
+             copy back at it"
+        );
+        assert!(
+            the_copy_here_holds_work_nobody_has_sent(&contact),
+            "the edit Outlook has never been sent is still in this copy of the contact, \
+             and a merge rewrites the fields both address books share"
+        );
+    }
+
+    #[test]
+    fn test_an_address_book_left_waiting_is_work_here_whatever_the_contact_says_of_itself() {
+        // `told` keeps the contact's own flag and the address books' flags in
+        // step, and this question deliberately does not rely on that staying
+        // true. A guard that fails open is how every one of these losses
+        // happened, and a row can be written by a path that sets one and not
+        // the other.
+        let mut contact = a_local_contact(THE_WORDS_TYPED_HERE, "alice@example.com");
+        contact.pending = false;
+        contact.known_to = vec![ProviderIdentity {
+            address_book: AddressBook::Microsoft,
+            provider_contact_id: OUTLOOKS_NAME_FOR_HER.to_string(),
+            provider_version: Some(THE_OUTLOOK_MARKER_LAST_SEEN.to_string()),
+            change_is_waiting: true,
+        }];
+
+        assert!(the_copy_here_holds_work_nobody_has_sent(&contact));
+    }
+
+    #[tokio::test]
+    async fn test_a_change_only_outlook_still_needs_is_not_written_over_quietly_by_google() {
+        // Pins the Google sync's merge gate. Google has the edit already, so
+        // its own flag says nothing is waiting, and the whole stored contact
+        // was rewritten with Google's copy while Outlook was still owed the
+        // edit. Nothing counted it and the status line called it an update.
+        let cache = a_cache("google_read_over_a_change_owed_to_outlook");
+        let in_both_books = a_contact_both_address_books_know(&cache, AddressBook::Microsoft);
+        let google = ScriptedGoogle {
+            people: vec![a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "etag-2",
+            )],
+            ..Default::default()
+        };
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
+
+        assert!(
+            google.changed.borrow().is_empty(),
+            "a change Google has already taken was sent to Google again"
+        );
+        let stored = the_contact_under(&cache, &in_both_books.id);
+        assert_eq!(
+            stored.name, THE_ADDRESS_BOOKS_OWN_WORDS,
+            "Google moved its own copy, so Google's copy is the one to keep"
+        );
+        assert_eq!(
+            result.replaced, 1,
+            "the edit Outlook was still owed was written over and nothing counted it: {result:?}"
+        );
+        assert!(
+            what_the_contacts_sync_did(&result).contains("replaced by the address book"),
+            "{}",
+            what_the_contacts_sync_did(&result)
+        );
+        assert!(
+            still_owed_the_change(&stored, &AddressBook::Microsoft),
+            "Outlook is no longer owed anything, so the copy that survived never reaches it"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_only_outlook_still_needs_survives_a_google_read_that_moved_nothing() {
+        // The same state, with Google's copy standing still. Nothing has moved
+        // anywhere, so there is nothing to take, nothing to say and nothing to
+        // count: the contact is left alone and Outlook is still owed the edit.
+        // Google's copy is given different words from the stored one so that
+        // the two outcomes can be told apart at all.
+        let cache = a_cache("google_read_moved_nothing");
+        let in_both_books = a_contact_both_address_books_know(&cache, AddressBook::Microsoft);
+        let google = ScriptedGoogle {
+            people: vec![a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                THE_GOOGLE_MARKER_LAST_SEEN,
+            )],
+            ..Default::default()
+        };
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
+
+        let stored = the_contact_under(&cache, &in_both_books.id);
+        assert_eq!(
+            stored.name, THE_WORDS_TYPED_HERE,
+            "Google's copy was written over the words somebody typed, and Google had not \
+             touched its own copy"
+        );
+        assert_eq!(
+            result.updated_local, 0,
+            "a contact that was left alone was counted as changed: {result:?}"
+        );
+        assert_eq!(result.replaced, 0, "nothing was lost: {result:?}");
+        assert!(
+            still_owed_the_change(&stored, &AddressBook::Microsoft),
+            "the change stopped waiting without ever reaching Outlook"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_only_google_still_needs_is_not_written_over_quietly_by_outlook() {
+        // Pins the Microsoft sync's merge gate, the same way round.
+        let cache = a_cache("outlook_read_over_a_change_owed_to_google");
+        let in_both_books = a_contact_both_address_books_know(&cache, AddressBook::Google);
+        let microsoft = ScriptedMicrosoft {
+            contacts: vec![a_microsoft_contact_at_version(
+                OUTLOOKS_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "W/\"2\"",
+            )],
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        assert!(
+            microsoft.changed.borrow().is_empty(),
+            "a change Outlook has already taken was sent to Outlook again"
+        );
+        let stored = the_contact_under(&cache, &in_both_books.id);
+        assert_eq!(
+            stored.name, THE_ADDRESS_BOOKS_OWN_WORDS,
+            "Outlook moved its own copy, so Outlook's copy is the one to keep"
+        );
+        assert_eq!(
+            result.replaced, 1,
+            "the edit Google was still owed was written over and nothing counted it: {result:?}"
+        );
+        assert!(
+            what_the_contacts_sync_did(&result).contains("replaced by the address book"),
+            "{}",
+            what_the_contacts_sync_did(&result)
+        );
+        assert!(
+            still_owed_the_change(&stored, &AddressBook::Google),
+            "Google is no longer owed anything, so the copy that survived never reaches it"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_only_google_still_needs_survives_an_outlook_read_that_moved_nothing() {
+        // The Microsoft sync's half of the rule above, and read with the same
+        // note about the two copies being given different words.
+        let cache = a_cache("outlook_read_moved_nothing");
+        let in_both_books = a_contact_both_address_books_know(&cache, AddressBook::Google);
+        let microsoft = ScriptedMicrosoft {
+            contacts: vec![a_microsoft_contact_at_version(
+                OUTLOOKS_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                THE_OUTLOOK_MARKER_LAST_SEEN,
+            )],
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        let stored = the_contact_under(&cache, &in_both_books.id);
+        assert_eq!(
+            stored.name, THE_WORDS_TYPED_HERE,
+            "Outlook's copy was written over the words somebody typed, and Outlook had not \
+             touched its own copy"
+        );
+        assert_eq!(
+            result.updated_local, 0,
+            "a contact that was left alone was counted as changed: {result:?}"
+        );
+        assert_eq!(result.replaced, 0, "nothing was lost: {result:?}");
+        assert!(
+            still_owed_the_change(&stored, &AddressBook::Google),
+            "the change stopped waiting without ever reaching Google"
+        );
+    }
+
+    // The deletion side of the same question. Deleting the contact removes the
+    // row and every address book's waiting change with it, so what makes the
+    // deletion worth a sentence is work anywhere in the row, not work owed to
+    // the address book that did the deleting.
+
+    #[tokio::test]
+    async fn test_a_contact_google_deleted_takes_the_change_owed_to_outlook_with_it_and_says_so() {
+        let cache = a_cache("google_deletes_a_contact_owed_to_outlook");
+        a_contact_both_address_books_know(&cache, AddressBook::Microsoft);
+        let google = ScriptedGoogle {
+            people: vec![a_person_google_deleted(GOOGLES_NAME_FOR_HER)],
+            ..Default::default()
+        };
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
+
+        assert_eq!(result.deleted_local, 1, "{result:?}");
+        assert_eq!(
+            result.deleted_with_a_change_waiting, 1,
+            "the row went and took the edit Outlook was still owed with it, and the sync \
+             called it an ordinary deletion: {result:?}"
+        );
+        assert!(
+            what_the_contacts_sync_did(&result).contains("A contact you had changed was deleted"),
+            "{}",
+            what_the_contacts_sync_did(&result)
+        );
+        assert!(the_names_stored(&cache).is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_outlook_removed_takes_the_change_owed_to_google_with_it_and_says_so() {
+        let cache = a_cache("outlook_removes_a_contact_owed_to_google");
+        a_contact_both_address_books_know(&cache, AddressBook::Google);
+        let microsoft = ScriptedMicrosoft {
+            contacts: vec![a_contact_microsoft_removed(OUTLOOKS_NAME_FOR_HER)],
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        assert_eq!(result.deleted_local, 1, "{result:?}");
+        assert_eq!(
+            result.deleted_with_a_change_waiting, 1,
+            "the row went and took the edit Google was still owed with it, and the sync \
+             called it an ordinary deletion: {result:?}"
+        );
+        assert!(
+            what_the_contacts_sync_did(&result).contains("A contact you had changed was deleted"),
+            "{}",
+            what_the_contacts_sync_did(&result)
+        );
+        assert!(the_names_stored(&cache).is_empty());
     }
 }
