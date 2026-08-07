@@ -65,9 +65,19 @@ fn where_it_lives(event: &CalendarEventEntry) -> WhereItLives {
     match event.web_link.as_deref() {
         // A feed event is stored with an empty address, and a calendar read
         // before this shipped holds the bare path the server answered with.
-        Some(at) if at.starts_with("http") => WhereItLives::AtThisAddress(at.to_string()),
+        Some(at) if is_a_whole_address(at) => WhereItLives::AtThisAddress(at.to_string()),
         _ => WhereItLives::AddressNotKnownYet,
     }
+}
+
+/// Whether this is a whole address at the calendar server.
+///
+/// A feed event is stored with an empty address and a calendar read before
+/// addresses were resolved holds the bare path the server answered with.
+/// Neither says where the event is, so neither is something to send a change to
+/// or to match an arriving event against.
+fn is_a_whole_address(value: &str) -> bool {
+    value.starts_with("http")
 }
 
 /// Send a calendar server everything changed here that it has not been told.
@@ -343,19 +353,28 @@ pub async fn sync_caldav_calendar(
     for remote in &remote_events {
         seen_uids.insert(remote.uid.as_str());
 
+        let already = local_uids
+            .get(remote.uid.as_str())
+            .copied()
+            .or_else(|| the_one_stored_at(&local_events, &remote.url));
+        if let Some(held) = already
+            && let Some(under) = held.provider_event_id.as_deref()
+        {
+            // Whatever name the row was stored under, this event is still here,
+            // so the pass below must not take it for one the server dropped.
+            seen_uids.insert(under);
+        }
+
         // A change made here that has not been sent yet is the newer copy, so
         // the server's is not written over it. Doing that destroys the edit the
         // next push was going to send, which turns "waiting to be sent" into
         // waiting for ever to send the server's own words back to it.
-        if local_uids
-            .get(remote.uid.as_str())
-            .is_some_and(|held| held.pending)
-        {
+        if already.is_some_and(|held| held.pending) {
             continue;
         }
 
         let mut local_entry = caldav_event_to_local(remote, account_id, &calendar.id);
-        match local_uids.get(remote.uid.as_str()) {
+        match already {
             Some(held) => {
                 carry_over_local_only(&mut local_entry, held);
                 cache.save_calendar_event(&local_entry)?;
@@ -455,6 +474,41 @@ pub async fn refresh_subscription(
     }
 
     Ok(result)
+}
+
+/// The event stored at this address at the calendar server, when exactly one is
+/// stored there.
+///
+/// An arriving event is matched to a stored one by the identifier the server
+/// gives it, and that answers it almost always. It does not answer it when what
+/// was stored as the identifier changes underneath: a build before the reader
+/// put broken-up lines back together stored the first 71 characters of a long
+/// one and nothing else, so the whole identifier arriving now matches nothing,
+/// the event is stored a second time and the row already here is removed as one
+/// the server dropped. The category, the guests and the alerts typed on this
+/// computer are on that row and go with it.
+///
+/// The address is the other name the server has for the event, and it is exact
+/// rather than a guess at how much of an identifier was kept. Matching on how
+/// one identifier starts would be the guess, and a wrong guess here writes one
+/// event over another.
+///
+/// Anything short of a whole address is no answer: a feed event carries none at
+/// all and a row stored before addresses were resolved carries a bare path, so
+/// both fall through to the identifier. Exactly one, because two rows at one
+/// address is a question to leave alone rather than answer by guessing.
+fn the_one_stored_at<'a>(
+    held: &'a [CalendarEventEntry],
+    address: &str,
+) -> Option<&'a CalendarEventEntry> {
+    if !is_a_whole_address(address) {
+        return None;
+    }
+    let mut there = held
+        .iter()
+        .filter(|event| event.web_link.as_deref() == Some(address));
+    let only = there.next()?;
+    there.next().is_none().then_some(only)
 }
 
 /// The parts of an event a calendar server does not carry, kept from the copy
@@ -1012,6 +1066,161 @@ mod tests {
         // On the summary as well, so keeping the local fields cannot pass by
         // skipping the write altogether.
         assert_eq!(left[0].summary, "Event already-here");
+    }
+
+    #[tokio::test]
+    async fn test_an_event_stored_under_half_an_identifier_keeps_what_was_typed_on_it() {
+        // A build before the reader put broken-up lines back together stored
+        // the first part of a long identifier and nothing else. Read whole now,
+        // it matches nothing stored, so the event is created afresh and the row
+        // already here is removed as one the server dropped, taking the
+        // category, the guests and the alerts typed on this computer with it.
+        // The address the event lives at never changed, and two events are
+        // never at one address.
+        let cache = temp_cache("half_an_identifier");
+        let mut calendar = container("cal-identity", "acct");
+
+        let whole = "a-long-identifier-a-server-broke-across-two-lines-because-it-runs-past-the-limit@example.com";
+        let half = &whole[..71];
+
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            multi_status(&[whole]),
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+
+        let mut held = held_event("local-1", half, &calendar.id, "acct");
+        held.web_link = Some(format!("http://{address}/cal/{whole}.ics"));
+        held.categories = "Birthday".to_string();
+        held.attendees_json = Some("[{\"email\":\"sam@example.com\"}]".to_string());
+        held.reminders_json = Some("[{\"minutes\":15}]".to_string());
+        cache
+            .save_calendar_event(&held)
+            .expect("the event the cache already holds");
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let left = cache
+            .get_events_for_calendar(&calendar.id)
+            .expect("the calendar to be readable");
+        assert_eq!(
+            left.len(),
+            1,
+            "the event was stored a second time: {left:?}"
+        );
+        assert_eq!(
+            left[0].id, "local-1",
+            "the row already here was replaced by a new one"
+        );
+        assert_eq!(
+            left[0].provider_event_id.as_deref(),
+            Some(whole),
+            "the whole identifier is what the server knows it by now"
+        );
+        assert_eq!(left[0].categories, "Birthday");
+        assert_eq!(
+            left[0].attendees_json.as_deref(),
+            Some("[{\"email\":\"sam@example.com\"}]")
+        );
+        assert_eq!(
+            left[0].reminders_json.as_deref(),
+            Some("[{\"minutes\":15}]")
+        );
+        assert_eq!(result.deleted, 0, "nothing was dropped by the server");
+        assert_eq!(result.updated, 1, "it is the event already here, changed");
+        assert_eq!(result.created, 0);
+    }
+
+    #[test]
+    fn test_the_row_at_an_address_is_answered_only_for_a_whole_address_and_only_when_there_is_one()
+    {
+        let mut path_only = held_event("local-1", "a", "cal", "acct");
+        path_only.web_link = Some("/dav/sam/work/a.ics".to_string());
+        let mut whole = held_event("local-2", "b", "cal", "acct");
+        whole.web_link = Some("https://cal.example.test/dav/b.ics".to_string());
+        let mut feed_row = held_event("local-3", "c", "cal", "acct");
+        feed_row.web_link = Some(String::new());
+        let held = [path_only, whole.clone(), feed_row];
+
+        assert_eq!(
+            the_one_stored_at(&held, "https://cal.example.test/dav/b.ics").map(|e| e.id.as_str()),
+            Some("local-2"),
+            "the row stored at that address is the one to answer with"
+        );
+        assert!(
+            the_one_stored_at(&held, "/dav/sam/work/a.ics").is_none(),
+            "a bare path does not say where an event lives, so it names nothing"
+        );
+        assert!(
+            the_one_stored_at(&held, "").is_none(),
+            "an event with no address of its own must not match a row with none"
+        );
+
+        let mut twin = held_event("local-4", "d", "cal", "acct");
+        twin.web_link = whole.web_link.clone();
+        assert!(
+            the_one_stored_at(&[whole, twin], "https://cal.example.test/dav/b.ics").is_none(),
+            "two rows at one address is a question to leave alone, not to guess at"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_at_another_address_is_another_event_however_it_is_named() {
+        // The other half of the rule above. Matching on the address must not
+        // turn every unmatched event into a change to whatever row happens to
+        // be stored: an event the server dropped still goes, and an event the
+        // server added still arrives.
+        let cache = temp_cache("another_address");
+        let mut calendar = container("cal-elsewhere", "acct");
+
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            multi_status(&["arrived"]),
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+
+        let mut held = held_event("local-1", "gone", &calendar.id, "acct");
+        held.web_link = Some(format!("http://{address}/cal/gone.ics"));
+        cache
+            .save_calendar_event(&held)
+            .expect("the event the cache already holds");
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let left = cache
+            .get_events_for_calendar(&calendar.id)
+            .expect("the calendar to be readable");
+        assert_eq!(left.len(), 1);
+        assert_eq!(
+            left[0].provider_event_id.as_deref(),
+            Some("arrived"),
+            "the event the server has is the one that is stored"
+        );
+        assert_eq!(result.created, 1);
+        assert_eq!(result.deleted, 1);
+        assert_eq!(result.updated, 0);
     }
 
     #[test]

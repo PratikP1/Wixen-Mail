@@ -291,10 +291,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   came back cut mid-word, which is the title read out. A repeat rule ending on a
   given date could lose that date, and a series that was meant to stop then
   never stopped. A long note or a long place came back cut in the same way, and
-  a start time could lose its own digits. Worst of all, the identifier a server
-  gives an event is often long enough to be broken up, and half an identifier is
-  a different event: the copy already on this computer would be taken as gone
-  from the server and removed, and a second copy made beside it, on every sync.
+  a start time could lose its own digits.
+
+  The identifier a server gives an event is often long enough to be broken up
+  too, and that one behaves differently from everything above. Half an
+  identifier is not the name the server knows the event by, but nothing went
+  wrong on the day it was stored: the server sends the same document at every
+  sync, the same half was read out of it every time, and the event went on
+  matching itself. The cost falls on the first sync after this change, when the
+  whole identifier arrives and no longer matches the half stored beside it. What
+  that would have cost, and what stops it, is the end of this entry.
 
   The same applies to a published calendar you subscribed to, which is written
   by somebody else's software and broken up the same way.
@@ -304,9 +310,40 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   document it is changing. Guests, alarms and everything else this program
   passes through untouched were never read here and are unaffected.
 
-  Nothing was lost for good. The server keeps the document and every sync reads
-  the whole of it afresh, so an event already stored here is put right the next
-  time that calendar syncs, with nothing to ask for and nothing to press.
+  A value read short is put right by the next sync of that calendar, with
+  nothing to ask for and nothing to press. The server keeps the document and
+  every sync reads the whole of it afresh.
+
+  **The identifier needed more than that**, because putting it right changes
+  what the event is called. An arriving event is matched to the copy stored here
+  by its identifier, so a copy stored under half of one matches nothing when the
+  whole one arrives: it would be stored a second time and the copy already here
+  removed as one the server had dropped, taking the category, the guests and the
+  alerts typed on this computer with it. A calendar server has a second name for
+  an event, the address it lives at, and that address does not change. An
+  arriving event is now matched on either, so the copy already here keeps its
+  place and everything typed onto it stays. The address is exact rather than a
+  guess at how much of an identifier was kept, and where two stored events share
+  an address, which should never happen, neither is matched that way.
+
+  A calendar you subscribed to has no such address, because a feed names its
+  events and nothing else. So an event in a feed whose identifier was cut short
+  is stored afresh on the first refresh after this change, and anything typed
+  onto it here, such as a category or an alert, goes with the copy it replaces.
+  Everything the feed itself carries arrives whole, because a feed is read whole
+  every time.
+
+- **An event a calendar server sends without an address of its own no longer
+  takes the calendar's address for it.** A server says where each event lives,
+  and when it did not say, this read the answer as the address of the calendar
+  itself. A change to such an event would then have been addressed to the whole
+  calendar rather than to the event, and every event arriving that way read as
+  living in the same place, which is one of the two names an arriving event is
+  matched to a stored one by. Nothing is guessed at now: the event is stored
+  with no address, the sync says plainly that where it lives is not known here
+  rather than sending the change anywhere, and the next read of that calendar
+  fills the address in. A server answering this way is a broken one and none has
+  been seen doing it.
 
 - **A repeating event first dated a very long time ago no longer stops halfway
   through the calendar.** An event that repeats every day and carries a first

@@ -696,8 +696,16 @@ fn parse_report_events(xml: &str, calendar_url: &str) -> Result<Vec<CalDavEvent>
             continue;
         }
 
-        // Parse the iCalendar data to extract event properties
-        let at = resolved_against(&href, calendar_url);
+        // Where the event lives, or nothing when the server did not say. An
+        // empty address resolves to the calendar's own, and that is worse than
+        // no answer: a change to the event is then written over the whole
+        // collection, and every event arriving without an address reads as
+        // living in the same place, which is one of the two names the sync
+        // matches a stored event by.
+        let at = match href.is_empty() {
+            true => String::new(),
+            false => resolved_against(&href, calendar_url),
+        };
         match parse_ical_vevent(&ical_data, &at, etag.as_deref()) {
             Some(event) => events.push(event),
             None => unreadable += 1,
@@ -2670,6 +2678,31 @@ mod tests {
             .expect("an empty calendar to read as empty");
 
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_an_event_the_server_gave_no_address_for_is_not_given_the_calendar_own_address() {
+        // A response with no address in it is malformed, and answering with the
+        // calendar's own address makes two mistakes at once. A change to such
+        // an event is then written over the whole collection rather than over
+        // the event, and every event arriving that way reads as living in the
+        // same place, which is one of the two things the sync matches a stored
+        // event by. Nothing is guessed at: the event is stored with no address,
+        // the change path says so, and the next read fills it in.
+        let answer = "<d:multistatus xmlns:d=\"DAV:\">\n  <d:response>\n    \
+             <d:propstat><d:prop>\n      <d:getetag>\"v1\"</d:getetag>\n      \
+             <c:calendar-data>BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:nowhere\n\
+             DTSTART:20260305T090000Z\nEND:VEVENT\nEND:VCALENDAR</c:calendar-data>\n    \
+             </d:prop></d:propstat>\n  </d:response>\n</d:multistatus>";
+
+        let events = parse_report_events(answer, "https://cal.example.com/dav/sam/work/")
+            .expect("the event to read");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].url, "",
+            "the calendar's own address was taken for the event's"
+        );
     }
 
     #[test]
