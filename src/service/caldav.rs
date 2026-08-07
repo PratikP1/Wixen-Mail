@@ -3392,6 +3392,15 @@ pub(crate) mod writing_tests {
     ///
     /// This one fixture is what makes "everything else survives" a claim a test
     /// can check rather than a sentence in a comment.
+    ///
+    /// The alarm carries what RFC 5545 section 3.6.6 says a display alarm
+    /// carries and nothing else: an action, a description and a trigger. It
+    /// had a `DTSTART` on it for a while, which no server sends and the
+    /// standard has no place for, and the test built on it read as though a
+    /// change could move the alert. It cannot: an alarm is timed by its
+    /// trigger, and nothing here writes a trigger. What a change could do to
+    /// an alarm is take its `DESCRIPTION` away, because that is a name this
+    /// program owns on the event, and that is what the fixture now pins.
     pub fn a_document_the_server_holds(uid: &str) -> String {
         format!(
             "BEGIN:VCALENDAR\r\n\
@@ -3425,7 +3434,6 @@ pub(crate) mod writing_tests {
              ACTION:DISPLAY\r\n\
              DESCRIPTION:Reminder\r\n\
              TRIGGER:-PT15M\r\n\
-             DTSTART:20260305T084500Z\r\n\
              END:VALARM\r\n\
              END:VEVENT\r\n\
              END:VCALENDAR\r\n"
@@ -3808,11 +3816,17 @@ pub(crate) mod writing_tests {
     }
 
     #[test]
-    fn test_the_alarm_keeps_its_own_start_time_when_the_event_moves() {
-        // A VALARM carries its own DTSTART and its own DESCRIPTION. Walking
-        // the document without watching for the nested block rewrites those
-        // with the event's values, so the alert fires at the wrong time and
-        // reads out the appointment's title.
+    fn test_the_alarm_keeps_its_own_words_when_the_event_is_changed() {
+        // An alarm's DESCRIPTION is the words it shows, and DESCRIPTION is one
+        // of the names a change to the event replaces. Walking the document
+        // without watching for the nested block takes the alarm's line out with
+        // the event's, so the alert is left with nothing to show and the
+        // calendar program falls back to the appointment's own title.
+        //
+        // What does NOT happen, because it is worth being exact about: the
+        // alert does not move. An alarm is timed by its TRIGGER, nothing here
+        // writes a trigger, and TRIGGER is not a name a change replaces, so it
+        // comes through either way. Asserted as well so the claim stays true.
         let changed = ical_with_the_event_changed(
             &a_document_the_server_holds("e-1"),
             &as_it_was_changed_here("e-1"),
@@ -3823,8 +3837,14 @@ pub(crate) mod writing_tests {
             .split_once("BEGIN:VALARM")
             .map(|(_, after)| after)
             .unwrap_or_else(|| panic!("the alarm is gone:\n{changed}"));
-        assert!(alarm.contains("DTSTART:20260305T084500Z"), "{changed}");
-        assert!(alarm.contains("DESCRIPTION:Reminder"), "{changed}");
+        assert!(
+            alarm.contains("DESCRIPTION:Reminder"),
+            "the alarm lost the words it shows:\n{changed}"
+        );
+        assert!(
+            alarm.contains("TRIGGER:-PT15M"),
+            "the alert no longer fires when it did:\n{changed}"
+        );
         assert!(
             !alarm.contains("SUMMARY:"),
             "the event's own properties were written into the alarm:\n{changed}"
@@ -4155,8 +4175,8 @@ pub(crate) mod writing_tests {
         // The same guarantee as for a document in capitals, and it has to hold
         // in both or folding case in the writer trades one loss for another:
         // an alarm whose opening marker is in small letters is no longer a
-        // nested block, so the event's own start and title get written over
-        // the alarm's.
+        // nested block, so the words the alert shows are taken away with the
+        // event's own.
         let held = the_same_document_in_small_letters("e-1");
 
         let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"))
@@ -4200,12 +4220,12 @@ pub(crate) mod writing_tests {
             .map(|(_, after)| after)
             .unwrap_or_else(|| panic!("the alarm is gone:\n{changed}"));
         assert!(
-            alarm.contains("dtstart:20260305T084500Z"),
-            "the alarm was moved to the event's own time:\n{changed}"
+            alarm.contains("description:Reminder"),
+            "the alarm lost the words it shows:\n{changed}"
         );
         assert!(
-            alarm.contains("description:Reminder"),
-            "the alarm lost its own words:\n{changed}"
+            alarm.contains("trigger:-PT15M"),
+            "the alert no longer fires when it did:\n{changed}"
         );
         assert!(
             !alarm.contains("SUMMARY:"),

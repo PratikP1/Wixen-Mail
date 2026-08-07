@@ -542,8 +542,14 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   written in small letters had that number left in the document beside the new
   one, so another calendar program picking the higher of the two could believe
   the copy your change replaced. And an alarm inside such an event was no longer
-  recognised as a block of its own, which would have moved the alert to the
-  appointment's time and made it read out the appointment's title.
+  recognised as a block of its own, so saving the appointment took away the
+  words the alert shows, along with the appointment's own note. The alert then
+  had nothing of its own to say, and a calendar program with nothing to say
+  falls back to the appointment's title.
+
+  The time the alert goes off is not affected, and was not affected before
+  either. An alarm is timed by how long before the appointment it fires, this
+  program never writes that, so it comes through whatever else happens.
 
 - **Editing a repeating event no longer wrecks the occurrences you had moved.**
   When you move or retitle a single occurrence of a repeating event, a calendar
