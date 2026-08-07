@@ -1,0 +1,187 @@
+# Guards, and the break each one is supposed to notice.
+#
+# A guard test is written, taken red once against the defect it defends, and
+# then never measured again. The code around it goes on changing. Nothing
+# re-asks whether it would still go red, so a guard can stop defending anything
+# and keep its name, and the suite stays green the whole time.
+#
+# That has happened here. One commit added a "neither copy moved" arm to the
+# contacts merge; two tests that used to reach the arm the guard was about
+# started reaching the new one instead. Both arms do nothing, so every count,
+# every sentence and every flag those tests asserted came out the same either
+# way. Two guards became one, with two names still promising two, and it was
+# found by hand three commits later.
+#
+# Each entry below is that measurement written down so a machine can take it
+# again. `scripts/guards.sh` applies `before` -> `after`, runs the tests named
+# in `red`, and requires every one of them to fail.
+#
+# Adding one: take the break by hand first and write down what really went red.
+# A `red` list longer than the truth makes the run fail; shorter, and the guard
+# is recorded as weaker than it is, which is the thing this file exists to
+# stop.
+#
+# `before` has to appear exactly once in the file. When it stops appearing, the
+# run fails and says so, which is the signal that somebody moved the code a
+# guard is about and the guard needs measuring again by hand. That is not a
+# reason to edit this file until the break matches; it is a reason to check the
+# guard still discriminates and then write down what it does now.
+
+# ── The two questions the contacts sync must not confuse ────────────────────
+#
+# What to keep is asked of the whole stored contact; what to send is asked of
+# one address book. Asking the narrow question where the wide one belongs
+# writes an address book's copy over an edit another address book has never
+# been given.
+
+[[guard]]
+name = "the Google merge asks what the whole contact is owed"
+file = "src/application/contacts_sync.rs"
+before = """
+                let answer = whose_copy_wins(
+                    the_copy_here_holds_work_nobody_has_sent(local),
+                    arrived_at.as_deref(),
+                    last_seen.as_deref(),
+                );"""
+after = """
+                let answer = whose_copy_wins(
+                    this_address_book_is_still_owed_the_change(local, &AddressBook::Google),
+                    arrived_at.as_deref(),
+                    last_seen.as_deref(),
+                );"""
+red = [
+    "application::contacts_sync::tests::test_a_change_only_outlook_still_needs_is_not_written_over_quietly_by_google",
+    "application::contacts_sync::tests::test_a_change_only_outlook_still_needs_survives_a_google_read_that_moved_nothing",
+    "application::contacts_sync::tests::test_a_contact_typed_here_that_google_already_holds_is_not_lost_without_a_word",
+]
+
+[[guard]]
+name = "the Microsoft merge asks what the whole contact is owed"
+file = "src/application/contacts_sync.rs"
+before = """
+                let answer = whose_copy_wins(
+                    the_copy_here_holds_work_nobody_has_sent(local),
+                    arrived_at,
+                    last_seen.as_deref(),
+                );"""
+after = """
+                let answer = whose_copy_wins(
+                    this_address_book_is_still_owed_the_change(local, &AddressBook::Microsoft),
+                    arrived_at,
+                    last_seen.as_deref(),
+                );"""
+red = [
+    "application::contacts_sync::tests::test_a_change_only_google_still_needs_is_not_written_over_quietly_by_outlook",
+    "application::contacts_sync::tests::test_a_change_only_google_still_needs_survives_an_outlook_read_that_moved_nothing",
+]
+
+# ── The deletion warning, read three wrong ways ─────────────────────────────
+#
+# Deleting the row takes every address book's waiting change with it, so the
+# sentence is decided by work owed anywhere in the row. Each of the three
+# narrower readings has to be caught.
+
+[[guard]]
+name = "a deletion asks Outlook as well as Google what is owed"
+file = "src/application/contacts_sync.rs"
+before = """    if the_copy_here_holds_work_nobody_has_sent(local) {"""
+after = """    if this_address_book_is_still_owed_the_change(local, &AddressBook::Google) {"""
+red = [
+    "application::contacts_sync::tests::test_a_contact_google_deleted_takes_the_change_owed_to_outlook_with_it_and_says_so",
+    "application::contacts_sync::tests::test_a_contact_outlook_removed_takes_a_waiting_change_with_it_and_says_so",
+    "application::contacts_sync::tests::test_a_deletion_says_what_went_with_it_whatever_the_contact_says_of_itself",
+]
+
+[[guard]]
+name = "a deletion asks Google as well as Outlook what is owed"
+file = "src/application/contacts_sync.rs"
+before = """    if the_copy_here_holds_work_nobody_has_sent(local) {"""
+after = """    if this_address_book_is_still_owed_the_change(local, &AddressBook::Microsoft) {"""
+red = [
+    "application::contacts_sync::tests::test_a_contact_google_deleted_takes_a_waiting_change_with_it_and_says_so",
+    "application::contacts_sync::tests::test_a_contact_outlook_removed_takes_the_change_owed_to_google_with_it_and_says_so",
+]
+
+[[guard]]
+name = "a deletion asks the address books, not the contact's own flag"
+file = "src/application/contacts_sync.rs"
+before = """    if the_copy_here_holds_work_nobody_has_sent(local) {"""
+after = """    if local.pending {"""
+red = [
+    "application::contacts_sync::tests::test_a_deletion_says_what_went_with_it_whatever_the_contact_says_of_itself",
+]
+
+# ── Clauses of a summary that stop being said ───────────────────────────────
+#
+# Every one of these leaves its count right and stops the person hearing it. A
+# test that asserts the count and not the words does not notice.
+
+[[guard]]
+name = "a task kept on this computer is said"
+file = "src/application/tasks_sync.rs"
+before = """        if self.local_only > 0 {"""
+after = """        if false {"""
+red = [
+    "application::tasks_sync::tests::test_a_task_in_a_list_this_computer_made_is_counted_rather_than_reported_as_a_failure",
+    "application::tasks_sync::tests::test_what_stays_here_is_said_without_being_called_a_problem",
+]
+
+[[guard]]
+name = "what went up to the provider is said"
+file = "src/application/tasks_sync.rs"
+before = """        if self.sent > 0 {"""
+after = """        if false {"""
+red = [
+    "application::tasks_sync::tests::test_a_deletion_the_provider_accepted_is_counted_once_and_stops_being_carried",
+    "application::tasks_sync::tests::test_a_local_change_the_provider_took_is_counted_and_stops_waiting",
+    "application::tasks_sync::tests::test_every_clause_at_once_is_still_read_as_sentences",
+    "application::tasks_sync::tests::test_the_summary_counts_what_went_up",
+]
+
+[[guard]]
+name = "the tasks nobody touched are said"
+file = "src/application/tasks_sync.rs"
+before = """        if self.unchanged > 0 {"""
+after = """        if false {"""
+red = [
+    "application::tasks_sync::tests::test_a_task_nobody_touched_is_counted_once_and_left_in_the_database_as_it_was",
+    "application::tasks_sync::tests::test_the_summary_says_how_many_were_left_alone",
+]
+
+[[guard]]
+name = "nothing removed is not read out as a removal"
+file = "src/application/tasks_sync.rs"
+before = """        if self.deleted > 0 {"""
+after = """        if true {"""
+red = [
+    "application::tasks_sync::tests::test_a_tombstone_for_a_task_this_computer_never_had_is_not_counted_as_a_removal",
+    "application::tasks_sync::tests::test_every_clause_at_once_is_still_read_as_sentences",
+    "application::tasks_sync::tests::test_one_of_each_is_not_read_as_a_plural",
+    "application::tasks_sync::tests::test_the_summary_says_what_happened_in_words",
+]
+
+[[guard]]
+name = "a task refusal is said as a problem"
+file = "src/application/tasks_sync.rs"
+before = """        if !self.errors.is_empty() {
+            // The count, not the text."""
+after = """        if false {
+            // The count, not the text."""
+red = [
+    "application::tasks_sync::tests::test_a_deletion_the_provider_refused_is_reported_and_tried_again_next_time",
+    "application::tasks_sync::tests::test_a_failure_is_counted_rather_than_swallowed",
+    "application::tasks_sync::tests::test_every_clause_at_once_is_still_read_as_sentences",
+    "application::tasks_sync::tests::test_several_failures_are_counted_not_listed",
+]
+
+[[guard]]
+name = "the calendar summary says how many events went"
+file = "src/application/calendar.rs"
+before = """        "Calendar sync: {} created, {} updated, {} deleted",
+        result.created, result.updated, result.deleted"""
+after = """        "Calendar sync: {} created, {} updated",
+        result.created, result.updated"""
+red = [
+    "application::calendar::tests::test_an_event_microsoft_says_is_gone_is_removed_and_counted_once",
+    "application::calendar::tests::test_every_clause_at_once_is_still_read_as_sentences",
+]

@@ -144,6 +144,27 @@ about two days, so it is used scoped, and the pull request check runs it on the
 diff only. Before trusting a new regression test, take the fix out and watch the
 test fail; a test that has never been red proves nothing.
 
+Taking it red once is not enough either, because the code around it goes on
+changing and nothing re-asks. One commit added an arm to a decision in the
+contacts sync and two guard tests started reaching the new arm instead of the
+one they were about; both arms do nothing, so every count and every sentence
+they assert came out the same either way. Two guards became one, both kept
+their names, nothing was red at any point, and it was found by hand three
+commits later.
+
+```bash
+scripts/guards.sh              # every recorded guard, one build each
+scripts/guards.sh deletion     # only the guards whose names match
+```
+
+`guards/guards.toml` holds, for each guard, the exact edit that should break it
+and the tests that should go red when it does. The script applies each one and
+requires every named test to fail. Run it after a change that touches code a
+guard is about. When a recorded break no longer matches the file the run fails
+and says so: that is the moment to measure that guard by hand again, not to
+edit the record until it applies. Add an entry the same way, by taking the
+break by hand first and writing down what really went red.
+
 `application::filters`, `due`, `tagging` and `sign_off` are clean as of
 2026-08-01: 157 mutants, 141 caught, 16 that would not compile, none missed. It
 took three passes to get there, and what the first two found is the pattern
