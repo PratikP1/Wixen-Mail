@@ -263,6 +263,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   refuses to send anything unless the document really holds the event, says so,
   and leaves the change waiting so the next sync tries again.
 
+  Known limitation: if a server really does hold a different identifier at that
+  address, and keeps holding it, the change will be refused at every sync and
+  will never go out. You would see the message each time rather than losing the
+  edit quietly, which is the trade made here, but nothing yet gives up and tells
+  you the address is wrong. None of this has run against a real calendar server.
+
 - **A contact card written in small letters imports now.** The card format says
   a property name means the same however it is written, and plenty of software
   writes them in small letters. This program read them only in capitals, so a
