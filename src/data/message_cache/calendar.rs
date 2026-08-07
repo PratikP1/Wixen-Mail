@@ -342,15 +342,11 @@ impl MessageCache {
                 )
                 .map_err(|e| Error::Other(format!("Failed to record a deleted event: {}", e)))?;
         }
-        self.drop_synced_calendar_event(event_id)
-    }
-
-    /// Remove an event because the provider says it is gone.
-    ///
-    /// No note: the provider already knows, and telling it again would mean
-    /// asking it to delete something it has already deleted, on every sync from
-    /// now on.
-    pub fn drop_synced_calendar_event(&self, event_id: &str) -> Result<()> {
+        // Its own removal rather than the one below. That one refuses a row
+        // holding a change nobody has sent, which is right when a provider is
+        // the one asking and wrong here: an event made on this computer and
+        // deleted before it ever synced is waiting to be sent for the whole of
+        // its life, and refusing would make it undeletable.
         self.conn
             .execute(
                 "DELETE FROM calendar_events WHERE id = ?1",
@@ -358,6 +354,33 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to delete calendar event: {}", e)))?;
         Ok(())
+    }
+
+    /// Remove an event because the provider says it is gone.
+    ///
+    /// No note: the provider already knows, and telling it again would mean
+    /// asking it to delete something it has already deleted, on every sync from
+    /// now on.
+    ///
+    /// A row carrying a change nobody has sent is refused. What is on it exists
+    /// nowhere else, so it is not a provider's to remove. Every sync that
+    /// removes what did not arrive is supposed to ask that question before
+    /// calling this, both calendar-server passes did not, and one of them said
+    /// "nothing is written over it, so nothing is lost" in the same pass that
+    /// removed the row. Asking it here as well is what makes the next pass
+    /// somebody writes safe without their having to know.
+    ///
+    /// Answers whether a row really went, so a summary counts what happened
+    /// rather than what was attempted.
+    pub fn drop_synced_calendar_event(&self, event_id: &str) -> Result<bool> {
+        let removed = self
+            .conn
+            .execute(
+                "DELETE FROM calendar_events WHERE id = ?1 AND pending = 0",
+                params![event_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to delete calendar event: {}", e)))?;
+        Ok(removed > 0)
     }
 
     /// Every deletion the provider has not been told about, oldest first.
@@ -1343,6 +1366,50 @@ mod tests {
                 .deleted_calendar_events("acct")
                 .expect("the deletions")
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_an_event_with_a_change_nobody_has_sent_is_not_removed_as_one_a_provider_dropped() {
+        // The last door, and the reason it is shut here rather than only in the
+        // syncs. Every pass that removes what did not arrive has to ask whether
+        // a change is waiting on the row first, four of them did not, and a
+        // fifth written next year will not know to either. A row holding words
+        // nobody else has is not a provider's to remove, so this route cannot
+        // remove it whoever calls it.
+        //
+        // The person's own deletion is a different thing and still goes: they
+        // asked, and an event made here and deleted before it was ever sent is
+        // waiting to be sent for its whole life.
+        let cache = temp_cache("cal_keeps_unsent_work");
+        let mut waiting = make_event("evt-1", "acct", "uid-1", "Dentist, moved");
+        waiting.pending = true;
+        cache.save_calendar_event(&waiting).expect("the event");
+
+        assert!(
+            !cache
+                .drop_synced_calendar_event("evt-1")
+                .expect("the removal to be answered"),
+            "a row was removed that holds a change nobody has sent"
+        );
+        assert!(
+            cache
+                .get_event_by_id("evt-1")
+                .expect("the calendar to be readable")
+                .is_some(),
+            "the words somebody typed were removed as though a provider had \
+             dropped the event"
+        );
+
+        cache
+            .delete_calendar_event("evt-1")
+            .expect("the person's own deletion to go through");
+        assert!(
+            cache
+                .get_event_by_id("evt-1")
+                .expect("the calendar to be readable")
+                .is_none(),
+            "somebody deleted the event themselves and it is still here"
         );
     }
 

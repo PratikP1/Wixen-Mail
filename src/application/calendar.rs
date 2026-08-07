@@ -415,6 +415,20 @@ fn settled(
     Ok(settled)
 }
 
+/// Whether the copy stored here is the newer one and has to be left alone.
+///
+/// A change nobody has sent yet exists only on this computer. Writing the
+/// provider's copy over it destroys the edit the next push was going to send and
+/// clears the waiting flag with it, so nothing ever tries again and the words
+/// somebody typed are gone with nothing said. Allow Changes off is the shipped
+/// default and refuses every push, so without this an edit to a Google or
+/// Outlook event could not survive a single sync.
+///
+/// The calendar-server read has had this rule all along and these two did not.
+fn a_change_here_is_still_waiting(held: Option<&CalendarEventEntry>) -> bool {
+    held.is_some_and(|held| held.pending)
+}
+
 /// Send Google everything changed here that it has not been told about.
 ///
 /// Runs before the pull. The other order would send a value the pull had just
@@ -573,8 +587,11 @@ pub async fn sync_google_calendar(
             continue;
         }
 
-        let local_event = google_event_to_local(event, account_id, &filed_under.id);
         let existing = cache.get_event_by_provider_id(account_id, &event.id)?;
+        if a_change_here_is_still_waiting(existing.as_ref()) {
+            continue;
+        }
+        let local_event = google_event_to_local(event, account_id, &filed_under.id);
 
         match existing {
             Some(ex) => {
@@ -720,8 +737,11 @@ pub async fn sync_microsoft_calendar(
             continue;
         }
 
-        let local_event = ms_event_to_local(event, account_id, &filed_under.id);
         let existing = cache.get_event_by_provider_id(account_id, &event.id)?;
+        if a_change_here_is_still_waiting(existing.as_ref()) {
+            continue;
+        }
+        let local_event = ms_event_to_local(event, account_id, &filed_under.id);
 
         match existing {
             Some(ex) => {
@@ -4305,6 +4325,104 @@ mod tests {
             .expect("the calendar to be readable")
             .expect("an event that is still happening was taken off");
         assert_eq!(kept.summary, "Stand-up");
+    }
+
+    /// One event in a Google calendar as Google answers with it.
+    ///
+    /// Its own words in the summary, so a test can tell whose copy survived.
+    fn what_google_answers_with(id: &str, summary: &str) -> String {
+        format!(
+            "{{\"items\":[{{\"id\":\"{id}\",\"status\":\"confirmed\",\
+               \"summary\":\"{summary}\",\"etag\":\"\\\"e1\\\"\",\
+               \"start\":{{\"dateTime\":\"2026-03-06T09:00:00Z\"}},\
+               \"end\":{{\"dateTime\":\"2026-03-06T09:15:00Z\"}}}}\
+             ],\"nextSyncToken\":\"marker-1\"}}"
+        )
+    }
+
+    #[tokio::test]
+    async fn test_a_change_waiting_here_is_not_written_over_by_the_google_read_that_follows() {
+        // Allow Changes off is the shipped default, so the push is refused and
+        // the change keeps waiting. The read that followed then wrote Google's
+        // copy over it and cleared the flag with it, so the words somebody typed
+        // were gone and nothing was left to try again. The same rule the
+        // calendar-server read has always had, and for the same reason: a change
+        // that has not been sent is the newer copy.
+        let cache = temp_cache("pull_google_keeps_the_edit");
+        let waiting = a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, Some("evt1"));
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![what_google_answers_with("evt1", "Google's own words")],
+        )
+        .await;
+
+        let result = sync_google_calendar(
+            &cache,
+            &GoogleApiClient::new().pointed_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        heard(listening, "the read").await.expect("one request");
+        assert_eq!(
+            result.waiting_on_the_setting, 1,
+            "the change was counted as something other than waiting on the setting: {result:?}"
+        );
+        let stored = cache
+            .get_event_by_id(&waiting.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(
+            stored.summary, waiting.summary,
+            "Google's copy was written over the words somebody typed"
+        );
+        assert!(
+            stored.pending,
+            "the change stopped waiting without ever reaching Google, so nothing \
+             will try again and the words somebody typed are gone"
+        );
+        assert_eq!(
+            result.updated, 0,
+            "an event that was left alone was counted as changed: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_waiting_here_is_not_written_over_by_the_outlook_read_that_follows() {
+        // The same decision on the Outlook route, which reads the same way.
+        let cache = temp_cache("pull_ms_keeps_the_edit");
+        let waiting = a_pending_event_in(&cache, MICROSOFT, MICROSOFT_CALENDAR_NAME, Some("ms-1"));
+        let address = replying(delta_reply(&[graph_event("ms-1", "Outlook's own words")])).await;
+        point_the_sync_at(&cache, &address);
+
+        let result = sync_microsoft_calendar(&cache, &MsGraphClient::new(), "a-token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        assert_eq!(
+            result.waiting_on_the_setting, 1,
+            "the change was counted as something other than waiting on the setting: {result:?}"
+        );
+        let stored = cache
+            .get_event_by_id(&waiting.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(
+            stored.summary, waiting.summary,
+            "Outlook's copy was written over the words somebody typed"
+        );
+        assert!(
+            stored.pending,
+            "the change stopped waiting without ever reaching Outlook, so nothing \
+             will try again and the words somebody typed are gone"
+        );
+        assert_eq!(
+            result.updated, 0,
+            "an event that was left alone was counted as changed: {result:?}"
+        );
     }
 
     #[tokio::test]

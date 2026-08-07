@@ -241,6 +241,42 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **An appointment further ahead than a sync asks about is no longer deleted
+  from this computer.** When this program reads a calendar from a calendar
+  server it asks for six months back to a year forward, because asking for
+  everything is slow on a calendar with years of history in it. The pass that
+  followed then removed anything the server had not just mentioned, and an
+  appointment eighteen months out is not mentioned for the simple reason that
+  nobody asked about it.
+
+  So an appointment you made a long way ahead was sent to the server on one
+  sync and deleted from this computer on the next, with nothing said. The server
+  still had it, so it came back the next time you looked further ahead than a
+  year, or when the window caught up with it. Until then it was gone from every
+  list, every search and every reminder here.
+
+  A sync now only removes an appointment when it falls inside the stretch of
+  time it actually asked about. An appointment it cannot place, because the date
+  stored for it cannot be read, is kept rather than guessed at.
+
+  Known limitation: an appointment that repeats and whose first occurrence is
+  older than six months is now kept even when the server really has dropped it,
+  because what is stored here is where the series starts and not the days the
+  server worked out. A stale entry on a calendar is the safer of the two
+  mistakes, and it clears the next time the series changes.
+
+- **A change waiting to be sent to Google Calendar or Outlook Calendar is no
+  longer written over by the read that follows.** A sync sends what you changed
+  and then reads the calendar back. If the sending part could not go, and the
+  usual reason is that Allow Changes is off, then the reading part wrote the
+  provider's copy straight over your edit and marked the event as no longer
+  waiting for anything. Your words were gone and nothing was left to try again.
+
+  The calendar-server side of the program has always left a waiting change
+  alone. Google and Outlook now do the same: while a change is waiting, the
+  event here is yours, and the provider's copy is taken only once the change has
+  been sent or you have discarded it.
+
 - **An edit to an event in a calendar you subscribe to is no longer wiped by the
   next refresh.** Some calendars can only be read. A subscribed feed is
   published by somebody else, and a calendar server can mark one of its own
@@ -254,10 +290,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   written in small letters, and the same reason it is the worst shape a bug can
   take here: only you knew the words had ever existed.
 
-  Your change is now kept and the feed's copy is not written over it. The event
-  as it arrives from the feed is left alone until the change is gone. That
+  Your change is now kept, the feed's copy is not written over it, and the pass
+  that clears out events the feed has stopped carrying leaves it alone too. The
+  event as it arrives from the feed is left alone until the change is gone. That
   matches how a calendar you can write to has always behaved, where a change
   waiting to be sent is the newer copy.
+
+  That last part was missing when this entry was first written, and without it
+  the rest did not hold. The row was safe from being written over and not from
+  being deleted, so a feed that stopped carrying the event you had edited took
+  your words away with it and said nothing. On a calendar a server marks
+  read-only it was worse, because the sync said the opposite out loud: "nothing
+  is written over it, so nothing is lost", in the same pass that removed the row
+  it was talking about. The same thing happened on a calendar you can write to
+  whenever Allow Changes was off, which is how the program is shipped: the
+  summary said the change was waiting for you to turn the setting on, and the
+  row holding that change had already gone.
 
   Being unable to save is one thing and losing the words with no word about it
   is another, so the sync now says which calendar it is and what it means:

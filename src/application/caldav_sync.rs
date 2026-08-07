@@ -35,6 +35,23 @@
 //! the sync says which calendar it is and that nothing will ever send it. The
 //! same holds for a calendar a server marks read-only.
 //!
+//! # What the pass that removes things is allowed to remove
+//!
+//! Keeping a row from being written over is only half of keeping it. The pass
+//! that removes whatever the answer did not name has to leave it alone too, and
+//! for a while it did not: the row was safe from the server's copy and not from
+//! the deletion beside it, so a read-only calendar said "nothing is written over
+//! it, so nothing is lost" and removed the row it was talking about in the same
+//! pass.
+//!
+//! Two questions are asked now, in `may_be_taken_off_this_computer`, and a no to
+//! either keeps the row. Is there a change on it nobody has sent? And did the
+//! answer cover this event at all? A calendar server is asked about six months
+//! back to a year forward and answers about that stretch only, so an event
+//! eighteen months out is missing from the answer whether the server holds it or
+//! not, and reading that silence as a deletion took an event off this computer
+//! while the server still had it.
+//!
 //! None of this has run against a live server.
 
 use crate::application::calendar::CalendarSyncResult;
@@ -341,6 +358,98 @@ fn say_the_change_cannot_be_saved(
     ));
 }
 
+/// How far back a calendar server is asked about, in days.
+///
+/// Named rather than written twice. The pass that removes what did not arrive
+/// has to ask about exactly the stretch of time the read asked for, and two
+/// copies of "six months back" drift the moment one of them is edited.
+const HOW_FAR_BACK_THE_READ_ASKS: i64 = 180;
+
+/// How far forward a calendar server is asked about, in days.
+const HOW_FAR_AHEAD_THE_READ_ASKS: i64 = 365;
+
+/// How much of a calendar the answer that has just arrived speaks for.
+///
+/// The pass that removes what did not arrive rests entirely on this. A whole
+/// feed carries everything the calendar holds, so an event missing from it
+/// really has gone. A calendar server is asked about one stretch of time and
+/// answers about that stretch only, so it is silent about everything outside
+/// it, and reading that silence as a deletion takes an event off this computer
+/// while the server still holds it.
+enum WhatTheAnswerCovers {
+    /// Everything the calendar holds.
+    AllOfIt,
+    /// One stretch of time, and nothing outside it either way.
+    OnlyBetween(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>),
+}
+
+impl WhatTheAnswerCovers {
+    /// Whether this answer would have named this event, had the calendar still
+    /// held it.
+    ///
+    /// Only then does the event being missing from it mean anything. The test
+    /// is the one a calendar server applies to its own answer: an event is in a
+    /// stretch of time when it overlaps that stretch at all.
+    ///
+    /// A stored time this program cannot read is a time it cannot place, so the
+    /// answer is no and the event stays. The same goes for an event that
+    /// repeats and whose first occurrence sits outside the stretch: the series
+    /// may well reach into it, and what is stored here is where the series
+    /// starts rather than the occurrences the server worked out. That keeps a
+    /// row the server really has dropped, which leaves something stale on a
+    /// calendar instead of taking something off one.
+    fn would_have_named(&self, event: &CalendarEventEntry) -> bool {
+        let (from, to) = match self {
+            Self::AllOfIt => return true,
+            Self::OnlyBetween(from, to) => (from, to),
+        };
+        let Some(starts) = a_moment(&event.start_datetime) else {
+            return false;
+        };
+        // The rule `end_of` gives an arriving event that named no end: it ends
+        // when it starts.
+        let ends = a_moment(&event.end_datetime).unwrap_or(starts);
+        ends >= *from && starts <= *to
+    }
+}
+
+/// A time as the cache stores it, in the two forms it holds.
+///
+/// A timed event keeps the whole moment. A whole-day event keeps the date on
+/// its own, which is that day from midnight.
+fn a_moment(stored: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    let stored = stored.trim();
+    if let Ok(at) = chrono::DateTime::parse_from_rfc3339(stored) {
+        return Some(at.with_timezone(&chrono::Utc));
+    }
+    Some(
+        chrono::NaiveDate::parse_from_str(stored, WHOLE_DAY_DATE)
+            .ok()?
+            .and_hms_opt(0, 0, 0)?
+            .and_utc(),
+    )
+}
+
+/// Whether a row the answer did not name may be taken off this computer.
+///
+/// Two questions, and a no to either keeps the row.
+///
+/// A change nobody has sent yet exists only here. Removing the row destroys
+/// words only the person who typed them knows ever existed, and on a calendar
+/// this program can only read the sync says "nothing is written over it, so
+/// nothing is lost" in the very same pass. The waiting flag was checked in the
+/// two loops that write the server's copy over a row and not in the two that
+/// remove one, so a row was safe from being written over and not from being
+/// deleted.
+///
+/// And an absence only says anything when the answer covered the event at all.
+fn may_be_taken_off_this_computer(
+    event: &CalendarEventEntry,
+    covered: &WhatTheAnswerCovers,
+) -> bool {
+    !event.pending && covered.would_have_named(event)
+}
+
 /// Sync a CalDAV calendar with the local cache.
 pub async fn sync_caldav_calendar(
     cache: &MessageCache,
@@ -368,16 +477,20 @@ pub async fn sync_caldav_calendar(
     )
     .await;
 
-    // Ask for six months back and a year forward.
+    // Ask for six months back and a year forward. Held rather than worked out
+    // twice: the pass at the end has to know which stretch of time the answer
+    // speaks for, and an answer says nothing at all about anything outside it.
     let now = chrono::Utc::now();
+    let asked_from = now - chrono::Duration::days(HOW_FAR_BACK_THE_READ_ASKS);
+    let asked_to = now + chrono::Duration::days(HOW_FAR_AHEAD_THE_READ_ASKS);
 
     let (remote_events, _new_ctag) = match caldav
         .list_events(
             calendar_url,
             username,
             password,
-            Some(now - chrono::Duration::days(180)),
-            Some(now + chrono::Duration::days(365)),
+            Some(asked_from),
+            Some(asked_to),
             calendar.ctag.as_deref(),
         )
         .await
@@ -443,14 +556,20 @@ pub async fn sync_caldav_calendar(
         }
     }
 
-    // Delete local events not seen in remote. Silently: the server is the one
+    // Delete local events the server dropped. Silently: the server is the one
     // that dropped them, so leaving a note to delete them there would ask it on
     // every sync from now on to delete something it has already deleted.
+    //
+    // Missing from the answer is not the same as dropped, which is what
+    // `may_be_taken_off_this_computer` decides. A change nobody has sent stays,
+    // and so does an event outside the stretch of time this answer speaks for.
+    let answered_about = WhatTheAnswerCovers::OnlyBetween(asked_from, asked_to);
     for local in &local_events {
         if let Some(uid) = local.provider_event_id.as_deref()
             && !seen_uids.contains(uid)
+            && may_be_taken_off_this_computer(local, &answered_about)
+            && cache.drop_synced_calendar_event(&local.id)?
         {
-            cache.drop_synced_calendar_event(&local.id)?;
             result.deleted += 1;
         }
     }
@@ -530,19 +649,28 @@ pub async fn refresh_subscription(
             }
         }
     }
-    say_the_change_cannot_be_saved(calendar, kept_here, &mut result);
-
     // Only what the feed has stopped carrying goes. An event filed here by
     // hand has no identity from the feed and is left alone. Silently, for the
     // same reason: a feed is read and never written to.
+    //
+    // A feed carries the whole calendar, so unlike the calendar-server read
+    // there is no stretch of time to allow for: what is missing from it really
+    // has gone from the feed. A change nobody has sent still stays, and it is
+    // counted into the sentence below rather than removed without a word.
     for event in &held {
         if let Some(uid) = event.provider_event_id.as_deref()
             && !in_feed.contains(uid)
         {
-            cache.drop_synced_calendar_event(&event.id)?;
-            result.deleted += 1;
+            if !may_be_taken_off_this_computer(event, &WhatTheAnswerCovers::AllOfIt) {
+                kept_here += 1;
+                continue;
+            }
+            if cache.drop_synced_calendar_event(&event.id)? {
+                result.deleted += 1;
+            }
         }
     }
+    say_the_change_cannot_be_saved(calendar, kept_here, &mut result);
 
     Ok(result)
 }
@@ -819,7 +947,14 @@ mod tests {
     }
 
     /// An event the cache already holds for a calendar.
+    ///
+    /// Tomorrow, rather than a date written into this file, and deliberately.
+    /// The pass that removes what the server did not mention now only acts on
+    /// events inside the stretch of time the read asked for, so a fixed date
+    /// would drift out of that stretch as the months passed and every test
+    /// about removal would quietly stop testing removal.
     fn held_event(id: &str, uid: &str, calendar_id: &str, account_id: &str) -> CalendarEventEntry {
+        let starts = chrono::Utc::now() + chrono::Duration::days(1);
         CalendarEventEntry {
             id: id.to_string(),
             account_id: account_id.to_string(),
@@ -828,8 +963,8 @@ mod tests {
             summary: format!("Held {uid}"),
             description: None,
             location: None,
-            start_datetime: "2026-03-05T09:00:00Z".to_string(),
-            end_datetime: "2026-03-05T10:00:00Z".to_string(),
+            start_datetime: starts.to_rfc3339(),
+            end_datetime: (starts + chrono::Duration::hours(1)).to_rfc3339(),
             start_date: None,
             end_date: None,
             is_all_day: false,
@@ -2310,10 +2445,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_an_event_just_sent_to_the_server_is_not_removed_by_the_read_that_follows() {
-        // The read asks for six months back to a year ahead. An event further
-        // off than that is correctly missing from the answer, and without this
-        // it would be created at the server and dropped from this computer
-        // moments later, in the same pass.
+        // An event created at the server moments ago and not in the answer that
+        // followed. Inside the stretch of time the read asked for, on purpose,
+        // so that what keeps it is the record of what was just sent and not the
+        // separate guard about events outside that stretch. A server that has
+        // not caught up with its own write is all it takes, and without this the
+        // event is created there and dropped from here in the same pass.
         let cache = temp_cache("push_then_read");
         let mut calendar = container("cal-window", "acct");
         let (address, listening) = answering_in_turn(
@@ -2326,11 +2463,7 @@ mod tests {
         )
         .await;
         calendar.caldav_url = Some(format!("http://{address}/cal/"));
-        let mut far_off = a_change_waiting_in(&cache, &calendar, None, None);
-        far_off.start_datetime = (chrono::Utc::now() + chrono::Duration::days(730)).to_rfc3339();
-        cache
-            .save_calendar_event(&far_off)
-            .expect("an event two years out");
+        a_change_waiting_in(&cache, &calendar, None, None);
 
         let result = sync_caldav_calendar(
             &cache,
@@ -2438,6 +2571,270 @@ mod tests {
             arm.contains("total_errors.push"),
             "{path} passes over a calendar whose sign-in it cannot read without \
              a word, so a change waits for ever with no explanation"
+        );
+    }
+
+    // ── What the pass that removes things is allowed to remove ───────────
+    //
+    // Two faults, one pass. A row carrying a change nobody has sent is
+    // somebody's own words and only they know they typed them, and the sync
+    // says in the same breath that nothing is lost. And an answer covering one
+    // stretch of time says nothing at all about anything outside it, so absent
+    // from that answer is not absent from the server.
+
+    #[tokio::test]
+    async fn test_a_change_waiting_in_a_calendar_this_account_may_only_read_survives_the_read() {
+        // The worst of the three, because the sync says the words out loud in
+        // the same pass that destroys them: "nothing is written over it, so
+        // nothing is lost", and the row holding what was typed is gone.
+        let cache = temp_cache("read_only_keeps_the_row");
+        let mut calendar = container("cal-read-only-drop", "acct");
+        calendar.name = "Team holidays".to_string();
+        calendar.is_read_only = true;
+        let waiting = a_change_waiting_on(&cache, &calendar, "e-9");
+
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            multi_status(&["e-1"]),
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let said = result.changes_that_cannot_be_saved.join(" ");
+        assert!(
+            said.contains("nothing is lost"),
+            "the sentence this test is about was not said: {said:?}"
+        );
+        assert_eq!(
+            result.deleted, 0,
+            "the sync said nothing is lost and counted a deletion in the same pass"
+        );
+        assert!(
+            cache
+                .get_event_by_id(&waiting.id)
+                .expect("the calendar to be readable")
+                .is_some(),
+            "the sync said nothing is lost and deleted the row it was talking about"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_waiting_on_an_event_a_feed_has_stopped_carrying_is_kept_and_said() {
+        // The same loss on the feed route, and this one says nothing at all.
+        // The feed still parses, it simply no longer names the event somebody
+        // edited, so the row goes with no message and no error.
+        let cache = temp_cache("feed_drops_the_edited_event");
+        let mut calendar = container("sub-dropped", "acct");
+        calendar.name = "Term dates".to_string();
+        calendar.source_provider = Some("subscription".to_string());
+        let waiting = a_change_waiting_on(&cache, &calendar, "f-1");
+
+        let (address, _heard) =
+            answering("200 OK", "text/calendar; charset=utf-8", ics_feed(&["f-2"])).await;
+        calendar.subscription_url = Some(format!("http://{address}/feed.ics"));
+
+        let result =
+            refresh_subscription(&cache, &ICalSubscriptionClient::new(), &calendar, "acct")
+                .await
+                .expect("the refresh to finish");
+
+        assert_eq!(result.deleted, 0, "the words somebody typed were removed");
+        let stored = cache
+            .get_event_by_id(&waiting.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(stored.summary, "Dentist, moved to the afternoon");
+        assert!(
+            stored.pending,
+            "the change stopped waiting without going anywhere"
+        );
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        let said = result.changes_that_cannot_be_saved.join(" ");
+        assert!(
+            said.contains("Term dates"),
+            "the row was kept and nobody was told why saving never takes: {said:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_waiting_on_the_allow_changes_setting_survives_the_read_that_follows() {
+        // Allow Changes off is the shipped default, so this is what the sync
+        // does on a computer nobody has configured. The summary says the change
+        // is waiting for the setting to be turned on, and the row holding it
+        // was deleted in the same pass, so turning the setting on sends
+        // nothing.
+        let cache = temp_cache("gate_shut_keeps_the_row");
+        let mut calendar = container("cal-gate-shut", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![Answer::plain(multi_status(&["e-2"]))],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let waiting = a_change_waiting_in(
+            &cache,
+            &calendar,
+            Some("e-1"),
+            Some(format!("http://{address}/cal/e-1.ics")),
+        );
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let _ = heard(listening, "the calendar being read").await;
+        assert_eq!(
+            result.waiting_on_the_setting, 1,
+            "the change was counted as something other than waiting on the setting"
+        );
+        assert_eq!(
+            result.deleted, 0,
+            "the change waiting on a setting was removed"
+        );
+        assert!(
+            cache
+                .get_event_by_id(&waiting.id)
+                .expect("the calendar to be readable")
+                .is_some(),
+            "the summary says the change is waiting for Allow Changes to be \
+             turned on, and the row holding that change was deleted in the same \
+             pass"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_further_ahead_than_the_read_asks_for_is_not_taken_for_one_that_has_gone()
+    {
+        // Nothing to do with a change waiting. The read asks for six months
+        // back to a year forward, so an event eighteen months out is correctly
+        // missing from the answer while the server still holds it. Created at
+        // the server on one sync and deleted from this computer on the next,
+        // silently.
+        let cache = temp_cache("beyond_the_window");
+        let mut calendar = container("cal-beyond", "acct");
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            multi_status(&[]),
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+
+        let mut far_ahead = held_event("local-far", "e-eighteen-months", &calendar.id, "acct");
+        far_ahead.web_link = Some(format!("http://{address}/cal/e-eighteen-months.ics"));
+        let starts = chrono::Utc::now() + chrono::Duration::days(540);
+        far_ahead.start_datetime = starts.to_rfc3339();
+        far_ahead.end_datetime = (starts + chrono::Duration::hours(1)).to_rfc3339();
+        cache
+            .save_calendar_event(&far_ahead)
+            .expect("an event eighteen months out");
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        assert_eq!(
+            result.deleted, 0,
+            "the read asked about six months back to a year forward and was \
+             answered about that stretch only, so an event outside it is \
+             missing whether the server holds it or not"
+        );
+        assert!(
+            cache
+                .get_event_by_id(&far_ahead.id)
+                .expect("the calendar to be readable")
+                .is_some(),
+            "the event is on the server and gone from this computer"
+        );
+    }
+
+    #[test]
+    fn test_what_an_answer_covers_decides_which_absences_mean_anything() {
+        let from = chrono::Utc::now() - chrono::Duration::days(180);
+        let to = chrono::Utc::now() + chrono::Duration::days(365);
+        let stretch = WhatTheAnswerCovers::OnlyBetween(from, to);
+
+        let at = |days: i64| {
+            let mut event = held_event("local-1", "e-1", "cal", "acct");
+            let starts = chrono::Utc::now() + chrono::Duration::days(days);
+            event.start_datetime = starts.to_rfc3339();
+            event.end_datetime = (starts + chrono::Duration::hours(1)).to_rfc3339();
+            event
+        };
+
+        assert!(
+            stretch.would_have_named(&at(0)),
+            "today is inside the window"
+        );
+        assert!(
+            stretch.would_have_named(&at(-90)),
+            "three months back is inside"
+        );
+        assert!(
+            stretch.would_have_named(&at(300)),
+            "ten months ahead is inside"
+        );
+        assert!(
+            !stretch.would_have_named(&at(540)),
+            "eighteen months ahead is outside, so the answer says nothing about it"
+        );
+        assert!(
+            !stretch.would_have_named(&at(-400)),
+            "over a year back is outside, so the answer says nothing about it"
+        );
+
+        let mut whole_day = at(3);
+        whole_day.is_all_day = true;
+        whole_day.start_datetime = (chrono::Utc::now() + chrono::Duration::days(3))
+            .format(WHOLE_DAY_DATE)
+            .to_string();
+        whole_day.end_datetime = (chrono::Utc::now() + chrono::Duration::days(4))
+            .format(WHOLE_DAY_DATE)
+            .to_string();
+        assert!(
+            stretch.would_have_named(&whole_day),
+            "a whole-day event is stored as a date with no time and is inside the window"
+        );
+
+        let mut unreadable = at(0);
+        unreadable.start_datetime = "sometime next week".to_string();
+        assert!(
+            !stretch.would_have_named(&unreadable),
+            "a time this program cannot read is a time it cannot place in the \
+             window, and guessing removes somebody's event"
+        );
+
+        assert!(
+            WhatTheAnswerCovers::AllOfIt.would_have_named(&at(540)),
+            "a whole feed carries everything the calendar holds, so absence from \
+             it means what it says"
         );
     }
 
