@@ -32,7 +32,7 @@ A message that has been sent cannot be recalled, and a message deleted from a
 server may have been the only copy. A task in the wrong place can be moved
 back. That is the whole reason they are separate.
 
-Change them in Settings, under Allowed Changes. You can also set it per
+Change them in Settings, under Allow Changes. You can also set it per
 account, which is the useful shape while testing: leave your real mail read
 only, and allow everything on an account you do not mind breaking.
 

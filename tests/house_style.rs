@@ -232,6 +232,51 @@ fn test_the_documents_call_it_by_its_name() {
     );
 }
 
+/// Where a name a person is told to look for must not be typed a second time.
+///
+/// The screen and the sentence that sends somebody to it. Source rather than
+/// behaviour, and the reason is that the settings panel is built by wxWidgets
+/// calls with no seam short of a running window. What it can say is that the
+/// name is not written out here, which is the whole of how the two drifted.
+const WHERE_THE_SECTION_IS_LABELLED: &str = "src/presentation/wx_settings.rs";
+
+#[test]
+fn test_the_settings_screen_does_not_write_the_section_name_out_itself() {
+    // A sync says "turn on Allow Changes for this account". The section was
+    // headed "Allowed Changes", because the sentence and the label were two
+    // strings typed in two places. Near enough to look like the right place,
+    // far enough that somebody stops and checks whether they have found it.
+    //
+    // Both come from `application::allowed::SETTINGS_SECTION` now, so the name
+    // can be changed in one place and both follow. This is what stops the
+    // label being typed back in.
+    let screen = fs::read_to_string(WHERE_THE_SECTION_IS_LABELLED)
+        .expect("the settings screen to be readable");
+
+    let typed: Vec<String> = screen
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| {
+            line.contains("\"Allow Changes\"") || line.contains("\"Allowed Changes\"")
+        })
+        .map(|(number, line)| {
+            format!(
+                "{WHERE_THE_SECTION_IS_LABELLED}:{}: {}",
+                number + 1,
+                line.trim()
+            )
+        })
+        .collect();
+
+    assert!(
+        typed.is_empty(),
+        "the name of this section is said by a sync as the place to go, so it \
+         is held in one constant. Written out here it can drift from the \
+         sentence again:\n  {}",
+        typed.join("\n  ")
+    );
+}
+
 /// Documents describing what the software is now, as opposed to what it was.
 ///
 /// `docs/changelog.md` is left out on purpose. It is a dated record, and one of

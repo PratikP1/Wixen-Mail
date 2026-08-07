@@ -871,22 +871,25 @@ fn build_language_tab(
     // have been the only copy, while a task in the wrong place can be moved
     // back. Both say they are experimental, because they are: none of it has
     // run against a real account.
-    let allowed_sec = section(panel, "Allowed Changes");
+    // The heading comes from the same constant the sync sentences name, so a
+    // person told to turn this on reads the words they were told. The label
+    // and the sentence were typed separately and said different things.
+    let allowed_sec = section(panel, crate::application::allowed::SETTINGS_SECTION);
 
     let allow_pim = CheckBox::builder(panel)
-        .with_label("Let Wixen Mail change my &tasks, contacts and calendar")
+        .with_label("Allow Wixen Mail to change my &tasks, contacts and calendar")
         .build();
     set_accessible_name(
         &allow_pim,
-        "Let Wixen Mail change my tasks, contacts and calendar",
+        "Allow Wixen Mail to change my tasks, contacts and calendar",
     );
     allow_pim.set_value(config.allowed_changes.personal_information);
     allowed_sec.add(&allow_pim, 0, SizerFlag::All, 4);
 
     let allow_mail = CheckBox::builder(panel)
-        .with_label("Let Wixen Mail &send and delete mail")
+        .with_label("Allow Wixen Mail to &send and delete mail")
         .build();
-    set_accessible_name(&allow_mail, "Let Wixen Mail send and delete mail");
+    set_accessible_name(&allow_mail, "Allow Wixen Mail to send and delete mail");
     allow_mail.set_value(config.allowed_changes.mail);
     allowed_sec.add(&allow_mail, 0, SizerFlag::All, 4);
 

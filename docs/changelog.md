@@ -81,6 +81,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **One name for the setting that decides what may be sent: Allow Changes.**
+  A sync tells you to turn on Allow Changes. The settings section was headed
+  Allowed Changes, and the two boxes in it started "Let Wixen Mail". Three
+  wordings for one thing, so somebody who heard the sentence and went looking
+  for it had to work out whether they had found the right place.
+
+  The section is now headed Allow Changes, and the boxes read "Allow Wixen
+  Mail to change my tasks, contacts and calendar" and "Allow Wixen Mail to
+  send and delete mail". The choices on the first-run screen use the same
+  word, and so does the testing page. The heading and the sentence come from
+  one place in the code now, so they cannot drift apart again.
+
+  Nothing about what is allowed has changed. These are the words only.
+
 - **A phone number or an address with one label keeps it.** A label was only
   ever kept when a contact had two or more of something, so a person with one
   number labelled Work had that word thrown away on the way in. It was worse

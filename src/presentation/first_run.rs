@@ -63,8 +63,11 @@ impl Choice {
     pub const fn label(self) -> &'static str {
         match self {
             Choice::ReadOnly => "Read my mail, change nothing",
-            Choice::TasksAndContacts => "Also let it change my tasks, contacts and calendar",
-            Choice::Everything => "Let it do everything, including sending mail",
+            // "Allow", the word the settings screen and every sync sentence
+            // use for this. Somebody who answers here and later goes looking
+            // for the setting is looking for the same word.
+            Choice::TasksAndContacts => "Also allow it to change my tasks, contacts and calendar",
+            Choice::Everything => "Allow it to do everything, including sending mail",
         }
     }
 
@@ -209,11 +212,11 @@ mod tests {
         assert_eq!(Choice::ReadOnly.label(), "Read my mail, change nothing");
         assert_eq!(
             Choice::TasksAndContacts.label(),
-            "Also let it change my tasks, contacts and calendar"
+            "Also allow it to change my tasks, contacts and calendar"
         );
         assert_eq!(
             Choice::Everything.label(),
-            "Let it do everything, including sending mail"
+            "Allow it to do everything, including sending mail"
         );
     }
 
