@@ -35,7 +35,8 @@ fn ours() -> Vec<PathBuf> {
     collect(Path::new("src"), &["rs"], &mut found);
     collect(Path::new("docs"), &["md"], &mut found);
     collect(Path::new("tests"), &["rs"], &mut found);
-    collect(Path::new("scripts"), &["sh"], &mut found);
+    collect(Path::new("scripts"), &["sh", "py", "ps1"], &mut found);
+    collect(Path::new("guards"), &["toml"], &mut found);
     collect(Path::new("installer"), &["iss"], &mut found);
     collect(Path::new(".github"), &["yml"], &mut found);
     for single in ["README.md", "CLAUDE.md", "Cargo.toml", ".gitignore"] {
@@ -365,6 +366,15 @@ fn test_the_check_is_looking_at_the_whole_project() {
     assert!(
         files.iter().any(|f| f.ends_with("ALPHA_TESTING.md")),
         "the documents are not being checked"
+    );
+    assert!(
+        files.iter().any(|f| f.ends_with("guards.py")),
+        "the scripts that are not shell are not being checked, and four of \
+         them are Python"
+    );
+    assert!(
+        files.iter().any(|f| f.ends_with("guards.toml")),
+        "the guard record carries prose and is not being checked"
     );
 }
 
