@@ -1776,9 +1776,25 @@ fn as_one_value(text: &str) -> String {
 ///
 /// One pass, left to right. Undoing each mark in turn instead would take the
 /// slash off `\\,` and then read the comma it was protecting as a mark of its
-/// own. A slash in front of anything else is dropped and the character kept,
-/// which is what the standard says an unknown escape means, and a slash at the
-/// very end is a slash.
+/// own.
+///
+/// RFC 5545 section 3.3.11 defines five spellings of four marks and says
+/// nothing at all about a backslash in front of anything else, so a document
+/// carrying `\q` is not one written to the standard and there is no rule to
+/// follow. Both characters are kept. Dropping the backslash was the other
+/// reading, and it reads a little better on screen at the cost of destroying a
+/// character in somebody else's calendar: `Ten\q twenty` was read as
+/// "Tenq twenty" and the next save wrote "Tenq twenty" back. Kept, the value
+/// survives every round trip and goes out as `Ten\\q twenty`, which is how the
+/// standard writes a backslash, so the document that comes back is readable
+/// where the one that arrived was not. A slash at the very end has nothing
+/// after it to protect and is a slash.
+///
+/// This is the inverse of [`as_one_value`] for every value the standard allows.
+/// It is not the identity on the document's own bytes and cannot be: a break
+/// written `\N` comes back written `\n`, and a comma or semicolon a producer
+/// left unmarked goes back marked. Both are the same value written the one way
+/// this program writes it.
 fn as_typed(value: &str) -> String {
     let mut written = String::with_capacity(value.len());
     let mut characters = value.chars();
@@ -1789,7 +1805,11 @@ fn as_typed(value: &str) -> String {
         }
         match characters.next() {
             Some('n' | 'N') => written.push('\n'),
-            Some(escaped) => written.push(escaped),
+            Some(marked @ ('\\' | ';' | ',')) => written.push(marked),
+            Some(unknown) => {
+                written.push('\\');
+                written.push(unknown);
+            }
             None => written.push('\\'),
         }
     }
@@ -2161,6 +2181,53 @@ mod tests {
 
         assert!(back.contains("SUMMARY:Lunch\\, then a walk"), "{back}");
         assert!(back.contains("DESCRIPTION:Line one\\nLine two"), "{back}");
+    }
+
+    #[test]
+    fn test_a_mark_the_standard_does_not_define_is_not_dropped_on_the_way_back_to_the_server() {
+        // RFC 5545 section 3.3.11 defines four marks and no others, so `\q` is
+        // not something a document written to the standard carries. Read as "q"
+        // with the backslash thrown away, that character is gone from somebody
+        // else's calendar the moment anything at all on the event is saved: the
+        // server held `Ten\q twenty` and gets `Tenq twenty` back. Both
+        // characters are kept instead, and what goes out writes the backslash
+        // the way the standard writes one, so the document is left readable by
+        // every other calendar program rather than left as it was found.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:esc-3\r\n\
+                    SUMMARY:Ten\\q twenty\r\nDTSTART:20260305T090000Z\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+        let back = build_ical_vevent(&event);
+
+        assert_eq!(event.summary, "Ten\\q twenty");
+        assert!(back.contains("SUMMARY:Ten\\\\q twenty"), "{back}");
+        assert_eq!(
+            parse_ical_vevent(&back, "", None)
+                .expect("an event")
+                .summary,
+            event.summary,
+            "the value changed on the way out and back:\n{back}"
+        );
+    }
+
+    #[test]
+    fn test_a_line_break_written_the_other_allowed_way_goes_back_written_this_one() {
+        // The standard allows a line break to be written `\n` or `\N` and means
+        // the same by both. This program writes the small one, so a document
+        // carrying the capital comes back carrying the small one. The line
+        // break is the same line break, and the two characters are not the same
+        // two characters. Pinned so the changelog cannot go back to claiming a
+        // value returns character for character as it arrived.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:esc-4\r\n\
+                    SUMMARY:Standup\r\nDESCRIPTION:one\\Ntwo\r\n\
+                    DTSTART:20260305T090000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+        let back = build_ical_vevent(&event);
+
+        assert_eq!(event.description.as_deref(), Some("one\ntwo"));
+        assert!(back.contains("DESCRIPTION:one\\ntwo"), "{back}");
     }
 
     fn an_event_to_send() -> CalDavEvent {

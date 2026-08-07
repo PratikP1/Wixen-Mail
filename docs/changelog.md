@@ -636,10 +636,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   change escapes whatever it is given, so every save wrote the backslashes again
   and they doubled each time, in your calendar and at the server.
 
-  The title, the notes and the place are now read as the words they are, and go
-  back to the server written the way they came. The identifier an event is known
-  by is left exactly as it arrives: it is the name the server calls the event
-  by, not words anybody typed, and it is matched character for character.
+  The title, the notes and the place are now read as the words they are, and the
+  same words go back to the server. Not always the same characters, and it is
+  worth being exact about which ones move. A line break can be written two ways
+  and goes back written the one this program writes. A comma or a semicolon a
+  server left bare comes back with the backslash the standard asks for. Every
+  calendar program reads those the same way either way, so nothing you typed
+  changes.
+
+  One of these did lose a character, and no longer does. A backslash in front of
+  anything the standard does not name, such as `\q`, used to be thrown away on
+  the way in, so a title the server held as `Ten\q twenty` was read here as "Tenq
+  twenty" and the next save wrote "Tenq twenty" back with the backslash gone for
+  good. Both characters are kept now. The cost is that such a title now reads out
+  with a backslash in it, which is what the document says is there.
+
+  The identifier an event is known by is left exactly as it arrives: it is the
+  name the server calls the event by, not words anybody typed, and it is matched
+  character for character.
 
   A calendar you subscribed to is read by the same code and was showing the same
   backslashes.
@@ -856,7 +870,11 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   What this program replaces is the title, the notes, the place, the start and
   end, the repeat rule, the days the series calls off, and the status. Emptying
   one of those here clears it on the server too, because that is what emptying
-  it means.
+  it means. Those it does replace go back written the one way this program
+  writes them, even where you changed something else on the event and not them.
+  That is the same words and not always the same characters; the entry above
+  about a comma in a title says exactly which characters can move.
+
 
   **If somebody else changed the same event first**, from a phone or another
   program, the change is refused rather than written over theirs, and the sync
