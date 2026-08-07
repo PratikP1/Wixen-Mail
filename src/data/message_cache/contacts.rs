@@ -1196,10 +1196,17 @@ impl MessageCache {
     /// A bare value's commas separate one type from the next, so the first is
     /// taken. A quoted value's commas are part of the value, so the whole of
     /// it is one label, which is what keeps a label of "Work, main" whole. The
-    /// one shape that reads both ways is a quoted list of plain type words,
+    /// one shape that reads both ways is a quoted list of type words,
     /// `TYPE="voice,home"`, which RFC 6350 shows and which is treated as the
-    /// list it is. That leaves one label unreachable: two plain words with a
-    /// comma and no space between them, "Work,main", comes back "Work".
+    /// list it is.
+    ///
+    /// [`A_TYPE_WORD_THE_STANDARDS_DEFINE`] is what draws that line, and it is
+    /// drawn there rather than at "any plain word" because any plain word is
+    /// also what a person types. Read that way, a label of "Work,main" came
+    /// back as "Work": a comma with no space after it looked exactly like the
+    /// list, and the label somebody chose was cut off at it.
+    ///
+    /// [`A_TYPE_WORD_THE_STANDARDS_DEFINE`]: MessageCache::A_TYPE_WORD_THE_STANDARDS_DEFINE
     fn extract_vcard_type_param(prefix: &str) -> String {
         for part in Self::split_outside_quotes(prefix, ';') {
             let Some((name, value)) = part.split_once('=') else {
@@ -1217,11 +1224,13 @@ impl MessageCache {
     fn label_a_type_value_names(value: &str) -> String {
         let listed: Vec<&str> = match Self::quoted_value_inside(value) {
             Some(inside) => match Self::split_outside_quotes(inside, ',') {
-                // A quoted list of plain type words is a list. Anything else
-                // inside quotes is one label, punctuation and all.
+                // A quoted list of type words is a list. Anything else inside
+                // quotes is one label, punctuation and all.
                 listed
                     if listed.len() > 1
-                        && listed.iter().all(|word| Self::is_one_plain_word(word)) =>
+                        && listed
+                            .iter()
+                            .all(|word| Self::a_type_word_the_standards_define(word)) =>
                 {
                     listed
                 }
@@ -1230,6 +1239,50 @@ impl MessageCache {
             None => value.split(',').collect(),
         };
         Self::tidied_label(listed.first().unwrap_or(&"").trim())
+    }
+
+    /// Every word RFC 2426 and RFC 6350 give a `TYPE` parameter a meaning for,
+    /// in one list because a card reader meets both.
+    ///
+    /// RFC 2426 section 3 names them for a telephone number, an email address
+    /// and a postal address; RFC 6350 section 5.6 keeps `work` and `home` for
+    /// every property and section 6.4.1 adds the rest of the telephone ones.
+    /// Nothing outside this list is a word either standard defines, so a piece
+    /// that is not here is part of a label somebody chose.
+    const A_TYPE_WORD_THE_STANDARDS_DEFINE: &'static [&'static str] = &[
+        "bbs",
+        "car",
+        "cell",
+        "dom",
+        "fax",
+        "home",
+        "internet",
+        "intl",
+        "isdn",
+        "modem",
+        "msg",
+        "pager",
+        "parcel",
+        "pcs",
+        "postal",
+        "pref",
+        "text",
+        "textphone",
+        "video",
+        "voice",
+        "work",
+        "x400",
+    ];
+
+    /// Whether this piece of a quoted `TYPE` value is one of those words.
+    ///
+    /// Matched whatever case it is written in, because RFC 6350 section 3.3
+    /// says the value means the same either way and cards arrive shouted as
+    /// often as not.
+    fn a_type_word_the_standards_define(piece: &str) -> bool {
+        Self::A_TYPE_WORD_THE_STANDARDS_DEFINE
+            .iter()
+            .any(|word| piece.eq_ignore_ascii_case(word))
     }
 
     /// The text inside a quoted parameter value, or nothing if it is bare.
@@ -2573,6 +2626,12 @@ mod tests {
             // A label somebody chose, which has to be quoted to survive and
             // then comes back exactly as it was typed rather than tidied.
             ("TEL;TYPE=\"Work, main\"", "Work, main"),
+            // The same label without the space. A quoted value's commas are
+            // part of it unless every piece is one of the type words the
+            // standards define, which is the shape RFC 6350 writes a list in.
+            // "main" is not one of those words, so this is one label.
+            ("TEL;TYPE=\"Work,main\"", "Work,main"),
+            ("TEL;TYPE=\"Grandma,Grandpa\"", "Grandma,Grandpa"),
             ("TEL;TYPE=\"Home; the flat\"", "Home; the flat"),
             ("TEL;TYPE=\"Ada: personal\"", "Ada: personal"),
             ("TEL;TYPE=\"Work Fax\"", "Work Fax"),
@@ -2595,6 +2654,28 @@ mod tests {
                 MessageCache::extract_vcard_type_param(prefix),
                 expected,
                 "{prefix} was labelled wrongly"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_label_made_only_of_the_standard_type_words_is_still_read_as_a_list() {
+        // Pinned so the loss is visible rather than discovered, and so the
+        // changelog entry describing it can be checked against the code.
+        //
+        // This is what is left of the shape a comma used to cut off. A quoted
+        // value whose every piece is a word the standards define reads as the
+        // list RFC 6350 writes that way, and a person who types "Work,Home" as
+        // one label has written exactly that. Nothing in a card tells the two
+        // apart, and reading a real list correctly is worth more.
+        for (prefix, expected) in [
+            ("TEL;TYPE=\"Work,Home\"", "Work"),
+            ("TEL;TYPE=\"voice,fax\"", "Voice"),
+        ] {
+            assert_eq!(
+                MessageCache::extract_vcard_type_param(prefix),
+                expected,
+                "{prefix} reads differently now, so the changelog entry about it should go"
             );
         }
     }
@@ -2660,6 +2741,7 @@ mod tests {
         // failure names the label instead of showing a whole contact.
         for label in [
             "Work, main",
+            "Work,main",
             "Home; the flat",
             "Ada: personal",
             "Work Fax",

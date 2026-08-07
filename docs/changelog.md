@@ -404,7 +404,7 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 - **A contact exported to a file and imported back is now the contact it was.**
   Exporting your contacts to a `.vcf` file and importing that file, which is how
   you move an address book to another machine or keep a copy of one, used to
-  lose eight things. They are all fixed:
+  lose all of the following. They are fixed:
 
   - The given name and the family name were written nowhere at all, so a
     contact came back with a whole name and neither part. The card now carries
@@ -433,7 +433,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
     the rest of the label on the front of the phone number, so the number came
     back wrong as well as the label: "Ada: personal" turned "+44 7700 900999"
     into "PERSONAL:+44 7700 900999". Even "Work Fax", which is in the dropdown,
-    came back "Work fax". They all come back now exactly as they were.
+    came back "Work fax". They all come back now exactly as they were, and so
+    does a label run together with a comma and no space after it, such as
+    "Work,main", which was the last shape a comma still cut off.
   - A space next to a line break in the file was eaten. The format breaks a
     long line in two and marks the second half with a space, and reading it
     back took off every space there rather than the one the break put in. A
@@ -442,35 +444,36 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
     any other program that broke a line in the same place arrived with two
     words run together.
 
-  Two things still do not survive, and this is the whole list:
+  What still does not survive a round trip:
 
   - A contact with no email address, such as one you keep only a phone number
-    for, is written to the file and then refused on the way back in, without a
-    word. The import turns away any card that names no address it could write
-    to, so that a file from anywhere cannot fill your address book with rows
-    nobody can reach, and that rule is why this contact is turned away too.
-    Which of the two rules should give way is a decision nobody has made yet.
-    If you keep contacts with no email address, a `.vcf` file is not a complete
-    backup of your address book.
+    for, is written to the file and then refused on the way back in. The import
+    turns away any card that names no address it could write to, so that a file
+    from anywhere cannot fill your address book with rows nobody can reach, and
+    that rule is why this contact is turned away too. Which of the two rules
+    should give way is a decision nobody has made yet. If you keep contacts
+    with no email address, a `.vcf` file is not a complete backup of your
+    address book. The import no longer does this without a word: it says how
+    many cards it left out and why.
   - Whether a contact is a favourite. A contact card has no property for it and
     this program does not invent one, because a property only this program
     understands would help it talk to itself and nothing else.
+  - A label made only of the words the card standards define, run together with
+    a comma and no space, such as "Work,Home". It comes back as "Work". Written
+    that way, a card cannot tell it from a list of two standard labels, which
+    is what `TYPE="voice,home"` means in a card written elsewhere, and reading
+    a real list correctly is worth more. Put a space after the comma, or use
+    any word the standards do not define, and the label survives.
+  - Custom fields written by a build from before this release. Their names were
+    already flattened into capitals in the file, and the new reader does not
+    read them. Everything else in such a file reads normally.
 
-  Three smaller notes. A file exported by an earlier build carries its own
-  custom fields in the old shape, whose names were already flattened into
-  capitals, and the new reader does not read them; everything else in such a
-  file reads normally. Exported cards now carry the structured name property
-  that the vCard 3.0 standard requires and this program never wrote, so a card
-  exported from here is valid where it used to be malformed. And a label with
-  punctuation or a space in it is now written in quotes, which is what the
-  standard asks for, so other programs read it as one label rather than as the
-  end of the line.
-
-  One label shape is still lost, and it is the only one: two plain words with a
-  comma and no space between them, such as "Work,main", comes back as "Work". A
-  card cannot tell that apart from a list of two standard labels, which is what
-  `TYPE="voice,home"` means in a card written elsewhere, and reading the list
-  correctly is worth more. Put a space after the comma and the label survives.
+  Also worth knowing, and neither of these is a loss. Exported cards now carry
+  the structured name property that the vCard 3.0 standard requires and this
+  program never wrote, so a card exported from here is valid where it used to be
+  malformed. And a label with punctuation or a space in it is now written in
+  quotes, which is what the standard asks for, so other programs read it as one
+  label rather than as the end of the line.
 
   None of the export or import work has been checked with a screen reader, and
   none of it has run against a real account, which it does not need to: a `.vcf`
