@@ -441,8 +441,8 @@ impl MessageCache {
                 if let Ok(entries) = serde_json::from_str::<Vec<super::EmailEntry>>(json) {
                     for e in &entries {
                         output.push_str(&Self::fold_vcard_line(&format!(
-                            "EMAIL;TYPE={}:{}",
-                            e.label.to_uppercase(),
+                            "EMAIL;{}:{}",
+                            Self::vcard_type_parameter(&e.label),
                             Self::escape_vcard_text(&e.address)
                         )));
                     }
@@ -458,8 +458,8 @@ impl MessageCache {
                 if let Ok(entries) = serde_json::from_str::<Vec<super::PhoneEntry>>(json) {
                     for p in &entries {
                         output.push_str(&Self::fold_vcard_line(&format!(
-                            "TEL;TYPE={}:{}",
-                            p.label.to_uppercase(),
+                            "TEL;{}:{}",
+                            Self::vcard_type_parameter(&p.label),
                             Self::escape_vcard_text(&p.number)
                         )));
                     }
@@ -500,8 +500,8 @@ impl MessageCache {
                 if let Ok(entries) = serde_json::from_str::<Vec<super::AddressEntry>>(json) {
                     for a in &entries {
                         output.push_str(&Self::fold_vcard_line(&format!(
-                            "ADR;TYPE={}:{}",
-                            a.label.to_uppercase(),
+                            "ADR;{}:{}",
+                            Self::vcard_type_parameter(&a.label),
                             Self::address_value(a)
                         )));
                     }
@@ -804,7 +804,7 @@ impl MessageCache {
         if !rest.starts_with(':') && !rest.starts_with(';') {
             return None;
         }
-        let at = rest.find(':')?;
+        let at = Self::where_the_value_begins(rest)?;
         Some((&line[..property.len() + at], &rest[at + 1..]))
     }
 
@@ -999,6 +999,127 @@ impl MessageCache {
         })
     }
 
+    /// The `TYPE` parameter naming a label, written so the card carries the
+    /// label whole.
+    ///
+    /// A label is not a word from a fixed list. It is whatever somebody typed
+    /// in the contact editor, or whatever their address book called a custom
+    /// type, so it can carry any punctuation at all. Written into the
+    /// parameter bare, each piece of punctuation ends something: a comma ends
+    /// the type, a semicolon ends the parameter, and a colon ends the
+    /// parameters and begins the value, which took the tail of the label into
+    /// the phone number itself. Quoting is what the format gives for saying
+    /// that a character is part of the value (RFC 2426 section 4, RFC 6350
+    /// section 3.3), so anything that is not one plain word is quoted.
+    ///
+    /// One plain word goes out bare and in capitals, because `TYPE=WORK` is
+    /// what every other client writes and some of them match it in capitals.
+    ///
+    /// A quoted value cannot hold a double quote or a line break in either
+    /// standard, so those go out the way RFC 6868 writes them and
+    /// [`caret_unescaped`] brings them back. A reader that does not know
+    /// RFC 6868 shows `^'` where the quote was, which is a mark out of place
+    /// rather than a card it cannot parse.
+    ///
+    /// [`caret_unescaped`]: MessageCache::caret_unescaped
+    fn vcard_type_parameter(label: &str) -> String {
+        if Self::is_one_plain_word(label) {
+            return format!("TYPE={}", label.to_uppercase());
+        }
+        format!("TYPE=\"{}\"", Self::caret_escaped(label))
+    }
+
+    /// Whether this is one run of ASCII letters, which is the shape of every
+    /// standard type word and the only shape written without quotes.
+    fn is_one_plain_word(text: &str) -> bool {
+        !text.is_empty()
+            && text
+                .chars()
+                .all(|character| character.is_ascii_alphabetic())
+    }
+
+    /// A parameter value with the characters a quoted one cannot hold written
+    /// the way RFC 6868 writes them.
+    fn caret_escaped(value: &str) -> String {
+        value
+            .replace('^', "^^")
+            .replace('"', "^'")
+            .replace('\n', "^n")
+    }
+
+    /// The other half of [`caret_escaped`], in one pass so that it is really
+    /// its opposite: a caret somebody typed goes out as `^^` and has to come
+    /// back as one caret rather than be read again as the start of an escape.
+    ///
+    /// RFC 6868 section 3 says a caret in front of anything else is left as it
+    /// stands, so a card written by software that never heard of the rule
+    /// keeps its carets.
+    ///
+    /// [`caret_escaped`]: MessageCache::caret_escaped
+    fn caret_unescaped(value: &str) -> String {
+        let mut out = String::with_capacity(value.len());
+        let mut characters = value.chars();
+        while let Some(character) = characters.next() {
+            if character != '^' {
+                out.push(character);
+                continue;
+            }
+            match characters.next() {
+                Some('^') => out.push('^'),
+                Some('\'') => out.push('"'),
+                Some('n') => out.push('\n'),
+                Some(other) => {
+                    out.push('^');
+                    out.push(other);
+                }
+                None => out.push('^'),
+            }
+        }
+        out
+    }
+
+    /// The pieces of a property's parameter text, split where the separator
+    /// really separates rather than where it sits inside a quoted value.
+    fn split_outside_quotes(text: &str, separator: char) -> Vec<&str> {
+        let mut pieces: Vec<&str> = Vec::new();
+        let mut inside_quotes = false;
+        let mut start = 0;
+        for (at, character) in text.char_indices() {
+            match character {
+                '"' => inside_quotes = !inside_quotes,
+                _ if character == separator && !inside_quotes => {
+                    pieces.push(&text[start..at]);
+                    start = at + character.len_utf8();
+                }
+                _ => {}
+            }
+        }
+        pieces.push(&text[start..]);
+        pieces
+    }
+
+    /// Where a property's value begins: the first colon that is not inside a
+    /// quoted parameter value.
+    ///
+    /// A card whose quotes do not pair up is malformed, and there the first
+    /// colon anywhere is used instead. Dropping the whole property loses more
+    /// than reading it the way every reader did before quotes were understood.
+    fn where_the_value_begins(rest: &str) -> Option<usize> {
+        let mut inside_quotes = false;
+        let mut first_colon = None;
+        for (at, character) in rest.char_indices() {
+            match character {
+                '"' => inside_quotes = !inside_quotes,
+                ':' if !inside_quotes => return Some(at),
+                ':' => {
+                    first_colon.get_or_insert(at);
+                }
+                _ => {}
+            }
+        }
+        first_colon
+    }
+
     /// Whether a property's parameters say the value is the thing itself rather
     /// than an address to fetch it from.
     ///
@@ -1006,11 +1127,14 @@ impl MessageCache {
     /// are written by real clients. Read only in the first shape and only in
     /// capitals, a picture came back as somebody's website address.
     fn says_the_value_is_inline(parameters: &str) -> bool {
-        parameters
-            .split(';')
+        Self::split_outside_quotes(parameters, ';')
+            .into_iter()
             .filter_map(|part| part.split_once('='))
             .any(|(name, _)| name.eq_ignore_ascii_case("ENCODING"))
     }
+
+    /// Shown for a phone number, address or email whose card gave no label.
+    const NO_LABEL: &'static str = "Other";
 
     /// The label a vCard property carries, as something worth reading out.
     ///
@@ -1019,31 +1143,74 @@ impl MessageCache {
     /// clients write it rather than only the tidiest one: RFC 6350 makes the
     /// parameter name case insensitive, lets several types be listed at once,
     /// and lets the value be quoted.
+    ///
+    /// Quoting is where the format is ambiguous and this reader has to choose.
+    /// A bare value's commas separate one type from the next, so the first is
+    /// taken. A quoted value's commas are part of the value, so the whole of
+    /// it is one label, which is what keeps a label of "Work, main" whole. The
+    /// one shape that reads both ways is a quoted list of plain type words,
+    /// `TYPE="voice,home"`, which RFC 6350 shows and which is treated as the
+    /// list it is. That leaves one label unreachable: two plain words with a
+    /// comma and no space between them, "Work,main", comes back "Work".
     fn extract_vcard_type_param(prefix: &str) -> String {
-        const NO_LABEL: &str = "Other";
-
-        for part in prefix.split(';') {
+        for part in Self::split_outside_quotes(prefix, ';') {
             let Some((name, value)) = part.split_once('=') else {
                 continue;
             };
             if !name.eq_ignore_ascii_case("TYPE") {
                 continue;
             }
-
-            let value = value.trim_matches('"');
-            let head = match value.split_once(',') {
-                Some((first, _)) => first,
-                None => value,
-            };
-
-            let lower = head.trim().to_lowercase();
-            let mut chars = lower.chars();
-            return match chars.next() {
-                None => NO_LABEL.to_string(),
-                Some(letter) => letter.to_uppercase().collect::<String>() + chars.as_str(),
-            };
+            return Self::label_a_type_value_names(value.trim());
         }
-        NO_LABEL.to_string()
+        Self::NO_LABEL.to_string()
+    }
+
+    /// The one label a `TYPE` parameter's value names.
+    fn label_a_type_value_names(value: &str) -> String {
+        let listed: Vec<&str> = match Self::quoted_value_inside(value) {
+            Some(inside) => match Self::split_outside_quotes(inside, ',') {
+                // A quoted list of plain type words is a list. Anything else
+                // inside quotes is one label, punctuation and all.
+                listed
+                    if listed.len() > 1
+                        && listed.iter().all(|word| Self::is_one_plain_word(word)) =>
+                {
+                    listed
+                }
+                _ => return Self::tidied_label(&Self::caret_unescaped(inside)),
+            },
+            None => value.split(',').collect(),
+        };
+        Self::tidied_label(listed.first().unwrap_or(&"").trim())
+    }
+
+    /// The text inside a quoted parameter value, or nothing if it is bare.
+    fn quoted_value_inside(value: &str) -> Option<&str> {
+        value
+            .strip_prefix('"')
+            .and_then(|rest| rest.strip_suffix('"'))
+    }
+
+    /// A label as it is worth reading out.
+    ///
+    /// A standard type word arrives shouted, `WORK`, or in small letters, and
+    /// either read aloud as it stands is wrong, so one plain word is tidied to
+    /// "Work". Anything else is a label somebody chose and is kept exactly as
+    /// it was written: tidying "Work Fax" the same way gave back "Work fax",
+    /// which is not the label they picked from the list.
+    fn tidied_label(value: &str) -> String {
+        if value.is_empty() {
+            return Self::NO_LABEL.to_string();
+        }
+        if !Self::is_one_plain_word(value) {
+            return value.to_string();
+        }
+        let lower = value.to_lowercase();
+        let mut characters = lower.chars();
+        match characters.next() {
+            None => Self::NO_LABEL.to_string(),
+            Some(letter) => letter.to_uppercase().collect::<String>() + characters.as_str(),
+        }
     }
 
     /// A value made of several fields, written the way a card separates them.
@@ -1201,18 +1368,30 @@ impl MessageCache {
         out
     }
 
+    /// One card's lines, with the ones the format broke in two joined back on.
+    ///
+    /// RFC 2426 section 2.6 and RFC 6350 section 3.2 both say unfolding takes
+    /// off the line break and exactly one white space character. Any white
+    /// space after that one belongs to the value, and so does any at the end
+    /// of the line the fold broke. Taking all of it off ran two words
+    /// together: a county of "Tyne and Wear" came back "Tyneand Wear",
+    /// whichever side of the space the fold happened to land, and it did the
+    /// same to a card written by anything else that folded in front of a
+    /// space.
+    ///
+    /// The iCalendar reader answers the same question in
+    /// `service::caldav::put_back_together`, and this agrees with it.
     fn unfold_vcard_lines(block: &str) -> Vec<String> {
         let mut lines: Vec<String> = Vec::new();
         for raw in block.lines() {
             let line = raw.trim_end_matches('\r');
-            if line.starts_with(' ') || line.starts_with('\t') {
-                if let Some(last) = lines.last_mut() {
-                    last.push_str(line.trim_start());
-                } else {
-                    lines.push(line.trim_start().to_string());
+            match line.strip_prefix([' ', '\t']) {
+                Some(carried_on) if !lines.is_empty() => {
+                    if let Some(last) = lines.last_mut() {
+                        last.push_str(carried_on);
+                    }
                 }
-            } else {
-                lines.push(line.trim().to_string());
+                _ => lines.push(line.to_string()),
             }
         }
         lines
@@ -1485,6 +1664,51 @@ mod tests {
     }
 
     #[test]
+    fn test_unfolding_takes_off_one_space_and_leaves_the_rest_of_the_value() {
+        // RFC 2426 section 2.6 and RFC 6350 section 3.2: unfolding removes the
+        // line break and exactly one white space character. Any further space
+        // belongs to the value. Taking them all off, a card written anywhere
+        // else that broke a line in front of a space arrived with two words run
+        // together: "Tyne and Wear" came back "Tyneand Wear".
+        //
+        // This pins the unfolding on its own, with no folding in front of it,
+        // because it is an import fault as well as a round trip one.
+        let unfolded = MessageCache::unfold_vcard_lines("ADR:Tyne\r\n  and Wear\r\n");
+
+        assert_eq!(unfolded, ["ADR:Tyne and Wear"]);
+    }
+
+    #[test]
+    fn test_unfolding_keeps_a_space_the_fold_left_at_the_end_of_a_line() {
+        // The other side of the same rule. A fold that lands just after a space
+        // leaves that space as the last character of the line it broke, and the
+        // space is the value's.
+        let unfolded = MessageCache::unfold_vcard_lines("ADR:Tyne \r\n and Wear\r\n");
+
+        assert_eq!(unfolded, ["ADR:Tyne and Wear"]);
+    }
+
+    #[test]
+    fn test_a_space_beside_a_fold_survives_folding_and_unfolding() {
+        // Both halves of this are this program's own code, so a value it wrote
+        // itself came back with a space missing. The two lengths put the fold
+        // on either side of the one space in the value.
+        for spare in [0, 1] {
+            let value = a_value_with_its_space_at(FOLDS_AT - "NOTE:".len() - spare);
+            let line = format!("NOTE:{value}");
+
+            let folded = MessageCache::fold_vcard_line(&line);
+            let unfolded = MessageCache::unfold_vcard_lines(&folded);
+
+            assert_eq!(
+                unfolded,
+                [line],
+                "folding and unfolding lost a space beside the fold"
+            );
+        }
+    }
+
+    #[test]
     fn test_something_that_is_not_an_address_does_not_become_a_contact() {
         // Import takes files from anywhere. A contact whose address is not one
         // can never be written to, and it sits in the list looking like
@@ -1646,10 +1870,34 @@ mod tests {
     /// comma, so a street with a semicolon in it, a company with a comma and a
     /// note with a line break are what tell a writer and a reader that really
     /// agree from two that only look as though they do.
+    /// The octet a card's first fold falls after, counting the property name
+    /// and its colon along with the value.
+    const FOLDS_AT: usize = 75;
+
+    /// A value long enough to be folded, carrying exactly one space, at the
+    /// character asked for.
+    ///
+    /// The hyphenated filler is there to reach that length and nothing else:
+    /// what the value is about is where its one space sits. Ask for
+    /// `FOLDS_AT - name_and_colon` and the fold lands immediately in front of
+    /// the space; ask for one less and it lands immediately after it. Those
+    /// are the two places the folding and the unfolding have to agree about,
+    /// and a fixture that folds mid-word never reaches either.
+    fn a_value_with_its_space_at(character: usize) -> String {
+        let filler: String = "Rear-Admiral-of-the-Fleet-"
+            .chars()
+            .cycle()
+            .take(character)
+            .collect();
+        format!("{filler} and the rest of it")
+    }
+
     fn a_contact_carrying_every_part_a_person_can_fill_in() -> ContactEntry {
         let emails = vec![
             super::super::EmailEntry {
-                label: "Work".to_string(),
+                // A comma separates one type from the next in a card, so a
+                // label carrying one is a label that arrives cut short.
+                label: "Work, main".to_string(),
                 address: "grace@example.com".to_string(),
             },
             super::super::EmailEntry {
@@ -1659,17 +1907,21 @@ mod tests {
         ];
         let phones = vec![
             super::super::PhoneEntry {
-                label: "Mobile".to_string(),
+                // A colon ends the parameters and begins the value, so a label
+                // carrying one takes part of itself into the phone number.
+                label: "Ada: personal".to_string(),
                 number: "+44 7700 900123".to_string(),
             },
             super::super::PhoneEntry {
-                label: "Work".to_string(),
+                // A shipped dropdown value, and the one with a space in it.
+                label: "Work Fax".to_string(),
                 number: "+44 20 7946 0000".to_string(),
             },
         ];
         let addresses = vec![
             super::super::AddressEntry {
-                label: "Home".to_string(),
+                // A semicolon separates one parameter from the next.
+                label: "Home; the flat".to_string(),
                 street: "12 High Street; Flat 2".to_string(),
                 city: "London".to_string(),
                 state: "Greater London".to_string(),
@@ -1700,7 +1952,8 @@ mod tests {
             phone: Some("+44 7700 900123".to_string()),
             company: Some("Acme, Limited".to_string()),
             department: Some("Research".to_string()),
-            job_title: Some("Rear Admiral".to_string()),
+            // Long enough to be folded, and folded immediately after a space.
+            job_title: Some(a_value_with_its_space_at(FOLDS_AT - "TITLE:".len() - 1)),
             website: Some("https://example.com/grace".to_string()),
             address: Some(
                 "12 High Street; Flat 2, London, Greater London, SW1A 1AA, United Kingdom"
@@ -1709,7 +1962,8 @@ mod tests {
             birthday: Some("1906-12-09".to_string()),
             avatar_url: Some("https://example.com/grace.png".to_string()),
             notes: Some("Two lines\nand a semicolon; and a comma, too".to_string()),
-            nickname: Some("Amazing Grace".to_string()),
+            // Long enough to be folded, and folded immediately before a space.
+            nickname: Some(a_value_with_its_space_at(FOLDS_AT - "NICKNAME:".len())),
             relationship: Some("Colleague".to_string()),
             emails_json: serde_json::to_string(&emails).ok(),
             phones_json: serde_json::to_string(&phones).ok(),
@@ -1786,6 +2040,52 @@ mod tests {
             with_the_parts_a_card_cannot_carry_put_back(&read_back, &original),
             original,
             "the contact lost detail going out to a card and coming back"
+        );
+    }
+
+    #[test]
+    fn test_the_round_trip_fixtures_two_long_fields_really_fold_beside_a_space() {
+        // The round trip above cannot tell a fixture that exercises the fold
+        // boundary from one that does not: the fixture it replaced folded in
+        // the middle of "United Kingdom" and passed for months against a
+        // reader that ate a space. The two lengths here are counted rather
+        // than seen, so this counts them again from the card that came out. A
+        // filler with a comma in it, or a property renamed, moves the fold and
+        // nothing else would say so.
+        let original = a_contact_carrying_every_part_a_person_can_fill_in();
+        let out = a_cache("vcard_fold_boundary");
+        out.save_contact(&original).expect("the contact to save");
+        let card = out
+            .export_contacts_to_vcard(&original.account_id)
+            .expect("the export to run");
+        let lines: Vec<&str> = card.lines().collect();
+
+        let line_after = |name: &str| -> (&str, &str) {
+            let at = lines
+                .iter()
+                .position(|line| line.starts_with(name))
+                .unwrap_or_else(|| panic!("no {name} line in the card"));
+            (lines[at], lines[at + 1])
+        };
+
+        let (title, after_title) = line_after("TITLE:");
+        assert!(
+            title.ends_with(' '),
+            "the job title does not fold immediately after a space: {title:?}"
+        );
+        assert!(
+            !after_title.starts_with("  "),
+            "the job title folds in front of a space too, so one case covers both: {after_title:?}"
+        );
+
+        let (nickname, after_nickname) = line_after("NICKNAME:");
+        assert!(
+            !nickname.ends_with(' '),
+            "the nickname folds after a space too, so one case covers both: {nickname:?}"
+        );
+        assert!(
+            after_nickname.starts_with("  "),
+            "the nickname does not fold immediately before a space: {after_nickname:?}"
         );
     }
 
@@ -1993,8 +2293,23 @@ mod tests {
             // The first is the one worth saying.
             ("TEL;TYPE=WORK,VOICE", "Work"),
             ("TEL;TYPE=\"WORK,VOICE\"", "Work"),
+            ("TEL;TYPE=\"voice,home\"", "Voice"),
+            // A label somebody chose, which has to be quoted to survive and
+            // then comes back exactly as it was typed rather than tidied.
+            ("TEL;TYPE=\"Work, main\"", "Work, main"),
+            ("TEL;TYPE=\"Home; the flat\"", "Home; the flat"),
+            ("TEL;TYPE=\"Ada: personal\"", "Ada: personal"),
+            ("TEL;TYPE=\"Work Fax\"", "Work Fax"),
+            ("TEL;TYPE=\"Grandma's house\"", "Grandma's house"),
+            // A quoted value cannot hold a double quote, so RFC 6868 writes it
+            // and a caret with a caret in front.
+            ("TEL;TYPE=\"Ada ^'Bee^'\"", "Ada \"Bee\""),
+            ("TEL;TYPE=\"up^^down\"", "up^down"),
             // Another parameter first, which is also ordinary.
             ("TEL;PREF=1;TYPE=HOME", "Home"),
+            // A parameter in front of a quoted one carrying a semicolon: the
+            // semicolon inside the quotes does not end anything.
+            ("TEL;PREF=1;TYPE=\"Home; the flat\"", "Home; the flat"),
             // Nothing to go on.
             ("TEL", "Other"),
             ("TEL;TYPE=", "Other"),
@@ -2004,6 +2319,101 @@ mod tests {
                 MessageCache::extract_vcard_type_param(prefix),
                 expected,
                 "{prefix} was labelled wrongly"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_label_that_is_not_one_plain_word_is_written_in_quotes() {
+        // Pins the card this program writes rather than the round trip,
+        // because another client reads the card too. A colon ends the
+        // parameters, a semicolon separates one from the next and a comma
+        // separates one type from the next, so a label carrying any of them
+        // has to be quoted or it stops being that label. A plain word stays
+        // bare and in capitals, which is what TYPE=WORK looks like everywhere.
+        for (label, parameter) in [
+            ("Work", "TYPE=WORK"),
+            ("Mobile", "TYPE=MOBILE"),
+            ("Other", "TYPE=OTHER"),
+            ("Work Fax", "TYPE=\"Work Fax\""),
+            ("Work, main", "TYPE=\"Work, main\""),
+            ("Home; the flat", "TYPE=\"Home; the flat\""),
+            ("Ada: personal", "TYPE=\"Ada: personal\""),
+            ("Grandma's house", "TYPE=\"Grandma's house\""),
+            ("Ada \"Bee\"", "TYPE=\"Ada ^'Bee^'\""),
+            ("up^down", "TYPE=\"up^^down\""),
+        ] {
+            assert_eq!(
+                MessageCache::vcard_type_parameter(label),
+                parameter,
+                "{label:?} was written into a parameter wrongly"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_colon_inside_a_quoted_parameter_does_not_begin_the_value() {
+        // Pins the line reader on its own. Reading the value from the first
+        // colon anywhere, a label of "Ada: personal" left "PERSONAL:+44 7700
+        // 900999" as the phone number, so the label corrupted the number.
+        let (prefix, value) =
+            MessageCache::vcard_named("TEL;TYPE=\"Ada: personal\":+44 7700 900999", "TEL")
+                .expect("the line to be read as a TEL");
+
+        assert_eq!(prefix, "TEL;TYPE=\"Ada: personal\"");
+        assert_eq!(value, "+44 7700 900999");
+    }
+
+    #[test]
+    fn test_a_line_with_an_unbalanced_quote_is_still_read() {
+        // Cards come from other people's software. A quote that never closes
+        // is malformed, and dropping the whole property because of it loses
+        // more than reading the value from the first colon does.
+        let (_, value) = MessageCache::vcard_named("TEL;TYPE=\"broken:+44 7700 900999", "TEL")
+            .expect("the line to be read as a TEL");
+
+        assert_eq!(value, "+44 7700 900999");
+    }
+
+    #[test]
+    fn test_a_label_somebody_chose_comes_back_whole_and_the_number_with_it() {
+        // A label reaches this from a sync as well as from typing: a Google or
+        // Microsoft custom type such as "Grandma's house" or "Work, main"
+        // lands in the label verbatim, and task #116 exists to keep it. Pins
+        // the exporter and the importer together, one label at a time, so a
+        // failure names the label instead of showing a whole contact.
+        for label in [
+            "Work, main",
+            "Home; the flat",
+            "Ada: personal",
+            "Work Fax",
+            "Grandma's house",
+        ] {
+            let phones = vec![super::super::PhoneEntry {
+                label: label.to_string(),
+                number: "+44 7700 900999".to_string(),
+            }];
+            let original = ContactEntry {
+                phone: Some("+44 7700 900999".to_string()),
+                phones_json: serde_json::to_string(&phones).ok(),
+                ..a_contact_carrying_every_part_a_person_can_fill_in()
+            };
+
+            let read_back = out_to_a_card_and_back(&original);
+            let back: Vec<super::super::PhoneEntry> =
+                serde_json::from_str(read_back.phones_json.as_deref().expect("a phone list"))
+                    .expect("the phone list to read back");
+
+            assert_eq!(
+                back.len(),
+                1,
+                "{label:?} came back as {} numbers",
+                back.len()
+            );
+            assert_eq!(back[0].label, label, "the label did not come back whole");
+            assert_eq!(
+                back[0].number, "+44 7700 900999",
+                "part of the label {label:?} got into the phone number"
             );
         }
     }

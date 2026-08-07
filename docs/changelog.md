@@ -285,7 +285,7 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 - **A contact exported to a file and imported back is now the contact it was.**
   Exporting your contacts to a `.vcf` file and importing that file, which is how
   you move an address book to another machine or keep a copy of one, used to
-  lose six things. They are all fixed:
+  lose eight things. They are all fixed:
 
   - The given name and the family name were written nowhere at all, so a
     contact came back with a whole name and neither part. The card now carries
@@ -305,6 +305,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   - The address shown on a contact's main line came back as the raw line from
     the file, punctuation and all, which a screen reader reads out as a run of
     semicolons. It now reads the same after an import as it does after an edit.
+  - The label on a phone number, an email address or a postal address was cut
+    short, and one kind of label damaged the value beside it. A label is
+    whatever you picked in the contact editor or whatever your address book
+    called its own custom type, so "Work, main", "Home; the flat" and
+    "Grandma's house" are ordinary ones. A comma cut the label off at the
+    comma. A semicolon threw away everything after it. A colon did that and put
+    the rest of the label on the front of the phone number, so the number came
+    back wrong as well as the label: "Ada: personal" turned "+44 7700 900999"
+    into "PERSONAL:+44 7700 900999". Even "Work Fax", which is in the dropdown,
+    came back "Work fax". They all come back now exactly as they were.
+  - A space next to a line break in the file was eaten. The format breaks a
+    long line in two and marks the second half with a space, and reading it
+    back took off every space there rather than the one the break put in. A
+    county of "Tyne and Wear" came back "Tyneand Wear" whenever the break
+    landed beside that space. This was also an import fault: a card written by
+    any other program that broke a line in the same place arrived with two
+    words run together.
 
   Two things still do not survive, and this is the whole list:
 
@@ -320,12 +337,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
     this program does not invent one, because a property only this program
     understands would help it talk to itself and nothing else.
 
-  Two smaller notes. A file exported by an earlier build carries its own custom
-  fields in the old shape, whose names were already flattened into capitals, and
-  the new reader does not read them; everything else in such a file reads
-  normally. And exported cards now carry the structured name property that the
-  vCard 3.0 standard requires and this program never wrote, so a card exported
-  from here is valid where it used to be malformed.
+  Three smaller notes. A file exported by an earlier build carries its own
+  custom fields in the old shape, whose names were already flattened into
+  capitals, and the new reader does not read them; everything else in such a
+  file reads normally. Exported cards now carry the structured name property
+  that the vCard 3.0 standard requires and this program never wrote, so a card
+  exported from here is valid where it used to be malformed. And a label with
+  punctuation or a space in it is now written in quotes, which is what the
+  standard asks for, so other programs read it as one label rather than as the
+  end of the line.
+
+  One label shape is still lost, and it is the only one: two plain words with a
+  comma and no space between them, such as "Work,main", comes back as "Work". A
+  card cannot tell that apart from a list of two standard labels, which is what
+  `TYPE="voice,home"` means in a card written elsewhere, and reading the list
+  correctly is worth more. Put a space after the comma and the label survives.
+
+  None of the export or import work has been checked with a screen reader, and
+  none of it has run against a real account, which it does not need to: a `.vcf`
+  file is read and written here and nowhere else.
 
 - **An appointment whose title a calendar server wrote with a stray space no
   longer reaches the calendar twice.** The calendar standard puts no space
