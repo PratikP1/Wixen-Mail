@@ -404,7 +404,11 @@ pub async fn refresh_subscription(
     let remote_events = match ical_client.fetch_and_parse(url).await {
         Ok(events) => events,
         Err(e) => {
-            result.errors.push(format!("ICS fetch: {}", e));
+            // Not "fetch". Fetching and reading are two things that fail
+            // separately and the label used to name only the first, so a feed
+            // that arrived whole and could not be read was reported as a feed
+            // that never arrived. The error itself says which.
+            result.errors.push(format!("Calendar feed: {}", e));
             return Ok(result);
         }
     };
@@ -1109,6 +1113,118 @@ mod tests {
             "nothing went, so nothing should be announced as gone"
         );
         assert_eq!(result.updated, 1, "the one event it holds was refreshed");
+    }
+
+    #[tokio::test]
+    async fn test_a_feed_that_arrived_but_could_not_be_read_is_reported_and_keeps_what_it_held() {
+        // End to end, because the point of the message is that somebody sees
+        // it. The feed arrives whole and carries one event with no identifier,
+        // so nothing on it can be stored. Before this the calendar came back
+        // empty, the sync reported no errors at all, and the only thing to look
+        // at was an empty calendar.
+        let cache = temp_cache("feed_unreadable");
+        let mut calendar = container("sub-unreadable", "acct");
+        calendar.source_provider = Some("subscription".to_string());
+        cache
+            .save_calendar_event(&held_event("local-1", "held-1", &calendar.id, "acct"))
+            .expect("the event the cache already holds");
+
+        let (address, _heard) = answering(
+            "200 OK",
+            "text/calendar; charset=utf-8",
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nSUMMARY:No identifier\r\n\
+             END:VEVENT\r\nEND:VCALENDAR\r\n"
+                .to_string(),
+        )
+        .await;
+        calendar.subscription_url = Some(format!("http://{address}/feed.ics"));
+
+        let result =
+            refresh_subscription(&cache, &ICalSubscriptionClient::new(), &calendar, "acct")
+                .await
+                .expect("the refresh to finish");
+
+        assert_eq!(
+            result.errors.len(),
+            1,
+            "a feed that could not be read reported nothing: {:?}",
+            result.errors
+        );
+        assert!(
+            result.errors[0].to_lowercase().contains("read"),
+            "the message does not say what went wrong: {}",
+            result.errors[0]
+        );
+        assert!(
+            !result.errors[0].to_lowercase().contains("fetch"),
+            "the feed arrived, so calling this a fetch failure sends somebody \
+             looking at their network: {}",
+            result.errors[0]
+        );
+        assert_eq!(
+            cache
+                .get_events_for_calendar(&calendar.id)
+                .expect("the calendar to be readable")
+                .len(),
+            1,
+            "a feed nobody could read must not empty the calendar it stands for"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_calendar_whose_documents_could_not_be_read_is_reported_and_keeps_what_it_held()
+    {
+        // The same end to end on the server side. The answer carries one
+        // calendar document with no identifier in it, so the calendar reads as
+        // having nothing on it, and the events already stored must survive that
+        // rather than being taken as deleted at the server.
+        let cache = temp_cache("caldav_unreadable");
+        let mut calendar = container("cal-unreadable", "acct");
+        cache
+            .save_calendar_event(&held_event("local-1", "held-1", &calendar.id, "acct"))
+            .expect("the event the cache already holds");
+
+        let body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\
+             <d:response><d:href>/cal/x.ics</d:href><d:propstat><d:prop>\
+             <d:getetag>\"tag-x\"</d:getetag>\
+             <c:calendar-data>BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:No identifier\n\
+             END:VEVENT\nEND:VCALENDAR</c:calendar-data>\
+             </d:prop></d:propstat></d:response></d:multistatus>"
+            .to_string();
+        let (address, _heard) = answering("207 Multi-Status", "application/xml", body).await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "sam",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        assert_eq!(
+            result.errors.len(),
+            1,
+            "a calendar nothing could be read from reported nothing: {:?}",
+            result.errors
+        );
+        assert!(
+            result.errors[0].to_lowercase().contains("read"),
+            "the message does not say what went wrong: {}",
+            result.errors[0]
+        );
+        assert_eq!(
+            cache
+                .get_events_for_calendar(&calendar.id)
+                .expect("the calendar to be readable")
+                .len(),
+            1,
+            "an answer nobody could read must not empty the calendar it stands for"
+        );
     }
 
     #[tokio::test]

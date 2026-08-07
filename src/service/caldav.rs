@@ -673,8 +673,15 @@ fn resolved_against(href: &str, base_url: &str) -> String {
 }
 
 /// Parse REPORT multistatus response to extract events.
+///
+/// A document this cannot read is passed over, because one bad event must not
+/// cost somebody the other two hundred. When every document was passed over,
+/// though, that is not a calendar with nothing on it and it must not look like
+/// one: the two answers were the same empty list, and an empty calendar is
+/// exactly what somebody would then go looking for a broken account over.
 fn parse_report_events(xml: &str, calendar_url: &str) -> Result<Vec<CalDavEvent>> {
     let mut events = Vec::new();
+    let mut unreadable = 0_usize;
 
     for response_block in response_blocks(xml) {
         let href = extract_xml_value(response_block, "d:href").unwrap_or_default();
@@ -691,12 +698,30 @@ fn parse_report_events(xml: &str, calendar_url: &str) -> Result<Vec<CalDavEvent>
 
         // Parse the iCalendar data to extract event properties
         let at = resolved_against(&href, calendar_url);
-        if let Some(event) = parse_ical_vevent(&ical_data, &at, etag.as_deref()) {
-            events.push(event);
+        match parse_ical_vevent(&ical_data, &at, etag.as_deref()) {
+            Some(event) => events.push(event),
+            None => unreadable += 1,
         }
     }
 
+    if events.is_empty() && unreadable > 0 {
+        return Err(Error::Protocol(format!(
+            "The calendar server sent {} and none could be read. \
+             Nothing on this calendar was changed here.",
+            how_many(unreadable, "event")
+        )));
+    }
+
     Ok(events)
+}
+
+/// A count with the thing it counts, so a message reads as a sentence.
+pub(crate) fn how_many(count: usize, thing: &str) -> String {
+    if count == 1 {
+        format!("1 {thing}")
+    } else {
+        format!("{count} {thing}s")
+    }
 }
 
 /// Parse a single VEVENT from iCalendar data.
@@ -1289,24 +1314,95 @@ fn said_again(ours: &[String], numbered: u64) -> Vec<String> {
 /// A calendar document may break a long property across lines, each carrying on
 /// with a space or a tab. Read line by line, one property looks like a property
 /// and two lines of nonsense, and removing the property leaves the nonsense.
+///
+/// A document somebody laid out by hand uses that same white space to show what
+/// sits inside what, and the two cannot both be obeyed. Read as folding, every
+/// line of an indented document joins onto the first, so the whole file becomes
+/// one line with no identifier on it and the event is gone. [`laid_out_by_hand`]
+/// is the one shape where the difference can be told, and there the layout is
+/// taken off instead and nothing is joined.
 fn unfolded(document: &str) -> Vec<String> {
+    let separate: Vec<&str> = document
+        .split("\r\n")
+        .flat_map(|line| line.split('\n'))
+        .map(|line| line.strip_suffix('\r').unwrap_or(line))
+        .collect();
+
+    let mut lines: Vec<String> = if laid_out_by_hand(&separate) {
+        separate
+            .iter()
+            .map(|line| line.trim_start().to_string())
+            .collect()
+    } else {
+        put_back_together(&separate)
+    };
+
+    // A document ends with a line break, which splits into a last empty line.
+    while lines.last().is_some_and(|line| line.is_empty()) {
+        lines.pop();
+    }
+    lines
+}
+
+/// Lines with the ones the standard broke in two joined back onto their first
+/// part.
+fn put_back_together(separate: &[&str]) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
-    for line in document.split("\r\n").flat_map(|line| line.split('\n')) {
-        let line = line.strip_suffix('\r').unwrap_or(line);
+    for line in separate {
         match line.strip_prefix([' ', '\t']) {
             Some(carried_on) if !lines.is_empty() => {
                 if let Some(last) = lines.last_mut() {
                     last.push_str(carried_on);
                 }
             }
-            _ => lines.push(line.to_string()),
+            _ => lines.push((*line).to_string()),
         }
     }
-    // A document ends with a line break, which splits into a last empty line.
-    while lines.last().is_some_and(|line| line.is_empty()) {
-        lines.pop();
-    }
     lines
+}
+
+/// Whether this document's leading white space is somebody's layout rather than
+/// a line the standard broke in two.
+///
+/// RFC 5545 section 3.1 says a line beginning with white space carries on the
+/// line above, so reading it that way is the standard-correct reading and it is
+/// what happens everywhere this cannot tell. Hand-written and pretty-printed
+/// calendar files that indent do exist, though, and people subscribe to feeds
+/// they did not write, so where the difference *can* be told it is worth
+/// telling.
+///
+/// One shape tells it. White space directly after a line that opens or closes a
+/// component is layout, because what follows the colon on such a line is a
+/// component name: it holds no white space, `BEGIN:VEVENT` is twelve octets,
+/// and folding happens at seventy-five. No producer breaks one of those in two,
+/// so nothing there is carrying anything on.
+///
+/// A document indented only in the middle, where every indented line follows an
+/// ordinary property, is left as folding. That shape really is ambiguous and
+/// the standard's answer is the one to give.
+fn laid_out_by_hand(lines: &[&str]) -> bool {
+    let mut before: Option<&str> = None;
+    for line in lines {
+        if indented(line) && before.is_some_and(opens_or_closes_a_component) {
+            return true;
+        }
+        before = Some(*line);
+    }
+    false
+}
+
+/// Whether a line carries something and begins with white space.
+///
+/// A line of nothing but white space carries nothing, so it says nothing about
+/// how the document is laid out.
+fn indented(line: &str) -> bool {
+    line.starts_with([' ', '\t']) && !line.trim().is_empty()
+}
+
+/// Whether a line begins or ends a component, whatever is in front of it.
+fn opens_or_closes_a_component(line: &str) -> bool {
+    let named = line.trim_start();
+    opens_with_ignoring_case(named, "BEGIN:") || opens_with_ignoring_case(named, "END:")
 }
 
 /// The name of the property a line carries, if it carries one.
@@ -2064,6 +2160,128 @@ mod tests {
         );
     }
 
+    // ── A document somebody laid out by hand ────────────────────────────────
+    //
+    // The standard says a line starting with white space carries on the line
+    // above, so putting broken lines back together and reading an indented
+    // document are the same question given opposite answers. Reading it as
+    // folding is the standard-correct answer and it is what the reader does
+    // everywhere it cannot tell. These are the documents where it can tell.
+
+    #[test]
+    fn test_an_indented_document_is_read_rather_than_run_into_one_line() {
+        // Read as folding, every line here joins onto the one above it and the
+        // document ends as a single line with no identifier anywhere on it, so
+        // the event is dropped and nothing is said. Pretty-printed .ics files
+        // exist and people subscribe to feeds they did not write.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\n\x20\x20UID:p7\r\n\
+                    \x20\x20SUMMARY:Standup\r\n\x20\x20DTSTART:20260305T090000Z\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(event.uid, "p7");
+        assert_eq!(event.summary, "Standup");
+        assert_eq!(event.dtstart, "2026-03-05T09:00:00Z");
+    }
+
+    #[test]
+    fn test_a_document_indented_from_its_first_line_is_read() {
+        // The whole file laid out, markers and all, which is what a formatter
+        // leaves behind. The nesting is what tells this apart from folding: a
+        // line that opens or closes a component carries a component name,
+        // which is short and holds no white space, so no producer ever breaks
+        // one in two.
+        let ical = "\x20\x20BEGIN:VCALENDAR\r\n\x20\x20BEGIN:VEVENT\r\n\
+                    \x20\x20\x20\x20UID:p8\r\n\x20\x20\x20\x20SUMMARY:Review\r\n\
+                    \x20\x20\x20\x20DTSTART:20260306T140000Z\r\n\
+                    \x20\x20END:VEVENT\r\n\x20\x20END:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(event.uid, "p8");
+        assert_eq!(event.summary, "Review");
+    }
+
+    #[test]
+    fn test_an_indented_document_that_also_breaks_a_long_line_reads_that_one_short() {
+        // What this costs, pinned rather than left to be discovered. Once a
+        // document is known to be laid out by hand there is nothing left to
+        // tell a carried-on line from an indented one, because the layout and
+        // the single space a fold adds are the same white space. So the join
+        // is not made and a long value is read short. The event still reads,
+        // which is the whole trade: before this the document had no event in
+        // it at all.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\n\x20\x20UID:p9\r\n\
+                    \x20\x20SUMMARY:Quarterly planning review with the whole product and\r\n\
+                    \x20\x20\x20support team\r\n\
+                    \x20\x20DTSTART:20260305T090000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(event.uid, "p9");
+        assert_eq!(
+            event.summary, "Quarterly planning review with the whole product and",
+            "read short, and said so, rather than the event being lost"
+        );
+    }
+
+    #[test]
+    fn test_a_carried_on_line_that_reads_like_a_property_is_still_carried_on() {
+        // The layout rule must not widen into "anything that reads like a
+        // property is one". A note carried on with "Note: bring the numbers"
+        // reads exactly like a property line and is not one, and there is no
+        // layout anywhere in this document.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:p10\r\n\
+                    DTSTART:20260305T090000Z\r\n\
+                    DESCRIPTION:Last month's figures and the three questions. \r\n\
+                    \x20Note: bring the numbers\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(
+            event.description.as_deref(),
+            Some("Last month's figures and the three questions. Note: bring the numbers")
+        );
+    }
+
+    #[test]
+    fn test_a_line_of_nothing_but_white_space_does_not_decide_how_a_document_is_laid_out() {
+        // A blank line that happens to carry a space is not layout, and it is
+        // not carrying anything on either. Letting one of those settle the
+        // question would take the joins out of a document that really was
+        // broken in two, and cost a title.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\n\x20\r\nUID:p13\r\n\
+                    DTSTART:20260305T090000Z\r\n\
+                    SUMMARY:Quarterly planning review with the whole product and\r\n\
+                    \x20 support team\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(
+            event.summary,
+            "Quarterly planning review with the whole product and support team"
+        );
+    }
+
+    #[test]
+    fn test_a_document_broken_in_two_after_a_marker_line_is_still_read_as_folded_elsewhere() {
+        // The rule looks at the line above, so a document that never puts white
+        // space directly after a marker is untouched by it and every fold in it
+        // is still put back together.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:p11\r\n\
+                    SUMMARY:Standup\r\nDTSTART:20260305T090000Z\r\n\
+                    EXDATE:20260312T090000Z,20260319T090000Z,20260326T0900\r\n\
+                    \x2000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(
+            event.exception_dates.as_deref(),
+            Some("20260312T090000Z,20260319T090000Z,20260326T090000Z")
+        );
+    }
+
     /// A calendar server sends the timezone rules in the same document as the
     /// event, and those rules carry their own start date and their own repeat
     /// rule for when the clocks change.
@@ -2265,6 +2483,78 @@ mod tests {
             out.push_str(rng.pick(&pieces));
         }
         out
+    }
+
+    /// A multistatus answer carrying one calendar document per event.
+    fn an_answer_carrying(documents: &[&str]) -> String {
+        let blocks: String = documents
+            .iter()
+            .enumerate()
+            .map(|(n, document)| {
+                format!(
+                    "  <d:response>\n    <d:href>/dav/sam/work/e-{n}.ics</d:href>\n\
+                         <d:propstat><d:prop>\n      <d:getetag>\"v{n}\"</d:getetag>\n\
+                           <c:calendar-data>{document}</c:calendar-data>\n\
+                         </d:prop></d:propstat>\n  </d:response>\n"
+                )
+            })
+            .collect();
+        format!("<d:multistatus xmlns:d=\"DAV:\">\n{blocks}</d:multistatus>")
+    }
+
+    #[test]
+    fn test_a_calendar_whose_every_document_was_unreadable_says_so_rather_than_reading_as_empty() {
+        // "No events" and "nothing here could be read" are different things and
+        // they used to look the same: every document that would not read was
+        // passed over, and a calendar full of them came back as a calendar with
+        // nothing in it. Somebody looking at an empty calendar has no way to
+        // tell which of the two happened.
+        let answer = an_answer_carrying(&[
+            "BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:No identifier\nEND:VEVENT\nEND:VCALENDAR",
+            "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:no-start\nEND:VEVENT\nEND:VCALENDAR",
+        ]);
+
+        let refused = parse_report_events(&answer, "https://cal.example.com/dav/sam/work/")
+            .expect_err("a calendar that could not be read to say so");
+
+        let said = refused.to_string();
+        assert!(
+            said.contains("2 events"),
+            "it does not say how many: {said}"
+        );
+        assert!(
+            said.to_lowercase().contains("read"),
+            "it does not say what went wrong: {said}"
+        );
+    }
+
+    #[test]
+    fn test_a_calendar_the_server_says_is_empty_is_not_reported_as_a_failure() {
+        // The other of the two. An answer carrying no documents at all is a
+        // calendar with nothing on it, which is an ordinary thing for a
+        // calendar to be, and reporting it as a failure on every sync is how a
+        // warning somebody needs stops being read.
+        let answer = an_answer_carrying(&[]);
+
+        let events = parse_report_events(&answer, "https://cal.example.com/dav/sam/work/")
+            .expect("an empty calendar to read as empty");
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_a_calendar_with_one_document_it_could_not_read_still_gives_back_the_rest() {
+        // A single bad document must not take the whole calendar down with it.
+        let answer = an_answer_carrying(&[
+            "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:good\nDTSTART:20260305T090000Z\nEND:VEVENT\nEND:VCALENDAR",
+            "BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:No identifier\nEND:VEVENT\nEND:VCALENDAR",
+        ]);
+
+        let events = parse_report_events(&answer, "https://cal.example.com/dav/sam/work/")
+            .expect("the readable event to come back");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].uid, "good");
     }
 
     #[test]
@@ -2752,6 +3042,67 @@ pub(crate) mod writing_tests {
         assert_eq!(
             ical_with_the_event_changed(held, &as_it_was_changed_here("e-1")),
             None
+        );
+    }
+
+    #[test]
+    fn test_a_change_reaches_an_event_in_a_document_somebody_laid_out_by_hand() {
+        // The reader and the writer have to agree about where an event begins,
+        // or the mismatch is the same silent loss the case defect was: the
+        // reader offers the event, somebody edits it, and the writer finds
+        // nothing to write into. Both go through the same unfolding, so this
+        // holds them together.
+        let held = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\n\x20\x20UID:p12\r\n\
+                    \x20\x20SUMMARY:Old title\r\n\x20\x20DTSTART:20260305T090000Z\r\n\
+                    \x20\x20BEGIN:VALARM\r\n\x20\x20\x20\x20ACTION:DISPLAY\r\n\
+                    \x20\x20\x20\x20DESCRIPTION:Reminder\r\n\
+                    \x20\x20\x20\x20TRIGGER:-PT15M\r\n\x20\x20END:VALARM\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+        let read = parse_ical_vevent(held, "https://example.test/p12.ics", None).expect("an event");
+        let renamed = CalDavEvent {
+            summary: "New title".to_string(),
+            ..read
+        };
+
+        let changed =
+            ical_with_the_event_changed(held, &renamed).expect("the event to be found and changed");
+
+        assert!(
+            changed.contains("SUMMARY:New title"),
+            "the change never reached the document:\n{changed}"
+        );
+        assert!(
+            !changed.contains("Old title"),
+            "the server would be sent its own old title back:\n{changed}"
+        );
+        assert!(
+            changed.contains("DESCRIPTION:Reminder") && changed.contains("TRIGGER:-PT15M"),
+            "the alarm inside the event was not passed through:\n{changed}"
+        );
+    }
+
+    #[test]
+    fn test_a_document_whose_closing_marker_is_indented_is_not_run_into_the_line_above() {
+        // A closing marker is as short as an opening one and is folded just as
+        // never. Read as a carried-on line it joins onto the line above, and
+        // the document that then goes to the server has `END:VEVENT` and
+        // `END:VCALENDAR` on one line: the event never closes and neither does
+        // the calendar. The reader would not have noticed, because it looks for
+        // `END:VEVENT` anywhere and finds it there.
+        let held = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:p14\r\nSUMMARY:Old title\r\n\
+                    DTSTART:20260305T090000Z\r\nEND:VEVENT\r\n\x20\x20END:VCALENDAR\r\n";
+        let read = parse_ical_vevent(held, "https://example.test/p14.ics", None).expect("an event");
+        let renamed = CalDavEvent {
+            summary: "New title".to_string(),
+            ..read
+        };
+
+        let changed =
+            ical_with_the_event_changed(held, &renamed).expect("the event to be found and changed");
+
+        assert!(
+            changed.contains("END:VEVENT\r\nEND:VCALENDAR"),
+            "the event and the calendar close on the same line:\n{changed}"
         );
     }
 

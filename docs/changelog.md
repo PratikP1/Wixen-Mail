@@ -458,6 +458,53 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   meeting into nine o'clock in no zone at all, and that is nine o'clock wherever
   the reader happens to be.
 
+- **A calendar file laid out with indentation is read again.** The change above
+  that puts a broken line back together reads every line starting with a space
+  or a tab as the rest of the line before it, which is what the calendar
+  standard says such a line is. A file somebody laid out by hand, or ran through
+  a formatter, uses those same spaces to show what sits inside what. Read as
+  joins, the whole file ran together into a single line with no identifier
+  anywhere on it, so the event was dropped and nothing was said about it. A
+  calendar you subscribed to that was written that way showed as a calendar with
+  nothing on it.
+
+  A file is now read as laid out by hand wherever the two can be told apart,
+  which is a line with a space in front of it directly after a line that opens
+  or closes a block. Those lines carry a block name: it is short, it holds no
+  spaces, and no calendar program breaks one across two lines. The spaces are
+  taken off every line in such a file instead of being read as joins. Where the
+  two cannot be told apart, a line starting with a space is still read as the
+  rest of the line before it, because that is what the standard asks for.
+
+  What it costs, which is worth saying plainly: a file that is both laid out by
+  hand and has a long line broken across two now reads that one line short. Once
+  the layout is taken off there is nothing left to tell a join from an indent.
+  The event itself still reads, where before the file had no event in it at all.
+
+  The same layout also ran an event's closing line together with the calendar's
+  own closing line in a document being sent back to a server, so neither closed
+  properly. That is fixed by the same change.
+
+- **A calendar nothing could be read from no longer looks like a calendar with
+  nothing on it.** An event this program could not make sense of was passed
+  over, which is right, because one bad entry must not cost you the other two
+  hundred. When every entry was passed over the answer was the same empty list,
+  and an empty calendar is exactly what somebody then goes looking for a broken
+  account over.
+
+  A calendar sync, or a refresh of a calendar you subscribed to, that could read
+  none of what arrived now says so and says how many entries it could not read.
+  A calendar that really has nothing on it is still reported as the ordinary
+  thing it is. Nothing already stored is deleted in either case.
+
+  A feed that failed while being read was also being reported as a feed that
+  failed to arrive, which sends you looking at your network for something that
+  is not there. Those two now read differently.
+
+  Known limitation: this tells apart "nothing could be read" from "there was
+  nothing". It does not report the case in between, where most entries read and
+  a few did not. Those few are still passed over without a word.
+
 - **An event repeating on a weekday no month has is now shown once, and says
   so.** A monthly repeat can name which weekday of the month it falls on, such
   as the second Thursday. No month has a sixth Monday, but a rule could still

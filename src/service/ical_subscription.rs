@@ -56,8 +56,15 @@ impl ICalSubscriptionClient {
 }
 
 /// Parse a complete iCalendar (.ics) file into individual events.
+///
+/// An event this cannot read is passed over, so one bad entry in a holiday feed
+/// does not cost the other three hundred. When every one of them was passed
+/// over, that is not a feed with nothing on it and it must not look like one:
+/// both used to come back as the same empty list, and a subscribed calendar
+/// that quietly shows nothing is a calendar somebody trusts and should not.
 fn parse_ics(ical_data: &str) -> Result<Vec<CalDavEvent>> {
     let mut events = Vec::new();
+    let mut unreadable = 0_usize;
 
     // Split by VEVENT blocks. The markers are matched whatever case they are
     // written in, the same as the property names inside them, or a feed written
@@ -66,17 +73,29 @@ fn parse_ics(ical_data: &str) -> Result<Vec<CalDavEvent>> {
     let mut remaining = ical_data;
     while let Some(start) = crate::service::caldav::found_ignoring_case(remaining, "BEGIN:VEVENT") {
         let after = &remaining[start..];
-        if let Some(end) = crate::service::caldav::found_ignoring_case(after, "END:VEVENT") {
-            let vevent_block = &after[..end + "END:VEVENT".len()];
-            // Wrap in VCALENDAR for the parser
-            let full_ical = format!("BEGIN:VCALENDAR\r\n{}\r\nEND:VCALENDAR", vevent_block);
-            if let Some(event) = parse_ical_vevent(&full_ical, "", None) {
-                events.push(event);
-            }
-            remaining = &after[end + "END:VEVENT".len()..];
-        } else {
+        let Some(end) = crate::service::caldav::found_ignoring_case(after, "END:VEVENT") else {
+            // An event the feed opens and never closes. Nothing is guessed at,
+            // and it is still counted: a feed cut off partway through arriving
+            // is a reason a calendar is empty, not a calendar that is empty.
+            unreadable += 1;
             break;
+        };
+        let vevent_block = &after[..end + "END:VEVENT".len()];
+        // Wrap in VCALENDAR for the parser
+        let full_ical = format!("BEGIN:VCALENDAR\r\n{}\r\nEND:VCALENDAR", vevent_block);
+        match parse_ical_vevent(&full_ical, "", None) {
+            Some(event) => events.push(event),
+            None => unreadable += 1,
         }
+        remaining = &after[end + "END:VEVENT".len()..];
+    }
+
+    if events.is_empty() && unreadable > 0 {
+        return Err(Error::Protocol(format!(
+            "The calendar feed carried {} and none could be read. \
+             Nothing on this calendar was changed here.",
+            crate::service::caldav::how_many(unreadable, "event")
+        )));
     }
 
     Ok(events)
@@ -266,18 +285,59 @@ END:VCALENDAR"#;
     }
 
     #[test]
-    fn test_unterminated_event_is_ignored_rather_than_guessed_at() {
+    fn test_unterminated_event_is_ignored_rather_than_guessed_at_and_the_feed_says_so() {
+        // Nothing is guessed at: a feed cut off partway through carries an
+        // event nobody can say the end of. It is still counted as one that
+        // could not be read, because a truncated feed showing as an empty
+        // calendar is the same silence by another route.
         let feed = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:x\r\nSUMMARY:Never closed";
-        assert!(parse_ics(feed).unwrap().is_empty());
+
+        let refused = parse_ics(feed).expect_err("a feed cut off partway to say so");
+
+        assert!(
+            refused.to_string().to_lowercase().contains("read"),
+            "it does not say what went wrong: {refused}"
+        );
     }
 
     #[test]
-    fn test_event_without_a_uid_is_skipped() {
+    fn test_event_without_a_uid_is_not_stored_and_the_feed_says_why_it_is_empty() {
         // A UID is how an event is matched on the next sync. Without one there
-        // is no way to update or delete it later, so it is not stored.
+        // is no way to update or delete it later, so it is not stored. What it
+        // must not do is leave the calendar looking empty with nothing said:
+        // "this feed has nothing on it" and "nothing on this feed could be
+        // read" are different things somebody needs told apart.
         let feed =
             "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Anonymous\r\nEND:VEVENT\r\nEND:VCALENDAR";
-        assert!(parse_ics(feed).unwrap().is_empty());
+
+        let refused = parse_ics(feed).expect_err("a feed that could not be read to say so");
+
+        let said = refused.to_string();
+        assert!(
+            said.to_lowercase().contains("read"),
+            "it does not say what went wrong: {said}"
+        );
+        assert!(
+            said.contains("1 event and"),
+            "one of a thing is not several of it: {said}"
+        );
+    }
+
+    #[test]
+    fn test_an_indented_feed_is_read_rather_than_run_into_one_line() {
+        // A feed somebody laid out by hand, or ran through a formatter. Read
+        // as folding it has no identifier on it anywhere and shows as a
+        // calendar with nothing in it.
+        let feed = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\n\x20\x20UID:holiday-1\r\n\
+                    \x20\x20SUMMARY:Bank holiday\r\n\x20\x20DTSTART;VALUE=DATE:20260406\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let events = parse_ics(feed).expect("a feed to read");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].uid, "holiday-1");
+        assert_eq!(events[0].summary, "Bank holiday");
+        assert!(events[0].is_all_day);
     }
 
     #[test]
