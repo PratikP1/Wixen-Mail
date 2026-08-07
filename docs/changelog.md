@@ -231,6 +231,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A contact card written in small letters imports now.** The card format says
+  a property name means the same however it is written, and plenty of software
+  writes them in small letters. This program read them only in capitals, so a
+  file exported by that software imported as nothing at all and the import
+  reported that it had run. Cards are now read whatever case they are written
+  in. A property name is also matched in full rather than as a prefix, so a
+  `TELEPHONE` line no longer fills in a phone number, and a photo carried in the
+  card is recognised in both of the ways clients write it rather than only one.
+
 - **The sign-in pages your browser shows are readable pages now.** When you sign
   in to Gmail or Outlook, the provider sends your browser back to a page this
   program serves, and that page is the one part of signing in you meet as a web

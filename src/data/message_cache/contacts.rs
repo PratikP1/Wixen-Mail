@@ -383,8 +383,7 @@ impl MessageCache {
     /// Import contacts from a vCard string
     pub fn import_contacts_from_vcard(&self, account_id: &str, vcard_data: &str) -> Result<usize> {
         let mut imported = 0usize;
-        for block in vcard_data.split("BEGIN:VCARD").skip(1) {
-            let entry = format!("BEGIN:VCARD{}", block);
+        for entry in Self::cards_in(vcard_data) {
             if let Some(mut contact) = Self::contact_from_vcard_block(account_id, &entry) {
                 // A card carries no identifier this application keeps, so the
                 // address is what says the same card read twice is one person.
@@ -742,6 +741,57 @@ impl MessageCache {
         }
     }
 
+    /// Each card in a file, from the line that opens it to the line before the
+    /// next one opens.
+    ///
+    /// The marker is matched at the start of a line and whatever case it is
+    /// written in, because the standard says the name means the same either
+    /// way and because the exporter beside this writes the same marker. Split
+    /// on capitals anywhere, an address book exported by software that writes
+    /// in small letters imported as nothing at all, and a NOTE that mentioned
+    /// `BEGIN:VCARD` cut a card in half.
+    fn cards_in(vcard_data: &str) -> Vec<String> {
+        let mut cards: Vec<String> = Vec::new();
+        for raw in vcard_data.lines() {
+            let opens_a_card = Self::vcard_named(raw.trim(), "BEGIN")
+                .is_some_and(|(_, names)| names.trim().eq_ignore_ascii_case("VCARD"));
+            if opens_a_card {
+                cards.push(String::new());
+            }
+            if let Some(card) = cards.last_mut() {
+                card.push_str(raw);
+                card.push_str("\r\n");
+            }
+        }
+        cards
+    }
+
+    /// What a card line carries for a property: the parameters in front of the
+    /// value and the value itself, or nothing if the line names another
+    /// property.
+    ///
+    /// A property name is followed by ':' or by ';' introducing parameters, as
+    /// in `EMAIL;TYPE=WORK:sam@example.com`. Matched as a bare prefix instead,
+    /// a `TELEPHONE` line satisfied a request for `TEL` and filled somebody's
+    /// phone number in with something that was not one.
+    ///
+    /// The name is matched whatever case it is written in. RFC 6350 section 3.3
+    /// says it means the same either way, and cards are written by other
+    /// people's software. The exporter beside this one writes capitals, so a
+    /// reader that only accepts capitals is a reader that disagrees with every
+    /// writer but its own.
+    fn vcard_named<'a>(line: &'a str, property: &str) -> Option<(&'a str, &'a str)> {
+        let (name, rest) = line.split_at_checked(property.len())?;
+        if !name.eq_ignore_ascii_case(property) {
+            return None;
+        }
+        if !rest.starts_with(':') && !rest.starts_with(';') {
+            return None;
+        }
+        let at = rest.find(':')?;
+        Some((&line[..property.len() + at], &rest[at + 1..]))
+    }
+
     fn contact_from_vcard_block(account_id: &str, block: &str) -> Option<ContactEntry> {
         let mut name = String::new();
         let mut primary_email = String::new();
@@ -761,82 +811,73 @@ impl MessageCache {
         let mut addresses: Vec<super::AddressEntry> = Vec::new();
 
         for line in Self::unfold_vcard_lines(block) {
-            if let Some(value) = line.strip_prefix("FN:") {
+            if let Some((_, value)) = Self::vcard_named(&line, "FN") {
                 name = Self::unescape_vcard_text(value.trim());
-            } else if line.starts_with("NICKNAME") {
-                if let Some((_, value)) = line.split_once(':') {
-                    nickname = Some(Self::unescape_vcard_text(value.trim()));
+            } else if let Some((_, value)) = Self::vcard_named(&line, "NICKNAME") {
+                nickname = Some(Self::unescape_vcard_text(value.trim()));
+            } else if let Some((prefix, value)) = Self::vcard_named(&line, "EMAIL") {
+                let addr = Self::unescape_vcard_text(value.trim());
+                let label = Self::extract_vcard_type_param(prefix);
+                emails.push(super::EmailEntry {
+                    label,
+                    address: addr.clone(),
+                });
+                if primary_email.is_empty() {
+                    primary_email = addr;
                 }
-            } else if line.starts_with("EMAIL") {
-                if let Some((prefix, value)) = line.split_once(':') {
-                    let addr = Self::unescape_vcard_text(value.trim());
-                    let label = Self::extract_vcard_type_param(prefix);
-                    emails.push(super::EmailEntry {
-                        label,
-                        address: addr.clone(),
-                    });
-                    if primary_email.is_empty() {
-                        primary_email = addr;
+            } else if let Some((prefix, value)) = Self::vcard_named(&line, "TEL") {
+                let num = Self::unescape_vcard_text(value.trim());
+                let label = Self::extract_vcard_type_param(prefix);
+                phones.push(super::PhoneEntry {
+                    label,
+                    number: num.clone(),
+                });
+                if phone.is_none() {
+                    phone = Some(num);
+                }
+            } else if let Some((_, value)) = Self::vcard_named(&line, "ORG") {
+                company = Some(Self::unescape_vcard_text(value.trim()));
+            } else if let Some((_, value)) = Self::vcard_named(&line, "TITLE") {
+                job_title = Some(Self::unescape_vcard_text(value.trim()));
+            } else if let Some((_, value)) = Self::vcard_named(&line, "URL") {
+                website = Some(Self::unescape_vcard_text(value.trim()));
+            } else if let Some((prefix, value)) = Self::vcard_named(&line, "ADR") {
+                let raw = Self::unescape_vcard_text(value.trim());
+                let label = Self::extract_vcard_type_param(prefix);
+                let parts: Vec<&str> = raw.split(';').collect();
+                let addr_entry = super::AddressEntry {
+                    label,
+                    street: parts.get(2).unwrap_or(&"").to_string(),
+                    city: parts.get(3).unwrap_or(&"").to_string(),
+                    state: parts.get(4).unwrap_or(&"").to_string(),
+                    zip: parts.get(5).unwrap_or(&"").to_string(),
+                    country: parts.get(6).unwrap_or(&"").to_string(),
+                };
+                addresses.push(addr_entry);
+                if address.is_none() {
+                    address = Some(raw);
+                }
+            } else if let Some((_, value)) = Self::vcard_named(&line, "BDAY") {
+                birthday = Some(Self::unescape_vcard_text(value.trim()));
+            } else if let Some((_, value)) = Self::vcard_named(&line, "NOTE") {
+                notes = Some(Self::unescape_vcard_text(value.trim()));
+            } else if let Some((prefix, value)) = Self::vcard_named(&line, "PHOTO") {
+                // A photo arrives either as an address to fetch it from or as
+                // the picture itself, and which one it is is said by the
+                // parameters rather than by the property name. The picture is
+                // folded across many lines, so the spaces that carried it come
+                // back in the middle of the data and have to come out again.
+                match Self::says_the_value_is_inline(prefix) {
+                    true => {
+                        avatar_data_base64 = Some(
+                            value
+                                .chars()
+                                .filter(|character| !character.is_whitespace())
+                                .collect(),
+                        )
                     }
+                    false => avatar_url = Some(Self::unescape_vcard_text(value.trim())),
                 }
-            } else if line.starts_with("TEL") {
-                if let Some((prefix, value)) = line.split_once(':') {
-                    let num = Self::unescape_vcard_text(value.trim());
-                    let label = Self::extract_vcard_type_param(prefix);
-                    phones.push(super::PhoneEntry {
-                        label,
-                        number: num.clone(),
-                    });
-                    if phone.is_none() {
-                        phone = Some(num);
-                    }
-                }
-            } else if line.starts_with("ORG") {
-                if let Some((_, value)) = line.split_once(':') {
-                    company = Some(Self::unescape_vcard_text(value.trim()));
-                }
-            } else if line.starts_with("TITLE") {
-                if let Some((_, value)) = line.split_once(':') {
-                    job_title = Some(Self::unescape_vcard_text(value.trim()));
-                }
-            } else if line.starts_with("URL") {
-                if let Some((_, value)) = line.split_once(':') {
-                    website = Some(Self::unescape_vcard_text(value.trim()));
-                }
-            } else if line.starts_with("ADR") {
-                if let Some((prefix, value)) = line.split_once(':') {
-                    let raw = Self::unescape_vcard_text(value.trim());
-                    let label = Self::extract_vcard_type_param(prefix);
-                    let parts: Vec<&str> = raw.split(';').collect();
-                    let addr_entry = super::AddressEntry {
-                        label,
-                        street: parts.get(2).unwrap_or(&"").to_string(),
-                        city: parts.get(3).unwrap_or(&"").to_string(),
-                        state: parts.get(4).unwrap_or(&"").to_string(),
-                        zip: parts.get(5).unwrap_or(&"").to_string(),
-                        country: parts.get(6).unwrap_or(&"").to_string(),
-                    };
-                    addresses.push(addr_entry);
-                    if address.is_none() {
-                        address = Some(raw);
-                    }
-                }
-            } else if line.starts_with("BDAY") {
-                if let Some((_, value)) = line.split_once(':') {
-                    birthday = Some(Self::unescape_vcard_text(value.trim()));
-                }
-            } else if line.starts_with("NOTE") {
-                if let Some((_, value)) = line.split_once(':') {
-                    notes = Some(Self::unescape_vcard_text(value.trim()));
-                }
-            } else if line.starts_with("PHOTO;ENCODING=b:") {
-                avatar_data_base64 = line
-                    .split_once(':')
-                    .map(|(_, v)| v.chars().filter(|c| !c.is_whitespace()).collect::<String>());
-            } else if line.starts_with("PHOTO:") {
-                avatar_url = line
-                    .split_once(':')
-                    .map(|(_, v)| Self::unescape_vcard_text(v.trim()));
             }
         }
 
@@ -896,6 +937,19 @@ impl MessageCache {
             pending: false,
             known_to: Vec::new(),
         })
+    }
+
+    /// Whether a property's parameters say the value is the thing itself rather
+    /// than an address to fetch it from.
+    ///
+    /// `PHOTO;ENCODING=b:` and `PHOTO;ENCODING=BASE64:` both say so, and both
+    /// are written by real clients. Read only in the first shape and only in
+    /// capitals, a picture came back as somebody's website address.
+    fn says_the_value_is_inline(parameters: &str) -> bool {
+        parameters
+            .split(';')
+            .filter_map(|part| part.split_once('='))
+            .any(|(name, _)| name.eq_ignore_ascii_case("ENCODING"))
     }
 
     /// The label a vCard property carries, as something worth reading out.
@@ -1313,6 +1367,91 @@ mod tests {
                 .expect("contacts to be readable")
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn test_a_card_written_in_small_letters_is_read_the_same_as_one_in_capitals() {
+        // The card standard says a property name means the same however it is
+        // written, and cards come from other people's software. Matched in
+        // capitals only, a whole address book imported as nothing at all and
+        // the import reported that it had run.
+        let cache = a_cache("vcard_small_letters");
+
+        let imported = cache
+            .import_contacts_from_vcard(
+                "acc-1",
+                "begin:vcard\r\nversion:3.0\r\nfn:Grace Hopper\r\n\
+                 nickname:Amazing Grace\r\nemail;type=work:grace@example.com\r\n\
+                 tel;type=cell:+1 555 0100\r\norg:Navy\r\ntitle:Rear Admiral\r\n\
+                 url:https://example.com/grace\r\nbday:1906-12-09\r\n\
+                 note:Coined the term bug\r\nend:vcard\r\n",
+            )
+            .expect("the import to run");
+
+        assert_eq!(imported, 1, "a card in small letters imported as nothing");
+        let contacts = cache
+            .get_contacts_for_account("acc-1")
+            .expect("contacts to be readable");
+        let read = &contacts[0];
+        assert_eq!(read.name, "Grace Hopper");
+        assert_eq!(read.email, "grace@example.com");
+        assert_eq!(read.nickname.as_deref(), Some("Amazing Grace"));
+        assert_eq!(read.phone.as_deref(), Some("+1 555 0100"));
+        assert_eq!(read.company.as_deref(), Some("Navy"));
+        assert_eq!(read.job_title.as_deref(), Some("Rear Admiral"));
+        assert_eq!(read.website.as_deref(), Some("https://example.com/grace"));
+        assert_eq!(read.birthday.as_deref(), Some("1906-12-09"));
+        assert_eq!(read.notes.as_deref(), Some("Coined the term bug"));
+    }
+
+    #[test]
+    fn test_two_cards_in_small_letters_are_two_contacts_and_not_one() {
+        // Splitting a file into cards is the other half of the same question,
+        // and it was answered in capitals while the exporter beside it wrote
+        // the marker. A file in small letters split into no cards at all.
+        let cache = a_cache("vcard_small_letters_split");
+
+        let imported = cache
+            .import_contacts_from_vcard(
+                "acc-1",
+                "begin:vcard\r\nversion:3.0\r\nfn:First Person\r\n\
+                 email:first@example.com\r\nend:vcard\r\n\
+                 begin:vcard\r\nversion:3.0\r\nfn:Second Person\r\n\
+                 email:second@example.com\r\nend:vcard\r\n",
+            )
+            .expect("the import to run");
+
+        assert_eq!(imported, 2, "a file of two cards imported as {imported}");
+        let mut names: Vec<String> = cache
+            .get_contacts_for_account("acc-1")
+            .expect("contacts to be readable")
+            .into_iter()
+            .map(|contact| contact.name)
+            .collect();
+        names.sort();
+        assert_eq!(names, ["First Person", "Second Person"]);
+    }
+
+    #[test]
+    fn test_a_property_name_with_more_letters_on_it_is_not_the_property() {
+        // "TELEPHONE" is not "TEL" and "ORGANISER" is not "ORG". Matched as a
+        // prefix, a name nobody here models filled in a field somebody reads.
+        let cache = a_cache("vcard_longer_name");
+
+        cache
+            .import_contacts_from_vcard(
+                "acc-1",
+                "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Grace Hopper\r\n\
+                 EMAIL:grace@example.com\r\nTELEPHONE:not a phone number\r\n\
+                 ORGANISER:not a company\r\nEND:VCARD\r\n",
+            )
+            .expect("the import to run");
+
+        let contacts = cache
+            .get_contacts_for_account("acc-1")
+            .expect("contacts to be readable");
+        assert_eq!(contacts[0].phone, None, "TELEPHONE was read as TEL");
+        assert_eq!(contacts[0].company, None, "ORGANISER was read as ORG");
     }
 
     #[test]
