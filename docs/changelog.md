@@ -255,10 +255,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   address while the sign-in was open, which is a two minute window, could
   therefore put its own markup into a page you were reading, in the middle of
   signing in to your mail. Those two values are no longer on the page at all.
-  Wixen Mail still shows what came back, in its own window as text, so you can
-  still see why a sign-in failed. It is now shown as a single line and cut off
-  if it is very long, so one reply cannot fill the window or read aloud for a
-  minute.
+  Wixen Mail still shows what came back through your browser, in its own window
+  as text, so you can still see why a sign-in failed. It is now shown as a
+  single line and cut off if it is very long, so one reply cannot fill the
+  window or read aloud for a minute. A provider can refuse a second way as well,
+  in its answer to the request this program makes for your access token, and
+  both ways now go through the same limit.
 
   Known limitation, and it is not fixed: while it waits, the sign-in listens on
   every network connection this computer has rather than only on the computer
@@ -412,16 +414,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   matched.
 
   An event from a server that writes them in small letters never reached the
-  calendar at all. It was not read with pieces missing: the identifier and the
-  start time are the two things an event cannot be read without, so the whole
-  appointment was dropped as it arrived, with nothing said about why. A
-  subscribed feed written the same way was split into no events and showed as an
-  empty calendar.
+  calendar at all. Nothing arrived half read: the identifier and the start time
+  are the two things an event cannot be read without, so the whole appointment
+  was dropped as it arrived, with nothing said about why. A subscribed feed
+  written the same way was split into no events and showed as an empty calendar.
 
-  Both are now read, property names and the lines that open and close an event
-  alike. Almost every server and every publisher writes these in capitals, so
-  this may never have reached anybody. Nothing was lost for good: the server
-  keeps the document and every sync reads the whole of it afresh.
+  Property names and the lines that open and close an event are now matched in
+  either case, in a calendar from a server and in a subscribed feed alike.
+
+  That alone did not make such a calendar usable, and three entries below are
+  the rest of it. The zone a meeting is in was matched in capitals only, so a
+  calendar in small letters was read right down to the appointment and came back
+  with no zone on it. The two letters that shape a timestamp were matched in
+  capitals only, so the start was not something the calendar could show on a day.
+  And the half of this program that writes a change back was still looking for
+  capitals, so an edit to such an event was thrown away without a word. The four
+  together are what makes a calendar written in small letters read, and stay
+  read when you change something on it.
+
+  Almost every server and every publisher writes these in capitals, so this may
+  never have reached anybody. Nothing that was read is lost for good: the server
+  keeps the document and every sync reads the whole of it afresh. An edit thrown
+  away is a different matter, and the entry about the writer says what that cost.
 
 - **A change to an event written in small letters now reaches the calendar
   server.** Making such an event readable, above, also made it editable, and the
@@ -527,6 +541,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   What it costs, which is worth saying plainly: a file that is both laid out by
   hand and has a long line broken across two now reads that one line short. Once
   the layout is taken off there is nothing left to tell a join from an indent.
+
+  There is a sharper edge to that, and it is not fixed. The second half of a
+  broken line then stands on its own, and where it happens to begin with a
+  property name and a colon it is read as that property. A note carrying on with
+  "Location: the car park" gives the appointment that place instead of the one
+  written on its own line further down. It needs a file that is indented and
+  broken and broken at exactly that word, so it is unlikely, and the alternative
+  is guessing at which lines read like properties, which is the guesswork this
+  rule exists to avoid.
+
   The event itself still reads, where before the file had no event in it at all.
 
   The same layout also ran an event's closing line together with the calendar's
@@ -2176,34 +2200,11 @@ live account or a live calendar server:
   translating the month names, the relative wording and eventually every other
   string, which is a piece of work rather than a line change.
 
-- **An event that repeats is shown once.** The rule it repeats by is stored, and
-  nothing turns that rule into the occurrences it stands for, so a weekly
-  meeting appears on one day and nothing says it comes round again. This is true
-  of Google, Microsoft and CalDAV calendars alike.
-- **A calendar change made here is not sent to a CalDAV server.** Reading a
-  calendar is built; writing one back is not, so an event you make or change
-  stays on this computer and the next sync overwrites a change to an event the
-  server also holds.
-- **A calendar change made here is not sent to Google or Outlook either.** The
-  same is true of both: an event you make or change stays on this computer. The
-  groundwork so that sending one will not destroy anything is in, and nothing
-  calls it yet. Nothing here has ever run against a live calendar account.
-- **Emptying a description or a location cannot be sent.** Once sending a
-  calendar change is built, clearing one of those fields will read the same as
-  leaving it alone, so the old text will stay at the service. Setting new text
-  works. This is deliberate for now: the way to tell the two apart is the same
-  way a field is sent by accident, and destroying what somebody wrote is the
-  worse of the two failures.
-- **There is no way to add a calendar by its address.** Neither a CalDAV server
-  address nor a subscription feed can be entered anywhere, so the calendar sync
-  described above cannot currently run at all. None of it has been tried against
-  a live server.
-- **A category on an event is never read out.** You can type one, it is kept
-  through an edit and through a sync, and it is offered back the next time you
-  file an event, so the writing half works. Nothing says it: an event read
-  aloud gives its title, its time and where it is, and never its category. So
-  telling a birthday from a dentist appointment by ear, which is what a
-  category is for here, still means opening each one.
+Six limitations that stood here have been closed further up this same release
+and their notes have gone with them: a repeating event now shows on every day it
+falls on, a change made here reaches a CalDAV server and Google and Outlook
+alike, emptying a field empties it at the provider, a calendar can be added by
+its address, and an event read aloud says its category.
 
 ### Added
 
@@ -2587,7 +2588,7 @@ live account or a live calendar server:
 - Earcons are Windows-only for now. On macOS and Linux the sound channel is silent and the text channels carry the event on their own; a port needs its own audio path.
 - Feedback preferences are per channel, not per event. The per-event overrides exist in the model and have no interface yet, because a grid of nine events by four channels is not the choice most people are making.
 - Threading runs over the loaded folder rather than incrementally as mail arrives. The `References` headers are now stored by the sync, so conversations form from real mail; rethreading still happens when a folder is opened rather than as messages arrive.
-- **Check Mail brings down the newest 500 messages in each folder**, not the whole mailbox. Reading further back needs paging, which is not built. The count of what is on the server is reported, so the gap is visible rather than silent.
+- **Check Mail brings down the newest 500 messages in each folder**, not the whole mailbox. Reading further back is Get older messages, `Shift+F9`, a page at a time. The count of what is on the server is reported, so the gap is visible rather than silent.
 - **The junk folder is not synced.** Downloading it costs the whole of it and fills the client with mail you did not ask for. It can still be opened.
 - **Deleting a message on a server without UIDPLUS marks it rather than removing it.** The only alternative such a server offers is a bare EXPUNGE, which removes every message in the mailbox marked deleted, including ones another client marked. That is somebody else's mail. The result says which happened rather than reporting a deletion that did not occur.
 - **The folder tree is one flat level.** Nested mailboxes are listed by their full path, so `Archive/2026` reads as itself rather than as a second folder called `2026`. A real hierarchy is a separate piece of work.
@@ -2602,7 +2603,7 @@ live account or a live calendar server:
 - **Five new modules alongside mail**: calendar, contacts, reminders, tasks, and notes. All six share one window and one focus model. Switch between them with `Ctrl+Shift+1` through `Ctrl+Shift+6`.
 - **Calendar and contact sync** through the Google and Microsoft Graph APIs, with incremental sync using Google sync tokens and Microsoft delta links.
 - **CalDAV support** for providers that offer no REST API, and read-only iCal subscription feeds.
-- **Storage for the new modules** in the existing encrypted cache: calendars, calendar events, reminders, task lists, tasks, note folders, and notes.
+- **Storage for the new modules** in the existing cache on this computer: calendars, calendar events, reminders, task lists, tasks, note folders, and notes. That cache is not encrypted, which is written down in [the alpha testing notes](ALPHA_TESTING.md) rather than implied away here.
 - **Calendar display settings**: default view, weekend visibility, first day of the week, and reminder lead time.
 - **Message delete and read-toggle** now reach the cache. Both actions were already in the context menu with nothing behind them.
 - **The calendar, contacts, reminders, tasks, and notes panels now show your data.** Opening a module reads its records from the local cache and fills the panel. Every one of these panels previously rendered empty in a running build no matter what was stored, because nothing connected the storage to the display.
