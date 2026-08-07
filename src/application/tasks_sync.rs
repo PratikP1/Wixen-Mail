@@ -2476,6 +2476,11 @@ mod tests {
 
         assert_eq!(result.errors.len(), 1, "{:?}", result.errors);
         assert!(
+            result.summary().contains("1 problem"),
+            "a refusal nobody hears about is a refusal nobody acts on: {}",
+            result.summary()
+        );
+        assert!(
             !result.needs_sign_in,
             "an ordinary refusal was read as a permission one"
         );
@@ -2558,6 +2563,11 @@ mod tests {
         .await;
 
         assert_eq!(result.local_only, 1);
+        assert!(
+            result.summary().contains("1 kept on this computer"),
+            "the task was counted and the person was told nothing: {}",
+            result.summary()
+        );
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         assert_eq!(result.sent, 0);
         assert_eq!(
@@ -2600,6 +2610,11 @@ mod tests {
         assert_eq!(
             result.deleted, 0,
             "a note about a task this computer never had was counted as a removal"
+        );
+        assert!(
+            !result.summary().contains("removed"),
+            "nothing went, and somebody was told something had: {}",
+            result.summary()
         );
         assert!(result.errors.is_empty(), "{:?}", result.errors);
     }
@@ -3399,6 +3414,12 @@ mod tests {
 
         assert_eq!(result.unchanged, 1);
         assert_eq!(result.stored, 0);
+        assert!(
+            result.summary().contains("1 unchanged"),
+            "on a full re-read this is the difference between a list nothing \
+             happened to and every task in it reported as changed: {}",
+            result.summary()
+        );
         assert_eq!(
             cache
                 .find_task("ms:a")
@@ -3596,6 +3617,11 @@ mod tests {
         .await;
 
         assert_eq!(result.sent, 1, "a deletion that landed was not counted");
+        assert!(
+            result.summary().contains("1 of yours sent"),
+            "a deletion that landed was counted and never said: {}",
+            result.summary()
+        );
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         assert!(
             !result.needs_sign_in,
@@ -3639,6 +3665,11 @@ mod tests {
         .await;
 
         assert_eq!(result.sent, 1, "a change that landed was not counted");
+        assert!(
+            result.summary().contains("1 of yours sent"),
+            "the sentence this test's own note is about was not said: {}",
+            result.summary()
+        );
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         assert!(
             cache

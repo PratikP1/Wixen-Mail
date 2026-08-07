@@ -3378,6 +3378,12 @@ mod tests {
 
         assert_eq!(result.deleted, 1, "one event went, so the summary says one");
         assert!(
+            what_the_calendar_sync_did(&result).contains("1 deleted"),
+            "the line above says the summary says one and nothing here asked \
+             it: {}",
+            what_the_calendar_sync_did(&result)
+        );
+        assert!(
             cache
                 .get_event_by_provider_id("acct", "ms-1")
                 .expect("the calendar to be readable")
