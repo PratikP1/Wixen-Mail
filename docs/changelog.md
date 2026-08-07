@@ -400,6 +400,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   recognised as a block of its own, which would have moved the alert to the
   appointment's time and made it read out the appointment's title.
 
+- **Editing a repeating event no longer wrecks the occurrences you had moved.**
+  When you move or retitle a single occurrence of a repeating event, a calendar
+  server keeps the series and each changed occurrence together in one document.
+  Saving any change to that event wrote this program's version of it into every
+  occurrence in the document, not just the series, and it wrote them all into
+  the same place. So the series came out with two titles, two start times and
+  two repeat rules, which is not a valid event and which some servers will
+  refuse outright, and every occurrence you had moved lost its own title and its
+  own time and was left as nothing but a marker saying which week it replaced.
+
+  Only the series is changed now, and every occurrence changed on its own is
+  passed through exactly as the server had it. This one has nothing to do with
+  letter case. It was found while fixing the entries above and it was there
+  before them.
+
+  What was lost is not recoverable from here, but it was almost certainly never
+  lost: nothing in this program has run against a real calendar server, so the
+  only way to have met it is to have tried a real account yourself.
+
 - **A change that did not get made is no longer sent and counted as saved.** The
   bug above was able to lose an edit because of what happened after it: a
   document with the change not in it was still sent, the server accepted it,

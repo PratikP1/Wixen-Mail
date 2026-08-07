@@ -1166,6 +1166,12 @@ const PROPERTIES_A_CHANGE_REPLACES: [&str; 10] = [
 /// own start and its own description, and the timezone rules keep theirs. The
 /// identity is never rewritten.
 ///
+/// The first event in the document is the one changed, which is the one
+/// [`parse_ical_vevent`] read, and every later event is copied through. A
+/// repeating event with an occurrence somebody moved is one resource holding
+/// the series and one event per changed occurrence, so a writer that changed
+/// every event it met would rewrite occurrences this program never read.
+///
 /// Every marker and every property name here is matched whatever case it is
 /// written in, the same as the readers. It has to be the same as the readers or
 /// the mismatch loses somebody's work: once the readers folded case and this did
@@ -1244,7 +1250,15 @@ pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> Option<St
             continue;
         }
 
-        if opens_with_ignoring_case(&line, "BEGIN:VEVENT") {
+        // The first event in the document and no other. A repeating event with
+        // an occurrence somebody moved is one resource holding the series and
+        // one event per changed occurrence, all under the same identity, and
+        // the reader takes the first of them, so the writer answers the same
+        // way. Writing into every one of them wrote this program's properties
+        // into the series twice, because where the first copy went was never
+        // forgotten, and left the moved occurrence as a bare RECURRENCE-ID with
+        // no title and no time of its own.
+        if !ours_are_in && opens_with_ignoring_case(&line, "BEGIN:VEVENT") {
             inside_the_event = true;
         }
         written.push(line);
@@ -2631,6 +2645,84 @@ pub(crate) mod writing_tests {
             })
             .collect::<Vec<_>>()
             .join("\r\n")
+    }
+
+    /// A series and the one occurrence somebody moved out of it.
+    ///
+    /// What a calendar server really hands back for a repeating event once an
+    /// occurrence has been changed: one resource holding the series and one
+    /// VEVENT per changed occurrence, all under the same identity, told apart
+    /// by RECURRENCE-ID.
+    fn a_series_with_one_occurrence_moved() -> String {
+        [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "BEGIN:VEVENT",
+            "UID:e-1",
+            "SUMMARY:Weekly review",
+            "DTSTART:20260305T090000Z",
+            "DTEND:20260305T100000Z",
+            "RRULE:FREQ=WEEKLY",
+            "SEQUENCE:2",
+            "END:VEVENT",
+            "BEGIN:VEVENT",
+            "UID:e-1",
+            "RECURRENCE-ID:20260312T090000Z",
+            "SUMMARY:Weekly review\\, the week it moved",
+            "DTSTART:20260312T140000Z",
+            "DTEND:20260312T150000Z",
+            "SEQUENCE:1",
+            "END:VEVENT",
+            "END:VCALENDAR",
+            "",
+        ]
+        .join("\r\n")
+    }
+
+    #[test]
+    fn test_changing_a_series_leaves_the_occurrence_somebody_moved_out_of_it_alone() {
+        // The reader takes the first event in the document and everything after
+        // it belongs to something else, so the writer has to answer the same
+        // way. It did not: it wrote this program's properties into every event
+        // it met, and because it never forgot where the first one's went, the
+        // second copy landed inside the first event. So the series ended up
+        // with two titles, two starts and two repeat rules, which is not a
+        // valid event, and the occurrence somebody had moved lost its own
+        // title and its own time and became a bare RECURRENCE-ID.
+        let changed = ical_with_the_event_changed(
+            &a_series_with_one_occurrence_moved(),
+            &as_it_was_changed_here("e-1"),
+        )
+        .expect("the event to be found and changed");
+
+        assert_eq!(
+            changed.matches("SUMMARY:Quarterly review\\, moved").count(),
+            1,
+            "the change was written into the document more than once:\n{changed}"
+        );
+        assert_eq!(
+            changed.matches("DTSTART:").count(),
+            2,
+            "the series and the moved occurrence have one start each:\n{changed}"
+        );
+        assert!(
+            changed.contains("SUMMARY:Weekly review\\, the week it moved"),
+            "the occurrence somebody moved lost its own title:\n{changed}"
+        );
+        assert!(
+            changed.contains("DTSTART:20260312T140000Z"),
+            "the occurrence somebody moved lost its own time:\n{changed}"
+        );
+        assert!(
+            changed.contains("RECURRENCE-ID:20260312T090000Z"),
+            "the occurrence lost what says which one it replaces:\n{changed}"
+        );
+        // And the series itself really was changed.
+        assert!(changed.contains("SEQUENCE:3"), "{changed}");
+        assert!(
+            !changed.contains("SUMMARY:Weekly review\r\n"),
+            "the series kept its old title:\n{changed}"
+        );
     }
 
     #[test]
