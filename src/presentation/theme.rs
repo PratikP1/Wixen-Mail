@@ -353,18 +353,28 @@ fn palette_for(setting: &str, system_is_dark: bool, high_contrast: bool) -> Opti
 ///
 /// `SystemParametersInfo` with `SPI_GETHIGHCONTRAST`, because there is no
 /// cross-platform way to ask and this is a Windows-first application. Anywhere
-/// else the answer is no, which leaves the palette in charge, and that is
-/// correct on a platform with no such mode.
+/// else there is nobody to ask, and the answer works out as no, which leaves
+/// the palette in charge and is correct on a platform with no such mode.
+///
+/// No platform gate in here. It used to answer a hand-written `false` off
+/// Windows, which is a second place for the same decision to be made and the
+/// only one of the two a test on this machine cannot reach. The gate is on the
+/// asking now, so this composition is the same code everywhere and one test
+/// covers it everywhere.
 fn windows_high_contrast() -> bool {
-    #[cfg(target_os = "windows")]
-    {
-        let (ok, flags) = ask_windows_about_high_contrast();
-        high_contrast_from(ok, flags)
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        false
-    }
+    let (ok, flags) = ask_windows_about_high_contrast();
+    high_contrast_from(ok, flags)
+}
+
+/// Nobody to ask off Windows, so nothing was answered.
+///
+/// `(0, 0)` is what a refused call looks like, and [`high_contrast_from`] reads
+/// a refused call as high contrast off. That is the right answer on a platform
+/// with no such mode, and it is reached through the same tested reading rather
+/// than through a `false` written out a second time.
+#[cfg(not(target_os = "windows"))]
+fn ask_windows_about_high_contrast() -> (i32, u32) {
+    (0, 0)
 }
 
 /// Put the question to Windows, and answer with what came back untouched.
@@ -548,6 +558,41 @@ mod tests {
         assert!(
             flags & HCF_AVAILABLE != 0,
             "the flags word came back as {flags:#010x}, which does not name a scheme as available"
+        );
+    }
+
+    /// The answer handed to the palette is the machine's, not a constant.
+    ///
+    /// The leaf that asks Windows has a test and the reading of its answer has
+    /// two, and the composition that joins them had none, so both of its
+    /// mutants lived: a body replaced by `true` or by `false` passed the whole
+    /// suite. This calls it and holds it against what Windows said a moment
+    /// ago.
+    ///
+    /// The expected side works the bit out longhand rather than calling
+    /// [`high_contrast_from`], so the two sides are not the same code and a
+    /// wrong reading cannot move them together.
+    ///
+    /// It asserts nothing about whether high contrast is on, so it stays green
+    /// when Pratik switches it on for an accessibility pass, which is the one
+    /// time the suite must not be lying to him.
+    ///
+    /// What it cannot do. It kills only the constant that disagrees with this
+    /// machine right now: with high contrast off, "always on" dies here and
+    /// "always off" does not, and "always off" is the harmful one, because that
+    /// is the answer that paints our palette over the colours of somebody who
+    /// turned high contrast on because nothing else is legible to them. Killing
+    /// that one needs the suite run with high contrast switched on, which is a
+    /// decision about somebody's own machine and not one a test may make.
+    #[test]
+    fn test_the_high_contrast_answer_is_the_machines_own_and_not_a_constant() {
+        let (ok, flags) = ask_windows_about_high_contrast();
+        let machine_says_on = ok != 0 && flags & HCF_HIGHCONTRASTON != 0;
+
+        assert_eq!(
+            windows_high_contrast(),
+            machine_says_on,
+            "Windows answered {ok} with flags {flags:#010x} and the palette was told otherwise"
         );
     }
 
