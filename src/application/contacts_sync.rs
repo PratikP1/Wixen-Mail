@@ -3258,6 +3258,214 @@ mod tests {
         assert!(microsoft_fields_over_local(&local, &alice_from_microsoft()).favorite);
     }
 
+    // ── Every field of a merge, named once ──────────────────────────────────
+
+    /// A contact with every field filled in, each value saying whose copy it
+    /// came from, so a merge taking the wrong side is read off the value
+    /// rather than inferred from a missing one.
+    ///
+    /// The two flags cannot carry a name, so they are set apart by the caller:
+    /// true on the copy stored here and false on the address book's.
+    fn every_field_filled(whose: &str, flags: bool) -> ContactEntry {
+        let value = |field: &str| format!("{whose} {field}");
+        ContactEntry {
+            id: value("id"),
+            account_id: value("account"),
+            name: value("name"),
+            given_name: Some(value("given name")),
+            family_name: Some(value("family name")),
+            email: value("email"),
+            phone: Some(value("phone")),
+            company: Some(value("company")),
+            job_title: Some(value("job title")),
+            website: Some(value("website")),
+            address: Some(value("address")),
+            birthday: Some(value("birthday")),
+            avatar_url: Some(value("avatar url")),
+            avatar_data_base64: Some(value("photo")),
+            source_provider: Some(value("source")),
+            last_synced_at: Some(value("last synced")),
+            vcard_raw: Some(value("card")),
+            notes: Some(value("notes")),
+            favorite: flags,
+            created_at: value("created"),
+            nickname: Some(value("nickname")),
+            department: Some(value("department")),
+            relationship: Some(value("relationship")),
+            emails_json: Some(value("emails")),
+            phones_json: Some(value("phones")),
+            addresses_json: Some(value("addresses")),
+            custom_fields_json: Some(value("own fields")),
+            pending: flags,
+            known_to: vec![ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: value("known as"),
+                provider_version: Some(value("marker")),
+                change_is_waiting: flags,
+            }],
+        }
+    }
+
+    /// Every field Google speaks for, and every field it does not, in one
+    /// place.
+    ///
+    /// The tests above say what one field does. This one says the list is
+    /// complete. Its pattern carries no `..`, so a field added to
+    /// [`ContactEntry`] later stops this compiling until somebody decides here
+    /// whether the address book speaks for it. Inside the merge the same
+    /// addition would be silent: `..local.clone()` makes "kept" the default,
+    /// and a silent default is how a field ends up neither taken nor pinned.
+    #[test]
+    fn test_a_google_merge_names_every_field_it_takes_and_every_field_it_keeps() {
+        let local = every_field_filled("here", true);
+        let google = every_field_filled("Google", false);
+
+        let ContactEntry {
+            // Google's, because Google holds them.
+            name,
+            given_name,
+            family_name,
+            email,
+            phone,
+            company,
+            job_title,
+            website,
+            birthday,
+            avatar_url,
+            source_provider,
+            last_synced_at,
+            notes,
+            nickname,
+            department,
+            emails_json,
+            phones_json,
+            // This computer's, because Google either does not hold them or is
+            // not asked for them.
+            id,
+            account_id,
+            address,
+            avatar_data_base64,
+            vcard_raw,
+            favorite,
+            created_at,
+            relationship,
+            addresses_json,
+            custom_fields_json,
+            pending,
+            known_to,
+        } = google_fields_over_local(&local, &google);
+
+        assert_eq!(name, google.name);
+        assert_eq!(given_name, google.given_name);
+        assert_eq!(family_name, google.family_name);
+        assert_eq!(email, google.email);
+        assert_eq!(phone, google.phone);
+        assert_eq!(company, google.company);
+        assert_eq!(job_title, google.job_title);
+        assert_eq!(website, google.website);
+        assert_eq!(birthday, google.birthday);
+        assert_eq!(avatar_url, google.avatar_url);
+        assert_eq!(source_provider, google.source_provider);
+        assert_eq!(last_synced_at, google.last_synced_at);
+        assert_eq!(notes, google.notes);
+        assert_eq!(nickname, google.nickname);
+        assert_eq!(department, google.department);
+        assert_eq!(emails_json, google.emails_json);
+        assert_eq!(phones_json, google.phones_json);
+
+        assert_eq!(id, local.id);
+        assert_eq!(account_id, local.account_id);
+        assert_eq!(address, local.address);
+        assert_eq!(avatar_data_base64, local.avatar_data_base64);
+        assert_eq!(vcard_raw, local.vcard_raw);
+        assert_eq!(favorite, local.favorite);
+        assert_eq!(created_at, local.created_at);
+        assert_eq!(relationship, local.relationship);
+        assert_eq!(addresses_json, local.addresses_json);
+        assert_eq!(custom_fields_json, local.custom_fields_json);
+        assert_eq!(pending, local.pending);
+        assert_eq!(known_to, local.known_to);
+    }
+
+    /// The same list for Outlook, which speaks for fewer fields.
+    ///
+    /// Two differences from the Google side are the point of having both. A
+    /// photo's address is Google's and never Outlook's, and the list of phone
+    /// numbers is left alone because Outlook's copy of it is only ever the
+    /// first number. The postal addresses are left alone on both sides, and
+    /// Outlook is the one that holds any: the stored list holds addresses from
+    /// every address book at once, so no single sync may write it whole.
+    #[test]
+    fn test_a_microsoft_merge_names_every_field_it_takes_and_every_field_it_keeps() {
+        let local = every_field_filled("here", true);
+        let outlook = every_field_filled("Outlook", false);
+
+        let ContactEntry {
+            // Outlook's, because Outlook holds them.
+            name,
+            given_name,
+            family_name,
+            email,
+            phone,
+            company,
+            job_title,
+            department,
+            nickname,
+            website,
+            birthday,
+            notes,
+            source_provider,
+            last_synced_at,
+            emails_json,
+            // This computer's.
+            id,
+            account_id,
+            address,
+            avatar_url,
+            avatar_data_base64,
+            vcard_raw,
+            favorite,
+            created_at,
+            relationship,
+            phones_json,
+            addresses_json,
+            custom_fields_json,
+            pending,
+            known_to,
+        } = microsoft_fields_over_local(&local, &outlook);
+
+        assert_eq!(name, outlook.name);
+        assert_eq!(given_name, outlook.given_name);
+        assert_eq!(family_name, outlook.family_name);
+        assert_eq!(email, outlook.email);
+        assert_eq!(phone, outlook.phone);
+        assert_eq!(company, outlook.company);
+        assert_eq!(job_title, outlook.job_title);
+        assert_eq!(department, outlook.department);
+        assert_eq!(nickname, outlook.nickname);
+        assert_eq!(website, outlook.website);
+        assert_eq!(birthday, outlook.birthday);
+        assert_eq!(notes, outlook.notes);
+        assert_eq!(source_provider, outlook.source_provider);
+        assert_eq!(last_synced_at, outlook.last_synced_at);
+        assert_eq!(emails_json, outlook.emails_json);
+
+        assert_eq!(id, local.id);
+        assert_eq!(account_id, local.account_id);
+        assert_eq!(address, local.address);
+        assert_eq!(avatar_url, local.avatar_url);
+        assert_eq!(avatar_data_base64, local.avatar_data_base64);
+        assert_eq!(vcard_raw, local.vcard_raw);
+        assert_eq!(favorite, local.favorite);
+        assert_eq!(created_at, local.created_at);
+        assert_eq!(relationship, local.relationship);
+        assert_eq!(phones_json, local.phones_json);
+        assert_eq!(addresses_json, local.addresses_json);
+        assert_eq!(custom_fields_json, local.custom_fields_json);
+        assert_eq!(pending, local.pending);
+        assert_eq!(known_to, local.known_to);
+    }
+
     // ── Which stored contact a provider's copy of a person is ───────────────
 
     /// A contact one address book already knows, under the name it gave it.

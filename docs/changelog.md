@@ -519,6 +519,11 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   with a stray semicolon in front of it. Export a contact, import it again, and
   those are what is different. None of it changed here.
 
+  Superseded in an unreleased change: all three travel both ways now. The two
+  parts of a name, how somebody is related to you and a department are each
+  written into a card and read back out of one. The entry about a contact
+  exported to a file and imported back, further up, is the whole of it.
+
 - **The sign-in pages your browser shows are readable pages now.** When you sign
   in to Gmail or Outlook, the provider sends your browser back to a page this
   program serves, and that page is the one part of signing in you meet as a web
@@ -2041,8 +2046,10 @@ live account or a live calendar server:
   before there was anywhere to keep a label goes out with none rather than with
   a guessed one.
 
-  Contacts from Microsoft still show Other on every address. Microsoft sends no
-  label with them, so that is what it gave rather than something being dropped.
+  Contacts from Microsoft still show Other on every email address. Microsoft
+  sends no label with those, so that is what it gave rather than something being
+  dropped. Corrected in an unreleased change for postal addresses: Outlook keeps
+  two, a home one and a work one, and each now arrives here under that name.
 
   None of this has run against a real account.
 
@@ -2052,6 +2059,12 @@ live account or a live calendar server:
   before it the given name. A family name that contains a space, such as van der
   Berg, still goes the other way. No rule gets both right from one line of text,
   and the whole name is sent as well, so the address book still has it.
+
+  Superseded in an unreleased change: nothing splits a whole name any more. Both
+  parts are kept as the address book gave them, or as you typed them in the two
+  boxes the contact editor now has, so "van der Berg" no longer goes the other
+  way either. The entry about a person's name surviving a trip to an address
+  book and back, further up, is the whole of it.
 
 - **A birthday with no year no longer says you were born in the year nothing.**
   Google returns most birthdays without a year, and that arrived here as the
@@ -2222,6 +2235,25 @@ live account or a live calendar server:
   the contact alone. The website and any second phone number survive a Microsoft
   sync for the same reason.
 
+  Two of those sentences are wrong. Outlook does carry a postal address, two of
+  them, and since an unreleased change this program reads both and sends an
+  address to both address books; the entry about a contact sent to Google
+  keeping its birthday, further up, says the same thing. What keeps the one you
+  typed is not that nobody holds it. The list stored here holds the addresses
+  from every address book at once, so no single sync may write it whole.
+  Outlook's two arrive with a contact this computer is meeting for the first
+  time, under Home and Work, and an address changed at Outlook after that does
+  not come down. Google's are still never read.
+
+  The website does not survive a Microsoft sync either. Outlook holds one and
+  this program reads it, so Outlook's copy is written over the one stored here,
+  including where Outlook holds none and yours is emptied in its place. The
+  exception is a contact you changed and have not sent yet, which a sync now
+  keeps whole: the entry about a contact quietly replaced by your address
+  book's older copy, further up, is that rule. The second phone number half is
+  right, and for the reason given. Outlook reads only the first number, so the
+  rest of the list is left alone.
+
   Contacts already emptied by earlier syncs are not brought back. There is
   nothing left to bring them back from.
 
@@ -2249,7 +2281,9 @@ live account or a live calendar server:
   to read which contacts they were. That gap is not fixed here.
 
   Superseded in an unreleased change: an account can now hold as many contacts
-  without an email address as it has, and none of them are skipped.
+  without an email address as it has, and none of them are skipped. A contacts
+  sync skips nothing at all now, so the count named above is gone from the
+  sentence said after a sync. There is nothing left for it to count.
 
   None of this has run against a live Google or Microsoft account.
 
