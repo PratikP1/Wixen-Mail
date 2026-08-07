@@ -13,6 +13,7 @@ mod filters;
 mod folders;
 mod messages;
 pub use calendar::DeletedCalendarEvent;
+pub use contacts::CardsRead;
 pub use messages::{IncomingMessage, MessageListRow};
 pub mod notes;
 mod outbox;

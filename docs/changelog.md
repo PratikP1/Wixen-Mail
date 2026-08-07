@@ -241,6 +241,48 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A contact file laid out with indentation is read again, and an import that
+  added nothing now says why.** The card standard reads every line starting with
+  a space or a tab as the rest of the line before it, and this program does the
+  same. A file somebody laid out by hand, or ran through a formatter, uses those
+  same spaces to show what sits inside what. Read as joins, the whole card ran
+  together into a single line with no email address anywhere on it, the contact
+  was dropped, and the import said "Imported 0 contacts". A file of two hundred
+  contacts written that way imported as nothing at all.
+
+  A card is now read as laid out by hand wherever the two can be told apart,
+  which is a line with a space in front of it directly after the line that opens
+  or closes the card. Those lines carry the word `VCARD`: it is short, it holds
+  no spaces, and no program breaks one across two lines. The spaces come off
+  every line in such a card instead of being read as joins. Where the two cannot
+  be told apart, a line starting with a space is still the rest of the line
+  before it, because that is what the standard asks for. The calendar reader
+  draws the line in the same place, for the same reason.
+
+  What it costs, which is worth saying plainly: a card that is both laid out by
+  hand and has a long line broken across two now reads that one line short. Once
+  the layout is off there is nothing left to tell a join from an indent. The
+  contact itself still reads, where before the card had nothing in it at all.
+
+  The silence was the worse half. A card this program cannot use is passed over,
+  which is right, because one bad card must not cost you the other hundred and
+  ninety-nine. What came back was a count of how many arrived and nothing else,
+  so a folder with no card files in it, a folder whose cards were all turned
+  away, and a file this program could not read all said "Imported 0 contacts".
+
+  An import now says what it left out as well as what it took. "No contacts were
+  imported. 3 cards named no email address and were left out, because a contact
+  here needs an address to write to." A contact that was read and could not be
+  saved on this computer is said too, instead of going only to the log. The
+  counts are added up across every file in a folder and said once.
+
+  Known limitations: none of this has been heard with a screen reader. A card
+  that names no email address is still turned away, which is the same decision
+  as before and is why an address book kept without email addresses imports as
+  nothing; what has changed is that it now says so. A file this program cannot
+  open at all, because of its permissions or because it is not text, is still
+  skipped without a word.
+
 - **The sentence said after a sync no longer stutters or trails off.** When a
   sync had more than one thing to tell you, the parts were pushed on to the end
   of each other and their punctuation collided. A contacts sync with changes

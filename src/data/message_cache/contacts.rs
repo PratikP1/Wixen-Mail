@@ -5,6 +5,37 @@ use crate::common::{Error, Result};
 use rusqlite::params;
 use std::collections::HashMap;
 
+/// What reading a file of contact cards did, and what it could not do.
+///
+/// Three counts rather than one, because one of them made two different
+/// answers look the same. A file with nothing in it and a file where every
+/// card was turned away both came back as nought added, and the person was
+/// told "Imported 0 contacts" either way.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct CardsRead {
+    /// Contacts written into the address book, whether new or refreshed.
+    pub added: usize,
+    /// Cards turned away because they named no address this program could
+    /// write to, which covers a card with no `EMAIL` line and one whose
+    /// address is not an address.
+    pub with_no_email_address: usize,
+    /// Contacts read out of the file that the database would not take.
+    pub not_written_down: usize,
+}
+
+impl CardsRead {
+    /// Fold one file's counts into a running total.
+    ///
+    /// A folder of card files is read one file at a time and reported once, so
+    /// the folding lives here rather than being written out at the call site
+    /// with some of the counts named and the rest dropped.
+    pub fn absorb(&mut self, other: CardsRead) {
+        self.added += other.added;
+        self.with_no_email_address += other.with_no_email_address;
+        self.not_written_down += other.not_written_down;
+    }
+}
+
 impl MessageCache {
     /// Save or update a contact.
     ///
@@ -380,25 +411,42 @@ impl MessageCache {
         Ok(imported_count)
     }
 
-    /// Import contacts from a vCard string
-    pub fn import_contacts_from_vcard(&self, account_id: &str, vcard_data: &str) -> Result<usize> {
-        let mut imported = 0usize;
+    /// Read a file of contact cards into the address book.
+    ///
+    /// Every count this answers with is one somebody is told about. A card this
+    /// cannot use is passed over, so one bad card in a file of two hundred does
+    /// not cost the other hundred and ninety-nine, and a count of what was
+    /// added is all anybody used to get back. "That file had nothing in it" and
+    /// "nothing in that file could be added" both came back as nought, and the
+    /// second is the one somebody goes looking for a broken program over.
+    pub fn import_contacts_from_vcard(
+        &self,
+        account_id: &str,
+        vcard_data: &str,
+    ) -> Result<CardsRead> {
+        let mut read = CardsRead::default();
         for entry in Self::cards_in(vcard_data) {
-            if let Some(mut contact) = Self::contact_from_vcard_block(account_id, &entry) {
-                // A card carries no identifier this application keeps, so the
-                // address is what says the same card read twice is one person.
-                if let Some(already_here) = self.contact_id_holding(account_id, &contact.email)? {
-                    contact.id = already_here;
-                }
-                match self.save_contact(&contact) {
-                    Ok(_) => imported += 1,
-                    Err(e) => {
-                        tracing::warn!("vCard import skipped contact '{}': {}", contact.email, e)
-                    }
+            let Some(mut contact) = Self::contact_from_vcard_block(account_id, &entry) else {
+                // The one rule that turns a card away, so this counts one
+                // thing and not several: a card naming no address this
+                // program could write to.
+                read.with_no_email_address += 1;
+                continue;
+            };
+            // A card carries no identifier this application keeps, so the
+            // address is what says the same card read twice is one person.
+            if let Some(already_here) = self.contact_id_holding(account_id, &contact.email)? {
+                contact.id = already_here;
+            }
+            match self.save_contact(&contact) {
+                Ok(_) => read.added += 1,
+                Err(e) => {
+                    read.not_written_down += 1;
+                    tracing::warn!("vCard import skipped contact '{}': {}", contact.email, e)
                 }
             }
         }
-        Ok(imported)
+        Ok(read)
     }
 
     /// Export contacts to vCard 3.0 format
@@ -1381,20 +1429,95 @@ impl MessageCache {
     ///
     /// The iCalendar reader answers the same question in
     /// `service::caldav::put_back_together`, and this agrees with it.
+    ///
+    /// A card somebody laid out by hand uses that same white space to show what
+    /// sits inside what, and the two cannot both be obeyed. Read as folding,
+    /// every line of an indented card joins onto the one that opens it, so the
+    /// whole card becomes a single line with no address anywhere on it and the
+    /// contact is gone. [`laid_out_by_hand`] is the one shape where the
+    /// difference can be told, and there the layout is taken off instead and
+    /// nothing is joined.
+    ///
+    /// [`laid_out_by_hand`]: MessageCache::laid_out_by_hand
     fn unfold_vcard_lines(block: &str) -> Vec<String> {
+        let separate: Vec<&str> = block
+            .lines()
+            .map(|raw| raw.trim_end_matches('\r'))
+            .collect();
+        if Self::laid_out_by_hand(&separate) {
+            return separate
+                .iter()
+                .map(|line| line.trim_start().to_string())
+                .collect();
+        }
+        Self::put_back_together(&separate)
+    }
+
+    /// Lines with the ones the format broke in two joined back onto their first
+    /// part.
+    fn put_back_together(separate: &[&str]) -> Vec<String> {
         let mut lines: Vec<String> = Vec::new();
-        for raw in block.lines() {
-            let line = raw.trim_end_matches('\r');
+        for line in separate {
             match line.strip_prefix([' ', '\t']) {
                 Some(carried_on) if !lines.is_empty() => {
                     if let Some(last) = lines.last_mut() {
                         last.push_str(carried_on);
                     }
                 }
-                _ => lines.push(line.to_string()),
+                _ => lines.push((*line).to_string()),
             }
         }
         lines
+    }
+
+    /// Whether this card's leading white space is somebody's layout rather than
+    /// a line the format broke in two.
+    ///
+    /// RFC 6350 section 3.2 says a line beginning with white space carries on
+    /// the line above, so reading it that way is the standard-correct reading
+    /// and it is what happens everywhere this cannot tell. Hand-written and
+    /// pretty-printed card files that indent do exist, though, and people
+    /// import files they did not write, so where the difference *can* be told
+    /// it is worth telling.
+    ///
+    /// One shape tells it. White space directly after the line that opens or
+    /// closes a card is layout, because what follows the colon on such a line
+    /// is `VCARD`: it holds no white space, `BEGIN:VCARD` is eleven octets, and
+    /// folding happens at seventy-five. No producer breaks one of those in two,
+    /// so nothing there is carrying anything on.
+    ///
+    /// A card indented only in the middle, where every indented line follows an
+    /// ordinary property, is left as folding. That shape really is ambiguous
+    /// and the standard's answer is the one to give.
+    ///
+    /// The calendar reader draws the same line in the same place, in
+    /// `service::caldav::laid_out_by_hand`, and the two agree on purpose.
+    fn laid_out_by_hand(lines: &[&str]) -> bool {
+        let mut before: Option<&str> = None;
+        for line in lines {
+            if Self::indented(line) && before.is_some_and(Self::opens_or_closes_a_card) {
+                return true;
+            }
+            before = Some(*line);
+        }
+        false
+    }
+
+    /// Whether a line carries something and begins with white space.
+    ///
+    /// A line of nothing but white space carries nothing, so it says nothing
+    /// about how the file is laid out.
+    fn indented(line: &str) -> bool {
+        line.starts_with([' ', '\t']) && !line.trim().is_empty()
+    }
+
+    /// Whether a line opens or closes a card, whatever is in front of it.
+    fn opens_or_closes_a_card(line: &str) -> bool {
+        let named = line.trim_start();
+        ["BEGIN", "END"].iter().any(|marker| {
+            Self::vcard_named(named, marker)
+                .is_some_and(|(_, names)| names.trim().eq_ignore_ascii_case("VCARD"))
+        })
     }
 
     /// A name to show for somebody whose address arrived without one.
@@ -1708,6 +1831,139 @@ mod tests {
         }
     }
 
+    // ── A file somebody laid out by hand ────────────────────────────────────
+    //
+    // The same trade the calendar reader makes in `service::caldav::unfolded`,
+    // for the same reason and with the same cost. A line beginning with white
+    // space is the rest of the line above it, which is what RFC 6350 section
+    // 3.2 says it is, and it is also what somebody's indentation looks like.
+
+    #[test]
+    fn test_a_card_laid_out_by_hand_is_read_rather_than_run_into_one_line() {
+        // Read as folding, every line of an indented card joins onto the
+        // BEGIN line, so the whole card becomes one line with no address
+        // anywhere on it and the contact is gone. An address book exported
+        // by a formatter, or written by hand, imported as nothing at all.
+        let cache = a_cache("vcard_laid_out_by_hand");
+
+        let imported = cache
+            .import_contacts_from_vcard(
+                "acc-1",
+                "  BEGIN:VCARD\r\n  VERSION:3.0\r\n  FN:X\r\n  EMAIL:x@e.com\r\n  END:VCARD\r\n",
+            )
+            .expect("the import to run");
+
+        assert_eq!(imported.added, 1, "an indented card imported as nothing");
+        let contacts = cache
+            .get_contacts_for_account("acc-1")
+            .expect("contacts to be readable");
+        assert_eq!(contacts[0].name, "X");
+        assert_eq!(contacts[0].email, "x@e.com");
+    }
+
+    #[test]
+    fn test_a_card_indented_only_after_its_first_property_is_still_read_as_folded() {
+        // The other side of the rule, and the reason it is drawn where it is.
+        // A line with white space in front of it that follows an ordinary
+        // property is the shape that really is ambiguous, and there the
+        // standard's reading is the one to give.
+        let unfolded = MessageCache::unfold_vcard_lines(
+            "BEGIN:VCARD\r\nNOTE:the beginning\r\n and the rest\r\nEND:VCARD\r\n",
+        );
+
+        assert_eq!(
+            unfolded,
+            ["BEGIN:VCARD", "NOTE:the beginningand the rest", "END:VCARD"]
+        );
+    }
+
+    #[test]
+    fn test_a_card_that_is_both_laid_out_by_hand_and_folded_reads_that_value_short() {
+        // What the trade costs, pinned so it is known rather than discovered.
+        // Once the layout is taken off there is nothing left to tell a fold
+        // from an indent, so a long value broken across two lines loses the
+        // join. The contact still reads, where before the card had nothing in
+        // it at all.
+        let unfolded = MessageCache::unfold_vcard_lines(
+            "  BEGIN:VCARD\r\n  NOTE:the beginning\r\n  and the rest\r\n  END:VCARD\r\n",
+        );
+
+        assert_eq!(
+            unfolded,
+            [
+                "BEGIN:VCARD",
+                "NOTE:the beginning",
+                "and the rest",
+                "END:VCARD"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_file_whose_cards_were_all_turned_away_says_how_many_rather_than_only_nought() {
+        // "That file had nothing in it" and "nothing in that file could be
+        // added" are different things somebody needs told apart, and a count
+        // of nought said both. An address book exported from a program that
+        // keeps contacts without email addresses is the ordinary way to meet
+        // this, and the answer used to be "Imported 0 contacts".
+        let cache = a_cache("vcard_all_turned_away");
+
+        let read = cache
+            .import_contacts_from_vcard(
+                "acc-1",
+                "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:A Person\r\nTEL:+44 7700 900999\r\nEND:VCARD\r\n\
+                 BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Another\r\nTEL:+44 7700 900998\r\nEND:VCARD\r\n",
+            )
+            .expect("the import to run");
+
+        assert_eq!(read.added, 0);
+        assert_eq!(
+            read.with_no_email_address, 2,
+            "the cards that were turned away were not counted, so nothing can say so"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_of_card_files_carries_every_count_forward_and_drops_none() {
+        // A folder is read one file at a time and reported once. Written out
+        // at the call site with some of the counts named and the rest left
+        // out, a folder where one file's cards were all turned away reported
+        // the same as a folder where none were.
+        let mut whole_folder = CardsRead {
+            added: 2,
+            with_no_email_address: 3,
+            not_written_down: 1,
+        };
+
+        whole_folder.absorb(CardsRead {
+            added: 20,
+            with_no_email_address: 30,
+            not_written_down: 10,
+        });
+
+        assert_eq!(
+            whole_folder,
+            CardsRead {
+                added: 22,
+                with_no_email_address: 33,
+                not_written_down: 11,
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_file_with_no_cards_in_it_is_not_reported_as_cards_that_were_turned_away() {
+        // The other half of telling those two apart. A file that is not a card
+        // file at all, or a folder with nothing in it, turned nothing away.
+        let cache = a_cache("vcard_no_cards_at_all");
+
+        let read = cache
+            .import_contacts_from_vcard("acc-1", "this is not a card file\r\n")
+            .expect("the import to run");
+
+        assert_eq!(read, CardsRead::default());
+    }
+
     #[test]
     fn test_something_that_is_not_an_address_does_not_become_a_contact() {
         // Import takes files from anywhere. A contact whose address is not one
@@ -1721,7 +1977,14 @@ mod tests {
             )
             .expect("the import to run");
 
-        assert_eq!(imported, 0, "a contact with no real address was imported");
+        assert_eq!(
+            imported.added, 0,
+            "a contact with no real address was imported"
+        );
+        assert_eq!(
+            imported.with_no_email_address, 1,
+            "the card was turned away and nothing counted it, so nothing can say so"
+        );
         assert!(
             cache
                 .get_contacts_for_account("acc-1")
@@ -1749,7 +2012,10 @@ mod tests {
             )
             .expect("the import to run");
 
-        assert_eq!(imported, 1, "a card in small letters imported as nothing");
+        assert_eq!(
+            imported.added, 1,
+            "a card in small letters imported as nothing"
+        );
         let contacts = cache
             .get_contacts_for_account("acc-1")
             .expect("contacts to be readable");
@@ -1782,7 +2048,10 @@ mod tests {
             )
             .expect("the import to run");
 
-        assert_eq!(imported, 2, "a file of two cards imported as {imported}");
+        assert_eq!(
+            imported.added, 2,
+            "a file of two cards imported as {imported:?}"
+        );
         let mut names: Vec<String> = cache
             .get_contacts_for_account("acc-1")
             .expect("contacts to be readable")
@@ -2022,7 +2291,10 @@ mod tests {
         let imported = back
             .import_contacts_from_vcard("read-back", &card)
             .expect("the import to run");
-        assert_eq!(imported, 1, "the card did not read back as one contact");
+        assert_eq!(
+            imported.added, 1,
+            "the card did not read back as one contact"
+        );
 
         let read_back = back
             .get_contacts_for_account("read-back")
@@ -2163,8 +2435,12 @@ mod tests {
             .expect("the import to run");
 
         assert_eq!(
-            imported, 0,
+            imported.added, 0,
             "a contact with no address came back, which is new: update the round trip tests"
+        );
+        assert_eq!(
+            imported.with_no_email_address, 1,
+            "the card was turned away without being counted, so nothing can say why"
         );
     }
 
@@ -3237,7 +3513,7 @@ END:VCARD";
         let imported = cache
             .import_contacts_from_vcard("test@example.com", vcard)
             .unwrap();
-        assert_eq!(imported, 1);
+        assert_eq!(imported.added, 1);
 
         let contacts = cache.get_contacts_for_account("test@example.com").unwrap();
         assert_eq!(contacts.len(), 1);

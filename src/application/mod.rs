@@ -23,6 +23,7 @@ pub mod filters;
 pub mod forget;
 pub mod from_message;
 pub mod help;
+pub mod importing_contacts;
 pub mod item_fields;
 pub mod local_delete;
 pub mod local_folders;

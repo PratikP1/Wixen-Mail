@@ -1500,12 +1500,16 @@ impl WxMailApp {
                         if let Some(cache) = &message_cache {
                             // Try to read .vcf file from the selected path
                             let vcf_path = std::path::Path::new(&path);
-                            let mut imported = 0usize;
+                            // Every file's counts folded into one, so a folder
+                            // is reported once and the cards that were turned
+                            // away are reported with the ones that arrived.
+                            let mut read = crate::data::message_cache::CardsRead::default();
                             if vcf_path.is_file() {
-                                if let Ok(data) = std::fs::read_to_string(vcf_path) {
-                                    imported = cache
-                                        .import_contacts_from_vcard("default", &data)
-                                        .unwrap_or(0);
+                                if let Ok(data) = std::fs::read_to_string(vcf_path)
+                                    && let Ok(one_file) =
+                                        cache.import_contacts_from_vcard("default", &data)
+                                {
+                                    read.absorb(one_file);
                                 }
                             } else if vcf_path.is_dir()
                                 && let Ok(entries) = std::fs::read_dir(vcf_path)
@@ -1517,14 +1521,17 @@ impl WxMailApp {
                                         .map(|e| e == "vcf")
                                         .unwrap_or(false)
                                         && let Ok(data) = std::fs::read_to_string(entry.path())
+                                        && let Ok(one_file) =
+                                            cache.import_contacts_from_vcard("default", &data)
                                     {
-                                        imported += cache
-                                            .import_contacts_from_vcard("default", &data)
-                                            .unwrap_or(0);
+                                        read.absorb(one_file);
                                     }
                                 }
                             }
-                            let msg = format!("Imported {} contacts", imported);
+                            let msg =
+                                crate::application::importing_contacts::what_the_card_import_did(
+                                    &read,
+                                );
                             send_status(&ui_tx, &runtime, &msg);
                             let _ = a11y.announce(
                                 &msg,
