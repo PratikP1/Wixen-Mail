@@ -751,10 +751,21 @@ pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Opti
     // clocks last changed rather than the date it is on.
     let block = vevent_block(&document);
 
+    // The three properties that carry words somebody typed, with the marks the
+    // document puts round them taken off. The identifier below is not one of
+    // them: it is the name the server calls the event by and it is matched
+    // against character for character.
     let uid = extract_ical_property(block, "UID")?;
-    let summary = extract_ical_property(block, "SUMMARY").unwrap_or_default();
-    let description = extract_ical_property(block, "DESCRIPTION");
-    let location = extract_ical_property(block, "LOCATION");
+    let summary = extract_ical_property(block, "SUMMARY")
+        .as_deref()
+        .map(as_typed)
+        .unwrap_or_default();
+    let description = extract_ical_property(block, "DESCRIPTION")
+        .as_deref()
+        .map(as_typed);
+    let location = extract_ical_property(block, "LOCATION")
+        .as_deref()
+        .map(as_typed);
     let dtstart_raw = extract_ical_property(block, "DTSTART")?;
     let dtend = extract_ical_property(block, "DTEND");
     let status = extract_ical_property(block, "STATUS").unwrap_or_else(|| "CONFIRMED".to_string());
@@ -1523,6 +1534,37 @@ fn as_one_value(text: &str) -> String {
     written
 }
 
+/// The words somebody typed, taken back out of the way a document writes them.
+///
+/// The inverse of [`as_one_value`], and it has to stay the inverse. The writer
+/// escapes what it is given, so with nothing undoing it on the way in a title
+/// with a comma grew a backslash on every save and the server ended up holding
+/// `Lunch\\\, then a walk`. Read out, that is a backslash somebody hears in the
+/// middle of their own title, and a two-line note is one line carrying a
+/// visible `\n`.
+///
+/// One pass, left to right. Undoing each mark in turn instead would take the
+/// slash off `\\,` and then read the comma it was protecting as a mark of its
+/// own. A slash in front of anything else is dropped and the character kept,
+/// which is what the standard says an unknown escape means, and a slash at the
+/// very end is a slash.
+fn as_typed(value: &str) -> String {
+    let mut written = String::with_capacity(value.len());
+    let mut characters = value.chars();
+    while let Some(character) = characters.next() {
+        if character != '\\' {
+            written.push(character);
+            continue;
+        }
+        match characters.next() {
+            Some('n' | 'N') => written.push('\n'),
+            Some(escaped) => written.push(escaped),
+            None => written.push('\\'),
+        }
+    }
+    written
+}
+
 /// A property value that says something, or nothing at all.
 fn worth_sending(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|value| !value.is_empty())
@@ -1837,6 +1879,57 @@ mod tests {
         );
         let read_back = parse_ical_vevent(&ical, "", None).expect("the document to read");
         assert_eq!(read_back.summary, long_title, "the title came back changed");
+    }
+
+    #[test]
+    fn test_the_marks_a_document_puts_round_a_comma_or_a_line_break_are_not_part_of_the_words() {
+        // A calendar document writes a backslash in front of a comma, a
+        // semicolon and a backslash, and writes a line break as two characters.
+        // The writer here has always done that and nothing undid it on the way
+        // in, so a title from a server arrived as "Lunch\, then a walk" and was
+        // stored, shown and read aloud with a backslash in the middle of it. A
+        // note written on a phone as two lines became one line carrying a
+        // visible "\n".
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:esc\\,1\r\n\
+                    SUMMARY:Lunch\\, then a walk\r\nDESCRIPTION:Line one\\nLine two\r\n\
+                    LOCATION:Room 12\\; door 3\r\nDTSTART:20260305T090000Z\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(event.summary, "Lunch, then a walk");
+        assert_eq!(event.description.as_deref(), Some("Line one\nLine two"));
+        assert_eq!(event.location.as_deref(), Some("Room 12; door 3"));
+        assert_eq!(
+            event.uid, "esc\\,1",
+            "an identifier is the name the server calls the event by, not words \
+             somebody typed, so it is left exactly as it came"
+        );
+
+        // A slash at the very end of a value has nothing after it to protect,
+        // so it is a slash.
+        let trailing = ical.replace("SUMMARY:Lunch\\, then a walk", "SUMMARY:Ten percent\\");
+        let event =
+            parse_ical_vevent(&trailing, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(event.summary, "Ten percent\\");
+    }
+
+    #[test]
+    fn test_a_title_read_out_of_a_document_goes_back_into_one_written_the_same_way() {
+        // Reading and writing have to be inverses of each other. The writer
+        // escapes what it is given, so with nothing undoing it on the way in,
+        // every save wrote the backslash again: three saves of a title with a
+        // comma in it and the server holds "Lunch\\\, then a walk".
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:esc-2\r\n\
+                    SUMMARY:Lunch\\, then a walk\r\nDESCRIPTION:Line one\\nLine two\r\n\
+                    DTSTART:20260305T090000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+        let back = build_ical_vevent(&event);
+
+        assert!(back.contains("SUMMARY:Lunch\\, then a walk"), "{back}");
+        assert!(back.contains("DESCRIPTION:Line one\\nLine two"), "{back}");
     }
 
     fn an_event_to_send() -> CalDavEvent {
@@ -2198,7 +2291,10 @@ mod tests {
         );
         assert_eq!(
             event.location.as_deref(),
-            Some("Building two\\, fourth floor\\, the room at the far end of the corridor")
+            // Joined back together, and with the marks the document puts round
+            // a comma taken off. This test is about the join; it used to expect
+            // the backslashes because that is what the reader did at the time.
+            Some("Building two, fourth floor, the room at the far end of the corridor")
         );
     }
 

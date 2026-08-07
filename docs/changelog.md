@@ -472,9 +472,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   refuse outright, and every occurrence you had moved lost its own title and its
   own time and was left as nothing but a marker saying which week it replaced.
 
-  Only the series is changed now, and every occurrence changed on its own is
-  passed through exactly as the server had it. This one has nothing to do with
-  letter case. It was found while fixing the entries above and it was there
+  Only the series is changed now, and every occurrence changed on its own goes
+  back with the values the server had, in a document written out afresh. This
+  one has nothing to do with letter case. It was found while fixing the entries above and it was there
   before them.
 
   What was lost is not recoverable from here, but it was almost certainly never
@@ -519,6 +519,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   the `Z` on its way back out to the server, which turns a nine o'clock UTC
   meeting into nine o'clock in no zone at all, and that is nine o'clock wherever
   the reader happens to be.
+
+- **A comma in an appointment's title no longer arrives with a backslash in
+  front of it.** A calendar document puts a backslash before a comma, a
+  semicolon and a backslash, and writes a line break as the two characters `\n`,
+  so that words somebody typed cannot be read as the document's own punctuation.
+  This program has always written them that way and never took them off again on
+  the way in. An appointment called "Lunch, then a walk" therefore arrived from a
+  calendar server as `Lunch\, then a walk`, and that is what the list showed and
+  what a screen reader read out. A note written on another program as two lines
+  arrived as one line with a visible `\n` in the middle of it.
+
+  It got worse rather than staying still. The half of this program that writes a
+  change escapes whatever it is given, so every save wrote the backslashes again
+  and they doubled each time, in your calendar and at the server.
+
+  The title, the notes and the place are now read as the words they are, and go
+  back to the server written the way they came. The identifier an event is known
+  by is left exactly as it arrives: it is the name the server calls the event
+  by, not words anybody typed, and it is matched character for character.
+
+  A calendar you subscribed to is read by the same code and was showing the same
+  backslashes.
 
 - **A calendar file laid out with indentation is read again.** The change above
   that puts a broken line back together reads every line starting with a space
