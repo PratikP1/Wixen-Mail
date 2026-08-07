@@ -272,9 +272,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   today.** The rule is that each clause says what it is and never how it joins
   to its neighbours, so the summary decides the spacing and the full stops in
   one place. It took the stop and the spaces off the end of a clause and never
-  off the front, so a clause written with a space already there would have been
-  spoken with two: "0 deleted.  Term dates: something". Read aloud that is a
-  pause where there should be none.
+  off the front, so a clause written with a space already there would have
+  carried two: "0 deleted.  Term dates: something". On the status line that is
+  a typo, and what a speech synthesiser makes of it is up to the synthesiser.
 
   Nothing in the program writes a clause that way. Every path that could was
   checked and each one either trims what it writes or cannot reach that clause

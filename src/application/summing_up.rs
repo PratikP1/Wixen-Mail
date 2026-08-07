@@ -209,8 +209,10 @@ mod tests {
         // The other half of the rule this module states and did not keep. A
         // part says what it is and never how it is joined to its neighbours,
         // so the space in front of it belongs here too. Written with one of
-        // its own it gave "deleted.  Term dates", and a space is not a typo
-        // in something read aloud: some screen readers pause on each one.
+        // its own it gave "deleted.  Term dates", which is a typo on the
+        // status line and an unknown quantity spoken: what a synthesiser does
+        // with a double space is up to the synthesiser, and this line goes to
+        // whichever one the person is using.
         let mut said = SummingUp::opening("  Calendar sync: 0 created, 0 updated, 0 deleted");
         said.count(" 1 sent");
         said.sentence(" Term dates: 1 change made here cannot be saved");
