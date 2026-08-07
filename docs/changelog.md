@@ -241,6 +241,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **One contact you changed once is now said once, not once per address book.**
+  The line after a contacts sync counts people, and a person kept in both Google
+  and Outlook is one person. Until now each address book counted its own copy of
+  her, so one edit to one contact was read out as "0 created, 2 updated, 0
+  deleted, 2 of your changes replaced by the address book. 2 changes are waiting
+  here". Every number in that sentence was double, and the same edit was
+  described twice as lost.
+
+  The same sync now says "0 created, 1 updated, 0 deleted, 1 of your change
+  replaced by the address book. 1 change is waiting here: turn on Allow Changes
+  for this account to send it."
+
+  Two smaller faults in the same sentence go with it. A contact one address book
+  changed while the other left its copy alone was counted as updated and as
+  unchanged, so one person was read out as two. And one contact waiting on a
+  setting was read out as "1 changes are waiting here ... to send them".
+
 - **A contacts sync no longer reports contacts as changed when nothing changed,
   and no longer counts deletions it never made.** Two of the numbers on the line
   after a contacts sync were saying more than had happened.

@@ -77,17 +77,65 @@ use crate::service::google_api::{
 };
 use crate::service::microsoft_graph::{MsEmailAddress, MsGraphClient, MsGraphContact};
 
+/// The contacts something happened to, counted once each however many address
+/// books hold a copy of that person.
+///
+/// Every number in a contacts summary is a number of people. The same person is
+/// ordinarily in both address books, each sync reads its own copy of her, and a
+/// count kept as a running total was raised once per copy: one contact, one
+/// edit, and the summary said "2 updated, 2 of your changes replaced". Naming
+/// the contact rather than adding one is what makes the second address book's
+/// copy the same person as the first.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Contacts(std::collections::BTreeSet<String>);
+
+impl Contacts {
+    /// Note that this happened to this contact. Noting the same contact again
+    /// is still one contact.
+    fn note(&mut self, contact_id: &str) {
+        self.0.insert(contact_id.to_string());
+    }
+
+    /// How many contacts, which is never how many copies of them.
+    pub fn count(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// These contacts and those, as one set of people.
+    fn and(&self, others: &Contacts) -> Contacts {
+        Contacts(self.0.union(&others.0).cloned().collect())
+    }
+
+    /// These contacts, less any that are also in the other set.
+    fn apart_from(&self, others: &Contacts) -> Contacts {
+        Contacts(self.0.difference(&others.0).cloned().collect())
+    }
+
+    /// The contacts in a test, named rather than counted.
+    #[cfg(test)]
+    fn these(ids: impl IntoIterator<Item = &'static str>) -> Self {
+        Contacts(ids.into_iter().map(str::to_string).collect())
+    }
+}
+
 /// Result of a sync operation.
 ///
 /// Compared whole in its own test rather than field by field, so a count added
 /// later cannot be dropped on the way to the status line without something
 /// going red.
+///
+/// Every field but `errors` is a set of contacts rather than a running total,
+/// and [`Contacts`] says why.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct SyncResult {
-    pub created_local: usize,
-    pub updated_local: usize,
-    pub created_remote: usize,
-    pub updated_remote: usize,
+    pub created_local: Contacts,
+    pub updated_local: Contacts,
+    pub created_remote: Contacts,
+    pub updated_remote: Contacts,
     /// Contacts removed from this computer because the address book no longer
     /// has them.
     ///
@@ -98,22 +146,31 @@ pub struct SyncResult {
     /// leaves no record for a later sync to send. So the total could report
     /// deletions that had never happened, and the count of what a sync really
     /// did was one line away from a count of nothing.
-    pub deleted_local: usize,
+    pub deleted_local: Contacts,
     /// Contacts the address book sent back that neither side had touched.
-    pub unchanged: usize,
+    pub unchanged: Contacts,
     /// Changes still waiting because the account is open for reading only.
     ///
     /// Counted rather than reported as a failure. Nothing went wrong: the
     /// change is waiting on a setting, and one error per waiting contact on
     /// every sync from now on is how a warning somebody needs stops being
     /// read.
-    pub waiting_on_the_setting: usize,
+    pub waiting_on_the_setting: Contacts,
+    /// Changes still waiting because a change goes only to the address book the
+    /// contact came from.
+    ///
+    /// Apart from `waiting_on_the_setting` because it is a different setting
+    /// with a different answer, and somebody told to turn on Allow Changes
+    /// would turn it on and see the same sentence again. Held back by this one,
+    /// a change was counted nowhere and said nowhere: the flag stayed on the
+    /// contact for ever and every sync reported a clean run.
+    pub waiting_on_how_far_a_change_goes: Contacts,
     /// Changes made here that an address book's own copy replaced.
     ///
     /// The honest half of letting the address book win. Somebody whose edit
     /// was thrown away has to be told, or a change that was made and lost
     /// looks exactly like a change that never saved.
-    pub replaced: usize,
+    pub replaced: Contacts,
     /// Contacts removed here because the address book deleted them, that still
     /// held a change nobody had sent.
     ///
@@ -121,7 +178,7 @@ pub struct SyncResult {
     /// hear. A contact going because it was deleted at the other end is
     /// ordinary; work going with it is not, and "3 deleted" says nothing about
     /// whether any of it was yours.
-    pub deleted_with_a_change_waiting: usize,
+    pub deleted_with_a_change_waiting: Contacts,
     pub errors: Vec<String>,
 }
 
@@ -132,17 +189,45 @@ impl SyncResult {
     /// site. A count that is collected here and forgotten there is a count
     /// nobody is ever shown, and the additions used to be written out by hand
     /// in the window code with four of the counts named and the rest left out.
+    ///
+    /// Folding two address books together is where a contact both of them hold
+    /// stops being two people: each set keeps the contact once, so absorbing
+    /// the second address book's answer adds nothing that was already said.
     pub fn absorb(&mut self, other: SyncResult) {
-        self.created_local += other.created_local;
-        self.updated_local += other.updated_local;
-        self.created_remote += other.created_remote;
-        self.updated_remote += other.updated_remote;
-        self.deleted_local += other.deleted_local;
-        self.unchanged += other.unchanged;
-        self.waiting_on_the_setting += other.waiting_on_the_setting;
-        self.replaced += other.replaced;
-        self.deleted_with_a_change_waiting += other.deleted_with_a_change_waiting;
+        self.created_local = self.created_local.and(&other.created_local);
+        self.updated_local = self.updated_local.and(&other.updated_local);
+        self.created_remote = self.created_remote.and(&other.created_remote);
+        self.updated_remote = self.updated_remote.and(&other.updated_remote);
+        self.deleted_local = self.deleted_local.and(&other.deleted_local);
+        self.unchanged = self.unchanged.and(&other.unchanged);
+        self.waiting_on_the_setting = self
+            .waiting_on_the_setting
+            .and(&other.waiting_on_the_setting);
+        self.waiting_on_how_far_a_change_goes = self
+            .waiting_on_how_far_a_change_goes
+            .and(&other.waiting_on_how_far_a_change_goes);
+        self.replaced = self.replaced.and(&other.replaced);
+        self.deleted_with_a_change_waiting = self
+            .deleted_with_a_change_waiting
+            .and(&other.deleted_with_a_change_waiting);
         self.errors.extend(other.errors);
+    }
+
+    /// Every contact this sync did something to.
+    ///
+    /// What makes "unchanged" mean nothing happened. A contact one address book
+    /// changed while the other left its copy alone was counted in both, so one
+    /// person was read out as "1 updated, 1 unchanged".
+    fn contacts_something_happened_to(&self) -> Contacts {
+        self.created_local
+            .and(&self.created_remote)
+            .and(&self.updated_local)
+            .and(&self.updated_remote)
+            .and(&self.deleted_local)
+            .and(&self.waiting_on_the_setting)
+            .and(&self.waiting_on_how_far_a_change_goes)
+            .and(&self.replaced)
+            .and(&self.deleted_with_a_change_waiting)
     }
 }
 
@@ -711,7 +796,7 @@ fn the_copy_here_holds_work_nobody_has_sent(contact: &ContactEntry) -> bool {
 /// Outlook went silently when Google deleted the contact.
 fn say_if_a_change_went_too(local: &ContactEntry, result: &mut SyncResult) {
     if the_copy_here_holds_work_nobody_has_sent(local) {
-        result.deleted_with_a_change_waiting += 1;
+        result.deleted_with_a_change_waiting.note(&local.id);
     }
 }
 
@@ -736,7 +821,7 @@ fn a_change_here_that_lost(
     if answer != WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere {
         return merged;
     }
-    result.replaced += 1;
+    result.replaced.note(&merged.id);
     let version = version_given_by(&merged, address_book);
     merged.told(address_book, version.as_deref())
 }
@@ -921,54 +1006,92 @@ impl MicrosoftContactBook for MsGraphClient {
 /// somebody who has just corrected a phone number needs to hear that the
 /// correction reached their address book.
 ///
-/// A change held back by the setting is not a failure and is not counted as
-/// one. It names the setting, because "nothing happened" sends somebody
-/// looking for a broken account.
+/// A change held back by a setting is not a failure and is not counted as one.
+/// Each of the two settings that can hold one back is named where it is the
+/// answer, because "nothing happened" sends somebody looking for a broken
+/// account and the wrong setting sends them to turn on something that changes
+/// nothing.
+///
+/// Every number here is a number of contacts. A person in two address books is
+/// one person, whatever each address book did with its own copy of her.
 pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
+    let created = result.created_local.and(&result.created_remote);
+    let untouched = result
+        .unchanged
+        .apart_from(&result.contacts_something_happened_to());
     let mut said = SummingUp::opening(format!(
         "Contacts sync: {} created, {} updated, {} deleted",
-        result.created_local + result.created_remote,
-        result.updated_local,
-        result.deleted_local
+        created.count(),
+        result.updated_local.count(),
+        result.deleted_local.count()
     ));
-    if result.updated_remote > 0 {
-        said.count(format!("{} sent", result.updated_remote));
+    if !result.updated_remote.is_empty() {
+        said.count(format!("{} sent", result.updated_remote.count()));
     }
-    if result.unchanged > 0 {
+    if !untouched.is_empty() {
         // Said only when there is one, because on an ordinary sync there is
         // nothing to say and a count of nought on every line is a count
         // nobody hears any more. It matters on a full re-read, where it is
         // the difference between "your address book has not changed" and two
         // hundred contacts reported as changed overnight.
-        said.count(format!("{} unchanged", result.unchanged));
+        said.count(format!("{} unchanged", untouched.count()));
     }
-    if result.replaced > 0 {
+    if !result.replaced.is_empty() {
         // Named as a loss rather than folded into the count of contacts
         // updated, because it is one, and because the person is the only one
         // who can decide whether to make the change again.
         said.count(format!(
             "{} of your change{} replaced by the address book",
-            result.replaced,
-            if result.replaced == 1 { "" } else { "s" }
+            result.replaced.count(),
+            if result.replaced.count() == 1 {
+                ""
+            } else {
+                "s"
+            }
         ));
     }
     if !result.errors.is_empty() {
         said.count(format!("{} errors", result.errors.len()));
     }
-    if result.waiting_on_the_setting > 0 {
-        said.sentence(format!(
-            "{} changes are waiting here: turn on Allow Changes for this \
-             account to send them",
-            result.waiting_on_the_setting
-        ));
+    if !result.waiting_on_the_setting.is_empty() {
+        // Written out both ways rather than built from parts. Three words have
+        // to agree in number, and one contact waiting was read out as "1
+        // changes are waiting here ... to send them".
+        said.sentence(if result.waiting_on_the_setting.count() == 1 {
+            "1 change is waiting here: turn on Allow Changes for this account to \
+             send it"
+                .to_string()
+        } else {
+            format!(
+                "{} changes are waiting here: turn on Allow Changes for this \
+                 account to send them",
+                result.waiting_on_the_setting.count()
+            )
+        });
     }
-    if result.deleted_with_a_change_waiting > 0 {
+    if !result.waiting_on_how_far_a_change_goes.is_empty() {
+        // The other setting, named apart from Allow Changes because turning
+        // that one on sends none of these. Held back by this one, a change was
+        // said nowhere at all.
+        said.sentence(if result.waiting_on_how_far_a_change_goes.count() == 1 {
+            "1 change is not going to your other address book: turn on sending a \
+             change to every address book that has the contact"
+                .to_string()
+        } else {
+            format!(
+                "{} changes are not going to your other address books: turn on \
+                 sending a change to every address book that has the contact",
+                result.waiting_on_how_far_a_change_goes.count()
+            )
+        });
+    }
+    if !result.deleted_with_a_change_waiting.is_empty() {
         // A whole sentence rather than another item in the list, because the
         // person has lost work and needs to read what happened rather than
         // decode a count. Two sentences written out rather than one built from
         // parts: three words have to agree in number and a sentence assembled
         // from fragments reads like one.
-        said.sentence(if result.deleted_with_a_change_waiting == 1 {
+        said.sentence(if result.deleted_with_a_change_waiting.count() == 1 {
             "A contact you had changed was deleted in your address book, and your \
              change went with it"
                 .to_string()
@@ -976,7 +1099,7 @@ pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
             format!(
                 "{} contacts you had changed were deleted in your address book, and \
                  your changes went with them",
-                result.deleted_with_a_change_waiting
+                result.deleted_with_a_change_waiting.count()
             )
         });
     }
@@ -1056,9 +1179,9 @@ fn count_the_attempt(
     result: &mut SyncResult,
 ) {
     match sent {
-        Ok(()) => result.updated_remote += 1,
+        Ok(()) => result.updated_remote.note(contact_id),
         Err(refused) if crate::service::outward::was_refused_by_the_gate(refused) => {
-            result.waiting_on_the_setting += 1;
+            result.waiting_on_the_setting.note(contact_id);
         }
         Err(failed) => result.errors.push(format!(
             "The change to contact {contact_id} could not be sent to {address_book_called}: {failed}"
@@ -1200,7 +1323,7 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
             {
                 say_if_a_change_went_too(local, &mut result);
                 cache.delete_contact(&local.id)?;
-                result.deleted_local += 1;
+                result.deleted_local.note(&local.id);
             }
             continue;
         }
@@ -1229,7 +1352,7 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                     continue;
                 }
                 if answer == WhoseCopyWins::NeitherCopyMoved {
-                    result.unchanged += 1;
+                    result.unchanged.note(&local.id);
                     continue;
                 }
                 // Google adds itself to the address books that know this
@@ -1245,11 +1368,11 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                     answer,
                     &mut result,
                 ))?;
-                result.updated_local += 1;
+                result.updated_local.note(&local.id);
             }
             None => {
                 cache.save_contact(&remote_contact)?;
-                result.created_local += 1;
+                result.created_local.note(&remote_contact.id);
             }
         }
     }
@@ -1294,7 +1417,7 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                         // after the answer, so a crash in between still makes
                         // the contact a second time on the next full read.
                         write_down(cache, &updated, &mut result);
-                        result.created_remote += 1;
+                        result.created_remote.note(&local.id);
                     }
                     Err(e) => {
                         result.errors.push(format!(
@@ -1367,7 +1490,7 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
             {
                 say_if_a_change_went_too(local, &mut result);
                 cache.delete_contact(&local.id)?;
-                result.deleted_local += 1;
+                result.deleted_local.note(&local.id);
             }
             continue;
         }
@@ -1396,7 +1519,7 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                     continue;
                 }
                 if answer == WhoseCopyWins::NeitherCopyMoved {
-                    result.unchanged += 1;
+                    result.unchanged.note(&local.id);
                     continue;
                 }
                 let merged = microsoft_fields_over_local(local, &remote_contact).also_known_to(
@@ -1410,11 +1533,11 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                     answer,
                     &mut result,
                 ))?;
-                result.updated_local += 1;
+                result.updated_local.note(&local.id);
             }
             None => {
                 cache.save_contact(&remote_contact)?;
-                result.created_local += 1;
+                result.created_local.note(&remote_contact.id);
             }
         }
     }
@@ -1441,7 +1564,7 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                         updated.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
                         // Never `?`, for the reason written on the Google side.
                         write_down(cache, &updated, &mut result);
-                        result.created_remote += 1;
+                        result.created_remote.note(&local.id);
                     }
                     Err(e) => {
                         result.errors.push(format!(
@@ -4542,7 +4665,7 @@ mod tests {
                 .await
                 .expect("a sync that read the whole address book");
 
-        assert_eq!(result.created_local, 1);
+        assert_eq!(result.created_local.count(), 1);
         assert_eq!(the_names_stored(&cache), vec!["Alice Smith".to_string()]);
     }
 
@@ -4599,7 +4722,7 @@ mod tests {
                 .await
                 .expect("a sync");
 
-        assert_eq!(result.deleted_local, 1);
+        assert_eq!(result.deleted_local.count(), 1);
         assert_eq!(the_names_stored(&cache), vec!["Bob Jones".to_string()]);
     }
 
@@ -4628,8 +4751,8 @@ mod tests {
                 .await
                 .expect("a sync");
 
-        assert_eq!(result.updated_local, 1);
-        assert_eq!(result.created_local, 0);
+        assert_eq!(result.updated_local.count(), 1);
+        assert_eq!(result.created_local.count(), 0);
         assert_eq!(the_names_stored(&cache), vec!["Alice Smith".to_string()]);
     }
 
@@ -4692,10 +4815,11 @@ mod tests {
                 .expect("a sync");
 
         assert_eq!(
-            result.updated_local, 0,
+            result.updated_local.count(),
+            0,
             "a contact neither side touched was counted as changed"
         );
-        assert_eq!(result.unchanged, 1);
+        assert_eq!(result.unchanged.count(), 1);
         let said = what_the_contacts_sync_did(&result);
         assert!(said.contains("0 updated"), "{said}");
         assert!(said.contains("1 unchanged"), "{said}");
@@ -4734,10 +4858,11 @@ mod tests {
         .expect("a sync");
 
         assert_eq!(
-            result.updated_local, 0,
+            result.updated_local.count(),
+            0,
             "a contact neither side touched was counted as changed"
         );
-        assert_eq!(result.unchanged, 1);
+        assert_eq!(result.unchanged.count(), 1);
         let said = what_the_contacts_sync_did(&result);
         assert!(said.contains("0 updated"), "{said}");
         assert!(said.contains("1 unchanged"), "{said}");
@@ -4761,8 +4886,8 @@ mod tests {
                 .await
                 .expect("a sync");
 
-        assert_eq!(result.created_local, 1);
-        assert_eq!(result.updated_local, 0);
+        assert_eq!(result.created_local.count(), 1);
+        assert_eq!(result.updated_local.count(), 0);
         assert_eq!(the_names_stored(&cache), vec!["Alice Smith".to_string()]);
     }
 
@@ -4787,7 +4912,7 @@ mod tests {
                 .await
                 .expect("a sync");
 
-        assert_eq!(result.created_remote, 1);
+        assert_eq!(result.created_remote.count(), 1);
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         let sent = google.sent.borrow();
         assert_eq!(sent.len(), 1);
@@ -4844,7 +4969,8 @@ mod tests {
         .expect("the second sync");
 
         assert_eq!(
-            result.replaced, 0,
+            result.replaced.count(),
+            0,
             "the contact reached Google, so nothing of anybody's was replaced: {result:?}"
         );
         assert!(
@@ -4902,7 +5028,8 @@ mod tests {
         .expect("the second sync");
 
         assert_eq!(
-            result.replaced, 0,
+            result.replaced.count(),
+            0,
             "the contact reached Outlook, so nothing of anybody's was replaced: {result:?}"
         );
         assert!(
@@ -4933,7 +5060,7 @@ mod tests {
             google.sent.borrow().is_empty(),
             "a contact the Outlook address book holds was sent to Google as well"
         );
-        assert_eq!(result.created_remote, 0);
+        assert_eq!(result.created_remote.count(), 0);
     }
 
     #[tokio::test]
@@ -4969,7 +5096,7 @@ mod tests {
         .await
         .expect("a sync");
 
-        assert_eq!(result.deleted_local, 1);
+        assert_eq!(result.deleted_local.count(), 1);
         assert_eq!(the_names_stored(&cache), vec!["Bob Jones".to_string()]);
     }
 
@@ -5003,8 +5130,8 @@ mod tests {
         .await
         .expect("a sync");
 
-        assert_eq!(result.updated_local, 1);
-        assert_eq!(result.created_local, 0);
+        assert_eq!(result.updated_local.count(), 1);
+        assert_eq!(result.created_local.count(), 0);
         assert_eq!(the_names_stored(&cache), vec!["Alice Smith".to_string()]);
     }
 
@@ -5031,8 +5158,8 @@ mod tests {
         .await
         .expect("a sync");
 
-        assert_eq!(result.created_local, 1);
-        assert_eq!(result.updated_local, 0);
+        assert_eq!(result.created_local.count(), 1);
+        assert_eq!(result.updated_local.count(), 0);
         assert_eq!(the_names_stored(&cache), vec!["Alice Smith".to_string()]);
     }
 
@@ -5060,7 +5187,7 @@ mod tests {
         .await
         .expect("a sync");
 
-        assert_eq!(result.created_remote, 1);
+        assert_eq!(result.created_remote.count(), 1);
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         let sent = microsoft.sent.borrow();
         assert_eq!(sent.len(), 1);
@@ -5093,10 +5220,21 @@ mod tests {
             microsoft.sent.borrow().is_empty(),
             "a contact the Google address book holds was sent to Microsoft as well"
         );
-        assert_eq!(result.created_remote, 0);
+        assert_eq!(result.created_remote.count(), 0);
     }
 
     // ── A person in two address books, and a person with no address ─────────
+
+    /// However many contacts, named apart so that the set counts as that many.
+    /// What each one is called does not matter to a sentence that only says how
+    /// many there were.
+    fn however_many(how_many: usize) -> Contacts {
+        let mut contacts = Contacts::default();
+        for which in 0..how_many {
+            contacts.note(&format!("contact {which}"));
+        }
+        contacts
+    }
 
     #[test]
     fn test_folding_two_address_books_together_keeps_every_count() {
@@ -5108,52 +5246,88 @@ mod tests {
         // happens.
         let mut total = SyncResult::default();
         total.absorb(SyncResult {
-            created_local: 1,
-            updated_local: 2,
-            created_remote: 3,
-            updated_remote: 4,
-            deleted_local: 5,
-            unchanged: 11,
-            waiting_on_the_setting: 7,
-            replaced: 8,
-            deleted_with_a_change_waiting: 9,
+            created_local: Contacts::these(["created here 1"]),
+            updated_local: Contacts::these(["updated here 1"]),
+            created_remote: Contacts::these(["created there 1"]),
+            updated_remote: Contacts::these(["sent 1"]),
+            deleted_local: Contacts::these(["deleted 1"]),
+            unchanged: Contacts::these(["unchanged 1"]),
+            waiting_on_the_setting: Contacts::these(["waiting on allow changes 1"]),
+            waiting_on_how_far_a_change_goes: Contacts::these(["waiting on how far 1"]),
+            replaced: Contacts::these(["replaced 1"]),
+            deleted_with_a_change_waiting: Contacts::these(["deleted with a change 1"]),
             errors: vec!["one".to_string()],
         });
         total.absorb(SyncResult {
-            created_local: 10,
-            updated_local: 20,
-            created_remote: 30,
-            updated_remote: 40,
-            deleted_local: 50,
-            unchanged: 110,
-            waiting_on_the_setting: 70,
-            replaced: 80,
-            deleted_with_a_change_waiting: 90,
+            created_local: Contacts::these(["created here 2"]),
+            updated_local: Contacts::these(["updated here 2"]),
+            created_remote: Contacts::these(["created there 2"]),
+            updated_remote: Contacts::these(["sent 2"]),
+            deleted_local: Contacts::these(["deleted 2"]),
+            unchanged: Contacts::these(["unchanged 2"]),
+            waiting_on_the_setting: Contacts::these(["waiting on allow changes 2"]),
+            waiting_on_how_far_a_change_goes: Contacts::these(["waiting on how far 2"]),
+            replaced: Contacts::these(["replaced 2"]),
+            deleted_with_a_change_waiting: Contacts::these(["deleted with a change 2"]),
             errors: vec!["two".to_string()],
         });
 
         assert_eq!(
             total,
             SyncResult {
-                created_local: 11,
-                updated_local: 22,
-                created_remote: 33,
-                updated_remote: 44,
-                deleted_local: 55,
-                unchanged: 121,
-                waiting_on_the_setting: 77,
-                replaced: 88,
-                deleted_with_a_change_waiting: 99,
+                created_local: Contacts::these(["created here 1", "created here 2"]),
+                updated_local: Contacts::these(["updated here 1", "updated here 2"]),
+                created_remote: Contacts::these(["created there 1", "created there 2"]),
+                updated_remote: Contacts::these(["sent 1", "sent 2"]),
+                deleted_local: Contacts::these(["deleted 1", "deleted 2"]),
+                unchanged: Contacts::these(["unchanged 1", "unchanged 2"]),
+                waiting_on_the_setting: Contacts::these([
+                    "waiting on allow changes 1",
+                    "waiting on allow changes 2"
+                ]),
+                waiting_on_how_far_a_change_goes: Contacts::these([
+                    "waiting on how far 1",
+                    "waiting on how far 2"
+                ]),
+                replaced: Contacts::these(["replaced 1", "replaced 2"]),
+                deleted_with_a_change_waiting: Contacts::these([
+                    "deleted with a change 1",
+                    "deleted with a change 2"
+                ]),
                 errors: vec!["one".to_string(), "two".to_string()],
             }
         );
     }
 
     #[test]
+    fn test_folding_two_address_books_together_counts_one_contact_once() {
+        // The same fold, over the same person. Both address books hold a copy
+        // of her and each read its own, so a running total said one edit had
+        // happened twice.
+        let mut total = SyncResult::default();
+        total.absorb(SyncResult {
+            updated_local: Contacts::these(["her"]),
+            replaced: Contacts::these(["her"]),
+            waiting_on_the_setting: Contacts::these(["her"]),
+            ..Default::default()
+        });
+        total.absorb(SyncResult {
+            updated_local: Contacts::these(["her"]),
+            replaced: Contacts::these(["her"]),
+            waiting_on_the_setting: Contacts::these(["her"]),
+            ..Default::default()
+        });
+
+        assert_eq!(total.updated_local.count(), 1);
+        assert_eq!(total.replaced.count(), 1);
+        assert_eq!(total.waiting_on_the_setting.count(), 1);
+    }
+
+    #[test]
     fn test_a_change_held_back_by_the_setting_names_the_setting_rather_than_saying_nothing() {
         let held = SyncResult {
-            updated_local: 2,
-            waiting_on_the_setting: 3,
+            updated_local: however_many(2),
+            waiting_on_the_setting: however_many(3),
             ..Default::default()
         };
 
@@ -5166,7 +5340,7 @@ mod tests {
     #[test]
     fn test_a_sync_that_sent_something_says_so() {
         let sent = SyncResult {
-            updated_remote: 1,
+            updated_remote: however_many(1),
             ..Default::default()
         };
 
@@ -5189,7 +5363,7 @@ mod tests {
         // If deleting here ever does reach an address book, this is where the
         // count for it goes, and it goes in with the path that sets it.
         let removed_here = SyncResult {
-            deleted_local: 3,
+            deleted_local: however_many(3),
             ..Default::default()
         };
 
@@ -5215,13 +5389,13 @@ mod tests {
         // fragment. Each clause is an item in a list here and the list is
         // punctuated once, so a clause added later cannot bring it back.
         let said = what_the_contacts_sync_did(&SyncResult {
-            created_local: 1,
-            updated_local: 1,
-            updated_remote: 1,
-            deleted_local: 2,
-            replaced: 1,
-            waiting_on_the_setting: 2,
-            deleted_with_a_change_waiting: 2,
+            created_local: however_many(1),
+            updated_local: however_many(1),
+            updated_remote: however_many(1),
+            deleted_local: however_many(2),
+            replaced: however_many(1),
+            waiting_on_the_setting: however_many(2),
+            deleted_with_a_change_waiting: however_many(2),
             errors: vec!["the address book said no".to_string()],
             ..Default::default()
         });
@@ -5265,7 +5439,7 @@ mod tests {
             "{:?}",
             google.sent.borrow()
         );
-        assert_eq!(result.created_remote, 0);
+        assert_eq!(result.created_remote.count(), 0);
     }
 
     // ── A change made here, going back out ──────────────────────────────────
@@ -5343,8 +5517,8 @@ mod tests {
             "AAMkAGI2",
             "each address book is sent its own name for the contact"
         );
-        assert_eq!(from_google.updated_remote, 1);
-        assert_eq!(from_microsoft.updated_remote, 1);
+        assert_eq!(from_google.updated_remote.count(), 1);
+        assert_eq!(from_microsoft.updated_remote.count(), 1);
     }
 
     #[tokio::test]
@@ -5468,7 +5642,7 @@ mod tests {
         .await
         .expect("a sync");
 
-        assert_eq!(result.waiting_on_the_setting, 1);
+        assert_eq!(result.waiting_on_the_setting.count(), 1);
         assert!(
             result.errors.is_empty(),
             "one refusal per contact on every sync is how a warning stops being read: {:?}",
@@ -5994,7 +6168,7 @@ mod tests {
         .await
         .expect("a sync");
 
-        assert_eq!(result.created_remote, 1);
+        assert_eq!(result.created_remote.count(), 1);
         assert_eq!(
             the_version_kept_for(&cache, "Grace Hopper", AddressBook::Microsoft).as_deref(),
             Some("W/\"v3\"")
@@ -6043,7 +6217,7 @@ mod tests {
             "a contact Google already holds was written into Outlook as well: {:?}",
             microsoft.sent.borrow()
         );
-        assert_eq!(result.created_remote, 0);
+        assert_eq!(result.created_remote.count(), 0);
     }
 
     fn the_contact_stored(cache: &MessageCache, name: &str) -> ContactEntry {
@@ -6081,8 +6255,8 @@ mod tests {
                 .expect("a sync");
 
         assert!(result.errors.is_empty(), "{:?}", result.errors);
-        assert_eq!(result.updated_local, 1);
-        assert_eq!(result.created_local, 0);
+        assert_eq!(result.updated_local.count(), 1);
+        assert_eq!(result.created_local.count(), 0);
         assert_eq!(the_names_stored(&cache), vec!["Alice Smith".to_string()]);
         let alice = the_contact_stored(&cache, "Alice Smith");
         assert_eq!(alice.id_in(&AddressBook::Google), Some("people/c1"));
@@ -6120,7 +6294,7 @@ mod tests {
         .expect("a sync");
 
         assert!(result.errors.is_empty(), "{:?}", result.errors);
-        assert_eq!(result.updated_local, 1);
+        assert_eq!(result.updated_local.count(), 1);
         assert_eq!(the_names_stored(&cache), vec!["Alice Smith".to_string()]);
         let alice = the_contact_stored(&cache, "Alice Smith");
         assert_eq!(alice.id_in(&AddressBook::Google), Some("people/c1"));
@@ -6145,7 +6319,7 @@ mod tests {
                 .expect("a sync");
 
         assert!(result.errors.is_empty(), "{:?}", result.errors);
-        assert_eq!(result.created_local, 2);
+        assert_eq!(result.created_local.count(), 2);
         let mut names = the_names_stored(&cache);
         names.sort();
         assert_eq!(
@@ -6180,7 +6354,7 @@ mod tests {
         .expect("a sync");
 
         assert!(result.errors.is_empty(), "{:?}", result.errors);
-        assert_eq!(result.created_local, 2);
+        assert_eq!(result.created_local.count(), 2);
         assert_eq!(the_names_stored(&cache).len(), 2);
     }
 
@@ -6205,7 +6379,7 @@ mod tests {
                 .await
                 .expect("a sync");
 
-        assert_eq!(result.deleted_local, 0);
+        assert_eq!(result.deleted_local.count(), 0);
         assert_eq!(the_names_stored(&cache), vec!["Alice Smith".to_string()]);
     }
 
@@ -6465,8 +6639,8 @@ mod tests {
     #[test]
     fn test_a_change_an_address_book_replaced_is_said_rather_than_just_done() {
         let result = SyncResult {
-            updated_local: 3,
-            replaced: 2,
+            updated_local: however_many(3),
+            replaced: however_many(2),
             ..Default::default()
         };
 
@@ -6479,7 +6653,7 @@ mod tests {
     #[test]
     fn test_one_replaced_change_is_not_said_in_the_plural() {
         let result = SyncResult {
-            replaced: 1,
+            replaced: however_many(1),
             ..Default::default()
         };
 
@@ -6491,7 +6665,7 @@ mod tests {
     #[test]
     fn test_a_sync_that_replaced_nothing_says_nothing_about_it() {
         let result = SyncResult {
-            updated_local: 4,
+            updated_local: however_many(4),
             ..Default::default()
         };
 
@@ -6525,10 +6699,11 @@ mod tests {
             "Google moved its own copy, so Google's copy is the one to keep"
         );
         assert_eq!(
-            result.replaced, 1,
+            result.replaced.count(),
+            1,
             "an edit was thrown away and nothing counted it: {result:?}"
         );
-        assert_eq!(result.updated_local, 1, "{result:?}");
+        assert_eq!(result.updated_local.count(), 1, "{result:?}");
         assert!(
             what_the_contacts_sync_did(&result).contains("1 of your change replaced by the"),
             "counting the loss and never saying it leaves the edit as silently gone \
@@ -6573,10 +6748,11 @@ mod tests {
             "Outlook moved its own copy, so Outlook's copy is the one to keep"
         );
         assert_eq!(
-            result.replaced, 1,
+            result.replaced.count(),
+            1,
             "an edit was thrown away and nothing counted it: {result:?}"
         );
-        assert_eq!(result.updated_local, 1, "{result:?}");
+        assert_eq!(result.updated_local.count(), 1, "{result:?}");
         assert!(
             what_the_contacts_sync_did(&result).contains("1 of your change replaced by the"),
             "counting the loss and never saying it leaves the edit as silently gone \
@@ -6609,9 +6785,10 @@ mod tests {
                 .await
                 .expect("a sync");
 
-        assert_eq!(result.deleted_local, 1, "{result:?}");
+        assert_eq!(result.deleted_local.count(), 1, "{result:?}");
         assert_eq!(
-            result.deleted_with_a_change_waiting, 1,
+            result.deleted_with_a_change_waiting.count(),
+            1,
             "the contact and the unsent change in it both went and the sync called \
              it an ordinary deletion: {result:?}"
         );
@@ -6643,9 +6820,10 @@ mod tests {
         .await
         .expect("a sync");
 
-        assert_eq!(result.deleted_local, 1, "{result:?}");
+        assert_eq!(result.deleted_local.count(), 1, "{result:?}");
         assert_eq!(
-            result.deleted_with_a_change_waiting, 1,
+            result.deleted_with_a_change_waiting.count(),
+            1,
             "the contact and the unsent change in it both went and the sync called \
              it an ordinary deletion: {result:?}"
         );
@@ -6677,8 +6855,12 @@ mod tests {
                 .await
                 .expect("a sync");
 
-        assert_eq!(result.deleted_local, 1);
-        assert_eq!(result.deleted_with_a_change_waiting, 0, "{result:?}");
+        assert_eq!(result.deleted_local.count(), 1);
+        assert_eq!(
+            result.deleted_with_a_change_waiting.count(),
+            0,
+            "{result:?}"
+        );
         assert!(
             !what_the_contacts_sync_did(&result).contains("you had changed"),
             "{}",
@@ -6689,8 +6871,8 @@ mod tests {
     #[test]
     fn test_a_contact_deleted_with_a_change_in_it_is_said_rather_than_counted_as_one_deletion() {
         let one = what_the_contacts_sync_did(&SyncResult {
-            deleted_local: 1,
-            deleted_with_a_change_waiting: 1,
+            deleted_local: however_many(1),
+            deleted_with_a_change_waiting: however_many(1),
             ..Default::default()
         });
         assert!(
@@ -6699,8 +6881,8 @@ mod tests {
         );
 
         let several = what_the_contacts_sync_did(&SyncResult {
-            deleted_local: 3,
-            deleted_with_a_change_waiting: 2,
+            deleted_local: however_many(3),
+            deleted_with_a_change_waiting: however_many(2),
             ..Default::default()
         });
         assert!(
@@ -6712,7 +6894,7 @@ mod tests {
     #[test]
     fn test_a_sync_that_deleted_nothing_of_yours_says_nothing_about_it() {
         let result = SyncResult {
-            deleted_local: 4,
+            deleted_local: however_many(4),
             ..Default::default()
         };
 
@@ -6752,7 +6934,8 @@ mod tests {
         let stored = the_contact_under(&cache, &typed_here.id);
         assert_eq!(stored.name, THE_ADDRESS_BOOKS_OWN_WORDS);
         assert_eq!(
-            result.replaced, 1,
+            result.replaced.count(),
+            1,
             "the words somebody typed were replaced and nothing counted it: {result:?}"
         );
         assert!(
@@ -6793,7 +6976,8 @@ mod tests {
                 .expect("a sync");
 
         assert_eq!(
-            result.waiting_on_the_setting, 1,
+            result.waiting_on_the_setting.count(),
+            1,
             "the change was counted as something other than waiting on the setting: {result:?}"
         );
         let stored = the_contact_under(&cache, &typed_here.id);
@@ -6803,7 +6987,8 @@ mod tests {
              touched its own copy"
         );
         assert_eq!(
-            result.updated_local, 0,
+            result.updated_local.count(),
+            0,
             "a contact that was left alone was counted as changed: {result:?}"
         );
         assert!(
@@ -6841,7 +7026,8 @@ mod tests {
         .expect("a sync");
 
         assert_eq!(
-            result.waiting_on_the_setting, 1,
+            result.waiting_on_the_setting.count(),
+            1,
             "the change was counted as something other than waiting on the setting: {result:?}"
         );
         let stored = the_contact_under(&cache, &typed_here.id);
@@ -6851,7 +7037,8 @@ mod tests {
              touched its own copy"
         );
         assert_eq!(
-            result.updated_local, 0,
+            result.updated_local.count(),
+            0,
             "a contact that was left alone was counted as changed: {result:?}"
         );
         assert!(
@@ -6952,7 +7139,8 @@ mod tests {
             "Google moved its own copy, so Google's copy is the one to keep"
         );
         assert_eq!(
-            result.replaced, 1,
+            result.replaced.count(),
+            1,
             "the edit Outlook was still owed was written over and nothing counted it: {result:?}"
         );
         assert!(
@@ -6996,10 +7184,11 @@ mod tests {
              touched its own copy"
         );
         assert_eq!(
-            result.updated_local, 0,
+            result.updated_local.count(),
+            0,
             "a contact that was left alone was counted as changed: {result:?}"
         );
-        assert_eq!(result.replaced, 0, "nothing was lost: {result:?}");
+        assert_eq!(result.replaced.count(), 0, "nothing was lost: {result:?}");
         assert!(
             !what_the_contacts_sync_did(&result).contains("replaced"),
             "nothing was lost and somebody was told they had lost a change: {}",
@@ -7045,7 +7234,8 @@ mod tests {
             "Outlook moved its own copy, so Outlook's copy is the one to keep"
         );
         assert_eq!(
-            result.replaced, 1,
+            result.replaced.count(),
+            1,
             "the edit Google was still owed was written over and nothing counted it: {result:?}"
         );
         assert!(
@@ -7091,10 +7281,11 @@ mod tests {
              touched its own copy"
         );
         assert_eq!(
-            result.updated_local, 0,
+            result.updated_local.count(),
+            0,
             "a contact that was left alone was counted as changed: {result:?}"
         );
-        assert_eq!(result.replaced, 0, "nothing was lost: {result:?}");
+        assert_eq!(result.replaced.count(), 0, "nothing was lost: {result:?}");
         assert!(
             !what_the_contacts_sync_did(&result).contains("replaced"),
             "nothing was lost and somebody was told they had lost a change: {}",
@@ -7103,6 +7294,159 @@ mod tests {
         assert!(
             still_owed_the_change(&stored, &AddressBook::Google),
             "the change stopped waiting without ever reaching Google"
+        );
+    }
+
+    // ── One contact, however many address books hold a copy ─────────────────
+    //
+    // Every count in the summary is a number of contacts. Each address book
+    // reads its own copy of the same person, so a count kept per copy said one
+    // edit had happened twice and somebody heard it said twice.
+
+    /// A contact both address books know, changed here, where neither of them
+    /// has been told yet.
+    ///
+    /// Ordinary rather than exotic: a push that failed leaves exactly this, and
+    /// so does an account whose changes are held back by a setting.
+    fn a_contact_both_address_books_are_owed(cache: &MessageCache) -> ContactEntry {
+        let contact = a_contact_in_both_books(true);
+        cache
+            .save_contact(&contact)
+            .expect("a contact to be stored");
+        contact
+    }
+
+    /// A contact both address books know that nobody here has touched.
+    fn a_contact_both_address_books_know_and_nobody_changed(cache: &MessageCache) -> ContactEntry {
+        let mut contact = a_contact_in_both_books(false);
+        contact.last_synced_at = Some("2026-01-01T00:00:00Z".to_string());
+        cache
+            .save_contact(&contact)
+            .expect("a contact to be stored");
+        contact
+    }
+
+    /// One person in both address books, either owed a change made here or not.
+    fn a_contact_in_both_books(a_change_is_waiting: bool) -> ContactEntry {
+        let mut contact = a_local_contact(THE_WORDS_TYPED_HERE, "alice@example.com");
+        contact.id = "local-in-both-books".to_string();
+        contact.source_provider = Some(GOOGLE_ADDRESS_BOOK.to_string());
+        contact.pending = a_change_is_waiting;
+        contact.known_to = vec![
+            ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: GOOGLES_NAME_FOR_HER.to_string(),
+                provider_version: Some(THE_GOOGLE_MARKER_LAST_SEEN.to_string()),
+                change_is_waiting: a_change_is_waiting,
+            },
+            ProviderIdentity {
+                address_book: AddressBook::Microsoft,
+                provider_contact_id: OUTLOOKS_NAME_FOR_HER.to_string(),
+                provider_version: Some(THE_OUTLOOK_MARKER_LAST_SEEN.to_string()),
+                change_is_waiting: a_change_is_waiting,
+            },
+        ];
+        contact
+    }
+
+    #[tokio::test]
+    async fn test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice() {
+        // The fault as it was measured with the shipped settings: one contact,
+        // one edit owed to both address books, and every number in the sentence
+        // doubled, because each address book counted its own copy of her.
+        let cache = a_cache("one_contact_counted_once");
+        a_contact_both_address_books_are_owed(&cache);
+        let google = ScriptedGoogle {
+            people: vec![a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "etag-2",
+            )],
+            the_account_is_read_only: true,
+            ..Default::default()
+        };
+        let microsoft = ScriptedMicrosoft {
+            contacts: vec![a_microsoft_contact_at_version(
+                OUTLOOKS_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "W/\"2\"",
+            )],
+            the_account_is_read_only: true,
+            ..Default::default()
+        };
+
+        let mut total = SyncResult::default();
+        total.absorb(
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a Google sync"),
+        );
+        total.absorb(
+            sync_microsoft_contacts(
+                &cache,
+                &microsoft,
+                "a token",
+                AN_ACCOUNT,
+                ANYWHERE_IT_IS_KNOWN,
+            )
+            .await
+            .expect("a Microsoft sync"),
+        );
+
+        assert_eq!(
+            what_the_contacts_sync_did(&total),
+            "Contacts sync: 0 created, 1 updated, 0 deleted, 1 of your change replaced \
+             by the address book. 1 change is waiting here: turn on Allow Changes for \
+             this account to send it."
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_one_address_book_moved_is_not_also_called_unchanged() {
+        // Unchanged means nothing happened to this contact, so a contact
+        // something did happen to cannot be one of them. Google moved its copy
+        // and Outlook did not, which said "1 updated, 1 unchanged" about one
+        // person.
+        let cache = a_cache("updated_is_not_also_unchanged");
+        a_contact_both_address_books_know_and_nobody_changed(&cache);
+        let google = ScriptedGoogle {
+            people: vec![a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "etag-2",
+            )],
+            ..Default::default()
+        };
+        let microsoft = ScriptedMicrosoft {
+            contacts: vec![a_microsoft_contact_at_version(
+                OUTLOOKS_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                THE_OUTLOOK_MARKER_LAST_SEEN,
+            )],
+            ..Default::default()
+        };
+
+        let mut total = SyncResult::default();
+        total.absorb(
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a Google sync"),
+        );
+        total.absorb(
+            sync_microsoft_contacts(
+                &cache,
+                &microsoft,
+                "a token",
+                AN_ACCOUNT,
+                ANYWHERE_IT_IS_KNOWN,
+            )
+            .await
+            .expect("a Microsoft sync"),
+        );
+
+        assert_eq!(
+            what_the_contacts_sync_did(&total),
+            "Contacts sync: 0 created, 1 updated, 0 deleted"
         );
     }
 
@@ -7125,9 +7469,10 @@ mod tests {
                 .await
                 .expect("a sync");
 
-        assert_eq!(result.deleted_local, 1, "{result:?}");
+        assert_eq!(result.deleted_local.count(), 1, "{result:?}");
         assert_eq!(
-            result.deleted_with_a_change_waiting, 1,
+            result.deleted_with_a_change_waiting.count(),
+            1,
             "the row went and took the edit Outlook was still owed with it, and the sync \
              called it an ordinary deletion: {result:?}"
         );
@@ -7158,9 +7503,10 @@ mod tests {
         .await
         .expect("a sync");
 
-        assert_eq!(result.deleted_local, 1, "{result:?}");
+        assert_eq!(result.deleted_local.count(), 1, "{result:?}");
         assert_eq!(
-            result.deleted_with_a_change_waiting, 1,
+            result.deleted_with_a_change_waiting.count(),
+            1,
             "the row went and took the edit Google was still owed with it, and the sync \
              called it an ordinary deletion: {result:?}"
         );
