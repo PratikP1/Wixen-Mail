@@ -1052,7 +1052,7 @@ pub fn build_ical_vevent(event: &CalDavEvent) -> String {
     lines.push("END:VEVENT".to_string());
     lines.push("END:VCALENDAR".to_string());
 
-    lines.join("\r\n")
+    written_out(&lines)
 }
 
 /// Every property of an event this program has a value for.
@@ -1292,7 +1292,7 @@ pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> Option<St
     if !ours_are_in {
         return None;
     }
-    let mut document = written.join("\r\n");
+    let mut document = written_out(&written);
     document.push_str("\r\n");
     Some(document)
 }
@@ -1307,6 +1307,73 @@ fn said_again(ours: &[String], numbered: u64) -> Vec<String> {
     lines.push(format!("SEQUENCE:{}", numbered.saturating_add(1)));
     lines.push(format!("DTSTAMP:{}", ical_utc_stamp(chrono::Utc::now())));
     lines
+}
+
+/// The longest a line in a calendar document may be, in octets.
+///
+/// RFC 5545 section 3.1.
+const LONGEST_LINE: usize = 75;
+
+/// Lines written out as a document, each broken where the standard breaks a
+/// long one.
+fn written_out(lines: &[String]) -> String {
+    lines
+        .iter()
+        .map(|line| folded(line))
+        .collect::<Vec<String>>()
+        .join("\r\n")
+}
+
+/// One line, broken where the standard says a long one breaks.
+///
+/// A line runs to 75 octets and the rest is carried on the next one behind a
+/// single space, which counts toward that next line's own length. A reader puts
+/// them back together by taking the space off, so nothing is added to the value
+/// and nothing is taken away.
+///
+/// The break lands between characters and never inside one. The limit is in
+/// octets and a character can be four of them, so a break counted straight at
+/// the seventy-fifth octet cuts a Japanese title in half and leaves two pieces
+/// that are not text.
+///
+/// A line that opens or closes a component is left as it is however long it is.
+/// [`laid_out_by_hand`] reads white space directly after such a line as
+/// somebody's layout, so breaking one would make the next reader take the whole
+/// document as indented and every long value in it would come back short. No
+/// calendar program writes a marker line past the limit; this writes out what a
+/// server sent, and what a server sends is not trusted.
+fn folded(line: &str) -> String {
+    if line.len() <= LONGEST_LINE || opens_or_closes_a_component(line) {
+        return line.to_string();
+    }
+    let mut written = String::with_capacity(line.len() + line.len() / LONGEST_LINE * 3);
+    let mut rest = line;
+    let mut room = LONGEST_LINE;
+    loop {
+        let (piece, left) = rest.split_at(fits_in(rest, room));
+        written.push_str(piece);
+        if left.is_empty() {
+            return written;
+        }
+        written.push_str("\r\n ");
+        // The space that says the line is carried on is part of what the next
+        // line may hold.
+        room = LONGEST_LINE - 1;
+        rest = left;
+    }
+}
+
+/// How much of this text fits in that many octets without cutting a character
+/// in half.
+fn fits_in(text: &str, octets: usize) -> usize {
+    if text.len() <= octets {
+        return text.len();
+    }
+    let mut at = octets;
+    while !text.is_char_boundary(at) {
+        at -= 1;
+    }
+    at
 }
 
 /// One document's lines, with folded ones put back together.
@@ -1471,6 +1538,18 @@ fn without_the_property_name(rule: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The lines of a document that are longer than the standard allows.
+    ///
+    /// Named rather than counted so a failure says which line went out too
+    /// long, and shared with the tests of the change path below so both halves
+    /// of the writer are held to one rule.
+    pub(crate) fn lines_too_long(document: &str) -> Vec<&str> {
+        document
+            .split("\r\n")
+            .filter(|line| line.len() > LONGEST_LINE)
+            .collect()
+    }
 
     #[test]
     fn test_normalize_ical_datetime() {
@@ -1699,6 +1778,57 @@ mod tests {
             "{}",
             build_ical_vevent(&event)
         );
+    }
+
+    #[test]
+    fn test_a_long_line_this_program_writes_is_broken_the_way_the_standard_breaks_one() {
+        // RFC 5545 section 3.1: a line runs to 75 octets and the rest is
+        // carried on the next one behind a space. This program wrote whatever
+        // length it liked, so a long title went out as one 150 octet line. A
+        // server that checks what it is sent refuses the whole document, and
+        // the person is told only that the server said no.
+        let long_title = "Quarterly review of everything the team managed this \
+                          year and what it means for the one ahead";
+        let event = CalDavEvent {
+            summary: long_title.to_string(),
+            ..an_event_to_send()
+        };
+
+        let ical = build_ical_vevent(&event);
+
+        assert!(
+            lines_too_long(&ical).is_empty(),
+            "these lines are longer than the standard allows: {:?}\n{ical}",
+            lines_too_long(&ical)
+        );
+        let read_back = parse_ical_vevent(&ical, "", None).expect("the document to read");
+        assert_eq!(
+            read_back.summary, long_title,
+            "breaking the line changed the title:\n{ical}"
+        );
+    }
+
+    #[test]
+    fn test_a_character_that_takes_more_than_one_octet_is_not_cut_in_half_by_a_break() {
+        // The limit is in octets and a character can be three of them, so a
+        // break counted in characters writes lines over the limit and a break
+        // counted in octets can land inside a character. Either way the value
+        // stops being the words somebody typed.
+        let long_title = "日本語の会議についての長い説明とその他いろいろな話題".repeat(3);
+        let event = CalDavEvent {
+            summary: long_title.clone(),
+            ..an_event_to_send()
+        };
+
+        let ical = build_ical_vevent(&event);
+
+        assert!(
+            lines_too_long(&ical).is_empty(),
+            "these lines are longer than the standard allows: {:?}",
+            lines_too_long(&ical)
+        );
+        let read_back = parse_ical_vevent(&ical, "", None).expect("the document to read");
+        assert_eq!(read_back.summary, long_title, "the title came back changed");
     }
 
     fn an_event_to_send() -> CalDavEvent {
@@ -2649,6 +2779,7 @@ mod sign_in_tests {
 
 #[cfg(test)]
 pub(crate) mod writing_tests {
+    use super::tests::lines_too_long;
     use super::*;
     use crate::common::answering::{answering, answering_with_a_tag, asked_for, heard};
 
@@ -2786,6 +2917,63 @@ pub(crate) mod writing_tests {
             changed.matches("UID:e-1").count(),
             1,
             "the identity was rewritten or repeated:\n{changed}"
+        );
+    }
+
+    #[test]
+    fn test_a_line_the_server_broke_in_two_goes_back_broken_rather_than_as_one_long_one() {
+        // The change path puts the server's folded lines back together to read
+        // the document, and used to write them all back out as single lines. A
+        // guest list is the usual one: an ATTENDEE line with a full name and an
+        // address on it is past the limit, so it went back 101 octets long. The
+        // value survived; the way it was written did not, and a server that
+        // checks what it is sent refuses the whole PUT.
+        let a_long_guest = "ATTENDEE;CN=Samantha Fitzwilliam-Cholmondeley;\
+                            PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:samantha@example.com";
+        let held = a_document_the_server_holds("e-1").replace(
+            "ATTENDEE;CN=Sam;PARTSTAT=ACCEPTED:mailto:sam@example.com",
+            a_long_guest,
+        );
+
+        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"))
+            .expect("the event to be found and changed");
+
+        assert!(
+            lines_too_long(&changed).is_empty(),
+            "these lines are longer than the standard allows: {:?}\n{changed}",
+            lines_too_long(&changed)
+        );
+        assert!(
+            unfolded(&changed).iter().any(|line| line == a_long_guest),
+            "the guest did not survive being broken up:\n{changed}"
+        );
+    }
+
+    #[test]
+    fn test_a_document_this_program_writes_reads_back_as_the_lines_it_was_written_from() {
+        // The reader here takes a line beginning with white space directly
+        // after a BEGIN or END line as somebody's layout rather than a break,
+        // and takes the white space off the whole document. So a marker line
+        // long enough to be broken would make the next document this program
+        // reads back its own writing as an indented one, and every long value
+        // in it would come back short. No calendar program writes a marker line
+        // that long, but this writes out what a server sent and what a server
+        // sends is not trusted.
+        let absurd = format!("X-{}", "LONG-COMPONENT-NAME-".repeat(5));
+        let lines: Vec<String> = vec![
+            "BEGIN:VCALENDAR".to_string(),
+            format!("BEGIN:{absurd}"),
+            format!("DESCRIPTION:{}", "a note that runs on and on ".repeat(6)),
+            format!("END:{absurd}"),
+            "END:VCALENDAR".to_string(),
+        ];
+
+        let document = written_out(&lines);
+
+        assert_eq!(
+            unfolded(&document),
+            lines,
+            "the document does not read back as what it was written from:\n{document}"
         );
     }
 

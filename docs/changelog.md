@@ -654,10 +654,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   A calendar server holds a whole document per event, and a change replaces the
   whole thing, so this could easily have wiped out everything it does not model.
   It does not: the document the server holds is read first, the handful of
-  things this program knows about are replaced inside it, and everything else
-  goes back exactly as it arrived. Guests keep their invitations and their
-  answers, alarms keep their own times, and anything another calendar program
-  put there is left alone.
+  things this program knows about are replaced inside it, and every other value
+  goes back with the same words it arrived with. Guests keep their invitations
+  and their answers, alarms keep their own times, and anything another calendar
+  program put there is kept.
+
+  The values go back unchanged. The document itself is written out afresh
+  rather than copied, so it is the same value rewritten and not the same bytes:
+  a line the server had broken across two is put back together to read it and
+  broken again to send it, and the break can land in a different place. That
+  breaking is new. Before it, a guest with a long name and an address on the
+  same line went back as one line of 101 characters where the standard allows
+  75, and a server that checks what it is sent can refuse the whole change over
+  it.
 
   What this program replaces is the title, the notes, the place, the start and
   end, the repeat rule, the days the series calls off, and the status. Emptying
