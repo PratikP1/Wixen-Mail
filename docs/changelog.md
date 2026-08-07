@@ -241,6 +241,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A hole closed in how a sync summary is punctuated, which nobody meets
+  today.** The rule is that each clause says what it is and never how it joins
+  to its neighbours, so the summary decides the spacing and the full stops in
+  one place. It took the stop and the spaces off the end of a clause and never
+  off the front, so a clause written with a space already there would have been
+  spoken with two: "0 deleted.  Term dates: something". Read aloud that is a
+  pause where there should be none.
+
+  Nothing in the program writes a clause that way. Every path that could was
+  checked and each one either trims what it writes or cannot reach that clause
+  at all, so this is a guarantee that was not kept rather than a fault anybody
+  has heard. It is fixed because the next clause somebody writes should not
+  have to know.
+
 - **A change an address book replaced is now said once, not on every sync after
   it.** Where your copy and the address book's copy have both moved, the address
   book wins and the line after the sync says your change was replaced, so a lost

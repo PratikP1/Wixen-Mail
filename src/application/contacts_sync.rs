@@ -5449,6 +5449,7 @@ mod tests {
         assert!(!said.contains(".."), "a stop spoken twice: {said}");
         assert!(!said.contains("., "), "a fragment after a stop: {said}");
         assert!(!said.contains(" ,"), "a pause before a pause: {said}");
+        assert!(!said.contains("  "), "a space spoken twice: {said}");
         assert_eq!(
             said,
             "Contacts sync: 1 created, 1 updated, 2 deleted, 1 sent, \

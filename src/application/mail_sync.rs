@@ -1942,6 +1942,7 @@ mod tests {
 
         assert!(!said.contains(".."), "a stop spoken twice: {said}");
         assert!(!said.contains("., "), "a fragment after a stop: {said}");
+        assert!(!said.contains("  "), "a space spoken twice: {said}");
         assert_eq!(
             said,
             "Inbox: 500 of 40000 messages downloaded, Shift+F9 for older, \

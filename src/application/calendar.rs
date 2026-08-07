@@ -4800,6 +4800,7 @@ mod tests {
 
         assert!(!said.contains(".."), "a stop spoken twice: {said}");
         assert!(!said.contains("., "), "a fragment after a stop: {said}");
+        assert!(!said.contains("  "), "a space spoken twice: {said}");
         assert_eq!(
             said,
             "Calendar sync: 1 created, 1 updated, 0 deleted, 2 sent, 1 errors. \

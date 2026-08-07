@@ -84,9 +84,14 @@ fn close(said: &mut String) {
     }
 }
 
-/// A part with no full stop of its own, however it was written.
+/// A part with no space or full stop of its own, however it was written.
+///
+/// Both ends, because a part says what it is and never how it is joined to its
+/// neighbours. The space in front is as much a joining decision as the stop
+/// behind: a sentence written with one gave "deleted.  Term dates", and this
+/// module exists to make that decision once.
 fn without_a_stop(part: &str) -> &str {
-    part.trim_end().trim_end_matches('.').trim_end()
+    part.trim().trim_end_matches('.').trim_end()
 }
 
 /// The parts that have something in them, each without a stop of its own.
@@ -196,6 +201,24 @@ mod tests {
         assert_eq!(
             said.spoken(),
             "Calendar sync: 1 created. Term dates: 1 change cannot be saved."
+        );
+    }
+
+    #[test]
+    fn test_a_part_written_with_a_space_in_front_of_it_is_not_spoken_with_two() {
+        // The other half of the rule this module states and did not keep. A
+        // part says what it is and never how it is joined to its neighbours,
+        // so the space in front of it belongs here too. Written with one of
+        // its own it gave "deleted.  Term dates", and a space is not a typo
+        // in something read aloud: some screen readers pause on each one.
+        let mut said = SummingUp::opening("  Calendar sync: 0 created, 0 updated, 0 deleted");
+        said.count(" 1 sent");
+        said.sentence(" Term dates: 1 change made here cannot be saved");
+
+        assert_eq!(
+            said.spoken(),
+            "Calendar sync: 0 created, 0 updated, 0 deleted, 1 sent. \
+             Term dates: 1 change made here cannot be saved."
         );
     }
 

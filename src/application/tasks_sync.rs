@@ -1589,6 +1589,7 @@ mod tests {
 
         assert!(!said.contains(".."), "a stop spoken twice: {said}");
         assert!(!said.contains("., "), "a fragment after a stop: {said}");
+        assert!(!said.contains("  "), "a space spoken twice: {said}");
         assert!(
             !said.contains("task changes,"),
             "a count was heard as part of the instruction: {said}"
