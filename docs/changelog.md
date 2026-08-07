@@ -504,17 +504,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   account over.
 
   A calendar sync, or a refresh of a calendar you subscribed to, that could read
-  none of what arrived now says so and says how many entries it could not read.
-  A calendar that really has nothing on it is still reported as the ordinary
-  thing it is. Nothing already stored is deleted in either case.
+  none of what arrived now counts that as a problem, so the sync no longer
+  reports plain success over an empty calendar. A calendar that really has
+  nothing on it is still reported as the ordinary thing it is. Nothing already
+  stored is deleted in either case.
 
   A feed that failed while being read was also being reported as a feed that
   failed to arrive, which sends you looking at your network for something that
   is not there. Those two now read differently.
 
-  Known limitation: this tells apart "nothing could be read" from "there was
-  nothing". It does not report the case in between, where most entries read and
-  a few did not. Those few are still passed over without a word.
+  Two known limitations, both real. What the window says and what is announced
+  is still only that the sync had a problem, and how many; the sentence saying
+  what the problem was, and how many entries could not be read, goes to the log
+  and no further. And this tells apart "nothing could be read" from "there was
+  nothing on it", but not the case in between, where most entries read and a few
+  did not. Those few are still passed over without a word.
 
 - **An event repeating on a weekday no month has is now shown once, and says
   so.** A monthly repeat can name which weekday of the month it falls on, such
