@@ -539,6 +539,15 @@ fn test_the_temp_folder_check_can_tell_the_two_apart() {
 // naming the four questions in front of a list of three failure modes. A check
 // that fired on those would need exceptions, and a style check with exceptions
 // is a check nobody reads.
+//
+// What it still cannot see, so that nobody reads a clean run as more than it
+// is. A count in the middle of a paragraph that does not end with a colon: the
+// paragraph has to announce the list for a number in it to be about the list,
+// and without that rule "stored in three places" reads as a count of three.
+// A list of more than twenty announced by its size. A count written inside a
+// code span, which is stripped before any of this. And a list nothing
+// introduces, which is most of them: forty-three lists in the changelog, five
+// of them with a paragraph in front.
 
 /// Numbers as prose writes them, which is how a count beside a list is written.
 const COUNTED_IN_WORDS: [(&str, usize); 12] = [
@@ -556,24 +565,65 @@ const COUNTED_IN_WORDS: [(&str, usize); 12] = [
     ("twelve", 12),
 ];
 
-/// The number a paragraph opens with, if it opens with one.
+/// A list longer than this is not something a paragraph here counts out loud.
 ///
-/// Only the first few words. "Two things still do not survive" is a count of
-/// what follows; a number in the middle of a sentence is usually about
-/// something else, and reading that as the count of the list is how a check
-/// starts crying wolf.
-fn the_count_it_opens_with(paragraph: &str) -> Option<usize> {
-    paragraph.split_whitespace().take(3).find_map(|word| {
-        let bare = word
-            .chars()
-            .filter(char::is_ascii_alphabetic)
-            .collect::<String>()
-            .to_lowercase();
-        COUNTED_IN_WORDS
-            .iter()
-            .find(|(spelled, _)| *spelled == bare)
-            .map(|(_, count)| *count)
-    })
+/// The bound is what keeps a year and a page number from being read as a count
+/// of bullets. It costs the check a list of more than twenty introduced by its
+/// size, and this file has never had one.
+const A_LIST_LONGER_THAN_ANYBODY_ANNOUNCES: usize = 20;
+
+/// The number a paragraph states about the list under it, if it states one.
+///
+/// Two shapes, and deliberately only two. At the very start, "Two things still
+/// do not survive". Or anywhere in the sentence that ends with the colon
+/// announcing the list, "Some prose about it, and three things are worth
+/// knowing before you try it:", which is the commonest shape in the changelog
+/// and was invisible while this read three words.
+///
+/// A number anywhere else is about something else. "The rule it repeats by is
+/// stored in three places" counts something that is not the list, and reading
+/// that as the count is how a check starts crying wolf.
+fn the_count_it_states(paragraph: &str) -> Option<usize> {
+    let prose = without_code_and_addresses(paragraph);
+    if let Some(count) = the_first_number_among(prose.split_whitespace().take(3)) {
+        return Some(count);
+    }
+    if !prose.trim_end().ends_with(':') {
+        return None;
+    }
+    the_first_number_among(the_sentence_that_announces(&prose).split_whitespace())
+}
+
+/// The last sentence of a paragraph, which is the one carrying the colon.
+fn the_sentence_that_announces(paragraph: &str) -> &str {
+    match paragraph.rfind(['.', '!', '?']) {
+        Some(at) => &paragraph[at + 1..],
+        None => paragraph,
+    }
+}
+
+/// The first of these words that is a number, if any of them is.
+fn the_first_number_among<'a>(words: impl Iterator<Item = &'a str>) -> Option<usize> {
+    words.filter_map(the_number_a_word_is).next()
+}
+
+/// The number a word is, spelled or in digits, if it is one.
+///
+/// Only the edges are trimmed and never the middle. "0.5.0" is a version and
+/// "2026-07-20" is a date, and taking the punctuation out of either leaves a
+/// number that was never written.
+fn the_number_a_word_is(word: &str) -> Option<usize> {
+    let bare = word.trim_matches(|c: char| !c.is_ascii_alphanumeric());
+    let lowered = bare.to_lowercase();
+    if let Some((_, count)) = COUNTED_IN_WORDS
+        .iter()
+        .find(|(spelled, _)| *spelled == lowered)
+    {
+        return Some(*count);
+    }
+    bare.parse()
+        .ok()
+        .filter(|count| (1..=A_LIST_LONGER_THAN_ANYBODY_ANNOUNCES).contains(count))
 }
 
 /// Whether a line is a bullet at exactly this indentation.
@@ -670,7 +720,7 @@ fn test_no_changelog_list_is_introduced_by_a_count_that_disagrees_with_it() {
     let disagreeing: Vec<String> = lists
         .iter()
         .filter_map(|(line, paragraph, bullets)| {
-            let count = the_count_it_opens_with(paragraph)?;
+            let count = the_count_it_states(paragraph)?;
             (count != *bullets).then(|| {
                 let opening: String = paragraph.chars().take(70).collect();
                 format!("docs/changelog.md:{line}: says {count}, list has {bullets}: {opening}")
@@ -736,13 +786,13 @@ fn test_the_count_check_can_see_a_count_that_disagrees() {
                    - Five accessibility scan findings remain.\n";
     let lists = lists_with_their_introductions(drifted);
     assert_eq!(lists.len(), 1, "the list was not read at all");
-    assert_eq!(the_count_it_opens_with(&lists[0].1), Some(3));
+    assert_eq!(the_count_it_states(&lists[0].1), Some(3));
     assert_eq!(lists[0].2, 4, "the bullets were not counted");
 
     // A count that agrees is not complained about.
     let agreeing = "Two things still do not survive:\n\n- The first.\n- The second.\n";
     let lists = lists_with_their_introductions(agreeing);
-    assert_eq!(the_count_it_opens_with(&lists[0].1), Some(2));
+    assert_eq!(the_count_it_states(&lists[0].1), Some(2));
     assert_eq!(lists[0].2, 2);
 
     // A nested list, which is where two of the stale counts were. Read on one
@@ -762,12 +812,43 @@ fn test_the_count_check_can_see_a_count_that_disagrees() {
         .iter()
         .find(|(_, paragraph, _)| paragraph.starts_with("Two things"))
         .expect("the nested list was not read");
-    assert_eq!(the_count_it_opens_with(&counted.1), Some(2));
+    assert_eq!(the_count_it_states(&counted.1), Some(2));
     assert_eq!(counted.2, 3, "the nested bullets were not counted");
+
+    // A count later in the paragraph, which is the commonest shape in the
+    // changelog: prose first, then a sentence ending in a colon that announces
+    // the list. Read as three words this was invisible.
+    let announced = concat!(
+        "Some prose about it, and three things are worth knowing before you try it:\n",
+        "\n",
+        "- The first.\n",
+        "- The second.\n"
+    );
+    let lists = lists_with_their_introductions(announced);
+    assert_eq!(the_count_it_states(&lists[0].1), Some(3));
+    assert_eq!(lists[0].2, 2, "the bullets were not counted");
+
+    // And written in digits. Prose spells the small numbers and this file
+    // mostly does, but nothing stops somebody writing the digit.
+    let in_digits = "There are 3 things here:\n\n- The first.\n- The second.\n";
+    let lists = lists_with_their_introductions(in_digits);
+    assert_eq!(the_count_it_states(&lists[0].1), Some(3));
+    assert_eq!(lists[0].2, 2, "the bullets were not counted");
 
     // A number in the middle of a sentence is about something else.
     assert_eq!(
-        the_count_it_opens_with("The rule it repeats by is stored in three places"),
+        the_count_it_states("The rule it repeats by is stored in three places"),
+        None
+    );
+
+    // A version and a date are numbers in an announcing sentence and neither
+    // is a count of anything. Both are ordinary in this file.
+    assert_eq!(
+        the_count_it_states("Everything that changed in 0.5.0:"),
+        None
+    );
+    assert_eq!(
+        the_count_it_states("What was still true on 2026-07-20:"),
         None
     );
 
