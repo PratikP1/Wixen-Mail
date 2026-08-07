@@ -88,8 +88,19 @@ pub struct SyncResult {
     pub updated_local: usize,
     pub created_remote: usize,
     pub updated_remote: usize,
+    /// Contacts removed from this computer because the address book no longer
+    /// has them.
+    ///
+    /// The only deletions a sync performs. There was a second count beside
+    /// this one for deletions made at an address book, added into the total on
+    /// the status line, and nothing anywhere could set it: neither address
+    /// book's client is asked to delete anything, and a contact deleted here
+    /// leaves no record for a later sync to send. So the total could report
+    /// deletions that had never happened, and the count of what a sync really
+    /// did was one line away from a count of nothing.
     pub deleted_local: usize,
-    pub deleted_remote: usize,
+    /// Contacts the address book sent back that neither side had touched.
+    pub unchanged: usize,
     /// Changes still waiting because the account is open for reading only.
     ///
     /// Counted rather than reported as a failure. Nothing went wrong: the
@@ -127,7 +138,7 @@ impl SyncResult {
         self.created_remote += other.created_remote;
         self.updated_remote += other.updated_remote;
         self.deleted_local += other.deleted_local;
-        self.deleted_remote += other.deleted_remote;
+        self.unchanged += other.unchanged;
         self.waiting_on_the_setting += other.waiting_on_the_setting;
         self.replaced += other.replaced;
         self.deleted_with_a_change_waiting += other.deleted_with_a_change_waiting;
@@ -586,6 +597,15 @@ pub enum WhoseCopyWins {
     /// edit made here, and an edit disappearing with nothing said is
     /// indistinguishable from a change that never saved.
     TakeTheAddressBooksOverAChangeMadeHere,
+    /// Neither copy moved since the last sync. Leave it alone.
+    ///
+    /// Its own answer rather than part of [`Self::TakeTheAddressBooks`],
+    /// because the write is not the same write: there is nothing to write.
+    /// Folded in with taking the address book's copy, every contact a full
+    /// re-read brought back was written again and counted as updated, so a
+    /// first sync of two hundred contacts said "200 updated" and a re-read
+    /// after a marker expired said it again.
+    NeitherCopyMoved,
 }
 
 /// Decide what happens to one contact, given what each side did.
@@ -605,13 +625,13 @@ pub fn whose_copy_wins(
     version_now: Option<&str>,
     version_last_seen: Option<&str>,
 ) -> WhoseCopyWins {
-    if !work_here_nobody_has_sent {
-        return WhoseCopyWins::TakeTheAddressBooks;
+    let moved_there = the_address_book_moved(version_now, version_last_seen);
+    match (work_here_nobody_has_sent, moved_there) {
+        (false, false) => WhoseCopyWins::NeitherCopyMoved,
+        (false, true) => WhoseCopyWins::TakeTheAddressBooks,
+        (true, true) => WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere,
+        (true, false) => WhoseCopyWins::KeepWhatIsHere,
     }
-    if the_address_book_moved(version_now, version_last_seen) {
-        return WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere;
-    }
-    WhoseCopyWins::KeepWhatIsHere
 }
 
 /// Whether the address book has moved its own copy since this computer last
@@ -909,10 +929,18 @@ pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
         "Contacts sync: {} created, {} updated, {} deleted",
         result.created_local + result.created_remote,
         result.updated_local,
-        result.deleted_local + result.deleted_remote
+        result.deleted_local
     ));
     if result.updated_remote > 0 {
         said.count(format!("{} sent", result.updated_remote));
+    }
+    if result.unchanged > 0 {
+        // Said only when there is one, because on an ordinary sync there is
+        // nothing to say and a count of nought on every line is a count
+        // nobody hears any more. It matters on a full re-read, where it is
+        // the difference between "your address book has not changed" and two
+        // hundred contacts reported as changed overnight.
+        said.count(format!("{} unchanged", result.unchanged));
     }
     if result.replaced > 0 {
         // Named as a loss rather than folded into the count of contacts
@@ -1194,7 +1222,14 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                     arrived_at.as_deref(),
                     last_seen.as_deref(),
                 );
+                // Nothing to write for either of these, and they are counted
+                // apart: a change kept here is still owed to somebody, and a
+                // contact neither side touched is owed to nobody.
                 if answer == WhoseCopyWins::KeepWhatIsHere {
+                    continue;
+                }
+                if answer == WhoseCopyWins::NeitherCopyMoved {
+                    result.unchanged += 1;
                     continue;
                 }
                 // Google adds itself to the address books that know this
@@ -1354,7 +1389,14 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                     arrived_at,
                     last_seen.as_deref(),
                 );
+                // Nothing to write for either of these, and they are counted
+                // apart: a change kept here is still owed to somebody, and a
+                // contact neither side touched is owed to nobody.
                 if answer == WhoseCopyWins::KeepWhatIsHere {
+                    continue;
+                }
+                if answer == WhoseCopyWins::NeitherCopyMoved {
+                    result.unchanged += 1;
                     continue;
                 }
                 let merged = microsoft_fields_over_local(local, &remote_contact).also_known_to(
@@ -4591,6 +4633,116 @@ mod tests {
         assert_eq!(the_names_stored(&cache), vec!["Alice Smith".to_string()]);
     }
 
+    /// A contact this account already holds, with the marker the address book
+    /// gave for its own copy at the end of the last sync.
+    ///
+    /// Separate from [`a_stored_contact`] because that one records no marker,
+    /// and a contact with no marker is one nothing can say stood still.
+    fn a_stored_contact_at_version(
+        cache: &MessageCache,
+        name: &str,
+        email: &str,
+        provider_contact_id: &str,
+        provider: &str,
+        version: &str,
+    ) {
+        let mut contact = a_local_contact(name, email);
+        contact.id = format!("local-{provider_contact_id}");
+        contact.known_to = vec![ProviderIdentity {
+            address_book: AddressBook::from_stored(provider),
+            provider_contact_id: provider_contact_id.to_string(),
+            provider_version: Some(version.to_string()),
+            change_is_waiting: false,
+        }];
+        contact.source_provider = Some(provider.to_string());
+        cache
+            .save_contact(&contact)
+            .expect("a contact to be stored");
+    }
+
+    #[tokio::test]
+    async fn test_a_google_contact_neither_side_moved_is_not_counted_as_one_that_changed() {
+        // A read with no marker to ask from brings back the whole address
+        // book, which is what the first sync of an account does and what
+        // happens whenever Google says the marker it was given is too old.
+        // Every contact that came back was written again and counted as
+        // updated, so re-reading two hundred contacts said "200 updated" and
+        // somebody heard that their address book had changed overnight.
+        let cache = a_cache("google_moved_nothing");
+        a_stored_contact_at_version(
+            &cache,
+            "Alice Smith",
+            "alice@example.com",
+            "people/c1",
+            GOOGLE_ADDRESS_BOOK,
+            "etag-1",
+        );
+        let google = ScriptedGoogle {
+            people: vec![a_google_person_at_version(
+                "people/c1",
+                "Alice Smith",
+                "etag-1",
+            )],
+            ..Default::default()
+        };
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
+
+        assert_eq!(
+            result.updated_local, 0,
+            "a contact neither side touched was counted as changed"
+        );
+        assert_eq!(result.unchanged, 1);
+        let said = what_the_contacts_sync_did(&result);
+        assert!(said.contains("0 updated"), "{said}");
+        assert!(said.contains("1 unchanged"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_microsoft_contact_neither_side_moved_is_not_counted_as_one_that_changed() {
+        // The Outlook mirror, because the two syncs decide this separately and
+        // a rule fixed in one of them is not fixed in the other.
+        let cache = a_cache("microsoft_moved_nothing");
+        a_stored_contact_at_version(
+            &cache,
+            "Alice Smith",
+            "alice@example.com",
+            "AAMk1",
+            MICROSOFT_ADDRESS_BOOK,
+            "W/\"1\"",
+        );
+        let microsoft = ScriptedMicrosoft {
+            contacts: vec![a_microsoft_contact_at_version(
+                "AAMk1",
+                "Alice Smith",
+                "W/\"1\"",
+            )],
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        assert_eq!(
+            result.updated_local, 0,
+            "a contact neither side touched was counted as changed"
+        );
+        assert_eq!(result.unchanged, 1);
+        let said = what_the_contacts_sync_did(&result);
+        assert!(said.contains("0 updated"), "{said}");
+        assert!(said.contains("1 unchanged"), "{said}");
+    }
+
     #[tokio::test]
     async fn test_a_contact_google_has_that_is_new_here_is_stored_and_counted_as_new() {
         let cache = a_cache("google_new");
@@ -4961,7 +5113,7 @@ mod tests {
             created_remote: 3,
             updated_remote: 4,
             deleted_local: 5,
-            deleted_remote: 6,
+            unchanged: 11,
             waiting_on_the_setting: 7,
             replaced: 8,
             deleted_with_a_change_waiting: 9,
@@ -4973,7 +5125,7 @@ mod tests {
             created_remote: 30,
             updated_remote: 40,
             deleted_local: 50,
-            deleted_remote: 60,
+            unchanged: 110,
             waiting_on_the_setting: 70,
             replaced: 80,
             deleted_with_a_change_waiting: 90,
@@ -4988,7 +5140,7 @@ mod tests {
                 created_remote: 33,
                 updated_remote: 44,
                 deleted_local: 55,
-                deleted_remote: 66,
+                unchanged: 121,
                 waiting_on_the_setting: 77,
                 replaced: 88,
                 deleted_with_a_change_waiting: 99,
@@ -5021,6 +5173,31 @@ mod tests {
         let said = what_the_contacts_sync_did(&sent);
 
         assert!(said.contains("1 sent"), "{said}");
+    }
+
+    #[test]
+    fn test_the_deleted_count_says_what_was_removed_here_and_nothing_else() {
+        // Pinned so the gap stays visible rather than being discovered again.
+        // Nothing in this program deletes a contact at an address book:
+        // neither address book's trait has a delete on it at all, the delete
+        // methods on both clients are called by nothing, and a contact
+        // deleted here leaves no record for a later sync to send. A second
+        // count for deletions made at an address book was added into this
+        // total and nothing anywhere could set it, so the status line could
+        // say "7 deleted" when nothing had been deleted anywhere.
+        //
+        // If deleting here ever does reach an address book, this is where the
+        // count for it goes, and it goes in with the path that sets it.
+        let removed_here = SyncResult {
+            deleted_local: 3,
+            ..Default::default()
+        };
+
+        assert!(
+            what_the_contacts_sync_did(&removed_here).contains("3 deleted"),
+            "{}",
+            what_the_contacts_sync_did(&removed_here)
+        );
     }
 
     #[test]
@@ -6198,9 +6375,18 @@ mod tests {
             whose_copy_wins(false, Some("etag-2"), Some("etag-1")),
             WhoseCopyWins::TakeTheAddressBooks
         );
+    }
+
+    #[test]
+    fn test_a_copy_neither_side_moved_is_left_alone_rather_than_written_again() {
+        // The fourth answer, and the one that was missing. Nothing is waiting
+        // here and the address book's marker is the one it gave last time, so
+        // neither copy has moved: there is nothing to write and nothing to
+        // report as changed. Folded into taking the address book's copy, a
+        // full re-read counted the whole address book as updated.
         assert_eq!(
             whose_copy_wins(false, Some("etag-1"), Some("etag-1")),
-            WhoseCopyWins::TakeTheAddressBooks
+            WhoseCopyWins::NeitherCopyMoved
         );
     }
 

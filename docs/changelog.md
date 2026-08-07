@@ -241,6 +241,41 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A contacts sync no longer reports contacts as changed when nothing changed,
+  and no longer counts deletions it never made.** Two of the numbers on the line
+  after a contacts sync were saying more than had happened.
+
+  The first was the count of contacts updated. A sync reads only what changed
+  since the last one, but there are two ordinary times it reads the whole
+  address book instead: the first sync of an account, and any sync where the
+  address book says the marker from last time is too old. Every contact that
+  came back on such a read was written down again and counted as updated, so a
+  first sync of two hundred contacts said "200 updated", and so did a re-read
+  weeks later when nothing at all had changed. Hearing that your address book
+  changed overnight is the kind of thing somebody goes looking through their
+  contacts over.
+
+  A contact where neither copy has moved since the last sync is now left alone
+  and counted apart, the way the task sync already counted one: "Contacts sync:
+  0 created, 0 updated, 0 deleted, 200 unchanged". The count is only said when
+  there is something to say.
+
+  The second was the count of contacts deleted, which added together two
+  numbers: contacts removed from this computer because the address book no
+  longer had them, and contacts deleted at an address book. The second number
+  could never be anything but nought, because nothing here deletes a contact at
+  an address book, and yet it was added into the total that gets read out. It is
+  gone, so the number said is the number of contacts really removed.
+
+  Known limitation, and it is the reason that second count existed: **deleting a
+  contact here does not delete it in Google or Outlook.** It goes from this
+  computer and the address book keeps its copy, so the next sync brings it back.
+  Nothing says so at the time; the message after a delete is the contact's name
+  and the word deleted. Making a delete travel means keeping a note of what was
+  deleted while offline, which is a change to how contacts are stored rather
+  than a line of code, so it is not done here. If you want a contact gone from
+  your address book, delete it there.
+
 - **A contact file laid out with indentation is read again, and an import that
   added nothing now says why.** The card standard reads every line starting with
   a space or a tab as the rest of the line before it, and this program does the
