@@ -340,6 +340,23 @@ impl MessageCache {
     ///
     /// No tombstone: the provider already knows, and telling it again would
     /// mean asking it to delete something it has already deleted.
+    ///
+    /// Removes the row whatever state it is in, and that is deliberate rather
+    /// than an oversight. The calendar has the opposite rule next door:
+    /// `drop_synced_calendar_event` refuses in SQL a row with a change waiting
+    /// on it, so a pass that forgets to ask is safe anyway. That cannot be
+    /// copied here, because two of the three callers hand this a row that is
+    /// waiting on purpose. [`Self::rename_task`] removes the row a task was
+    /// made under once the provider has named it, and a task waiting to be
+    /// sent is exactly what a task being named is. [`Self::delete_task`] is
+    /// somebody deleting a task they may have just changed. A guard here would
+    /// leave the first on screen twice and the second on screen after being
+    /// deleted, and two tests beside those two say so.
+    ///
+    /// What makes that safe is that the third caller has already asked. The
+    /// sync only ever removes a task that a full read of every list did not
+    /// bring back, and only one whose id the provider issued: see `gone_from`
+    /// and `missing_from` in `application::tasks_sync`.
     pub fn drop_synced_task(&self, task_id: &str) -> Result<()> {
         // Re-parent any subtasks
         self.conn
@@ -767,6 +784,70 @@ mod tests {
         let tasks = cache.get_tasks_for_list(&list.id).unwrap();
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, "google:real");
+    }
+
+    /// A task made here, still carrying the flag that says it has not been
+    /// sent. What every row that reaches a rename or a deletion really looks
+    /// like, and what the test above does not use.
+    fn a_task_waiting_to_be_sent(cache: &MessageCache, id: &str, list_id: &str) -> TaskEntry {
+        let waiting = TaskEntry {
+            pending: true,
+            remote_updated: None,
+            ..synced_task(cache, id, list_id)
+        };
+        cache.save_task(&waiting).unwrap();
+        waiting
+    }
+
+    #[test]
+    fn test_a_task_the_provider_named_leaves_no_second_row_when_it_was_waiting_to_be_sent() {
+        // Why `drop_synced_task` refuses nothing, written as a test rather
+        // than as a comment somebody can talk themselves out of. The calendar
+        // has the opposite rule: `drop_synced_calendar_event` refuses a row
+        // with a change waiting on it, in SQL, so a pass that forgets to ask
+        // is safe anyway. Copying that here would break this: the row a rename
+        // removes is the local one, and the local one is always waiting,
+        // because waiting to be sent is what made the provider give it a name
+        // in the first place. The task would then be on screen twice.
+        let cache = test_cache();
+        let list = cache.ensure_default_task_list("acct-1").unwrap();
+        let local = a_task_waiting_to_be_sent(&cache, "local-1", &list.id);
+
+        let named = TaskEntry {
+            id: "google:real".to_string(),
+            pending: false,
+            ..local
+        };
+        cache.rename_task("local-1", &named).unwrap();
+
+        let tasks = cache.get_tasks_for_list(&list.id).unwrap();
+        assert_eq!(
+            tasks.len(),
+            1,
+            "the row the task was made under is still here beside the one the \
+             provider named, so the task is on screen twice: {tasks:?}"
+        );
+        assert_eq!(tasks[0].id, "google:real");
+    }
+
+    #[test]
+    fn test_deleting_a_task_that_was_waiting_to_be_sent_really_takes_the_row_away() {
+        // The second reason `drop_synced_task` refuses nothing. Somebody
+        // deleting a task they had just changed goes through the same call,
+        // and a row that refused to go would leave the task on screen after
+        // being deleted, with a note telling the provider to delete it.
+        let cache = test_cache();
+        let list = cache.ensure_default_task_list("acct-1").unwrap();
+        a_task_waiting_to_be_sent(&cache, "google:t1", &list.id);
+
+        cache.delete_task("google:t1").unwrap();
+
+        assert!(
+            cache.get_tasks_for_list(&list.id).unwrap().is_empty(),
+            "a task somebody deleted is still on screen because it had a change \
+             waiting on it"
+        );
+        assert_eq!(cache.deleted_tasks("acct-1").unwrap().len(), 1);
     }
 
     #[test]

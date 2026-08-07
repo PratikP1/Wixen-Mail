@@ -420,7 +420,23 @@ impl MessageCache {
         Ok(())
     }
 
-    /// Delete a calendar event by provider event ID.
+    /// Delete a calendar event by the name the provider gave it.
+    ///
+    /// Unguarded, unlike [`Self::drop_synced_calendar_event`] beside it, and
+    /// the difference is what the caller knows. That one is called where a row
+    /// is removed for not being in an answer, and an answer that covers six
+    /// months back to a year forward says nothing about an appointment
+    /// eighteen months out, so it has to refuse a row holding work nobody has
+    /// sent. This one is called only where the provider named the event and
+    /// said it was cancelled or removed. That is somebody saying so outright,
+    /// and being cut short does not make it untrue.
+    ///
+    /// The row is matched on the provider's own name for the event, so an
+    /// event made here and never sent carries no such name and is never
+    /// reached. What can still be lost is an edit waiting on an event that was
+    /// then cancelled at the provider: the edit goes with the event, which is
+    /// right, but the summary counts it as an ordinary deletion and says
+    /// nothing about the work in it.
     pub fn delete_calendar_event_by_provider_id(
         &self,
         account_id: &str,

@@ -575,7 +575,15 @@ pub async fn sync_google_calendar(
             continue;
         }
 
-        // Cancelled events = deleted
+        // Cancelled events = deleted.
+        //
+        // No question about a change waiting on the row, unlike the read just
+        // below and unlike both calendar-server passes. Those remove a row for
+        // not being in the answer, and the answer only covers a stretch of
+        // time, so absence proves nothing. This is Google naming the event and
+        // saying it was cancelled, which a short answer cannot make untrue.
+        // The event has gone at both ends and an edit to it was an edit to
+        // something that no longer exists.
         if event.status.as_deref() == Some("cancelled") {
             if cache
                 .get_event_by_provider_id(account_id, &event.id)?
@@ -726,6 +734,9 @@ pub async fn sync_microsoft_calendar(
             continue;
         }
 
+        // Outlook naming the event as removed, which is the same statement
+        // Google's cancelled status makes, and safe for the same reason
+        // written beside that one.
         if event.removed.is_some() {
             if cache
                 .get_event_by_provider_id(account_id, &event.id)?

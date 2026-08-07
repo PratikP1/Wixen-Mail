@@ -281,6 +281,16 @@ pub fn resolve(
 ///
 /// Each id comes back once, however many times it was held, for the reason
 /// [`each_id_once`] gives.
+///
+/// It asks nothing about whether a change is waiting on the row, which is the
+/// question the calendar had to add and this does not. The reason is that
+/// absence means something different here. A calendar server is asked for one
+/// stretch of time, so an appointment outside it is missing from the answer
+/// whether the server holds it or not. A task list is read whole, and a read
+/// that could not be finished sets `read_every_list` to false, which stops this
+/// being called at all. So a task the provider still holds always comes back,
+/// and one that did not come back really has gone. A change waiting on it was a
+/// change to something that no longer exists at either end.
 fn missing_from(
     held: impl IntoIterator<Item = String>,
     arrived: &[String],
