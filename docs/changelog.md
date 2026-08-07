@@ -302,7 +302,7 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   sync, the same half was read out of it every time, and the event went on
   matching itself. The cost falls on the first sync after this change, when the
   whole identifier arrives and no longer matches the half stored beside it. What
-  that would have cost, and what stops it, is the end of this entry.
+  that would have cost, and what stops it, is at the end of this entry.
 
   The same applies to a published calendar you subscribed to, which is written
   by somebody else's software and broken up the same way.
