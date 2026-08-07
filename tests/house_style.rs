@@ -252,13 +252,16 @@ fn test_the_settings_screen_does_not_write_the_section_name_out_itself() {
     // label being typed back in.
     let screen = fs::read_to_string(WHERE_THE_SECTION_IS_LABELLED)
         .expect("the settings screen to be readable");
+    // The name as it stands, not the name it happens to have today. Written
+    // out as a literal here, this check would go on forbidding "Allow Changes"
+    // after somebody renamed the section to something else and typed the new
+    // name in, which is the same fault one step along.
+    let written_out = format!("\"{}\"", wixen_mail::application::allowed::SETTINGS_SECTION);
 
     let typed: Vec<String> = screen
         .lines()
         .enumerate()
-        .filter(|(_, line)| {
-            line.contains("\"Allow Changes\"") || line.contains("\"Allowed Changes\"")
-        })
+        .filter(|(_, line)| line.contains(&written_out))
         .map(|(number, line)| {
             format!(
                 "{WHERE_THE_SECTION_IS_LABELLED}:{}: {}",

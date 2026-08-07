@@ -454,8 +454,8 @@ check. A label you make yourself carries a keyword built from the letters of its
 name, because a keyword cannot hold a space.
 
 Sending a label to the server is a change to your mailbox, so it is switched off
-until you allow changes to mail in Settings. Until then labels work here and go
-no further.
+until you turn on Allow Changes for mail in Settings. Until then labels work here
+and go no further.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
