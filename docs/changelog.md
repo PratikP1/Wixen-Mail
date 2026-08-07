@@ -241,6 +241,51 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A contact exported to a file and imported back is now the contact it was.**
+  Exporting your contacts to a `.vcf` file and importing that file, which is how
+  you move an address book to another machine or keep a copy of one, used to
+  lose six things. They are all fixed:
+
+  - The given name and the family name were written nowhere at all, so a
+    contact came back with a whole name and neither part. The card now carries
+    both, in the field the format gives them. Nothing is split out of the whole
+    name to fill them in, so "van der Berg" stays "van der Berg".
+  - A department was lost. With a company recorded it was written nowhere; with
+    none it went out in a way that came back as a company called ";Research".
+    Company and department now travel together, the way the format intends, and
+    come back in their own boxes.
+  - How somebody is related to you was written out and read by nothing.
+  - A field you named yourself was written with its name forced into capitals
+    and its spaces turned into dashes, and read by nothing. "Blood type" now
+    comes back as "Blood type".
+  - An address with a semicolon in it, such as "12 High Street; Flat 2", came
+    back with the flat number in the town box and shoved the town, the county
+    and the postcode each one box along, dropping the country off the end.
+  - The address shown on a contact's main line came back as the raw line from
+    the file, punctuation and all, which a screen reader reads out as a run of
+    semicolons. It now reads the same after an import as it does after an edit.
+
+  Two things still do not survive, and this is the whole list:
+
+  - A contact with no email address, such as one you keep only a phone number
+    for, is written to the file and then refused on the way back in, without a
+    word. The import turns away any card that names no address it could write
+    to, so that a file from anywhere cannot fill your address book with rows
+    nobody can reach, and that rule is why this contact is turned away too.
+    Which of the two rules should give way is a decision nobody has made yet.
+    If you keep contacts with no email address, a `.vcf` file is not a complete
+    backup of your address book.
+  - Whether a contact is a favourite. A contact card has no property for it and
+    this program does not invent one, because a property only this program
+    understands would help it talk to itself and nothing else.
+
+  Two smaller notes. A file exported by an earlier build carries its own custom
+  fields in the old shape, whose names were already flattened into capitals, and
+  the new reader does not read them; everything else in such a file reads
+  normally. And exported cards now carry the structured name property that the
+  vCard 3.0 standard requires and this program never wrote, so a card exported
+  from here is valid where it used to be malformed.
+
 - **An appointment whose title a calendar server wrote with a stray space no
   longer reaches the calendar twice.** The calendar standard puts no space
   between a property name and the punctuation after it, so a server holding

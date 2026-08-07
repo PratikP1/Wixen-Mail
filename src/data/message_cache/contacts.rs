@@ -411,6 +411,25 @@ impl MessageCache {
                 "FN:{}",
                 Self::escape_vcard_text(&c.name)
             )));
+            // The parts of the name this application actually holds, in the
+            // five fields RFC 2426 gives them, with the three it holds nothing
+            // for left empty. Nothing is split out of the whole name to fill
+            // them: splitting sends "Grace Brewster Murray Hopper" out with
+            // the wrong given name and brings "van der Berg" back as "Berg".
+            //
+            // Written for every contact, even one with no parts recorded,
+            // because a vCard 3.0 card without N is malformed and other
+            // clients are entitled to refuse it.
+            output.push_str(&Self::fold_vcard_line(&format!(
+                "N:{}",
+                Self::structured_value(&[
+                    c.family_name.as_deref().unwrap_or_default(),
+                    c.given_name.as_deref().unwrap_or_default(),
+                    "",
+                    "",
+                    "",
+                ])
+            )));
             if let Some(ref nick) = c.nickname {
                 output.push_str(&Self::fold_vcard_line(&format!(
                     "NICKNAME:{}",
@@ -451,20 +470,18 @@ impl MessageCache {
                     Self::escape_vcard_text(phone)
                 )));
             }
-            if let Some(ref company) = c.company {
-                output.push_str(&Self::fold_vcard_line(&format!(
-                    "ORG:{}",
-                    Self::escape_vcard_text(company)
-                )));
-            }
-            if let Some(ref dept) = c.department {
-                // ORG can include department as second component
-                if c.company.is_none() {
-                    output.push_str(&Self::fold_vcard_line(&format!(
-                        "ORG:;{}",
-                        Self::escape_vcard_text(dept)
-                    )));
-                }
+            // ORG names the organisation first and the unit inside it second,
+            // which is where a department belongs. One property carrying both,
+            // because two ORG lines is two answers to one question: with a
+            // company recorded the department used to be written nowhere at
+            // all, and with none it went out as a company called ";Research".
+            if c.company.is_some() || c.department.is_some() {
+                let company = c.company.as_deref().unwrap_or_default();
+                let organisation = match c.department.as_deref() {
+                    Some(department) => Self::structured_value(&[company, department]),
+                    None => Self::structured_value(&[company]),
+                };
+                output.push_str(&Self::fold_vcard_line(&format!("ORG:{organisation}")));
             }
             if let Some(ref job_title) = c.job_title {
                 output.push_str(&Self::fold_vcard_line(&format!(
@@ -482,29 +499,26 @@ impl MessageCache {
             if let Some(ref json) = c.addresses_json {
                 if let Ok(entries) = serde_json::from_str::<Vec<super::AddressEntry>>(json) {
                     for a in &entries {
-                        let structured = format!(
-                            ";;{};{};{};{};{}",
-                            Self::escape_vcard_text(&a.street),
-                            Self::escape_vcard_text(&a.city),
-                            Self::escape_vcard_text(&a.state),
-                            Self::escape_vcard_text(&a.zip),
-                            Self::escape_vcard_text(&a.country),
-                        );
                         output.push_str(&Self::fold_vcard_line(&format!(
                             "ADR;TYPE={}:{}",
                             a.label.to_uppercase(),
-                            structured
+                            Self::address_value(a)
                         )));
                     }
                 }
             } else if let Some(ref address) = c.address {
-                let escaped_address = Self::escape_vcard_text(address);
-                let structured = if escaped_address.contains(';') {
-                    escaped_address
-                } else {
-                    format!(";;{};;;;", escaped_address)
-                };
-                output.push_str(&Self::fold_vcard_line(&format!("ADR:{}", structured)));
+                // One line of words with no parts marked out, so it goes in
+                // the street field whole. It used to be written as a whole
+                // structured value whenever it held a semicolon, which put an
+                // address like "12 High Street; Flat 2" in the post office box
+                // field, where nothing reads it back.
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "ADR:{}",
+                    Self::address_value(&super::AddressEntry {
+                        street: address.clone(),
+                        ..Default::default()
+                    })
+                )));
             }
             if let Some(ref birthday) = c.birthday {
                 output.push_str(&Self::fold_vcard_line(&format!(
@@ -539,17 +553,19 @@ impl MessageCache {
                     Self::escape_vcard_text(notes)
                 )));
             }
-            // Custom fields as X-CUSTOM properties
+            // A field somebody named themselves, with the name and the value
+            // as the two parts of one X-CUSTOM property. The name used to be
+            // built into the property name instead, which forced it into
+            // capitals and turned its spaces into dashes, so "Blood type"
+            // could only ever come back as "BLOOD-TYPE". Kept as a value, it
+            // comes back as it was typed.
             if let Some(ref json) = c.custom_fields_json
                 && let Ok(fields) = serde_json::from_str::<Vec<super::CustomFieldEntry>>(json)
             {
                 for f in &fields {
                     output.push_str(&Self::fold_vcard_line(&format!(
-                        "X-CUSTOM-{}:{}",
-                        Self::escape_vcard_text(&f.label)
-                            .to_uppercase()
-                            .replace(' ', "-"),
-                        Self::escape_vcard_text(&f.value)
+                        "X-CUSTOM:{}",
+                        Self::structured_value(&[&f.label, &f.value])
                     )));
                 }
             }
@@ -805,14 +821,28 @@ impl MessageCache {
         let mut avatar_url = None;
         let mut avatar_data_base64 = None;
         let mut nickname = None;
+        let mut given_name = None;
+        let mut family_name = None;
+        let mut department = None;
+        let mut relationship = None;
         // Collect multi-value entries
         let mut emails: Vec<super::EmailEntry> = Vec::new();
         let mut phones: Vec<super::PhoneEntry> = Vec::new();
         let mut addresses: Vec<super::AddressEntry> = Vec::new();
+        let mut custom_fields: Vec<super::CustomFieldEntry> = Vec::new();
 
         for line in Self::unfold_vcard_lines(block) {
             if let Some((_, value)) = Self::vcard_named(&line, "FN") {
                 name = Self::unescape_vcard_text(value.trim());
+            } else if let Some((_, value)) = Self::vcard_named(&line, "N") {
+                // The two parts this application holds, taken from the two
+                // fields that hold them and nowhere else. The three fields
+                // after them are an additional name, a prefix and a suffix,
+                // and there is nowhere here to keep any of them, so they are
+                // read past rather than folded into something else.
+                let parts = Self::structured_parts(value.trim());
+                family_name = Self::a_field_that_was_filled_in(parts.first());
+                given_name = Self::a_field_that_was_filled_in(parts.get(1));
             } else if let Some((_, value)) = Self::vcard_named(&line, "NICKNAME") {
                 nickname = Some(Self::unescape_vcard_text(value.trim()));
             } else if let Some((prefix, value)) = Self::vcard_named(&line, "EMAIL") {
@@ -836,31 +866,56 @@ impl MessageCache {
                     phone = Some(num);
                 }
             } else if let Some((_, value)) = Self::vcard_named(&line, "ORG") {
-                company = Some(Self::unescape_vcard_text(value.trim()));
+                // The organisation and the unit inside it. Read as one string
+                // instead, a card that named both gave somebody a company
+                // called "Acme;Research" and no department at all.
+                let parts = Self::structured_parts(value.trim());
+                company = Self::a_field_that_was_filled_in(parts.first());
+                department = Self::a_field_that_was_filled_in(parts.get(1));
             } else if let Some((_, value)) = Self::vcard_named(&line, "TITLE") {
                 job_title = Some(Self::unescape_vcard_text(value.trim()));
             } else if let Some((_, value)) = Self::vcard_named(&line, "URL") {
                 website = Some(Self::unescape_vcard_text(value.trim()));
             } else if let Some((prefix, value)) = Self::vcard_named(&line, "ADR") {
-                let raw = Self::unescape_vcard_text(value.trim());
                 let label = Self::extract_vcard_type_param(prefix);
-                let parts: Vec<&str> = raw.split(';').collect();
+                let parts = Self::structured_parts(value.trim());
+                let field = |at: usize| parts.get(at).cloned().unwrap_or_default();
                 let addr_entry = super::AddressEntry {
                     label,
-                    street: parts.get(2).unwrap_or(&"").to_string(),
-                    city: parts.get(3).unwrap_or(&"").to_string(),
-                    state: parts.get(4).unwrap_or(&"").to_string(),
-                    zip: parts.get(5).unwrap_or(&"").to_string(),
-                    country: parts.get(6).unwrap_or(&"").to_string(),
+                    street: field(2),
+                    city: field(3),
+                    state: field(4),
+                    zip: field(5),
+                    country: field(6),
                 };
-                addresses.push(addr_entry);
                 if address.is_none() {
-                    address = Some(raw);
+                    // The same one line of words the contact editor writes.
+                    // Kept as the raw card value instead, the primary address
+                    // read out as ";;12 High Street;London;;;".
+                    address = Some(addr_entry.on_one_line());
                 }
+                addresses.push(addr_entry);
             } else if let Some((_, value)) = Self::vcard_named(&line, "BDAY") {
                 birthday = Some(Self::unescape_vcard_text(value.trim()));
             } else if let Some((_, value)) = Self::vcard_named(&line, "NOTE") {
                 notes = Some(Self::unescape_vcard_text(value.trim()));
+            } else if let Some((_, value)) = Self::vcard_named(&line, "X-RELATIONSHIP") {
+                // Written by the exporter beside this one since it was first
+                // built, and read by nothing, so how somebody is related was
+                // lost by the file that was supposed to carry it.
+                relationship =
+                    Self::a_field_that_was_filled_in(Some(Self::unescape_vcard_text(value)));
+            } else if let Some((_, value)) = Self::vcard_named(&line, "X-CUSTOM") {
+                // A field somebody named themselves: the name first, then the
+                // value. A row with no name names nothing and the contact
+                // editor drops one, so it is not read back in either.
+                let parts = Self::structured_parts(value.trim());
+                if let Some(label) = Self::a_field_that_was_filled_in(parts.first()) {
+                    custom_fields.push(super::CustomFieldEntry {
+                        label,
+                        value: parts.get(1).cloned().unwrap_or_default(),
+                    });
+                }
             } else if let Some((prefix, value)) = Self::vcard_named(&line, "PHOTO") {
                 // A photo arrives either as an address to fetch it from or as
                 // the picture itself, and which one it is is said by the
@@ -903,13 +958,18 @@ impl MessageCache {
         } else {
             serde_json::to_string(&addresses).ok()
         };
+        let custom_fields_json = if custom_fields.is_empty() {
+            None
+        } else {
+            serde_json::to_string(&custom_fields).ok()
+        };
 
         Some(ContactEntry {
             id: uuid::Uuid::new_v4().to_string(),
             account_id: account_id.to_string(),
             name,
-            given_name: None,
-            family_name: None,
+            given_name,
+            family_name,
             email: primary_email,
             phone,
             company,
@@ -926,12 +986,12 @@ impl MessageCache {
             favorite: false,
             created_at: chrono::Utc::now().to_rfc3339(),
             nickname,
-            department: None,
-            relationship: None,
+            department,
+            relationship,
             emails_json,
             phones_json,
             addresses_json,
-            custom_fields_json: None,
+            custom_fields_json,
             // A contact read out of a card somebody imported is not a change
             // they made to an address book that already holds it.
             pending: false,
@@ -984,6 +1044,83 @@ impl MessageCache {
             };
         }
         NO_LABEL.to_string()
+    }
+
+    /// A value made of several fields, written the way a card separates them.
+    ///
+    /// A semicolon separates one field from the next, so a semicolon inside a
+    /// field is escaped and no longer separates anything. [`structured_parts`]
+    /// is the other half of this and the two have to stay a pair.
+    ///
+    /// [`structured_parts`]: MessageCache::structured_parts
+    fn structured_value(parts: &[&str]) -> String {
+        parts
+            .iter()
+            .map(|part| Self::escape_vcard_text(part))
+            .collect::<Vec<_>>()
+            .join(";")
+    }
+
+    /// The fields inside a value like `ADR`, `N` or `ORG`, split where the
+    /// card really separates them and then unescaped one by one.
+    ///
+    /// The order matters and getting it the other way round loses data
+    /// silently. Unescaping the whole value first turns every `\;` somebody
+    /// typed into a plain semicolon, and splitting after that reads it as the
+    /// end of a field: a street of "12 High Street\; Flat 2" came back as a
+    /// street of "12 High Street" and a town of " Flat 2", and shoved the
+    /// town, county, postcode and country each one field along, dropping the
+    /// country off the end.
+    fn structured_parts(value: &str) -> Vec<String> {
+        let mut parts: Vec<String> = Vec::new();
+        let mut field = String::new();
+        let mut after_a_backslash = false;
+        for character in value.chars() {
+            match (after_a_backslash, character) {
+                (false, '\\') => {
+                    after_a_backslash = true;
+                    field.push(character);
+                }
+                (false, ';') => parts.push(std::mem::take(&mut field)),
+                _ => {
+                    after_a_backslash = false;
+                    field.push(character);
+                }
+            }
+        }
+        parts.push(field);
+        parts
+            .iter()
+            .map(|part| Self::unescape_vcard_text(part))
+            .collect()
+    }
+
+    /// One structured address written into the seven fields `ADR` defines.
+    ///
+    /// The post office box and the extended address are the first two and
+    /// this application holds neither, so they go out empty.
+    fn address_value(entry: &super::AddressEntry) -> String {
+        Self::structured_value(&[
+            "",
+            "",
+            &entry.street,
+            &entry.city,
+            &entry.state,
+            &entry.zip,
+            &entry.country,
+        ])
+    }
+
+    /// One field of a card as something worth storing, or nothing when the
+    /// card left it empty.
+    ///
+    /// A field written as blank is not a fact about anybody. Recorded anyway
+    /// it says somebody's department is the empty string, which reads out as a
+    /// department they do not have.
+    fn a_field_that_was_filled_in<S: AsRef<str>>(field: Option<S>) -> Option<String> {
+        field
+            .map(|part| part.as_ref().trim().to_string())
+            .filter(|part| !part.is_empty())
     }
 
     fn escape_vcard_text(value: &str) -> String {
@@ -1495,6 +1632,261 @@ mod tests {
         assert_eq!(read_again, photo, "the photo did not survive being written");
     }
 
+    // ── A contact going out to a card and coming back ────────────────────
+    //
+    // A .vcf file is what somebody moving between two machines, or backing an
+    // address book up, relies on. Whatever the file does not carry is gone,
+    // and nothing says so. These tests ask one question: is the contact that
+    // comes back the contact that went out?
+
+    /// One contact with every part somebody can fill in filled in.
+    ///
+    /// The values are deliberately awkward. A card separates the fields inside
+    /// a structured value with a semicolon and the items of a list with a
+    /// comma, so a street with a semicolon in it, a company with a comma and a
+    /// note with a line break are what tell a writer and a reader that really
+    /// agree from two that only look as though they do.
+    fn a_contact_carrying_every_part_a_person_can_fill_in() -> ContactEntry {
+        let emails = vec![
+            super::super::EmailEntry {
+                label: "Work".to_string(),
+                address: "grace@example.com".to_string(),
+            },
+            super::super::EmailEntry {
+                label: "Home".to_string(),
+                address: "grace@home.example.com".to_string(),
+            },
+        ];
+        let phones = vec![
+            super::super::PhoneEntry {
+                label: "Mobile".to_string(),
+                number: "+44 7700 900123".to_string(),
+            },
+            super::super::PhoneEntry {
+                label: "Work".to_string(),
+                number: "+44 20 7946 0000".to_string(),
+            },
+        ];
+        let addresses = vec![
+            super::super::AddressEntry {
+                label: "Home".to_string(),
+                street: "12 High Street; Flat 2".to_string(),
+                city: "London".to_string(),
+                state: "Greater London".to_string(),
+                zip: "SW1A 1AA".to_string(),
+                country: "United Kingdom".to_string(),
+            },
+            super::super::AddressEntry {
+                label: "Work".to_string(),
+                street: "1 Long Acre".to_string(),
+                city: "Leeds".to_string(),
+                state: String::new(),
+                zip: "LS1 6AA".to_string(),
+                country: "United Kingdom".to_string(),
+            },
+        ];
+        let custom = vec![super::super::CustomFieldEntry {
+            label: "Blood type".to_string(),
+            value: "O negative".to_string(),
+        }];
+
+        ContactEntry {
+            name: "Grace van der Berg".to_string(),
+            // A family name carrying a space, which is the case no rule for
+            // splitting a whole name gets right. It is kept as it was given.
+            given_name: Some("Grace".to_string()),
+            family_name: Some("van der Berg".to_string()),
+            email: "grace@example.com".to_string(),
+            phone: Some("+44 7700 900123".to_string()),
+            company: Some("Acme, Limited".to_string()),
+            department: Some("Research".to_string()),
+            job_title: Some("Rear Admiral".to_string()),
+            website: Some("https://example.com/grace".to_string()),
+            address: Some(
+                "12 High Street; Flat 2, London, Greater London, SW1A 1AA, United Kingdom"
+                    .to_string(),
+            ),
+            birthday: Some("1906-12-09".to_string()),
+            avatar_url: Some("https://example.com/grace.png".to_string()),
+            notes: Some("Two lines\nand a semicolon; and a comma, too".to_string()),
+            nickname: Some("Amazing Grace".to_string()),
+            relationship: Some("Colleague".to_string()),
+            emails_json: serde_json::to_string(&emails).ok(),
+            phones_json: serde_json::to_string(&phones).ok(),
+            addresses_json: serde_json::to_string(&addresses).ok(),
+            custom_fields_json: serde_json::to_string(&custom).ok(),
+            ..a_contact("round-trip", "Grace van der Berg")
+        }
+    }
+
+    /// The contact that came back, with the parts a card does not carry taken
+    /// from the contact that went out, so what is left to compare is what
+    /// should have survived.
+    ///
+    /// Each of these is either about this database rather than about the
+    /// person (the row's identifier, the account it sits in, when it was
+    /// added, whether a change is waiting to be sent, which address books know
+    /// it) or is a record of where the contact came from, which after an
+    /// import is this file. A card cannot carry any of them, and no property
+    /// is invented to make it look as though it does.
+    ///
+    /// `favorite` is here for a different reason: a card has no property for
+    /// it and this application does not invent one, so it is lost. That loss
+    /// is pinned by a test of its own rather than hidden here.
+    fn with_the_parts_a_card_cannot_carry_put_back(
+        read_back: &ContactEntry,
+        original: &ContactEntry,
+    ) -> ContactEntry {
+        ContactEntry {
+            id: original.id.clone(),
+            account_id: original.account_id.clone(),
+            source_provider: original.source_provider.clone(),
+            last_synced_at: original.last_synced_at.clone(),
+            vcard_raw: original.vcard_raw.clone(),
+            created_at: original.created_at.clone(),
+            pending: original.pending,
+            known_to: original.known_to.clone(),
+            favorite: original.favorite,
+            ..read_back.clone()
+        }
+    }
+
+    /// One contact out to a card and back in through a second database.
+    ///
+    /// A second database rather than the same one, because importing into the
+    /// account the contact came from would find the row already there by its
+    /// address and write over it, which proves nothing about what the card
+    /// carried.
+    fn out_to_a_card_and_back(original: &ContactEntry) -> ContactEntry {
+        let out = a_cache("vcard_round_trip_out");
+        out.save_contact(original).expect("the contact to save");
+        let card = out
+            .export_contacts_to_vcard(&original.account_id)
+            .expect("the export to run");
+
+        let back = a_cache("vcard_round_trip_back");
+        let imported = back
+            .import_contacts_from_vcard("read-back", &card)
+            .expect("the import to run");
+        assert_eq!(imported, 1, "the card did not read back as one contact");
+
+        let read_back = back
+            .get_contacts_for_account("read-back")
+            .expect("contacts to be readable");
+        assert_eq!(read_back.len(), 1, "the card did not read back as one row");
+        read_back.into_iter().next().expect("the one contact")
+    }
+
+    #[test]
+    fn test_a_contact_written_out_to_a_card_and_read_back_is_the_contact_it_was() {
+        let original = a_contact_carrying_every_part_a_person_can_fill_in();
+        let read_back = out_to_a_card_and_back(&original);
+
+        assert_eq!(
+            with_the_parts_a_card_cannot_carry_put_back(&read_back, &original),
+            original,
+            "the contact lost detail going out to a card and coming back"
+        );
+    }
+
+    #[test]
+    fn test_a_birthday_with_no_year_survives_going_out_to_a_card_and_coming_back() {
+        // A birthday recorded without a year is the ordinary case, not the odd
+        // one: most address books hold the day and not the year. Written as a
+        // year of 0 or dropped, it is a fact nobody gave or a fact nobody has.
+        let original = ContactEntry {
+            birthday: Some("--12-09".to_string()),
+            ..a_contact_carrying_every_part_a_person_can_fill_in()
+        };
+        let read_back = out_to_a_card_and_back(&original);
+
+        assert_eq!(
+            read_back.birthday.as_deref(),
+            Some("--12-09"),
+            "a birthday with no year did not survive the round trip"
+        );
+    }
+
+    #[test]
+    fn test_a_contact_stored_before_the_lists_existed_still_survives_a_card() {
+        // A contact from an older database has the primary columns and no
+        // lists, and that is the shape the fall-back half of the exporter
+        // writes. An address with a semicolon in it used to go out as a whole
+        // structured value, which put the flat number in the post office box
+        // field and brought back an address of nothing at all.
+        let original = ContactEntry {
+            email: "grace@example.com".to_string(),
+            phone: Some("+44 7700 900123".to_string()),
+            address: Some("12 High Street; Flat 2, London".to_string()),
+            emails_json: None,
+            phones_json: None,
+            addresses_json: None,
+            ..a_contact_carrying_every_part_a_person_can_fill_in()
+        };
+        let read_back = out_to_a_card_and_back(&original);
+
+        assert_eq!(read_back.email, original.email);
+        assert_eq!(read_back.phone, original.phone);
+        assert_eq!(
+            read_back.address, original.address,
+            "the address on the contact's main line did not survive"
+        );
+    }
+
+    #[test]
+    fn test_a_contact_with_no_email_address_does_not_come_back_from_a_card() {
+        // Pinned so the loss is visible rather than discovered. A contact with
+        // only a phone number is an ordinary contact and the export writes it
+        // out, but the import refuses a card that names no address it could
+        // write to, deliberately, so that a file from anywhere cannot fill the
+        // address book with rows nobody can reach. The two rules disagree and
+        // which one gives way is a decision about the product. Until it is
+        // made, such a contact is dropped without a word.
+        let original = ContactEntry {
+            email: String::new(),
+            emails_json: None,
+            ..a_contact_carrying_every_part_a_person_can_fill_in()
+        };
+        let out = a_cache("vcard_no_address_out");
+        out.save_contact(&original).expect("the contact to save");
+        let card = out
+            .export_contacts_to_vcard(&original.account_id)
+            .expect("the export to run");
+        assert!(
+            card.contains("FN:Grace van der Berg"),
+            "the export left the contact out, so this test is about nothing"
+        );
+
+        let back = a_cache("vcard_no_address_back");
+        let imported = back
+            .import_contacts_from_vcard("read-back", &card)
+            .expect("the import to run");
+
+        assert_eq!(
+            imported, 0,
+            "a contact with no address came back, which is new: update the round trip tests"
+        );
+    }
+
+    #[test]
+    fn test_a_card_does_not_say_whether_a_contact_is_a_favourite() {
+        // Pinned so the loss is visible rather than discovered. A vCard has no
+        // property for this and nothing here invents one, because a property
+        // only this application understands helps it talk to itself and
+        // nothing else. If that is ever decided differently, this test says so
+        // and the round trip above has to stop excusing the field.
+        let original = ContactEntry {
+            favorite: true,
+            ..a_contact_carrying_every_part_a_person_can_fill_in()
+        };
+        let read_back = out_to_a_card_and_back(&original);
+
+        assert!(
+            !read_back.favorite,
+            "a card carried the favourite flag, which is new: update the round trip test"
+        );
+    }
+
     #[test]
     fn test_folding_counts_octets_rather_than_characters() {
         // RFC 6350 counts octets. Folding by characters puts a 75 character
@@ -1541,6 +1933,33 @@ mod tests {
                 MessageCache::unescape_vcard_text(&escaped),
                 original,
                 "{original:?} did not survive the round trip"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_fields_inside_one_value_come_back_as_the_fields_they_were() {
+        // A value like ADR, N or ORG holds several fields with a semicolon
+        // between them. Writing and reading have to agree on which semicolons
+        // separate fields and which ones somebody typed, or every field after
+        // the first typed one is read as the wrong field. Nothing says so: the
+        // contact still looks imported, with the town in the county box.
+        for fields in [
+            vec!["Acme, Limited", "Research"],
+            vec!["12 High Street; Flat 2", "London"],
+            vec!["a;b;c", "d"],
+            vec!["ends with a backslash\\", "next"],
+            vec!["two\nlines", "next"],
+            vec!["", "Research"],
+            vec!["Acme", ""],
+            vec!["", ""],
+            vec!["one field only"],
+        ] {
+            let written = MessageCache::structured_value(&fields);
+            assert_eq!(
+                MessageCache::structured_parts(&written),
+                fields,
+                "{fields:?} did not come back as it went in, written as {written:?}"
             );
         }
     }

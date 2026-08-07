@@ -228,20 +228,7 @@ pub fn to_stored(
         company: blank_to_none(&editor.company),
         job_title: blank_to_none(&editor.job_title),
         website: blank_to_none(&editor.website),
-        address: addresses.first().map(|a| {
-            [
-                a.street.as_str(),
-                a.city.as_str(),
-                a.state.as_str(),
-                a.zip.as_str(),
-                a.country.as_str(),
-            ]
-            .iter()
-            .filter(|part| !part.trim().is_empty())
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(", ")
-        }),
+        address: addresses.first().map(AddressEntry::on_one_line),
         birthday: blank_to_none(&editor.birthday),
         avatar_url: blank_to_none(&editor.avatar_url),
         avatar_data_base64: None,
@@ -368,6 +355,41 @@ mod tests {
         assert_eq!(restored.emails[1].address, "grace@example.com");
         assert_eq!(restored.phones[1].number, "555 0101");
         assert_eq!(restored.addresses[0].city, "Arlington");
+    }
+
+    #[test]
+    fn test_an_address_saved_in_the_editor_and_the_same_one_imported_read_the_same() {
+        // Two ways into the same column. Written separately they drifted: the
+        // editor stored "1 Navy Way, Arlington, VA, 22202, USA" and importing
+        // the same address from a card stored ";;1 Navy Way;Arlington;VA;
+        // 22202;USA", so the same contact read out one way after an edit and
+        // another way after an import. One routine answers it now, and this
+        // says so from outside that routine.
+        let from_the_editor = to_stored(&editor_contact(), "acct", None);
+
+        let cache = crate::common::temp_home::TempHome::named("contact_address_two_ways", |dir| {
+            crate::data::message_cache::MessageCache::new(dir.to_path_buf(), None)
+                .expect("a cache to open")
+        });
+        cache
+            .import_contacts_from_vcard(
+                "acct",
+                "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Grace Hopper\r\n\
+                 EMAIL:grace@navy.example\r\n\
+                 ADR;TYPE=WORK:;;1 Navy Way;Arlington;VA;22202;USA\r\nEND:VCARD\r\n",
+            )
+            .expect("the import to run");
+        let from_a_card = cache
+            .get_contacts_for_account("acct")
+            .expect("contacts to be readable")
+            .into_iter()
+            .next()
+            .expect("the imported contact");
+
+        assert_eq!(
+            from_a_card.address, from_the_editor.address,
+            "the editor and the card reader wrote the same address two ways"
+        );
     }
 
     #[test]

@@ -217,6 +217,36 @@ pub struct AddressEntry {
     pub country: String,
 }
 
+impl AddressEntry {
+    /// This address on one line, the way [`ContactEntry::address`] holds it.
+    ///
+    /// The parts somebody filled in, in the order they are written on an
+    /// envelope, separated by commas. Empty parts are left out rather than
+    /// leaving a run of commas with nothing between them, which is read out
+    /// aloud as a stammer.
+    ///
+    /// One routine because two callers need the same answer: the contact
+    /// editor, which stores the primary address when somebody saves a contact,
+    /// and the card reader, which stores it when somebody imports one. Written
+    /// separately, the card reader kept the raw card value instead, so the
+    /// same contact read out as "12 High Street, London" after an edit and as
+    /// ";;12 High Street;London;;;" after an import.
+    pub fn on_one_line(&self) -> String {
+        [
+            self.street.as_str(),
+            self.city.as_str(),
+            self.state.as_str(),
+            self.zip.as_str(),
+            self.country.as_str(),
+        ]
+        .iter()
+        .filter(|part| !part.trim().is_empty())
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ")
+    }
+}
+
 /// User-defined custom field (stored as JSON array)
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CustomFieldEntry {
@@ -282,7 +312,12 @@ pub struct ProviderIdentity {
 }
 
 /// Contact entry for account address book
-#[derive(Debug, Clone)]
+///
+/// Compared whole rather than field by field, so that a round trip through a
+/// contact card can be checked by asking whether the contact that came back is
+/// the contact that went out. A test that names the fields it compares stops
+/// covering any field added after it was written.
+#[derive(Debug, Clone, PartialEq)]
 pub struct ContactEntry {
     pub id: String,
     pub account_id: String,
