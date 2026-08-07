@@ -2769,11 +2769,11 @@ live account or a live calendar server:
   translating the month names, the relative wording and eventually every other
   string, which is a piece of work rather than a line change.
 
-Six limitations that stood here have been closed further up this same release
-and their notes have gone with them: a repeating event now shows on every day it
-falls on, a change made here reaches a CalDAV server and Google and Outlook
-alike, emptying a field empties it at the provider, a calendar can be added by
-its address, and an event read aloud says its category.
+The limitations listed here have been closed further up this same release and
+their notes have gone with them: a repeating event now shows on every day it
+falls on, a change made here reaches a CalDAV server, the same change reaches
+Google and Outlook, emptying a field empties it at the provider, a calendar can
+be added by its address, and an event read aloud says its category.
 
 ### Added
 
@@ -3219,9 +3219,11 @@ its address, and an event read aloud says its category.
 
 ### Known limitations
 
-These three were true when they were written and are not true now. They are kept
-because the entries above them describe a client that could not fetch mail, and
-taking them out would leave those entries reading as though it could.
+These were true when they were written. They are kept because the entries above
+them describe a client that could not fetch mail, and taking them out would
+leave those entries reading as though it could. A note that has since been
+closed, or partly closed, says so at its own end. A note with nothing added to
+it has not been looked at again.
 
 - **Receiving mail is not implemented.** The IMAP and POP3 modules perform no network I/O; every call returns fabricated data. Nothing in the window is wired to them, deliberately, because showing invented folders and messages as your own mail would be worse than showing none. Sending works; receiving does not. **Closed further up this same release:** both modules open real connections now, `F9` fetches real mail, and a POP account has a real client behind it.
 - Sending does not support OAuth accounts. The SMTP layer authenticates with a password and has no XOAUTH2 support, so a Gmail or Outlook account configured for OAuth is refused with a message saying so rather than failing at the server. **Closed further up this same release:** IMAP and SMTP both sign in with XOAUTH2 from the token in the Windows credential store.

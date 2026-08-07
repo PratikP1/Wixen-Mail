@@ -508,3 +508,263 @@ fn test_the_temp_folder_check_can_tell_the_two_apart() {
         "the module this rule was written for is not being checked"
     );
 }
+
+// ── A count beside a list ───────────────────────────────────────────────────
+//
+// A number in the sentence that introduces a list, and a claim in prose that a
+// list is everything, are both a second statement of a fact the list already
+// makes. The list then changes and the sentence does not. In `docs/changelog.md`
+// that has now happened seven times, and three of them were standing at once:
+// one entry said "Two things still do not survive, and this is the whole list"
+// and then, further down the same entry, "One label shape is still lost, and it
+// is the only one"; another said "Six limitations" over a list of five; a third
+// said "These three were true when they were written and are not true now" over
+// four notes, one of which said "Half closed".
+//
+// Each was found by reading, corrected by hand, and came back. So it is a
+// failing build instead.
+//
+// Only the changelog. The same shape appears in `docs/plans` where it is
+// correct: a list of three whose bullets add up to twelve, and a paragraph
+// naming the four questions in front of a list of three failure modes. A check
+// that fired on those would need exceptions, and a style check with exceptions
+// is a check nobody reads.
+
+/// Numbers as prose writes them, which is how a count beside a list is written.
+const COUNTED_IN_WORDS: [(&str, usize); 12] = [
+    ("one", 1),
+    ("two", 2),
+    ("three", 3),
+    ("four", 4),
+    ("five", 5),
+    ("six", 6),
+    ("seven", 7),
+    ("eight", 8),
+    ("nine", 9),
+    ("ten", 10),
+    ("eleven", 11),
+    ("twelve", 12),
+];
+
+/// The number a paragraph opens with, if it opens with one.
+///
+/// Only the first few words. "Two things still do not survive" is a count of
+/// what follows; a number in the middle of a sentence is usually about
+/// something else, and reading that as the count of the list is how a check
+/// starts crying wolf.
+fn the_count_it_opens_with(paragraph: &str) -> Option<usize> {
+    paragraph.split_whitespace().take(3).find_map(|word| {
+        let bare = word
+            .chars()
+            .filter(char::is_ascii_alphabetic)
+            .collect::<String>()
+            .to_lowercase();
+        COUNTED_IN_WORDS
+            .iter()
+            .find(|(spelled, _)| *spelled == bare)
+            .map(|(_, count)| *count)
+    })
+}
+
+/// Whether a line is a bullet at exactly this indentation.
+fn a_bullet_at(line: &str, indent: usize) -> bool {
+    line.strip_prefix(" ".repeat(indent).as_str())
+        .is_some_and(|rest| rest.starts_with("- "))
+}
+
+/// Whether a line belongs to the bullet above it rather than ending the list.
+fn inside_the_list(line: &str, indent: usize) -> bool {
+    line.trim().is_empty() || line.starts_with(" ".repeat(indent + 2).as_str())
+}
+
+/// Every bullet list in a document, with the paragraph that introduces it.
+///
+/// Gives the line the paragraph starts on, the paragraph itself, and how many
+/// bullets the list holds. A list with a heading or another bullet directly
+/// above it introduces itself and is left out.
+fn lists_with_their_introductions(text: &str) -> Vec<(usize, String, usize)> {
+    // The changelog indents a nested list by two and a bullet's own
+    // continuation lines by two more, so those are the only two levels. Each
+    // level is read on its own pass: read together, a nested list is swallowed
+    // as part of the bullet it sits under and never counted.
+    let lines: Vec<&str> = text.lines().collect();
+    let mut found = Vec::new();
+    for indent in [0, 2] {
+        found.extend(lists_at(&lines, indent));
+    }
+    found
+}
+
+/// Every bullet list at one indentation, with the paragraph introducing it.
+fn lists_at(lines: &[&str], indent: usize) -> Vec<(usize, String, usize)> {
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at < lines.len() {
+        if !a_bullet_at(lines[at], indent) {
+            at += 1;
+            continue;
+        }
+        let mut bullets = 0;
+        let mut end = at;
+        while end < lines.len() {
+            if a_bullet_at(lines[end], indent) {
+                bullets += 1;
+            } else if !inside_the_list(lines[end], indent) {
+                break;
+            }
+            end += 1;
+        }
+
+        let mut last = at;
+        while last > 0 && lines[last - 1].trim().is_empty() {
+            last -= 1;
+        }
+        let introduced = last > 0
+            && !lines[last - 1].trim_start().starts_with("- ")
+            && !lines[last - 1].starts_with('#');
+        if introduced {
+            let mut first = last - 1;
+            while first > 0
+                && !lines[first - 1].trim().is_empty()
+                && !lines[first - 1].trim_start().starts_with("- ")
+            {
+                first -= 1;
+            }
+            let paragraph = lines[first..last]
+                .iter()
+                .map(|line| line.trim())
+                .collect::<Vec<_>>()
+                .join(" ");
+            found.push((first + 1, paragraph, bullets));
+        }
+        at = end;
+    }
+    found
+}
+
+/// Prose that says a list is everything there is.
+const A_CLAIM_THE_LIST_ALREADY_MAKES: [&str; 6] = [
+    "this is the whole list",
+    "these are the whole list",
+    "it is the only one",
+    "these are all of them",
+    "that is all of them",
+    "this is the complete list",
+];
+
+#[test]
+fn test_no_changelog_list_is_introduced_by_a_count_that_disagrees_with_it() {
+    let changelog = fs::read_to_string("docs/changelog.md").expect("the changelog to be readable");
+    let lists = lists_with_their_introductions(&changelog);
+
+    let disagreeing: Vec<String> = lists
+        .iter()
+        .filter_map(|(line, paragraph, bullets)| {
+            let count = the_count_it_opens_with(paragraph)?;
+            (count != *bullets).then(|| {
+                let opening: String = paragraph.chars().take(70).collect();
+                format!("docs/changelog.md:{line}: says {count}, list has {bullets}: {opening}")
+            })
+        })
+        .collect();
+
+    assert!(
+        disagreeing.is_empty(),
+        "a count beside a list states a fact the list already states, and these \
+         two have drifted apart. Take the count out rather than correcting \
+         it:\n  {}",
+        disagreeing.join("\n  ")
+    );
+
+    // The check has to find a list at all, or it passes by reading nothing.
+    // Most lists here sit under a heading or another bullet and so introduce
+    // themselves; the ones with a paragraph in front are the ones at issue.
+    // `test_the_count_check_can_see_a_count_that_disagrees` is what says the
+    // reading works, at both levels of indentation.
+    assert!(
+        !lists.is_empty(),
+        "no list with a paragraph in front of it was found, so the reading is broken"
+    );
+}
+
+#[test]
+fn test_the_changelog_does_not_claim_in_prose_that_a_list_is_everything() {
+    let changelog = fs::read_to_string("docs/changelog.md").expect("the changelog to be readable");
+
+    let claiming: Vec<String> = changelog
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| {
+            let lowered = line.to_lowercase();
+            A_CLAIM_THE_LIST_ALREADY_MAKES
+                .iter()
+                .any(|claim| lowered.contains(claim))
+        })
+        .map(|(number, line)| format!("docs/changelog.md:{}: {}", number + 1, line.trim()))
+        .collect();
+
+    assert!(
+        claiming.is_empty(),
+        "a list is already the whole of what it holds, so saying so in prose \
+         beside it is a second statement that goes stale when the list \
+         changes:\n  {}",
+        claiming.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_count_check_can_see_a_count_that_disagrees() {
+    // Proving the measurement. A check that reads nothing passes, and from
+    // outside that looks exactly like a check that reads everything and finds
+    // nothing wrong. These are the shapes it was written for, taken from the
+    // changelog as it stood.
+    let drifted = "These three were true when they were written and are not true now.\n\
+                   \n\
+                   - Receiving mail is not implemented.\n\
+                   - Sending does not support OAuth accounts.\n\
+                   - Threaded view appears in the View menu.\n\
+                   - Five accessibility scan findings remain.\n";
+    let lists = lists_with_their_introductions(drifted);
+    assert_eq!(lists.len(), 1, "the list was not read at all");
+    assert_eq!(the_count_it_opens_with(&lists[0].1), Some(3));
+    assert_eq!(lists[0].2, 4, "the bullets were not counted");
+
+    // A count that agrees is not complained about.
+    let agreeing = "Two things still do not survive:\n\n- The first.\n- The second.\n";
+    let lists = lists_with_their_introductions(agreeing);
+    assert_eq!(the_count_it_opens_with(&lists[0].1), Some(2));
+    assert_eq!(lists[0].2, 2);
+
+    // A nested list, which is where two of the stale counts were. Read on one
+    // pass with the level above it, a nested list is swallowed as part of the
+    // bullet it sits under and is never counted at all.
+    let nested = concat!(
+        "- **An entry with a list inside it.** Some prose about it.\n",
+        "\n",
+        "  Two things still do not survive:\n",
+        "\n",
+        "  - The first.\n",
+        "  - The second.\n",
+        "  - The third.\n"
+    );
+    let inside = lists_with_their_introductions(nested);
+    let counted = inside
+        .iter()
+        .find(|(_, paragraph, _)| paragraph.starts_with("Two things"))
+        .expect("the nested list was not read");
+    assert_eq!(the_count_it_opens_with(&counted.1), Some(2));
+    assert_eq!(counted.2, 3, "the nested bullets were not counted");
+
+    // A number in the middle of a sentence is about something else.
+    assert_eq!(
+        the_count_it_opens_with("The rule it repeats by is stored in three places"),
+        None
+    );
+
+    // And the claim check has something to match on.
+    assert!(
+        A_CLAIM_THE_LIST_ALREADY_MAKES
+            .iter()
+            .any(|claim| "and this is the whole list:".contains(claim))
+    );
+}
