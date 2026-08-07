@@ -47,8 +47,11 @@ const MOST_DAYS_ONE_SERIES_SHOWS: usize = 800;
 /// now starts at the block the window opens in, so a rule that falls on a day
 /// takes about as many steps as the window is wide. This is the backstop for
 /// what neither of those covers: a rule that falls on no day at all, and a
-/// series counting its way to an ending, which has to be counted from its own
-/// first day and so is still walked from there.
+/// month or year rule counting its way to an ending, which is still walked from
+/// its own first day because how many days it has fallen on cannot be worked
+/// out any other way. Forty thousand months is three thousand three hundred
+/// years and forty thousand years is forty thousand years, so no first date a
+/// calendar carries reaches this.
 const MOST_STEPS: usize = 40_000;
 
 /// The days an event falls on between two dates.
@@ -294,19 +297,26 @@ impl Rule {
         from: chrono::NaiveDate,
         to: chrono::NaiveDate,
     ) -> (Vec<chrono::NaiveDate>, usize) {
-        self.days_stepping_from(self.where_to_start_stepping(first, from), first, from, to)
+        let (start, gone_by) = self.where_to_start_stepping(first, from);
+        self.days_stepping_from(start, gone_by, first, from, to)
     }
 
-    /// The same again, from a block named by the caller.
+    /// The same again, from a block named by the caller, with the days the
+    /// series had already fallen on before that block.
     ///
     /// Split out so a test can hold the answer from the block the window opens
     /// in against the answer from the series' own first day, which is where
     /// this used to start. Those two have to name the same days for every
     /// series the old way could still reach, and that is the whole claim: the
     /// fix is only allowed to end the truncation, never to shift a day.
+    ///
+    /// `gone_by` is nought when the walk starts at the series' own first day,
+    /// and it only means anything to a series that stops after so many times,
+    /// which is counted from that day whatever block the walk begins at.
     fn days_stepping_from(
         &self,
         start: chrono::NaiveDate,
+        gone_by: usize,
         first: chrono::NaiveDate,
         from: chrono::NaiveDate,
         to: chrono::NaiveDate,
@@ -323,7 +333,7 @@ impl Rule {
         };
 
         let mut found = Vec::new();
-        let mut counted = 0usize;
+        let mut counted = gone_by;
         let mut blocks = 0usize;
         let mut cursor = start;
         'stepping: for _ in 0..MOST_STEPS {
@@ -373,8 +383,9 @@ impl Rule {
         (found, blocks)
     }
 
-    /// Which block the stepping starts at, so a series of any age reaches the
-    /// window in about as many steps as the window is wide.
+    /// Which block the stepping starts at, and how many days the series has
+    /// already fallen on before it, so a series of any age reaches the window
+    /// in about as many steps as the window is wide.
     ///
     /// Walked from its own first day, a series costs one step per interval
     /// since that day. Forty thousand daily steps is a hundred and nine years,
@@ -390,43 +401,85 @@ impl Rule {
     /// opening at or before `from` is the earliest one that can hold a day
     /// inside the window, and starting there leaves the days shown exactly as
     /// they were for every series the walking could already reach.
+    ///
+    /// A series that stops after so many times has to carry its count across
+    /// that jump, because the count is of days from the series' own first one.
+    /// Where the days already gone by cannot be worked out, the walk starts at
+    /// that first day as it always did, so the count is never begun part way
+    /// through and a series that ran out in 1918 never goes on showing today.
     fn where_to_start_stepping(
         &self,
         first: chrono::NaiveDate,
         from: chrono::NaiveDate,
-    ) -> chrono::NaiveDate {
+    ) -> (chrono::NaiveDate, usize) {
         let opening = self.opening(first);
-        // A count counts from the series' own first day, so a series that stops
-        // after so many times is walked from there. Started anywhere else the
-        // count would begin part way through, and a series that ran out in 1918
-        // would go on showing today.
-        //
-        // What that leaves, said plainly rather than left to be found: a
-        // counted series still meets MOST_STEPS the way every series used to.
-        // A daily one first dated 1917, carrying a count big enough to still be
-        // running now, is shown on 151 of the 546 days the window holds, which
-        // is the fault above on a narrower shape. Reaching it takes a count in
-        // the tens of thousands, which nothing writes by hand. Closing it means
-        // working out how many occurrences were skipped as well as where to
-        // start, and that is only closed form for the daily and weekly rules,
-        // so it was left rather than half done.
-        if matches!(
-            self.stops,
-            crate::application::repeating::Until::AfterTimes(_)
-        ) {
-            return opening;
+        let blocks = self.blocks_between(opening, from);
+        let gone_by = match self.stops {
+            crate::application::repeating::Until::AfterTimes(_) => {
+                self.days_before_block(first, blocks)
+            }
+            _ => Some(0),
+        };
+        match (self.blocks_on(opening, blocks), gone_by) {
+            (Some(start), Some(gone_by)) => (start, gone_by),
+            // Either the count of this frequency cannot be worked out, or the
+            // arithmetic for the block itself ran off the end of the calendar.
+            // Both mean walking from the series' own first day, which is right
+            // and slow rather than fast and wrong.
+            _ => (opening, 0),
         }
-        // Whole blocks between the two, at an interval of one. Dividing by the
-        // interval after is the same answer as dividing by the two together,
-        // and it keeps each unit in one place.
+    }
+
+    /// How many whole intervals of this rule lie between two dates.
+    ///
+    /// Never negative: a series that has not begun by `from` starts at its own
+    /// first block rather than at a block before it.
+    fn blocks_between(&self, opening: chrono::NaiveDate, from: chrono::NaiveDate) -> i64 {
+        // Worked out at an interval of one and divided by the interval after,
+        // which is the same answer as dividing by the two together and keeps
+        // each unit in one place.
         let apart = match self.how {
             How::Daily => (from - opening).num_days(),
             How::Weekly => (from - opening).num_days().div_euclid(7),
             How::Monthly => months_apart(opening, from),
             How::Yearly => months_apart(opening, from).div_euclid(12),
         };
-        let steps = apart.max(0) / i64::from(self.every);
-        self.blocks_on(opening, steps).unwrap_or(opening)
+        apart.max(0) / i64::from(self.every)
+    }
+
+    /// How many days the series falls on before a block, or nothing where that
+    /// cannot be worked out without walking them.
+    ///
+    /// A day rule and a week rule land on the same number of days in every
+    /// block, so the total is arithmetic however many blocks there are. A month
+    /// rule does not: February has no 31st, and only three months of a year
+    /// hold a fifth Tuesday. Nor does a year rule, because three years in four
+    /// have no 29th of February. Those two are answered `None` and are walked
+    /// from the series' own first day, which reaches three thousand three
+    /// hundred years of months and forty thousand years of years before it
+    /// meets `MOST_STEPS`, so no date a calendar carries is beyond it.
+    ///
+    /// The first block is the one that can hold days before the series' own
+    /// first day, and those are not days of the series: a weekly rule naming
+    /// Monday and Friday, first dated on a Friday, falls on one day in its
+    /// opening week and two in every week after. How many days a block holds is
+    /// asked of `days_at`, the same as the walking asks, so the two cannot
+    /// disagree about it.
+    fn days_before_block(&self, first: chrono::NaiveDate, blocks: i64) -> Option<usize> {
+        if matches!(self.how, How::Monthly | How::Yearly) {
+            return None;
+        }
+        let blocks = usize::try_from(blocks).ok()?;
+        let opening = self.opening(first);
+        let each_block = self.days_at(opening, first);
+        let in_the_opening = each_block.iter().filter(|day| **day >= first).count();
+        let Some(after_the_opening) = blocks.checked_sub(1) else {
+            return Some(0);
+        };
+        // Saturating rather than checked: a count is at most a u32, so a total
+        // this cannot hold is a series that ran out long ago whatever the exact
+        // figure, and saying "more than the count" is the right answer for it.
+        Some(in_the_opening.saturating_add(after_the_opening.saturating_mul(each_block.len())))
     }
 
     /// Where the stepping starts, which is the block the first day sits in
@@ -1341,6 +1394,186 @@ mod tests {
     }
 
     #[test]
+    fn test_a_counted_series_first_dated_a_century_ago_is_shown_across_the_whole_window() {
+        // The same fault as the test above, on a series that stops after so
+        // many times rather than one that runs for ever, and it was left open
+        // when that one was closed. A count is counted from the series' own
+        // first day, so a counted series was walked from there whatever window
+        // it was asked about: a daily one first dated 1900 showed on none of
+        // the 546 days the window holds, and one dated 1917 on 151 of them.
+        //
+        // Fifty thousand days is a hundred and thirty-six years, so every one
+        // of these is still running through the whole of the window.
+        let (from, to) = the_real_window_width();
+        for year in [1900, 1917, 1930, 1970, 1990, 2015] {
+            let event = an_event(
+                &format!("{year}-01-01 09:00"),
+                &format!("{year}-01-01 09:15"),
+                Some("FREQ=DAILY;COUNT=50000"),
+            );
+
+            let shown = falls_on(&event, from, to);
+
+            assert_eq!(shown.days.len(), 546, "a counted series first dated {year}");
+            assert_eq!(
+                shown.days.first().map(|day| day.start.as_str()),
+                Some("2026-02-07 09:00"),
+                "a counted series first dated {year}"
+            );
+            assert_eq!(
+                shown.days.last().map(|day| day.start.as_str()),
+                Some("2027-08-06 09:00"),
+                "a counted series first dated {year}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_counted_series_from_long_ago_still_stops_on_the_day_its_count_runs_out() {
+        // Starting inside the window is worth nothing if the count then starts
+        // over from there: a series that ran out in 1918 would go on showing
+        // today. The days already gone by have to be worked out as exactly as
+        // walking them would have counted them.
+        //
+        // The 15th of June 2026 is 46,186 days after the 1st of January 1900,
+        // so it is occurrence number 46,187 and the last day of a series
+        // counting that far. The window opens on the 7th of February 2026,
+        // which leaves 129 days of it to show.
+        let (from, to) = the_real_window_width();
+        let event = an_event(
+            "1900-01-01 09:00",
+            "1900-01-01 09:15",
+            Some("FREQ=DAILY;COUNT=46187"),
+        );
+
+        let shown = falls_on(&event, from, to);
+
+        assert_eq!(shown.days.len(), 129, "{:?}", shown.days.last());
+        assert_eq!(
+            shown.days.last().map(|day| day.start.as_str()),
+            Some("2026-06-15 09:00")
+        );
+    }
+
+    #[test]
+    fn test_a_counted_series_that_ran_out_before_the_window_shows_no_day_of_it() {
+        // The other side of the same arithmetic, and the reason the count
+        // cannot simply be started again at the window.
+        let (from, to) = the_real_window_width();
+        let event = an_event(
+            "1900-01-01 09:00",
+            "1900-01-01 09:15",
+            Some("FREQ=DAILY;COUNT=46000"),
+        );
+
+        let shown = falls_on(&event, from, to);
+
+        assert!(shown.days.is_empty(), "{:?}", starts(&shown));
+    }
+
+    #[test]
+    fn test_a_counted_series_is_not_carried_to_the_window_one_step_at_a_time() {
+        // The days are only half of it, the same as for a series with no
+        // ending. A counted daily series first dated 1900 was stepped forty
+        // thousand times, per event, per build of the calendar panel, and
+        // showed nothing for the trouble. A counted weekly one first dated 1900
+        // did reach the window, so its days were right, and it still walked six
+        // and a half thousand blocks to get there.
+        let (from, to) = the_real_window_width();
+
+        for (written, days) in [
+            ("FREQ=DAILY;COUNT=50000", 546),
+            ("FREQ=DAILY;INTERVAL=2;COUNT=50000", 273),
+            ("FREQ=WEEKLY;COUNT=30000", 78),
+            ("FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=30000", 234),
+        ] {
+            let rule = Rule::read(written).expect("a rule this can read");
+            let first = between("1900-01-03", "1900-01-03").0;
+
+            let (found, blocks) = rule.days_and_blocks(first, from, to);
+
+            assert_eq!(found.len(), days, "{written}");
+            assert!(
+                blocks <= 600,
+                "stepped {blocks} blocks over a window 546 days wide, for {written}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_counted_month_series_counts_the_days_it_falls_on_not_the_months() {
+        // Why a month rule is still walked, said as the measurement that
+        // decided it rather than as an assertion in a comment. Only seven
+        // months of twelve have a 31st, so counting a day per month would run
+        // such a series out years early and take the rest of it off the
+        // calendar.
+        //
+        // The 31st of January 2005 is the 147th 31st of the month counting from
+        // itself through the end of 2025, so a series stopping after 150 has its
+        // last day on the 31st of May 2026, and two of them fall inside the
+        // window. Counted by months it would be 253 months in and long finished.
+        let (from, to) = the_real_window_width();
+        let event = an_event(
+            "2005-01-31 09:00",
+            "2005-01-31 10:00",
+            Some("FREQ=MONTHLY;COUNT=150"),
+        );
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            ["2026-03-31 09:00", "2026-05-31 09:00"]
+        );
+    }
+
+    #[test]
+    fn test_a_counted_year_series_counts_the_days_it_falls_on_not_the_years() {
+        // The same again for a year rule, which falls on the 29th of February
+        // one year in four.
+        //
+        // A window of its own, further ahead than the one the product shows,
+        // because the product's window holds no 29th of February this year. The
+        // 29th of February 2020 is the first day of this series, 2024 the
+        // second and 2028 the third, so one stopping after three ends there.
+        // Counted by years it would be eight years in and finished.
+        let event = an_event(
+            "2020-02-29 09:00",
+            "2020-02-29 10:00",
+            Some("FREQ=YEARLY;COUNT=3"),
+        );
+        let (from, to) = between("2028-01-01", "2028-12-31");
+
+        assert_eq!(starts(&falls_on(&event, from, to)), ["2028-02-29 09:00"]);
+    }
+
+    #[test]
+    fn test_a_counted_monthly_or_yearly_series_reaches_the_window_from_any_real_first_date() {
+        // How many days a month rule or a year rule has fallen on cannot be
+        // worked out without walking them, so those two are still walked from
+        // the series' own first day when they carry a count. This is what that
+        // leaves, said as a measurement rather than as a promise: the backstop
+        // is forty thousand steps, which is three thousand three hundred years
+        // of months and forty thousand years of years, so a first date of the
+        // year 1 still arrives with room to spare.
+        let (from, to) = the_real_window_width();
+
+        for (written, days, last) in [
+            ("FREQ=MONTHLY;COUNT=40000", 18, "2027-08-01 08:00"),
+            ("FREQ=YEARLY;COUNT=40000", 1, "2027-01-01 08:00"),
+        ] {
+            let event = an_event("0001-01-01 08:00", "0001-01-01 08:00", Some(written));
+
+            let shown = falls_on(&event, from, to);
+
+            assert_eq!(shown.days.len(), days, "{written}: {:?}", starts(&shown));
+            assert_eq!(
+                shown.days.last().map(|day| day.start.as_str()),
+                Some(last),
+                "{written}"
+            );
+        }
+    }
+
+    #[test]
     fn test_a_series_that_has_not_begun_yet_is_not_stepped_at_all() {
         // The other end of the same arithmetic. Working out where the window is
         // has to answer "at the series' own first block" for a series that
@@ -1402,6 +1635,28 @@ mod tests {
             "FREQ=WEEKLY;COUNT=500",
             "FREQ=DAILY;UNTIL=20261231T235959Z",
             "FREQ=MONTHLY;BYDAY=2TU;UNTIL=20270101T000000Z",
+            // Counts big enough that the walk crosses decades to reach the
+            // window, which is where the two used to part company: the walk was
+            // the only way of knowing how many days had gone by, and it is now
+            // arithmetic. The figures are chosen so that the day the count runs
+            // out lands inside one of the windows for several of the first
+            // dates below, because a count that never runs out inside a window
+            // proves only that the jump did not lose the series.
+            "FREQ=DAILY;COUNT=50000",
+            "FREQ=DAILY;COUNT=15500",
+            "FREQ=DAILY;COUNT=7700",
+            "FREQ=DAILY;COUNT=2200",
+            "FREQ=DAILY;INTERVAL=2;COUNT=3850",
+            "FREQ=WEEKLY;COUNT=2200",
+            "FREQ=WEEKLY;INTERVAL=2;COUNT=1100",
+            "FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=6600",
+            "FREQ=WEEKLY;BYDAY=SA,SU;COUNT=4400",
+            "FREQ=WEEKLY;BYDAY=TU;INTERVAL=2;COUNT=1100",
+            // A month rule and a year rule are still walked from the first day
+            // when they carry a count, so these two hold that path against
+            // itself and would notice it being changed to the arithmetic one.
+            "FREQ=MONTHLY;COUNT=520",
+            "FREQ=YEARLY;COUNT=43",
         ];
         let windows = [
             the_real_window_width(),
@@ -1437,7 +1692,7 @@ mod tests {
                     chrono::NaiveDate::from_ymd_opt(year, month, day).expect("a day of the year");
                 for (from, to) in windows {
                     let (walked, blocks) =
-                        rule.days_stepping_from(rule.opening(first), first, from, to);
+                        rule.days_stepping_from(rule.opening(first), 0, first, from, to);
 
                     assert!(
                         blocks < MOST_STEPS,

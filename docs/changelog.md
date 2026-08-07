@@ -273,15 +273,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   counting would go. A daily series starting in 1917 used the whole cap getting
   to today and ran out part way through the year ahead.
 
-  The days are now worked out from the part of the calendar you are looking at,
-  so how old the event is makes no difference to whether it appears. The days it
-  falls on are exactly the days it fell on before for every series that already
-  worked: only the ones that were being cut short have changed. Opening the
-  calendar is also quicker where old repeating events are stored, because the
-  years in between are no longer walked through one day at a time.
+  The days are now worked out from the part of the calendar you are looking at.
+  A daily event dated 1917 shows on all 546 days of the calendar instead of 151,
+  and one dated 1900 on all 546 instead of none. The days a series falls on are
+  exactly the days it fell on before for every series that already worked: only
+  the ones that were being cut short have changed. Opening the calendar is also
+  quicker where old repeating events are stored, because the years in between
+  are no longer walked through one day at a time.
 
-  A daily event dated 1917 now shows on all 546 days of the calendar instead of
-  151, and one dated 1900 on all 546 instead of none.
+  A series set to stop after so many occurrences is the awkward one, because
+  showing it correctly means knowing how many have already gone by. For a daily
+  or a weekly series that number is now worked out by arithmetic, so it starts
+  from the part of the calendar you are looking at like any other. A daily
+  series dated 1900 set to stop after 50,000 times showed on none of the 546
+  days and now shows on all of them, and one set to stop after 46,187 times
+  still stops on the 15th of June 2026, the day it was always going to stop on.
+
+  A monthly or a yearly series that stops after so many occurrences is still
+  counted from its own first date, one month or one year at a time, because
+  there is nothing to multiply: only seven months of the year have a 31st, and
+  only one year in four has a 29th of February. That counting reaches back 3,300
+  years for a monthly series and 40,000 years for a yearly one, which is further
+  than any date a calendar can hold, so no such series is cut short by it.
 
 - **A day you cancelled out of a repeating Google event stays cancelled.** Three
   separate faults dropped the days you had called off. Each one had the same
