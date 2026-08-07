@@ -87,8 +87,10 @@ pub struct FolderSync {
 /// not one.
 pub fn what_the_folder_sync_did(result: &FolderSync) -> String {
     let mut said = SummingUp::opening(format!(
-        "{}: {} of {} messages downloaded",
-        result.folder, result.held, result.total_on_server
+        "{}: {} of {} downloaded",
+        result.folder,
+        result.held,
+        crate::service::caldav::how_many(result.total_on_server, "message")
     ));
     if more_to_fetch(result.held, result.total_on_server) {
         said.count("Shift+F9 for older");
@@ -1917,6 +1919,20 @@ mod tests {
         });
 
         assert_eq!(said, "Inbox: 500 of 500 messages downloaded");
+    }
+
+    #[test]
+    fn test_a_folder_holding_one_message_does_not_say_one_messages() {
+        // The same shape the contacts and calendar summaries had. A folder
+        // with one message in it is an ordinary folder, so this is heard.
+        let said = what_the_folder_sync_did(&FolderSync {
+            folder: "Archive".to_string(),
+            held: 1,
+            total_on_server: 1,
+            ..FolderSync::default()
+        });
+
+        assert_eq!(said, "Archive: 1 of 1 message downloaded");
     }
 
     #[test]

@@ -1089,23 +1089,18 @@ pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
         ));
     }
     if !result.errors.is_empty() {
-        said.count(format!("{} errors", result.errors.len()));
+        said.count(crate::service::caldav::how_many(
+            result.errors.len(),
+            "error",
+        ));
     }
     if !result.waiting_on_the_setting.is_empty() {
-        // Written out both ways rather than built from parts. Three words have
-        // to agree in number, and one contact waiting was read out as "1
-        // changes are waiting here ... to send them".
-        said.sentence(if result.waiting_on_the_setting.count() == 1 {
-            "1 change is waiting here: turn on Allow Changes for this account to \
-             send it"
-                .to_string()
-        } else {
-            format!(
-                "{} changes are waiting here: turn on Allow Changes for this \
-                 account to send them",
-                result.waiting_on_the_setting.count()
-            )
-        });
+        // The calendar sync says this too, so it is said in one place. Written
+        // out both ways there rather than built from parts, because three
+        // words have to agree in number.
+        said.sentence(crate::application::allowed::changes_waiting_here(
+            result.waiting_on_the_setting.count(),
+        ));
     }
     if !result.waiting_on_how_far_a_change_goes.is_empty() {
         // The other setting, named apart from Allow Changes because turning
@@ -5421,6 +5416,22 @@ mod tests {
     }
 
     #[test]
+    fn test_one_thing_going_wrong_is_not_read_out_as_one_errors() {
+        // The count of what went wrong is a count like any other and was the
+        // one clause here still built by pushing the number in front of a
+        // plural noun.
+        let one = SyncResult {
+            errors: vec!["the address book said no".to_string()],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            what_the_contacts_sync_did(&one),
+            "Contacts sync: 0 created, 0 updated, 0 deleted, 1 error"
+        );
+    }
+
+    #[test]
     fn test_a_quiet_sync_says_only_what_came_down() {
         let said = what_the_contacts_sync_did(&SyncResult::default());
 
@@ -5453,7 +5464,7 @@ mod tests {
         assert_eq!(
             said,
             "Contacts sync: 1 created, 1 updated, 2 deleted, 1 sent, \
-             1 of your change replaced by the address book, 1 errors. \
+             1 of your change replaced by the address book, 1 error. \
              2 changes are waiting here: turn on Allow Changes for this account \
              to send them. 2 contacts you had changed were deleted in your \
              address book, and your changes went with them."

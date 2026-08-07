@@ -241,6 +241,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **"1 errors" and "1 changes are waiting here" are said properly now.** The
+  line read out after a sync put the number in front of a plural word whatever
+  the number was, so one thing going wrong was "1 errors", one change held back
+  by a setting was "1 changes are waiting here: turn on Allow Changes for this
+  account to send them", and a folder holding a single message was "1 of 1
+  messages downloaded". The calendar sync, the contacts sync, the tasks sync
+  and the mail sync each had their own version of it.
+
+  They ask one routine now, so there is one place to get this right rather than
+  five. The sentence about changes waiting is also written once and shared by
+  the calendar and contacts syncs, which is how one of the two copies came to
+  be corrected on its own.
+
 - **A hole closed in how a sync summary is punctuated, which nobody meets
   today.** The rule is that each clause says what it is and never how it joins
   to its neighbours, so the summary decides the spacing and the full stops in

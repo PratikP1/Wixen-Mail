@@ -186,6 +186,32 @@ red = [
     "application::calendar::tests::test_every_clause_at_once_is_still_read_as_sentences",
 ]
 
+# ── A count and the thing it counts ─────────────────────────────────────────
+#
+# Five modules used to answer this question in their own words and two of them
+# got it wrong, so "1 errors" and "1 changes are waiting here ... to send them"
+# were both read out. There is one routine now, and this is the whole family in
+# one break.
+
+[[guard]]
+name = "a count and the thing it counts agree in number"
+file = "src/service/caldav.rs"
+before = """    if count == 1 {
+        format!("1 {thing}")"""
+after = """    if count == 0 {
+        format!("1 {thing}")"""
+red = [
+    "application::calendar::tests::test_every_clause_at_once_is_still_read_as_sentences",
+    "application::calendar::tests::test_one_change_waiting_and_one_thing_wrong_are_not_read_out_in_the_plural",
+    "application::contacts_sync::tests::test_every_clause_at_once_is_still_read_as_sentences",
+    "application::contacts_sync::tests::test_one_thing_going_wrong_is_not_read_out_as_one_errors",
+    "application::mail_sync::tests::test_a_folder_holding_one_message_does_not_say_one_messages",
+    "application::tasks_sync::tests::test_a_list_that_went_is_said_rather_than_left_to_be_noticed",
+    "application::tasks_sync::tests::test_every_clause_at_once_is_still_read_as_sentences",
+    "application::tasks_sync::tests::test_one_of_each_is_not_read_as_a_plural",
+    "service::ical_subscription::tests::test_event_without_a_uid_is_not_stored_and_the_feed_says_why_it_is_empty",
+]
+
 # ── One contact, however many address books hold a copy ─────────────────────
 #
 # Every number in a contacts summary is a number of people. Each address book
@@ -243,10 +269,13 @@ red = [
 
 [[guard]]
 name = "one change waiting is not read out in the plural"
-file = "src/application/contacts_sync.rs"
-before = """        said.sentence(if result.waiting_on_the_setting.count() == 1 {"""
-after = """        said.sentence(if false {"""
+file = "src/application/allowed.rs"
+before = """    match count {
+        1 => format!("""
+after = """    match count {
+        0 => format!("""
 red = [
+    "application::calendar::tests::test_one_change_waiting_and_one_thing_wrong_are_not_read_out_in_the_plural",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
     "application::contacts_sync::tests::test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice",
 ]

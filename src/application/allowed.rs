@@ -87,7 +87,39 @@ impl Allowed {
     }
 }
 
-/// The warning shown beside the two Allowed Changes boxes.
+/// What the settings screen calls the section holding the two boxes below.
+///
+/// One string rather than one per screen. A sync tells somebody to turn this
+/// on by name, so the name it says has to be the name they then read on the
+/// screen. It was not: the sentence said "Allow Changes" and the section was
+/// headed "Allowed Changes", which is near enough to look like the right place
+/// and far enough to make somebody stop and check.
+pub const SETTINGS_SECTION: &str = "Allow Changes";
+
+/// The sentence a sync says when that setting is holding changes here.
+///
+/// One answer rather than one per module. The contacts sync and the calendar
+/// sync say the same sentence about the same setting, they were written out
+/// separately, and only one of them was ever corrected: the calendar read out
+/// "1 changes are waiting here ... to send them".
+///
+/// Both numbers are written out whole rather than built from a stem and an
+/// "s". Three words have to agree, and a sentence assembled from fragments
+/// reads like one.
+pub fn changes_waiting_here(count: usize) -> String {
+    match count {
+        1 => format!(
+            "1 change is waiting here: turn on {SETTINGS_SECTION} for this \
+             account to send it"
+        ),
+        many => format!(
+            "{many} changes are waiting here: turn on {SETTINGS_SECTION} for \
+             this account to send them"
+        ),
+    }
+}
+
+/// The warning shown beside the two Allow Changes boxes.
 ///
 /// Kept here rather than typed into the settings screen, because it was typed
 /// there and the copy drifted: the visible label and the accessible name were

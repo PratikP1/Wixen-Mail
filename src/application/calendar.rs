@@ -249,13 +249,16 @@ pub fn what_the_calendar_sync_did(result: &CalendarSyncResult) -> String {
         said.count(format!("{} sent", result.sent));
     }
     if !result.errors.is_empty() {
-        said.count(format!("{} errors", result.errors.len()));
+        said.count(crate::service::caldav::how_many(
+            result.errors.len(),
+            "error",
+        ));
     }
     if result.waiting_on_the_setting > 0 {
-        said.sentence(format!(
-            "{} changes are waiting here: turn on Allow Changes for this \
-             account to send them",
-            result.waiting_on_the_setting
+        // The contacts sync says this too, so it is said in one place. Two
+        // copies of it drifted and only one was corrected.
+        said.sentence(crate::application::allowed::changes_waiting_here(
+            result.waiting_on_the_setting,
         ));
     }
     // Whole sentences, because the calendar's name and what to do instead are
@@ -4745,7 +4748,28 @@ mod tests {
         // And when something did go wrong, the count is there to be heard.
         result.errors.push("the server said no".to_string());
         let said = what_the_calendar_sync_did(&result);
-        assert!(said.contains("1 errors"), "{said}");
+        assert!(said.contains("1 error"), "{said}");
+    }
+
+    #[test]
+    fn test_one_change_waiting_and_one_thing_wrong_are_not_read_out_in_the_plural() {
+        // Both were: "1 errors", and "1 changes are waiting here ... to send
+        // them". Three words in the waiting sentence have to agree in number,
+        // so it is written out both ways rather than built from a stem and an
+        // "s", and the count of what went wrong is asked of the one routine
+        // that already answers this question.
+        let one = CalendarSyncResult {
+            waiting_on_the_setting: 1,
+            errors: vec!["the server said no".to_string()],
+            ..CalendarSyncResult::default()
+        };
+
+        assert_eq!(
+            what_the_calendar_sync_did(&one),
+            "Calendar sync: 0 created, 0 updated, 0 deleted, 1 error. \
+             1 change is waiting here: turn on Allow Changes for this account \
+             to send it."
+        );
     }
 
     #[test]
@@ -4803,7 +4827,7 @@ mod tests {
         assert!(!said.contains("  "), "a space spoken twice: {said}");
         assert_eq!(
             said,
-            "Calendar sync: 1 created, 1 updated, 0 deleted, 2 sent, 1 errors. \
+            "Calendar sync: 1 created, 1 updated, 0 deleted, 2 sent, 1 error. \
              3 changes are waiting here: turn on Allow Changes for this account \
              to send them. Term dates: 1 change made here cannot be saved, \
              because this is a calendar this program can only read."

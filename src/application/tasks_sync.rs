@@ -68,6 +68,7 @@
 use crate::application::summing_up::SummingUp;
 use crate::common::{Error, Result};
 use crate::data::message_cache::{MessageCache, TaskEntry};
+use crate::service::caldav::how_many;
 use crate::service::tasks_api::{
     GoogleTask, GoogleTaskList, MsTodoList, MsTodoTask, PagedRead, TasksClient,
     entry_to_google_task, entry_to_ms_task, google_list_to_entry, google_task_to_entry,
@@ -155,12 +156,13 @@ impl TaskSyncResult {
 
     /// What the status line says afterwards.
     pub fn summary(&self) -> String {
+        // A count and the thing it counts, asked of the one routine that
+        // answers that. Every clause here used to answer it again in its own
+        // words, and two other modules doing the same read out "1 errors".
         let mut said = SummingUp::opening(format!(
-            "{} task{} in {} list{}",
-            self.stored,
-            if self.stored == 1 { "" } else { "s" },
-            self.lists,
-            if self.lists == 1 { "" } else { "s" }
+            "{} in {}",
+            how_many(self.stored, "task"),
+            how_many(self.lists, "list")
         ));
         if self.unchanged > 0 {
             said.count(format!("{} unchanged", self.unchanged));
@@ -172,11 +174,7 @@ impl TaskSyncResult {
             said.count(format!("{} of yours sent", self.sent));
         }
         if self.lists_removed > 0 {
-            said.count(format!(
-                "{} list{} removed",
-                self.lists_removed,
-                if self.lists_removed == 1 { "" } else { "s" }
-            ));
+            said.count(format!("{} removed", how_many(self.lists_removed, "list")));
         }
         if self.kept_elsewhere > 0 {
             said.count(format!(
@@ -201,11 +199,7 @@ impl TaskSyncResult {
             // The count, not the text. The messages are in the log, and a
             // status line that grows with the number of failures pushes
             // everything else off it.
-            said.count(format!(
-                "{} problem{}",
-                self.errors.len(),
-                if self.errors.len() == 1 { "" } else { "s" }
-            ));
+            said.count(how_many(self.errors.len(), "problem"));
         }
         if self.needs_sign_in {
             // Said rather than counted. An account signed in before this
