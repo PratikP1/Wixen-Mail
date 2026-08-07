@@ -231,6 +231,42 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The sign-in pages your browser shows are readable pages now.** When you sign
+  in to Gmail or Outlook, the provider sends your browser back to a page this
+  program serves, and that page is the one part of signing in you meet as a web
+  page rather than as a window. There were four of them and none was a whole
+  document: no language, so a screen reader read English sentences in whatever
+  voice it was left in, which on a computer set to another language makes them
+  unintelligible; no title, so the tab announced its address; no heading, so
+  there was nothing to jump to; and no stated encoding, so an accent could
+  arrive as nonsense. Each one now says it is in English, carries a title naming
+  Wixen Mail, opens with a heading, and states its encoding.
+
+  What the pages say has been rewritten in plain language and now tells you what
+  to do next. The one shown when a sign-in is refused no longer repeats the
+  provider's own wording at you, and the one shown when the reply does not match
+  no longer says "CSRF state does not match", which named the problem in
+  language nobody outside this trade uses and said nothing about what to do.
+
+- **Text arriving from outside is no longer put into the sign-in page as
+  markup.** The page shown when a sign-in is refused used to write two values
+  out of the address it was sent, the error and its description, straight into
+  the page without escaping them. Anything able to send your browser to that
+  address while the sign-in was open, which is a two minute window, could
+  therefore put its own markup into a page you were reading, in the middle of
+  signing in to your mail. Those two values are no longer on the page at all.
+  Wixen Mail still shows what came back, in its own window as text, so you can
+  still see why a sign-in failed. It is now shown as a single line and cut off
+  if it is very long, so one reply cannot fill the window or read aloud for a
+  minute.
+
+  Known limitation, and it is not fixed: while it waits, the sign-in listens on
+  every network connection this computer has rather than only on the computer
+  itself. Narrowing that is a one word change and would be the right one, but it
+  cannot be made without trying it against a real browser and a real mail
+  provider, and no part of signing in has ever been run against either. The
+  reason it has not been narrowed is written beside the code.
+
 - **A long line from a calendar server is no longer read half of.** The calendar
   standard makes a server break any line longer than 75 characters and carry the
   rest on the next one. Reading an event, this counted the carried-on part as

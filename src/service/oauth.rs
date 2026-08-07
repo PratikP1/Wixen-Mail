@@ -344,14 +344,239 @@ fn local_redirect_uri() -> String {
     format!("http://localhost:{}/oauth/callback", REDIRECT_PORT)
 }
 
+/// The language the callback pages are written in.
+///
+/// English, said outright rather than read off the machine. The sentences on
+/// these pages are English ones written here, so they are English on a machine
+/// set to any language, and a `lang` naming another one makes a screen reader
+/// pronounce English words by that language's rules, which is worse than
+/// saying nothing. This is the same answer `presentation::help_page` gives for
+/// the same reason. A message body is the other case, where the text is
+/// somebody else's: that one asks `language_attribute` in the HTML renderer,
+/// which reads the machine and writes no attribute at all when the machine
+/// will not say.
+const PAGE_LANGUAGE: &str = "en";
+
+/// The most of a reply's own text that reaches the application's status line.
+const MOST_CHARACTERS_FROM_A_REPLY: usize = 200;
+
+/// One of the pages the browser is shown when the provider comes back.
+///
+/// A whole document, because what a fragment leaves out is the accessible
+/// part. The doctype keeps the browser out of quirks mode. `lang` tells a
+/// screen reader which voice to read it in, which is WCAG 3.1.1 and is the
+/// reason this matters more here than on most pages: this is the one surface
+/// in the sign-in a person meets as a web page. The title is what the tab
+/// announces. The heading is what `H` moves to and what is read first. The
+/// charset decides whether the text arrives as text.
+///
+/// Both arguments are literals from this file. Nothing that arrived over the
+/// network reaches here, which is why nothing is escaped, and why nothing that
+/// would need escaping may be passed in.
+fn callback_page(heading: &str, message: &str) -> String {
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="{PAGE_LANGUAGE}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{heading} - Wixen Mail</title>
+<style>
+:root {{ color-scheme: light dark; }}
+body {{
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 1rem;
+  line-height: 1.6;
+  /* In characters, so the line still holds its shape at any text size. */
+  max-width: 60ch;
+  margin: 0 auto;
+  padding: 2rem 1.25rem;
+}}
+h1 {{ line-height: 1.25; font-size: 1.6rem; }}
+</style>
+</head>
+<body>
+<h1>{heading}</h1>
+<p>{message}</p>
+</body>
+</html>
+"#
+    )
+}
+
+/// A reply's own text, cut down to something a status line can hold.
+///
+/// This text is not ours, and it is not necessarily a provider's either:
+/// anything that can reach the listener while it is open chooses it. It never
+/// goes into markup, and where it does go is a label a screen reader reads
+/// out, so it arrives as one line and it arrives short. Otherwise one reply
+/// could break the label across lines or read aloud for a minute.
+fn as_one_short_line(text: &str) -> String {
+    let flattened: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let mut tidy = flattened.split_whitespace().collect::<Vec<_>>().join(" ");
+    if tidy.chars().count() > MOST_CHARACTERS_FROM_A_REPLY {
+        tidy = tidy
+            .chars()
+            .take(MOST_CHARACTERS_FROM_A_REPLY)
+            .chain(" (cut short)".chars())
+            .collect();
+    }
+    tidy
+}
+
+/// What one reply to the redirect listener turned out to be.
+///
+/// The listener does the same three things with every one of them: build a
+/// page, send it, then act. Deciding which of these four it is happens here
+/// rather than inside the socket loop, which is what makes all four testable
+/// without opening a port.
+enum Callback {
+    /// The provider said the sign-in did not go through, and what it said.
+    Refused { error: String, description: String },
+    /// The reply did not match the request that was sent.
+    Mismatched,
+    /// Not the reply being waited for, so the listener keeps waiting.
+    NotIt,
+    /// The authorization code, which is what the listener is open for.
+    Code(String),
+}
+
+impl Callback {
+    /// The document the browser is given for this outcome.
+    ///
+    /// Note what is missing from the first one. The reply's own `error` and
+    /// `error_description` used to be written into it with `format!` and no
+    /// escaping, so anything that could drive the browser to this port while
+    /// the listener was open had its markup rendered in a page somebody reads
+    /// halfway through signing in. They are not escaped here, they are simply
+    /// not on the page: nothing in them tells the person anything they can act
+    /// on, and the words that would have helped somebody diagnose it are in
+    /// [`Self::outcome`], where the application shows them as text.
+    fn page(&self) -> String {
+        match self {
+            Self::Refused { .. } => callback_page(
+                "Sign-in was not completed",
+                "Your mail provider did not finish signing you in. \
+                 You can close this tab. Wixen Mail shows what came back, \
+                 and you can try again from there.",
+            ),
+            Self::Mismatched => callback_page(
+                "Sign-in was stopped",
+                "The reply did not match the request Wixen Mail sent, so it was not used. \
+                 Close this tab and start signing in again from Wixen Mail.",
+            ),
+            Self::NotIt => callback_page(
+                "Waiting for the sign-in to finish",
+                "Wixen Mail is waiting for your mail provider to send you back here. \
+                 Finish signing in with your provider, in the tab it opened.",
+            ),
+            Self::Code(_) => callback_page(
+                "Signed in",
+                "Wixen Mail has what it needs. You can close this tab and go back to it.",
+            ),
+        }
+    }
+
+    /// What the sign-in does next: stop with an error, take the code, or keep
+    /// waiting, which is `None`.
+    ///
+    /// The error is the other half of the pair with [`Self::page`]. This is the
+    /// half that carries the reply's own words, because the application puts it
+    /// in a status line as text where somebody can read what went wrong and
+    /// nothing parses it as markup.
+    fn outcome(self) -> Option<Result<String>> {
+        match self {
+            Self::Refused { error, description } => {
+                let said = if description.trim().is_empty() {
+                    error
+                } else {
+                    format!("{error}: {description}")
+                };
+                Some(Err(Error::Authentication(as_one_short_line(&said))))
+            }
+            Self::Mismatched => Some(Err(Error::Authentication(
+                "The reply did not match the request Wixen Mail sent, so it was not used. \
+                 It may have been intercepted. Start signing in again."
+                    .to_string(),
+            ))),
+            Self::NotIt => None,
+            Self::Code(code) => Some(Ok(code)),
+        }
+    }
+}
+
+/// Read one reply to the redirect listener.
+///
+/// `target` is what the request line carried, so `/oauth/callback?code=...`.
+/// Pure, so every answer can be tested without a socket.
+fn read_callback(target: &str, expected_state: Option<&str>) -> Callback {
+    let Ok(parsed) = url::Url::parse(&format!("http://localhost{target}")) else {
+        // Something knocking on this port with a target that is not a URL is
+        // not the provider, and must not end a sign-in somebody is halfway
+        // through.
+        return Callback::NotIt;
+    };
+    let params: std::collections::HashMap<_, _> = parsed.query_pairs().collect();
+
+    if let Some(error) = params.get("error") {
+        return Callback::Refused {
+            error: error.to_string(),
+            description: params
+                .get("error_description")
+                .map(|d| d.to_string())
+                .unwrap_or_default(),
+        };
+    }
+
+    let Some(code) = params.get("code") else {
+        return Callback::NotIt;
+    };
+
+    if let Some(expected) = expected_state
+        && let Some(state) = params.get("state")
+        && state.as_ref() != expected
+    {
+        return Callback::Mismatched;
+    }
+
+    Callback::Code(code.to_string())
+}
+
+/// Send one page back to the browser.
+///
+/// The content type says utf-8 out loud. `Response::from_string` sets
+/// `text/plain; charset=UTF-8`, and naming `Content-Type` again replaces that
+/// whole header rather than only its type, so leaving the charset off here
+/// leaves the browser to guess an encoding.
+fn html_response(page: String) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
+    let response = tiny_http::Response::from_string(page);
+    match "Content-Type: text/html; charset=utf-8".parse::<tiny_http::Header>() {
+        Ok(header) => response.with_header(header),
+        // A literal, so this cannot happen. If it somehow did, the page still
+        // goes out, as text rather than not at all.
+        Err(()) => response,
+    }
+}
+
 /// Spin up a short-lived local HTTP server on `REDIRECT_PORT`, wait for the
 /// OAuth redirect, and return the authorization code.
 ///
-/// The server shows a friendly HTML page telling the user they can close the tab,
-/// then shuts itself down.
+/// Every reply gets a page back (see [`Callback::page`]) and the listener then
+/// shuts itself down, unless the reply was not the one being waited for.
 ///
 /// `expected_state`: if provided, the `state` query param must match.
 /// `timeout_secs`: how long to wait before giving up (default 120).
+///
+/// Known and not fixed here: this binds every interface rather than loopback,
+/// so for the two minutes it is open anything on the same network can reach it
+/// and be answered. Narrowing it to `127.0.0.1` is one word, but the redirect
+/// registered with both providers is `http://localhost:...` and Windows may
+/// resolve that name to `::1`, which a v4-only listener would not answer at
+/// all, so the change cannot be made safely without trying it against a real
+/// browser and a real provider. Nothing here has ever run against either.
 fn wait_for_redirect_code(expected_state: Option<&str>, timeout_secs: u64) -> Result<String> {
     let addr = format!("0.0.0.0:{}", REDIRECT_PORT);
     let server = tiny_http::Server::http(&addr).map_err(|e| {
@@ -382,75 +607,21 @@ fn wait_for_redirect_code(expected_state: Option<&str>, timeout_secs: u64) -> Re
             }
         };
 
-        let url_str = format!("http://localhost{}", request.url());
-        let parsed = url::Url::parse(&url_str)
-            .map_err(|e| Error::Authentication(format!("Failed to parse redirect URL: {}", e)))?;
+        let callback = read_callback(request.url(), expected_state);
+        // Answer the browser first, whatever this turned out to be. A person
+        // is looking at that tab and a blank one tells them nothing.
+        let _ = request.respond(html_response(callback.page()));
 
-        // Extract query parameters
-        let params: std::collections::HashMap<_, _> = parsed.query_pairs().collect();
-
-        // Check for error in the redirect
-        if let Some(err) = params.get("error") {
-            let desc = params
-                .get("error_description")
-                .map(|s| s.to_string())
-                .unwrap_or_default();
-            let html = format!(
-                "<html><body><h2>Authorization Failed</h2><p>{}: {}</p><p>You can close this tab.</p></body></html>",
-                err, desc
-            );
-            let response = tiny_http::Response::from_string(html).with_header(
-                "Content-Type: text/html"
-                    .parse::<tiny_http::Header>()
-                    .unwrap(),
-            );
-            let _ = request.respond(response);
-            return Err(Error::Authentication(format!("{}: {}", err, desc)));
-        }
-
-        let code = match params.get("code") {
-            Some(c) => c.to_string(),
-            None => {
-                // Not the redirect we're looking for, respond and continue
-                let response = tiny_http::Response::from_string("Waiting for authorization...");
-                let _ = request.respond(response);
-                continue;
+        match callback.outcome() {
+            // Deliberately not logging what it was. A refusal carries text
+            // this program did not write, and the success carries the
+            // authorization code.
+            Some(outcome) => {
+                tracing::info!("OAuth redirect received, listener closing");
+                return outcome;
             }
-        };
-
-        // Validate CSRF state if provided
-        if let Some(expected) = expected_state
-            && let Some(state) = params.get("state")
-            && state.as_ref() != expected
-        {
-            let html = "<html><body><h2>State Mismatch</h2><p>CSRF state does not match. Authorization aborted.</p></body></html>";
-            let response = tiny_http::Response::from_string(html).with_header(
-                "Content-Type: text/html"
-                    .parse::<tiny_http::Header>()
-                    .unwrap(),
-            );
-            let _ = request.respond(response);
-            return Err(Error::Authentication(
-                "CSRF state mismatch, the response may have been intercepted".to_string(),
-            ));
+            None => continue,
         }
-
-        // Success: respond with a friendly page and return the code
-        let html = concat!(
-            "<html><body style='font-family:sans-serif;text-align:center;padding:40px'>",
-            "<h2>Authorization Successful</h2>",
-            "<p>You have been authorized. You can close this tab and return to Wixen Mail.</p>",
-            "</body></html>"
-        );
-        let response = tiny_http::Response::from_string(html).with_header(
-            "Content-Type: text/html"
-                .parse::<tiny_http::Header>()
-                .unwrap(),
-        );
-        let _ = request.respond(response);
-
-        tracing::info!("OAuth authorization code received");
-        return Ok(code);
     }
 }
 
@@ -971,6 +1142,257 @@ mod tests {
         )
         .await;
         assert!(result.is_err());
+    }
+
+    // ── The pages the browser is shown ──────────────────────────────────
+
+    /// Every page the redirect listener can serve.
+    ///
+    /// Listed in one place so a rule about them is checked against all of
+    /// them, rather than against whichever one somebody remembered. Three of
+    /// the four went out with no doctype, no language and no title for as long
+    /// as this listener has existed, and the fourth was not a document at all.
+    fn every_callback_page() -> Vec<(&'static str, String)> {
+        vec![
+            (
+                "the provider refused",
+                Callback::Refused {
+                    error: "access_denied".to_string(),
+                    description: "The user denied the request".to_string(),
+                }
+                .page(),
+            ),
+            ("the state did not match", Callback::Mismatched.page()),
+            ("still waiting", Callback::NotIt.page()),
+            ("signed in", Callback::Code("code-123".to_string()).page()),
+        ]
+    }
+
+    #[test]
+    fn test_every_callback_page_says_what_language_it_is_in() {
+        // These pages are read in a real browser during sign-in, which makes
+        // them the one surface in this product a screen reader meets as a web
+        // page. With no `lang` the reader carries on in whatever voice it was
+        // left in, which on a machine set to another language makes English
+        // sentences unintelligible rather than merely wrong. WCAG 3.1.1.
+        //
+        // English, stated, because the sentences are English ones written
+        // here. See PAGE_LANGUAGE.
+        for (which, page) in every_callback_page() {
+            assert!(
+                page.contains(r#"<html lang="en">"#),
+                "the {which} page does not say what language it is in:\n{page}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_callback_page_is_a_whole_document() {
+        // A doctype, so the browser is not in quirks mode. A charset, so the
+        // text arrives as text. A title, because that is what the tab
+        // announces. A heading, because that is what H moves to and what is
+        // read first.
+        for (which, page) in every_callback_page() {
+            assert!(
+                page.starts_with("<!DOCTYPE html>"),
+                "the {which} page has no doctype:\n{page}"
+            );
+            assert!(
+                page.contains(r#"<meta charset="utf-8">"#),
+                "the {which} page does not say its encoding:\n{page}"
+            );
+            assert!(
+                page.contains("<title>") && page.contains("</title>"),
+                "the {which} page has no title for the tab to announce:\n{page}"
+            );
+            assert!(
+                page.contains("<h1>") && page.contains("</h1>"),
+                "the {which} page has no heading:\n{page}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_callback_page_names_the_product_in_its_title() {
+        // The tab is announced by its title and there may be several open.
+        // "Signed in" alone does not say signed in to what.
+        for (which, page) in every_callback_page() {
+            assert!(
+                page.contains("- Wixen Mail</title>"),
+                "the {which} page's title does not say which program it is:\n{page}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_page_is_served_as_html_in_a_named_encoding() {
+        // from_string sets text/plain with a charset, and naming Content-Type
+        // again replaces that whole header rather than only its type. Setting
+        // it to a bare "text/html" therefore threw the charset away and left
+        // the browser guessing an encoding.
+        let response = html_response(Callback::Mismatched.page());
+        let content_types: Vec<String> = response
+            .headers()
+            .iter()
+            .filter(|h| h.field.equiv("Content-Type"))
+            .map(|h| h.value.as_str().to_string())
+            .collect();
+
+        assert_eq!(
+            content_types,
+            vec!["text/html; charset=utf-8".to_string()],
+            "the page is not served as html in a named encoding"
+        );
+    }
+
+    // ── What the provider sent does not become markup ───────────────────
+
+    #[test]
+    fn test_a_provider_error_carrying_markup_does_not_reach_the_page() {
+        // Anything that can drive the browser to the listener while it is open
+        // chooses these two values. They used to be written into the page with
+        // format!, unescaped, so they were markup in a page somebody is
+        // reading in a real browser in the middle of signing in.
+        let hostile = Callback::Refused {
+            error: "<script>alert(1)</script>".to_string(),
+            description: "<img src=x onerror=alert(2)>".to_string(),
+        };
+        let page = hostile.page();
+
+        assert!(
+            !page.contains("<script"),
+            "a script tag from the query string reached the page:\n{page}"
+        );
+        assert!(
+            !page.contains("onerror"),
+            "an event handler from the query string reached the page:\n{page}"
+        );
+        assert!(
+            !page.contains("alert("),
+            "text from the query string reached the page:\n{page}"
+        );
+    }
+
+    #[test]
+    fn test_the_refused_page_is_the_same_whatever_came_back() {
+        // Stronger than checking the shapes of attack somebody thought of. If
+        // the page cannot vary with those two values, nothing in them can be
+        // injected into it, escaped or not.
+        let plain = Callback::Refused {
+            error: "access_denied".to_string(),
+            description: "The user denied the request".to_string(),
+        }
+        .page();
+        let hostile = Callback::Refused {
+            error: "</p><script>alert(1)</script><p>".to_string(),
+            description: "\" onload=\"alert(2)".to_string(),
+        }
+        .page();
+        let empty = Callback::Refused {
+            error: String::new(),
+            description: String::new(),
+        }
+        .page();
+
+        assert_eq!(plain, hostile);
+        assert_eq!(plain, empty);
+    }
+
+    #[test]
+    fn test_the_page_and_the_error_carry_different_things() {
+        // The provider's own words are worth having: without them the first
+        // real failure is undiagnosable. They belong where the application can
+        // show them, not in a document a browser parses.
+        let refused = Callback::Refused {
+            error: "invalid_scope".to_string(),
+            description: "Some requested scopes were invalid".to_string(),
+        };
+        let page = refused.page();
+        let Some(Err(error)) = refused.outcome() else {
+            panic!("a refusal should stop the sign-in");
+        };
+
+        assert!(!page.contains("invalid_scope"), "{page}");
+        assert!(error.to_string().contains("invalid_scope"), "{error}");
+        assert!(
+            error
+                .to_string()
+                .contains("Some requested scopes were invalid"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn test_what_came_back_reaches_the_status_line_as_one_short_line() {
+        // It ends up in a label a screen reader reads out. A reply carrying
+        // newlines, control characters or four kilobytes of text would break
+        // the line up or read for a minute, and anything that can reach the
+        // listener chooses it.
+        let flood = "x".repeat(5000);
+        let refused = Callback::Refused {
+            error: "bad\r\nrequest\u{7}".to_string(),
+            description: flood,
+        };
+        let Some(Err(error)) = refused.outcome() else {
+            panic!("a refusal should stop the sign-in");
+        };
+        let said = error.to_string();
+
+        assert!(!said.contains('\n') && !said.contains('\r'), "{said}");
+        assert!(!said.chars().any(char::is_control), "{said}");
+        assert!(said.contains("bad request"), "{said}");
+        assert!(
+            said.chars().count() < 400,
+            "a reply of {} characters reached the status line whole",
+            said.chars().count()
+        );
+    }
+
+    // ── Reading one reply off the listener ──────────────────────────────
+
+    #[test]
+    fn test_the_code_is_read_off_the_redirect() {
+        let callback = read_callback("/oauth/callback?code=abc123&state=s1", Some("s1"));
+        assert!(matches!(callback.outcome(), Some(Ok(code)) if code == "abc123"));
+    }
+
+    #[test]
+    fn test_a_state_that_does_not_match_stops_the_sign_in() {
+        let callback = read_callback("/oauth/callback?code=abc123&state=other", Some("s1"));
+        assert!(matches!(&callback, Callback::Mismatched));
+        assert!(matches!(callback.outcome(), Some(Err(_))));
+    }
+
+    #[test]
+    fn test_a_provider_error_stops_the_sign_in() {
+        let callback = read_callback("/oauth/callback?error=access_denied", Some("s1"));
+        assert!(matches!(callback.outcome(), Some(Err(_))));
+    }
+
+    #[test]
+    fn test_a_request_that_is_not_the_redirect_leaves_the_listener_waiting() {
+        // A browser asking for a favicon, or a person opening the port by
+        // hand, must not end a sign-in somebody is halfway through.
+        for target in ["/favicon.ico", "/", "/oauth/callback", "*"] {
+            let callback = read_callback(target, Some("s1"));
+            assert!(
+                callback.outcome().is_none(),
+                "{target} ended the sign-in instead of leaving it waiting"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_stopped_pages_do_not_ask_the_reader_to_know_what_csrf_means() {
+        // Plain language, on the one page in this flow a person actually
+        // reads. "CSRF state does not match" says nothing about what to do.
+        let page = Callback::Mismatched.page();
+        let Some(Err(error)) = Callback::Mismatched.outcome() else {
+            panic!("a mismatch should stop the sign-in");
+        };
+
+        assert!(!page.contains("CSRF"), "{page}");
+        assert!(!error.to_string().contains("CSRF"), "{error}");
     }
 
     #[test]
