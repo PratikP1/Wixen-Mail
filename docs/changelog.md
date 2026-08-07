@@ -241,6 +241,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A change kept from your other address book by a setting now says so.** When
+  "Send a change to a contact to every address book that has that contact" is
+  off, a change goes only to the address book the contact came from. That is
+  what the setting is for, but the change kept from the other address book was
+  counted nowhere and said nowhere: the sync reported a clean run, the change
+  stayed waiting on the contact for ever, and nobody could tell that from an
+  edit that had gone everywhere.
+
+  The line after a sync now says "1 change is not going to your other address
+  book: turn on sending a change to every address book that has the contact." It
+  names that setting and not Allow Changes, because turning Allow Changes on
+  sends none of these.
+
 - **One contact you changed once is now said once, not once per address book.**
   The line after a contacts sync counts people, and a person kept in both Google
   and Outlook is one person. Until now each address book counted its own copy of

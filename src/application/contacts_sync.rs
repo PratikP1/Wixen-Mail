@@ -1160,6 +1160,12 @@ fn changes_waiting_for(
             if how_far == HowFarAChangeGoes::OnlyToWhereItCameFrom
                 && contact.source_provider.as_deref() != Some(address_book.as_stored())
             {
+                // Counted on the way past, because this is the one place that
+                // knows a change is being held back here. Left uncounted, it
+                // was invisible: the flag stayed on the contact, every sync
+                // from then on reported a clean run, and the edit never
+                // reached this address book with nobody told.
+                result.waiting_on_how_far_a_change_goes.note(&contact.id);
                 return None;
             }
             let name_there = identity.provider_contact_id.clone();
@@ -5677,6 +5683,48 @@ mod tests {
         assert!(
             microsoft.changed.borrow().is_empty(),
             "the contact came from Google, so only Google is told"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_held_from_the_other_address_book_by_the_setting_is_said() {
+        // The setting holds the change back and says so. Held back and counted
+        // nowhere, the change was invisible: the flag stayed on the contact,
+        // every sync from then on reported a clean run, and Outlook never got
+        // an edit somebody had made and been told nothing about. Naming Allow
+        // Changes here would be worse than saying nothing, because turning that
+        // on sends none of these.
+        let cache = a_cache("fan_out_setting_off_is_said");
+        a_contact_both_address_books_know_was_changed_here(&cache);
+        let microsoft = an_outlook_that_takes_changes();
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            HowFarAChangeGoes::OnlyToWhereItCameFrom,
+        )
+        .await
+        .expect("a sync");
+
+        assert!(
+            microsoft.changed.borrow().is_empty(),
+            "the contact came from Google, so Outlook is not told"
+        );
+        assert_eq!(
+            what_the_contacts_sync_did(&result),
+            "Contacts sync: 0 created, 0 updated, 0 deleted. 1 change is not going to \
+             your other address book: turn on sending a change to every address book \
+             that has the contact."
+        );
+        let still = the_contact_stored(&cache, "Alice Smith");
+        assert!(
+            still
+                .known_to
+                .iter()
+                .any(|i| i.address_book == AddressBook::Microsoft && i.change_is_waiting),
+            "the change is kept, waiting on the setting"
         );
     }
 
