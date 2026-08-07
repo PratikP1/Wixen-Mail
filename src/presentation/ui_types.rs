@@ -420,6 +420,10 @@ pub enum UIUpdate {
         sent: usize,
         /// Changes still here because the account is open for reading only.
         waiting_on_the_setting: usize,
+        /// Calendars that can only be read and hold a change made here, one
+        /// sentence each. Spoken, not logged: nothing else in the sync
+        /// mentions them and nothing will ever send them.
+        changes_that_cannot_be_saved: Vec<String>,
         errors: Vec<String>,
     },
     /// A calendar event was saved successfully

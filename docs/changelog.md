@@ -231,6 +231,42 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **An edit to an event in a calendar you subscribe to is no longer wiped by the
+  next refresh.** Some calendars can only be read. A subscribed feed is
+  published by somebody else, and a calendar server can mark one of its own
+  calendars read-only. A change you make to an event in either can never be
+  sent, and nothing in this program ever tried to.
+
+  For a subscribed feed the refresh then wrote the feed's copy straight over
+  your change. You edited an appointment, it looked saved, and at the next
+  refresh it said what the feed said. Nothing told you, and the words you typed
+  were gone. That is the same shape as the bug below about editing an event
+  written in small letters, and the same reason it is the worst shape a bug can
+  take here: only you knew the words had ever existed.
+
+  Your change is now kept and the feed's copy is not written over it. The event
+  as it arrives from the feed is left alone until the change is gone. That
+  matches how a calendar you can write to has always behaved, where a change
+  waiting to be sent is the newer copy.
+
+  Being unable to save is one thing and losing the words with no word about it
+  is another, so the sync now says which calendar it is and what it means:
+  "Term dates: 1 change made here cannot be sent, because this is a calendar
+  this program can only read." It is read out and shown, not only written to the
+  log, and it is said on every sync rather than once, because nothing resolves
+  it on its own. One sentence per calendar, not one per event.
+
+  The same sentence is now said for a calendar a server marks read-only, where
+  the change was already being kept safely and nothing had ever mentioned it.
+
+  **What it does not do.** Adding the event again to a calendar you can change
+  is the only way to have it saved, which is what the sentence says. Moving the
+  event to another calendar is on the menu and does not work for this: the moved
+  row keeps the identifier and address it was stored under, so the next sync
+  either sends the change back to the calendar that would not take it or reports
+  that it does not know where the event lives. That is a separate gap and it is
+  not fixed here.
+
 - **A note that mentions the end of an event no longer destroys the event's
   repeat rule.** If you typed something like "Say END:VEVENT when you are done"
   into an event's notes box, or if the calendar you subscribe to carried a note

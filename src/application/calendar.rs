@@ -78,6 +78,15 @@ pub struct CalendarSyncResult {
     /// change is waiting on a setting, and one error per waiting event on every
     /// sync from now on is how a warning somebody needs stops being read.
     pub waiting_on_the_setting: usize,
+    /// Calendars this program can only read that hold a change made here, one
+    /// sentence each.
+    ///
+    /// Not an error and not a count. Nothing went wrong and nothing is lost,
+    /// but the change can never be sent, so somebody has to be told plainly
+    /// which calendar and what to do instead. Sentences rather than a number
+    /// because the calendar's name is the useful part and a number cannot
+    /// carry it.
+    pub changes_that_cannot_be_saved: Vec<String>,
     pub errors: Vec<String>,
 }
 
@@ -247,6 +256,12 @@ pub fn what_the_calendar_sync_did(result: &CalendarSyncResult) -> String {
     }
     if !result.errors.is_empty() {
         said.push_str(&format!(", {} errors", result.errors.len()));
+    }
+    // Whole sentences, because the calendar's name and what to do instead are
+    // the useful part and a count carries neither. One per calendar, so a
+    // person with one subscribed feed hears one extra sentence.
+    for cannot in &result.changes_that_cannot_be_saved {
+        said.push_str(&format!(". {cannot}"));
     }
     said
 }
@@ -4539,8 +4554,7 @@ mod tests {
             updated: 1,
             deleted: 0,
             sent: 3,
-            waiting_on_the_setting: 0,
-            errors: Vec::new(),
+            ..CalendarSyncResult::default()
         };
 
         let said = what_the_calendar_sync_did(&result);
@@ -4571,9 +4585,7 @@ mod tests {
             created: 1,
             updated: 0,
             deleted: 0,
-            sent: 0,
-            waiting_on_the_setting: 0,
-            errors: Vec::new(),
+            ..CalendarSyncResult::default()
         };
 
         let said = what_the_calendar_sync_did(&result);
@@ -4590,6 +4602,69 @@ mod tests {
         result.errors.push("the server said no".to_string());
         let said = what_the_calendar_sync_did(&result);
         assert!(said.contains("1 errors"), "{said}");
+    }
+
+    #[test]
+    fn test_a_change_that_can_never_be_saved_is_said_out_loud_and_not_only_logged() {
+        // A change to an event in a calendar this program can only read is kept
+        // here and never sent, and nothing else in the sync would mention it.
+        // Left out of this sentence it reaches the log and nowhere else, and a
+        // warning only the log carries is a warning nobody gets: saving quietly
+        // never takes and there is nothing anywhere that says why.
+        let result = CalendarSyncResult {
+            created: 1,
+            changes_that_cannot_be_saved: vec![
+                "Term dates: 1 change made here cannot be saved, because this \
+                 is a calendar this program can only read."
+                    .to_string(),
+            ],
+            ..CalendarSyncResult::default()
+        };
+
+        let said = what_the_calendar_sync_did(&result);
+        assert!(
+            said.contains("Term dates") && said.contains("cannot be saved"),
+            "the whole sentence has to be heard, not a count of it: {said}"
+        );
+        assert!(
+            !said.contains("errors"),
+            "a change that can never be sent was counted as a failure: {said}"
+        );
+    }
+
+    #[test]
+    fn test_a_change_that_can_never_be_saved_reaches_the_window_that_speaks_it() {
+        // Source rather than behaviour, and the same reason as the sibling
+        // above it: the calendar sync runs in a closure on a background thread
+        // with its own cache, so there is no seam short of a running window.
+        // Without the field carried through, the sentence is built in the
+        // application layer and thrown away before anybody hears it.
+        let path = "src/presentation/wx_app.rs";
+        let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        // Read with the white space taken out, so a line the formatter decides
+        // to wrap does not turn this into a failure about nothing.
+        let packed: String = source.chars().filter(|c| !c.is_whitespace()).collect();
+
+        for (carried, without_it) in [
+            (
+                "total_cannot_be_saved.extend(result.changes_that_cannot_be_saved)",
+                "the refresh works out the sentence and the window throws it away",
+            ),
+            (
+                "changes_that_cannot_be_saved:total_cannot_be_saved",
+                "the sentence never leaves the thread that made it",
+            ),
+            (
+                "changes_that_cannot_be_saved:changes_that_cannot_be_saved.clone()",
+                "the window has the sentence and never puts it in what it speaks",
+            ),
+        ] {
+            assert!(
+                packed.contains(carried),
+                "{path} is missing {carried}, so {without_it} and a change \
+                 that can never be saved is never said to anybody"
+            );
+        }
     }
 
     #[test]

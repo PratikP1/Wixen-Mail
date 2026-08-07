@@ -6579,6 +6579,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             deleted,
             sent,
             waiting_on_the_setting,
+            changes_that_cannot_be_saved,
             errors,
         } => {
             let msg = crate::application::calendar::what_the_calendar_sync_did(
@@ -6588,6 +6589,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     deleted: *deleted,
                     sent: *sent,
                     waiting_on_the_setting: *waiting_on_the_setting,
+                    changes_that_cannot_be_saved: changes_that_cannot_be_saved.clone(),
                     errors: errors.clone(),
                 },
             );
@@ -9555,6 +9557,12 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
         let mut total_deleted = 0usize;
         let mut total_sent = 0usize;
         let mut total_waiting = 0usize;
+        // A calendar that can only be read holds a change made here. Carried
+        // as sentences rather than a count, because the calendar's name and
+        // what to do instead are the useful part, and spoken rather than
+        // logged, because nothing else in the sync mentions it and nothing
+        // will ever send it.
+        let mut total_cannot_be_saved: Vec<String> = Vec::new();
         let mut total_errors = Vec::new();
 
         // Try Google calendar sync
@@ -9580,6 +9588,7 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
                             total_deleted += result.deleted;
                             total_sent += result.sent;
                             total_waiting += result.waiting_on_the_setting;
+                            total_cannot_be_saved.extend(result.changes_that_cannot_be_saved);
                             total_errors.extend(result.errors);
                         }
                         Err(e) => total_errors.push(format!("Google calendar: {}", e)),
@@ -9609,6 +9618,7 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
                             total_deleted += result.deleted;
                             total_sent += result.sent;
                             total_waiting += result.waiting_on_the_setting;
+                            total_cannot_be_saved.extend(result.changes_that_cannot_be_saved);
                             total_errors.extend(result.errors);
                         }
                         Err(e) => total_errors.push(format!("Microsoft calendar: {}", e)),
@@ -9653,6 +9663,7 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
                     total_deleted += result.deleted;
                     total_sent += result.sent;
                     total_waiting += result.waiting_on_the_setting;
+                    total_cannot_be_saved.extend(result.changes_that_cannot_be_saved);
                     total_errors.extend(result.errors);
                 }
                 Err(e) => total_errors.push(format!("Calendar server ({}): {}", cal.name, e)),
@@ -9674,6 +9685,7 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
                     total_created += result.created;
                     total_updated += result.updated;
                     total_deleted += result.deleted;
+                    total_cannot_be_saved.extend(result.changes_that_cannot_be_saved);
                     total_errors.extend(result.errors);
                 }
                 Err(e) => total_errors.push(format!("Subscription refresh ({}): {}", cal.name, e)),
@@ -9688,6 +9700,7 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
                     deleted: total_deleted,
                     sent: total_sent,
                     waiting_on_the_setting: total_waiting,
+                    changes_that_cannot_be_saved: total_cannot_be_saved,
                     errors: total_errors,
                 })
                 .await;

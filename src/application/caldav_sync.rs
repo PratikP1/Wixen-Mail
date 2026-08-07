@@ -28,8 +28,12 @@
 //! and a version that had moved on would make the deletion fail on every sync
 //! from now on with nothing they could do about it.
 //!
-//! A feed is different and stays different: it is published, it is only ever
-//! read, and a change to one is kept here and written over by the next refresh.
+//! A feed is different and stays different: it is published and it is only ever
+//! read, so a change to an event in one can never be sent. It used to be
+//! written over by the next refresh, which took the words somebody typed with
+//! nothing said. It is kept now, the feed's copy is left out of that row, and
+//! the sync says which calendar it is and that nothing will ever send it. The
+//! same holds for a calendar a server marks read-only.
 //!
 //! None of this has run against a live server.
 
@@ -102,8 +106,14 @@ async fn push_to_the_calendar_server(
     let mut just_sent = std::collections::HashSet::new();
     if calendar.is_read_only {
         // A calendar this account may only read, such as a feed. The waiting
-        // flag stays set rather than being cleared, because moving the event
-        // into a calendar that can be written to should still send it.
+        // flag stays set rather than being cleared: it is what tells the read
+        // below to leave the row alone, so clearing it here would let the
+        // server's copy land on top of somebody's words at the very next pass.
+        //
+        // Said out loud, because it waits for ever: nothing here will ever
+        // send it and nothing else was going to mention it.
+        let waiting = changes_waiting(cache, calendar, account_id, result).len();
+        say_the_change_cannot_be_saved(calendar, waiting, result);
         return just_sent;
     }
 
@@ -287,6 +297,50 @@ fn worth_sending(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|value| !value.is_empty())
 }
 
+/// Say that changes made to this calendar cannot be saved anywhere but here.
+///
+/// Two calendars behave this way: one a subscribed feed, which is published and
+/// only ever read, and one a calendar the server itself marks as read-only.
+/// Both keep the change rather than dropping it, and neither will ever send it,
+/// so without this the words somebody typed sit in a row nothing will ever do
+/// anything with and nobody is told why saving never seems to take.
+///
+/// One sentence for the calendar rather than one per event. A warning repeated
+/// once per event on every sync is how a warning somebody needs stops being
+/// read, which is the same reason a change held back by the Allow Changes
+/// setting is counted rather than reported.
+///
+/// It is said on every sync rather than once, because nothing here resolves it.
+/// Saying it once would mean the person who was away from the screen that time
+/// never hears it at all.
+///
+/// The way out it names is adding the event to a calendar that can be written
+/// to, and not moving this one there. Moving is offered on the menu and does
+/// not work for this: the row keeps the identifier and the address it was
+/// stored under, so the next push either sends the change back to the calendar
+/// that refused it or reports that it does not know where the event lives.
+/// Naming a way out that does not work is worse than naming none.
+fn say_the_change_cannot_be_saved(
+    calendar: &CalendarContainer,
+    waiting: usize,
+    result: &mut CalendarSyncResult,
+) {
+    if waiting == 0 {
+        return;
+    }
+    // Not an error. Nothing went wrong and nothing is lost, so counting it as
+    // a failure would teach somebody to stop reading the count that means one.
+    result.changes_that_cannot_be_saved.push(format!(
+        "{}: {} made here cannot be sent, because this is a calendar this \
+         program can only read. What you typed is kept on this computer and \
+         nothing is written over it, so nothing is lost, but no sync will ever \
+         send it. Adding the event to a calendar you can change is the only \
+         way to have it saved.",
+        calendar.name,
+        crate::service::caldav::how_many(waiting, "change"),
+    ));
+}
+
 /// Sync a CalDAV calendar with the local cache.
 pub async fn sync_caldav_calendar(
     cache: &MessageCache,
@@ -446,11 +500,25 @@ pub async fn refresh_subscription(
     // There is no transaction to reach for here, so the order is what stops a
     // feed that fails halfway through from leaving an empty calendar behind.
     let mut in_feed = std::collections::HashSet::new();
+    let mut kept_here = 0;
     for remote in &remote_events {
         in_feed.insert(remote.uid.as_str());
 
+        let already = held_by_uid.get(remote.uid.as_str()).copied();
+
+        // A change made here that has not been sent, and in a feed never can
+        // be. Writing the feed's copy over it takes the words somebody typed
+        // with nothing said, which is worse than not saving them: they know
+        // they typed it and only they know it is gone. The same rule as the
+        // calendar-server read, for the same reason, and here it is the whole
+        // of what protects the row rather than a race with the push.
+        if already.is_some_and(|held| held.pending) {
+            kept_here += 1;
+            continue;
+        }
+
         let mut local = caldav_event_to_local(remote, account_id, &calendar.id);
-        match held_by_uid.get(remote.uid.as_str()) {
+        match already {
             Some(already) => {
                 carry_over_local_only(&mut local, already);
                 cache.save_calendar_event(&local)?;
@@ -462,6 +530,7 @@ pub async fn refresh_subscription(
             }
         }
     }
+    say_the_change_cannot_be_saved(calendar, kept_here, &mut result);
 
     // Only what the feed has stopped carrying goes. An event filed here by
     // hand has no identity from the feed and is left alone. Silently, for the
@@ -1014,6 +1083,134 @@ mod tests {
             .expect("the calendar to be readable");
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].provider_event_id.as_deref(), Some("this-time"));
+    }
+
+    /// An event in a calendar with a change on it that has not been sent.
+    fn a_change_waiting_on(
+        cache: &MessageCache,
+        calendar: &CalendarContainer,
+        uid: &str,
+    ) -> CalendarEventEntry {
+        let mut waiting = held_event("local-waiting", uid, &calendar.id, "acct");
+        waiting.summary = "Dentist, moved to the afternoon".to_string();
+        waiting.pending = true;
+        cache
+            .save_calendar_event(&waiting)
+            .expect("the waiting change");
+        waiting
+    }
+
+    #[tokio::test]
+    async fn test_a_change_to_an_event_in_a_subscribed_feed_survives_the_next_refresh_and_is_said()
+    {
+        // A feed is published and only ever read, so a change to an event in
+        // one can never be sent. The refresh wrote the feed's copy straight
+        // over it: the words somebody typed were gone at the next refresh,
+        // with nothing said and nothing to say it to. Being unable to save is
+        // one thing; losing the words with no word about it is the failure
+        // this program treats as its worst.
+        let cache = temp_cache("feed_keeps_the_edit");
+        let mut calendar = container("sub-edit", "acct");
+        calendar.name = "Term dates".to_string();
+        calendar.source_provider = Some("subscription".to_string());
+        let waiting = a_change_waiting_on(&cache, &calendar, "feed-1");
+
+        let (address, _heard) = answering(
+            "200 OK",
+            "text/calendar; charset=utf-8",
+            ics_feed(&["feed-1"]),
+        )
+        .await;
+        calendar.subscription_url = Some(format!("http://{address}/feed.ics"));
+
+        let result =
+            refresh_subscription(&cache, &ICalSubscriptionClient::new(), &calendar, "acct")
+                .await
+                .expect("the refresh to finish");
+
+        let stored = cache
+            .get_event_by_id(&waiting.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(
+            stored.summary, "Dentist, moved to the afternoon",
+            "the feed's copy was written over what somebody typed"
+        );
+        assert!(
+            stored.pending,
+            "the change stopped waiting without ever going anywhere"
+        );
+        assert_eq!(
+            result.updated, 0,
+            "an event that was left alone was counted as refreshed"
+        );
+        assert_eq!(result.deleted, 0, "the event was dropped rather than kept");
+
+        assert!(
+            result.errors.is_empty(),
+            "nothing went wrong and nothing is lost, so this is not a failure \
+             to be counted as one: {:?}",
+            result.errors
+        );
+        let said = result.changes_that_cannot_be_saved.join(" ");
+        assert_eq!(
+            result.changes_that_cannot_be_saved.len(),
+            1,
+            "one sentence for the calendar, not one per event, and not none: {said:?}"
+        );
+        assert!(
+            said.contains("Term dates") && said.contains("only read"),
+            "the sentence has to name the calendar and say why nothing was \
+             saved: {said}"
+        );
+        assert!(
+            said.contains("Adding the event to a calendar you can change"),
+            "the sentence has to say what somebody can do about it, and it has \
+             to be something that works: moving the event is on the menu and \
+             leaves the row pointing at the calendar that would not take it: \
+             {said}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_in_a_calendar_the_account_may_only_read_is_said_rather_than_left_silent()
+    {
+        // The same decision on the other route. A calendar server can mark a
+        // calendar read-only, the push leaves the flag set on purpose, and the
+        // read leaves the row alone, so the change is safe and waits for ever
+        // with nobody told why nothing ever saves.
+        let cache = temp_cache("read_only_says_so");
+        let mut calendar = container("cal-read-only", "acct");
+        calendar.name = "Team holidays".to_string();
+        calendar.is_read_only = true;
+        a_change_waiting_on(&cache, &calendar, "e-1");
+
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            multi_status(&["e-1"]),
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        assert_eq!(result.sent, 0);
+        let said = result.changes_that_cannot_be_saved.join(" ");
+        assert!(
+            said.contains("Team holidays") && said.contains("only read"),
+            "a change that can never be sent was passed over without a word: \
+             {said:?}"
+        );
     }
 
     #[tokio::test]
