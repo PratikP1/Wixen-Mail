@@ -569,11 +569,30 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   document with the change not in it was still sent, the server accepted it,
   and the change stopped waiting to be sent, so nothing ever tried again.
 
-  A change is now only sent when it is really in the document going out. If it
-  is not, for any reason, nothing is sent, the sync says so instead of counting
-  a success, and the change stays waiting so the next sync tries again. This is
-  the guard that would have caught the bug above without anybody knowing what
-  caused it, and it will catch the next mistake of that shape.
+  The document that would go to the server is now read back before it goes, with
+  the same routine that reads a calendar arriving, and the change has to come
+  out of it: every line the change is made of, once each, among the event's own
+  lines rather than an alarm's, under the same identifier. If it does not come
+  back out, nothing is sent, the sync says which of four things went wrong
+  instead of counting a success, and the change stays waiting so the next sync
+  tries again.
+
+  What that covers, and what it does not, because the difference is the whole
+  value of it. It covers the change being written somewhere no reader will look,
+  the change being written into somebody else's appointment, a document that
+  opens an event and never ends it, a line lost or doubled between building the
+  document and writing it out, and a property this program starts writing
+  without also taking the server's old copy of it out first, which would
+  otherwise leave two start dates on one appointment.
+
+  It does not cover a wrong answer from the one routine that decides where an
+  event begins and ends. Both halves ask that routine, so a wrong answer looks
+  right to both of them and this check cannot see it. What closes that class is
+  there being one routine rather than two, which is the entry above about small
+  letters, and not this check. Nor does it cover a line neither half recognises
+  as a property at all: a title the server wrote in a shape this program does
+  not read is not taken out and not counted, so the document goes out carrying
+  two of them.
 
 - **The timezone on a meeting is read whether the server writes it in capitals
   or not, and quote marks around it are no longer part of it.** The zone a time

@@ -1307,6 +1307,98 @@ const PROPERTIES_A_CHANGE_REPLACES: [&str; 10] = [
     "DTSTAMP",
 ];
 
+/// Why a change could not be written into the document the calendar server
+/// holds.
+///
+/// Four things stop it and they want four different things done about them, so
+/// the caller is handed the reason rather than one sentence covering all of
+/// them. A wrong address is somebody's to fix; a document this program cannot
+/// read is this program's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhyTheChangeWasNotMade {
+    /// The document carries no event at all.
+    TheDocumentHoldsNoEvent,
+    /// It opens an event and never says where that event ends.
+    TheEventIsNeverClosed,
+    /// The event in it is a different one, under a different identifier.
+    TheDocumentIsForAnotherEvent,
+    /// The change was written in, and reading the result back does not find it.
+    TheChangeDidNotComeBackOut,
+}
+
+impl std::fmt::Display for WhyTheChangeWasNotMade {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::TheDocumentHoldsNoEvent => {
+                "the document the calendar server handed back holds no event to \
+                 change, so what would have gone out is the server's own words \
+                 rather than yours"
+            }
+            Self::TheEventIsNeverClosed => {
+                "the document the calendar server handed back opens an event and \
+                 never says where it ends, so there is nowhere in it this change \
+                 belongs"
+            }
+            Self::TheDocumentIsForAnotherEvent => {
+                "the document the calendar server handed back is for a different \
+                 event, so sending it would have written this appointment over \
+                 somebody else's"
+            }
+            Self::TheChangeDidNotComeBackOut => {
+                "the change was written into the document and reading that \
+                 document back does not find it, so what would go out is not \
+                 what you typed"
+            }
+        })
+    }
+}
+
+/// Whether the change really is in the document that is about to go out.
+///
+/// The one claim this program makes about a change it sends is that the change
+/// is in it, and everywhere else that claim is an argument about how the writer
+/// works. Here it is a check on this document: the bytes that would go to the
+/// server are read back with the routine the reader uses, and the lines the
+/// writer meant to put in have to be the lines that come out. All of them, in
+/// that order, once each, among the event's own lines rather than a nested
+/// block's, under the same identifier.
+///
+/// Reading back with the same routine is a check and not a second opinion. A
+/// second reader with its own idea of where an event ends is what caused the
+/// defects this file is full of; one routine answering that question for both,
+/// asked again on the way out, says whether the writer and the reader agree
+/// about this document rather than about documents in general.
+///
+/// **What it cannot see.** Because both sides ask the same routine, a fault in
+/// that routine is invisible here: if the boundary were wrong again, the writer
+/// would splice in the wrong place and the reader would look in the same wrong
+/// place and agree. That class is closed at [`events_in`] by there being one
+/// routine, not here. Nor can it see a line neither side recognises as a
+/// property: a `SUMMARY` the server wrote in a shape [`property_name`] does not
+/// read is not taken out and not counted here either, so the document goes out
+/// carrying two of them.
+///
+/// **What it does see.** The change spliced somewhere no reader will look, the
+/// change landing inside a nested block, a line lost or doubled between
+/// building the document and writing it out, a fold that does not survive being
+/// read back, and a property added to what this program writes without being
+/// added to what it removes first, which would otherwise leave the server's old
+/// line beside the new one.
+fn the_change_came_back_out(document: &str, uid: &str, meant: &[String]) -> bool {
+    let lines = unfolded(document);
+    let Some(its) = events_in(&lines).into_iter().next() else {
+        return false;
+    };
+    if its.closed_on.is_none() || !holds_the_event(&lines, &its, uid) {
+        return false;
+    }
+    let came_back_out: Vec<&str> = lines_at(&lines, &its.its_own)
+        .into_iter()
+        .filter(|line| a_change_replaces(line))
+        .collect();
+    came_back_out == meant.iter().map(String::as_str).collect::<Vec<&str>>()
+}
+
 /// The document the server holds, with this program's idea of the event in it.
 ///
 /// This is what makes a change safe. A PUT replaces the whole document and this
@@ -1341,20 +1433,27 @@ const PROPERTIES_A_CHANGE_REPLACES: [&str; 10] = [
 /// one round trip ago, and `If-Match` is what turns that window into a refusal
 /// rather than a silent overwrite.
 ///
-/// Nothing at all is handed back when the change was not made: a document with
-/// no event this could write into, an event the document never closes, or a
-/// document holding somebody else's event. Handing back the document unchanged
-/// is what made the case defect above cost somebody an edit: what goes out then
-/// is the server's own words, and the server takes them, so the sync counts a
-/// success and the change stops waiting. Whatever the reason the change was not
-/// made, a caller with nothing in its hand cannot send one.
+/// Nothing at all is handed back when the change was not made, only the reason
+/// it was not. Handing back the document unchanged is what made the case defect
+/// above cost somebody an edit: what goes out then is the server's own words,
+/// and the server takes them, so the sync counts a success and the change stops
+/// waiting. Whatever the reason the change was not made, a caller with nothing
+/// in its hand cannot send one.
 ///
 /// The identity is checked rather than assumed. A server answering a GET with
 /// the wrong resource, a stale address or an aliased one all hand back an
 /// appointment belonging to somebody else, and writing into that one and
 /// sending it back with `If-Match` overwrites their meeting and counts as a
 /// success on both sides.
-pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> Option<String> {
+///
+/// The document is then read back before it is handed over, which is what turns
+/// "the change is in what goes out" from an argument about this function into a
+/// check on the bytes it produced. [`the_change_came_back_out`] says what that
+/// proves and, as importantly, what it cannot.
+pub fn ical_with_the_event_changed(
+    held: &str,
+    event: &CalDavEvent,
+) -> std::result::Result<String, WhyTheChangeWasNotMade> {
     let lines = unfolded(held);
 
     // The first event in the document and no other. A repeating event with an
@@ -1365,12 +1464,16 @@ pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> Option<St
     // and left the moved occurrence as a bare RECURRENCE-ID with no title and
     // no time of its own.
     let events = events_in(&lines);
-    let its = events.first()?;
+    let its = events
+        .first()
+        .ok_or(WhyTheChangeWasNotMade::TheDocumentHoldsNoEvent)?;
 
     // An event the document opens and never closes. Nothing is guessed at, and
     // handing the document back unchanged would be the silent loss above by
     // another route.
-    let closes_on = its.closed_on?;
+    let closes_on = its
+        .closed_on
+        .ok_or(WhyTheChangeWasNotMade::TheEventIsNeverClosed)?;
 
     // The document has to be the one this event lives in. A server answering a
     // GET with the wrong resource, a stale href or an aliased one all hand back
@@ -1378,7 +1481,7 @@ pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> Option<St
     // with If-Match, and counted a success: a third party's meeting overwritten
     // and neither of them told.
     if !holds_the_event(&lines, its, &event.uid) {
-        return None;
+        return Err(WhyTheChangeWasNotMade::TheDocumentIsForAnotherEvent);
     }
 
     let ours = the_properties_this_program_owns(event);
@@ -1388,6 +1491,10 @@ pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> Option<St
         .filter_map(|written| written.parse::<u64>().ok())
         .next_back()
         .unwrap_or(0);
+    // Worked out once, because it is both what goes into the document and what
+    // the document is checked against below. Asked twice it would be two
+    // different stamps and the check would be checking itself.
+    let meant = said_again(&ours, numbered);
 
     let mut written: Vec<String> = Vec::new();
     let mut where_ours_go: Option<usize> = None;
@@ -1396,7 +1503,7 @@ pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> Option<St
     for (at, line) in lines.iter().enumerate() {
         if at == closes_on {
             let goes = where_ours_go.unwrap_or(written.len());
-            written.splice(goes..goes, said_again(&ours, numbered));
+            written.splice(goes..goes, meant.clone());
         }
         // Only the event's own property lines are replaced. Everything else is
         // copied through exactly as it arrived, which is what leaves an alarm
@@ -1410,7 +1517,10 @@ pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> Option<St
 
     let mut document = written_out(&written);
     document.push_str("\r\n");
-    Some(document)
+    if !the_change_came_back_out(&document, &event.uid, &meant) {
+        return Err(WhyTheChangeWasNotMade::TheChangeDidNotComeBackOut);
+    }
+    Ok(document)
 }
 
 /// Whether the document the server handed back is the one holding this event.
@@ -3334,6 +3444,124 @@ pub(crate) mod writing_tests {
         }
     }
 
+    /// A calendar document wrapped round whatever an event block holds.
+    fn a_document_carrying(event: &str) -> String {
+        format!("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n{event}END:VCALENDAR\r\n")
+    }
+
+    #[test]
+    fn test_the_change_has_to_come_back_out_of_the_document_going_out() {
+        // The one claim this program makes about a change it sends is that the
+        // change is in it, and until now that was an argument rather than a
+        // check. The document about to go out is read back with the routine the
+        // reader will use on it, and the lines the writer meant to put in have
+        // to be the lines that come out: all of them, in that order, once each,
+        // among the event's own lines, under the same identity.
+        let meant = [
+            "SUMMARY:Quarterly review".to_string(),
+            "DTSTART:20260305T090000Z".to_string(),
+            "SEQUENCE:4".to_string(),
+        ];
+        let whole = "BEGIN:VEVENT\r\nUID:e-1\r\nSUMMARY:Quarterly review\r\n\
+                     DTSTART:20260305T090000Z\r\nSEQUENCE:4\r\nEND:VEVENT\r\n";
+
+        assert!(
+            the_change_came_back_out(&a_document_carrying(whole), "e-1", &meant),
+            "a document really carrying the change was refused, so nobody \
+             could ever save anything"
+        );
+
+        for (going_out, what_went_wrong) in [
+            (
+                "BEGIN:VEVENT\r\nUID:e-1\r\nSUMMARY:Quarterly review\r\n\
+                 SEQUENCE:4\r\nEND:VEVENT\r\n",
+                "a line the writer meant to put in never reached the document",
+            ),
+            (
+                "BEGIN:VEVENT\r\nUID:e-1\r\nSUMMARY:Last quarter\r\n\
+                 SUMMARY:Quarterly review\r\nDTSTART:20260305T090000Z\r\n\
+                 SEQUENCE:4\r\nEND:VEVENT\r\n",
+                "the server's own line was left sitting beside the new one, \
+                 which for a start date is an appointment on two days",
+            ),
+            (
+                "BEGIN:VEVENT\r\nUID:somebody-else\r\nSUMMARY:Quarterly review\r\n\
+                 DTSTART:20260305T090000Z\r\nSEQUENCE:4\r\nEND:VEVENT\r\n",
+                "the change was written into somebody else's appointment",
+            ),
+            (
+                "BEGIN:VEVENT\r\nUID:e-1\r\nEND:VEVENT\r\n\
+                 SUMMARY:Quarterly review\r\nDTSTART:20260305T090000Z\r\n\
+                 SEQUENCE:4\r\n",
+                "the change landed outside the event, where no reader looks",
+            ),
+            (
+                "BEGIN:VEVENT\r\nUID:e-1\r\nSUMMARY:Quarterly review\r\n\
+                 DTSTART:20260305T090000Z\r\nSEQUENCE:4\r\n",
+                "the event is never closed, so where it ends is a guess",
+            ),
+            (
+                "BEGIN:VEVENT\r\nUID:e-1\r\nSUMMARY:Quarterly review\r\n\
+                 BEGIN:VALARM\r\nDTSTART:20260305T090000Z\r\nSEQUENCE:4\r\n\
+                 END:VALARM\r\nEND:VEVENT\r\n",
+                "the change landed inside the alarm rather than on the event",
+            ),
+            (
+                "VERSION:2.0\r\n",
+                "there is no event in the document at all",
+            ),
+        ] {
+            assert!(
+                !the_change_came_back_out(&a_document_carrying(going_out), "e-1", &meant),
+                "{what_went_wrong}, and the document was handed out to be sent \
+                 anyway"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_change_that_could_not_be_made_says_which_of_the_ways_it_failed() {
+        // Four things stop a change being written into the document a server
+        // holds, and one sentence covering all four tells somebody nothing
+        // about which of them happened to them. A wrong address and a document
+        // this program cannot read want different things done about them.
+        let event = as_it_was_changed_here("e-1");
+
+        for (held, why) in [
+            (
+                a_document_carrying(""),
+                WhyTheChangeWasNotMade::TheDocumentHoldsNoEvent,
+            ),
+            (
+                "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:e-1\r\n\
+                 SUMMARY:Quarterly review\r\n"
+                    .to_string(),
+                WhyTheChangeWasNotMade::TheEventIsNeverClosed,
+            ),
+            (
+                a_document_the_server_holds("somebody-else"),
+                WhyTheChangeWasNotMade::TheDocumentIsForAnotherEvent,
+            ),
+        ] {
+            assert_eq!(ical_with_the_event_changed(&held, &event), Err(why));
+        }
+
+        // And every reason says something a person could act on rather than
+        // naming itself.
+        for why in [
+            WhyTheChangeWasNotMade::TheDocumentHoldsNoEvent,
+            WhyTheChangeWasNotMade::TheEventIsNeverClosed,
+            WhyTheChangeWasNotMade::TheDocumentIsForAnotherEvent,
+            WhyTheChangeWasNotMade::TheChangeDidNotComeBackOut,
+        ] {
+            let said = why.to_string();
+            assert!(
+                said.len() > 40 && said.contains(' '),
+                "{why:?} says {said:?}, which is not a sentence anybody can read"
+            );
+        }
+    }
+
     #[test]
     fn test_a_change_keeps_the_guests_the_alarms_and_everything_else_the_server_had() {
         // A PUT replaces the whole document, and this program models about a
@@ -3677,7 +3905,7 @@ pub(crate) mod writing_tests {
 
         assert_eq!(
             ical_with_the_event_changed(held, &as_it_was_changed_here("e-1")),
-            None
+            Err(WhyTheChangeWasNotMade::TheDocumentHoldsNoEvent)
         );
     }
 
@@ -3691,7 +3919,7 @@ pub(crate) mod writing_tests {
 
         assert_eq!(
             ical_with_the_event_changed(held, &as_it_was_changed_here("e-1")),
-            None
+            Err(WhyTheChangeWasNotMade::TheEventIsNeverClosed)
         );
     }
 

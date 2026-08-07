@@ -193,17 +193,17 @@ async fn send_one_change(
             // change waiting: the edit is gone and nobody is told. That is what
             // a reader and a writer disagreeing about letter case cost once,
             // and the next mistake of that shape stops here instead.
-            let Some(document) = ical_with_the_event_changed(&held.document, &going) else {
-                return Err(crate::common::Error::Other(
-                    "This change was not sent: the document the calendar server \
-                     handed back does not hold the event being changed, either \
-                     because it has no event in it or because the event in it \
-                     is a different one. Sending it would have put the server's \
-                     own copy back over the change, or written this appointment \
-                     over somebody else's. The change is still waiting and will \
-                     be tried again at the next sync."
-                        .to_string(),
-                ));
+            //
+            // The reason is carried out rather than flattened, because the four
+            // ways this fails want four different things done about them.
+            let document = match ical_with_the_event_changed(&held.document, &going) {
+                Ok(document) => document,
+                Err(why) => {
+                    return Err(crate::common::Error::Other(format!(
+                        "This change was not sent: {why}. The change is still \
+                         waiting and will be tried again at the next sync."
+                    )));
+                }
             };
             going.ical_data = document;
             let changed = caldav
@@ -1948,10 +1948,14 @@ mod tests {
         // a success and the change stops waiting, and the words somebody typed
         // are gone with nothing said.
         //
-        // Nothing may be sent unless the change is really in what is going out,
-        // whatever the reason it is not: a document for the wrong resource, a
-        // marker this program cannot read, or the next mistake of this shape
-        // that nobody has thought of yet.
+        // This covers one of the four reasons a change is refused, and only
+        // that one: a document with no event in it. The other three have tests
+        // of their own. A document for the wrong resource is the sibling test
+        // above; an event the document never closes and a change that does not
+        // come back out of the document going out are in service::caldav.
+        //
+        // Naming a reason here that this test does not exercise is how the last
+        // reader of this file came to believe the whole class was closed.
         let cache = temp_cache("push_no_event");
         let mut calendar = container("cal-no-event", "acct");
         let (address, listening) = answering_in_turn(
