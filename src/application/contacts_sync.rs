@@ -27,12 +27,14 @@
 //!
 //! The second belongs to contacts alone. An address book hands out a version
 //! marker with its copy of a contact and refuses a change that does not carry
-//! the marker it last gave. So if the copy here won a tie, the marker held here
-//! would stay stale for ever: every push would be refused, every sync would
-//! report the same problem, and nothing would ever break the deadlock. Letting
-//! the address book win takes its new marker along with its copy, so the next
-//! change somebody makes can be sent. A calendar event carries no such marker,
-//! which is why that module could decide the other way.
+//! the marker it last gave. Both markers are sent from here: Google reads the
+//! marker inside the change, Outlook reads it from an `If-Match` header. So if
+//! the copy here won a tie, the marker held here would stay stale for ever:
+//! every push would be refused, every sync would report the same problem, and
+//! nothing would ever break the deadlock. Letting the address book win takes
+//! its new marker along with its copy, so the next change somebody makes can be
+//! sent. A calendar event is sent with no marker, which is why that module could
+//! decide the other way.
 //!
 //! # Two questions that look like one
 //!
@@ -1092,7 +1094,13 @@ async fn push_changed_contacts_to_microsoft<B: MicrosoftContactBook>(
 ) {
     let book = AddressBook::Microsoft;
     for (contact, name_there) in changes_waiting_for(cache, account_id, &book, how_far, result) {
-        let changed = contact_to_ms_contact(&contact);
+        let mut changed = contact_to_ms_contact(&contact);
+        // The version this change was built on. Outlook refuses a change that
+        // does not carry the marker it last gave, the same way Google does,
+        // and without it two devices editing the same contact overwrite each
+        // other with nobody told. The client sends it as `If-Match`; it is
+        // never part of the body.
+        changed.odata_etag = version_given_by(&contact, &book);
 
         let sent = ms_client.update_contact(token, &name_there, &changed).await;
         if let Ok(now_there) = &sent {
@@ -6909,5 +6917,45 @@ mod tests {
             what_the_contacts_sync_did(&result)
         );
         assert!(the_names_stored(&cache).is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_the_change_sent_to_outlook_carries_the_marker_outlook_last_gave() {
+        // Pins the application half of what stops two devices editing the same
+        // Outlook contact from silently overwriting each other. The marker
+        // Outlook gave for its copy goes back with the change, so a change
+        // built on a copy that has moved since can be refused. The client turns
+        // it into an If-Match header; that half is pinned in `service`.
+        let cache = a_cache("outlook_change_carries_the_marker");
+        a_contact_changed_here(
+            &cache,
+            AddressBook::Microsoft,
+            OUTLOOKS_NAME_FOR_HER,
+            THE_OUTLOOK_MARKER_LAST_SEEN,
+        );
+        let microsoft = ScriptedMicrosoft {
+            accepts_a_change: true,
+            the_version_it_gives_back: Some("W/\"2\"".to_string()),
+            ..Default::default()
+        };
+
+        sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        let changed = microsoft.changed.borrow();
+        let (_, sent) = changed.first().expect("a change to have been sent");
+        assert_eq!(
+            sent.odata_etag.as_deref(),
+            Some(THE_OUTLOOK_MARKER_LAST_SEEN),
+            "the change went to Outlook carrying no marker, so Outlook cannot refuse a \
+             change built on a copy that has moved since"
+        );
     }
 }

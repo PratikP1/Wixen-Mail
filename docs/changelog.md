@@ -316,6 +316,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   later change made in the other one is reported as replacing your change again,
   although it was only lost once.
 
+- **A change sent to Outlook now says which copy it was built on.** Google has
+  always been told the version of the contact a change was made against, and
+  refuses the change if its own copy has moved on since. Outlook was told
+  nothing, so two devices editing the same Outlook contact overwrote each other
+  and neither was told. This was also given as the reason the address book wins
+  a tie, in the changelog and in the code, and for Outlook it was not true.
+
+  Changes to Outlook contacts now carry the version marker Outlook last gave, as
+  an `If-Match` header, which is where Outlook looks for it. A change built on a
+  copy that has moved on is refused rather than overwriting what is there, the
+  sync says the change could not be sent, and the read that follows brings back
+  the copy that is there and counts it as replacing yours.
+
+  Known limitations: this has not run against a real Outlook account, so what
+  Outlook actually answers to a marker it does not recognise has not been seen.
+  A contact stored before this program kept markers has none to send, and a
+  change to it still goes out unconditionally and can overwrite a change made
+  somewhere else. Calendar events are unchanged and send no marker.
+
 - **A contact exported to a file and imported back is now the contact it was.**
   Exporting your contacts to a `.vcf` file and importing that file, which is how
   you move an address book to another machine or keep a copy of one, used to

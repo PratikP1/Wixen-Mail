@@ -436,6 +436,12 @@ impl MsGraphClient {
     /// unchanged, so it goes into the address the same way an event's does. A
     /// character that ends a path or starts a query, dropped in raw, addresses
     /// the change at some other contact or at none.
+    ///
+    /// The version marker on the contact being sent is the version this change
+    /// was built on, and it travels as `If-Match` so that Graph can refuse a
+    /// change built on a copy that has moved on since. A contact carrying no
+    /// marker is sent without one, because there is nothing to compare and a
+    /// made-up marker would have the change refused for ever.
     pub async fn update_contact(
         &self,
         token: &str,
@@ -443,7 +449,14 @@ impl MsGraphClient {
         contact: &MsGraphContact,
     ) -> Result<MsGraphContact> {
         let url = format!("{}/me/contacts/{}", self.base, in_a_path(contact_id));
-        with_retry(3, || self.api_patch(&url, token, contact)).await
+        let version_this_was_built_on = contact
+            .odata_etag
+            .as_deref()
+            .filter(|marker| !marker.is_empty());
+        with_retry(3, || {
+            self.api_patch(&url, token, contact, version_this_was_built_on)
+        })
+        .await
     }
 
     /// Delete a contact.
@@ -501,6 +514,13 @@ impl MsGraphClient {
     }
 
     /// Update a calendar event in a named calendar.
+    ///
+    /// Sent with no version marker, unlike a contact, so a change to an event
+    /// somebody else has moved since is accepted rather than refused. The
+    /// calendar keeps the copy on this computer when a change is waiting, so a
+    /// change refused for carrying an old marker would be refused again on
+    /// every sync with nothing to break the deadlock. That reasoning is written
+    /// out in `application::contacts_sync`.
     pub async fn update_event(
         &self,
         token: &str,
@@ -513,7 +533,7 @@ impl MsGraphClient {
             calendar_base(&self.base, calendar_id),
             in_a_path(event_id)
         );
-        with_retry(3, || self.api_patch(&url, token, event)).await
+        with_retry(3, || self.api_patch(&url, token, event, None)).await
     }
 
     /// Delete a calendar event from a named calendar.
@@ -556,13 +576,19 @@ impl MsGraphClient {
         Self::parse_response(resp, "microsoft").await
     }
 
+    /// Send a change.
+    ///
+    /// `version_being_changed` names the copy the change was built on, when the
+    /// caller has one. Graph reads it from `If-Match` and nowhere else, and
+    /// refuses the change if its own copy has moved on since.
     async fn api_patch<T: serde::de::DeserializeOwned>(
         &self,
         url: &str,
         token: &str,
         body: &impl Serialize,
+        version_being_changed: Option<&str>,
     ) -> Result<T> {
-        let resp = self
+        let mut asking = self
             .http
             .changing(
                 reqwest::Method::PATCH,
@@ -570,7 +596,11 @@ impl MsGraphClient {
                 "change something in this account",
             )?
             .bearer_auth(token)
-            .json(body)
+            .json(body);
+        if let Some(version) = version_being_changed {
+            asking = asking.header(reqwest::header::IF_MATCH, version);
+        }
+        let resp = asking
             .send()
             .await
             .map_err(|e| Error::Network(format!("Graph API PATCH failed: {}", e)))?;
@@ -721,6 +751,98 @@ mod tests {
         // change cannot empty a field it never mentioned.
         assert!(
             request.contains(r#"{"displayName":"Alice Smith"}"#),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_carries_the_marker_graph_last_gave_for_that_contact() {
+        // Without this, two devices editing the same Outlook contact overwrite
+        // each other and neither is told. The marker travels as `If-Match`,
+        // which is where Graph looks for it, and not in the body, where it is
+        // an annotation Graph refuses to be given.
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .update_contact(
+                "a-token",
+                "AAMkAGI2",
+                &MsGraphContact {
+                    display_name: "Alice Smith".to_string(),
+                    odata_etag: Some("W/\"1\"".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "the contact change")
+            .await
+            .expect("a request");
+        assert!(
+            request.to_ascii_lowercase().contains("if-match: w/\"1\""),
+            "the change carried no version marker, so Graph cannot refuse one built on \
+             a copy that has moved since: {request}"
+        );
+        assert!(!request.contains("odata.etag"), "{request}");
+    }
+
+    #[tokio::test]
+    async fn test_a_change_to_a_contact_with_no_marker_kept_is_sent_without_one() {
+        // Nothing stored before the marker column existed has one, and a
+        // contact can reach here with none. An empty or invented `If-Match`
+        // would have every one of those changes refused for ever.
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .update_contact(
+                "a-token",
+                "AAMkAGI2",
+                &MsGraphContact {
+                    display_name: "Alice Smith".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "the contact change")
+            .await
+            .expect("a request");
+        assert!(
+            !request.to_ascii_lowercase().contains("if-match"),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_marker_that_is_only_an_empty_string_is_not_sent_as_one() {
+        // An empty `If-Match` is a version nothing can match, so Graph would
+        // refuse the change and go on refusing it. No marker at all is the
+        // honest reading of a marker that says nothing.
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .update_contact(
+                "a-token",
+                "AAMkAGI2",
+                &MsGraphContact {
+                    display_name: "Alice Smith".to_string(),
+                    odata_etag: Some(String::new()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "the contact change")
+            .await
+            .expect("a request");
+        assert!(
+            !request.to_ascii_lowercase().contains("if-match"),
             "{request}"
         );
     }
