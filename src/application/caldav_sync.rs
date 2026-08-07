@@ -413,21 +413,31 @@ impl WhatTheAnswerCovers {
     }
 }
 
-/// A time as the cache stores it, in the two forms it holds.
+/// A time as the cache stores it, in the shapes it holds.
 ///
-/// A timed event keeps the whole moment. A whole-day event keeps the date on
-/// its own, which is that day from midnight.
+/// A whole-day event keeps the date on its own, which is that day from
+/// midnight. A clock face that names no zone is read as this computer's own,
+/// which is what it meant to the person who typed it. Reading it in the wrong
+/// zone moves it by hours and the window it is being placed in is months wide,
+/// so the only thing that decides here is the day.
 fn a_moment(stored: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    use chrono::TimeZone;
     let stored = stored.trim();
     if let Ok(at) = chrono::DateTime::parse_from_rfc3339(stored) {
         return Some(at.with_timezone(&chrono::Utc));
     }
-    Some(
-        chrono::NaiveDate::parse_from_str(stored, WHOLE_DAY_DATE)
-            .ok()?
-            .and_hms_opt(0, 0, 0)?
-            .and_utc(),
-    )
+    let clock = crate::application::calendar::CLOCK_FACES
+        .iter()
+        .find_map(|shape| chrono::NaiveDateTime::parse_from_str(stored, shape).ok())
+        .or_else(|| {
+            chrono::NaiveDate::parse_from_str(stored, WHOLE_DAY_DATE)
+                .ok()?
+                .and_hms_opt(0, 0, 0)
+        })?;
+    chrono::Local
+        .from_local_datetime(&clock)
+        .earliest()
+        .map(|at| at.with_timezone(&chrono::Utc))
 }
 
 /// Whether a row the answer did not name may be taken off this computer.
@@ -2821,6 +2831,23 @@ mod tests {
         assert!(
             stretch.would_have_named(&whole_day),
             "a whole-day event is stored as a date with no time and is inside the window"
+        );
+
+        // The shape this program's own editor writes: a space instead of a T,
+        // no seconds and no zone. An event made here and never yet named by a
+        // read keeps that shape for as long as it lives, so failing to place it
+        // would leave every event made in this program out of the removal pass
+        // for good and let a calendar fill up with events the server dropped.
+        let clock = (chrono::Utc::now() + chrono::Duration::days(2)).naive_utc();
+        let mut as_the_editor_writes_it = at(2);
+        as_the_editor_writes_it.start_datetime = clock.format("%Y-%m-%d %H:%M").to_string();
+        as_the_editor_writes_it.end_datetime = (clock + chrono::Duration::hours(1))
+            .format("%Y-%m-%d %H:%M")
+            .to_string();
+        assert!(
+            stretch.would_have_named(&as_the_editor_writes_it),
+            "an event written the way this program's own editor writes one was \
+             not placed in the window at all"
         );
 
         let mut unreadable = at(0);

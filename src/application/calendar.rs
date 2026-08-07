@@ -1551,7 +1551,13 @@ const COORDINATED_UNIVERSAL_TIME: &str = "UTC";
 /// Graph writes seven digits of fraction, this program's own editor writes a
 /// space and no seconds, and a whole day is a bare date. None of the three
 /// carries an offset, so each keeps its clock face and the zone stored with it.
-const CLOCK_FACES: [&str; 5] = [
+///
+/// Shared with the calendar-server sync, which has to place a stored event
+/// inside the stretch of time it asked the server about. Two copies of this list
+/// would agree today and drift the first time either was edited, and the cost of
+/// their disagreeing is an event nobody can place, which that sync then keeps
+/// for ever.
+pub(crate) const CLOCK_FACES: [&str; 5] = [
     "%Y-%m-%dT%H:%M:%S%.f",
     "%Y-%m-%dT%H:%M:%S",
     "%Y-%m-%dT%H:%M",
