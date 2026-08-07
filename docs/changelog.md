@@ -164,7 +164,7 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   refused, and the reason it gave was about a mail server setting that had
   nothing to do with it. Delete now moves the message to that account's Trash
   folder on this computer, and Delete again from the Trash, or Shift+Delete
-  anywhere, takes it off the computer.
+  anywhere, takes it out of every folder here.
 
   Nothing is removed from the POP server by this. Mail stays there until the
   account's own "Leave mail on the server" setting takes it, which is unchanged
@@ -177,7 +177,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   how they say Delete must not be the thing that loses it. Unticking it makes
   Delete say so, by name, instead of blaming a server.
 
-  Known limitation: none of this has run against a live POP server.
+  Known limitations: none of this has run against a live POP server.
+
+  Deleting does not erase. The message leaves every folder, count and search,
+  and nothing here brings it back, but the message and its text stay in this
+  computer's mail database, which is not encrypted. Two things need them to
+  stay. The number the POP server knows the message by is how the next check
+  knows not to download it again, and the text was downloaded once with no
+  server to fetch it back from. Nothing clears either yet, and the sentence
+  after a delete says "Deleted from this computer" without saying any of this.
+  If you delete mail because somebody else will use the machine, that is not
+  what this does.
 
 - **A message deleted on a POP account stays deleted.** Checking for mail asked
   one folder what had already been downloaded, so anything moved to the Trash

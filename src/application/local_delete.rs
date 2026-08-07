@@ -410,6 +410,60 @@ mod tests {
     }
 
     #[test]
+    fn test_a_message_deleted_outright_keeps_its_number_and_its_text_on_this_computer() {
+        // What "off this computer" really means here, pinned because the words
+        // said about it were wrong once. The row is marked deleted, so it
+        // leaves every list, every count and every search. It is not removed:
+        //
+        //  - the number the POP server knows it by stays, and it has to. That
+        //    number is the whole of how the next check knows this message has
+        //    already been seen. Take the row away and the message is
+        //    downloaded again, which is the bug the "stays deleted" work fixed.
+        //  - the text stays too, deliberately. Mail collected over POP was
+        //    downloaded once and there is no server to fetch it back from.
+        //
+        // So the message is gone from the program and still in the database
+        // file, which is not encrypted. Nothing in the product brings it back
+        // and nothing in the product clears it. Anything said to the person
+        // has to match this.
+        let cache = a_cache("outright_leaves_the_text");
+        let account = a_pop_account();
+        its_folders(&cache, &account);
+        let inbox = a_folder(
+            &cache,
+            &account.id,
+            &format!("{LOCAL_PREFIX}/Inbox"),
+            "Inbox",
+        );
+        let row = a_message(&cache, inbox, "Gone for good");
+        cache
+            .save_message_body(row, Some("The words that were in it"), None)
+            .expect("a body to save");
+
+        perform(&cache, &account, row, Deleting::Outright)
+            .expect("the delete runs")
+            .expect("a message on this computer is this path's business");
+
+        assert!(
+            cache
+                .pop_uidls_for_account(&account.id)
+                .expect("the identifiers")
+                .contains("Gone for good"),
+            "the number the server knows it by is gone, so the next check \
+             downloads the message again"
+        );
+        assert_eq!(
+            cache
+                .get_message_body(row)
+                .expect("the lookup")
+                .and_then(|body| body.body_plain)
+                .as_deref(),
+            Some("The words that were in it"),
+            "the only copy of the text was destroyed"
+        );
+    }
+
+    #[test]
     fn test_a_message_on_a_server_is_left_for_the_server_path() {
         // `None` is what keeps every IMAP account behaving exactly as it does
         // today: the route that asks the server runs unchanged.
