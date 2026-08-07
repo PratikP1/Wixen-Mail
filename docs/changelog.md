@@ -231,6 +231,38 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A note that mentions the end of an event no longer destroys the event's
+  repeat rule.** If you typed something like "Say END:VEVENT when you are done"
+  into an event's notes box, or if the calendar you subscribe to carried a note
+  that did, the next time this program read that event it stopped reading at
+  those words. Everything written after the note was invisible to it: the repeat
+  rule, the days the series had been called off, and the rest of the note
+  itself.
+
+  On a calendar you can write to, the damage went further. The next edit to the
+  event, even something as small as a change of title, sent the server a copy
+  with no repeat rule, no cancelled days and no note. The server accepted it, so
+  the sync reported no errors and the event stopped waiting to be sent, and the
+  repeat rule was gone from the server for good with nothing left to try again.
+  On a subscribed calendar nothing was written, but the event still showed as
+  happening once instead of every week and nothing said why.
+
+  The cause was that two pieces of code answered the question "where does this
+  event begin and end", and they answered it differently. Now one routine
+  answers it and everything that reads or writes a calendar asks that routine.
+  An appointment that carries a reminder also reads correctly now: an
+  appointment with no note of its own used to come back wearing the words its
+  reminder says.
+
+- **A calendar server's wrong answer can no longer overwrite somebody else's
+  appointment.** Before sending a change, this program asks the server for the
+  document it holds and edits that. It did not check that the document it got
+  back was for the event being changed. A server answering with the wrong
+  resource, or an address that had gone stale, meant this program wrote your
+  appointment over a stranger's and both syncs counted it a success. It now
+  refuses to send anything unless the document really holds the event, says so,
+  and leaves the change waiting so the next sync tries again.
+
 - **A contact card written in small letters imports now.** The card format says
   a property name means the same however it is written, and plenty of software
   writes them in small letters. This program read them only in capitals, so a

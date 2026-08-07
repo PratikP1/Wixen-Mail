@@ -186,10 +186,12 @@ async fn send_one_change(
             let Some(document) = ical_with_the_event_changed(&held.document, &going) else {
                 return Err(crate::common::Error::Other(
                     "This change was not sent: the document the calendar server \
-                     holds for this event has no event in it that could be \
-                     changed, so sending it would have put the server's own \
-                     copy back over the change. The change is still waiting and \
-                     will be tried again at the next sync."
+                     handed back does not hold the event being changed, either \
+                     because it has no event in it or because the event in it \
+                     is a different one. Sending it would have put the server's \
+                     own copy back over the change, or written this appointment \
+                     over somebody else's. The change is still waiting and will \
+                     be tried again at the next sync."
                         .to_string(),
                 ));
             };
@@ -1582,6 +1584,162 @@ mod tests {
         );
         assert_eq!(result.sent, 1);
         assert!(result.errors.is_empty(), "{:?}", result.errors);
+    }
+
+    /// The document a server holds for an event whose note names the marker
+    /// that ends an event.
+    ///
+    /// The repeat rule and the cancelled day sit after the note, so a reader
+    /// that stops at the words somebody typed never reaches either of them.
+    fn a_document_whose_note_names_the_end_of_an_event(uid: &str) -> String {
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:{uid}\r\n\
+             SUMMARY:Quarterly review\r\nDTSTART:20260305T090000Z\r\n\
+             DTEND:20260305T100000Z\r\n\
+             DESCRIPTION:Say END:VEVENT when you are done\r\n\
+             RRULE:FREQ=WEEKLY;COUNT=10\r\nEXDATE:20260312T090000Z\r\n\
+             STATUS:CONFIRMED\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+    }
+
+    #[tokio::test]
+    async fn test_a_note_naming_the_end_of_an_event_does_not_cost_the_repeat_rule_at_the_server() {
+        // Somebody typed "Say END:VEVENT when you are done" into the notes box.
+        // The reader stopped at those words and the writer did not, so the row
+        // stored here had no repeat rule and no cancelled day, and the next
+        // edit to the title wrote that emptiness over the server's copy. The
+        // series was gone from the server for good, the sync reported no
+        // errors, and the row stopped waiting so nothing tried again.
+        let cache = temp_cache("push_note_names_the_end");
+        let mut calendar = container("cal-note-end", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::tagged(
+                    "\"v7\"",
+                    a_document_whose_note_names_the_end_of_an_event("e-1"),
+                ),
+                Answer::plain(String::new()),
+                Answer::plain(multi_status(&["e-1"])),
+            ],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+
+        // The row is the one a previous sync's read produced, which is what
+        // makes this the whole round trip rather than half of it.
+        let at = format!("http://{address}/cal/e-1.ics");
+        let read = crate::service::caldav::parse_ical_vevent(
+            &a_document_whose_note_names_the_end_of_an_event("e-1"),
+            &at,
+            Some("\"v7\""),
+        )
+        .expect("the server's document to read");
+        let mut waiting = caldav_event_to_local(&read, "acct", &calendar.id);
+        waiting.summary = "Quarterly review, moved".to_string();
+        waiting.pending = true;
+        cache
+            .save_calendar_event(&waiting)
+            .expect("the waiting change");
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a read, a change and the calendar")
+            .await
+            .expect("three requests");
+        assert_eq!(asked_for(&requests[1]), "PUT /cal/e-1.ics");
+        let sent = body_of(&requests[1]);
+        assert!(
+            sent.contains("RRULE:FREQ=WEEKLY;COUNT=10"),
+            "the repeat rule was taken off the server's copy: {sent}"
+        );
+        assert!(
+            sent.contains("EXDATE:20260312T090000Z"),
+            "the cancelled day was taken off the server's copy: {sent}"
+        );
+        assert!(
+            sent.contains("Say END:VEVENT when you are done"),
+            "the note somebody typed was taken off the server's copy: {sent}"
+        );
+        assert!(
+            sent.contains("SUMMARY:Quarterly review\\, moved"),
+            "what was typed here did not go out: {sent}"
+        );
+        assert_eq!(result.sent, 1);
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+    }
+
+    #[tokio::test]
+    async fn test_a_document_for_somebody_elses_event_is_not_written_into_and_the_change_keeps_waiting()
+     {
+        // A server answering a GET with the wrong resource, a stale address or
+        // an aliased one all hand back an appointment belonging to somebody
+        // else. Written into and sent back with If-Match, that overwrites their
+        // meeting with this one and the sync counts a success. Nothing may go
+        // out unless the document really holds the event being changed.
+        let cache = temp_cache("push_wrong_document");
+        let mut calendar = container("cal-wrong-doc", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::tagged("\"v7\"", a_document_the_server_holds("somebody-elses")),
+                Answer::plain(multi_status(&["e-1"])),
+            ],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let waiting = a_change_waiting_in(
+            &cache,
+            &calendar,
+            Some("e-1"),
+            Some(format!("http://{address}/cal/e-1.ics")),
+        );
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a read and the calendar").await.expect(
+            "two requests: the document being read, and the calendar. A third \
+             means somebody else's appointment was written over",
+        );
+        assert_eq!(asked_for(&requests[0]), "GET /cal/e-1.ics");
+        assert_eq!(
+            asked_for(&requests[1]),
+            "REPORT /cal/",
+            "a document for another event was written into and sent back"
+        );
+        assert_eq!(result.sent, 0);
+        assert!(
+            !result.errors.is_empty(),
+            "writing into somebody else's appointment was reported as nothing happening"
+        );
+        let stored = cache
+            .get_event_by_id(&waiting.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert!(
+            stored.pending,
+            "the change stopped waiting without ever reaching the server"
+        );
     }
 
     #[tokio::test]

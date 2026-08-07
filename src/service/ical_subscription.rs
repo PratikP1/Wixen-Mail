@@ -5,7 +5,7 @@
 //! They refresh by re-fetching the full .ics feed on sync.
 
 use crate::common::{Error, Result};
-use crate::service::caldav::{CalDavEvent, parse_ical_vevent};
+use crate::service::caldav::{self, CalDavEvent, parse_ical_vevent};
 
 /// ICS feed subscription client.
 pub struct ICalSubscriptionClient {
@@ -66,28 +66,27 @@ fn parse_ics(ical_data: &str) -> Result<Vec<CalDavEvent>> {
     let mut events = Vec::new();
     let mut unreadable = 0_usize;
 
-    // Split by VEVENT blocks. The markers are matched whatever case they are
-    // written in, the same as the property names inside them, or a feed written
-    // in small letters throughout splits into no events and shows as an empty
-    // calendar with nothing said about why.
-    let mut remaining = ical_data;
-    while let Some(start) = crate::service::caldav::found_ignoring_case(remaining, "BEGIN:VEVENT") {
-        let after = &remaining[start..];
-        let Some(end) = crate::service::caldav::found_ignoring_case(after, "END:VEVENT") else {
+    // Where each event begins and ends is answered by the one routine that
+    // answers it for a calendar server's document as well, markers matched at
+    // the start of a line and whatever case they are written in. Asked here in
+    // its own way, it gave two different answers to the same question: a feed
+    // in small letters split into no events at all, and a note reading
+    // "Say END:VEVENT when you are done" ended its event early and took the
+    // repeat rule off the calendar with nothing said.
+    let lines = caldav::unfolded(ical_data);
+    for event in caldav::events_in(&lines) {
+        let Some(closes_on) = event.closed_on else {
             // An event the feed opens and never closes. Nothing is guessed at,
             // and it is still counted: a feed cut off partway through arriving
             // is a reason a calendar is empty, not a calendar that is empty.
             unreadable += 1;
-            break;
+            continue;
         };
-        let vevent_block = &after[..end + "END:VEVENT".len()];
-        // Wrap in VCALENDAR for the parser
-        let full_ical = format!("BEGIN:VCALENDAR\r\n{}\r\nEND:VCALENDAR", vevent_block);
-        match parse_ical_vevent(&full_ical, "", None) {
+        let document = caldav::one_event_as_a_document(&lines[event.opened_on..=closes_on]);
+        match parse_ical_vevent(&document, "", None) {
             Some(event) => events.push(event),
             None => unreadable += 1,
         }
-        remaining = &after[end + "END:VEVENT".len()..];
     }
 
     if events.is_empty() && unreadable > 0 {
@@ -201,6 +200,61 @@ END:VCALENDAR"#;
         assert_eq!(events[0].uid, "feed-1");
         assert_eq!(events[1].uid, "feed-2");
         assert_eq!(events[1].summary, "Second");
+    }
+
+    #[test]
+    fn test_a_feed_whose_note_names_the_end_of_an_event_keeps_its_repeat_rule() {
+        // Nothing is written here, so nothing can be blamed on a writer: a
+        // published feed carrying a note that says "END:VEVENT" split at those
+        // words, and the event lost its repeat rule, its cancelled day and the
+        // rest of its note. The calendar simply showed one meeting instead of
+        // ten, with no error anywhere.
+        let feed = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:feed-note\r\n\
+                    SUMMARY:Standing meeting\r\nDTSTART:20260305T090000Z\r\n\
+                    DESCRIPTION:Say END:VEVENT when you are done\r\n\
+                    RRULE:FREQ=WEEKLY;COUNT=10\r\nEXDATE:20260312T090000Z\r\n\
+                    END:VEVENT\r\n\
+                    BEGIN:VEVENT\r\nUID:feed-after\r\nSUMMARY:The next one\r\n\
+                    DTSTART:20260306T090000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let events = parse_ics(feed).expect("a feed to read");
+
+        assert_eq!(events.len(), 2, "the feed split at the words in the note");
+        assert_eq!(
+            events[0].recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;COUNT=10"),
+            "the repeat rule was dropped with nothing said"
+        );
+        assert_eq!(
+            events[0].exception_dates.as_deref(),
+            Some("20260312T090000Z"),
+            "the cancelled day was dropped with nothing said"
+        );
+        assert_eq!(
+            events[0].description.as_deref(),
+            Some("Say END:VEVENT when you are done"),
+            "the note came back cut off at the words that end an event"
+        );
+        assert_eq!(events[1].uid, "feed-after");
+    }
+
+    #[test]
+    fn test_a_feed_whose_event_holds_an_alarm_reads_the_events_own_note_and_not_the_alarms() {
+        // An alarm carries a description of its own, and it is the words the
+        // alert says rather than the words on the appointment. Read as part of
+        // the event, an appointment with no note came back wearing its alarm's.
+        let feed = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:feed-alarm\r\n\
+                    SUMMARY:Standing meeting\r\nDTSTART:20260305T090000Z\r\n\
+                    BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:Leave now\r\n\
+                    TRIGGER:-PT15M\r\nEND:VALARM\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let events = parse_ics(feed).expect("a feed to read");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].description, None,
+            "the appointment was given its alarm's words as its own note"
+        );
     }
 
     #[test]

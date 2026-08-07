@@ -723,6 +723,13 @@ fn parse_report_events(xml: &str, calendar_url: &str) -> Result<Vec<CalDavEvent>
     Ok(events)
 }
 
+/// The lines a list of positions names, in the order it names them.
+fn lines_at<'a>(lines: &'a [String], at: &[usize]) -> Vec<&'a str> {
+    at.iter()
+        .filter_map(|at| lines.get(*at).map(String::as_str))
+        .collect()
+}
+
 /// A count with the thing it counts, so a message reads as a sentence.
 pub(crate) fn how_many(count: usize, thing: &str) -> String {
     if count == 1 {
@@ -742,14 +749,25 @@ pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Opti
     // is 88 octets, so this is the ordinary case and not a rare one: it lost
     // cancelled days, cut titles mid-word, and took the stop date off a
     // series so it never ended.
-    let document = unfolded(ical_data).join("\r\n");
+    let lines = unfolded(ical_data);
 
-    // Only the event's own lines. A calendar server sends its timezone rules
-    // in the same document, and those rules carry a start date and a repeat
-    // rule of their own for when the clocks change, so reading the document
-    // whole gave every appointment on a calendar outside UTC the date the
-    // clocks last changed rather than the date it is on.
-    let block = vevent_block(&document);
+    // Only the event's own lines, and the writer asks the same routine which
+    // those are. A calendar server sends its timezone rules in the same
+    // document, and those rules carry a start date and a repeat rule of their
+    // own for when the clocks change, so reading the document whole gave every
+    // appointment on a calendar outside UTC the date the clocks last changed
+    // rather than the date it is on. A block nested inside the event is left
+    // out for the same reason: an alarm has a description of its own, and an
+    // event with no note came back wearing its alarm's.
+    //
+    // A document with no event marker in it at all is read whole, so a fragment
+    // carrying bare property lines still reads.
+    let events = events_in(&lines);
+    let block = match events.first() {
+        Some(event) => lines_at(&lines, &event.its_own).join("\r\n"),
+        None => lines.join("\r\n"),
+    };
+    let block = block.as_str();
 
     // The three properties that carry words somebody typed, with the marks the
     // document puts round them taken off. The identifier below is not one of
@@ -794,50 +812,142 @@ pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Opti
     })
 }
 
-/// The part of a calendar document that describes the event itself.
+/// Which lines of a calendar document belong to one event in it.
 ///
-/// Everything outside it belongs to something else, usually the timezone
-/// rules. A document with no event in it is handed back whole, so a fragment
-/// carrying bare property lines still reads.
-fn vevent_block(ical: &str) -> &str {
-    let Some(opening) = found_ignoring_case(ical, "BEGIN:VEVENT") else {
-        return ical;
-    };
-    let after = &ical[opening..];
-    match found_ignoring_case(after, "END:VEVENT") {
-        Some(closing) => &after[..closing],
-        None => after,
+/// One answer to "where does this event begin and end", because there were two
+/// and they disagreed. The reader looked for `END:VEVENT` anywhere in the
+/// document and the writer looked for it at the start of a line, so a note
+/// reading "Say END:VEVENT when you are done" ended the event for the reader
+/// and not for the writer. The reader then handed back an event with no repeat
+/// rule, no cancelled day and half a note; the writer replaced all three with
+/// the nothing the reader had found; the server took it; and the series was
+/// gone with nothing left waiting to retry.
+pub(crate) struct EventLines {
+    /// The line that opens the event.
+    pub(crate) opened_on: usize,
+    /// The line that closes it, or nothing when the document never closes it.
+    pub(crate) closed_on: Option<usize>,
+    /// The lines between those two that are the event's own properties, in the
+    /// order they appear. A line inside a block nested in the event is not one
+    /// of them: an alarm carries a description and a start of its own, and an
+    /// event with no note of its own must not come back wearing its alarm's.
+    pub(crate) its_own: Vec<usize>,
+}
+
+/// Every event in a calendar document, in the order they appear.
+///
+/// Both the reader and the writer ask this and nothing else, so neither can
+/// come to its own view of where an event stops. A subscribed feed asks it too,
+/// because splitting a feed into events is the same question asked of a
+/// document holding many.
+///
+/// The lines are the document's, already put back together by [`unfolded`]. A
+/// marker counts only as a whole line: `BEGIN:VEVENT` opens an event and
+/// `DESCRIPTION:Say END:VEVENT when you are done` is a note.
+pub(crate) fn events_in(lines: &[String]) -> Vec<EventLines> {
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at < lines.len() {
+        if !names_the_event(component_opened(&lines[at])) {
+            at += 1;
+            continue;
+        }
+        let event = the_event_opened_on(lines, at);
+        at = event.closed_on.map_or(lines.len(), |closed| closed + 1);
+        found.push(event);
+    }
+    found
+}
+
+/// The event a `BEGIN:VEVENT` line opens, read to wherever it closes.
+///
+/// A block opened inside the event is counted in and out again, so the
+/// `END:VEVENT` that closes the event is the one at the event's own level and
+/// not an alarm's `END:VALARM` nor a nested event's close.
+fn the_event_opened_on(lines: &[String], opened_on: usize) -> EventLines {
+    let mut its_own = Vec::new();
+    let mut nested = 0_usize;
+    for (at, line) in lines.iter().enumerate().skip(opened_on + 1) {
+        if nested == 0 && names_the_event(component_closed(line)) {
+            return EventLines {
+                opened_on,
+                closed_on: Some(at),
+                its_own,
+            };
+        }
+        if component_opened(line).is_some() {
+            nested += 1;
+        } else if component_closed(line).is_some() {
+            nested = nested.saturating_sub(1);
+        } else if nested == 0 {
+            its_own.push(at);
+        }
+    }
+    EventLines {
+        opened_on,
+        closed_on: None,
+        its_own,
     }
 }
 
-/// Where a marker sits in a document, whatever case it is written in.
+/// Whether a component name is the event's, whatever case it is written in.
+fn names_the_event(component: Option<&str>) -> bool {
+    component.is_some_and(|name| name.eq_ignore_ascii_case("VEVENT"))
+}
+
+/// The component a line opens, as in `BEGIN:VEVENT`, if it opens one.
+fn component_opened(line: &str) -> Option<&str> {
+    component_named_after(line, "BEGIN:")
+}
+
+/// The component a line closes, as in `END:VEVENT`, if it closes one.
+fn component_closed(line: &str) -> Option<&str> {
+    component_named_after(line, "END:")
+}
+
+/// The component name a marker line carries, if the line is one.
 ///
-/// The calendar standard makes `BEGIN:VEVENT` mean the same however it is
-/// written, the same as the property names inside it, and matching only capitals
-/// meant a document in small letters throughout had no event to find. A calendar
-/// server's document was then read whole, so an appointment took the start date
-/// and the repeat rule out of the timezone rules; a subscribed feed was split
-/// into no events at all.
+/// What follows the marker on such a line is a component name: one word, with
+/// no white space and no punctuation of its own in it. A line carrying anything
+/// more is a property whose value happens to begin that way, and reading those
+/// as markers is what let a sentence somebody typed into a notes box end their
+/// own event.
 ///
-/// The marker is a literal written in this file, never anything a server sends,
-/// and it is all ASCII. So the position handed back is always the start of a
-/// character: a byte inside a longer UTF-8 character is never an ASCII one.
-pub(crate) fn found_ignoring_case(document: &str, marker: &str) -> Option<usize> {
-    let marker = marker.as_bytes();
+/// The marker is matched whatever case it is written in, the same as every
+/// other name in a calendar document.
+fn component_named_after<'a>(line: &'a str, marker: &str) -> Option<&'a str> {
+    if !opens_with_ignoring_case(line, marker) {
+        return None;
+    }
+    let named = line.get(marker.len()..)?.trim_end();
+    let is_a_component_name = !named.is_empty() && !named.contains([':', ';', ',', ' ', '\t']);
+    is_a_component_name.then_some(named)
+}
+
+/// One event's lines written back out as a calendar document of its own.
+///
+/// A subscribed feed carries every event in one document and each is stored on
+/// a row of its own, so each needs a document a reader can take whole.
+pub(crate) fn one_event_as_a_document(lines: &[String]) -> String {
+    let mut written = vec!["BEGIN:VCALENDAR".to_string()];
+    written.extend_from_slice(lines);
+    written.push("END:VCALENDAR".to_string());
+    let mut document = written_out(&written);
+    document.push_str("\r\n");
     document
-        .as_bytes()
-        .windows(marker.len())
-        .position(|window| window.eq_ignore_ascii_case(marker))
 }
 
 /// Whether a line opens with a marker, whatever case it is written in.
 ///
-/// The same rule as [`found_ignoring_case`] applied where the marker has to be
-/// at the start of a line rather than anywhere in a document, which is what the
-/// writer needs: a `DESCRIPTION` mentioning `END:VEVENT` must not end the event.
+/// The calendar standard makes `BEGIN:VEVENT` mean the same however it is
+/// written, the same as the property names inside it. Matched as capitals only,
+/// a document in small letters throughout had no event to find: an appointment
+/// took its start date and its repeat rule out of the timezone rules, and a
+/// subscribed feed split into no events at all.
 ///
-/// The marker is a literal written in this file and is all ASCII, so comparing
-/// bytes cannot cut a longer character in half.
+/// The marker is a literal written in this file, never anything a server sends,
+/// and it is all ASCII, so comparing bytes cannot cut a longer character in
+/// half.
 fn opens_with_ignoring_case(line: &str, marker: &str) -> bool {
     line.as_bytes()
         .get(..marker.len())
@@ -1231,89 +1341,97 @@ const PROPERTIES_A_CHANGE_REPLACES: [&str; 10] = [
 /// one round trip ago, and `If-Match` is what turns that window into a refusal
 /// rather than a silent overwrite.
 ///
-/// Nothing at all is handed back when the change was not made, which is a
-/// document with no event this could write into. Handing back the document
-/// unchanged is what made the case defect above cost somebody an edit: what
-/// goes out then is the server's own words, and the server takes them, so the
-/// sync counts a success and the change stops waiting. Whatever the reason the
-/// change was not made, a caller with nothing in its hand cannot send one.
+/// Nothing at all is handed back when the change was not made: a document with
+/// no event this could write into, an event the document never closes, or a
+/// document holding somebody else's event. Handing back the document unchanged
+/// is what made the case defect above cost somebody an edit: what goes out then
+/// is the server's own words, and the server takes them, so the sync counts a
+/// success and the change stops waiting. Whatever the reason the change was not
+/// made, a caller with nothing in its hand cannot send one.
+///
+/// The identity is checked rather than assumed. A server answering a GET with
+/// the wrong resource, a stale address or an aliased one all hand back an
+/// appointment belonging to somebody else, and writing into that one and
+/// sending it back with `If-Match` overwrites their meeting and counts as a
+/// success on both sides.
 pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> Option<String> {
-    let ours = the_properties_this_program_owns(event);
-    let mut written: Vec<String> = Vec::new();
-    let mut where_ours_go: Option<usize> = None;
-    let mut inside_the_event = false;
-    let mut depth_below_the_event = 0_usize;
-    let mut numbered = 0_u64;
-    let mut ours_are_in = false;
+    let lines = unfolded(held);
 
-    for line in unfolded(held) {
-        // A block inside the event belongs to something else: an alarm has a
-        // start and a description of its own, and rewriting those makes the
-        // alert fire at the wrong time saying the wrong thing.
-        if inside_the_event && depth_below_the_event > 0 {
-            if opens_with_ignoring_case(&line, "BEGIN:") {
-                depth_below_the_event += 1;
-            } else if opens_with_ignoring_case(&line, "END:") {
-                depth_below_the_event -= 1;
-            }
-            written.push(line);
-            continue;
-        }
+    // The first event in the document and no other. A repeating event with an
+    // occurrence somebody moved is one resource holding the series and one
+    // event per changed occurrence, all under the same identity, and the reader
+    // takes the first of them, so the writer answers the same way. Writing into
+    // every one of them wrote this program's properties into the series twice
+    // and left the moved occurrence as a bare RECURRENCE-ID with no title and
+    // no time of its own.
+    let events = events_in(&lines);
+    let its = events.first()?;
 
-        if inside_the_event {
-            if opens_with_ignoring_case(&line, "BEGIN:") {
-                depth_below_the_event += 1;
-                written.push(line);
-                continue;
-            }
-            if opens_with_ignoring_case(&line, "END:VEVENT") {
-                let at = where_ours_go.unwrap_or(written.len());
-                written.splice(at..at, said_again(&ours, numbered));
-                // Written here rather than where the event opens. An event that
-                // opens and never closes never reaches this line, and a
-                // document sent back from there carries none of the change
-                // either.
-                ours_are_in = true;
-                inside_the_event = false;
-                written.push(line);
-                continue;
-            }
-            if let Some(name) = property_name(&line) {
-                if name.eq_ignore_ascii_case("SEQUENCE") {
-                    numbered = value_of(&line).and_then(|n| n.parse().ok()).unwrap_or(0);
-                }
-                if PROPERTIES_A_CHANGE_REPLACES
-                    .iter()
-                    .any(|owned| owned.eq_ignore_ascii_case(name))
-                {
-                    where_ours_go.get_or_insert(written.len());
-                    continue;
-                }
-            }
-            written.push(line);
-            continue;
-        }
+    // An event the document opens and never closes. Nothing is guessed at, and
+    // handing the document back unchanged would be the silent loss above by
+    // another route.
+    let closes_on = its.closed_on?;
 
-        // The first event in the document and no other. A repeating event with
-        // an occurrence somebody moved is one resource holding the series and
-        // one event per changed occurrence, all under the same identity, and
-        // the reader takes the first of them, so the writer answers the same
-        // way. Writing into every one of them wrote this program's properties
-        // into the series twice, because where the first copy went was never
-        // forgotten, and left the moved occurrence as a bare RECURRENCE-ID with
-        // no title and no time of its own.
-        if !ours_are_in && opens_with_ignoring_case(&line, "BEGIN:VEVENT") {
-            inside_the_event = true;
-        }
-        written.push(line);
-    }
-
-    if !ours_are_in {
+    // The document has to be the one this event lives in. A server answering a
+    // GET with the wrong resource, a stale href or an aliased one all hand back
+    // somebody else's appointment, and without this it was written into, PUT
+    // with If-Match, and counted a success: a third party's meeting overwritten
+    // and neither of them told.
+    if !holds_the_event(&lines, its, &event.uid) {
         return None;
     }
+
+    let ours = the_properties_this_program_owns(event);
+    let numbered = lines_at(&lines, &its.its_own)
+        .into_iter()
+        .filter_map(|line| value_named_on(line, "SEQUENCE"))
+        .filter_map(|written| written.parse::<u64>().ok())
+        .next_back()
+        .unwrap_or(0);
+
+    let mut written: Vec<String> = Vec::new();
+    let mut where_ours_go: Option<usize> = None;
+    let mut its_own = its.its_own.iter().copied().peekable();
+
+    for (at, line) in lines.iter().enumerate() {
+        if at == closes_on {
+            let goes = where_ours_go.unwrap_or(written.len());
+            written.splice(goes..goes, said_again(&ours, numbered));
+        }
+        // Only the event's own property lines are replaced. Everything else is
+        // copied through exactly as it arrived, which is what leaves an alarm
+        // its own trigger and description and the timezone rules theirs.
+        if its_own.next_if_eq(&at).is_some() && a_change_replaces(line) {
+            where_ours_go.get_or_insert(written.len());
+            continue;
+        }
+        written.push(line.clone());
+    }
+
     let mut document = written_out(&written);
     document.push_str("\r\n");
     Some(document)
+}
+
+/// Whether the document the server handed back is the one holding this event.
+///
+/// Matched character for character, the same way the reader takes the
+/// identifier: it is the name the server calls the event by rather than words
+/// somebody typed.
+fn holds_the_event(lines: &[String], its: &EventLines, uid: &str) -> bool {
+    lines_at(lines, &its.its_own)
+        .into_iter()
+        .find_map(|line| value_named_on(line, "UID"))
+        .is_some_and(|held| held == uid)
+}
+
+/// Whether a line carries one of the properties a change replaces.
+fn a_change_replaces(line: &str) -> bool {
+    property_name(line).is_some_and(|name| {
+        PROPERTIES_A_CHANGE_REPLACES
+            .iter()
+            .any(|owned| owned.eq_ignore_ascii_case(name))
+    })
 }
 
 /// This program's properties, plus the two that say which copy is newer.
@@ -1407,7 +1525,7 @@ fn fits_in(text: &str, octets: usize) -> usize {
 /// one line with no identifier on it and the event is gone. [`laid_out_by_hand`]
 /// is the one shape where the difference can be told, and there the layout is
 /// taken off instead and nothing is joined.
-fn unfolded(document: &str) -> Vec<String> {
+pub(crate) fn unfolded(document: &str) -> Vec<String> {
     let separate: Vec<&str> = document
         .split("\r\n")
         .flat_map(|line| line.split('\n'))
@@ -1488,7 +1606,7 @@ fn indented(line: &str) -> bool {
 /// Whether a line begins or ends a component, whatever is in front of it.
 fn opens_or_closes_a_component(line: &str) -> bool {
     let named = line.trim_start();
-    opens_with_ignoring_case(named, "BEGIN:") || opens_with_ignoring_case(named, "END:")
+    component_opened(named).is_some() || component_closed(named).is_some()
 }
 
 /// The name of the property a line carries, if it carries one.
@@ -1498,11 +1616,6 @@ fn opens_or_closes_a_component(line: &str) -> bool {
 fn property_name(line: &str) -> Option<&str> {
     let end = line.find([';', ':'])?;
     (end > 0).then(|| &line[..end])
-}
-
-/// The value a property line carries.
-fn value_of(line: &str) -> Option<&str> {
-    line.find(':').map(|at| line[at + 1..].trim())
 }
 
 /// Text somebody typed, written so a document reads it as one value.
@@ -1516,6 +1629,14 @@ fn value_of(line: &str) -> Option<&str> {
 ///
 /// The backslash goes first. Escaped last, the slash written for a comma would
 /// itself be escaped and every save would grow another one.
+///
+/// The colon is deliberately not one of the four. RFC 5545 section 3.3.11 names
+/// exactly those, and a colon inside a value is ordinary text: `\:` would show
+/// as a backslash in every other calendar program that read the document. A
+/// note reading "Say END:VEVENT when you are done" once destroyed the event's
+/// repeat rule, and it looked like this function's fault, but the cause was the
+/// reader and the writer deciding separately where the event ended. That is
+/// fixed at [`events_in`], which is the only place either of them asks.
 fn as_one_value(text: &str) -> String {
     let mut written = String::with_capacity(text.len());
     // One pair of characters is one line break. Left as two, a note typed on a
@@ -2038,6 +2159,49 @@ mod tests {
     }
 
     #[test]
+    fn test_a_note_naming_the_end_of_an_event_survives_a_new_event_going_out_and_coming_back() {
+        // The colon is deliberately not escaped. RFC 5545 section 3.3.11 names
+        // the four characters a text value escapes, backslash, semicolon,
+        // comma and line break, and a colon is not one of them: it is ordinary
+        // text inside a value and writing `\:` would put a backslash in front
+        // of it in every other calendar program that reads the document.
+        //
+        // What made the colon look dangerous was the boundary being decided in
+        // two places, and that is where it was fixed. This pins the decision:
+        // a note that names the marker ending an event goes out whole, comes
+        // back whole, and takes nothing with it.
+        let typed = "Say END:VEVENT when you are done";
+        let event = CalDavEvent {
+            description: Some(typed.to_string()),
+            recurrence_rule: Some("FREQ=WEEKLY;COUNT=10".to_string()),
+            exception_dates: Some("20260312T090000Z".to_string()),
+            ..an_event_to_send()
+        };
+
+        let written = build_ical_vevent(&event);
+
+        assert!(
+            written.contains("DESCRIPTION:Say END:VEVENT when you are done"),
+            "the colon somebody typed was written as something else:\n{written}"
+        );
+        let read_back = parse_ical_vevent(&written, "", None).expect("the document to read");
+        assert_eq!(
+            read_back.description.as_deref(),
+            Some(typed),
+            "the note did not come back as it was typed"
+        );
+        assert_eq!(
+            read_back.recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;COUNT=10")
+        );
+        assert_eq!(
+            read_back.exception_dates.as_deref(),
+            Some("20260312T090000Z")
+        );
+        assert_eq!(read_back.uid, event.uid, "the event lost its identity");
+    }
+
+    #[test]
     fn test_a_zone_name_in_quote_marks_is_read_without_them() {
         // The standard lets a parameter value be quoted and some servers quote
         // every one. Kept, the quote marks are part of the name, which matches
@@ -2126,57 +2290,163 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_nothing_that_reads_or_writes_a_calendar_document_matches_a_name_by_case() {
-        // Third time in this family. A reader was made to fold case, then the
-        // markers dividing the document were, and each time something next to
-        // it was left matching capitals only. The last one cost somebody an
-        // edit: the readers took a document in small letters, the writer found
-        // no event in it, and the change was dropped and marked as sent.
-        //
-        // So the rule is checked rather than remembered. Every name in a
-        // calendar document means the same however it is written, and the two
-        // files that read and write one answer that way throughout.
-        for path in ["src/service/caldav.rs", "src/service/ical_subscription.rs"] {
-            let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
-            // Only what ships. The tests below write documents in one case and
-            // read them back in another, which is the point of them.
-            //
-            // The test modules are the ones at the left margin. Cutting at the
-            // first `#[cfg(test)]` anywhere cut this at an indented one inside
-            // `sign_in`, so the check read a tenth of the file and passed
-            // against a defect that was sitting in it.
-            let production: String = source
-                .lines()
-                .take_while(|line| *line != "#[cfg(test)]")
-                .collect::<Vec<_>>()
-                .join("\n");
-            assert!(
-                production.contains("found_ignoring_case"),
-                "{path}: this check is reading the wrong part of the file, so it would \
-                 pass whatever the file said"
-            );
+    /// Every file here reads or writes a calendar document or a contact card.
+    ///
+    /// The list is the point of the check. Twice the rule was applied to the
+    /// file somebody was looking at and the file next to it kept matching
+    /// capitals, so the reader and the writer disagreed and the disagreement
+    /// cost somebody their work.
+    const FILES_THAT_READ_OR_WRITE_A_DOCUMENT: [&str; 7] = [
+        "src/service/caldav.rs",
+        "src/service/ical_subscription.rs",
+        "src/application/caldav_sync.rs",
+        "src/application/calendar.rs",
+        "src/application/occurrences.rs",
+        "src/data/message_cache/calendar.rs",
+        "src/data/message_cache/contacts.rs",
+    ];
 
-            for name in ["BEGIN", "END", "UID", "TZID", "VERSION", "PRODID"]
-                .iter()
-                .chain(PROPERTIES_A_CHANGE_REPLACES.iter())
-            {
-                for matching in [
-                    format!(".find(\"{name}"),
-                    format!(".contains(\"{name}"),
-                    format!(".starts_with(\"{name}"),
-                    format!(".strip_prefix(\"{name}"),
-                    format!("== \"{name}\""),
-                    format!("!= \"{name}\""),
-                ] {
-                    assert!(
-                        !production.contains(matching.as_str()),
-                        "{path} holds `{matching}`, which reads {name} only when a server \
-                         writes it in capitals. Use eq_ignore_ascii_case, found_ignoring_case \
-                         or opens_with_ignoring_case."
-                    );
+    /// Every name in one of those documents that means the same however it is
+    /// written.
+    ///
+    /// The calendar standard says so of component and property names, and the
+    /// card standard says so of its own.
+    const NAMES_THAT_MEAN_THE_SAME_IN_ANY_CASE: [&str; 22] = [
+        "BEGIN",
+        "END",
+        "UID",
+        "TZID",
+        "VERSION",
+        "PRODID",
+        "VEVENT",
+        "VCALENDAR",
+        "VALARM",
+        "RECURRENCE-ID",
+        "VCARD",
+        "NICKNAME",
+        "EMAIL",
+        "TEL",
+        "ORG",
+        "TITLE",
+        "URL",
+        "ADR",
+        "BDAY",
+        "NOTE",
+        "PHOTO",
+        "FN",
+    ];
+
+    /// What a file ships: everything outside the test modules at its margin.
+    ///
+    /// The tests write documents in one case and read them back in another,
+    /// which is the point of them, so they are left out.
+    ///
+    /// Whole modules are taken out rather than everything after the first one.
+    /// Cutting at the first `#[cfg(test)]` leaves any code that sits between
+    /// two test modules unread, and cutting at the first one *anywhere* once
+    /// cut at an indented one inside `sign_in`, so the check read a tenth of
+    /// the file and passed against a defect sitting in it.
+    fn what_ships(source: &str) -> String {
+        let mut ships: Vec<&str> = Vec::new();
+        let mut inside_a_test_module = false;
+        for line in source.lines() {
+            if inside_a_test_module {
+                // A module at the margin closes with a brace at the margin.
+                inside_a_test_module = line != "}";
+                continue;
+            }
+            match line == "#[cfg(test)]" {
+                true => inside_a_test_module = true,
+                false => ships.push(line),
+            }
+        }
+        ships.join("\n")
+    }
+
+    /// Every place text matches one of those names only when it is written in
+    /// capitals.
+    fn names_matched_by_case(text: &str) -> Vec<String> {
+        let mut found = Vec::new();
+        for name in NAMES_THAT_MEAN_THE_SAME_IN_ANY_CASE
+            .iter()
+            .chain(PROPERTIES_A_CHANGE_REPLACES.iter())
+        {
+            for matching in [
+                format!(".find(\"{name}"),
+                format!(".rfind(\"{name}"),
+                format!(".contains(\"{name}"),
+                format!(".starts_with(\"{name}"),
+                format!(".ends_with(\"{name}"),
+                format!(".strip_prefix(\"{name}"),
+                format!(".strip_suffix(\"{name}"),
+                format!(".split(\"{name}"),
+                format!(".split_once(\"{name}"),
+                format!(".trim_start_matches(\"{name}"),
+                format!("== \"{name}\""),
+                format!("!= \"{name}\""),
+            ] {
+                if text.contains(matching.as_str()) {
+                    found.push(matching);
                 }
             }
+        }
+        found
+    }
+
+    #[test]
+    fn test_nothing_that_reads_or_writes_a_calendar_document_matches_a_name_by_case() {
+        // Fourth time in this family. A reader was made to fold case, then the
+        // markers dividing the document were, and each time something next to
+        // it was left matching capitals only. One cost somebody an edit: the
+        // readers took a document in small letters, the writer found no event
+        // in it, and the change was dropped and marked as sent. Another left
+        // the card importer splitting on `BEGIN:VCARD` in capitals while the
+        // exporter beside it wrote the same marker.
+        //
+        // So the rule is checked rather than remembered, across every file that
+        // reads or writes one of these documents.
+
+        // The check has to be able to see a match before it is trusted to say
+        // there are none.
+        assert!(
+            !names_matched_by_case("    if line.starts_with(\"BEGIN:VEVENT\") {}").is_empty(),
+            "the scan cannot see a match by case, so it would pass whatever the files said"
+        );
+
+        // And it has to be handed the whole of what ships. Whole test modules
+        // come out and nothing else does, so code sitting between two of them
+        // is still read. The version before this cut at the first `#[cfg(test)]`
+        // and everything after it went unread.
+        assert_eq!(
+            what_ships(
+                "fn first() {}\n#[cfg(test)]\nmod tests {\n    fn hidden() {}\n}\nfn second() {}"
+            ),
+            "fn first() {}\nfn second() {}",
+            "the cut is not taking out test modules and leaving the rest"
+        );
+
+        for path in FILES_THAT_READ_OR_WRITE_A_DOCUMENT {
+            let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let ships = what_ships(&source);
+
+            // And it has to be reading the file, not a corner of it. Every one
+            // of these keeps its tests at the bottom, so what ships is a good
+            // part of the whole.
+            assert!(
+                ships.lines().count() * 5 >= source.lines().count(),
+                "{path}: the scan is reading {} of {} lines, so it would pass whatever the \
+                 rest of the file said",
+                ships.lines().count(),
+                source.lines().count()
+            );
+
+            let by_case = names_matched_by_case(&ships);
+            assert!(
+                by_case.is_empty(),
+                "{path} holds {by_case:?}, which read a name only when it arrives in \
+                 capitals. Use eq_ignore_ascii_case, or one of the helpers in \
+                 service::caldav that fold case for a marker or a property name."
+            );
         }
     }
 
@@ -2850,7 +3120,7 @@ mod tests {
             let _ = parse_ical_vevent(&data, "https://example.com/c/1.ics", None);
             let _ = extract_ical_property(&data, "SUMMARY");
             let _ = ical_parameter(&data, "DTSTART", TIME_ZONE_PARAMETER);
-            let _ = vevent_block(&data);
+            let _ = events_in(&unfolded(&data));
             let _ = normalize_ical_datetime(&data);
         }
     }
@@ -3026,6 +3296,42 @@ pub(crate) mod writing_tests {
     /// Whether a document has a line starting with the given property name.
     fn holds_a_line_starting(document: &str, opening: &str) -> bool {
         document.lines().any(|line| line.starts_with(opening))
+    }
+
+    #[test]
+    fn test_every_property_a_change_writes_is_one_a_change_takes_out_first() {
+        // The other pair in this file that answers one question twice. One list
+        // says what this program writes and another says what it removes from
+        // the document the server holds, and a name on the first that is
+        // missing from the second leaves the server's old line sitting beside
+        // the new one. Two DTSTARTs is an appointment on two days, and which
+        // one a calendar program shows is up to the calendar program.
+        let everything = CalDavEvent {
+            description: Some("A note".to_string()),
+            location: Some("Room 12".to_string()),
+            dtend: Some("2026-03-05T13:00:00Z".to_string()),
+            recurrence_rule: Some("FREQ=WEEKLY".to_string()),
+            exception_dates: Some("20260312T090000Z".to_string()),
+            time_zone: Some("Europe/London".to_string()),
+            ..an_event("every-field")
+        };
+
+        let written = said_again(&the_properties_this_program_owns(&everything), 3);
+
+        assert!(
+            written.len() >= 8,
+            "the event was not filled in enough to be worth checking: {written:?}"
+        );
+        for line in &written {
+            let name = property_name(line).expect("a property line to carry a name");
+            assert!(
+                PROPERTIES_A_CHANGE_REPLACES
+                    .iter()
+                    .any(|replaced| replaced.eq_ignore_ascii_case(name)),
+                "a change writes {name} but never takes the server's own {name} out \
+                 first, so the document goes back carrying both"
+            );
+        }
     }
 
     #[test]
@@ -3447,6 +3753,80 @@ pub(crate) mod writing_tests {
         assert!(
             changed.contains("END:VEVENT\r\nEND:VCALENDAR"),
             "the event and the calendar close on the same line:\n{changed}"
+        );
+    }
+
+    #[test]
+    fn test_a_note_saying_end_colon_vevent_does_not_cut_the_event_short_for_the_reader() {
+        // Somebody typed "Say END:VEVENT when you are done" into the notes box.
+        // The reader looked for that marker anywhere in the document, found it
+        // in the middle of the note, and stopped reading there. Everything
+        // written after the note was outside the event as far as the reader was
+        // concerned: no repeat rule, no cancelled day, and no note either.
+        let held = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:note-1\r\n\
+                    SUMMARY:Standing meeting\r\nDTSTART:20260305T090000Z\r\n\
+                    DESCRIPTION:Say END:VEVENT when you are done\r\n\
+                    RRULE:FREQ=WEEKLY;COUNT=10\r\nEXDATE:20260312T090000Z\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let read = parse_ical_vevent(held, "https://example.test/note-1.ics", None)
+            .expect("an event to read");
+
+        assert_eq!(
+            read.recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;COUNT=10"),
+            "the repeat rule was read as sitting outside the event"
+        );
+        assert_eq!(
+            read.exception_dates.as_deref(),
+            Some("20260312T090000Z"),
+            "the cancelled day was read as sitting outside the event"
+        );
+        assert_eq!(
+            read.description.as_deref(),
+            Some("Say END:VEVENT when you are done"),
+            "the note somebody typed was not read back"
+        );
+    }
+
+    #[test]
+    fn test_a_note_saying_end_colon_vevent_does_not_cost_the_repeat_rule_on_the_next_change() {
+        // The whole round trip the reader's early stop pays for. The reader
+        // hands back an event with no repeat rule and no cancelled day, a title
+        // edit is made against it, and the writer replaces both properties with
+        // the nothing the reader found. What goes to the server has no RRULE,
+        // no EXDATE and no DESCRIPTION, the server takes it, and the series is
+        // gone for good with nothing retrying.
+        let held = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:note-2\r\n\
+                    SUMMARY:Old title\r\nDTSTART:20260305T090000Z\r\n\
+                    DESCRIPTION:Say END:VEVENT when you are done\r\n\
+                    RRULE:FREQ=WEEKLY;COUNT=10\r\nEXDATE:20260312T090000Z\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+        let read = parse_ical_vevent(held, "https://example.test/note-2.ics", None)
+            .expect("an event to read");
+        let renamed = CalDavEvent {
+            summary: "New title".to_string(),
+            ..read
+        };
+
+        let changed =
+            ical_with_the_event_changed(held, &renamed).expect("the event to be found and changed");
+
+        assert!(
+            changed.contains("RRULE:FREQ=WEEKLY;COUNT=10"),
+            "the repeat rule is gone from what would go to the server:\n{changed}"
+        );
+        assert!(
+            changed.contains("EXDATE:20260312T090000Z"),
+            "the cancelled day is gone from what would go to the server:\n{changed}"
+        );
+        assert!(
+            changed.contains("Say END:VEVENT when you are done"),
+            "the note somebody typed is gone from what would go to the server:\n{changed}"
+        );
+        assert!(
+            changed.contains("SUMMARY:New title"),
+            "the change never reached the document:\n{changed}"
         );
     }
 
