@@ -786,7 +786,28 @@ pub(crate) fn found_ignoring_case(document: &str, marker: &str) -> Option<usize>
         .position(|window| window.eq_ignore_ascii_case(marker))
 }
 
+/// Whether a line opens with a marker, whatever case it is written in.
+///
+/// The same rule as [`found_ignoring_case`] applied where the marker has to be
+/// at the start of a line rather than anywhere in a document, which is what the
+/// writer needs: a `DESCRIPTION` mentioning `END:VEVENT` must not end the event.
+///
+/// The marker is a literal written in this file and is all ASCII, so comparing
+/// bytes cannot cut a longer character in half.
+fn opens_with_ignoring_case(line: &str, marker: &str) -> bool {
+    line.as_bytes()
+        .get(..marker.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(marker.as_bytes()))
+}
+
 /// Extract a simple XML element value like <tag>value</tag>.
+///
+/// This one matches case exactly, and it is the only reader here that does.
+/// XML element names are case-sensitive by definition, so `<D:HREF>` is a
+/// different element from `<d:href>` rather than the same one spelled another
+/// way, and folding case here would make up a rule the format does not have.
+/// The namespace prefix is a separate question and is answered at
+/// [`names_a_calendar_collection`].
 fn extract_xml_value(xml: &str, tag: &str) -> Option<String> {
     let open = format!("<{}", tag);
     let close = format!("</{}>", tag);
@@ -871,34 +892,75 @@ fn ical_utc_stamp(at: chrono::DateTime<chrono::Utc>) -> String {
 /// The parameter naming the zone a date and time is written in.
 const TIME_ZONE_PARAMETER: &str = "TZID";
 
+/// Whether a written date and time says it is already in UTC.
+///
+/// The letter that says so means the same in either case, the same as every
+/// name around it. One answer for it, in one place, because it is asked on the
+/// way in and twice on the way out: read as a capital only, a start stored from
+/// a server writing in small letters lost the letter on the way back out and a
+/// nine o'clock UTC meeting was sent as nine o'clock in no zone at all, and a
+/// cancelled day was given a zone on top of the UTC it already declared.
+fn says_utc(written: &str) -> bool {
+    written.ends_with(['Z', 'z'])
+}
+
 /// Read one parameter off a property line, as in `DTSTART;TZID=Europe/London:`.
 ///
 /// The parameters sit between the property name and the first colon, separated
 /// by semicolons, so only that stretch of the line is searched and the value
 /// itself is never mistaken for a parameter.
+///
+/// Both names are matched whatever case they are written in, the same as every
+/// other reader here. Matched as capitals only, a document written in small
+/// letters parsed and came back with no zone on it, so a nine o'clock London
+/// meeting was read in whatever zone the machine is in. That is also a write
+/// defect: [`the_properties_this_program_owns`] writes `;TZID=` only when it has
+/// a zone, so the next change took the zone off the server's copy as well.
+///
+/// A quoted value is handed back without its quote marks. See [`unquoted`].
 fn ical_parameter(ical: &str, property: &str, parameter: &str) -> Option<String> {
-    let wanted = format!("{parameter}=");
     for line in ical.lines() {
         let line = line.trim();
-        let Some(rest) = line.strip_prefix(property) else {
+        let Some((name, rest)) = line.split_at_checked(property.len()) else {
             continue;
         };
-        if !rest.starts_with(';') {
+        if !name.eq_ignore_ascii_case(property) || !rest.starts_with(';') {
             continue;
         }
         let Some(colon) = rest.find(':') else {
             continue;
         };
         for part in rest[1..colon].split(';') {
-            if let Some(value) = part.strip_prefix(&wanted) {
-                let value = value.trim();
-                if !value.is_empty() {
-                    return Some(value.to_string());
-                }
+            let Some((named, value)) = part.split_once('=') else {
+                continue;
+            };
+            if !named.trim().eq_ignore_ascii_case(parameter) {
+                continue;
+            }
+            let value = unquoted(value.trim());
+            if !value.is_empty() {
+                return Some(value.to_string());
             }
         }
     }
     None
+}
+
+/// A parameter value with the quote marks the standard allows taken off.
+///
+/// The standard lets any parameter value be quoted and requires it of one
+/// holding a colon, a semicolon or a comma; some servers quote every one.
+/// Kept, the quote marks are part of the value, so a zone name matched nothing
+/// in the timezone database and the meeting was read in the machine's own zone.
+/// They were then written back into the document on the next change.
+///
+/// A value quoted at one end only is left as it is. It is not a value this can
+/// repair, and guessing which end is missing would invent a name.
+fn unquoted(value: &str) -> &str {
+    value
+        .strip_prefix('"')
+        .and_then(|inner| inner.strip_suffix('"'))
+        .unwrap_or(value)
 }
 
 /// Normalize an iCalendar datetime to RFC 3339 format.
@@ -919,9 +981,13 @@ fn normalize_ical_datetime(dt: &str) -> String {
         return format!("{}-{}-{}", &dt[0..4], &dt[4..6], &dt[6..8]);
     }
 
-    // YYYYMMDDTHHmmSS, optionally with a trailing Z
-    if bytes.len() >= 15 && bytes[8] == b'T' && all_digits(&bytes[..8]) {
-        let has_z = bytes[bytes.len() - 1] == b'Z';
+    // YYYYMMDDTHHmmSS, optionally with a trailing Z. Both letters count in
+    // either case, the same as every name around them: a document written in
+    // small letters throughout was handed straight back, so the calendar held
+    // "20260305t090000z" where it expected a date and the appointment showed on
+    // no day at all.
+    if bytes.len() >= 15 && bytes[8].eq_ignore_ascii_case(&b'T') && all_digits(&bytes[..8]) {
+        let has_z = says_utc(dt);
         let time = if has_z {
             &bytes[9..bytes.len() - 1]
         } else {
@@ -991,12 +1057,17 @@ fn the_properties_this_program_owns(event: &CalDavEvent) -> Vec<String> {
     // off a whole-day date, which has no time to be in a zone, and off a time
     // that already says it is UTC, where naming a zone as well says two
     // different things about one instant.
+    //
+    // The start has been through denormalize_ical_datetime by the time it is
+    // asked, and that writes the letter as a capital, so no test can tell
+    // says_utc from a match on the capital here. It is asked the same way as
+    // the other two so there is one answer to one question, not two.
     let (start, zone) = if event.is_all_day {
         (event.dtstart.replace('-', ""), ";VALUE=DATE".to_string())
     } else {
         let start = denormalize_ical_datetime(&event.dtstart);
         let zone = match &event.time_zone {
-            Some(named) if !start.ends_with('Z') => format!(";TZID={named}"),
+            Some(named) if !says_utc(&start) => format!(";TZID={named}"),
             _ => String::new(),
         };
         (start, zone)
@@ -1019,7 +1090,7 @@ fn the_properties_this_program_owns(event: &CalDavEvent) -> Vec<String> {
         lines.push(format!("RRULE:{}", without_the_property_name(rule)));
     }
     if let Some(called_off) = worth_sending(event.exception_dates.as_deref()) {
-        let zone = if called_off.ends_with('Z') && !event.is_all_day {
+        let zone = if says_utc(called_off) && !event.is_all_day {
             String::new()
         } else {
             zone
@@ -1058,7 +1129,7 @@ fn denormalize_ical_datetime(dt: &str) -> String {
     while clock.len() < 6 {
         clock.push('0');
     }
-    let utc = if trimmed.ends_with('Z') { "Z" } else { "" };
+    let utc = if says_utc(trimmed) { "Z" } else { "" };
     format!("{date}T{clock}{utc}")
 }
 
@@ -1095,6 +1166,15 @@ const PROPERTIES_A_CHANGE_REPLACES: [&str; 10] = [
 /// own start and its own description, and the timezone rules keep theirs. The
 /// identity is never rewritten.
 ///
+/// Every marker and every property name here is matched whatever case it is
+/// written in, the same as the readers. It has to be the same as the readers or
+/// the mismatch loses somebody's work: once the readers folded case and this did
+/// not, an event from a server writing in small letters could be read and
+/// edited, and then no event was found to change. Every line was copied through,
+/// the server was sent its own old words back, the sync reported success, and
+/// the local row stopped being pending so nothing retried. The edit was gone and
+/// nobody was told.
+///
 /// The guarantee is real and it is weaker than the one Google gives, and it is
 /// worth saying which: Google merges on its side, so only the named fields can
 /// ever move. Here the merge happens on this side against what the server held
@@ -1113,9 +1193,9 @@ pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> String {
         // start and a description of its own, and rewriting those makes the
         // alert fire at the wrong time saying the wrong thing.
         if inside_the_event && depth_below_the_event > 0 {
-            if line.starts_with("BEGIN:") {
+            if opens_with_ignoring_case(&line, "BEGIN:") {
                 depth_below_the_event += 1;
-            } else if line.starts_with("END:") {
+            } else if opens_with_ignoring_case(&line, "END:") {
                 depth_below_the_event -= 1;
             }
             written.push(line);
@@ -1123,12 +1203,12 @@ pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> String {
         }
 
         if inside_the_event {
-            if line.starts_with("BEGIN:") {
+            if opens_with_ignoring_case(&line, "BEGIN:") {
                 depth_below_the_event += 1;
                 written.push(line);
                 continue;
             }
-            if line.starts_with("END:VEVENT") {
+            if opens_with_ignoring_case(&line, "END:VEVENT") {
                 let at = where_ours_go.unwrap_or(written.len());
                 written.splice(at..at, said_again(&ours, numbered));
                 inside_the_event = false;
@@ -1136,10 +1216,13 @@ pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> String {
                 continue;
             }
             if let Some(name) = property_name(&line) {
-                if name == "SEQUENCE" {
+                if name.eq_ignore_ascii_case("SEQUENCE") {
                     numbered = value_of(&line).and_then(|n| n.parse().ok()).unwrap_or(0);
                 }
-                if PROPERTIES_A_CHANGE_REPLACES.contains(&name) {
+                if PROPERTIES_A_CHANGE_REPLACES
+                    .iter()
+                    .any(|owned| owned.eq_ignore_ascii_case(name))
+                {
                     where_ours_go.get_or_insert(written.len());
                     continue;
                 }
@@ -1148,7 +1231,7 @@ pub fn ical_with_the_event_changed(held: &str, event: &CalDavEvent) -> String {
             continue;
         }
 
-        if line.starts_with("BEGIN:VEVENT") {
+        if opens_with_ignoring_case(&line, "BEGIN:VEVENT") {
             inside_the_event = true;
         }
         written.push(line);
@@ -1573,6 +1656,171 @@ mod tests {
         assert_eq!(event.dtstart, "2026-03-05T09:00:00Z");
         assert_eq!(event.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
         assert_eq!(event.summary, "Standup");
+    }
+
+    #[test]
+    fn test_a_zone_named_in_small_letters_is_still_the_zone_the_meeting_is_in() {
+        // A parameter name means the same however it is written, the same as
+        // the property it sits on. Read only in capitals, the zone came back as
+        // nothing and a nine o'clock London meeting was shown at nine o'clock
+        // wherever the machine keeps its clock. It is a write defect as well:
+        // the change path only writes a zone when it has one, so the next save
+        // took the zone off the server's copy too.
+        let ical = "begin:vcalendar\r\nbegin:vevent\r\nuid:zone-1\r\nsummary:Standup\r\n\
+                    dtstart;tzid=Europe/London:20260305T090000\r\n\
+                    end:vevent\r\nend:vcalendar\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(event.time_zone.as_deref(), Some("Europe/London"));
+        assert!(
+            build_ical_vevent(&event).contains("DTSTART;TZID=Europe/London:20260305T090000"),
+            "the zone was dropped on the way back out:\n{}",
+            build_ical_vevent(&event)
+        );
+    }
+
+    #[test]
+    fn test_a_zone_name_in_quote_marks_is_read_without_them() {
+        // The standard lets a parameter value be quoted and some servers quote
+        // every one. Kept, the quote marks are part of the name, which matches
+        // nothing in the timezone database, so the meeting is read in the
+        // machine's own zone. Then they are written back into the document.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:zone-2\r\nSUMMARY:Standup\r\n\
+                    DTSTART;TZID=\"America/Argentina/Buenos_Aires\":20260305T090000\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(
+            event.time_zone.as_deref(),
+            Some("America/Argentina/Buenos_Aires")
+        );
+    }
+
+    #[test]
+    fn test_a_start_written_with_a_small_t_and_a_small_z_is_still_a_date_and_a_time() {
+        // The two letters that shape a calendar timestamp mean the same in
+        // either case, the same as every name around them. Matched as capitals
+        // only, a document in small letters throughout had its start handed on
+        // unchanged, so the calendar held "20260305t090000z" where it expected
+        // a date: the appointment showed on no day at all.
+        let ical = "begin:vcalendar\r\nbegin:vevent\r\nuid:small-1\r\nsummary:Standup\r\n\
+                    dtstart:20260305t090000z\r\nend:vevent\r\nend:vcalendar\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(event.dtstart, "2026-03-05T09:00:00Z");
+    }
+
+    #[test]
+    fn test_a_time_stored_with_a_small_z_still_goes_back_out_saying_it_is_utc() {
+        // Rows written before the reader above folded case hold the start as
+        // the server wrote it, small letters and all. Read only as a capital,
+        // the letter that says "this is UTC" was dropped on the way out and a
+        // nine o'clock UTC meeting was sent as nine o'clock in no zone at all,
+        // which is nine o'clock wherever the reader happens to be.
+        let stored = CalDavEvent {
+            dtstart: "20260305t090000z".to_string(),
+            dtend: None,
+            exception_dates: Some("20260312t090000z".to_string()),
+            recurrence_rule: Some("FREQ=WEEKLY".to_string()),
+            time_zone: Some("Europe/London".to_string()),
+            ..an_event_to_send()
+        };
+
+        let ical = build_ical_vevent(&stored);
+
+        assert!(ical.contains("DTSTART:20260305T090000Z"), "{ical}");
+        assert!(
+            !ical.contains("DTSTART;TZID="),
+            "a time that says it is UTC was given a zone as well:\n{ical}"
+        );
+        assert!(
+            ical.contains("EXDATE:20260312t090000z"),
+            "a cancelled day that says it is UTC was given a zone as well:\n{ical}"
+        );
+    }
+
+    #[test]
+    fn test_a_cancelled_day_in_utc_gets_no_zone_even_when_the_meeting_it_belongs_to_has_one() {
+        // A series named in London with a cancelled day written in UTC, small
+        // letters and all. The start needs the zone and the cancelled day must
+        // not have it: a day carrying both says two different things about one
+        // instant, and the meeting somebody cancelled stays on the calendar.
+        let stored = CalDavEvent {
+            dtstart: "2026-03-05T09:00:00".to_string(),
+            dtend: None,
+            recurrence_rule: Some("FREQ=WEEKLY".to_string()),
+            exception_dates: Some("20260312t080000z".to_string()),
+            time_zone: Some("Europe/London".to_string()),
+            ..an_event_to_send()
+        };
+
+        let ical = build_ical_vevent(&stored);
+
+        assert!(
+            ical.contains("DTSTART;TZID=Europe/London:20260305T090000"),
+            "{ical}"
+        );
+        assert!(
+            ical.contains("EXDATE:20260312t080000z"),
+            "a cancelled day that says it is UTC was given a zone as well:\n{ical}"
+        );
+    }
+
+    #[test]
+    fn test_nothing_that_reads_or_writes_a_calendar_document_matches_a_name_by_case() {
+        // Third time in this family. A reader was made to fold case, then the
+        // markers dividing the document were, and each time something next to
+        // it was left matching capitals only. The last one cost somebody an
+        // edit: the readers took a document in small letters, the writer found
+        // no event in it, and the change was dropped and marked as sent.
+        //
+        // So the rule is checked rather than remembered. Every name in a
+        // calendar document means the same however it is written, and the two
+        // files that read and write one answer that way throughout.
+        for path in ["src/service/caldav.rs", "src/service/ical_subscription.rs"] {
+            let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            // Only what ships. The tests below write documents in one case and
+            // read them back in another, which is the point of them.
+            //
+            // The test modules are the ones at the left margin. Cutting at the
+            // first `#[cfg(test)]` anywhere cut this at an indented one inside
+            // `sign_in`, so the check read a tenth of the file and passed
+            // against a defect that was sitting in it.
+            let production: String = source
+                .lines()
+                .take_while(|line| *line != "#[cfg(test)]")
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(
+                production.contains("found_ignoring_case"),
+                "{path}: this check is reading the wrong part of the file, so it would \
+                 pass whatever the file said"
+            );
+
+            for name in ["BEGIN", "END", "UID", "TZID", "VERSION", "PRODID"]
+                .iter()
+                .chain(PROPERTIES_A_CHANGE_REPLACES.iter())
+            {
+                for matching in [
+                    format!(".find(\"{name}"),
+                    format!(".contains(\"{name}"),
+                    format!(".starts_with(\"{name}"),
+                    format!(".strip_prefix(\"{name}"),
+                    format!("== \"{name}\""),
+                    format!("!= \"{name}\""),
+                ] {
+                    assert!(
+                        !production.contains(matching.as_str()),
+                        "{path} holds `{matching}`, which reads {name} only when a server \
+                         writes it in capitals. Use eq_ignore_ascii_case, found_ignoring_case \
+                         or opens_with_ignoring_case."
+                    );
+                }
+            }
+        }
     }
 
     // ── Lines a server broke in two ─────────────────────────────────────
@@ -2334,6 +2582,143 @@ pub(crate) mod writing_tests {
         assert!(
             changed.contains("RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU"),
             "{changed}"
+        );
+    }
+
+    // ── A document written in small letters ─────────────────────────────
+    //
+    // The readers fold case and the writer did not, which is the worst of the
+    // two: an event from such a server could be read and edited, and the
+    // writer then found no event to change. Every line was copied through, the
+    // server was sent its own old words back, the sync reported success and
+    // the pending flag was cleared, so nothing ever retried. The edit was gone
+    // and nobody was told.
+
+    /// The same document the server holds, with every name in small letters.
+    ///
+    /// Only the names. The title, the note, the guests and the block names keep
+    /// the case they were written in, so `end:VEVENT` is here as well as the
+    /// wholly small-letters `end:vevent` the test above uses, and neither is
+    /// allowed to be the only shape that works.
+    fn the_same_document_in_small_letters(uid: &str) -> String {
+        a_document_the_server_holds(uid)
+            .lines()
+            .map(|line| match property_name(line) {
+                Some(name) => format!("{}{}", name.to_ascii_lowercase(), &line[name.len()..]),
+                None => line.to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join("\r\n")
+    }
+
+    #[test]
+    fn test_a_change_to_an_event_written_in_small_letters_reaches_the_document() {
+        // The one the brief names. Read and edited, then written back with the
+        // old title still on it and marked as sent.
+        let held = "begin:vcalendar\r\nbegin:vevent\r\nuid:p9\r\nsummary:Old title\r\n\
+                    dtstart:20260305T090000Z\r\nend:vevent\r\nend:vcalendar\r\n";
+        let read = parse_ical_vevent(held, "https://example.test/p9.ics", None).expect("an event");
+        let renamed = CalDavEvent {
+            summary: "New title".to_string(),
+            ..read
+        };
+
+        let changed = ical_with_the_event_changed(held, &renamed);
+
+        assert!(
+            changed.contains("SUMMARY:New title"),
+            "the change never reached the document:\n{changed}"
+        );
+        assert!(
+            !changed.contains("summary:Old title"),
+            "the server would be sent its own old title back:\n{changed}"
+        );
+    }
+
+    #[test]
+    fn test_a_change_to_an_event_in_small_letters_keeps_everything_it_does_not_own() {
+        // The same guarantee as for a document in capitals, and it has to hold
+        // in both or folding case in the writer trades one loss for another:
+        // an alarm whose opening marker is in small letters is no longer a
+        // nested block, so the event's own start and title get written over
+        // the alarm's.
+        let held = the_same_document_in_small_letters("e-1");
+
+        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"));
+
+        for kept in [
+            "attendee;CN=Sam;PARTSTAT=ACCEPTED:mailto:sam@example.com",
+            "attendee;CN=Kit;PARTSTAT=NEEDS-ACTION:mailto:kit@example.com",
+            "organizer;CN=Ada:mailto:ada@example.com",
+            "categories:Work,Important",
+            "transp:OPAQUE",
+            "x-apple-travel-duration;VALUE=DURATION:PT30M",
+            "begin:VALARM",
+            "trigger:-PT15M",
+            "end:VALARM",
+            "begin:VTIMEZONE",
+            "rrule:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU",
+        ] {
+            assert!(changed.contains(kept), "{kept} was lost:\n{changed}");
+        }
+        assert!(
+            changed.contains("SUMMARY:Quarterly review\\, moved"),
+            "the change never reached the document:\n{changed}"
+        );
+        assert!(
+            !changed.contains("summary:Quarterly review\r\n"),
+            "the old title is still in the document:\n{changed}"
+        );
+        assert!(
+            !changed.contains("dtstart;TZID=Europe/London:20260305T090000"),
+            "the old start is still in the document:\n{changed}"
+        );
+        assert_eq!(
+            changed.matches("uid:e-1").count(),
+            1,
+            "the identity was rewritten or repeated:\n{changed}"
+        );
+
+        let alarm = changed
+            .split_once("begin:VALARM")
+            .map(|(_, after)| after)
+            .unwrap_or_else(|| panic!("the alarm is gone:\n{changed}"));
+        assert!(
+            alarm.contains("dtstart:20260305T084500Z"),
+            "the alarm was moved to the event's own time:\n{changed}"
+        );
+        assert!(
+            alarm.contains("description:Reminder"),
+            "the alarm lost its own words:\n{changed}"
+        );
+        assert!(
+            !alarm.contains("SUMMARY:"),
+            "the event's own properties were written into the alarm:\n{changed}"
+        );
+    }
+
+    #[test]
+    fn test_a_sequence_number_in_small_letters_is_counted_on_and_not_left_beside_the_new_one() {
+        // Read only in capitals, the number the server holds is not seen, so
+        // the change goes out as the first one ever made and the old line
+        // stays: two sequence numbers in one event, and another calendar
+        // program picking the higher one believes the copy this replaced.
+        let held = the_same_document_in_small_letters("e-1");
+
+        let changed = ical_with_the_event_changed(&held, &as_it_was_changed_here("e-1"));
+
+        assert!(changed.contains("SEQUENCE:4"), "{changed}");
+        assert!(
+            !changed.contains("sequence:3"),
+            "the number the server held is still in the document:\n{changed}"
+        );
+        assert_eq!(
+            changed
+                .lines()
+                .filter(|line| line.to_ascii_uppercase().starts_with("DTSTAMP:"))
+                .count(),
+            1,
+            "two stamps say two different things about when this was written:\n{changed}"
         );
     }
 

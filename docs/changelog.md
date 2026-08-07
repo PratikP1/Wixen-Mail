@@ -375,6 +375,59 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   this may never have reached anybody. Nothing was lost for good: the server
   keeps the document and every sync reads the whole of it afresh.
 
+- **A change to an event written in small letters now reaches the calendar
+  server.** Making such an event readable, above, also made it editable, and the
+  half of this program that writes a change back still looked for the lines
+  opening and closing an event in capitals only. So it found no event to change.
+  It copied every line through untouched and sent the server its own old words
+  back, the server accepted them, the sync reported success, and the change
+  stopped waiting to be sent, so nothing ever tried again.
+
+  What that looked like: you edited an appointment, it looked saved, and the
+  next time the calendar was read it said what it said before. Nothing told you.
+  It is the worst shape a bug can take here, because the words you typed were
+  gone and only you knew they had ever existed.
+
+  Both halves now read a name the same way whatever case it is written in. This
+  was only ever true between two commits of the same unreleased round of work,
+  so no build that has gone to anybody could do it, and no calendar anybody
+  keeps has lost anything to it.
+
+  Two smaller things went with it. An event whose stored version number was
+  written in small letters had that number left in the document beside the new
+  one, so another calendar program picking the higher of the two could believe
+  the copy your change replaced. And an alarm inside such an event was no longer
+  recognised as a block of its own, which would have moved the alert to the
+  appointment's time and made it read out the appointment's title.
+
+- **The timezone on a meeting is read whether the server writes it in capitals
+  or not, and quote marks around it are no longer part of it.** The zone a time
+  is named in arrives as `DTSTART;TZID=Europe/London:...`, and that was matched
+  in capitals only. A calendar written in small letters throughout was read
+  right down to the appointment and then came back with no zone on it, so a nine
+  o'clock London meeting showed at nine o'clock in whatever zone this computer
+  is set to.
+
+  It did not stop at reading. This program writes a zone only when it has one,
+  so the next change you saved took the zone off the server's copy as well, and
+  every other program reading that calendar then had the meeting at the wrong
+  time too.
+
+  The standard also lets a server put quote marks round the zone name, and some
+  do. Kept, the quote marks are part of the name, which matches no zone in the
+  world, so the meeting was again read in this computer's own zone and the quote
+  marks were written back into the document on the next save.
+
+- **A start time written with small letters is a time again.** The two letters
+  that shape a calendar timestamp, the `T` between the date and the clock and
+  the `Z` that says the time is in UTC, mean the same in either case. Matched as
+  capitals only, `20260305t090000z` was handed on to the calendar exactly as it
+  arrived, so the appointment had nothing the calendar could read as a day and
+  showed on no day at all. A time stored that way by an earlier build also lost
+  the `Z` on its way back out to the server, which turns a nine o'clock UTC
+  meeting into nine o'clock in no zone at all, and that is nine o'clock wherever
+  the reader happens to be.
+
 - **An event repeating on a weekday no month has is now shown once, and says
   so.** A monthly repeat can name which weekday of the month it falls on, such
   as the second Thursday. No month has a sixth Monday, but a rule could still
