@@ -1920,9 +1920,12 @@ live account or a live calendar server:
   without it.
 
   Superseded in an unreleased change, and only half of it. A postal address now
-  goes out to both, and one held at Outlook now comes back, under Home and Work.
-  One held at Google is still not read: it arrives in the reply and nothing
-  stores it, so a postal address typed in Gmail does not appear here.
+  goes out to both, and Outlook's two come back with a contact this computer
+  reads for the first time, under Home and Work. Only that first time: the list
+  stored here holds the addresses from every address book at once, so no sync
+  writes it whole, and an address changed at Outlook afterwards does not come
+  down. One held at Google is still not read at all: it arrives in the reply and
+  nothing stores it, so a postal address typed in Gmail does not appear here.
 
 - **One word for a finished task, and only the words that tell you something.**
   Pressing Space on a task said "done", pressing it again said "Completed", and
