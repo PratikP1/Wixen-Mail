@@ -3213,6 +3213,37 @@ mod tests {
     }
 
     #[test]
+    fn test_a_zone_name_that_names_nothing_does_not_get_to_decide() {
+        // An empty name is not a name, and neither is a space. Read as one, it
+        // takes the offset off a moved clock face and leaves nothing in its
+        // place: the writers then fall back to the hour on this computer, which
+        // is the whole defect again by another door. Both writers already
+        // answer an empty name this way and this now agrees with them.
+        for naming_nothing in ["", "   "] {
+            let mut stored =
+                as_a_provider_sent_it("2026-07-27T09:00:00+05:30", "2026-07-27T09:15:00+05:30");
+            stored.time_zone = Some(naming_nothing.to_string());
+            let mut moved = only_the_summary_retyped(&stored, "Standup");
+            moved.start_time = "10:30".to_string();
+            moved.end_time = "11:00".to_string();
+
+            let edited = event_with_edits(stored, &moved);
+
+            assert_eq!(
+                edited.start_datetime, "2026-07-27T10:30:00+05:30",
+                "for a zone stored as {naming_nothing:?}"
+            );
+            assert_eq!(
+                the_instant_google_is_told(&edited),
+                chrono::DateTime::parse_from_rfc3339("2026-07-27T10:30:00+05:30")
+                    .expect("a moment")
+                    .with_timezone(&chrono::Utc),
+                "for a zone stored as {naming_nothing:?}"
+            );
+        }
+    }
+
+    #[test]
     fn test_putting_a_time_on_a_whole_day_event_does_not_borrow_midnights_zone() {
         // The whole-day columns hold midnight in universal time, which is not a
         // zone anybody chose for this event. A time typed into a box that was

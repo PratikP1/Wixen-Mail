@@ -953,6 +953,21 @@ red = [
     "presentation::managers::tests::test_moving_an_event_that_names_a_zone_across_summer_time_keeps_the_clock_face",
 ]
 
+[[guard]]
+name = "an empty zone name on an edited event names nothing"
+file = "src/presentation/managers.rs"
+before = """    let marker = match named_zone.map(str::trim) {
+        Some(named) if !named.is_empty() => "",
+        _ => zone_marker(shown),
+    };"""
+after = """    let marker = match named_zone {
+        Some(_) => "",
+        None => zone_marker(shown),
+    };"""
+red = [
+    "presentation::managers::tests::test_a_zone_name_that_names_nothing_does_not_get_to_decide",
+]
+
 # The same question asked of the two writers rather than of the editor. A clock
 # face with no zone stored beside it is one this program's own editor wrote, so
 # it means an hour on this computer. Google's converter read it that way and
