@@ -452,17 +452,18 @@ name = "a change no setting let out is kept, not replaced"
 file = "src/application/contacts_sync.rs"
 before = """    if answer == WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere
         && the_copy_here_was_written_here(the_copy_here)
-        && a_setting_stopped_this_sync_sending(&the_copy_here.id, result)
+        && (a_setting_stopped_this_sync_sending(&the_copy_here.id, result)
+            || still_built_on_an_old_copy.holds(&the_copy_here.id))
     {
         return WhoseCopyWins::KeepWhatIsHere;
     }
     answer"""
-after = """    let _ = (the_copy_here, result);
+after = """    let _ = (the_copy_here, result, still_built_on_an_old_copy);
     answer"""
 red = [
     "application::contacts_sync::tests::test_a_change_a_setting_held_back_survives_the_read_in_the_same_sync",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
-    "application::contacts_sync::tests::test_a_kept_change_the_address_book_then_refuses_is_replaced_and_said",
+    "application::contacts_sync::tests::test_a_change_that_cannot_be_sent_again_is_kept_rather_than_replaced_by_the_read",
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
 ]
 
@@ -470,8 +471,8 @@ red = [
 name = "only work somebody typed here is kept against an address book"
 file = "src/application/contacts_sync.rs"
 before = """        && the_copy_here_was_written_here(the_copy_here)
-        && a_setting_stopped_this_sync_sending(&the_copy_here.id, result)"""
-after = """        && a_setting_stopped_this_sync_sending(&the_copy_here.id, result)"""
+        && (a_setting_stopped_this_sync_sending(&the_copy_here.id, result)"""
+after = """        && (a_setting_stopped_this_sync_sending(&the_copy_here.id, result)"""
 red = [
     "application::contacts_sync::tests::test_an_address_books_own_copy_does_not_freeze_the_contact_against_the_other_one",
 ]
@@ -495,7 +496,7 @@ after = """    result.waiting_on_how_far_a_change_goes.holds(contact_id)"""
 red = [
     "application::contacts_sync::tests::test_a_change_a_setting_held_back_survives_the_read_in_the_same_sync",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
-    "application::contacts_sync::tests::test_a_kept_change_the_address_book_then_refuses_is_replaced_and_said",
+    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said",
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
 ]
 

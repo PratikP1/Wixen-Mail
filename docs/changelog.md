@@ -288,14 +288,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   That is the ordinary case on a real account rather than a rare one: a phone or
   a webmail tab moves the other copy between one sync and the next.
 
-  What happened before, with the settings this ships with. The first sync said
-  "1 change is waiting here: turn on Allow Changes in Settings to send it".
-  Turning it on and syncing again sent the change carrying the marker from
-  before, both address books turned it down, and the read that followed in the
-  same sync wrote their copy over your edit. That sync read out "0 created, 1
-  updated, 0 deleted, 1 of your change replaced by the address book, 2 errors".
-  Nothing was sent, and the instruction had been about work the same sync then
-  destroyed.
+  What happened before. A new installation already allows changes to contacts,
+  so the sync sent the change carrying the marker from before, the address book
+  turned it down, and the read that followed in the same sync wrote its copy
+  over your edit. Nothing was sent and the edit was gone.
+
+  Where somebody had turned Allow Changes off and then on again, the same fault
+  read worse. The first sync said "1 change is waiting here: turn on Allow
+  Changes in Settings to send it". Turning it on and syncing again lost the
+  edit to both address books at once: "0 created, 1 updated, 0 deleted, 1 of
+  your change replaced by the address book, 2 errors". The instruction had been
+  about work the sync that followed it destroyed.
 
   A change turned down for that reason is not a change that failed. Wixen Mail
   now asks the address book what it holds for that one contact, puts the change

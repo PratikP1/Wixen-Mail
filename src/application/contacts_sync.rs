@@ -8457,9 +8457,10 @@ mod tests {
         );
         // What it carries, and not only that it went. Keeping the edit keeps
         // the marker the edit was made against, so what goes out is the marker
-        // from before Google moved its own copy. This address book answers from
-        // a script and takes it; a real one weighs the marker and can refuse,
-        // which is the next test.
+        // from before Google moved its own copy. This address book takes a
+        // change carrying anything at all; one that weighs the marker turns it
+        // down, and what happens then is pinned in
+        // `test_a_change_google_had_moved_past_is_sent_again_rather_than_lost`.
         assert_eq!(
             sent[0].1.etag, THE_GOOGLE_MARKER_LAST_SEEN,
             "the change went out carrying a marker Google never gave for the copy \
