@@ -150,6 +150,34 @@ pub fn to_editor(stored: &StoredContact) -> EditorContact {
     }
 }
 
+/// Whether the row the contact manager returned is a change to what is stored.
+///
+/// Asked by putting the stored contact through `to_editor` again and comparing
+/// that with the row that came back. The manager is handed exactly that value,
+/// keeps it untouched for every row nobody opened, and replaces only the row
+/// somebody edited, so the two are equal for an untouched row and differ for an
+/// edited one.
+///
+/// The other way of answering it was to have the manager say which row it
+/// touched. That was not taken because touching a row and changing it are
+/// different things: opening the editor on a contact and pressing OK without
+/// typing would report a change, and a change here costs a push of that contact
+/// to Google and to Outlook.
+///
+/// # What happens to a field the editor cannot represent
+///
+/// The saved photo, the card the contact was imported from, the address books
+/// that know it, the date it was added and the date it was last taken from an
+/// address book are all stored and none of them is in the editor. So the editor
+/// cannot have changed any of them, and this comparison cannot see them. That
+/// is the whole reason a row this returns `false` for is left exactly as it is
+/// rather than written back: nothing is written for it at all, so there is
+/// nothing to lose. For the row that did change, [`to_stored`] takes each of
+/// them from the record being replaced.
+pub fn holds_a_change(returned: &EditorContact, replacing: &StoredContact) -> bool {
+    to_editor(replacing) != *returned
+}
+
 /// What a contact's source is called when it came from no address book.
 const MADE_HERE: &str = "local";
 
@@ -231,7 +259,12 @@ pub fn to_stored(
         address: addresses.first().map(AddressEntry::on_one_line),
         birthday: blank_to_none(&editor.birthday),
         avatar_url: blank_to_none(&editor.avatar_url),
-        avatar_data_base64: None,
+        // The saved photo, kept from the record being replaced. There is no
+        // photo control in the editor, so an edit cannot have changed it, and
+        // writing it flat as nothing threw away the picture of anybody whose
+        // phone number somebody corrected. The sync answers it the same way:
+        // a saved photo exists only here, so it falls through.
+        avatar_data_base64: replacing.and_then(|existing| existing.avatar_data_base64.clone()),
         // Which address book the contact came from, kept from the record being
         // replaced. Written flat as "local" on every edit, this relabelled a
         // Gmail contact as one made here the first time somebody corrected a
@@ -240,8 +273,15 @@ pub fn to_stored(
         source_provider: replacing
             .and_then(|existing| existing.source_provider.clone())
             .or_else(|| Some(MADE_HERE.to_string())),
+        // Emptied on purpose, and the one field here that is. `contacts_sync`
+        // reads an empty one as "this copy was written on this computer", which
+        // is what tells somebody's edit from a copy taken from an address book,
+        // and an edit arriving through this function is exactly that.
         last_synced_at: None,
-        vcard_raw: None,
+        // The card the contact was imported from, kept for the same reason as
+        // the photo: the editor has no card in it, so an edit cannot have
+        // changed it, and it is the only record of what actually arrived.
+        vcard_raw: replacing.and_then(|existing| existing.vcard_raw.clone()),
         notes: blank_to_none(&editor.notes),
         favorite: editor.favorite,
         created_at: replacing
@@ -641,5 +681,107 @@ mod tests {
         assert_eq!(stored.email, "");
         assert_eq!(stored.phone, None);
         assert!(to_editor(&stored).emails.is_empty());
+    }
+
+    /// A contact with the things only this computer holds: the photo that was
+    /// downloaded and the card it was imported from.
+    fn a_contact_with_a_photo_and_a_card() -> StoredContact {
+        let mut stored = a_contact_being_edited();
+        stored.avatar_data_base64 = Some("iVBORw0KGgo=".to_string());
+        stored.vcard_raw = Some("BEGIN:VCARD\r\nFN:Grace Hopper\r\nEND:VCARD\r\n".to_string());
+        stored
+    }
+
+    #[test]
+    fn test_editing_a_contact_keeps_the_photo_and_the_card_it_arrived_on() {
+        // Neither is in the editor, so an edit cannot have changed either.
+        // Written flat as nothing, correcting a phone number threw away the
+        // picture of the person whose number it was.
+        let before = a_contact_with_a_photo_and_a_card();
+        let mut editing = to_editor(&before);
+        editing.name = "Grace Brewster Hopper".to_string();
+
+        let after = to_stored(&editing, "acct", Some(&before));
+
+        assert_eq!(after.avatar_data_base64, before.avatar_data_base64);
+        assert_eq!(after.vcard_raw, before.vcard_raw);
+    }
+
+    #[test]
+    fn test_a_contact_typed_here_has_no_photo_and_no_card_to_keep() {
+        let typed = to_stored(&editor_contact(), "acct", None);
+
+        assert_eq!(typed.avatar_data_base64, None);
+        assert_eq!(typed.vcard_raw, None);
+    }
+
+    #[test]
+    fn test_an_edit_made_here_is_not_a_copy_taken_from_an_address_book() {
+        // `contacts_sync` reads an empty `last_synced_at` as "written on this
+        // computer", which is what tells somebody's edit from a copy that came
+        // down from an address book. Carrying the old date over would make an
+        // edit that lost a tie go unreported.
+        let before = a_contact_with_a_photo_and_a_card();
+
+        let after = to_stored(&to_editor(&before), "acct", Some(&before));
+
+        assert_eq!(after.last_synced_at, None);
+    }
+
+    #[test]
+    fn test_a_row_the_manager_handed_back_untouched_is_not_a_change() {
+        // What the manager holds for every row nobody opened is exactly what
+        // it was given. Reading that as a change is what queued the whole
+        // address book to be pushed after one edit.
+        let stored = a_contact_with_a_photo_and_a_card();
+
+        assert!(!holds_a_change(&to_editor(&stored), &stored));
+    }
+
+    #[test]
+    fn test_a_contact_stored_before_the_name_parts_existed_is_not_a_change() {
+        // The editor shows a guess at where such a name divides, so the row
+        // that comes back carries two parts the stored contact does not have.
+        // Read as a change, every one of these would be written back and sent.
+        let mut stored = a_contact_with_a_photo_and_a_card();
+        stored.given_name = None;
+        stored.family_name = None;
+
+        assert!(!holds_a_change(&to_editor(&stored), &stored));
+    }
+
+    #[test]
+    fn test_a_corrected_name_is_a_change() {
+        let stored = a_contact_with_a_photo_and_a_card();
+        let mut edited = to_editor(&stored);
+        edited.name = "Grace Brewster Murray Hopper".to_string();
+
+        assert!(holds_a_change(&edited, &stored));
+    }
+
+    #[test]
+    fn test_a_phone_number_added_in_the_editor_is_a_change() {
+        // A list rather than a box. A comparison that only reached the boxes
+        // would drop every added number, address and custom field on the
+        // floor, which is an edit somebody made and never got.
+        let stored = a_contact_with_a_photo_and_a_card();
+        let mut edited = to_editor(&stored);
+        edited.phones.push(PhoneItem {
+            label: "Home".to_string(),
+            number: "555 0199".to_string(),
+        });
+
+        assert!(holds_a_change(&edited, &stored));
+    }
+
+    #[test]
+    fn test_a_favourite_turned_off_in_the_editor_is_a_change() {
+        // A tick box, which is the field most easily left out of a comparison
+        // written by hand.
+        let stored = a_contact_with_a_photo_and_a_card();
+        let mut edited = to_editor(&stored);
+        edited.favorite = !edited.favorite;
+
+        assert!(holds_a_change(&edited, &stored));
     }
 }

@@ -200,21 +200,21 @@ fn make_shell(
 // ══════════════════════════════════════════════════════════════════════════════
 
 /// Phone number with type label
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PhoneItem {
     pub label: String,
     pub number: String,
 }
 
 /// Email address with type label
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct EmailItem {
     pub label: String,
     pub address: String,
 }
 
 /// Structured physical address with type label
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AddressItem {
     pub label: String,
     pub street: String,
@@ -225,13 +225,17 @@ pub struct AddressItem {
 }
 
 /// User-defined custom field
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CustomFieldItem {
     pub label: String,
     pub value: String,
 }
 
-#[derive(Debug, Clone)]
+/// Compared whole, because that comparison is what decides whether a contact
+/// is written back. Every field the editor can show is in here, so two of these
+/// being equal is the whole of "nobody changed this row", and a field added to
+/// the editor later joins the comparison without anybody remembering to.
+#[derive(Debug, Clone, PartialEq)]
 pub struct ContactEntry {
     pub id: String,
     // ── Name & Identity ─────────────────────────────────────────────────

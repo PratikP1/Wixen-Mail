@@ -790,39 +790,60 @@ pub fn manage_contacts(
         wx_managers::ContactManagerAction::SyncRequested => return true,
         wx_managers::ContactManagerAction::None => return false,
         wx_managers::ContactManagerAction::Updated(updated) => {
-            let changes = collection_sync::changes_between(
-                &stored,
-                updated,
-                |c| c.id.clone(),
-                |c| c.id.clone(),
-            );
-            let mut failures = Vec::new();
-            for id in &changes.removed {
-                if let Err(e) = cache.delete_contact(id) {
-                    failures.push(format!("delete {}: {}", id, e));
-                }
-            }
-            for row in &changes.written {
-                let mut edited = row.clone();
-                if edited.id.trim().is_empty() {
-                    edited.id = new_id("contact");
-                }
-                // The record being replaced carries what the editor does not:
-                // the date the contact was added, and the address books that
-                // know it. Every row comes back through here on an edit, not
-                // just the changed one, so losing it would cut the whole
-                // account off from its address books.
-                let replacing = stored.iter().find(|c| c.id == edited.id);
-                let contact = contact_convert::to_stored(&edited, &account, replacing);
-                if let Err(e) = cache.save_contact(&contact) {
-                    failures.push(format!("{}: {}", contact.name, e));
-                }
-            }
+            let failures =
+                save_what_the_contact_manager_returned(&cache, &account, &stored, updated);
             report(tx, rt, "contacts", failures);
             reload_contacts(&cache, &account, tx);
         }
     }
     false
+}
+
+/// Write back what the contact manager returned, and name anything that would
+/// not save.
+///
+/// Apart from the windows, this is the whole of saving a contact edit, so it is
+/// where the rule about which rows get written can be tested against a real
+/// store rather than described in a comment.
+fn save_what_the_contact_manager_returned(
+    cache: &MessageCache,
+    account: &str,
+    stored: &[crate::data::message_cache::ContactEntry],
+    updated: Vec<wx_managers::ContactEntry>,
+) -> Vec<String> {
+    let changes =
+        collection_sync::changes_between(stored, updated, |c| c.id.clone(), |c| c.id.clone());
+    let mut failures = Vec::new();
+    for id in &changes.removed {
+        if let Err(e) = cache.delete_contact(id) {
+            failures.push(format!("delete {}: {}", id, e));
+        }
+    }
+    for row in &changes.written {
+        let mut edited = row.clone();
+        if edited.id.trim().is_empty() {
+            edited.id = new_id("contact");
+        }
+        // The record being replaced carries what the editor does not: the
+        // saved photo, the card the contact was imported from, the date it
+        // was added, and the address books that know it.
+        let replacing = stored.iter().find(|c| c.id == edited.id);
+        // Every row comes back on any edit, not only the one somebody
+        // changed, so writing them all marked the whole address book as
+        // waiting to be sent. One corrected phone number queued every Google
+        // and Outlook contact for a push, and took the photo and the imported
+        // card of each of them with it. A row nobody changed is left exactly
+        // as it is instead, which is nothing written at all rather than a
+        // rebuilt row that happens to match.
+        if replacing.is_some_and(|existing| !contact_convert::holds_a_change(&edited, existing)) {
+            continue;
+        }
+        let contact = contact_convert::to_stored(&edited, account, replacing);
+        if let Err(e) = cache.save_contact(&contact) {
+            failures.push(format!("{}: {}", contact.name, e));
+        }
+    }
+    failures
 }
 
 /// Push the stored contacts back into the panel.
@@ -3177,5 +3198,298 @@ mod group_wiring {
 
         assert!(found.contains(&"Book club".to_string()), "{found:?}");
         assert!(found.contains(&"Team A".to_string()), "{found:?}");
+    }
+}
+
+#[cfg(test)]
+mod saving_the_contact_manager {
+    use super::*;
+    use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::{AddressBook, ContactEntry, ProviderIdentity};
+
+    const ACCOUNT: &str = "acct-1";
+
+    /// A cache in a folder of its own, so tests do not share a database.
+    fn a_cache(what_for: &str) -> TempHome<MessageCache> {
+        TempHome::named(what_for, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache to open")
+        })
+    }
+
+    /// A contact as an address book left it: a photo, the card it arrived on,
+    /// the date it was last taken from the address book, and nothing waiting to
+    /// be sent anywhere.
+    fn as_an_address_book_left_it(id: &str, name: &str) -> ContactEntry {
+        ContactEntry {
+            id: id.to_string(),
+            account_id: ACCOUNT.to_string(),
+            name: name.to_string(),
+            // None on purpose: a contact stored before the two name columns
+            // existed, so the editor shows a guess at where the name divides.
+            // The guess must not be read back as an edit somebody made.
+            given_name: None,
+            family_name: None,
+            email: format!("{id}@example.com"),
+            phone: None,
+            company: None,
+            job_title: None,
+            website: None,
+            address: None,
+            birthday: None,
+            avatar_url: None,
+            avatar_data_base64: Some(format!("photo-of-{id}")),
+            source_provider: Some("gmail".to_string()),
+            last_synced_at: Some("2026-01-01T00:00:00Z".to_string()),
+            vcard_raw: Some(format!("BEGIN:VCARD\r\nFN:{name}\r\nEND:VCARD\r\n")),
+            notes: None,
+            favorite: false,
+            created_at: "2020-01-01T00:00:00Z".to_string(),
+            nickname: None,
+            department: None,
+            relationship: None,
+            emails_json: None,
+            phones_json: None,
+            addresses_json: None,
+            custom_fields_json: None,
+            pending: false,
+            known_to: vec![ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: format!("people/{id}"),
+                provider_version: None,
+                change_is_waiting: false,
+            }],
+        }
+    }
+
+    /// An account holding three contacts, all of them synced and settled.
+    fn three_settled_contacts(cache: &MessageCache) -> Vec<ContactEntry> {
+        let stored = vec![
+            as_an_address_book_left_it("c1", "Grace Hopper"),
+            as_an_address_book_left_it("c2", "Ada Lovelace"),
+            as_an_address_book_left_it("c3", "Katherine Johnson"),
+        ];
+        for contact in &stored {
+            cache.save_contact(contact).expect("a contact to save");
+        }
+        stored
+    }
+
+    /// What the manager hands back after one row was edited: every row it was
+    /// given, with one of them changed.
+    fn one_row_edited(
+        stored: &[ContactEntry],
+        id: &str,
+        edit: impl Fn(&mut wx_managers::ContactEntry),
+    ) -> Vec<wx_managers::ContactEntry> {
+        let mut rows: Vec<wx_managers::ContactEntry> =
+            stored.iter().map(contact_convert::to_editor).collect();
+        let row = rows
+            .iter_mut()
+            .find(|row| row.id == id)
+            .expect("the row being edited");
+        edit(row);
+        rows
+    }
+
+    fn read_back(cache: &MessageCache) -> Vec<ContactEntry> {
+        cache
+            .get_contacts_for_account(ACCOUNT)
+            .expect("contacts to be readable")
+    }
+
+    fn the_one(contacts: &[ContactEntry], id: &str) -> ContactEntry {
+        contacts
+            .iter()
+            .find(|c| c.id == id)
+            .expect("the contact")
+            .clone()
+    }
+
+    #[test]
+    fn test_editing_one_contact_leaves_every_other_contact_settled() {
+        // The manager hands back the whole list on any edit, so every row went
+        // through the one path that says a change is waiting. One corrected
+        // phone number queued the whole address book to be pushed back to
+        // Google and Outlook.
+        let cache = a_cache("contacts_one_edit_one_pending");
+        let stored = three_settled_contacts(&cache);
+        let returned = one_row_edited(&stored, "c2", |row| {
+            row.name = "Ada King".to_string();
+        });
+
+        let failures = save_what_the_contact_manager_returned(&cache, ACCOUNT, &stored, returned);
+        assert!(failures.is_empty(), "{failures:?}");
+
+        let after = read_back(&cache);
+        let waiting: Vec<&str> = after
+            .iter()
+            .filter(|c| c.pending)
+            .map(|c| c.id.as_str())
+            .collect();
+        assert_eq!(
+            waiting,
+            ["c2"],
+            "one edit queued {} of {} contacts to be sent",
+            waiting.len(),
+            after.len()
+        );
+
+        let owed: Vec<&str> = after
+            .iter()
+            .filter(|c| c.known_to.iter().any(|book| book.change_is_waiting))
+            .map(|c| c.id.as_str())
+            .collect();
+        assert_eq!(
+            owed,
+            ["c2"],
+            "one edit left {} of {} contacts owed to an address book",
+            owed.len(),
+            after.len()
+        );
+    }
+
+    #[test]
+    fn test_editing_one_contact_does_not_drop_the_photo_and_card_of_the_others() {
+        // Worse than an unwanted push: the rebuilt row carries no photo and no
+        // imported card, and the write replaces every column, so one edit
+        // erased both for every other contact in the account.
+        let cache = a_cache("contacts_one_edit_others_keep_photos");
+        let stored = three_settled_contacts(&cache);
+        let returned = one_row_edited(&stored, "c2", |row| {
+            row.name = "Ada King".to_string();
+        });
+
+        save_what_the_contact_manager_returned(&cache, ACCOUNT, &stored, returned);
+
+        let after = read_back(&cache);
+        for id in ["c1", "c3"] {
+            let contact = the_one(&after, id);
+            assert_eq!(
+                contact.avatar_data_base64.as_deref(),
+                Some(format!("photo-of-{id}").as_str()),
+                "{id} lost its photo when another contact was edited"
+            );
+            assert!(
+                contact.vcard_raw.is_some(),
+                "{id} lost its imported card when another contact was edited"
+            );
+            assert_eq!(
+                contact.last_synced_at.as_deref(),
+                Some("2026-01-01T00:00:00Z"),
+                "{id} was made to look like a contact typed here"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_contact_nobody_touched_comes_back_exactly_as_it_was() {
+        // Compared whole rather than field by field, so a field added later is
+        // covered without anybody remembering to add it here.
+        let cache = a_cache("contacts_untouched_row_unchanged");
+        let stored = three_settled_contacts(&cache);
+        let returned = one_row_edited(&stored, "c2", |row| {
+            row.name = "Ada King".to_string();
+        });
+
+        save_what_the_contact_manager_returned(&cache, ACCOUNT, &stored, returned);
+
+        let after = read_back(&cache);
+        assert_eq!(the_one(&after, "c1"), stored[0]);
+        assert_eq!(the_one(&after, "c3"), stored[2]);
+    }
+
+    #[test]
+    fn test_the_contact_that_was_edited_keeps_its_own_photo_and_card() {
+        let cache = a_cache("contacts_edited_row_keeps_photo");
+        let stored = three_settled_contacts(&cache);
+        let returned = one_row_edited(&stored, "c2", |row| {
+            row.name = "Ada King".to_string();
+        });
+
+        save_what_the_contact_manager_returned(&cache, ACCOUNT, &stored, returned);
+
+        let edited = the_one(&read_back(&cache), "c2");
+        assert_eq!(edited.name, "Ada King");
+        assert_eq!(
+            edited.avatar_data_base64.as_deref(),
+            Some("photo-of-c2"),
+            "correcting a name threw away the contact's photo"
+        );
+        assert!(
+            edited.vcard_raw.is_some(),
+            "correcting a name threw away the card the contact was imported from"
+        );
+    }
+
+    #[test]
+    fn test_the_contact_that_was_edited_is_still_owed_to_every_address_book() {
+        // The half that has to keep working. An edit nothing queues is an edit
+        // that never leaves this computer.
+        let cache = a_cache("contacts_edited_row_still_queued");
+        let mut stored = three_settled_contacts(&cache);
+        stored[1].known_to.push(ProviderIdentity {
+            address_book: AddressBook::Microsoft,
+            provider_contact_id: "AAMkAGI2".to_string(),
+            provider_version: None,
+            change_is_waiting: false,
+        });
+        cache.save_contact(&stored[1]).expect("a contact to save");
+        let returned = one_row_edited(&stored, "c2", |row| {
+            row.name = "Ada King".to_string();
+        });
+
+        save_what_the_contact_manager_returned(&cache, ACCOUNT, &stored, returned);
+
+        let edited = the_one(&read_back(&cache), "c2");
+        assert!(edited.pending, "the edit has somewhere to go");
+        assert_eq!(edited.known_to.len(), 2);
+        assert!(
+            edited.known_to.iter().all(|book| book.change_is_waiting),
+            "one edit, every address book that has the contact"
+        );
+        assert_eq!(
+            edited.last_synced_at, None,
+            "an edit made here is not a copy taken from an address book"
+        );
+    }
+
+    #[test]
+    fn test_a_contact_added_in_the_manager_is_saved() {
+        // The row with no identifier yet. Leaving untouched rows alone must not
+        // leave out the one that was never there.
+        let cache = a_cache("contacts_added_row_saved");
+        let stored = three_settled_contacts(&cache);
+        let mut returned: Vec<wx_managers::ContactEntry> =
+            stored.iter().map(contact_convert::to_editor).collect();
+        let mut fresh =
+            contact_convert::to_editor(&as_an_address_book_left_it("x", "Mary Jackson"));
+        fresh.id = String::new();
+        returned.push(fresh);
+
+        save_what_the_contact_manager_returned(&cache, ACCOUNT, &stored, returned);
+
+        let after = read_back(&cache);
+        assert_eq!(after.len(), 4);
+        assert!(
+            after.iter().any(|c| c.name == "Mary Jackson"),
+            "a contact somebody added was dropped"
+        );
+    }
+
+    #[test]
+    fn test_a_contact_removed_in_the_manager_is_deleted() {
+        let cache = a_cache("contacts_removed_row_deleted");
+        let stored = three_settled_contacts(&cache);
+        let returned: Vec<wx_managers::ContactEntry> = stored
+            .iter()
+            .filter(|c| c.id != "c3")
+            .map(contact_convert::to_editor)
+            .collect();
+
+        save_what_the_contact_manager_returned(&cache, ACCOUNT, &stored, returned);
+
+        let after = read_back(&cache);
+        assert_eq!(after.len(), 2);
+        assert!(after.iter().all(|c| c.id != "c3"));
     }
 }

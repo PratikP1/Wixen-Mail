@@ -255,6 +255,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Editing one contact no longer rewrites every contact in the account.** The
+  contact manager hands back its whole list whenever anything in it changes, and
+  every row in that list was written back as though you had edited all of them.
+
+  The part that happens today, whatever your settings say: each rewritten
+  contact was rebuilt out of what the contact editor holds, and the editor holds
+  no photo and no imported card. So correcting one phone number erased the saved
+  photo and the original card of every other contact in the account, and left
+  each of them looking like a contact typed on this computer rather than one
+  taken from an address book.
+
+  The part that waits on a setting: every contact in the account was also marked
+  as having a change waiting for each address book that knows it. With Allow
+  Changes off, which is the default, nothing was sent. With it on, the next sync
+  would push your whole Google and Outlook address book back to those providers,
+  with the photos already gone.
+
+  A contact you did not change is now left exactly as it is, which means nothing
+  is written for it at all. A contact you did change is still marked as waiting
+  and still owed to every address book that has it, and it now keeps its own
+  photo and card as well.
+
 - **"1 errors" and "1 changes are waiting here" are said properly now.** The
   line read out after a sync put the number in front of a plural word whatever
   the number was, so one thing going wrong was "1 errors", one change held back
