@@ -53,10 +53,15 @@ impl MessageCache {
         Ok(rules)
     }
 
-    /// Update an existing message filter rule
-    pub fn update_filter_rule(&self, rule: &MessageFilterRule) -> Result<()> {
+    /// Update a message filter rule, and say how many rows that touched.
+    ///
+    /// The count matters, for the same reason it does on a label and on a
+    /// signature. Updating a row that is not there is not an error in SQL, so
+    /// the rule manager, which tried an update and created only when that
+    /// failed, never created anything and dropped every rule somebody added.
+    pub fn update_filter_rule(&self, rule: &MessageFilterRule) -> Result<usize> {
         let now = chrono::Utc::now().to_rfc3339();
-        self.conn.execute(
+        let touched = self.conn.execute(
             "UPDATE message_filter_rules
              SET name = ?1, field = ?2, match_type = ?3, pattern = ?4, case_sensitive = ?5, action_type = ?6, action_value = ?7, enabled = ?8, updated_at = ?9
              WHERE id = ?10",
@@ -66,7 +71,7 @@ impl MessageCache {
                 &rule.enabled, &now, &rule.id,
             ],
         ).map_err(|e| Error::Other(format!("Failed to update filter rule: {}", e)))?;
-        Ok(())
+        Ok(touched)
     }
 
     /// Delete a message filter rule by ID

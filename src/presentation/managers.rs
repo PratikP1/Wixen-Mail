@@ -127,8 +127,26 @@ pub fn manage_tags(
         return;
     };
 
+    let failures = save_what_the_tag_manager_returned(&cache, &account, &stored, updated);
+    report(tx, rt, "tags", failures);
+}
+
+/// Write back what the label manager returned, and name anything that would
+/// not save.
+///
+/// Every row is written, not only the changed one, and here that is safe: the
+/// update names exactly the two columns the manager can edit, so a row nobody
+/// touched is written with the values it already has. `created_at` and the
+/// keyword a label travels under are left alone by the update, which is what
+/// keeps a whole-list write from quietly rewriting them.
+fn save_what_the_tag_manager_returned(
+    cache: &MessageCache,
+    account: &str,
+    stored: &[crate::data::message_cache::Tag],
+    updated: Vec<wx_managers::TagEntry>,
+) -> Vec<String> {
     let changes =
-        collection_sync::changes_between(&stored, updated, |t| t.id.clone(), |t| t.id.clone());
+        collection_sync::changes_between(stored, updated, |t| t.id.clone(), |t| t.id.clone());
     let mut failures = Vec::new();
     for id in &changes.removed {
         if let Err(e) = cache.delete_tag(id) {
@@ -138,7 +156,7 @@ pub fn manage_tags(
     for row in &changes.written {
         let tag = crate::data::message_cache::Tag {
             id: id_or_new(&row.id, "tag"),
-            account_id: account.clone(),
+            account_id: account.to_string(),
             name: row.name.clone(),
             color: row.color.clone(),
             created_at: now_stamp(),
@@ -161,7 +179,7 @@ pub fn manage_tags(
             failures.push(format!("{}: {}", row.name, e));
         }
     }
-    report(tx, rt, "tags", failures);
+    failures
 }
 
 /// Signatures.
@@ -197,8 +215,24 @@ pub fn manage_signatures(
         return;
     };
 
+    let failures = save_what_the_signature_manager_returned(&cache, &account, &stored, updated);
+    report(tx, rt, "signatures", failures);
+}
+
+/// Write back what the signature manager returned, and name anything that
+/// would not save.
+///
+/// Safe to write every row for the same reason as the labels: the update names
+/// exactly the columns the manager can edit, so `created_at` survives a row
+/// being written with the values it already has.
+fn save_what_the_signature_manager_returned(
+    cache: &MessageCache,
+    account: &str,
+    stored: &[crate::data::message_cache::Signature],
+    updated: Vec<wx_managers::SignatureEntry>,
+) -> Vec<String> {
     let changes =
-        collection_sync::changes_between(&stored, updated, |s| s.id.clone(), |s| s.id.clone());
+        collection_sync::changes_between(stored, updated, |s| s.id.clone(), |s| s.id.clone());
     let mut failures = Vec::new();
     for id in &changes.removed {
         if let Err(e) = cache.delete_signature(id) {
@@ -208,7 +242,7 @@ pub fn manage_signatures(
     for row in &changes.written {
         let signature = crate::data::message_cache::Signature {
             id: id_or_new(&row.id, "sig"),
-            account_id: account.clone(),
+            account_id: account.to_string(),
             name: row.name.clone(),
             content_plain: row.content_plain.clone(),
             content_html: row.content_html.clone(),
@@ -224,7 +258,7 @@ pub fn manage_signatures(
             failures.push(format!("{}: {}", row.name, e));
         }
     }
-    report(tx, rt, "signatures", failures);
+    failures
 }
 
 /// Message filter rules.
@@ -264,8 +298,23 @@ pub fn manage_filters(
         return;
     };
 
+    let failures = save_what_the_filter_manager_returned(&cache, &account, &stored, updated);
+    report(tx, rt, "rules", failures);
+}
+
+/// Write back what the rule manager returned, and name anything that would not
+/// save.
+///
+/// Safe to write every row for the same reason as the labels and the
+/// signatures: the update names exactly the columns the manager can edit.
+fn save_what_the_filter_manager_returned(
+    cache: &MessageCache,
+    account: &str,
+    stored: &[crate::data::message_cache::MessageFilterRule],
+    updated: Vec<wx_managers::FilterRule>,
+) -> Vec<String> {
     let changes =
-        collection_sync::changes_between(&stored, updated, |r| r.id.clone(), |r| r.id.clone());
+        collection_sync::changes_between(stored, updated, |r| r.id.clone(), |r| r.id.clone());
     let mut failures = Vec::new();
     for id in &changes.removed {
         if let Err(e) = cache.delete_filter_rule(id) {
@@ -275,7 +324,7 @@ pub fn manage_filters(
     for row in &changes.written {
         let rule = crate::data::message_cache::MessageFilterRule {
             id: id_or_new(&row.id, "rule"),
-            account_id: account.clone(),
+            account_id: account.to_string(),
             name: row.name.clone(),
             field: row.field.clone(),
             match_type: row.match_type.clone(),
@@ -286,13 +335,16 @@ pub fn manage_filters(
             enabled: row.enabled,
             created_at: now_stamp(),
         };
-        if cache.update_filter_rule(&rule).is_err()
+        // On the count, not on an error, for the same reason as the labels and
+        // the signatures: an update that matched nothing is not a failure in
+        // SQL, so every new rule was silently dropped.
+        if cache.update_filter_rule(&rule).unwrap_or(0) == 0
             && let Err(e) = cache.create_filter_rule(&rule)
         {
             failures.push(format!("{}: {}", row.name, e));
         }
     }
-    report(tx, rt, "rules", failures);
+    failures
 }
 
 /// What the window that waits for a calendar server is called.
@@ -3491,5 +3543,284 @@ mod saving_the_contact_manager {
         let after = read_back(&cache);
         assert_eq!(after.len(), 2);
         assert!(after.iter().all(|c| c.id != "c3"));
+    }
+}
+
+#[cfg(test)]
+mod saving_the_other_managers {
+    //! The three managers that share the contact manager's shape.
+    //!
+    //! Each hands back its whole list on any change, so each writes back rows
+    //! nobody touched. On a contact that lost the photo and the imported card
+    //! of everybody else in the account, so the same question is asked here:
+    //! what does editing one row do to its neighbours, and does adding a row
+    //! save it.
+
+    use super::*;
+    use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::{MessageFilterRule, Signature, Tag};
+
+    const ACCOUNT: &str = "acct-1";
+
+    fn a_cache(what_for: &str) -> TempHome<MessageCache> {
+        TempHome::named(what_for, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache to open")
+        })
+    }
+
+    fn a_label(id: &str, name: &str) -> Tag {
+        Tag {
+            id: id.to_string(),
+            account_id: ACCOUNT.to_string(),
+            name: name.to_string(),
+            color: "#336699".to_string(),
+            created_at: "2020-01-01T00:00:00Z".to_string(),
+            keyword: Some(format!("kw-{id}")),
+        }
+    }
+
+    fn as_the_manager_shows_them(stored: &[Tag]) -> Vec<wx_managers::TagEntry> {
+        stored
+            .iter()
+            .map(|t| wx_managers::TagEntry {
+                id: t.id.clone(),
+                name: t.name.clone(),
+                color: t.color.clone(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_editing_one_label_leaves_the_others_exactly_as_they_were() {
+        // The whole list is written back on any change. That is only safe
+        // while the update names the columns the manager can edit and no
+        // others, so this asks the question of the store rather than of the
+        // SQL.
+        let cache = a_cache("labels_one_edit");
+        let stored = vec![a_label("t1", "Work"), a_label("t2", "Personal")];
+        for tag in &stored {
+            cache.create_tag(tag).expect("a label to save");
+        }
+        let mut returned = as_the_manager_shows_them(&stored);
+        returned[1].name = "Home".to_string();
+
+        let failures = save_what_the_tag_manager_returned(&cache, ACCOUNT, &stored, returned);
+        assert!(failures.is_empty(), "{failures:?}");
+
+        let after = cache
+            .get_tags_for_account(ACCOUNT)
+            .expect("labels to be readable");
+        let untouched = after.iter().find(|t| t.id == "t1").expect("the label");
+        assert_eq!(untouched.name, "Work");
+        assert_eq!(
+            untouched.created_at, "2020-01-01T00:00:00Z",
+            "editing one label restamped another as newly made"
+        );
+        assert_eq!(
+            untouched.keyword.as_deref(),
+            Some("kw-t1"),
+            "editing one label changed what another travels as, orphaning every \
+             message already carrying it"
+        );
+    }
+
+    #[test]
+    fn test_a_label_added_in_the_manager_is_saved() {
+        let cache = a_cache("labels_added_row");
+        let stored = vec![a_label("t1", "Work")];
+        cache.create_tag(&stored[0]).expect("a label to save");
+        let mut returned = as_the_manager_shows_them(&stored);
+        returned.push(wx_managers::TagEntry {
+            id: String::new(),
+            name: "Receipts".to_string(),
+            color: "#993366".to_string(),
+        });
+
+        save_what_the_tag_manager_returned(&cache, ACCOUNT, &stored, returned);
+
+        let after = cache
+            .get_tags_for_account(ACCOUNT)
+            .expect("labels to be readable");
+        assert!(
+            after.iter().any(|t| t.name == "Receipts"),
+            "a label somebody added was dropped"
+        );
+    }
+
+    fn a_signature(id: &str, name: &str) -> Signature {
+        Signature {
+            id: id.to_string(),
+            account_id: ACCOUNT.to_string(),
+            name: name.to_string(),
+            content_plain: format!("Regards, {name}"),
+            content_html: None,
+            is_default: false,
+            created_at: "2020-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_editing_one_signature_leaves_the_others_exactly_as_they_were() {
+        let cache = a_cache("signatures_one_edit");
+        let stored = vec![a_signature("s1", "Work"), a_signature("s2", "Personal")];
+        for signature in &stored {
+            cache
+                .create_signature(signature)
+                .expect("a signature to save");
+        }
+        let mut returned: Vec<wx_managers::SignatureEntry> = stored
+            .iter()
+            .map(|s| wx_managers::SignatureEntry {
+                id: s.id.clone(),
+                name: s.name.clone(),
+                content_plain: s.content_plain.clone(),
+                content_html: s.content_html.clone(),
+                is_default: s.is_default,
+            })
+            .collect();
+        returned[1].content_plain = "See you".to_string();
+
+        let failures = save_what_the_signature_manager_returned(&cache, ACCOUNT, &stored, returned);
+        assert!(failures.is_empty(), "{failures:?}");
+
+        let after = cache
+            .get_signatures_for_account(ACCOUNT)
+            .expect("signatures to be readable");
+        let untouched = after.iter().find(|s| s.id == "s1").expect("the signature");
+        assert_eq!(untouched.content_plain, "Regards, Work");
+        assert_eq!(
+            untouched.created_at, "2020-01-01T00:00:00Z",
+            "editing one signature restamped another as newly made"
+        );
+    }
+
+    #[test]
+    fn test_a_signature_added_in_the_manager_is_saved() {
+        let cache = a_cache("signatures_added_row");
+        let stored = vec![a_signature("s1", "Work")];
+        cache
+            .create_signature(&stored[0])
+            .expect("a signature to save");
+        let mut returned: Vec<wx_managers::SignatureEntry> = stored
+            .iter()
+            .map(|s| wx_managers::SignatureEntry {
+                id: s.id.clone(),
+                name: s.name.clone(),
+                content_plain: s.content_plain.clone(),
+                content_html: s.content_html.clone(),
+                is_default: s.is_default,
+            })
+            .collect();
+        returned.push(wx_managers::SignatureEntry {
+            id: String::new(),
+            name: "Short".to_string(),
+            content_plain: "P".to_string(),
+            content_html: None,
+            is_default: false,
+        });
+
+        save_what_the_signature_manager_returned(&cache, ACCOUNT, &stored, returned);
+
+        let after = cache
+            .get_signatures_for_account(ACCOUNT)
+            .expect("signatures to be readable");
+        assert!(
+            after.iter().any(|s| s.name == "Short"),
+            "a signature somebody added was dropped"
+        );
+    }
+
+    fn a_rule(id: &str, name: &str) -> MessageFilterRule {
+        MessageFilterRule {
+            id: id.to_string(),
+            account_id: ACCOUNT.to_string(),
+            name: name.to_string(),
+            field: "from".to_string(),
+            match_type: "contains".to_string(),
+            pattern: format!("{name}@example.com"),
+            case_sensitive: false,
+            action_type: "move".to_string(),
+            action_value: Some("Archive".to_string()),
+            enabled: true,
+            created_at: "2020-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    fn as_the_rule_manager_shows_them(
+        stored: &[MessageFilterRule],
+    ) -> Vec<wx_managers::FilterRule> {
+        stored
+            .iter()
+            .map(|r| wx_managers::FilterRule {
+                id: r.id.clone(),
+                name: r.name.clone(),
+                field: r.field.clone(),
+                match_type: r.match_type.clone(),
+                pattern: r.pattern.clone(),
+                case_sensitive: r.case_sensitive,
+                action_type: r.action_type.clone(),
+                action_value: r.action_value.clone().unwrap_or_default(),
+                enabled: r.enabled,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_editing_one_rule_leaves_the_others_exactly_as_they_were() {
+        let cache = a_cache("rules_one_edit");
+        let stored = vec![a_rule("r1", "newsletters"), a_rule("r2", "receipts")];
+        for rule in &stored {
+            cache.create_filter_rule(rule).expect("a rule to save");
+        }
+        let mut returned = as_the_rule_manager_shows_them(&stored);
+        returned[1].enabled = false;
+
+        let failures = save_what_the_filter_manager_returned(&cache, ACCOUNT, &stored, returned);
+        assert!(failures.is_empty(), "{failures:?}");
+
+        let after = cache
+            .get_filter_rules_for_account(ACCOUNT)
+            .expect("rules to be readable");
+        let untouched = after.iter().find(|r| r.id == "r1").expect("the rule");
+        assert!(untouched.enabled, "editing one rule turned another off");
+        assert_eq!(
+            untouched.created_at, "2020-01-01T00:00:00Z",
+            "editing one rule restamped another as newly made"
+        );
+    }
+
+    #[test]
+    fn test_a_rule_added_in_the_manager_is_saved() {
+        // The mistake already found twice on labels and on signatures:
+        // updating a row that is not there is not an error in SQL, so a caller
+        // that creates only when the update fails never creates anything.
+        let cache = a_cache("rules_added_row");
+        let stored = vec![a_rule("r1", "newsletters")];
+        cache
+            .create_filter_rule(&stored[0])
+            .expect("a rule to save");
+        let mut returned = as_the_rule_manager_shows_them(&stored);
+        returned.push(wx_managers::FilterRule {
+            id: String::new(),
+            name: "invoices".to_string(),
+            field: "subject".to_string(),
+            match_type: "contains".to_string(),
+            pattern: "invoice".to_string(),
+            case_sensitive: false,
+            action_type: "flag".to_string(),
+            action_value: String::new(),
+            enabled: true,
+        });
+
+        let failures = save_what_the_filter_manager_returned(&cache, ACCOUNT, &stored, returned);
+        assert!(failures.is_empty(), "{failures:?}");
+
+        let after = cache
+            .get_filter_rules_for_account(ACCOUNT)
+            .expect("rules to be readable");
+        assert!(
+            after.iter().any(|r| r.name == "invoices"),
+            "a rule somebody added was dropped, so the manager saves nothing new"
+        );
     }
 }

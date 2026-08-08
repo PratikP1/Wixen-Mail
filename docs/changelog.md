@@ -277,6 +277,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   and still owed to every address book that has it, and it now keeps its own
   photo and card as well.
 
+- **A message rule you add is saved now.** Adding a rule in the rule manager
+  did nothing at all. The manager tried to change the rule first and only
+  created it if that failed, and changing a rule that is not there yet is not a
+  failure, so nothing was ever created. Editing a rule that already existed
+  always worked. The same mistake was found and fixed on labels and on
+  signatures before this, and the rule manager was left behind both times.
+
 - **"1 errors" and "1 changes are waiting here" are said properly now.** The
   line read out after a sync put the number in front of a plural word whatever
   the number was, so one thing going wrong was "1 errors", one change held back
