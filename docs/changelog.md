@@ -255,6 +255,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A calendar or task list you made here is no longer promised back from your
+  provider.** The question asked before deleting one said "It will come back at
+  the next sync" whenever the open account was a Google or Outlook one. That is
+  right for a calendar or list your provider sent, and wrong for one you made
+  here and filed under that account: nothing sends it anywhere, so nothing puts
+  it back, and you were left waiting for a sync that will never mention it.
+
+  The question now asks about the one you are deleting rather than about its
+  kind. A calendar says where it came from, and a task list says it in the
+  identifier it was stored under.
+
+  Nothing else changed about deleting a container. Deleting a calendar, a task
+  list, a note folder or a contact group still removes only the copy on this
+  computer, and the question still says so for the two kinds a provider holds.
+  Note folders and contact groups are never sent anywhere, so nothing is
+  promised back for them and nothing is claimed about a provider.
+
 - **A contact you delete is now deleted in your address book too.** Deleting a
   contact took it off this computer and told nobody. The next sync read your
   address book, found the person still there and wrote them down again, so a

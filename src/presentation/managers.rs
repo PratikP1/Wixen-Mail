@@ -2671,7 +2671,13 @@ pub fn delete_container(
     // synced list here and watching it come back on the next sync looks
     // exactly like the delete having failed, and being told to expect that
     // about something no provider has is the same confusion the other way up.
-    let asked = new_item::deletion_warning(kind, &name, holding, &account_id);
+    let asked = new_item::deletion_warning(
+        kind,
+        &name,
+        holding,
+        &account_id,
+        where_it_came_from(&cache, kind, &id),
+    );
 
     let confirm = MessageDialog::builder(frame, &asked, &format!("Delete {}", kind.label()))
         .with_style(MessageDialogStyle::YesNo | MessageDialogStyle::IconQuestion)
@@ -3477,6 +3483,47 @@ fn remove_container(
     }
 }
 
+/// A calendar that says it was made here, in the words its row carries.
+///
+/// `store_new_container` writes it and the calendar sync writes the provider's
+/// name instead, so the row is the record of which it is. A row that says
+/// nothing at all counts as made here: nothing points at a provider, so nothing
+/// promises it back.
+const A_CALENDAR_MADE_HERE: &str = "local";
+
+/// Whether this particular container came from a provider or was made here.
+///
+/// Read from the row rather than assumed from the kind, because a calendar or
+/// a task list can be either and they read the same in the sidebar. A calendar
+/// says where it came from in a column of its own; a task list says it in its
+/// identifier, which is how the tasks sync already tells one it may push from
+/// one it may not.
+fn where_it_came_from(
+    cache: &MessageCache,
+    kind: crate::application::new_item::ContainerKind,
+    id: &str,
+) -> crate::application::new_item::WhereItCameFrom {
+    use crate::application::new_item::{ContainerKind, WhereItCameFrom};
+
+    let from_a_provider = match kind {
+        ContainerKind::Calendar => cache
+            .get_calendar(id)
+            .ok()
+            .flatten()
+            .and_then(|calendar| calendar.source_provider)
+            .is_some_and(|came_from| came_from != A_CALENDAR_MADE_HERE),
+        ContainerKind::TaskList => crate::application::tasks_sync::a_provider_holds(id),
+        // Neither is sent anywhere, so where it was made changes nothing. The
+        // kind is the whole answer and `the_provider_has_a_copy` gives it.
+        ContainerKind::NoteFolder | ContainerKind::ContactGroup => false,
+    };
+    if from_a_provider {
+        WhereItCameFrom::AProvider
+    } else {
+        WhereItCameFrom::ThisComputer
+    }
+}
+
 #[cfg(test)]
 mod deletion_wiring {
     /// Where each container's Delete command is raised from.
@@ -3515,9 +3562,25 @@ mod deletion_wiring {
         }
     }
 
+    /// This file, up to where these checks begin.
+    ///
+    /// A check that reads the file it lives in and looks for a call is
+    /// satisfied by the assertion that spells the call, whatever the code
+    /// above does. Taking the call out and watching the check stay green is
+    /// how that was found: the text was still there, in the check itself.
+    ///
+    /// Cut at this module rather than at the first `#[cfg(test)]`, because
+    /// this file has an earlier block of tests with real code after it.
+    fn the_code_these_checks_are_about() -> String {
+        let whole =
+            std::fs::read_to_string("src/presentation/managers.rs").expect("this file to read");
+        let checks_start = whole.find("mod deletion_wiring {").expect("this module");
+        whole[..checks_start].to_string()
+    }
+
     #[test]
     fn test_the_command_they_raise_exists() {
-        let source = std::fs::read_to_string("src/presentation/managers.rs").expect("this file");
+        let source = the_code_these_checks_are_about();
 
         assert!(source.contains("pub fn delete_container"));
         // All four kinds, so adding a fifth container without a delete fails.
@@ -3528,6 +3591,145 @@ mod deletion_wiring {
             "delete_contact_group(id)",
         ] {
             assert!(source.contains(storage), "{storage} is never called");
+        }
+    }
+
+    #[test]
+    fn test_the_question_is_asked_about_the_container_being_deleted() {
+        // Reaching the question needs a window, so the argument is checked
+        // here in the source. Handed a fixed answer instead of the one read
+        // off the row, nothing else in the suite goes red and the sentence
+        // promising a calendar back at the next sync comes back for one made
+        // on this computer, which nothing will ever put back.
+        let source = the_code_these_checks_are_about();
+
+        assert!(
+            source.contains("where_it_came_from(&cache, kind, &id)"),
+            "the deletion question is no longer told which container it is about"
+        );
+    }
+}
+
+#[cfg(test)]
+mod where_a_container_came_from {
+    use super::*;
+    use crate::application::new_item::{ContainerKind, WhereItCameFrom};
+    use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::{CalendarContainer, TaskListEntry};
+
+    fn a_cache(what_for: &str) -> TempHome<MessageCache> {
+        TempHome::named(what_for, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache to open")
+        })
+    }
+
+    /// A calendar filed under a provider account, saying where it came from.
+    fn a_calendar(cache: &MessageCache, id: &str, came_from: &str) {
+        let stamp = chrono::Utc::now().to_rfc3339();
+        cache
+            .save_calendar(&CalendarContainer {
+                id: id.to_string(),
+                account_id: "acct-1".to_string(),
+                name: "Trips".to_string(),
+                color: "#4285F4".to_string(),
+                source_provider: Some(came_from.to_string()),
+                caldav_url: None,
+                subscription_url: None,
+                is_default: false,
+                is_visible: true,
+                is_read_only: false,
+                display_order: 0,
+                etag: None,
+                ctag: None,
+                sync_token: None,
+                refresh_interval_minutes: None,
+                created_at: stamp.clone(),
+                updated_at: stamp,
+            })
+            .expect("the calendar to save");
+    }
+
+    /// One task list. The name is the identifier, because an account cannot
+    /// hold two lists with the same name and this test wants two lists.
+    fn a_task_list(cache: &MessageCache, id: &str) {
+        cache
+            .save_task_list(&TaskListEntry {
+                id: id.to_string(),
+                account_id: "acct-1".to_string(),
+                name: id.to_string(),
+                color: String::new(),
+                display_order: 0,
+                created_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .expect("the task list to save");
+    }
+
+    #[test]
+    fn test_a_calendar_made_here_in_a_provider_account_is_read_as_made_here() {
+        // The row is the record. Read off the kind instead, the question
+        // promised somebody a calendar back at a sync that will never mention
+        // it, because nothing sends one made here anywhere.
+        let cache = a_cache("calendar_made_here");
+        a_calendar(&cache, "calendar-abc", "local");
+
+        assert_eq!(
+            where_it_came_from(&cache, ContainerKind::Calendar, "calendar-abc"),
+            WhereItCameFrom::ThisComputer
+        );
+    }
+
+    #[test]
+    fn test_a_calendar_google_sent_is_read_as_the_providers() {
+        let cache = a_cache("calendar_from_google");
+        a_calendar(&cache, "cal-google-1", "google");
+
+        assert_eq!(
+            where_it_came_from(&cache, ContainerKind::Calendar, "cal-google-1"),
+            WhereItCameFrom::AProvider
+        );
+    }
+
+    #[test]
+    fn test_a_calendar_that_is_no_longer_there_is_not_promised_back() {
+        // Nothing to read, so nothing to promise. The answer that says less is
+        // the safe one: a sentence about a sync is worse than no sentence.
+        let cache = a_cache("calendar_missing");
+
+        assert_eq!(
+            where_it_came_from(&cache, ContainerKind::Calendar, "gone"),
+            WhereItCameFrom::ThisComputer
+        );
+    }
+
+    #[test]
+    fn test_a_task_list_is_read_from_its_identifier() {
+        // A list a provider sent carries the prefix it was filed under, and one
+        // made here does not. The tasks sync already tells them apart that way.
+        let cache = a_cache("task_lists_by_identifier");
+        a_task_list(&cache, "tasklist-abc");
+        a_task_list(&cache, "google:MTIz");
+
+        assert_eq!(
+            where_it_came_from(&cache, ContainerKind::TaskList, "tasklist-abc"),
+            WhereItCameFrom::ThisComputer
+        );
+        assert_eq!(
+            where_it_came_from(&cache, ContainerKind::TaskList, "google:MTIz"),
+            WhereItCameFrom::AProvider
+        );
+    }
+
+    #[test]
+    fn test_a_note_folder_and_a_group_are_read_as_kept_here() {
+        // Neither is sent anywhere, so where it was made changes nothing.
+        let cache = a_cache("folders_and_groups");
+
+        for kind in [ContainerKind::NoteFolder, ContainerKind::ContactGroup] {
+            assert_eq!(
+                where_it_came_from(&cache, kind, "whatever"),
+                WhereItCameFrom::ThisComputer,
+                "{kind:?}"
+            );
         }
     }
 }

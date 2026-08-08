@@ -845,22 +845,42 @@ pub fn deletion_reaches_provider(_kind: ContainerKind) -> bool {
     false
 }
 
-/// Whether a provider holds a copy of this kind of container at all.
+/// Where the container being deleted came from.
+///
+/// A calendar and a task list can be either: one Google or Outlook sent, or
+/// one somebody made here and filed under that same account. They read the
+/// same in the sidebar and they behave differently when deleted, so the
+/// question has to be told which it is rather than guess from the kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhereItCameFrom {
+    /// A provider sent it, so a copy of it is still there.
+    AProvider,
+    /// Made on this computer, so no copy of it exists anywhere else.
+    ThisComputer,
+}
+
+/// Whether a provider holds a copy of the container being deleted.
 ///
 /// Separate from [`deletion_reaches_provider`], which asks whether deleting
 /// here also deletes there. This asks whether there is anything there in the
 /// first place, and the answer decides whether somebody is told to expect the
 /// thing back at the next sync. Telling them that about something no provider
 /// has ever heard of leaves them waiting for a sync that will never mention it.
-pub const fn the_provider_has_a_copy(kind: ContainerKind) -> bool {
-    match kind {
-        // Both arrive from Google and Microsoft, so one deleted here is put
-        // back by the next read.
-        ContainerKind::Calendar | ContainerKind::TaskList => true,
-        // Neither is sent anywhere. Notes stay on this computer, and a contact
-        // group is a name kept here over people who may live anywhere.
-        ContainerKind::NoteFolder | ContainerKind::ContactGroup => false,
-    }
+///
+/// Two parts, and both are needed. Notes and contact groups are sent nowhere
+/// at all, so no copy of one exists anywhere whoever made it. A calendar or a
+/// task list ordinarily comes from Google or Microsoft and is put back by the
+/// next read, but one made here is not: nothing sends it anywhere either.
+/// Asked of the kind alone, the question promised a calendar somebody made
+/// here back at the next sync.
+pub const fn the_provider_has_a_copy(kind: ContainerKind, came_from: WhereItCameFrom) -> bool {
+    matches!(
+        (kind, came_from),
+        (
+            ContainerKind::Calendar | ContainerKind::TaskList,
+            WhereItCameFrom::AProvider
+        )
+    )
 }
 
 /// What to add to the question when the provider still has a copy.
@@ -878,10 +898,11 @@ pub fn deletion_warning(
     name: &str,
     holding: usize,
     account_id: &str,
+    came_from: WhereItCameFrom,
 ) -> String {
     let mut asked = deletion_question(kind, name, holding);
     let kept_here = account_id.starts_with(LOCAL_ACCOUNT_ID);
-    if the_provider_has_a_copy(kind) && !deletion_reaches_provider(kind) && !kept_here {
+    if the_provider_has_a_copy(kind, came_from) && !deletion_reaches_provider(kind) && !kept_here {
         asked.push_str(STILL_AT_THE_PROVIDER);
     }
     asked
@@ -951,17 +972,35 @@ mod deletion_tests {
         // The sentence was appended whenever the open account was not the
         // local one, whatever was being deleted, so a group nothing has ever
         // sent anywhere was announced as coming back at the next sync.
-        let group = deletion_warning(ContainerKind::ContactGroup, "Team A", 3, "acct-1");
+        let group = deletion_warning(
+            ContainerKind::ContactGroup,
+            "Team A",
+            3,
+            "acct-1",
+            WhereItCameFrom::AProvider,
+        );
         assert!(!group.contains("come back at the next sync"), "{group}");
 
-        let calendar = deletion_warning(ContainerKind::Calendar, "Trips", 2, "acct-1");
+        let calendar = deletion_warning(
+            ContainerKind::Calendar,
+            "Trips",
+            2,
+            "acct-1",
+            WhereItCameFrom::AProvider,
+        );
         assert!(
             calendar.contains("come back at the next sync"),
             "{calendar}"
         );
 
         // A calendar kept here has no provider copy either, whatever kind it is.
-        let here = deletion_warning(ContainerKind::Calendar, "Trips", 2, LOCAL_ACCOUNT_ID);
+        let here = deletion_warning(
+            ContainerKind::Calendar,
+            "Trips",
+            2,
+            LOCAL_ACCOUNT_ID,
+            WhereItCameFrom::AProvider,
+        );
         assert!(!here.contains("come back at the next sync"), "{here}");
     }
 
@@ -970,11 +1009,25 @@ mod deletion_tests {
         // Nothing sends a contact group to Google or Microsoft, so the
         // sentence promising it would come back at the next sync was telling
         // somebody to wait for something that is never going to happen.
-        // Notes go nowhere either, for the same reason.
-        assert!(!the_provider_has_a_copy(ContainerKind::ContactGroup));
-        assert!(!the_provider_has_a_copy(ContainerKind::NoteFolder));
-        assert!(the_provider_has_a_copy(ContainerKind::Calendar));
-        assert!(the_provider_has_a_copy(ContainerKind::TaskList));
+        // Notes go nowhere either, for the same reason, whoever made them.
+        for came_from in [WhereItCameFrom::AProvider, WhereItCameFrom::ThisComputer] {
+            assert!(!the_provider_has_a_copy(
+                ContainerKind::ContactGroup,
+                came_from
+            ));
+            assert!(!the_provider_has_a_copy(
+                ContainerKind::NoteFolder,
+                came_from
+            ));
+        }
+        assert!(the_provider_has_a_copy(
+            ContainerKind::Calendar,
+            WhereItCameFrom::AProvider
+        ));
+        assert!(the_provider_has_a_copy(
+            ContainerKind::TaskList,
+            WhereItCameFrom::AProvider
+        ));
     }
 
     #[test]
@@ -985,5 +1038,54 @@ mod deletion_tests {
             assert!(!deletion_reaches_provider(kind), "{kind:?}");
         }
         assert!(STILL_AT_THE_PROVIDER.contains("come back at the next sync"));
+    }
+
+    #[test]
+    fn test_a_calendar_made_on_this_computer_is_not_promised_back_from_a_provider() {
+        // A calendar or a task list made here inside a Google or Outlook
+        // account is sent nowhere, so nothing puts it back. Asked of the kind
+        // rather than of the one being deleted, the question promised it back
+        // anyway, and somebody who made a calendar here and deleted it was
+        // left waiting for a sync that will never mention it. That is the
+        // exact thing this half of the question exists to avoid.
+        let made_here = deletion_warning(
+            ContainerKind::Calendar,
+            "Trips",
+            2,
+            "acct-1",
+            WhereItCameFrom::ThisComputer,
+        );
+        assert!(
+            !made_here.contains("come back at the next sync"),
+            "{made_here}"
+        );
+
+        let from_a_provider = deletion_warning(
+            ContainerKind::Calendar,
+            "Trips",
+            2,
+            "acct-1",
+            WhereItCameFrom::AProvider,
+        );
+        assert!(
+            from_a_provider.contains("come back at the next sync"),
+            "{from_a_provider}"
+        );
+    }
+
+    #[test]
+    fn test_a_task_list_made_on_this_computer_is_not_promised_back_either() {
+        let made_here = deletion_warning(
+            ContainerKind::TaskList,
+            "Shopping",
+            2,
+            "acct-1",
+            WhereItCameFrom::ThisComputer,
+        );
+
+        assert!(
+            !made_here.contains("come back at the next sync"),
+            "{made_here}"
+        );
     }
 }

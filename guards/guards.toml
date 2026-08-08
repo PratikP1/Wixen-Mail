@@ -637,3 +637,58 @@ red = [
     "application::contacts_sync::tests::test_a_contact_both_address_books_knew_is_deleted_at_both_and_counted_once",
     "application::contacts_sync::tests::test_folding_two_address_books_together_keeps_every_count",
 ]
+
+# ── Deleting a calendar, a task list, a note folder or a group ──────────────
+#
+# None of the four reaches a provider, and the question asked first says so.
+# It has to say it about the one being deleted rather than about its kind: a
+# calendar or a task list made on this computer inside a Google account is sent
+# nowhere, so promising it back at the next sync leaves somebody waiting for a
+# sync that will never mention it.
+
+[[guard]]
+name = "the deletion question asks about the container, not its kind"
+file = "src/application/new_item.rs"
+before = """        (
+            ContainerKind::Calendar | ContainerKind::TaskList,
+            WhereItCameFrom::AProvider
+        )"""
+after = """        (
+            ContainerKind::Calendar | ContainerKind::TaskList,
+            WhereItCameFrom::AProvider | WhereItCameFrom::ThisComputer
+        )"""
+red = [
+    "application::new_item::deletion_tests::test_a_calendar_made_on_this_computer_is_not_promised_back_from_a_provider",
+    "application::new_item::deletion_tests::test_a_task_list_made_on_this_computer_is_not_promised_back_either",
+]
+
+[[guard]]
+name = "the deletion question is handed the container it is about"
+file = "src/presentation/managers.rs"
+before = """        where_it_came_from(&cache, kind, &id),
+    );"""
+after = """        crate::application::new_item::WhereItCameFrom::AProvider,
+    );"""
+red = [
+    "presentation::managers::deletion_wiring::test_the_question_is_asked_about_the_container_being_deleted",
+]
+
+[[guard]]
+name = "where a calendar came from is read off its row"
+file = "src/presentation/managers.rs"
+before = """        ContainerKind::Calendar => cache
+            .get_calendar(id)"""
+after = """        ContainerKind::Calendar => cache
+            .get_calendar("never this one")"""
+red = [
+    "presentation::managers::where_a_container_came_from::test_a_calendar_google_sent_is_read_as_the_providers",
+]
+
+[[guard]]
+name = "where a task list came from is read off its identifier"
+file = "src/presentation/managers.rs"
+before = """        ContainerKind::TaskList => crate::application::tasks_sync::a_provider_holds(id),"""
+after = """        ContainerKind::TaskList => true,"""
+red = [
+    "presentation::managers::where_a_container_came_from::test_a_task_list_is_read_from_its_identifier",
+]
