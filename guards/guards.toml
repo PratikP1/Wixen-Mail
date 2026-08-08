@@ -61,11 +61,35 @@ red = [
     "application::contacts_sync::tests::test_a_change_only_google_still_needs_survives_an_outlook_read_that_moved_nothing",
 ]
 
+# ── One address book cannot speak for the other ─────────────────────────────
+#
+# An address book saying it has deleted somebody speaks for itself and for
+# nothing else. Read as speaking for the whole row, it took the other address
+# book's name for her, and the change that book was still owed, away with her.
+
+[[guard]]
+name = "a deletion by one address book leaves a person the other still has"
+file = "src/application/contacts_sync.rs"
+before = """    if another_address_book_still_has_them(local, address_book) {"""
+after = """    if false {"""
+red = [
+    "application::contacts_sync::tests::test_a_person_one_address_book_deleted_and_the_other_still_holds_is_one_person",
+    "application::contacts_sync::tests::test_a_google_deletion_leaves_the_change_outlook_is_still_owed_where_it_is",
+    "application::contacts_sync::tests::test_an_outlook_deletion_leaves_the_change_google_is_still_owed_where_it_is",
+]
+
 # ── The deletion warning, read three wrong ways ─────────────────────────────
 #
-# Deleting the row takes every address book's waiting change with it, so the
-# sentence is decided by work owed anywhere in the row. Each of the three
-# narrower readings has to be caught.
+# Where nobody else holds the person the row does go, and it takes every
+# address book's waiting change with it, so the sentence is decided by work
+# owed anywhere in the row. Each of the three narrower readings has to be
+# caught.
+#
+# Two of these named a test each that used to reach the deletion with a contact
+# both address books knew. Those contacts are no longer deleted at all, so
+# those two tests no longer discriminate anything here and were taken out of
+# the lists rather than left to look like cover. What is left was measured
+# going red.
 
 [[guard]]
 name = "a deletion asks Outlook as well as Google what is owed"
@@ -73,9 +97,7 @@ file = "src/application/contacts_sync.rs"
 before = """    if the_copy_here_holds_work_nobody_has_sent(local) {"""
 after = """    if this_address_book_is_still_owed_the_change(local, &AddressBook::Google) {"""
 red = [
-    "application::contacts_sync::tests::test_a_contact_google_deleted_takes_the_change_owed_to_outlook_with_it_and_says_so",
     "application::contacts_sync::tests::test_a_contact_outlook_removed_takes_a_waiting_change_with_it_and_says_so",
-    "application::contacts_sync::tests::test_a_deletion_says_what_went_with_it_whatever_the_contact_says_of_itself",
 ]
 
 [[guard]]
@@ -85,7 +107,6 @@ before = """    if the_copy_here_holds_work_nobody_has_sent(local) {"""
 after = """    if this_address_book_is_still_owed_the_change(local, &AddressBook::Microsoft) {"""
 red = [
     "application::contacts_sync::tests::test_a_contact_google_deleted_takes_a_waiting_change_with_it_and_says_so",
-    "application::contacts_sync::tests::test_a_contact_outlook_removed_takes_the_change_owed_to_google_with_it_and_says_so",
 ]
 
 [[guard]]

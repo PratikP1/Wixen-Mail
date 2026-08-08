@@ -255,6 +255,33 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Somebody one address book deletes and the other still has stays here, and
+  is counted once.** Google saying it had deleted somebody took the whole
+  contact off this computer, and that included Outlook's name for her and any
+  change Outlook had not been sent yet. The read from Outlook later in the same
+  sync then wrote her down again as a new person, so one contact was read out as
+  "1 created, 0 updated, 1 deleted" with one row left over. On the ordinary sync
+  where Outlook has nothing new to say she was not written down again at all, so
+  somebody Outlook still holds disappeared because Google had let her go.
+
+  An address book saying it has deleted somebody now speaks for itself and for
+  nothing else. It comes off the contact, and the rest stays: the row, its photo
+  and the card it was imported from, the other address book's name for her, and
+  the change that address book is still owed. The same sync says "0 created, 1
+  updated, 0 deleted", which is one person and one thing that happened to her.
+
+  Where no other address book holds the person, the row still goes, and the sync
+  still says so when work went with it.
+
+  A change that was waiting only for the address book that let her go stops
+  waiting, because there is nobody left to send it to.
+
+  Known limitation: where a contact came from is not rewritten, so somebody who
+  came from Google and is now only in Outlook still counts as a Google contact.
+  While "Send a change to a contact to every address book that has that
+  contact" is off, a change to her goes nowhere, and the sync says so on every
+  run: "1 change is not going to your other address book."
+
 - **A change your address book has moved past is sent again instead of being
   thrown away.** Google and Outlook both hand out a version marker with their
   copy of a contact, and both turn down a change built against an older one.

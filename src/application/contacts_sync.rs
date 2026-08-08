@@ -915,6 +915,54 @@ fn the_copy_here_holds_work_nobody_has_sent(contact: &ContactEntry) -> bool {
             .any(|identity| identity.change_is_waiting)
 }
 
+/// Whether another address book still holds this contact.
+///
+/// What decides between taking one address book off a contact and removing the
+/// row. An address book saying it has deleted somebody speaks for itself and
+/// for nothing else, so a person Outlook still keeps is still a person here.
+fn another_address_book_still_has_them(
+    contact: &ContactEntry,
+    the_one_that_deleted_them: &AddressBook,
+) -> bool {
+    contact
+        .known_to
+        .iter()
+        .any(|identity| &identity.address_book != the_one_that_deleted_them)
+}
+
+/// Carry out one address book's deletion of one contact.
+///
+/// One place for both syncs, because the decision is the same one and the half
+/// that goes wrong is the same half: what happens to the address book that was
+/// not asked.
+///
+/// Where another address book still holds the person, this takes the deleting
+/// one off her and keeps everything else, which is one change to one row and is
+/// counted as that. Removing the row instead took the other address book's name
+/// for her and its waiting change with it, and then that address book's next
+/// read wrote her down again as somebody new: one person read out as "1
+/// created, 1 deleted". On a sync where that address book had nothing new to
+/// say, which is most of them, she was simply gone.
+///
+/// Where nobody else holds her, the row goes, and any work in it goes with it,
+/// which is what `say_if_a_change_went_too` is for.
+fn one_address_book_deleted_them(
+    cache: &MessageCache,
+    local: &ContactEntry,
+    address_book: &AddressBook,
+    result: &mut SyncResult,
+) -> Result<()> {
+    if another_address_book_still_has_them(local, address_book) {
+        cache.save_contact(&local.no_longer_in(address_book))?;
+        result.updated_local.note(&local.id);
+        return Ok(());
+    }
+    say_if_a_change_went_too(local, result);
+    cache.delete_contact(&local.id)?;
+    result.deleted_local.note(&local.id);
+    Ok(())
+}
+
 /// Note a contact about to be removed that still holds work nobody has sent.
 ///
 /// The removal itself stands. An address book naming a contact as deleted is
@@ -1713,9 +1761,7 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                 .iter()
                 .find(|c| c.id_in(&AddressBook::Google) == Some(person.resource_name.as_str()))
             {
-                say_if_a_change_went_too(local, &mut result);
-                cache.delete_contact(&local.id)?;
-                result.deleted_local.note(&local.id);
+                one_address_book_deleted_them(cache, local, &AddressBook::Google, &mut result)?;
             }
             continue;
         }
@@ -1893,9 +1939,7 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                 .iter()
                 .find(|c| c.id_in(&AddressBook::Microsoft) == Some(ms_contact.id.as_str()))
             {
-                say_if_a_change_went_too(local, &mut result);
-                cache.delete_contact(&local.id)?;
-                result.deleted_local.note(&local.id);
+                one_address_book_deleted_them(cache, local, &AddressBook::Microsoft, &mut result)?;
             }
             continue;
         }
@@ -7533,6 +7577,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_person_one_address_book_deleted_and_the_other_still_holds_is_one_person() {
+        // Deleting the row took every address book off her with it, so the
+        // read from the address book that still had her wrote her down again
+        // as somebody new. One person, one sync, and the line said "1 created,
+        // 0 updated, 1 deleted" about her. Worse than the counting: a sync
+        // where the other address book has nothing new to say never writes her
+        // down again at all, so a contact Outlook still holds disappears
+        // because Google let her go.
+        let cache = a_cache("google_lets_go_of_somebody_outlook_holds");
+        a_contact_both_address_books_know_and_nobody_changed(&cache);
+        let google = ScriptedGoogle {
+            people: vec![a_person_google_deleted(GOOGLES_NAME_FOR_HER)],
+            ..Default::default()
+        };
+        let outlook = ScriptedMicrosoft {
+            contacts: vec![a_microsoft_contact_at_version(
+                OUTLOOKS_NAME_FOR_HER,
+                THE_WORDS_TYPED_HERE,
+                THE_OUTLOOK_MARKER_LAST_SEEN,
+            )],
+            ..Default::default()
+        };
+
+        let mut total = SyncResult::default();
+        total.absorb(
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a Google sync"),
+        );
+        total.absorb(
+            sync_microsoft_contacts(
+                &cache,
+                &outlook,
+                "a token",
+                AN_ACCOUNT,
+                ANYWHERE_IT_IS_KNOWN,
+            )
+            .await
+            .expect("an Outlook sync"),
+        );
+
+        assert_eq!(
+            the_names_stored(&cache).len(),
+            1,
+            "one person is stored twice or not at all: {:?}",
+            the_names_stored(&cache)
+        );
+        let stored = the_contact_under(&cache, "local-in-both-books");
+        assert_eq!(
+            stored.id_in(&AddressBook::Google),
+            None,
+            "Google let her go and this still says Google knows her"
+        );
+        assert_eq!(
+            stored.id_in(&AddressBook::Microsoft),
+            Some(OUTLOOKS_NAME_FOR_HER),
+            "the address book that still holds her was taken off her as well"
+        );
+        assert_eq!(
+            what_the_contacts_sync_did(&total),
+            "Contacts sync: 0 created, 1 updated, 0 deleted",
+            "one person was counted as two: {total:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_an_ordinary_deletion_is_not_reported_as_losing_a_change() {
         let cache = a_cache("google_ordinary_deletion");
         a_stored_contact(
@@ -9073,13 +9183,19 @@ mod tests {
         );
     }
 
-    // The deletion side of the same question. Deleting the contact removes the
-    // row and every address book's waiting change with it, so what makes the
-    // deletion worth a sentence is work anywhere in the row, not work owed to
-    // the address book that did the deleting.
+    // The deletion side of the same question. Where nobody else holds the
+    // person, deleting her removes the row and every address book's waiting
+    // change with it, so what makes the deletion worth a sentence is work
+    // anywhere in the row and not work owed to the address book that did the
+    // deleting. Where another address book still holds her, the row stays and
+    // only that address book comes off, so there is no loss to say.
 
     #[tokio::test]
-    async fn test_a_contact_google_deleted_takes_the_change_owed_to_outlook_with_it_and_says_so() {
+    async fn test_a_google_deletion_leaves_the_change_outlook_is_still_owed_where_it_is() {
+        // Google letting go of somebody Outlook still holds used to take the
+        // row, the edit Outlook had not had yet, and Outlook's own name for her
+        // with it, and to say so as though the loss were unavoidable. None of
+        // that is Google's to decide: it can only say she has gone from Google.
         let cache = a_cache("google_deletes_a_contact_owed_to_outlook");
         a_contact_both_address_books_know(&cache, AddressBook::Microsoft);
         let google = ScriptedGoogle {
@@ -9092,23 +9208,30 @@ mod tests {
                 .await
                 .expect("a sync");
 
-        assert_eq!(result.deleted_local.count(), 1, "{result:?}");
-        assert_eq!(
-            result.deleted_with_a_change_waiting.count(),
-            1,
-            "the row went and took the edit Outlook was still owed with it, and the sync \
-             called it an ordinary deletion: {result:?}"
+        let stored = the_contact_under(&cache, "local-in-both-books");
+        assert_eq!(stored.id_in(&AddressBook::Google), None);
+        assert!(
+            still_owed_the_change(&stored, &AddressBook::Microsoft),
+            "the edit Outlook had not had yet went with a deletion at Google"
         );
         assert!(
-            what_the_contacts_sync_did(&result).contains("A contact you had changed was deleted"),
-            "{}",
-            what_the_contacts_sync_did(&result)
+            stored.pending,
+            "the contact says no work is waiting on it while Outlook is still owed a change"
         );
-        assert!(the_names_stored(&cache).is_empty());
+        assert_eq!(result.deleted_local.count(), 0, "{result:?}");
+        assert_eq!(
+            result.deleted_with_a_change_waiting.count(),
+            0,
+            "nothing was lost and somebody was told it was: {result:?}"
+        );
+        assert_eq!(
+            what_the_contacts_sync_did(&result),
+            "Contacts sync: 0 created, 1 updated, 0 deleted"
+        );
     }
 
     #[tokio::test]
-    async fn test_a_contact_outlook_removed_takes_the_change_owed_to_google_with_it_and_says_so() {
+    async fn test_an_outlook_deletion_leaves_the_change_google_is_still_owed_where_it_is() {
         let cache = a_cache("outlook_removes_a_contact_owed_to_google");
         a_contact_both_address_books_know(&cache, AddressBook::Google);
         let microsoft = ScriptedMicrosoft {
@@ -9126,19 +9249,46 @@ mod tests {
         .await
         .expect("a sync");
 
-        assert_eq!(result.deleted_local.count(), 1, "{result:?}");
+        let stored = the_contact_under(&cache, "local-in-both-books");
+        assert_eq!(stored.id_in(&AddressBook::Microsoft), None);
+        assert!(
+            still_owed_the_change(&stored, &AddressBook::Google),
+            "the edit Google had not had yet went with a deletion at Outlook"
+        );
+        assert_eq!(result.deleted_local.count(), 0, "{result:?}");
         assert_eq!(
             result.deleted_with_a_change_waiting.count(),
-            1,
-            "the row went and took the edit Google was still owed with it, and the sync \
-             called it an ordinary deletion: {result:?}"
+            0,
+            "{result:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_waiting_only_for_the_address_book_that_deleted_them_stops_waiting() {
+        // The other half of taking one address book off a contact. The change
+        // was owed to Google alone, Google no longer has the person, and there
+        // is nobody left to send it to. Left standing, the contact would say
+        // work was waiting that nothing could ever send, and the next Outlook
+        // read that moved her would count it as an edit an address book had
+        // replaced and tell somebody their work was gone.
+        let cache = a_cache("the_book_that_was_owed_the_change_deleted_them");
+        a_contact_both_address_books_know(&cache, AddressBook::Google);
+        let google = ScriptedGoogle {
+            people: vec![a_person_google_deleted(GOOGLES_NAME_FOR_HER)],
+            the_account_is_read_only: true,
+            ..Default::default()
+        };
+
+        sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+            .await
+            .expect("a sync");
+
+        let stored = the_contact_under(&cache, "local-in-both-books");
+        assert!(!still_owed_the_change(&stored, &AddressBook::Microsoft));
         assert!(
-            what_the_contacts_sync_did(&result).contains("A contact you had changed was deleted"),
-            "{}",
-            what_the_contacts_sync_did(&result)
+            !stored.pending,
+            "the contact still says work is waiting on it that nothing can send"
         );
-        assert!(the_names_stored(&cache).is_empty());
     }
 
     #[tokio::test]
@@ -9157,17 +9307,23 @@ mod tests {
         // anybody gets. Pinned here at the deletion rather than only at the
         // question, because it is the call that has to ask the wide way.
         //
+        // One address book and not two, because the row only goes when nobody
+        // else holds the person. With two, Google letting go of her leaves her
+        // here and there is nothing to say.
+        //
         // The same shape one layer down is
         // `test_an_address_book_left_waiting_is_work_here_whatever_the_contact_says_of_itself`.
         let cache = a_cache("google_deletes_a_contact_whose_own_flag_is_down");
-        let mut in_both_books = a_contact_both_address_books_know(&cache, AddressBook::Microsoft);
-        in_both_books.pending = false;
+        let mut only_google_knows_her =
+            a_contact_changed_here(&cache, AddressBook::Google, GOOGLES_NAME_FOR_HER, "etag-1");
+        only_google_knows_her.pending = false;
         cache
-            .save_contact(&in_both_books)
+            .save_contact(&only_google_knows_her)
             .expect("a contact whose own flag is down and whose address book is still owed");
 
         let google = ScriptedGoogle {
             people: vec![a_person_google_deleted(GOOGLES_NAME_FOR_HER)],
+            the_account_is_read_only: true,
             ..Default::default()
         };
 
@@ -9180,8 +9336,8 @@ mod tests {
         assert_eq!(
             result.deleted_with_a_change_waiting.count(),
             1,
-            "the row went and took the edit Outlook was still owed with it, and the \
-             sync read the contact's own flag rather than Outlook's: {result:?}"
+            "the row went and took the edit Google was still owed with it, and the \
+             sync read the contact's own flag rather than the address book's: {result:?}"
         );
         assert!(
             what_the_contacts_sync_did(&result).contains("A contact you had changed was deleted"),

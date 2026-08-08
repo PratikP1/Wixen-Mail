@@ -438,6 +438,33 @@ impl ContactEntry {
         }
     }
 
+    /// The contact, with this address book no longer knowing it.
+    ///
+    /// What an address book saying it has deleted somebody means when another
+    /// address book still holds her: she has gone from that one and from
+    /// nowhere else. Deleting the row instead took the other address book's
+    /// name for her, and its waiting change, away with it.
+    ///
+    /// A change that was waiting only for the address book being taken off is
+    /// waiting for nobody afterwards, so the contact's own flag is worked out
+    /// again from the address books that are left, the same way [`Self::told`]
+    /// works it out. Left standing, it would say work was waiting that nothing
+    /// could ever send, and the next read to move that contact would count it
+    /// as an edit the address book had replaced.
+    pub fn no_longer_in(&self, address_book: &AddressBook) -> ContactEntry {
+        let known_to: Vec<ProviderIdentity> = self
+            .known_to
+            .iter()
+            .filter(|identity| &identity.address_book != address_book)
+            .cloned()
+            .collect();
+        ContactEntry {
+            pending: known_to.iter().any(|identity| identity.change_is_waiting),
+            known_to,
+            ..self.clone()
+        }
+    }
+
     /// The contact, with this address book told about the change made here.
     ///
     /// The change stops waiting only once every address book that knows the
