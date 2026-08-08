@@ -446,12 +446,22 @@ impl ContactEntry {
     /// name for her, and its waiting change, away with it.
     ///
     /// A change that was waiting only for the address book being taken off is
-    /// waiting for nobody afterwards, so the contact's own flag is worked out
-    /// again from the address books that are left, the same way [`Self::told`]
-    /// works it out. Left standing, it would say work was waiting that nothing
-    /// could ever send, and the next read to move that contact would count it
-    /// as an edit the address book had replaced.
+    /// waiting for nobody afterwards, so the contact's own flag comes down with
+    /// it. Left standing, it would say work was waiting that nothing could ever
+    /// send, and the next read to move that contact would count it as an edit
+    /// the address book had replaced and tell somebody their work was gone.
+    ///
+    /// Only where the address book coming off was the one waiting, though.
+    /// `pending` is not merely a summary of these flags: a contact matched to
+    /// an address book by its email address alone has it up with no flag
+    /// anywhere, and working it out again from what is left would forget work
+    /// nobody has sent. [`Self::told`] can work it out that way because it is
+    /// only ever reached by a change that has just gone.
     pub fn no_longer_in(&self, address_book: &AddressBook) -> ContactEntry {
+        let it_was_waiting_there = self
+            .known_to
+            .iter()
+            .any(|identity| &identity.address_book == address_book && identity.change_is_waiting);
         let known_to: Vec<ProviderIdentity> = self
             .known_to
             .iter()
@@ -459,7 +469,8 @@ impl ContactEntry {
             .cloned()
             .collect();
         ContactEntry {
-            pending: known_to.iter().any(|identity| identity.change_is_waiting),
+            pending: known_to.iter().any(|identity| identity.change_is_waiting)
+                || (self.pending && !it_was_waiting_there),
             known_to,
             ..self.clone()
         }

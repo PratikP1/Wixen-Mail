@@ -61,6 +61,54 @@ red = [
     "application::contacts_sync::tests::test_a_change_only_google_still_needs_survives_an_outlook_read_that_moved_nothing",
 ]
 
+# ── A change built on a copy the address book has moved past ────────────────
+#
+# The one refusal with a remedy: ask what the address book holds now, put the
+# change on that marker, and send it again. Each provider words the refusal its
+# own way, so each half has to be read, and neither half has a second reader.
+
+[[guard]]
+name = "Google turning a change down for an old marker is read as one"
+file = "src/application/contacts_sync.rs"
+before = """    matches!(status, 400 | 409) && (said.contains("failed_precondition") || said.contains("etag"))"""
+after = """    false"""
+red = [
+    "application::contacts_sync::tests::test_a_change_google_had_moved_past_is_sent_again_rather_than_lost",
+    "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
+    "application::contacts_sync::tests::test_the_two_answers_an_address_book_gives_to_an_old_marker_are_both_read",
+]
+
+[[guard]]
+name = "Outlook turning a change down for an old marker is read as one"
+file = "src/application/contacts_sync.rs"
+before = """    if *status == THE_MARKER_WAS_NOT_THE_CURRENT_ONE {"""
+after = """    if false {"""
+red = [
+    "application::contacts_sync::tests::test_a_change_outlook_had_moved_past_is_sent_again_rather_than_lost",
+    "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
+    "application::contacts_sync::tests::test_the_two_answers_an_address_book_gives_to_an_old_marker_are_both_read",
+]
+
+[[guard]]
+name = "a change that could not be sent again is not replaced by the read"
+file = "src/application/contacts_sync.rs"
+before = """            || still_built_on_an_old_copy.holds(&the_copy_here.id))"""
+after = """            || false)"""
+red = [
+    "application::contacts_sync::tests::test_a_change_that_cannot_be_sent_again_is_kept_rather_than_replaced_by_the_read",
+]
+
+[[guard]]
+name = "a change sent over a newer copy is said and not only counted"
+file = "src/application/contacts_sync.rs"
+before = """    if !result.sent_over_a_newer_copy.is_empty() {"""
+after = """    if false {"""
+red = [
+    "application::contacts_sync::tests::test_a_change_sent_over_a_newer_copy_is_said_and_not_only_counted",
+    "application::contacts_sync::tests::test_a_change_google_had_moved_past_is_sent_again_rather_than_lost",
+    "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
+]
+
 # ── One address book cannot speak for the other ─────────────────────────────
 #
 # An address book saying it has deleted somebody speaks for itself and for

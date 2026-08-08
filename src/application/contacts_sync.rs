@@ -8769,6 +8769,132 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_an_edit_both_address_books_had_moved_past_reaches_both_of_them() {
+        // The whole case as it was reported, both address books together. One
+        // contact both of them know, one edit owed to both, both of them having
+        // moved their own copy on, and the account open for reading only to
+        // start with. The first sync says the change is waiting for a setting.
+        // Turning the setting on used to send nothing at all and lose the edit
+        // to the read that followed; this is the sentence somebody gets now.
+        let cache = a_cache("both_books_moved_past_the_edit");
+        a_contact_both_address_books_are_owed(&cache);
+        let read_only_google = ScriptedGoogle {
+            people: vec![a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "etag-2",
+            )],
+            the_account_is_read_only: true,
+            ..Default::default()
+        };
+        let read_only_outlook = ScriptedMicrosoft {
+            contacts: vec![a_microsoft_contact_at_version(
+                OUTLOOKS_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "W/\"2\"",
+            )],
+            the_account_is_read_only: true,
+            ..Default::default()
+        };
+        let mut first = SyncResult::default();
+        first.absorb(
+            sync_google_contacts(
+                &cache,
+                &read_only_google,
+                "a token",
+                AN_ACCOUNT,
+                ANYWHERE_IT_IS_KNOWN,
+            )
+            .await
+            .expect("a Google sync"),
+        );
+        first.absorb(
+            sync_microsoft_contacts(
+                &cache,
+                &read_only_outlook,
+                "a token",
+                AN_ACCOUNT,
+                ANYWHERE_IT_IS_KNOWN,
+            )
+            .await
+            .expect("an Outlook sync"),
+        );
+        assert_eq!(
+            what_the_contacts_sync_did(&first),
+            "Contacts sync: 0 created, 0 updated, 0 deleted. 1 change is waiting here: \
+             turn on Allow Changes in Settings to send it."
+        );
+
+        // Allow Changes on, and both address books weigh the marker.
+        let google = ScriptedGoogle {
+            accepts_a_change: true,
+            the_copy_it_holds: Some(a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "etag-2",
+            )),
+            ..Default::default()
+        };
+        let outlook = ScriptedMicrosoft {
+            accepts_a_change: true,
+            the_version_it_gives_back: Some("W/\"3\"".to_string()),
+            the_copy_it_holds: Some(a_microsoft_contact_at_version(
+                OUTLOOKS_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "W/\"2\"",
+            )),
+            ..Default::default()
+        };
+        let mut second = SyncResult::default();
+        second.absorb(
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a Google sync"),
+        );
+        second.absorb(
+            sync_microsoft_contacts(
+                &cache,
+                &outlook,
+                "a token",
+                AN_ACCOUNT,
+                ANYWHERE_IT_IS_KNOWN,
+            )
+            .await
+            .expect("an Outlook sync"),
+        );
+
+        let stored = the_contact_under(&cache, "local-in-both-books");
+        assert_eq!(stored.name, THE_WORDS_TYPED_HERE, "the edit went");
+        assert!(
+            !still_owed_the_change(&stored, &AddressBook::Google)
+                && !still_owed_the_change(&stored, &AddressBook::Microsoft),
+            "an address book is down as owed a change it has taken"
+        );
+        assert!(
+            !stored.pending,
+            "the contact still says work is waiting after both address books took it"
+        );
+        assert_eq!(
+            google.changed.borrow().len(),
+            2,
+            "Google was offered the change once and refused it"
+        );
+        assert_eq!(
+            outlook.changed.borrow().len(),
+            2,
+            "Outlook was offered the change once and refused it"
+        );
+        // One person, however many address books hold a copy of her, and the
+        // whole sentence because this is what somebody hears.
+        assert_eq!(
+            what_the_contacts_sync_did(&second),
+            "Contacts sync: 0 created, 0 updated, 0 deleted, 1 sent. A contact you had \
+             changed was changed in your address book as well, and what you have here \
+             was sent over it."
+        );
+    }
+
+    #[tokio::test]
     async fn test_a_change_that_cannot_be_sent_again_is_kept_rather_than_replaced_by_the_read() {
         // The unhappy ending of the same path. The address book turns the
         // change down for carrying an old marker and then will not hand its own
@@ -9288,6 +9414,37 @@ mod tests {
         assert!(
             !stored.pending,
             "the contact still says work is waiting on it that nothing can send"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_work_waiting_for_nobody_in_particular_survives_one_address_book_letting_go() {
+        // The contact's own flag is not merely a summary of the address books'.
+        // A contact matched to an address book by its email address alone has
+        // it up with no flag anywhere, because nothing in that contact came
+        // from that address book. Working the flag out again from the flags
+        // that are left would take that away, and then the next read to move
+        // her would write over work nobody had sent.
+        let cache = a_cache("work_waiting_for_nobody_in_particular");
+        let mut made_here = a_contact_in_both_books(false);
+        made_here.pending = true;
+        cache
+            .save_contact(&made_here)
+            .expect("a contact whose own flag is up and whose address books are owed nothing");
+        let google = ScriptedGoogle {
+            people: vec![a_person_google_deleted(GOOGLES_NAME_FOR_HER)],
+            ..Default::default()
+        };
+
+        sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+            .await
+            .expect("a sync");
+
+        let stored = the_contact_under(&cache, "local-in-both-books");
+        assert!(
+            stored.pending,
+            "work waiting on this contact was forgotten because an address book \
+             that was owed nothing let her go"
         );
     }
 
