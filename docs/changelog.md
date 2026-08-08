@@ -281,6 +281,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   card changes stays on this computer, and the next sync of an address book that
   holds the person can write its own copy back over it.
 
+- **Editing a contact no longer loses a postal address written by an older
+  version.** This one is about old data rather than anything that can be created
+  today. A contact stored before Wixen Mail kept lists of addresses has its
+  postal address in a single field, and the contact editor showed the email
+  address and the phone number from those older single fields but not the postal
+  address. So the editor opened with no address in it, and saving anything at
+  all about that contact, a corrected phone number included, wrote the address
+  away as empty. The editor now shows it the way it shows the older email
+  address and phone number, on one line and labelled Home, and saving keeps it.
+
 - **Editing an event keeps every alert on it, not just the first.** The event
   editor has one alert box, and it is filled from the first alert on the event.
   Saving rebuilt the alerts from that box alone, so an event with a popup

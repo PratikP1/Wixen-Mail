@@ -94,17 +94,37 @@ pub fn to_editor(stored: &StoredContact) -> EditorContact {
         });
     }
 
-    let addresses: Vec<AddressItem> = parse_list::<AddressEntry>(stored.addresses_json.as_ref())
-        .into_iter()
-        .map(|a| AddressItem {
-            label: a.label,
-            street: a.street,
-            city: a.city,
-            state: a.state,
-            zip: a.zip,
-            country: a.country,
-        })
-        .collect();
+    let mut addresses: Vec<AddressItem> =
+        parse_list::<AddressEntry>(stored.addresses_json.as_ref())
+            .into_iter()
+            .map(|a| AddressItem {
+                label: a.label,
+                street: a.street,
+                city: a.city,
+                state: a.state,
+                zip: a.zip,
+                country: a.country,
+            })
+            .collect();
+    // The same fallback the email address and the phone number get, for the
+    // one field that went without it. Read as no addresses at all, the column
+    // holding a postal address written before the lists existed was written
+    // straight back as nothing, so correcting anything else about that contact
+    // took their address away. It goes in the street whole, because one line of
+    // words with no parts marked out is all there is to go on, and the card
+    // reader stores such a line the same way.
+    if addresses.is_empty()
+        && let Some(address) = stored.address.as_ref().filter(|a| !a.trim().is_empty())
+    {
+        addresses.push(AddressItem {
+            label: "Home".to_string(),
+            street: address.clone(),
+            city: String::new(),
+            state: String::new(),
+            zip: String::new(),
+            country: String::new(),
+        });
+    }
 
     let custom_fields: Vec<CustomFieldItem> =
         parse_list::<CustomFieldEntry>(stored.custom_fields_json.as_ref())
@@ -461,6 +481,24 @@ mod tests {
         assert_eq!(restored.emails[0].address, "grace@navy.example");
         assert_eq!(restored.phones.len(), 1);
         assert_eq!(restored.phones[0].number, "555 0100");
+    }
+
+    #[test]
+    fn test_a_postal_address_stored_before_the_lists_existed_survives_an_edit() {
+        // The same fallback the email address and the phone number get, for
+        // the one field that never had it. Read as no addresses at all, the
+        // column holding it was written back as nothing and the address was
+        // gone, on any edit to any other field.
+        let mut stored = to_stored(&editor_contact(), "acct", None);
+        stored.addresses_json = None;
+        stored.address = Some("12 High Street, London".to_string());
+
+        let editing = to_editor(&stored);
+        let after = to_stored(&editing, "acct", Some(&stored));
+
+        assert_eq!(editing.addresses.len(), 1, "the address was not shown");
+        assert_eq!(editing.addresses[0].street, "12 High Street, London");
+        assert_eq!(after.address.as_deref(), Some("12 High Street, London"));
     }
 
     #[test]
