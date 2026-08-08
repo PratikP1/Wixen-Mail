@@ -117,7 +117,7 @@ back to your provider. None of that has been run against a real account yet, \
 so expect it to have bugs.
 
 Choose what Wixen Mail may change. You can change this later in Settings, and \
-you can set it per account.";
+the answer covers every account.";
 
 /// The button that opens the fuller page.
 pub const READ_MORE: &str = "What to test, and what is known to be broken";
@@ -187,6 +187,16 @@ mod tests {
         // Otherwise it reads as a one-off decision made under pressure at
         // startup, which is when somebody picks whatever gets them past it.
         assert!(INTRODUCTION.contains("change this later in Settings"));
+    }
+
+    #[test]
+    fn test_the_introduction_offers_only_the_control_that_exists() {
+        // It offered a setting per account. Nothing writes one: the settings
+        // screen writes the application-wide answer and every account gets
+        // that. This screen is read out in full before somebody reaches the
+        // buttons, so a control named here that is not there is a search
+        // somebody makes with a screen reader for nothing.
+        assert!(INTRODUCTION.contains("the answer covers every account"));
     }
 
     #[test]

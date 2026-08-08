@@ -32,9 +32,10 @@ A message that has been sent cannot be recalled, and a message deleted from a
 server may have been the only copy. A task in the wrong place can be moved
 back. That is the whole reason they are separate.
 
-Change them in Settings, under Allow Changes. You can also set it per
-account, which is the useful shape while testing: leave your real mail read
-only, and allow everything on an account you do not mind breaking.
+Change them in Settings, under Allow Changes. The answer covers every account
+you have signed in, so there is no way to leave one account read only and
+allow everything on another. To use a real account with nothing at risk, start
+Wixen Mail with `--read-only`, which is next.
 
 ### Turning it off for one run
 

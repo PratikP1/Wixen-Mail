@@ -4767,7 +4767,7 @@ mod tests {
         assert_eq!(
             what_the_calendar_sync_did(&one),
             "Calendar sync: 0 created, 0 updated, 0 deleted, 1 error. \
-             1 change is waiting here: turn on Allow Changes for this account \
+             1 change is waiting here: turn on Allow Changes in Settings \
              to send it."
         );
     }
@@ -4828,7 +4828,7 @@ mod tests {
         assert_eq!(
             said,
             "Calendar sync: 1 created, 1 updated, 0 deleted, 2 sent, 1 error. \
-             3 changes are waiting here: turn on Allow Changes for this account \
+             3 changes are waiting here: turn on Allow Changes in Settings \
              to send them. Term dates: 1 change made here cannot be saved, \
              because this is a calendar this program can only read."
         );

@@ -95,6 +95,16 @@ pub struct AppConfig {
     /// to write the permissive answer by accident; a map that answers with the
     /// application-wide setting for an id it has never seen cannot be got
     /// wrong that way.
+    ///
+    /// Nothing writes it. It is read by `allowed_for` below and honoured all
+    /// the way out to the provider clients, and the settings screen writes the
+    /// application-wide answer only, so every account gets that one. The gap is
+    /// written down here rather than left to be rediscovered: the testing page
+    /// and the first-run screen both used to offer this as a control somebody
+    /// could reach, and neither the screen nor the sentence a sync says names
+    /// an account any more. Wiring it means a control per account on the
+    /// settings screen, and the answer it writes can only ever narrow the
+    /// application-wide one.
     #[serde(default)]
     pub allowed_per_account: HashMap<String, crate::application::allowed::Allowed>,
     /// Whether a change to a contact goes to every address book that has that

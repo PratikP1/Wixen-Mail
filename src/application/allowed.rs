@@ -103,18 +103,25 @@ pub const SETTINGS_SECTION: &str = "Allow Changes";
 /// separately, and only one of them was ever corrected: the calendar read out
 /// "1 changes are waiting here ... to send them".
 ///
+/// It names Settings and not the account. There is one answer for the whole
+/// application and the settings screen is the only thing that writes it:
+/// `AppConfig::allowed_per_account` is read and honoured, and nothing outside
+/// its own tests has ever written one. Saying "for this account" sent somebody
+/// looking for a control that is not there, and hid the part that matters,
+/// which is that turning it on turns it on for every account they have.
+///
 /// Both numbers are written out whole rather than built from a stem and an
 /// "s". Three words have to agree, and a sentence assembled from fragments
 /// reads like one.
 pub fn changes_waiting_here(count: usize) -> String {
     match count {
         1 => format!(
-            "1 change is waiting here: turn on {SETTINGS_SECTION} for this \
-             account to send it"
+            "1 change is waiting here: turn on {SETTINGS_SECTION} in Settings \
+             to send it"
         ),
         many => format!(
-            "{many} changes are waiting here: turn on {SETTINGS_SECTION} for \
-             this account to send them"
+            "{many} changes are waiting here: turn on {SETTINGS_SECTION} in \
+             Settings to send them"
         ),
     }
 }
@@ -234,6 +241,25 @@ mod tests {
         ] {
             assert_eq!(stopped.allowed(), Allowed::NOTHING, "{stopped:?}");
         }
+    }
+
+    #[test]
+    fn test_a_waiting_change_names_the_one_place_that_can_send_it() {
+        // Allow Changes is one answer for the whole application: the settings
+        // screen writes that one, and nothing writes an answer for a single
+        // account. The sentence said to turn it on "for this account", which
+        // sent somebody looking for a control that is not there and hid the
+        // part that matters, which is that turning it on turns it on for every
+        // account they have.
+        assert_eq!(
+            changes_waiting_here(1),
+            "1 change is waiting here: turn on Allow Changes in Settings to send it"
+        );
+        assert_eq!(
+            changes_waiting_here(3),
+            "3 changes are waiting here: turn on Allow Changes in Settings to \
+             send them"
+        );
     }
 
     #[test]

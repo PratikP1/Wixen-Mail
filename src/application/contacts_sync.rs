@@ -7874,7 +7874,7 @@ mod tests {
         assert_eq!(
             what_the_contacts_sync_did(&total),
             "Contacts sync: 0 created, 0 updated, 0 deleted. 1 change is waiting here: \
-             turn on Allow Changes for this account to send it. 1 change is not going to \
+             turn on Allow Changes in Settings to send it. 1 change is not going to \
              your other address book: turn on sending a change to every address book \
              that has the contact."
         );
@@ -7961,7 +7961,7 @@ mod tests {
         assert_eq!(
             what_the_contacts_sync_did(&total),
             "Contacts sync: 0 created, 0 updated, 0 deleted. 1 change is waiting here: \
-             turn on Allow Changes for this account to send it."
+             turn on Allow Changes in Settings to send it."
         );
     }
 
@@ -7994,9 +7994,8 @@ mod tests {
         .await
         .expect("a first sync");
         assert!(
-            what_the_contacts_sync_did(&first).contains(
-                "1 change is waiting here: turn on Allow Changes for this account to send it"
-            ),
+            what_the_contacts_sync_did(&first)
+                .contains("1 change is waiting here: turn on Allow Changes in Settings to send it"),
             "the sync did not name the setting: {}",
             what_the_contacts_sync_did(&first)
         );

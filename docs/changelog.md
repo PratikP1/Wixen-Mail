@@ -255,6 +255,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Nothing offers a setting per account any more, because there is not one.**
+  The first-run screen and the testing page both said you could set what Wixen
+  Mail is allowed to change per account, and the line after a sync told you to
+  "turn on Allow Changes for this account". No screen writes an answer for one
+  account. There is one answer for the whole application, the settings screen
+  writes that one, and it covers every account you have signed in.
+
+  The shape the testing page recommended was not one the program could take
+  either. It said to leave your real mail read only and allow everything on an
+  account you do not mind breaking. An answer for one account can only ever take
+  permissions away from the application-wide one, never add them, so that is the
+  wrong way round.
+
+  A sync now says "1 change is waiting here: turn on Allow Changes in Settings to
+  send it", which is where the control really is. To use a real account with
+  nothing at risk, start Wixen Mail with `--read-only`, which the testing page
+  now points at instead.
+
+  Known limitation: the setting an account can carry is still read and still
+  honoured, so a per-account answer would work if anything wrote one. Nothing
+  does, and no screen offers it.
+
 - **The status line says "1 message" rather than "1 messages".** The line at the
   bottom of the window, which is also read out on every switch into a module,
   put the number in front of a plural word whatever the number was. A mailbox
@@ -305,14 +327,14 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   Both settings did it. With Allow Changes off, which is the default, one edit to
   one contact both address books hold was read out as "Contacts sync: 0 created,
   1 updated, 0 deleted, 1 of your change replaced by the address book. 1 change
-  is waiting here: turn on Allow Changes for this account to send it." Both
+  is waiting here: turn on Allow Changes in Settings to send it." Both
   halves of that were about the same contact, and by the end of the sync the
   change was gone. With "Send a change to a contact to every address book that
   has that contact" off as well, a second sentence named that setting and it did
   nothing either.
 
   The same sync now says "Contacts sync: 0 created, 0 updated, 0 deleted. 1
-  change is waiting here: turn on Allow Changes for this account to send it."
+  change is waiting here: turn on Allow Changes in Settings to send it."
   Your change is still on the contact, and turning the setting on really does
   send it.
 
@@ -604,10 +626,7 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   so the only way back is to make the change again. When the address book's copy
   wins, that copy is then sent on to the other address book, which is what keeps
   the two agreeing, and the status line counts it as one of your changes sent.
-  It is not one of yours, and the count says more than it should. For the same
-  reason, while one address book is still owed a change it cannot get, every
-  later change made in the other one is reported as replacing your change again,
-  although it was only lost once.
+  It is not one of yours, and the count says more than it should.
 
 - **A change sent to Outlook now says which copy it was built on.** Google has
   always been told the version of the contact a change was made against, and
@@ -3079,7 +3098,7 @@ be added by its address, and an event read aloud says its category.
 
 - **Wixen Mail asks, the first time you start it, what it is allowed to change.** Everything that writes is experimental: sending mail, deleting mail, and sending your changes to tasks, contacts and the calendar back to your provider. None of that has been run against a real account, so expect bugs. Reading your mail is the part that has been used.
   You get three choices, starting on the middle one: read only, tasks and contacts but not mail, or everything. Each says what it costs rather than which is recommended. There is a button to open [what to test and what is known to be broken](ALPHA_TESTING.md).
-  Change it later under Settings, Allowed Changes. You can also set it per account, which is the useful shape while testing: leave your real mail read only and allow everything on an account you do not mind breaking.
+  Change it later under Settings, Allow Changes. The answer covers every account you have signed in.
   If you were already using Wixen Mail before this version, you will be asked once too. Writing had been switched on all along without anybody saying it was unproven.
 
 - **`--read-only` and `--allow`, for one run.** `wixen-mail --read-only` changes nothing at any server that run, whatever the settings say. `wixen-mail --allow tasks` permits tasks, contacts and calendar but not mail. Neither can permit anything the settings forbid, so leaving one in a shortcut is safe.
