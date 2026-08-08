@@ -255,6 +255,32 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Importing a contact card no longer takes that person off your address
+  books.** Import Contacts reads a .vcf file, or a folder of them, and folds
+  each card into the contact it matches by email address. For somebody who is
+  also in Google or Outlook, the record it wrote named no address book at all,
+  so the contact became one this computer alone knows: every later edit to that
+  person stopped reaching Google and Outlook, and a change already waiting to be
+  sent was forgotten. The import also wrote over a saved photo, a note, a
+  company and a job title with nothing whenever the card carried none of them.
+
+  The rule now is the one the calendar sync already follows. A card is something
+  somebody wrote down on purpose, so it wins wherever it says something, and
+  every field it is silent about keeps what is stored. A card with no photo on
+  it is not a card asking for the photo to be taken away. Which address books
+  hold the person, whether a change is still waiting to be sent, when that
+  address book was last read, and where the contact came from are none of them
+  on a card, so an import no longer answers any of them.
+
+  Where a card does list things, its list is what gets stored. A card listing
+  one email address for somebody who had two here leaves them with the one on
+  the card, because the card is saying which addresses that person has, and
+  that is what makes re-importing a corrected card able to correct anything.
+
+  Known limitation: an import still sends nothing to Google or Outlook. What a
+  card changes stays on this computer, and the next sync of an address book that
+  holds the person can write its own copy back over it.
+
 - **Editing an event keeps every alert on it, not just the first.** The event
   editor has one alert box, and it is filled from the first alert on the event.
   Saving rebuilt the alerts from that box alone, so an event with a popup
