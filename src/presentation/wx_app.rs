@@ -6594,7 +6594,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // each cell as it paints. Filling row by row is what put a
             // ceiling of a few thousand items on these lists.
             pim.cal_event_list.set_item_count(events.len() as i64);
-            let msg = format!("{} calendar events loaded", events.len());
+            let msg = how_many_loaded(events.len(), "calendar event");
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "calendar-events");
         }
@@ -11035,6 +11035,10 @@ mod what_the_status_line_says {
         assert_eq!(how_many_loaded(1, "folder"), "1 folder loaded");
         assert_eq!(how_many_loaded(20, "folder"), "20 folders loaded");
         assert_eq!(how_many_loaded(1, "task list"), "1 task list loaded");
+        assert_eq!(
+            how_many_loaded(1, "calendar event"),
+            "1 calendar event loaded"
+        );
         assert_eq!(how_many_loaded(3, "task list"), "3 task lists loaded");
         assert_eq!(how_many_loaded(0, "note"), "0 notes loaded");
     }
