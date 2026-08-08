@@ -255,6 +255,29 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A contacts sync no longer counts the same person twice.** The line after a
+  sync says how many contacts were created, changed and deleted. A person kept
+  in both Google and Outlook arrives from whichever address book is read first
+  and has the other one's copy folded in straight after, and both were counted.
+  So a first sync of three people both address books hold said "Contacts sync: 3
+  created, 3 updated, 0 deleted" and stored three contacts. At the two hundred
+  shared contacts somebody really keeps, that reads as four hundred.
+
+  The same fault counted one person as two when one address book moved its copy
+  while the other deleted the contact: "1 updated, 1 deleted", about somebody who
+  is not there any more.
+
+  Those three counts are one person each now. Which of the three somebody is, is
+  what happened to them by the end of the sync: gone if they were removed, new if
+  they were not here when it started, changed otherwise. The same first sync says
+  "Contacts sync: 3 created, 0 updated, 0 deleted".
+
+  What is said after those three counts is deliberately about the same people,
+  because each part says something the three cannot: what went out rather than
+  what came down, whose work was lost, what is waiting on which setting, and
+  whether a deletion took work with it. So the person counted as changed can be
+  the same one whose edit the address book replaced, and both are said.
+
 - **A contact change a setting holds back is still there when you turn the
   setting on.** A contacts sync sends your changes first and then reads the
   address book. Where a setting stopped the sending, the read that followed in

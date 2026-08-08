@@ -200,7 +200,7 @@ after = """    if count == 0 {
 red = [
     "application::calendar::tests::test_every_clause_at_once_is_still_read_as_sentences",
     "application::calendar::tests::test_one_change_waiting_and_one_thing_wrong_are_not_read_out_in_the_plural",
-    "application::contacts_sync::tests::test_every_clause_at_once_is_still_read_as_sentences",
+    "application::contacts_sync::tests::test_every_clause_one_sync_can_say_is_still_read_as_sentences",
     "application::contacts_sync::tests::test_one_thing_going_wrong_is_not_read_out_as_one_errors",
     "application::mail_sync::tests::test_a_folder_holding_one_message_does_not_say_one_messages",
     "application::tasks_sync::tests::test_a_list_that_went_is_said_rather_than_left_to_be_noticed",
@@ -250,6 +250,41 @@ before = """    let untouched = result
 after = """    let untouched = result.unchanged.clone();"""
 red = [
     "application::contacts_sync::tests::test_a_contact_one_address_book_moved_is_not_also_called_unchanged",
+]
+
+# ── Created, updated and deleted are one person each ────────────────────────
+#
+# A person both address books hold arrives from the first and is folded from
+# the second, so an ordinary first sync of shared contacts said "3 created, 3
+# updated" about three people. One address book can move its copy while the
+# other deletes the contact, which said "1 updated, 1 deleted" about one person
+# who is gone.
+
+[[guard]]
+name = "a person who arrived this sync is not also counted as changed"
+file = "src/application/contacts_sync.rs"
+before = """    let changed = result
+        .updated_local
+        .apart_from(&result.deleted_local)
+        .apart_from(&created);"""
+after = """    let changed = result
+        .updated_local
+        .apart_from(&result.deleted_local);"""
+red = [
+    "application::contacts_sync::tests::test_a_first_sync_of_people_both_address_books_hold_counts_each_person_once",
+    "application::contacts_sync::tests::test_a_person_who_arrived_this_sync_is_not_also_counted_as_changed",
+]
+
+[[guard]]
+name = "a person this sync removed is not also counted as changed"
+file = "src/application/contacts_sync.rs"
+before = """    let changed = result
+        .updated_local
+        .apart_from(&result.deleted_local)
+        .apart_from(&created);"""
+after = """    let changed = result.updated_local.apart_from(&created);"""
+red = [
+    "application::contacts_sync::tests::test_a_person_this_sync_removed_is_not_also_counted_as_changed",
 ]
 
 [[guard]]

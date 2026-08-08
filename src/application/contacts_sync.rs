@@ -166,6 +166,13 @@ pub struct SyncResult {
     pub created_local: Contacts,
     pub updated_local: Contacts,
     pub created_remote: Contacts,
+    /// Changes sent out to an address book.
+    ///
+    /// Counted beside what came down rather than netted against it, because it
+    /// is the other direction. Somebody who has just corrected a phone number
+    /// needs to hear that the correction reached their address book, and a
+    /// contact can be sent to one address book and folded from the other in the
+    /// same sync.
     pub updated_remote: Contacts,
     /// Contacts removed from this computer because the address book no longer
     /// has them.
@@ -1141,19 +1148,48 @@ impl MicrosoftContactBook for MsGraphClient {
 /// Every number here is a number of contacts. A person in two address books is
 /// one person, whatever each address book did with its own copy of her.
 ///
+/// The three counts in the opening are a person each and never two of them.
+/// Which of the three she is, is what happened to her by the end of the sync
+/// rather than what each address book's copy did on the way: gone if she was
+/// removed, new if she was not here when the sync started, changed otherwise.
+/// Two of the three overlap for real. A person both address books hold arrives
+/// from the first and is folded from the second, so an ordinary first sync of
+/// two hundred shared contacts said "200 created, 200 updated". And one address
+/// book can move its copy while the other deletes the contact, which said
+/// "1 updated, 1 deleted" about one person who is not there any more.
+///
+/// Created and deleted are left to overlap because they cannot: a contact
+/// written down for the first time is a row that did not exist when the sync
+/// started, and a deleted one is a row that is gone, so no identifier can be in
+/// both.
+///
+/// The clauses after the opening are about the people it already counted and
+/// are meant to overlap it. Each one says something the three cannot: what went
+/// out rather than what came down, whose work was lost, what is waiting on
+/// which setting, and whether a deletion took work with it. So "1 updated, 1 of
+/// your change replaced by the address book" is one person, and that is the
+/// point of the second clause.
+///
 /// Every number but the errors, which count what went wrong. Two address books
 /// refusing the same contact is two things to look at, and some of what goes
 /// wrong is not about a contact at all: a list of waiting changes that will not
 /// read is one error and no contacts.
 pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
     let created = result.created_local.and(&result.created_remote);
+    // A person the sync removed is not also one it changed, and a person it
+    // wrote down for the first time is not also one it changed. Both are
+    // ordinary, and both used to count one person as two.
+    let changed = result
+        .updated_local
+        .apart_from(&result.deleted_local)
+        .apart_from(&created);
     let untouched = result
         .unchanged
         .apart_from(&result.contacts_something_happened_to());
     let mut said = SummingUp::opening(format!(
         "Contacts sync: {} created, {} updated, {} deleted",
         created.count(),
-        result.updated_local.count(),
+        changed.count(),
         result.deleted_local.count()
     ));
     if !result.updated_remote.is_empty() {
@@ -5476,6 +5512,114 @@ mod tests {
         assert_eq!(total.waiting_on_the_setting.count(), 1);
     }
 
+    #[tokio::test]
+    async fn test_a_first_sync_of_people_both_address_books_hold_counts_each_person_once() {
+        // The ordinary first sync of an account signed in to both. Google's
+        // read has nothing stored to match, so it writes all three down and
+        // counts them created. Outlook's read then finds each of them by email
+        // address and folds its own copy in, which is an update to a row that
+        // already exists. Three people arrived and the line said "3 created, 3
+        // updated": six events for three people, and four hundred for the two
+        // hundred contacts somebody really keeps in both.
+        let cache = a_cache("first_sync_of_shared_people");
+        let three = ["Alice Smith", "Bob Jones", "Carol Vance"];
+        let google = ScriptedGoogle {
+            people: three
+                .iter()
+                .enumerate()
+                .map(|(which, name)| {
+                    a_google_person(
+                        &format!("people/c{which}"),
+                        name,
+                        &format!("person{which}@example.com"),
+                    )
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let outlook = ScriptedMicrosoft {
+            contacts: three
+                .iter()
+                .enumerate()
+                .map(|(which, name)| {
+                    a_microsoft_contact(
+                        &format!("AAMk{which}"),
+                        name,
+                        &format!("person{which}@example.com"),
+                    )
+                })
+                .collect(),
+            ..Default::default()
+        };
+
+        let mut total = SyncResult::default();
+        total.absorb(
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a Google sync"),
+        );
+        total.absorb(
+            sync_microsoft_contacts(
+                &cache,
+                &outlook,
+                "a token",
+                AN_ACCOUNT,
+                ANYWHERE_IT_IS_KNOWN,
+            )
+            .await
+            .expect("an Outlook sync"),
+        );
+
+        assert_eq!(
+            cache
+                .get_contacts_for_account(AN_ACCOUNT)
+                .expect("the contacts stored")
+                .len(),
+            3,
+            "three people are stored, so three is what the line has to say"
+        );
+        assert_eq!(
+            what_the_contacts_sync_did(&total),
+            "Contacts sync: 3 created, 0 updated, 0 deleted"
+        );
+    }
+
+    #[test]
+    fn test_a_person_who_arrived_this_sync_is_not_also_counted_as_changed() {
+        // The same overlap said at the layer that builds the sentence, so what
+        // the rule is does not have to be read out of a whole sync. She came
+        // down from one address book and the other's copy was folded into the
+        // row that arrival made.
+        let both = SyncResult {
+            created_local: Contacts::these(["she arrived from Google"]),
+            updated_local: Contacts::these(["she arrived from Google"]),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            what_the_contacts_sync_did(&both),
+            "Contacts sync: 1 created, 0 updated, 0 deleted"
+        );
+    }
+
+    #[test]
+    fn test_a_person_this_sync_removed_is_not_also_counted_as_changed() {
+        // One address book moved its copy and the other said the contact was
+        // deleted. She is gone at the end of the sync, so "1 updated, 1
+        // deleted" counts one person twice and the update it names no longer
+        // exists to be read.
+        let changed_then_gone = SyncResult {
+            updated_local: Contacts::these(["Google moved her, Outlook dropped her"]),
+            deleted_local: Contacts::these(["Google moved her, Outlook dropped her"]),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            what_the_contacts_sync_did(&changed_then_gone),
+            "Contacts sync: 0 created, 0 updated, 1 deleted"
+        );
+    }
+
     #[test]
     fn test_a_change_held_back_by_the_setting_names_the_setting_rather_than_saying_nothing() {
         let held = SyncResult {
@@ -5551,20 +5695,45 @@ mod tests {
     }
 
     #[test]
-    fn test_every_clause_at_once_is_still_read_as_sentences() {
+    fn test_every_clause_one_sync_can_say_is_still_read_as_sentences() {
         // This string is spoken, and a screen reader stops at every full stop.
         // Clauses pushed on to the end of each other gave "send them.. 2
         // contacts" and "went with them., 2 errors": a stutter, then a
         // fragment. Each clause is an item in a list here and the list is
         // punctuated once, so a clause added later cannot bring it back.
+        //
+        // Named people rather than a count, because the counts are counts of
+        // people and one person in four of these sets is a state nobody can be
+        // in. Read the fixture as one account signed in to both address books,
+        // with Allow Changes on and a change going only to the address book the
+        // contact came from. Every overlap below is one that really happens:
+        //
+        // - The edit Google replaced is an update as well, because taking the
+        //   address book's copy is the write that lost it.
+        // - The correction Google took is not going to Outlook, because of the
+        //   setting. Sent to one and held from the other is the ordinary state
+        //   for a person both hold.
+        // - Both deletions took work with them, so both are counted again in
+        //   the sentence that says so.
+        //
+        // The one clause missing is "changes are waiting here", which names
+        // Allow Changes. It cannot appear beside "1 sent": one setting gates
+        // both address books, so a sync either sends or is refused. Its
+        // punctuation beside another sentence is pinned by
+        // `test_a_change_two_settings_hold_back_names_both_of_them`, against a
+        // whole sync rather than a fixture.
         let said = what_the_contacts_sync_did(&SyncResult {
-            created_local: however_many(1),
-            updated_local: however_many(1),
-            updated_remote: however_many(1),
-            deleted_local: however_many(2),
-            replaced: however_many(1),
-            waiting_on_the_setting: however_many(2),
-            deleted_with_a_change_waiting: however_many(2),
+            created_local: Contacts::these(["new in Google"]),
+            updated_local: Contacts::these(["Outlook moved her", "her edit lost to Google"]),
+            updated_remote: Contacts::these(["her correction went to Google"]),
+            deleted_local: Contacts::these(["deleted in Google", "deleted in Outlook"]),
+            unchanged: Contacts::these(["neither side touched him"]),
+            replaced: Contacts::these(["her edit lost to Google"]),
+            waiting_on_how_far_a_change_goes: Contacts::these(["her correction went to Google"]),
+            deleted_with_a_change_waiting: Contacts::these([
+                "deleted in Google",
+                "deleted in Outlook",
+            ]),
             errors: vec!["the address book said no".to_string()],
             ..Default::default()
         });
@@ -5575,11 +5744,12 @@ mod tests {
         assert!(!said.contains("  "), "a space spoken twice: {said}");
         assert_eq!(
             said,
-            "Contacts sync: 1 created, 1 updated, 2 deleted, 1 sent, \
+            "Contacts sync: 1 created, 2 updated, 2 deleted, 1 sent, 1 unchanged, \
              1 of your change replaced by the address book, 1 error. \
-             2 changes are waiting here: turn on Allow Changes for this account \
-             to send them. 2 contacts you had changed were deleted in your \
-             address book, and your changes went with them."
+             1 change is not going to your other address book: turn on sending a \
+             change to every address book that has the contact. \
+             2 contacts you had changed were deleted in your address book, and \
+             your changes went with them."
         );
     }
 
