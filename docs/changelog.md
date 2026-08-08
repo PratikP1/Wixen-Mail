@@ -277,9 +277,8 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   event.** Moving an event offered every calendar on the account, including a
   calendar feed you subscribed to and one your calendar server lets you read but
   not write. Choosing one filed the event there, marked it as waiting to be sent
-  and said "Dentist moved to Term dates". Nothing was ever sent: the next sync
-  found a calendar it can only read, left the row where it was, said nothing,
-  and did the same on every sync afterwards.
+  and said "Dentist moved to Term dates". Nothing was ever sent: every sync from
+  then on found a calendar it can only read and left the change where it was.
 
   Those calendars are now left out of the list you choose from, and a move into
   one is refused where the move is written as well, so it cannot happen by any
