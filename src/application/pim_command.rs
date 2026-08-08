@@ -99,6 +99,22 @@ const fn thing(kind: ItemKind) -> &'static str {
     }
 }
 
+/// The same word with the article that belongs in front of it.
+///
+/// One of the six starts with a vowel, and every sentence that wrote "a" and
+/// then the word got that one wrong. Written once here so the next sentence to
+/// name a kind cannot get it wrong again.
+const fn a_thing(kind: ItemKind) -> &'static str {
+    match kind {
+        ItemKind::Mail => "a message",
+        ItemKind::Contact => "a contact",
+        ItemKind::Event => "an event",
+        ItemKind::Reminder => "a reminder",
+        ItemKind::Task => "a task",
+        ItemKind::Note => "a note",
+    }
+}
+
 /// What to say once it is gone.
 ///
 /// Said rather than left silent. A row disappearing is not something somebody
@@ -143,10 +159,39 @@ pub fn cannot_be_moved(kind: ItemKind, holder: ContainerKind, name: &str) -> Str
     };
     format!(
         "{named} is held by the account it came from, and moving one of those to another \
-         {} is not something this can do yet. Nothing has been moved. A {} made on this \
+         {} is not something this can do yet. Nothing has been moved. {} made on this \
          computer can be moved.",
         holder.label().to_lowercase(),
-        thing(kind)
+        capitalise(a_thing(kind))
+    )
+}
+
+/// What to say when the container chosen is one this program can only read.
+///
+/// The other half of [`cannot_be_moved`], on the axis that one does not ask
+/// about. That one asks whether the item can be moved; this one asks whether
+/// the place it is going could ever hold it. A calendar somebody subscribed to,
+/// or one a calendar server marks as read-only, takes nothing: the row would be
+/// filed there on this computer, marked as waiting to be sent, and every sync
+/// from then on would look at it, find nothing that could send it, and leave it
+/// exactly where it was. The move was offered, accepted and announced as done,
+/// and nothing ever happened.
+///
+/// Same shape as the item refusal: what is true, then that nothing was moved,
+/// then what does work. Two sentences of the same shape are one thing to learn
+/// rather than two.
+pub fn cannot_be_moved_into(kind: ItemKind, holder: ContainerKind, container_name: &str) -> String {
+    let holder_name = holder.label().to_lowercase();
+    let named = match container_name.trim() {
+        // A row whose name never loaded. "That calendar" is still answerable.
+        "" => format!("That {holder_name}"),
+        name => format!("\"{name}\""),
+    };
+    format!(
+        "{named} is a {holder_name} this program can only read, and {} moved into it could \
+         never be sent. Nothing has been moved. {} you can change can hold it.",
+        a_thing(kind),
+        capitalise(&format!("a {holder_name}")),
     )
 }
 
@@ -270,6 +315,30 @@ mod tests {
 
         assert!(said.starts_with("This event is held"), "{said}");
         assert!(said.contains("another calendar"), "{said}");
+    }
+
+    #[test]
+    fn test_a_move_into_a_container_that_can_only_be_read_says_so_and_what_works() {
+        // The other axis of the same refusal. The item was fine to move and
+        // the destination was not, and the sentence has to name the
+        // destination, because that is the part somebody chose.
+        let said = cannot_be_moved_into(ItemKind::Event, ContainerKind::Calendar, "Term dates");
+
+        assert!(said.contains("Term dates"), "{said}");
+        assert!(said.contains("can only read"), "{said}");
+        assert!(said.contains("Nothing has been moved"), "{said}");
+        assert!(said.contains("A calendar you can change"), "{said}");
+    }
+
+    #[test]
+    fn test_the_refusal_names_the_kind_with_the_article_that_belongs_with_it() {
+        // Read aloud, so "a event" is heard rather than skimmed past. An event
+        // is the one of the six kinds that starts with a vowel, so it is the
+        // only one any of these sentences can get wrong.
+        let said = cannot_be_moved(ItemKind::Event, ContainerKind::Calendar, "Dentist");
+
+        assert!(said.contains("An event made on this computer"), "{said}");
+        assert!(!said.contains("A event"), "{said}");
     }
 
     #[test]

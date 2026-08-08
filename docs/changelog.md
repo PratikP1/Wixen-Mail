@@ -273,6 +273,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   it, was the one change most likely to be waiting and the one never mentioned.
   It is counted by asking the calendar what is waiting in it now.
 
+- **A calendar you can only read is no longer offered as somewhere to move an
+  event.** Moving an event offered every calendar on the account, including a
+  calendar feed you subscribed to and one your calendar server lets you read but
+  not write. Choosing one filed the event there, marked it as waiting to be sent
+  and said "Dentist moved to Term dates". Nothing was ever sent: the next sync
+  found a calendar it can only read, left the row where it was, said nothing,
+  and did the same on every sync afterwards.
+
+  Those calendars are now left out of the list you choose from, and a move into
+  one is refused where the move is written as well, so it cannot happen by any
+  route. The refusal has the same shape as the one you already get for an item
+  your provider holds: "Term dates is a calendar this program can only read, and
+  an event moved into it could never be sent. Nothing has been moved. A calendar
+  you can change can hold it."
+
 - **A calendar or task list you made here is no longer promised back from your
   provider.** The question asked before deleting one said "It will come back at
   the next sync" whenever the open account was a Google or Outlook one. That is

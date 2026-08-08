@@ -2227,6 +2227,183 @@ mod tests {
         );
     }
 
+    /// A calendar of the account's, either one changes can be sent to or one
+    /// this program can only read.
+    fn a_calendar(cache: &MessageCache, id: &str, name: &str, only_readable: bool) {
+        cache
+            .save_calendar(&crate::data::message_cache::CalendarContainer {
+                id: id.to_string(),
+                account_id: "acct".to_string(),
+                name: name.to_string(),
+                color: "#4285F4".to_string(),
+                source_provider: Some("gmail".to_string()),
+                caldav_url: None,
+                subscription_url: None,
+                is_default: false,
+                is_visible: true,
+                is_read_only: only_readable,
+                display_order: 0,
+                etag: None,
+                ctag: None,
+                sync_token: None,
+                refresh_interval_minutes: None,
+                created_at: now_stamp(),
+                updated_at: now_stamp(),
+            })
+            .expect("a calendar to file into");
+    }
+
+    /// Everywhere an offer names, in the order it names them.
+    fn offered_places(branches: &[crate::application::destinations::Branch]) -> Vec<String> {
+        branches
+            .iter()
+            .flat_map(|branch| branch.places.iter())
+            .map(|place| place.id.clone())
+            .collect()
+    }
+
+    #[test]
+    fn test_a_calendar_this_program_can_only_read_is_not_offered_as_somewhere_to_move_to() {
+        // Offered, chosen, written and announced as done, and then nothing at
+        // all: the push leaves a change in a calendar it can only read where
+        // it is, so the row waits for ever and the status line has already
+        // said the event moved.
+        let cache = test_cache();
+        a_calendar(&cache, "cal-a", "Home", false);
+        a_calendar(&cache, "cal-b", "Work", false);
+        a_calendar(&cache, "term-dates", "Term dates", true);
+        cache
+            .save_calendar_event(&a_settled_event("e1", "cal-a", None))
+            .expect("an event to move");
+
+        let offered = where_it_could_go(
+            &cache,
+            &looking_at("acct"),
+            crate::application::new_item::ItemKind::Event,
+            "e1",
+            "Dentist",
+        )
+        .expect("an answer");
+
+        match offered.offer {
+            Offer::Ask(branches) => assert_eq!(
+                offered_places(&branches),
+                vec!["cal-b".to_string()],
+                "a calendar nothing can send a change to was offered as \
+                 somewhere to move an event"
+            ),
+            Offer::Said(sentence) => panic!("a move that works was refused: {sentence}"),
+        }
+    }
+
+    #[test]
+    fn test_an_event_with_nowhere_but_a_read_only_calendar_to_go_is_told_so() {
+        // The other half. Taking the read-only calendars out must not leave an
+        // empty chooser for somebody to work through and find nothing in.
+        let cache = test_cache();
+        a_calendar(&cache, "cal-a", "Home", false);
+        a_calendar(&cache, "term-dates", "Term dates", true);
+        cache
+            .save_calendar_event(&a_settled_event("e1", "cal-a", None))
+            .expect("an event to move");
+
+        let offered = where_it_could_go(
+            &cache,
+            &looking_at("acct"),
+            crate::application::new_item::ItemKind::Event,
+            "e1",
+            "Dentist",
+        )
+        .expect("an answer");
+
+        match offered.offer {
+            Offer::Said(sentence) => assert!(
+                sentence.to_lowercase().contains("calendar"),
+                "the sentence has to say what there is none of: {sentence}"
+            ),
+            Offer::Ask(branches) => panic!(
+                "an empty chooser was opened: {:?}",
+                offered_places(&branches)
+            ),
+        }
+    }
+
+    #[test]
+    fn test_moving_an_event_into_a_calendar_this_program_can_only_read_is_refused() {
+        // Asked at the chooser and asked again here, the way the refusal for
+        // an item a provider holds is, so the move cannot be written by any
+        // route.
+        let cache = test_cache();
+        a_calendar(&cache, "cal-a", "Home", false);
+        a_calendar(&cache, "term-dates", "Term dates", true);
+        cache
+            .save_calendar_event(&a_settled_event("e1", "cal-a", None))
+            .expect("an event to move");
+
+        let refused = file_under(
+            &cache,
+            crate::application::new_item::ItemKind::Event,
+            "e1",
+            "term-dates",
+            "acct",
+        )
+        .expect_err("a move nothing can send is refused");
+        assert!(
+            refused.to_string().contains("Term dates"),
+            "the refusal has to name the calendar: {refused}"
+        );
+        assert!(
+            refused.to_string().contains("Nothing has been moved"),
+            "the refusal has to say the move did not happen: {refused}"
+        );
+
+        let held = cache
+            .get_all_events_for_account("acct")
+            .expect("the event back");
+        assert_eq!(
+            held.first().and_then(|event| event.calendar_id.as_deref()),
+            Some("cal-a"),
+            "the event was moved into it anyway"
+        );
+        assert!(
+            cache
+                .pending_calendar_events("acct")
+                .expect("the queue")
+                .is_empty(),
+            "a move nothing can carry out was queued to be sent"
+        );
+    }
+
+    #[test]
+    fn test_moving_an_event_into_a_calendar_that_can_be_written_to_still_works() {
+        // The refusal has to discriminate. One that is always true would stop
+        // the command working at all and no other test here would notice.
+        let cache = test_cache();
+        a_calendar(&cache, "cal-a", "Home", false);
+        a_calendar(&cache, "cal-b", "Work", false);
+        cache
+            .save_calendar_event(&a_settled_event("e1", "cal-a", None))
+            .expect("an event to move");
+
+        file_under(
+            &cache,
+            crate::application::new_item::ItemKind::Event,
+            "e1",
+            "cal-b",
+            "acct",
+        )
+        .expect("the move to be written");
+
+        let waiting = cache.pending_calendar_events("acct").expect("the queue");
+        assert_eq!(
+            waiting
+                .iter()
+                .map(|event| event.calendar_id.clone().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["cal-b".to_string()]
+        );
+    }
+
     /// A window state with one account open, which is all the move command
     /// reads out of it.
     fn looking_at(account_id: &str) -> Arc<StdMutex<WxUIState>> {
@@ -2825,6 +3002,11 @@ fn where_it_could_go(
     let account_for_lookup = account_id.clone();
     let places: Vec<Destination> = containers_in(cache, holder, &account_id)
         .into_iter()
+        // A container nothing could ever send a change to is not somewhere an
+        // item can go, so it is not offered. Asked here as well as at
+        // [`file_under`], the way the refusal for an item a provider holds is,
+        // and asked first so nobody chooses an answer that is then refused.
+        .filter(|(id, _, _)| can_only_be_read(cache, holder, id).is_none())
         .map(|(id, name, _)| Destination {
             name,
             id,
@@ -2958,6 +3140,16 @@ fn file_under(
     if let Err(refused) = moving_can_be_told(cache, kind, id, "", account_id) {
         return Err(Error::Other(refused));
     }
+    // And whether the place it is going could ever hold it. The chooser leaves
+    // those out, so this is only reached by a route that did not go through the
+    // chooser, which is exactly why it is asked here too.
+    if let Some(holder) = kind.kept_in()
+        && let Some(name) = can_only_be_read(cache, holder, into)
+    {
+        return Err(Error::Other(
+            crate::application::pim_command::cannot_be_moved_into(kind, holder, &name),
+        ));
+    }
 
     match kind {
         ItemKind::Event => {
@@ -2991,6 +3183,36 @@ fn file_under(
         // never opened for one. Written out rather than caught by a catch-all,
         // so a new kind of item is a compile error here.
         ItemKind::Mail | ItemKind::Contact | ItemKind::Reminder => Ok(()),
+    }
+}
+
+/// The container's name, when it is one this program can only ever read.
+///
+/// `None` for a container a change to its contents can be sent to, and for one
+/// that is no longer there: a move into a container that has gone is refused by
+/// the storage rather than by a sentence about reading.
+///
+/// Only a calendar can be marked this way. A calendar somebody subscribed to is
+/// a file somebody else publishes, and a calendar server can mark one read-only
+/// for this sign-in. Task lists, note folders and contact groups carry no such
+/// flag: notes and groups never leave this computer at all, and neither tasks
+/// API has the idea. Written out rather than answered by a catch-all so that a
+/// flag added to one of the other three is a compile error here.
+fn can_only_be_read(
+    cache: &MessageCache,
+    holder: crate::application::new_item::ContainerKind,
+    container_id: &str,
+) -> Option<String> {
+    use crate::application::new_item::ContainerKind;
+
+    match holder {
+        ContainerKind::Calendar => cache
+            .get_calendar(container_id)
+            .ok()
+            .flatten()
+            .filter(|calendar| calendar.is_read_only)
+            .map(|calendar| calendar.name),
+        ContainerKind::TaskList | ContainerKind::NoteFolder | ContainerKind::ContactGroup => None,
     }
 }
 
