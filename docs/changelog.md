@@ -287,6 +287,36 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A contact you delete no longer comes back in the same sync.** Deleting a
+  contact here sends the deletion out to the address books that hold her. The
+  read that follows in the same sync could write her straight back down, under a
+  new identifier, with nothing left to say she had ever been deleted. That reads
+  as the delete having quietly failed, and it is worse than not syncing at all.
+
+  The sync passed over anybody whose deletion had not gone out yet, and stopped
+  passing over her at the exact moment it had: sending the deletion clears the
+  note saying one is owed, so the check disarmed itself for the one person it
+  was there to protect. It now passes over everybody the sync deleted, whether
+  the address book has taken the deletion or not.
+
+  Not verified: whether Google or Outlook really name somebody in a read taken
+  moments after they took her deletion. Nothing here has run against a real
+  account, and the rule holds either way, because nothing a sync deleted should
+  be written back down by that same sync.
+
+- **A deletion your address book never received is no longer read out as one it
+  did.** Delete somebody on a phone, then delete the same person here before the
+  sync catches up, and the address book answers that it has no such contact.
+  That is the deletion having already happened, so the product stops asking,
+  which is right. Counting it as a deletion that was sent is not: the summary
+  said "1 deletion sent to your address book" about an address book that had
+  just said it never had her, and that sentence is the only thing telling you
+  whether your deletion travelled.
+
+  A sync now says "1 already gone from your address book" for those, apart from
+  the count of deletions that really went out. A sync where both happen says
+  both.
+
 - **An event made here reaches Outlook at the hour you set it.** The Outlook
   writer read a time this program had stored with no zone beside it as though
   it were already universal time. An event made here at nine in the morning

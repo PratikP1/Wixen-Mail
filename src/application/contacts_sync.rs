@@ -33,12 +33,19 @@
 //! hold her, deleting her at Google says nothing to Outlook, and one of the two
 //! can take the deletion while the other refuses it.
 //!
-//! The read has to know about the notes as well, because the push runs first
-//! and a deletion it could not send is still owed when the read arrives.
-//! `a_deletion_is_still_owed_for` is what stops the read putting her back, and
-//! it is not an unusual case: a push fails whenever the network or the provider
+//! The read has to know who the push was about, because the push runs first
+//! and the read arrives while the address book may still be naming her.
+//! `deleted_here_in_this_sync` is what stops the read putting her back, and it
+//! is not an unusual case: a push fails whenever the network or the provider
 //! does, and it is refused outright for as long as Allow Changes is off, so
 //! every sync in between would otherwise resurrect her.
+//!
+//! It asks about everybody the push was about rather than about the notes left
+//! over, and the difference matters most where it is least visible. A deletion
+//! that went clears its note, so a guard reading the notes disarms itself for
+//! the one person whose deletion has just succeeded, and the read that follows
+//! writes her back down. Nobody deleted here is written back down by the sync
+//! that deleted her, whether the address book has taken it or not.
 //!
 //! The other direction is not this. An address book saying she is gone is
 //! answered with `drop_synced_contact`, which leaves no note: sending the
@@ -263,6 +270,20 @@ pub struct SyncResult {
     /// One person however many address books held her, like every other count
     /// here. Deleting her at Google and at Outlook is one person deleted.
     pub deleted_remote: Contacts,
+    /// Contacts deleted here that the address book says it never held.
+    ///
+    /// Both address books answer a deletion for somebody they have not got
+    /// with HTTP 404, and that is the deletion having already happened:
+    /// somebody deleted her on a phone and then here before the sync caught
+    /// up. The note goes, because a note kept is sent again on every sync from
+    /// then on, refused every time, and read out as an error for ever.
+    ///
+    /// Counted apart from [`SyncResult::deleted_remote`] because nothing was
+    /// sent and nothing was there to send it to. Folded into that one, a sync
+    /// read out "1 deletion sent to your address book" about an address book
+    /// that had just said it never had her, and that sentence is the only thing
+    /// somebody has to tell them whether their deletion travelled.
+    pub already_gone_from_the_address_book: Contacts,
     /// Contacts the address book sent back that neither side had touched.
     pub unchanged: Contacts,
     /// Changes still waiting because the account is open for reading only.
@@ -337,6 +358,9 @@ impl SyncResult {
         self.updated_remote = self.updated_remote.and(&other.updated_remote);
         self.deleted_local = self.deleted_local.and(&other.deleted_local);
         self.deleted_remote = self.deleted_remote.and(&other.deleted_remote);
+        self.already_gone_from_the_address_book = self
+            .already_gone_from_the_address_book
+            .and(&other.already_gone_from_the_address_book);
         self.unchanged = self.unchanged.and(&other.unchanged);
         self.waiting_on_the_setting = self
             .waiting_on_the_setting
@@ -366,6 +390,7 @@ impl SyncResult {
             .and(&self.updated_remote)
             .and(&self.deleted_local)
             .and(&self.deleted_remote)
+            .and(&self.already_gone_from_the_address_book)
             .and(&self.waiting_on_the_setting)
             .and(&self.waiting_on_how_far_a_change_goes)
             .and(&self.replaced)
@@ -1466,6 +1491,24 @@ pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
             crate::service::caldav::how_many(result.deleted_remote.count(), "deletion")
         ));
     }
+    if !result.already_gone_from_the_address_book.is_empty() {
+        // Apart from the clause above, because nothing was sent. The address
+        // book answered that it has no such contact, which is somebody having
+        // deleted her on a phone before this computer got to it. Counted with
+        // the deletions that travelled, the sentence somebody reads to learn
+        // whether their deletion travelled said it had when it had not.
+        //
+        // Said rather than left out, because a sync whose only news is this
+        // would otherwise read as nothing at all having happened, and the
+        // person is waiting to hear that a contact they deleted is really gone.
+        //
+        // A number and a phrase with no verb in it, so nothing has to agree in
+        // number: one and two read the same way.
+        said.count(format!(
+            "{} already gone from your address book",
+            result.already_gone_from_the_address_book.count()
+        ));
+    }
     if !untouched.is_empty() {
         // Said only when there is one, because on an ordinary sync there is
         // nothing to say and a count of nought on every line is a count
@@ -1664,18 +1707,31 @@ fn deletions_waiting_for(
         .collect()
 }
 
-/// Whether this person is one somebody deleted here, whose deletion this
-/// address book has not been told about yet.
+/// Whether this person is one somebody deleted here, that this sync's push
+/// has already dealt with.
 ///
-/// The push runs before the pull in the same sync, and a deletion the push
-/// could not send is still owed when the pull arrives. Without this the read
-/// writes her straight back down: she is on the screen again, under a new
-/// identifier, with her own deletion still waiting to go out. That is exactly
-/// what somebody sees when they delete a contact and it comes back, and it
-/// takes nothing unusual to get there: a push that failed, or Allow Changes
-/// turned off, is enough.
-fn a_deletion_is_still_owed_for(waiting: &[DeletedContact], provider_contact_id: &str) -> bool {
-    waiting
+/// The push runs before the pull in the same sync, so every person it was
+/// about is somebody this computer deleted, and none of them may be written
+/// back down by the read that follows. Written down again she is on the screen
+/// again, under a new identifier, with nothing left to say she was ever
+/// deleted. That is exactly what somebody sees when they delete a contact and
+/// it comes back.
+///
+/// Asked of every deletion the push handled and not only of the ones it could
+/// not send. Whether the note still exists says whether the address book has
+/// been told, which is a different question and stops being the same one at
+/// the worst possible moment: a deletion that went clears its note, so a guard
+/// reading the notes disarms itself for exactly the person it was protecting.
+/// A read carrying a marker from before the deletion, or a provider whose
+/// answer has not caught up with the write it just took, then hands her back
+/// and she is written down again.
+///
+/// Whether a real read names somebody deleted a moment earlier is not proven
+/// from this side, and the rule holds whether it does or not: neither address
+/// book may resurrect anybody this sync deleted, and neither reading of the
+/// evidence makes it safe to write her down.
+fn deleted_here_in_this_sync(deleted_here: &[DeletedContact], provider_contact_id: &str) -> bool {
+    deleted_here
         .iter()
         .any(|note| note.provider_contact_id == provider_contact_id)
 }
@@ -1692,6 +1748,11 @@ fn a_deletion_is_still_owed_for(waiting: &[DeletedContact], provider_contact_id:
 /// note where it is, so the deletion is tried again next time. Dropping it
 /// would leave the person deleted here and present at their provider for ever,
 /// after the product had said "deleted".
+///
+/// Answers with every deletion it was about, whichever way each one went. The
+/// read that follows in the same sync must write none of them back down, and
+/// [`deleted_here_in_this_sync`] says why that is the whole list rather than
+/// the part still owed.
 async fn push_deleted_contacts_to_google<B: GoogleContactBook>(
     cache: &MessageCache,
     google: &B,
@@ -1700,20 +1761,18 @@ async fn push_deleted_contacts_to_google<B: GoogleContactBook>(
     result: &mut SyncResult,
 ) -> Vec<DeletedContact> {
     let book = AddressBook::Google;
-    let mut still_owed = Vec::new();
-    for note in deletions_waiting_for(cache, account_id, &book, result) {
+    let deleted_here = deletions_waiting_for(cache, account_id, &book, result);
+    for note in &deleted_here {
         let sent = google
             .delete_contact(token, &note.provider_contact_id)
             .await;
-        if !count_the_deletion(cache, &sent, &note, "Google", result) {
-            still_owed.push(note);
-        }
+        count_the_deletion(cache, &sent, note, "Google", result);
     }
-    still_owed
+    deleted_here
 }
 
 /// Send Outlook every deletion it has not been told about. Same rules as the
-/// Google side.
+/// Google side, and it answers with the same list for the same reason.
 async fn push_deleted_contacts_to_microsoft<B: MicrosoftContactBook>(
     cache: &MessageCache,
     ms_client: &B,
@@ -1722,20 +1781,28 @@ async fn push_deleted_contacts_to_microsoft<B: MicrosoftContactBook>(
     result: &mut SyncResult,
 ) -> Vec<DeletedContact> {
     let book = AddressBook::Microsoft;
-    let mut still_owed = Vec::new();
-    for note in deletions_waiting_for(cache, account_id, &book, result) {
+    let deleted_here = deletions_waiting_for(cache, account_id, &book, result);
+    for note in &deleted_here {
         let sent = ms_client
             .delete_contact(token, &note.provider_contact_id)
             .await;
-        if !count_the_deletion(cache, &sent, &note, "Outlook", result) {
-            still_owed.push(note);
-        }
+        count_the_deletion(cache, &sent, note, "Outlook", result);
     }
-    still_owed
+    deleted_here
 }
 
-/// Count one attempt to send a deletion, and say whether the address book took
-/// it.
+/// How an attempt to send a deletion ended, where the ending is one that
+/// finishes the deletion. The other endings keep the note and are counted
+/// where they happen.
+enum TheDeletionIsDone {
+    /// The address book took it, so it travelled.
+    TheAddressBookTookIt,
+    /// The address book says it has no such contact, so nothing travelled and
+    /// there was nothing there to delete.
+    SheWasNotThereToDelete,
+}
+
+/// Count one attempt to send a deletion.
 ///
 /// One place for both syncs, so the two cannot drift apart on the part that
 /// decides whether a deletion is forgotten or tried again.
@@ -1743,38 +1810,49 @@ async fn push_deleted_contacts_to_microsoft<B: MicrosoftContactBook>(
 /// A refusal by the write gate is a setting rather than a failure, counted the
 /// way a change held back by it is counted: one error per waiting deletion on
 /// every sync from now on is how a warning somebody needs stops being read.
+///
+/// The two endings that clear the note are counted apart, because one of them
+/// sent something and the other did not.
 fn count_the_deletion(
     cache: &MessageCache,
     sent: &Result<()>,
     note: &DeletedContact,
     address_book_called: &str,
     result: &mut SyncResult,
-) -> bool {
-    if let Err(refused) = sent {
-        if crate::service::outward::was_refused_by_the_gate(refused) {
+) {
+    let ending = match sent {
+        Ok(()) => TheDeletionIsDone::TheAddressBookTookIt,
+        Err(refused) if crate::service::outward::was_refused_by_the_gate(refused) => {
             result.waiting_on_the_setting.note(&note.contact_id);
-            return false;
+            return;
         }
-        if !the_address_book_has_never_heard_of_her(refused) {
+        Err(refused) if the_address_book_has_never_heard_of_her(refused) => {
+            TheDeletionIsDone::SheWasNotThereToDelete
+        }
+        Err(refused) => {
             result.errors.push(format!(
                 "Contact {} could not be deleted in {address_book_called}: {refused}",
                 note.contact_id
             ));
-            return false;
+            return;
         }
-    }
+    };
     if let Err(unwritten) = cache.forget_deleted_contact(&note.contact_id, &note.address_book) {
-        // Said rather than swallowed. The deletion has already happened at the
-        // address book, so a note left behind sends it again on the next sync,
-        // against somebody who is not there.
+        // Said rather than swallowed. She is gone from the address book either
+        // way by this point, so a note left behind sends the deletion again on
+        // the next sync, against somebody who is not there.
         result.errors.push(format!(
-            "Contact {} was deleted in {address_book_called} and the note saying so \
-             could not be cleared: {unwritten}",
+            "Contact {} is no longer in {address_book_called} and the note saying to \
+             delete her could not be cleared: {unwritten}",
             note.contact_id
         ));
     }
-    result.deleted_remote.note(&note.contact_id);
-    true
+    match ending {
+        TheDeletionIsDone::TheAddressBookTookIt => result.deleted_remote.note(&note.contact_id),
+        TheDeletionIsDone::SheWasNotThereToDelete => result
+            .already_gone_from_the_address_book
+            .note(&note.contact_id),
+    }
 }
 
 /// Whether the address book turned a deletion down by saying it has no such
@@ -1970,7 +2048,7 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
     // Deletions first. Deleting a contact takes the row and any change waiting
     // in it, so there is nothing left for the change push to find, and sending
     // a change to somebody about to be deleted is two calls to reach one place.
-    let deletions_google_is_still_owed =
+    let everybody_deleted_here_that_google_knew =
         push_deleted_contacts_to_google(cache, google, token, account_id, &mut result).await;
 
     let still_built_on_an_old_copy =
@@ -2004,10 +2082,13 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
             continue;
         }
 
-        // Somebody this computer deleted, whose deletion Google has not taken
-        // yet. Writing her back down puts her on the screen again while her own
-        // deletion is still waiting to go out.
-        if a_deletion_is_still_owed_for(&deletions_google_is_still_owed, &person.resource_name) {
+        // Somebody this computer deleted. Whether Google has taken the
+        // deletion or not, writing her back down puts a contact somebody
+        // deleted on the screen again.
+        if deleted_here_in_this_sync(
+            &everybody_deleted_here_that_google_knew,
+            &person.resource_name,
+        ) {
             continue;
         }
 
@@ -2169,7 +2250,7 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
     let mut result = SyncResult::default();
 
     // Deletions first, for the reason written on the Google side.
-    let deletions_outlook_is_still_owed =
+    let everybody_deleted_here_that_outlook_knew =
         push_deleted_contacts_to_microsoft(cache, ms_client, token, account_id, &mut result).await;
 
     let still_built_on_an_old_copy = push_changed_contacts_to_microsoft(
@@ -2194,9 +2275,9 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
             continue;
         }
 
-        // Somebody this computer deleted, whose deletion Outlook has not taken
-        // yet, for the reason written on the Google side.
-        if a_deletion_is_still_owed_for(&deletions_outlook_is_still_owed, &ms_contact.id) {
+        // Somebody this computer deleted, for the reason written on the Google
+        // side.
+        if deleted_here_in_this_sync(&everybody_deleted_here_that_outlook_knew, &ms_contact.id) {
             continue;
         }
 
@@ -6215,6 +6296,7 @@ mod tests {
             updated_remote: Contacts::these(["sent 1"]),
             deleted_local: Contacts::these(["deleted 1"]),
             deleted_remote: Contacts::these(["deleted there 1"]),
+            already_gone_from_the_address_book: Contacts::these(["already gone 1"]),
             unchanged: Contacts::these(["unchanged 1"]),
             waiting_on_the_setting: Contacts::these(["waiting on allow changes 1"]),
             waiting_on_how_far_a_change_goes: Contacts::these(["waiting on how far 1"]),
@@ -6230,6 +6312,7 @@ mod tests {
             updated_remote: Contacts::these(["sent 2"]),
             deleted_local: Contacts::these(["deleted 2"]),
             deleted_remote: Contacts::these(["deleted there 2"]),
+            already_gone_from_the_address_book: Contacts::these(["already gone 2"]),
             unchanged: Contacts::these(["unchanged 2"]),
             waiting_on_the_setting: Contacts::these(["waiting on allow changes 2"]),
             waiting_on_how_far_a_change_goes: Contacts::these(["waiting on how far 2"]),
@@ -6248,6 +6331,10 @@ mod tests {
                 updated_remote: Contacts::these(["sent 1", "sent 2"]),
                 deleted_local: Contacts::these(["deleted 1", "deleted 2"]),
                 deleted_remote: Contacts::these(["deleted there 1", "deleted there 2"]),
+                already_gone_from_the_address_book: Contacts::these([
+                    "already gone 1",
+                    "already gone 2"
+                ]),
                 unchanged: Contacts::these(["unchanged 1", "unchanged 2"]),
                 waiting_on_the_setting: Contacts::these([
                     "waiting on allow changes 1",
@@ -10479,6 +10566,86 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_contact_google_took_the_deletion_for_is_not_written_back_by_the_same_read() {
+        // The deletion went, and the read that follows it in the same sync
+        // still names her. Every other test here keeps the deletion owed, so
+        // none of them reaches this: the moment the note is cleared, a guard
+        // that asks whether the note is still there stops holding, and the
+        // read writes her back down under a new identifier with nothing left
+        // to say she was ever deleted.
+        //
+        // Whether Google's own read really names somebody deleted a moment
+        // earlier is not proven here and cannot be from this side. The rule
+        // has to hold either way: nobody this sync deleted is written back
+        // down by it.
+        let cache = a_cache("deleted_here_google_took_it_and_named_her");
+        somebody_deleted_here_that_only_google_knew(&cache);
+        let google = ScriptedGoogle {
+            accepts_a_deletion: true,
+            people: vec![a_google_person(
+                GOOGLES_NAME_FOR_HER,
+                THE_WORDS_TYPED_HERE,
+                "alice@example.com",
+            )],
+            ..Default::default()
+        };
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
+
+        assert!(
+            the_names_stored(&cache).is_empty(),
+            "the deletion reached Google and the same read put her back: {:?}",
+            the_names_stored(&cache)
+        );
+        assert_eq!(result.created_local.count(), 0, "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_outlook_took_the_deletion_for_is_not_written_back_by_the_same_read() {
+        // The Outlook half of the same thing.
+        let cache = a_cache("deleted_here_outlook_took_it_and_named_her");
+        a_stored_contact(
+            &cache,
+            THE_WORDS_TYPED_HERE,
+            "alice@example.com",
+            OUTLOOKS_NAME_FOR_HER,
+            MICROSOFT_ADDRESS_BOOK,
+        );
+        cache
+            .delete_contact(&format!("local-{OUTLOOKS_NAME_FOR_HER}"))
+            .expect("the contact to be deleted here");
+        let outlook = ScriptedMicrosoft {
+            accepts_a_deletion: true,
+            contacts: vec![a_microsoft_contact(
+                OUTLOOKS_NAME_FOR_HER,
+                THE_WORDS_TYPED_HERE,
+                "alice@example.com",
+            )],
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &outlook,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        assert!(
+            the_names_stored(&cache).is_empty(),
+            "the deletion reached Outlook and the same read put her back: {:?}",
+            the_names_stored(&cache)
+        );
+        assert_eq!(result.created_local.count(), 0, "{result:?}");
+    }
+
+    #[tokio::test]
     async fn test_a_contact_deleted_here_that_also_held_an_unsent_edit_is_deleted_not_sent() {
         // Deleting somebody is the last thing said about them. The edit went
         // with the row, so what reaches the address book is the deletion and
@@ -10607,7 +10774,23 @@ mod tests {
              happened, not a failure: {:?}",
             result.errors
         );
-        assert_eq!(result.deleted_remote.count(), 1, "{result:?}");
+        assert_eq!(
+            result.deleted_remote.count(),
+            0,
+            "nothing reached Google, which said it never held her: {result:?}"
+        );
+        assert_eq!(
+            result.already_gone_from_the_address_book.count(),
+            1,
+            "counted nowhere, so a sync whose only news is this says nothing \
+             happened: {result:?}"
+        );
+        assert!(
+            !what_the_contacts_sync_did(&result).contains("sent to your address book"),
+            "the summary says a deletion was sent to an address book that says it \
+             never had her: {}",
+            what_the_contacts_sync_did(&result)
+        );
     }
 
     #[tokio::test]
@@ -10692,5 +10875,64 @@ mod tests {
             "{said}"
         );
         assert!(!said.contains("address books"), "{said}");
+    }
+
+    #[test]
+    fn test_a_contact_the_address_book_never_held_is_not_said_to_have_been_sent_there() {
+        // Nothing was sent. The address book answered that it has no such
+        // contact, which is the deletion having already happened somewhere
+        // else, and "1 deletion sent to your address book" about it is the one
+        // sentence somebody has for whether their deletion travelled saying
+        // that it did.
+        let mut result = SyncResult::default();
+        result.already_gone_from_the_address_book.note("local-1");
+
+        let said = what_the_contacts_sync_did(&result);
+
+        assert!(
+            said.contains("1 already gone from your address book"),
+            "{said}"
+        );
+        assert!(!said.contains("sent"), "{said}");
+    }
+
+    #[test]
+    fn test_two_contacts_the_address_book_never_held_are_said_in_the_same_words() {
+        // The clause carries a number and no verb, so one and two read the
+        // same way and nothing has to agree in number.
+        let mut result = SyncResult::default();
+        result.already_gone_from_the_address_book.note("local-1");
+        result.already_gone_from_the_address_book.note("local-2");
+
+        let said = what_the_contacts_sync_did(&result);
+
+        assert!(
+            said.contains("2 already gone from your address book"),
+            "{said}"
+        );
+        assert!(!said.contains("address books"), "{said}");
+    }
+
+    #[test]
+    fn test_a_deletion_that_landed_and_one_that_had_nowhere_to_land_are_said_apart() {
+        // Two people and two different things to hear, in one sync. Somebody
+        // reading this has to be able to tell how many deletions really went
+        // out, which is what folding the two together took away.
+        let mut result = SyncResult::default();
+        result.deleted_remote.note("local-1");
+        result.already_gone_from_the_address_book.note("local-2");
+
+        let said = what_the_contacts_sync_did(&result);
+
+        assert!(
+            said.contains("1 deletion sent to your address book"),
+            "{said}"
+        );
+        assert!(
+            said.contains("1 already gone from your address book"),
+            "{said}"
+        );
+        assert!(!said.contains(".."), "a stop spoken twice: {said}");
+        assert!(!said.contains("  "), "a space spoken twice: {said}");
     }
 }

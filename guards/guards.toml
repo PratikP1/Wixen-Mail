@@ -282,6 +282,7 @@ after = """    if count == 0 {
 red = [
     "application::calendar::tests::test_every_clause_at_once_is_still_read_as_sentences",
     "application::calendar::tests::test_one_change_waiting_and_one_thing_wrong_are_not_read_out_in_the_plural",
+    "application::contacts_sync::tests::test_a_deletion_that_landed_and_one_that_had_nowhere_to_land_are_said_apart",
     "application::contacts_sync::tests::test_every_clause_one_sync_can_say_is_still_read_as_sentences",
     "application::contacts_sync::tests::test_one_thing_going_wrong_is_not_read_out_as_one_errors",
     "application::contacts_sync::tests::test_the_summary_says_a_deletion_reached_the_address_book",
@@ -613,7 +614,9 @@ red = [
     "application::contacts_sync::tests::test_a_contact_deleted_here_is_deleted_at_google_too",
     "application::contacts_sync::tests::test_a_contact_deleted_here_is_deleted_at_outlook_too",
     "application::contacts_sync::tests::test_a_contact_deleted_here_that_also_held_an_unsent_edit_is_deleted_not_sent",
+    "application::contacts_sync::tests::test_a_contact_google_took_the_deletion_for_is_not_written_back_by_the_same_read",
     "application::contacts_sync::tests::test_a_contact_outlook_still_holds_does_not_come_back_after_google_took_the_deletion",
+    "application::contacts_sync::tests::test_a_contact_outlook_took_the_deletion_for_is_not_written_back_by_the_same_read",
     "application::contacts_sync::tests::test_a_deletion_allow_changes_held_back_is_still_waiting_afterwards",
     "application::contacts_sync::tests::test_a_deletion_the_address_book_refused_is_kept_and_said",
     "application::contacts_sync::tests::test_an_address_book_that_has_never_heard_of_her_is_not_asked_again",
@@ -623,9 +626,12 @@ red = [
 ]
 
 [[guard]]
-name = "the Google read does not undo a deletion Google has not taken"
+name = "the Google read does not write back somebody this sync deleted"
 file = "src/application/contacts_sync.rs"
-before = """        if a_deletion_is_still_owed_for(&deletions_google_is_still_owed, &person.resource_name) {
+before = """        if deleted_here_in_this_sync(
+            &everybody_deleted_here_that_google_knew,
+            &person.resource_name,
+        ) {
             continue;
         }"""
 after = """        if false {
@@ -633,13 +639,36 @@ after = """        if false {
         }"""
 red = [
     "application::contacts_sync::tests::test_a_contact_deleted_here_does_not_come_back_from_the_read_that_follows",
+    "application::contacts_sync::tests::test_a_contact_google_took_the_deletion_for_is_not_written_back_by_the_same_read",
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_deletion_the_summary_said_was_waiting",
 ]
 
+# And the same question asked the narrow way. Reading the notes left over
+# answers "has the address book been told", which is the same answer right up
+# to the moment it stops being: a deletion that went clears its note, so the
+# guard disarms itself for the one person whose deletion has just succeeded and
+# the read writes her back down. Every test around it kept the deletion owed,
+# so none of them reached this.
+
 [[guard]]
-name = "the Outlook read does not undo a deletion Outlook has not taken"
+name = "the Google read asks who was deleted, not what is still owed"
 file = "src/application/contacts_sync.rs"
-before = """        if a_deletion_is_still_owed_for(&deletions_outlook_is_still_owed, &ms_contact.id) {
+before = """        count_the_deletion(cache, &sent, note, "Google", result);
+    }
+    deleted_here
+}"""
+after = """        count_the_deletion(cache, &sent, note, "Google", result);
+    }
+    deletions_waiting_for(cache, account_id, &book, result)
+}"""
+red = [
+    "application::contacts_sync::tests::test_a_contact_google_took_the_deletion_for_is_not_written_back_by_the_same_read",
+]
+
+[[guard]]
+name = "the Outlook read does not write back somebody this sync deleted"
+file = "src/application/contacts_sync.rs"
+before = """        if deleted_here_in_this_sync(&everybody_deleted_here_that_outlook_knew, &ms_contact.id) {
             continue;
         }"""
 after = """        if false {
@@ -647,6 +676,22 @@ after = """        if false {
         }"""
 red = [
     "application::contacts_sync::tests::test_a_contact_outlook_still_holds_does_not_come_back_after_google_took_the_deletion",
+    "application::contacts_sync::tests::test_a_contact_outlook_took_the_deletion_for_is_not_written_back_by_the_same_read",
+]
+
+[[guard]]
+name = "the Outlook read asks who was deleted, not what is still owed"
+file = "src/application/contacts_sync.rs"
+before = """        count_the_deletion(cache, &sent, note, "Outlook", result);
+    }
+    deleted_here
+}"""
+after = """        count_the_deletion(cache, &sent, note, "Outlook", result);
+    }
+    deletions_waiting_for(cache, account_id, &book, result)
+}"""
+red = [
+    "application::contacts_sync::tests::test_a_contact_outlook_took_the_deletion_for_is_not_written_back_by_the_same_read",
 ]
 
 [[guard]]
@@ -662,10 +707,10 @@ red = [
 name = "a deletion a setting held back is kept, not forgotten"
 file = "src/application/contacts_sync.rs"
 before = """            result.waiting_on_the_setting.note(&note.contact_id);
-            return false;"""
+            return;"""
 after = """            result.waiting_on_the_setting.note(&note.contact_id);
             let _ = cache.forget_deleted_contact(&note.contact_id, &note.address_book);
-            return false;"""
+            return;"""
 red = [
     "application::contacts_sync::tests::test_a_contact_deleted_here_does_not_come_back_from_the_read_that_follows",
     "application::contacts_sync::tests::test_a_contact_outlook_still_holds_does_not_come_back_after_google_took_the_deletion",
@@ -679,14 +724,56 @@ file = "src/application/contacts_sync.rs"
 before = """                "Contact {} could not be deleted in {address_book_called}: {refused}",
                 note.contact_id
             ));
-            return false;"""
+            return;"""
 after = """                "Contact {} could not be deleted in {address_book_called}: {refused}",
                 note.contact_id
             ));
             let _ = cache.forget_deleted_contact(&note.contact_id, &note.address_book);
-            return false;"""
+            return;"""
 red = [
     "application::contacts_sync::tests::test_a_deletion_the_address_book_refused_is_kept_and_said",
+]
+
+# ── A 404 is not a deletion that reached anybody ────────────────────────────
+#
+# The note goes either way, because a contact already gone from a phone must
+# not fail on every sync for ever. What is not the same is what was sent: the
+# address book answered that it has no such contact, so nothing travelled, and
+# counting it with the deletions that did made the one sentence somebody has
+# for whether their deletion travelled say it had.
+
+[[guard]]
+name = "a deletion the address book never took is not counted as one it took"
+file = "src/application/contacts_sync.rs"
+before = """        TheDeletionIsDone::SheWasNotThereToDelete => result
+            .already_gone_from_the_address_book
+            .note(&note.contact_id),"""
+after = """        TheDeletionIsDone::SheWasNotThereToDelete => result.deleted_remote.note(&note.contact_id),"""
+red = [
+    "application::contacts_sync::tests::test_an_address_book_that_has_never_heard_of_her_is_not_asked_again",
+]
+
+[[guard]]
+name = "a contact the address book never held is said, not passed over"
+file = "src/application/contacts_sync.rs"
+before = """    if !result.already_gone_from_the_address_book.is_empty() {"""
+after = """    if false {"""
+red = [
+    "application::contacts_sync::tests::test_a_contact_the_address_book_never_held_is_not_said_to_have_been_sent_there",
+    "application::contacts_sync::tests::test_a_deletion_that_landed_and_one_that_had_nowhere_to_land_are_said_apart",
+    "application::contacts_sync::tests::test_two_contacts_the_address_book_never_held_are_said_in_the_same_words",
+]
+
+[[guard]]
+name = "folding two results keeps the contacts an address book never held"
+file = "src/application/contacts_sync.rs"
+before = """        self.already_gone_from_the_address_book = self
+            .already_gone_from_the_address_book
+            .and(&other.already_gone_from_the_address_book);
+"""
+after = ""
+red = [
+    "application::contacts_sync::tests::test_folding_two_address_books_together_keeps_every_count",
 ]
 
 [[guard]]
@@ -695,6 +782,7 @@ file = "src/application/contacts_sync.rs"
 before = """    if !result.deleted_remote.is_empty() {"""
 after = """    if false {"""
 red = [
+    "application::contacts_sync::tests::test_a_deletion_that_landed_and_one_that_had_nowhere_to_land_are_said_apart",
     "application::contacts_sync::tests::test_the_summary_says_a_deletion_reached_the_address_book",
     "application::contacts_sync::tests::test_two_deletions_that_reached_the_address_book_are_not_read_out_in_the_singular",
 ]
