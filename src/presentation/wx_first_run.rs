@@ -125,11 +125,17 @@ pub fn ask_what_is_allowed(parent: &Frame) -> Allowed {
     });
     carry_on.on_click(move |_| dialog.end_modal(ID_CONTINUE));
 
-    // Focus on the first choice rather than on Continue, so the first thing
-    // heard is the decision rather than the way past it. Focus and the tick
-    // are not on the same button here: the one selected is the second.
-    if let Some((_, first)) = buttons.first() {
-        first.set_focus();
+    // Focus on the answer that is ticked, rather than on Continue, so what is
+    // heard is the decision rather than the way past it and it is the answer
+    // Continue will take.
+    //
+    // Read back from the buttons rather than worked out a second time, so the
+    // two cannot come apart. They had: the screen read out one answer and
+    // ticked another, so somebody using a screen reader heard the cautious one,
+    // pressed Enter on the first thing they heard, and switched on writing to
+    // their real address book, calendar and tasks.
+    if let Some((_, ticked)) = buttons.iter().find(|(_, button)| button.get_value()) {
+        ticked.set_focus();
     }
 
     dialog.show_modal();

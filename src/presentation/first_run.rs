@@ -15,8 +15,8 @@
 //! stored, so the decision was actually made by the person it affects.
 //! Somebody who presses Enter without reading gets the middle answer, which
 //! leaves mail alone and sends changes to tasks, contacts and the calendar up
-//! to their provider. Focus lands on the safest of the three, so that is the
-//! one read out first.
+//! to their provider. Focus lands on that middle answer too, so the answer read
+//! out is the answer Continue takes.
 //!
 //! The wording lives here, apart from the window, so it can be read in a test.
 //! What it says is the part that matters: the window is a list of radio
@@ -42,9 +42,10 @@ impl Choice {
     /// The three, in the order they are offered.
     ///
     /// Safest first, so arrowing down widens what is allowed and arrowing up
-    /// narrows it. Focus lands on the safest of them. The one selected is the
-    /// second, so somebody who presses Enter without reading allows changes to
-    /// tasks, contacts and the calendar.
+    /// narrows it. The one selected is the second, so somebody who presses
+    /// Enter without reading allows changes to tasks, contacts and the
+    /// calendar. Focus lands on the second as well, so the answer read out is
+    /// the answer Continue takes.
     pub const ALL: [Choice; 3] = [
         Choice::ReadOnly,
         Choice::TasksAndContacts,
@@ -148,12 +149,67 @@ mod tests {
         assert!(Choice::DEFAULT.allows().personal_information);
     }
 
+    /// The window that draws this screen, read as text.
+    ///
+    /// The same thing `test_the_installer_ships_the_page_beside_the_program`
+    /// does with the installer script, and for the same reason: the fact is
+    /// real and it matters, and a test cannot reach it by running because
+    /// reaching it needs a window on a screen.
+    fn the_window_that_draws_it() -> String {
+        std::fs::read_to_string("src/presentation/wx_first_run.rs")
+            .expect("the first-run window to be readable")
+            .replace("\r\n", "\n")
+    }
+
+    #[test]
+    fn test_the_screen_puts_focus_on_the_answer_it_ticks() {
+        // The rule this screen has to keep: what is read out and what Continue
+        // does are one answer. They were two. Focus was put on one answer and
+        // the tick on another, so somebody using a screen reader heard one
+        // answer, pressed Enter on it, and had writing to their real address
+        // book, calendar and tasks switched on without being told.
+        //
+        // Which answer it starts on is a separate question, and this is not it.
+        let window = the_window_that_draws_it();
+
+        assert!(
+            window.contains("button.set_value(*choice == Choice::DEFAULT)"),
+            "the window no longer ticks the answer DEFAULT names, so nothing \
+             here knows which one it starts on"
+        );
+        assert!(
+            window.contains(
+                "if let Some((_, ticked)) = buttons.iter().find(|(_, button)| \
+                 button.get_value()) {\n        ticked.set_focus();\n    }"
+            ),
+            "the window no longer puts focus on the answer it ticks"
+        );
+        assert_eq!(
+            window.matches("set_focus").count(),
+            1,
+            "something else in the window takes focus as well, so what is heard \
+             is no longer the answer that is ticked"
+        );
+        assert_eq!(
+            window.matches("set_value").count(),
+            1,
+            "the tick is put on in more than one place, so the answer focus \
+             found is not the one left ticked"
+        );
+        assert!(
+            window.find("button.set_value(*choice == Choice::DEFAULT)")
+                < window.find("ticked.set_focus()"),
+            "the tick is put on after focus goes looking for it, so focus finds \
+             nothing ticked and lands wherever the window puts it"
+        );
+    }
+
     #[test]
     fn test_the_choices_go_from_safest_to_riskiest() {
-        // Focus lands on the first, so arrowing down widens. The other order
-        // would mean arrowing down to become safer, having started on the
-        // riskiest thing. What is selected is a separate question, and the
-        // test above is the one about that.
+        // Safest at the top, so arrowing down widens. The other order would
+        // mean arrowing down to become safer, having started on the riskiest
+        // thing. Where the screen starts is a separate question, and the test
+        // above is the one about that.
         let mail: Vec<bool> = Choice::ALL.iter().map(|c| c.allows().mail).collect();
         let pim: Vec<bool> = Choice::ALL
             .iter()

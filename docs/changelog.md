@@ -309,6 +309,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   says they are the same person except the name, and two people can share a
   name.
 
+- **The first-run screen now reads out the answer it is going to use.** The
+  screen that asks what Wixen Mail may change put focus on "Read my mail, change
+  nothing" and ticked the next answer down, which sends changes to your tasks,
+  contacts and calendar up to your provider. Somebody using a screen reader
+  heard the cautious answer, pressed Enter on the first thing they heard, and
+  had writing to their real address book, calendar and tasks switched on without
+  being told.
+
+  Focus now lands on the answer that is ticked, so what is announced is what
+  Continue will do. Which answer the screen starts on has not changed: it is
+  still the second of the three, which leaves mail alone and sends changes to
+  tasks, contacts and the calendar to your provider. The words on the screen
+  have been corrected where they described the old behaviour.
+
+  Not verified: this has not been through a screen reader. What changed is which
+  control the window puts focus on.
+
 - **A contact you delete no longer comes back in the same sync.** Deleting a
   contact here sends the deletion out to the address books that hold her. The
   read that follows in the same sync could write her straight back down, under a

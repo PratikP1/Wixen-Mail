@@ -1275,6 +1275,29 @@ red = [
     "data::message_cache::contacts::tests::test_a_card_adding_an_address_to_a_row_with_no_list_keeps_the_one_on_its_main_line",
 ]
 
+# -- What the first-run screen reads out is what it will do ------------------
+#
+# The screen ticks one of three answers and puts focus somewhere. While those
+# were two decisions they disagreed: focus went to "read my mail, change
+# nothing" and the tick to the answer that sends changes to tasks, contacts and
+# the calendar up to a provider. Somebody using a screen reader hears the answer
+# focus is on, presses Enter on the first thing they hear, and has writing to
+# their real address book switched on without being told. Which answer it starts
+# on is a separate question and this is not about that.
+
+[[guard]]
+name = "the first-run screen focuses the answer it ticks"
+file = "src/presentation/wx_first_run.rs"
+before = """    if let Some((_, ticked)) = buttons.iter().find(|(_, button)| button.get_value()) {
+        ticked.set_focus();
+    }"""
+after = """    if let Some((_, first)) = buttons.first() {
+        first.set_focus();
+    }"""
+red = [
+    "presentation::first_run::tests::test_the_screen_puts_focus_on_the_answer_it_ticks",
+]
+
 # The part of an import that leaves this computer is said at the time rather
 # than left to the sync summary afterwards. Afterwards is too late to decide
 # against it.

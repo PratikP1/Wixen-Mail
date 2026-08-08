@@ -1830,15 +1830,23 @@ fn test_the_count_check_can_see_a_count_that_disagrees() {
 // ── Where the first-run screen starts ───────────────────────────────────────
 //
 // Two facts, and the prose about this screen has been welding them into one
-// sentence since the screen was written. Focus is put on the first of the three
-// choices, which is the safest one. What is *selected*, and so what Continue
-// takes from somebody who presses Enter without reading, is `Choice::DEFAULT`,
-// which is the second and allows changes to tasks, contacts and the calendar.
+// sentence since the screen was written. What is *selected*, and so what
+// Continue takes from somebody who presses Enter without reading, is
+// `Choice::DEFAULT`, which is the second of the three and allows changes to
+// tasks, contacts and the calendar. Where focus lands is the window layer's
+// doing, and it used to be the first, which is the safest.
 //
 // "The default is the first thing focus lands on" is those two welded together
-// and true of neither. So each is read against its own answer in the code: a
-// sentence about what is selected against where `DEFAULT` sits in `ALL`, and a
-// sentence about focus against the button the window layer focuses.
+// and, while they differed, true of neither. They do not differ now: the window
+// focuses whichever button it finds ticked, because somebody using a screen
+// reader hears the answer that is read out and presses Enter on the first thing
+// they hear. Read out the cautious answer and tick the permissive one, and that
+// person has switched on writing to their real address book without being told.
+//
+// Each sentence is still read against its own answer in the code, because they
+// are two facts even while they agree: a sentence about what is selected
+// against where `DEFAULT` sits in `ALL`, and a sentence about focus against the
+// button the window layer focuses.
 
 /// The screens whose prose says where this one starts.
 const WHERE_THE_FIRST_RUN_SCREEN_IS_DESCRIBED: [&str; 2] = [
@@ -1893,20 +1901,25 @@ fn sentences_of(prose: &str) -> Vec<(usize, &str)> {
 
 /// Which button the window layer puts focus on.
 ///
-/// Read from the source, because reaching the real answer needs a window. It
-/// is the only fact here the code cannot simply be asked for, and it is held
-/// this way rather than written down as a number so that moving the focus
-/// fails this instead of quietly making the prose wrong again.
-fn which_button_takes_focus() -> usize {
+/// Read from the source, because reaching the real answer needs a window, and
+/// what is read is a coupling rather than a number: the window puts focus on
+/// whichever button it finds ticked, so focus is wherever the tick is and the
+/// caller's number is the answer.
+///
+/// Only enough of that rule to know the two are one answer. The rule itself,
+/// with everything that can break it, belongs to the screen and is measured by
+/// `first_run::tests::test_the_screen_puts_focus_on_the_answer_it_ticks`.
+/// Reading it here at all is so that moving the focus fails this instead of
+/// quietly making the prose wrong again.
+fn which_button_takes_focus(where_the_tick_is: usize) -> usize {
     let screen = fs::read_to_string("src/presentation/wx_first_run.rs")
         .expect("the first-run window to be readable");
     assert!(
-        screen.contains("if let Some((_, first)) = buttons.first()")
-            && screen.contains("first.set_focus()"),
-        "the first-run window no longer focuses the first choice, so every \
-         sentence about where focus lands needs writing again"
+        screen.contains("ticked.set_focus()"),
+        "the first-run window no longer puts focus on the answer it ticks, so \
+         every sentence about where focus lands needs writing again"
     );
-    0
+    where_the_tick_is
 }
 
 #[test]
@@ -1917,7 +1930,7 @@ fn test_the_first_run_screen_is_not_described_as_starting_where_it_does_not() {
         .iter()
         .position(|choice| *choice == wixen_mail::presentation::first_run::Choice::DEFAULT)
         .expect("the choice the screen starts on to be one of the three offered");
-    let focused = which_button_takes_focus();
+    let focused = which_button_takes_focus(selected);
     let mut wrong = Vec::new();
 
     for name in WHERE_THE_FIRST_RUN_SCREEN_IS_DESCRIBED {
@@ -1985,6 +1998,15 @@ fn test_the_first_run_check_can_tell_the_two_apart() {
         ),
         ("Focus lands on the safest of them", Some(0)),
         (
+            "Focus lands on the second as well, so the answer read out is the answer Continue takes",
+            Some(1),
+        ),
+        (
+            "Focus lands on that middle answer too, so the answer read out is the answer Continue \
+             takes",
+            Some(1),
+        ),
+        (
             "mail is left alone, and changes go up to their provider",
             None,
         ),
@@ -2004,9 +2026,10 @@ fn test_the_first_run_check_can_tell_the_two_apart() {
         ]
     );
 
-    // The two answers this is checked against, which are the whole point: they
-    // come from the code and not from anything written here.
-    assert_eq!(which_button_takes_focus(), 0);
+    // The answer this is checked against, which is the whole point: it comes
+    // from the code and not from anything written here. Focus and the tick are
+    // one answer now, so there is one number where there were two, and reading
+    // the window is what says the two really are coupled.
     let selected = wixen_mail::presentation::first_run::Choice::ALL
         .iter()
         .position(|choice| *choice == wixen_mail::presentation::first_run::Choice::DEFAULT);
@@ -2015,6 +2038,7 @@ fn test_the_first_run_check_can_tell_the_two_apart() {
         Some(1),
         "the screen no longer starts on the second"
     );
+    assert_eq!(which_button_takes_focus(1), 1);
 
     // And the files really are there to be read, or the check above passes
     // over nothing.
