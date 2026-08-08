@@ -1731,9 +1731,17 @@ pub(crate) const CLOCK_FACES: [&str; 5] = [
 /// A time with no offset is a clock face already and keeps the zone it was
 /// stored with, which for an event that came from Graph is a name Graph gave us.
 ///
+/// A clock face with no zone stored beside it is one this program's own editor
+/// wrote, so it means a time on this computer, and it is sent as the universal
+/// time that is. Calling it universal time as it stood is what the Google side
+/// has never done and what put an event made here at nine in the morning into
+/// Outlook at nine in Greenwich.
+///
 /// Nothing is returned for a value that is none of these shapes, so an unreadable
 /// time is refused rather than sent as an hour nobody meant.
 fn wall_clock_for_graph(stored: &str, zone: Option<&str>) -> Option<MsDateTimeTimeZone> {
+    use chrono::TimeZone;
+
     if let Ok(moment) = chrono::DateTime::parse_from_rfc3339(stored) {
         return Some(MsDateTimeTimeZone {
             date_time: moment
@@ -1744,24 +1752,46 @@ fn wall_clock_for_graph(stored: &str, zone: Option<&str>) -> Option<MsDateTimeTi
         });
     }
 
-    let named = zone.unwrap_or(COORDINATED_UNIVERSAL_TIME).to_string();
+    // An empty name names nothing, which is the answer the Google side already
+    // gives it. Passed through, it reached Graph as a `timeZone` of "" beside a
+    // clock face, which is an hour nobody named.
+    let named = zone.map(str::trim).filter(|named| !named.is_empty());
 
     for shape in CLOCK_FACES {
-        if let Ok(clock) = chrono::NaiveDateTime::parse_from_str(stored, shape) {
+        let Ok(clock) = chrono::NaiveDateTime::parse_from_str(stored, shape) else {
+            continue;
+        };
+        let Some(named) = named else {
+            // `earliest` rather than one answer, because the hour a clock skips
+            // forward over does not exist and an event refused for being an hour
+            // that never happened helps nobody. The same choice as the Google
+            // side, for the same reason.
+            let here = chrono::Local.from_local_datetime(&clock).earliest()?;
             return Some(MsDateTimeTimeZone {
-                date_time: clock.format(GRAPH_WALL_CLOCK).to_string(),
-                time_zone: named,
+                date_time: here
+                    .with_timezone(&chrono::Utc)
+                    .format(GRAPH_WALL_CLOCK)
+                    .to_string(),
+                time_zone: COORDINATED_UNIVERSAL_TIME.to_string(),
             });
-        }
+        };
+        return Some(MsDateTimeTimeZone {
+            date_time: clock.format(GRAPH_WALL_CLOCK).to_string(),
+            time_zone: named.to_string(),
+        });
     }
 
+    // A whole day, which Graph is told is a whole day and therefore wants at
+    // midnight. Moving that midnight into universal time would make it some
+    // other hour and Graph refuses a whole-day event that does not start on
+    // one, so this one really is a clock face left where it stands.
     let whole_day = chrono::NaiveDate::parse_from_str(stored, "%Y-%m-%d").ok()?;
     Some(MsDateTimeTimeZone {
         date_time: whole_day
             .and_hms_opt(0, 0, 0)?
             .format(GRAPH_WALL_CLOCK)
             .to_string(),
-        time_zone: named,
+        time_zone: named.unwrap_or(COORDINATED_UNIVERSAL_TIME).to_string(),
     })
 }
 
@@ -3268,6 +3298,12 @@ mod tests {
         // Three sources write these three shapes: Graph writes a clock face with
         // no zone, this program's own editor writes a date and a time with a
         // space between them, and a whole-day event is stored as a bare date.
+        //
+        // The editor's shape is not here. Its clock face names no zone, so what
+        // Graph is told depends on where this computer is, and
+        // `test_the_two_providers_are_given_the_same_hour_in_the_shape_each_one_reads`
+        // asks about it by comparing the two providers rather than by naming an
+        // hour a test machine somewhere else would not agree with.
         for (stored, zone, wall_clock, named) in [
             (
                 "2026-03-05T14:00:00.0000000",
@@ -3275,7 +3311,12 @@ mod tests {
                 "2026-03-05T14:00:00",
                 "Eastern Standard Time",
             ),
-            ("2026-03-06 09:00", None, "2026-03-06T09:00:00", "UTC"),
+            (
+                "2026-03-06 09:00",
+                Some("Eastern Standard Time"),
+                "2026-03-06T09:00:00",
+                "Eastern Standard Time",
+            ),
             ("2026-03-06", None, "2026-03-06T00:00:00", "UTC"),
         ] {
             let mut event = make_event("e1", "Review", None);
@@ -3973,6 +4014,38 @@ mod tests {
                 || google.time_zone.is_some_and(|named| !named.is_empty()),
             "Google needs to know which moment {moment:?} is"
         );
+
+        // The same hour, which is what the name of this promises and what it did
+        // not ask. Each shape was checked and neither was compared with the
+        // other, so the two converters disagreed about what a clock face with no
+        // zone on it means: Google read it on this computer and Graph called it
+        // universal time. An event made here at nine reached Outlook at nine
+        // in Greenwich, which for most people is not nine.
+        assert_eq!(
+            graph_named_utc(&graph),
+            chrono::DateTime::parse_from_rfc3339(&moment)
+                .expect("a moment")
+                .with_timezone(&chrono::Utc),
+            "one provider was told {:?} in {:?} and the other {moment:?}",
+            graph.date_time,
+            graph.time_zone
+        );
+    }
+
+    /// The instant Graph was given, for a start it was told is in universal
+    /// time.
+    ///
+    /// Only that case: a Windows zone name would need a table to turn into an
+    /// instant, and the events this is asked about carry no name.
+    fn graph_named_utc(start: &MsDateTimeTimeZone) -> chrono::DateTime<chrono::Utc> {
+        assert_eq!(
+            start.time_zone, COORDINATED_UNIVERSAL_TIME,
+            "this reads a Graph start as universal time and it was told {:?}",
+            start.time_zone
+        );
+        chrono::DateTime::parse_from_rfc3339(&format!("{}Z", start.date_time))
+            .expect("a clock face Graph could read")
+            .with_timezone(&chrono::Utc)
     }
 
     // ── Emptying a field, and what the provider makes of it ──────────────

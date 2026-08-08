@@ -953,6 +953,31 @@ red = [
     "presentation::managers::tests::test_moving_an_event_that_names_a_zone_across_summer_time_keeps_the_clock_face",
 ]
 
+# The same question asked of the two writers rather than of the editor. A clock
+# face with no zone stored beside it is one this program's own editor wrote, so
+# it means an hour on this computer. Google's converter read it that way and
+# Graph's called it universal time, and the test named for the two agreeing
+# checked the shape of each and never compared them.
+
+[[guard]]
+name = "an hour with no zone means an hour here, to Outlook as well as to Google"
+file = "src/application/calendar.rs"
+before = """            let here = chrono::Local.from_local_datetime(&clock).earliest()?;
+            return Some(MsDateTimeTimeZone {
+                date_time: here
+                    .with_timezone(&chrono::Utc)
+                    .format(GRAPH_WALL_CLOCK)
+                    .to_string(),
+                time_zone: COORDINATED_UNIVERSAL_TIME.to_string(),
+            });"""
+after = """            return Some(MsDateTimeTimeZone {
+                date_time: clock.format(GRAPH_WALL_CLOCK).to_string(),
+                time_zone: COORDINATED_UNIVERSAL_TIME.to_string(),
+            });"""
+red = [
+    "application::calendar::tests::test_the_two_providers_are_given_the_same_hour_in_the_shape_each_one_reads",
+]
+
 # -- Which addresses say two records are one person -------------------------
 #
 # A contact card carries no identifier this application keeps, and neither does

@@ -287,6 +287,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **An event made here reaches Outlook at the hour you set it.** The Outlook
+  writer read a time this program had stored with no zone beside it as though
+  it were already universal time. An event made here at nine in the morning
+  went to Outlook as nine in Greenwich, so for anybody not on that clock it
+  landed at the wrong hour: five in the morning on the American east coast,
+  half past two in the afternoon in Kolkata. The Google writer has always read
+  the same value as a time on this computer, so one event reached the two
+  providers at two different hours.
+
+  Both are now given the same moment, each still in the shape it reads: Outlook
+  a clock face with a zone name and no offset, Google an offset. The test named
+  for the two agreeing checked the shape each provider was sent and never
+  compared the hours, so it passed throughout. It compares them now.
+
+  Whole-day events are unchanged. Outlook is told a whole day starts at
+  midnight and refuses one that does not, so its date stays where it is.
+
+  Events already sent at the wrong hour stay there until you edit them again.
+
 - **Correcting an event's spelling no longer moves it to a different time of
   day.** Changing anything about an event that came from Google, Outlook or a
   calendar server, even just its title, rebuilt its start and end from the two
