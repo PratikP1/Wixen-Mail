@@ -287,6 +287,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Importing two cards for one person no longer makes two contacts and loses an
+  address at your address book.** Several address books export one card per
+  address rather than one card carrying the whole list. Reading a file like
+  that, the first card replaced the addresses stored for that person with the
+  one address it named, so the second card matched nobody and was written down
+  as a new contact. Both rows were then marked to be sent, so a real address
+  book gained a duplicate and lost one of her addresses.
+
+  An imported card now adds addresses and takes none away. It still wins
+  everywhere else it says something: a company, a job title, a photo or a phone
+  number written on a card replaces what is stored, and everything the card is
+  silent about is kept as it was.
+
+  What that costs: importing a card can no longer remove an address. Removing
+  one is done in the contact editor, where it is one person deciding about one
+  contact rather than a file deciding about everybody in it.
+
+  Still true, and not fixed here: one file holding two cards for somebody this
+  computer has never seen still makes two contacts. Nothing in those two cards
+  says they are the same person except the name, and two people can share a
+  name.
+
 - **A contact you delete no longer comes back in the same sync.** Deleting a
   contact here sends the deletion out to the address books that hold her. The
   read that follows in the same sync could write her straight back down, under a

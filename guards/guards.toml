@@ -1208,7 +1208,71 @@ before = """            emails_json: contact.emails_json.clone().or_else(|| {
 after = """            emails_json: contact.emails_json.clone(),"""
 red = [
     "application::contacts_sync::tests::test_an_import_that_changed_nobody_sends_nothing_to_the_address_book",
+    "data::message_cache::contacts::tests::test_a_card_adding_an_address_to_a_row_with_no_list_keeps_the_one_on_its_main_line",
     "data::message_cache::contacts::tests::test_re_importing_a_backup_does_not_queue_a_contact_stored_by_an_older_version",
+]
+
+# -- What a card may do to the addresses somebody already holds --------------
+#
+# The list of addresses is the one list an import joins onto rather than
+# replaces, because an address is the whole of what says two records are one
+# person. Several address books export one card per address, so a card that
+# replaced the list left her holding whichever address the first card named,
+# the second card matched nobody, and she became two contacts at a real address
+# book with one address between them. Both halves of the matching rule above
+# worked on their own and this is where they failed to compose.
+
+[[guard]]
+name = "a card adds an address and takes none away"
+file = "src/data/message_cache/contacts.rs"
+before = """        let every_address = Self::every_address_she_has_after_the_card(&from_card, held);"""
+after = """        let every_address = from_card.emails_json.clone().or_else(|| held.emails_json.clone());"""
+red = [
+    "data::message_cache::contacts::tests::test_a_card_matched_by_address_keeps_the_addresses_it_is_silent_about",
+    "data::message_cache::contacts::tests::test_a_card_naming_an_address_she_does_not_hold_yet_adds_it_to_the_ones_she_has",
+    "data::message_cache::contacts::tests::test_a_card_repeating_the_addresses_already_held_changes_nothing_about_them",
+    "data::message_cache::contacts::tests::test_two_cards_one_address_each_are_one_person_holding_both_addresses",
+]
+
+# The other direction. Joining has its own way of going wrong: an address she
+# already holds written down a second time, in whatever case the card's writer
+# chose and with the label it did not carry, and then sent to Google and to
+# Outlook as a change nobody made.
+
+[[guard]]
+name = "an address she already holds is not written down again"
+file = "src/data/message_cache/contacts.rs"
+before = """        let new_to_her: Vec<super::EmailEntry> = from_card
+            .every_address_in_the_list()
+            .into_iter()
+            .filter(|arriving| !held.is_written_to_at(&arriving.address))
+            .collect();"""
+after = """        let new_to_her: Vec<super::EmailEntry> = from_card.every_address_in_the_list();"""
+red = [
+    "application::contacts_sync::tests::test_an_import_that_changed_nobody_sends_nothing_to_the_address_book",
+    "data::message_cache::contacts::tests::test_a_card_adding_an_address_to_a_row_with_no_list_keeps_the_one_on_its_main_line",
+    "data::message_cache::contacts::tests::test_a_card_matched_by_address_keeps_the_addresses_it_is_silent_about",
+    "data::message_cache::contacts::tests::test_a_card_naming_an_address_she_does_not_hold_yet_adds_it_to_the_ones_she_has",
+    "data::message_cache::contacts::tests::test_a_card_repeating_the_addresses_already_held_changes_nothing_about_them",
+    "data::message_cache::contacts::tests::test_importing_a_card_does_not_forget_a_change_still_waiting_to_be_sent",
+    "data::message_cache::contacts::tests::test_importing_a_card_that_changed_nothing_queues_nothing",
+    "data::message_cache::contacts::tests::test_re_importing_a_backup_does_not_queue_a_contact_stored_by_an_older_version",
+    "data::message_cache::contacts::tests::test_two_cards_one_address_each_are_one_person_holding_both_addresses",
+]
+
+# A row written before the lists existed has its address on its main line and
+# no list at all. Joined onto that empty list, the address she is really
+# written to at is the one that drops out.
+
+[[guard]]
+name = "a row with no address list still brings its own address to the join"
+file = "src/data/message_cache/contacts.rs"
+before = """        let joined: Vec<super::EmailEntry> = Self::what_the_record_says(held)
+            .every_address_in_the_list()"""
+after = """        let joined: Vec<super::EmailEntry> = held
+            .every_address_in_the_list()"""
+red = [
+    "data::message_cache::contacts::tests::test_a_card_adding_an_address_to_a_row_with_no_list_keeps_the_one_on_its_main_line",
 ]
 
 # The part of an import that leaves this computer is said at the time rather

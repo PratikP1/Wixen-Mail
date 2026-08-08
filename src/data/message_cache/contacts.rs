@@ -366,10 +366,19 @@ impl MessageCache {
     /// photo to be taken away, and no card at all says which address books
     /// know the person.
     ///
-    /// A list the card carries replaces the stored list rather than joining
-    /// it. The card lists the addresses that person has, so a second address
-    /// it does not repeat is one it says they no longer have, and that is what
-    /// makes importing a corrected card able to correct anything.
+    /// A list of phone numbers, postal addresses, or fields somebody named
+    /// themselves replaces the stored list rather than joining it. The card
+    /// lists what that person has, so one it does not repeat is one it says
+    /// they no longer have, and that is what makes importing a corrected card
+    /// able to correct anything.
+    ///
+    /// The list of email addresses is the one exception, and
+    /// [`every_address_she_has_after_the_card`] is where it is made. An address
+    /// is the whole of what says two records are one person, so a card that
+    /// takes one away takes away the line the next card would have been matched
+    /// on.
+    ///
+    /// [`every_address_she_has_after_the_card`]: MessageCache::every_address_she_has_after_the_card
     ///
     /// What is not named here, and why each one falls through from the stored
     /// copy:
@@ -409,6 +418,9 @@ impl MessageCache {
             }
             return Self::waiting_for_the_address_books(fresh);
         };
+        // Read before the card is taken apart below, because the answer is
+        // about both of them rather than about one field of one of them.
+        let every_address = Self::every_address_she_has_after_the_card(&from_card, held);
         let folded = ContactEntry {
             // A card with no `FN` says nothing about what somebody is called,
             // and the stand-in built out of an address is for a person nobody
@@ -434,7 +446,7 @@ impl MessageCache {
             nickname: from_card.nickname.or_else(|| held.nickname.clone()),
             department: from_card.department.or_else(|| held.department.clone()),
             relationship: from_card.relationship.or_else(|| held.relationship.clone()),
-            emails_json: from_card.emails_json.or_else(|| held.emails_json.clone()),
+            emails_json: every_address,
             phones_json: from_card.phones_json.or_else(|| held.phones_json.clone()),
             addresses_json: from_card
                 .addresses_json
@@ -448,6 +460,60 @@ impl MessageCache {
             true => Self::waiting_for_the_address_books(folded),
             false => folded,
         }
+    }
+
+    /// Every address she has once the card is folded in: the ones she already
+    /// holds, with the ones the card names that are new to her on the end.
+    ///
+    /// The one list that joins rather than replacing, and the reason is that an
+    /// address is the whole of what says two records are one person. Several
+    /// address books export one card per address rather than one card carrying
+    /// the whole list, and a list that replaced the stored one left her holding
+    /// whichever address the first card happened to name. The second card then
+    /// matched nobody and made a second contact, both of them marked to be
+    /// sent, so a real address book lost an address and gained a duplicate.
+    ///
+    /// A card is still a deliberate act and still wins where it says something.
+    /// What it says here is that these addresses are hers, and it says nothing
+    /// at all about the ones it does not carry.
+    ///
+    /// An address she already holds keeps the entry it has, spelling and label
+    /// both. The spelling because an address means the same however it is
+    /// written, which is the rule [`ContactEntry::is_written_to_at`] matches
+    /// on, so rewriting it is a change with no meaning behind it that still
+    /// goes up to a provider. The label because a card cannot say it has none:
+    /// a line with no `TYPE` and a line saying `TYPE=OTHER` both read back as
+    /// [`NO_LABEL`], so the word on the card cannot be told from the absence of
+    /// one, and the label the person chose here is the better of the two.
+    ///
+    /// [`NO_LABEL`]: MessageCache::NO_LABEL
+    fn every_address_she_has_after_the_card(
+        from_card: &ContactEntry,
+        held: &ContactEntry,
+    ) -> Option<String> {
+        let new_to_her: Vec<super::EmailEntry> = from_card
+            .every_address_in_the_list()
+            .into_iter()
+            .filter(|arriving| !held.is_written_to_at(&arriving.address))
+            .collect();
+        if new_to_her.is_empty() {
+            // Nothing on the card she is not already written to at, so the
+            // stored list is left exactly as it stands rather than written out
+            // again in this program's spacing.
+            return held.emails_json.clone();
+        }
+        // Through `what_the_record_says` because a row written before the lists
+        // existed holds her address on its main line and has no list at all.
+        // Joined onto an empty list, the address she is written to at would be
+        // missing from her own list.
+        let joined: Vec<super::EmailEntry> = Self::what_the_record_says(held)
+            .every_address_in_the_list()
+            .into_iter()
+            .chain(new_to_her)
+            .collect();
+        serde_json::to_string(&joined)
+            .ok()
+            .or_else(|| held.emails_json.clone())
     }
 
     /// Whether folding this card in changed anything about the person.
@@ -4032,13 +4098,21 @@ END:VCARD";
     }
 
     #[test]
-    fn test_a_card_matched_by_address_lists_the_addresses_that_person_now_has() {
-        // The decision this pins, for the one field where the two halves of
-        // the rule meet. A card lists addresses, so the list on the card is
-        // what gets stored, and a second address the card does not repeat is
-        // gone. That is what makes re-importing a corrected card able to
-        // correct anything. Everything the card is silent about is still kept,
-        // which is the rest of this test.
+    fn test_a_card_matched_by_address_keeps_the_addresses_it_is_silent_about() {
+        // The decision this pins, and it is the reverse of the one that stood
+        // here. The list on the card used to be the whole of what got stored,
+        // so a card naming one of the two addresses she holds took the other
+        // one away. That address is the line the next card for the same person
+        // is matched on, so one person became two contacts, both marked to be
+        // sent, and a real address book lost an address and gained a duplicate.
+        //
+        // What it costs, said plainly: importing a card can no longer take an
+        // address away. Taking one away is the contact editor's job, where it
+        // is one person deciding about one contact rather than a file deciding
+        // about everybody in it.
+        //
+        // Everything else the card is silent about is still kept, which is the
+        // rest of this test.
         let cache = a_cache("vcard_two_addresses");
         let held = a_stored_contact_in_both_address_books();
         cache.save_contact(&held).expect("the contact to save");
@@ -4051,15 +4125,9 @@ END:VCARD";
             .expect("the import to run");
 
         let grace = the_only_contact(&cache);
-        let addresses: Vec<crate::data::message_cache::EmailEntry> =
-            serde_json::from_str(grace.emails_json.as_deref().expect("an address list"))
-                .expect("the address list to read");
         assert_eq!(
-            addresses
-                .iter()
-                .map(|entry| entry.address.as_str())
-                .collect::<Vec<_>>(),
-            vec!["grace@example.com"]
+            the_addresses(&grace),
+            ["grace@example.com", "grace@home.example"]
         );
         assert_eq!(grace.email, "grace@example.com");
         assert_eq!(grace.avatar_data_base64, held.avatar_data_base64);
@@ -4261,6 +4329,114 @@ END:VCARD";
         stored.iter().map(|c| c.name.as_str()).collect()
     }
 
+    /// Somebody this account holds at two addresses, and nothing else.
+    fn alice_at_two_addresses() -> ContactEntry {
+        let mut alice = a_contact("alice-1", "Alice Smith");
+        alice.email = "alice@example.com".to_string();
+        alice.emails_json = Some(
+            "[{\"label\":\"Home\",\"address\":\"alice@example.com\"},\
+             {\"label\":\"Work\",\"address\":\"a.smith@work.example\"}]"
+                .to_string(),
+        );
+        alice
+    }
+
+    /// The addresses a contact holds, in the order they are stored.
+    fn the_addresses(contact: &ContactEntry) -> Vec<String> {
+        let list: Vec<crate::data::message_cache::EmailEntry> =
+            serde_json::from_str(contact.emails_json.as_deref().expect("an address list"))
+                .expect("the address list to read");
+        list.into_iter().map(|entry| entry.address).collect()
+    }
+
+    #[test]
+    fn test_two_cards_one_address_each_are_one_person_holding_both_addresses() {
+        // What several address books export: one card per address rather than
+        // one card carrying the whole list. Each card names one of the two
+        // addresses she holds and says nothing about the other, so a list that
+        // replaced the stored one left her holding only the first, the second
+        // card then matched nobody, and she became two contacts. Both rows were
+        // marked to be sent, so a real address book lost her work address and
+        // gained a duplicate.
+        let cache = a_cache("vcard_one_card_per_address");
+        cache
+            .save_contact(&alice_at_two_addresses())
+            .expect("the contact to save");
+
+        cache
+            .import_contacts_from_vcard(
+                "test@example.com",
+                &format!(
+                    "{}{}",
+                    a_card_naming("Alice Smith", "ALICE@EXAMPLE.COM"),
+                    a_card_naming("Alice Smith", "A.Smith@Work.Example")
+                ),
+            )
+            .expect("the import to run");
+
+        let alice = the_only_contact(&cache);
+        assert_eq!(
+            the_addresses(&alice),
+            ["alice@example.com", "a.smith@work.example"]
+        );
+    }
+
+    #[test]
+    fn test_a_card_naming_an_address_she_does_not_hold_yet_adds_it_to_the_ones_she_has() {
+        // The other half of the same rule, and the one that makes an import
+        // worth running: a card carrying an address nobody here has recorded
+        // adds it, rather than being folded away because she was matched on a
+        // different line.
+        let cache = a_cache("vcard_adds_an_address");
+        cache
+            .save_contact(&alice_at_two_addresses())
+            .expect("the contact to save");
+
+        cache
+            .import_contacts_from_vcard(
+                "test@example.com",
+                "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice Smith\r\n\
+                 EMAIL:alice@example.com\r\nEMAIL:alice@second.example\r\nEND:VCARD\r\n",
+            )
+            .expect("the import to run");
+
+        let alice = the_only_contact(&cache);
+        assert_eq!(
+            the_addresses(&alice),
+            [
+                "alice@example.com",
+                "a.smith@work.example",
+                "alice@second.example"
+            ]
+        );
+        assert!(alice.pending, "an address she did not have is a change");
+    }
+
+    #[test]
+    fn test_a_card_repeating_the_addresses_already_held_changes_nothing_about_them() {
+        // Joining must not churn. A card writes an address in whatever case its
+        // exporter chose and carries no label where the person picked none, and
+        // an address means the same however it is spelled. Written over the
+        // stored entries, importing a backup would relabel every address as
+        // "Other", and every contact in the file would be sent to Google and to
+        // Outlook carrying that.
+        let cache = a_cache("vcard_no_churn");
+        let held = alice_at_two_addresses();
+        cache.save_contact(&held).expect("the contact to save");
+
+        cache
+            .import_contacts_from_vcard(
+                "test@example.com",
+                "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice Smith\r\n\
+                 EMAIL:ALICE@EXAMPLE.COM\r\nEMAIL:A.Smith@Work.Example\r\nEND:VCARD\r\n",
+            )
+            .expect("the import to run");
+
+        let alice = the_only_contact(&cache);
+        assert_eq!(alice.emails_json, held.emails_json);
+        assert!(!alice.pending, "a card that said nothing new queued a push");
+    }
+
     // ── What an import owes the address books that hold the person ──────────
 
     #[test]
@@ -4362,6 +4538,33 @@ END:VCARD";
 
         assert_eq!(read.waiting_to_be_sent, 0, "{read:?}");
         assert!(!the_only_contact(&cache).pending);
+    }
+
+    #[test]
+    fn test_a_card_adding_an_address_to_a_row_with_no_list_keeps_the_one_on_its_main_line() {
+        // A row written before the lists existed holds her address on its main
+        // line and has no list at all. Joined onto an empty list, the address
+        // she is really written to at drops out of her own list, and that list
+        // is what the contacts list shows, what the search reads, and what goes
+        // out on the next card.
+        let cache = a_cache("vcard_older_row_gains_an_address");
+        cache
+            .save_contact(&a_contact_from_before_the_lists_existed())
+            .expect("the contact to save");
+
+        cache
+            .import_contacts_from_vcard(
+                "test@example.com",
+                "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Grace Hopper\r\n\
+                 EMAIL:grace@example.com\r\nEMAIL:grace@second.example\r\nEND:VCARD\r\n",
+            )
+            .expect("the import to run");
+
+        let grace = the_only_contact(&cache);
+        assert_eq!(
+            the_addresses(&grace),
+            ["grace@example.com", "grace@second.example"]
+        );
     }
 
     #[test]
