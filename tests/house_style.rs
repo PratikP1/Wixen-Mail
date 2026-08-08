@@ -629,8 +629,10 @@ const A_LIST_LONGER_THAN_ANYBODY_ANNOUNCES: usize = 20;
 /// and was invisible while this read three words.
 ///
 /// A number anywhere else is about something else. "The rule it repeats by is
-/// stored in three places" counts something that is not the list, and reading
-/// that as the count is how a check starts crying wolf.
+/// stored in three places and read once:" counts places, not bullets, and
+/// reading that as the count is how a check starts crying wolf.
+/// [`A_NUMBER_AFTER_ONE_OF_THESE_IS_NOT_THE_COUNT`] is what tells the two
+/// apart.
 fn the_count_it_states(paragraph: &str) -> Option<usize> {
     let prose = without_code_and_addresses(paragraph);
     if let Some(count) = the_first_number_among(prose.split_whitespace().take(3)) {
@@ -650,9 +652,39 @@ fn the_sentence_that_announces(paragraph: &str) -> &str {
     }
 }
 
-/// The first of these words that is a number, if any of them is.
+/// The words that hand the number after them to something other than the list.
+///
+/// "stored in three places" counts places. "and three things are worth knowing"
+/// counts the bullets underneath. What separates them is the word in front: a
+/// number opened by a preposition belongs to the phrase that preposition
+/// opened, and a sentence can carry one of those and still announce a list.
+///
+/// Reading past one of these can only make the check quieter, never louder. It
+/// gives up a list whose count really has drifted rather than name one that has
+/// not, which is the trade the bound above is drawn for as well.
+const A_NUMBER_AFTER_ONE_OF_THESE_IS_NOT_THE_COUNT: [&str; 12] = [
+    "in", "of", "at", "on", "from", "by", "to", "for", "with", "across", "over", "into",
+];
+
+/// The first of these words that is a number the sentence states about the
+/// list, if any of them is.
 fn the_first_number_among<'a>(words: impl Iterator<Item = &'a str>) -> Option<usize> {
-    words.filter_map(the_number_a_word_is).next()
+    let mut word_before = "";
+    for word in words {
+        match the_number_a_word_is(word) {
+            Some(count) if !hands_the_number_on(word_before) => return Some(count),
+            _ => word_before = word,
+        }
+    }
+    None
+}
+
+/// Whether this word puts the number after it on to something else.
+fn hands_the_number_on(word: &str) -> bool {
+    let bare = word
+        .trim_matches(|c: char| !c.is_ascii_alphanumeric())
+        .to_lowercase();
+    A_NUMBER_AFTER_ONE_OF_THESE_IS_NOT_THE_COUNT.contains(&bare.as_str())
 }
 
 /// The number a word is, spelled or in digits, if it is one.
@@ -883,10 +915,29 @@ fn test_the_count_check_can_see_a_count_that_disagrees() {
     assert_eq!(the_count_it_states(&lists[0].1), Some(3));
     assert_eq!(lists[0].2, 2, "the bullets were not counted");
 
-    // A number in the middle of a sentence is about something else.
+    // A number in the middle of a sentence is about something else. The colon
+    // belongs on it: without one the reading stops before the sentence that
+    // announces the list is looked at, so this proved nothing and the check
+    // really did read this as a count of bullets and cry wolf about it.
     assert_eq!(
-        the_count_it_states("The rule it repeats by is stored in three places"),
+        the_count_it_states("The rule it repeats by is stored in three places and read once:"),
         None
+    );
+
+    // The same sentence as a paragraph reads for a bullet's own continuation
+    // lines, which is where it starts once the bullet above it is stripped off.
+    // This is the shape the check was measured against in the real file.
+    assert_eq!(
+        the_count_it_states("in three places and read once:"),
+        None,
+        "a count of places was read as a count of bullets"
+    );
+
+    // And a sentence that carries both. Reading past the first number must not
+    // give up on the one that really does announce the list.
+    assert_eq!(
+        the_count_it_states("Stored in three places, and two things follow from that:"),
+        Some(2)
     );
 
     // A version and a date are numbers in an announcing sentence and neither
