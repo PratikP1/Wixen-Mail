@@ -1811,3 +1811,202 @@ fn test_the_count_check_can_see_a_count_that_disagrees() {
             .any(|claim| "and this is the whole list:".contains(claim))
     );
 }
+// ── Where the first-run screen starts ───────────────────────────────────────
+//
+// Two facts, and the prose about this screen has been welding them into one
+// sentence since the screen was written. Focus is put on the first of the three
+// choices, which is the safest one. What is *selected*, and so what Continue
+// takes from somebody who presses Enter without reading, is `Choice::DEFAULT`,
+// which is the second and allows changes to tasks, contacts and the calendar.
+//
+// "The default is the first thing focus lands on" is those two welded together
+// and true of neither. So each is read against its own answer in the code: a
+// sentence about what is selected against where `DEFAULT` sits in `ALL`, and a
+// sentence about focus against the button the window layer focuses.
+
+/// The screens whose prose says where this one starts.
+const WHERE_THE_FIRST_RUN_SCREEN_IS_DESCRIBED: [&str; 2] = [
+    "src/presentation/first_run.rs",
+    "src/presentation/wx_first_run.rs",
+];
+
+/// The three choices as prose names them, in the order they are offered.
+const HOW_PROSE_NAMES_THE_CHOICES: [&[&str]; 3] = [
+    &["first", "safest", "safe", "cautious"],
+    &["second", "middle"],
+    &["third", "last", "riskiest"],
+];
+
+/// Words saying a sentence is about which choice is selected.
+const ABOUT_THE_ANSWER_IT_STARTS_WITH: &[&str] = &[
+    "the default",
+    "starts on",
+    "selected",
+    "preselect",
+    "presses enter",
+    "pressing enter",
+];
+
+/// Which of the three a sentence names, if it names one.
+///
+/// The first naming word wins. A sentence naming two of them is describing one
+/// in terms of another, and the one it opens with is the one it is about.
+fn which_choice_it_names(sentence: &str) -> Option<usize> {
+    words_of(&sentence.to_lowercase())
+        .into_iter()
+        .find_map(|(_, word)| {
+            HOW_PROSE_NAMES_THE_CHOICES
+                .iter()
+                .position(|names| names.contains(&word.as_str()))
+        })
+}
+
+/// Every sentence of a run of prose, with where it starts.
+fn sentences_of(prose: &str) -> Vec<(usize, &str)> {
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at < prose.len() {
+        let (start, end) = the_sentence_around(prose, at);
+        if !prose[start..end].trim().is_empty() {
+            found.push((start, prose[start..end].trim()));
+        }
+        at = end + 1;
+    }
+    found
+}
+
+/// Which button the window layer puts focus on.
+///
+/// Read from the source, because reaching the real answer needs a window. It
+/// is the only fact here the code cannot simply be asked for, and it is held
+/// this way rather than written down as a number so that moving the focus
+/// fails this instead of quietly making the prose wrong again.
+fn which_button_takes_focus() -> usize {
+    let screen = fs::read_to_string("src/presentation/wx_first_run.rs")
+        .expect("the first-run window to be readable");
+    assert!(
+        screen.contains("if let Some((_, first)) = buttons.first()")
+            && screen.contains("first.set_focus()"),
+        "the first-run window no longer focuses the first choice, so every \
+         sentence about where focus lands needs writing again"
+    );
+    0
+}
+
+#[test]
+fn test_the_first_run_screen_is_not_described_as_starting_where_it_does_not() {
+    // Where the screen starts is two values in the code and no sentence
+    // written down here, so if either moves this follows it.
+    let selected = wixen_mail::presentation::first_run::Choice::ALL
+        .iter()
+        .position(|choice| *choice == wixen_mail::presentation::first_run::Choice::DEFAULT)
+        .expect("the choice the screen starts on to be one of the three offered");
+    let focused = which_button_takes_focus();
+    let mut wrong = Vec::new();
+
+    for name in WHERE_THE_FIRST_RUN_SCREEN_IS_DESCRIBED {
+        let path = PathBuf::from(name);
+        let text = fs::read_to_string(&path).expect("the screen to be readable");
+        for prose in prose_in(&path, &text) {
+            for (at, sentence) in sentences_of(&prose.text) {
+                let lowered = sentence.to_lowercase();
+                let Some(named) = which_choice_it_names(sentence) else {
+                    continue;
+                };
+                let about_the_answer = ABOUT_THE_ANSWER_IT_STARTS_WITH
+                    .iter()
+                    .any(|words| lowered.contains(words));
+                if about_the_answer && named != selected {
+                    wrong.push(format!(
+                        "{name}:{}: puts the answer it starts on at {named}, and it is at \
+                         {selected}: {sentence}",
+                        prose.line_at(at)
+                    ));
+                }
+                if lowered.contains("focus") && named != focused {
+                    wrong.push(format!(
+                        "{name}:{}: puts focus on {named}, and it lands on {focused}: {sentence}",
+                        prose.line_at(at)
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(
+        wrong.is_empty(),
+        "the first-run screen focuses the safest of the three and selects the \
+         second, which allows changes to tasks, contacts and the calendar. \
+         Somebody who presses Enter without reading gets the second, and these \
+         say otherwise:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_first_run_check_can_tell_the_two_apart() {
+    // Proving the measurement. Every sentence here is copied from the tree:
+    // the five that were wrong, and the ones that replaced them.
+    for (sentence, names) in [
+        ("The default is the safe one", Some(0)),
+        ("so the default is the first thing focus lands on", Some(0)),
+        (
+            "Somebody who presses Enter without reading gets the cautious answer",
+            Some(0),
+        ),
+        (
+            "Continue is always available, though, and starts on the safe answer",
+            Some(0),
+        ),
+        (
+            "pressing Enter immediately is a valid decision and a cautious one",
+            Some(0),
+        ),
+        ("The one selected is the second", Some(1)),
+        (
+            "Somebody who presses Enter without reading gets the middle answer",
+            Some(1),
+        ),
+        ("Focus lands on the safest of them", Some(0)),
+        (
+            "mail is left alone, and changes go up to their provider",
+            None,
+        ),
+    ] {
+        assert_eq!(which_choice_it_names(sentence), names, "{sentence}");
+    }
+
+    // A sentence is read on its own, or one carrying both facts is judged by
+    // whichever it happens to name first.
+    let both = "Focus lands on the safest of them. The one selected is the second.";
+    let read: Vec<&str> = sentences_of(both).into_iter().map(|(_, it)| it).collect();
+    assert_eq!(
+        read,
+        vec![
+            "Focus lands on the safest of them",
+            "The one selected is the second"
+        ]
+    );
+
+    // The two answers this is checked against, which are the whole point: they
+    // come from the code and not from anything written here.
+    assert_eq!(which_button_takes_focus(), 0);
+    let selected = wixen_mail::presentation::first_run::Choice::ALL
+        .iter()
+        .position(|choice| *choice == wixen_mail::presentation::first_run::Choice::DEFAULT);
+    assert_eq!(
+        selected,
+        Some(1),
+        "the screen no longer starts on the second"
+    );
+
+    // And the files really are there to be read, or the check above passes
+    // over nothing.
+    for name in WHERE_THE_FIRST_RUN_SCREEN_IS_DESCRIBED {
+        let text = fs::read_to_string(name).expect("the screen to be readable");
+        assert!(
+            !prose_in(&PathBuf::from(name), &text).is_empty(),
+            "{name} has no prose in it, so the reading is broken"
+        );
+    }
+}

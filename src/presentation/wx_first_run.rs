@@ -9,9 +9,10 @@
 //!
 //! There is no Cancel and Escape does not close it. The whole point is that
 //! somebody decided, and a dialog that can be waved away teaches people to
-//! wave it away. Continue is always available, though, and starts on the safe
-//! answer, so nobody is stuck: pressing Enter immediately is a valid decision
-//! and a cautious one.
+//! wave it away. Continue is always available, though, so nobody is stuck.
+//! What it takes is the second of the three, which leaves mail alone and sends
+//! changes to tasks, contacts and the calendar up to a provider, so pressing
+//! Enter immediately is a real decision rather than a safe one.
 
 use crate::application::allowed::Allowed;
 use crate::presentation::accessibility::names::{
@@ -125,7 +126,8 @@ pub fn ask_what_is_allowed(parent: &Frame) -> Allowed {
     carry_on.on_click(move |_| dialog.end_modal(ID_CONTINUE));
 
     // Focus on the first choice rather than on Continue, so the first thing
-    // heard is the decision rather than the way past it.
+    // heard is the decision rather than the way past it. Focus and the tick
+    // are not on the same button here: the one selected is the second.
     if let Some((_, first)) = buttons.first() {
         first.set_focus();
     }

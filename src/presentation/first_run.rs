@@ -12,9 +12,11 @@
 //! # Why it is a choice rather than a notice
 //!
 //! A notice is dismissed. A question has to be answered, and the answer is
-//! stored, so the decision was actually made by the person it affects. The
-//! default is the safe one, so somebody who presses Enter without reading gets
-//! the cautious answer rather than the permissive one.
+//! stored, so the decision was actually made by the person it affects.
+//! Somebody who presses Enter without reading gets the middle answer, which
+//! leaves mail alone and sends changes to tasks, contacts and the calendar up
+//! to their provider. Focus lands on the safest of the three, so that is the
+//! one read out first.
 //!
 //! The wording lives here, apart from the window, so it can be read in a test.
 //! What it says is the part that matters: the window is a list of radio
@@ -39,8 +41,10 @@ pub enum Choice {
 impl Choice {
     /// The three, in the order they are offered.
     ///
-    /// Safest first, so the default is the first thing focus lands on and
-    /// somebody arrowing down is widening rather than narrowing.
+    /// Safest first, so arrowing down widens what is allowed and arrowing up
+    /// narrows it. Focus lands on the safest of them. The one selected is the
+    /// second, so somebody who presses Enter without reading allows changes to
+    /// tasks, contacts and the calendar.
     pub const ALL: [Choice; 3] = [
         Choice::ReadOnly,
         Choice::TasksAndContacts,
@@ -133,18 +137,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_the_safe_choice_is_the_one_it_starts_on() {
-        // Somebody who presses Enter without reading gets the cautious
-        // answer. That is the whole reason the default is not "everything".
+    fn test_the_screen_starts_on_the_second_choice_and_not_the_safest() {
+        // Somebody who presses Enter without reading gets the second of the
+        // three: mail is left alone, and changes to tasks, contacts and the
+        // calendar go up to their provider. That is the whole reason it is not
+        // "everything", and it is not the safest answer either.
         assert_eq!(Choice::DEFAULT, Choice::TasksAndContacts);
+        assert_eq!(Choice::ALL[1], Choice::DEFAULT);
         assert!(!Choice::DEFAULT.allows().mail);
+        assert!(Choice::DEFAULT.allows().personal_information);
     }
 
     #[test]
     fn test_the_choices_go_from_safest_to_riskiest() {
         // Focus lands on the first, so arrowing down widens. The other order
         // would mean arrowing down to become safer, having started on the
-        // riskiest thing.
+        // riskiest thing. What is selected is a separate question, and the
+        // test above is the one about that.
         let mail: Vec<bool> = Choice::ALL.iter().map(|c| c.allows().mail).collect();
         let pim: Vec<bool> = Choice::ALL
             .iter()
