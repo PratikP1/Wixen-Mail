@@ -42,7 +42,12 @@ pub enum CalendarAction {
 }
 
 /// Data captured from the event editor dialog.
-#[derive(Debug, Clone)]
+///
+/// Compared as a whole to answer "did anybody change anything?", which is why
+/// it carries `PartialEq`. The editor is filled from [`Self::as_shown`] and
+/// hands back one of these, so the two are equal exactly when nothing was
+/// typed.
+#[derive(Debug, Clone, PartialEq)]
 pub struct CalendarEventData {
     pub summary: String,
     pub start_date: String,
@@ -56,6 +61,39 @@ pub struct CalendarEventData {
 }
 
 impl CalendarEventData {
+    /// What the editor is filled with for an event already stored.
+    ///
+    /// Written once rather than at the dialog and again wherever the answer is
+    /// compared with what came back. Two copies of these nine assignments
+    /// drift, and the moment they do an event nobody touched reads as edited
+    /// and the whole record goes back to the provider.
+    ///
+    /// The row is the list's, not the stored event's, so a repeating event
+    /// fills the boxes with the day somebody was standing on rather than the
+    /// day the series starts from. That is what the editor shows and therefore
+    /// what it writes back, and it is why a repeating event opened on its
+    /// fortieth day reads as changed even when nothing was typed.
+    pub fn as_shown(item: &CalendarEventItem) -> Self {
+        Self {
+            summary: item.summary.clone(),
+            // Ten characters of date, a separator, then five of time. A stored
+            // value with no time in it answers `None` here and leaves the box
+            // empty, which is what an all-day event wants.
+            start_date: item.start.get(..10).unwrap_or("").to_string(),
+            start_time: item.start.get(11..16).unwrap_or("").to_string(),
+            end_date: item.end.get(..10).unwrap_or("").to_string(),
+            end_time: item.end.get(11..16).unwrap_or("").to_string(),
+            is_all_day: item.is_all_day,
+            location: item.location.clone(),
+            // What the event actually says, rather than a blank and a quarter
+            // of an hour. The editor writes back what it shows, so showing the
+            // wrong thing here wiped the notes and reset the alert on every
+            // edit.
+            description: item.description.clone(),
+            reminder_minutes: item.reminder_minutes.unwrap_or(0),
+        }
+    }
+
     /// Validate the event data, returning a list of error messages.
     pub fn validate(&self) -> Vec<String> {
         let mut errors = Vec::new();
@@ -219,21 +257,7 @@ pub fn show_calendar_dialog(parent: &Frame, events: &[CalendarEventItem]) -> Vec
                 if sel >= 0 {
                     let idx = sel as usize;
                     if let Some(item) = events_data.get(idx) {
-                        let prefill = CalendarEventData {
-                            summary: item.summary.clone(),
-                            start_date: item.start.get(..10).unwrap_or("").to_string(),
-                            start_time: item.start.get(11..16).unwrap_or("").to_string(),
-                            end_date: item.end.get(..10).unwrap_or("").to_string(),
-                            end_time: item.end.get(11..16).unwrap_or("").to_string(),
-                            is_all_day: item.is_all_day,
-                            location: item.location.clone(),
-                            // What the event actually says, rather than a blank
-                            // and a quarter of an hour. The editor writes back
-                            // what it shows, so showing the wrong thing here
-                            // wiped the notes and reset the alert on every edit.
-                            description: item.description.clone(),
-                            reminder_minutes: item.reminder_minutes.unwrap_or(0),
-                        };
+                        let prefill = CalendarEventData::as_shown(item);
                         // Asked before the editor opens, so somebody who meant
                         // one day is not made to fill a form first and then
                         // told it cannot be done.
