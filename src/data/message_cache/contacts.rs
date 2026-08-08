@@ -1,6 +1,8 @@
 //! Contact, contact group, and vCard persistence operations
 
-use super::{AddressBook, ContactEntry, ContactGroup, MessageCache, ProviderIdentity};
+use super::{
+    AddressBook, ContactEntry, ContactGroup, DeletedContact, MessageCache, ProviderIdentity,
+};
 use crate::common::{Error, Result};
 use rusqlite::params;
 use std::collections::HashMap;
@@ -651,9 +653,25 @@ impl MessageCache {
         Ok(output)
     }
 
-    /// Delete a contact, and forget the address books that knew it.
+    /// Delete a contact somebody asked to delete, and leave every address book
+    /// that knew her a note saying so.
     ///
-    /// Both in one transaction. An identity left behind would refuse the next
+    /// A deleted row cannot carry a "not yet sent" flag, so the fact of the
+    /// deletion has to outlive it. Without the note nothing was left to say the
+    /// deletion had happened: no sync sent it, the next read wrote her back
+    /// down, and the product had already said "deleted". Use
+    /// [`Self::drop_synced_contact`] for the other direction, where the address
+    /// book is the one saying she is gone.
+    ///
+    /// One note per address book that knew her. She is one person however many
+    /// hold a copy, and deleting her at Google says nothing to Outlook, so each
+    /// is owed the deletion under its own name for her. A contact no address
+    /// book knew gets no note at all: there is nowhere to send it, and a note
+    /// nothing can clear sits in the table for ever.
+    ///
+    /// All of it in one transaction. The note has to be written before the
+    /// identities go, because afterwards there is nothing left to say what each
+    /// address book called her. An identity left behind would refuse the next
     /// contact the same address book hands over, because one address book's
     /// identifier can point at one contact.
     pub fn delete_contact(&self, contact_id: &str) -> Result<()> {
@@ -663,6 +681,44 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to delete contact: {}", e)))?;
         deleting
             .execute(
+                "INSERT OR REPLACE INTO deleted_contacts
+                    (contact_id, account_id, address_book, provider_contact_id, deleted_at)
+                 SELECT contact_id, account_id, address_book, provider_contact_id, ?2
+                 FROM contact_identities WHERE contact_id = ?1",
+                params![contact_id, chrono::Utc::now().to_rfc3339()],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record a deleted contact: {}", e)))?;
+        Self::take_the_contact_out(&deleting, contact_id)?;
+        deleting
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to delete contact: {}", e)))?;
+        Ok(())
+    }
+
+    /// Remove a contact an address book says is gone, leaving no note.
+    ///
+    /// The other direction from [`Self::delete_contact`]. The address book is
+    /// the one saying she is gone, so a note would send the deletion back to
+    /// the address book that asked for it, be refused for a contact that is not
+    /// there, and be tried again on every sync from then on.
+    pub fn drop_synced_contact(&self, contact_id: &str) -> Result<()> {
+        let deleting = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to delete contact: {}", e)))?;
+        Self::take_the_contact_out(&deleting, contact_id)?;
+        deleting
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to delete contact: {}", e)))?;
+        Ok(())
+    }
+
+    /// The row and its address book identities, in whatever transaction the
+    /// caller has open. Shared so the two ways of removing a contact cannot
+    /// drift apart on what they leave behind.
+    fn take_the_contact_out(deleting: &rusqlite::Transaction<'_>, contact_id: &str) -> Result<()> {
+        deleting
+            .execute(
                 "DELETE FROM contact_identities WHERE contact_id = ?1",
                 params![contact_id],
             )
@@ -670,9 +726,51 @@ impl MessageCache {
         deleting
             .execute("DELETE FROM contacts WHERE id = ?1", params![contact_id])
             .map_err(|e| Error::Other(format!("Failed to delete contact: {}", e)))?;
-        deleting
-            .commit()
-            .map_err(|e| Error::Other(format!("Failed to delete contact: {}", e)))?;
+        Ok(())
+    }
+
+    /// Every deletion no address book has been told about yet.
+    ///
+    /// Ordered by contact and then by address book, so a summary built from
+    /// these reads the same way twice running.
+    pub fn deleted_contacts(&self, account_id: &str) -> Result<Vec<DeletedContact>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT contact_id, account_id, address_book, provider_contact_id, deleted_at
+                 FROM deleted_contacts WHERE account_id = ?1
+                 ORDER BY deleted_at, contact_id, address_book",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare deletions query: {}", e)))?;
+        stmt.query_map(params![account_id], |row| {
+            Ok(DeletedContact {
+                contact_id: row.get(0)?,
+                account_id: row.get(1)?,
+                address_book: AddressBook::from_stored(&row.get::<_, String>(2)?),
+                provider_contact_id: row.get(3)?,
+                deleted_at: row.get(4)?,
+            })
+        })
+        .map_err(|e| Error::Other(format!("Failed to query deletions: {}", e)))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| Error::Other(format!("Failed to read a deletion: {}", e)))
+    }
+
+    /// This address book has been told, so it is owed nothing more.
+    ///
+    /// One address book at a time. Clearing the whole contact here would leave
+    /// the other one still holding somebody the product said was deleted.
+    pub fn forget_deleted_contact(
+        &self,
+        contact_id: &str,
+        address_book: &AddressBook,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "DELETE FROM deleted_contacts WHERE contact_id = ?1 AND address_book = ?2",
+                params![contact_id, address_book.as_stored()],
+            )
+            .map_err(|e| Error::Other(format!("Failed to clear a deletion: {}", e)))?;
         Ok(())
     }
 
@@ -3536,6 +3634,133 @@ mod tests {
             .expect("the contacts to read back");
         assert_eq!(stored.len(), 1);
         assert_eq!(stored[0].id_in(&AddressBook::Google), Some("people/c1"));
+    }
+
+    // ── The note a deletion leaves behind ───────────────────────────────────
+
+    /// A contact both address books know, so a test can say which of them a
+    /// note was left for.
+    fn a_contact_two_address_books_know(id: &str, name: &str) -> ContactEntry {
+        let mut person = a_contact(id, name);
+        person.known_to = vec![
+            ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: "people/c1".to_string(),
+                provider_version: None,
+                change_is_waiting: false,
+            },
+            ProviderIdentity {
+                address_book: AddressBook::Microsoft,
+                provider_contact_id: "AAMk1".to_string(),
+                provider_version: None,
+                change_is_waiting: false,
+            },
+        ];
+        person
+    }
+
+    /// Each waiting deletion as the address book it is owed to and the name
+    /// that address book gives the person.
+    fn the_deletions_waiting(cache: &MessageCache) -> Vec<(String, String)> {
+        cache
+            .deleted_contacts("test@example.com")
+            .expect("the deletions waiting to be sent")
+            .into_iter()
+            .map(|note| {
+                (
+                    note.address_book.as_stored().to_string(),
+                    note.provider_contact_id,
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_deleting_a_contact_leaves_a_note_for_every_address_book_that_knew_her() {
+        // The whole of the bug this exists for. A deleted row cannot carry a
+        // "not yet sent" flag, so without a note nothing is left to say the
+        // deletion happened, no sync sends it, and the next read writes her
+        // back down while the product has already said "deleted".
+        let cache = a_cache("deleting_leaves_a_note");
+        cache
+            .save_contact(&a_contact_two_address_books_know("alice-1", "Alice Smith"))
+            .expect("the contact to save");
+
+        cache
+            .delete_contact("alice-1")
+            .expect("the contact to be deleted");
+
+        assert_eq!(
+            the_deletions_waiting(&cache),
+            vec![
+                ("gmail".to_string(), "people/c1".to_string()),
+                ("outlook".to_string(), "AAMk1".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_deleting_a_contact_no_address_book_knew_leaves_no_note() {
+        // Somebody who only ever lived here. There is nowhere to send the
+        // deletion, so a note would sit in the table for ever with nothing
+        // able to clear it.
+        let cache = a_cache("deleting_a_local_contact");
+        cache
+            .save_contact(&a_contact("only-here-1", "Only Here"))
+            .expect("the contact to save");
+
+        cache
+            .delete_contact("only-here-1")
+            .expect("the contact to be deleted");
+
+        assert!(the_deletions_waiting(&cache).is_empty());
+    }
+
+    #[test]
+    fn test_telling_one_address_book_leaves_the_other_still_owed_the_deletion() {
+        // One person, two address books, and one of them told. Forgetting the
+        // whole contact here would leave Outlook holding somebody the product
+        // said was deleted.
+        let cache = a_cache("telling_one_address_book");
+        cache
+            .save_contact(&a_contact_two_address_books_know("alice-1", "Alice Smith"))
+            .expect("the contact to save");
+        cache
+            .delete_contact("alice-1")
+            .expect("the contact to be deleted");
+
+        cache
+            .forget_deleted_contact("alice-1", &AddressBook::Google)
+            .expect("Google's note to be cleared");
+
+        assert_eq!(
+            the_deletions_waiting(&cache),
+            vec![("outlook".to_string(), "AAMk1".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_a_contact_an_address_book_deleted_leaves_no_note_to_send_back() {
+        // The other direction. The address book is the one saying she is gone,
+        // so a note would send the deletion back to the address book that
+        // asked for it, be refused for a contact that is not there, and be
+        // tried again on every sync from then on.
+        let cache = a_cache("an_address_book_deleted_her");
+        cache
+            .save_contact(&a_contact_two_address_books_know("alice-1", "Alice Smith"))
+            .expect("the contact to save");
+
+        cache
+            .drop_synced_contact("alice-1")
+            .expect("the contact to be dropped");
+
+        assert!(the_deletions_waiting(&cache).is_empty());
+        assert!(
+            cache
+                .get_contacts_for_account("test@example.com")
+                .expect("the contacts to read back")
+                .is_empty()
+        );
     }
 
     #[test]

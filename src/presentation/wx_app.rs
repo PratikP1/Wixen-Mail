@@ -9384,7 +9384,9 @@ fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
         }
 
         handle.block_on(async {
-            let _ = tx.send(UIUpdate::ContactsSyncComplete(total)).await;
+            let _ = tx
+                .send(UIUpdate::ContactsSyncComplete(Box::new(total)))
+                .await;
         });
     });
 }

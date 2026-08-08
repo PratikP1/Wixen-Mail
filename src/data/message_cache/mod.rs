@@ -312,6 +312,28 @@ pub struct ProviderIdentity {
     pub change_is_waiting: bool,
 }
 
+/// A contact deleted here that one address book has not been told about.
+///
+/// One of these per address book that knew her, because a contact is one
+/// person in as many address books as hold her and each has its own name for
+/// her. Deleting her at Google says nothing to Outlook, so each is owed the
+/// deletion separately and each is forgotten separately once it has been told.
+///
+/// A deleted row cannot carry a flag, so the fact of the deletion has to
+/// outlive it. Without this a contact deleted here comes back on the next
+/// read, after the product has already said she was deleted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeletedContact {
+    /// The identifier the row here had, which is what the note is forgotten by.
+    pub contact_id: String,
+    pub account_id: String,
+    /// The address book still owed the deletion.
+    pub address_book: AddressBook,
+    /// What that address book calls her, which is how it finds her to delete.
+    pub provider_contact_id: String,
+    pub deleted_at: String,
+}
+
 /// Contact entry for account address book
 ///
 /// Compared whole rather than field by field, so that a round trip through a
@@ -1059,6 +1081,35 @@ impl MessageCache {
                     e
                 ))
             })?;
+
+        // ── Deleted contacts ────────────────────────────────────────────
+        //
+        // The same reason as `deleted_tasks`: a deleted row cannot carry a
+        // flag saying it has not been sent yet, so the fact of the deletion
+        // has to outlive the row. Without this a contact deleted here comes
+        // back on the next read, after the product has already said she was
+        // deleted, which reads as the deletion having silently failed.
+        //
+        // One row per address book, and not one per contact, because a
+        // contact is one person in as many address books as hold her and each
+        // of them has its own name for her. `contact_identities` is keyed the
+        // same way and for the same reason.
+        //
+        // A row goes when its own address book has been told, so the table
+        // empties as the deletion lands rather than growing for ever.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS deleted_contacts (
+                contact_id TEXT NOT NULL,
+                account_id TEXT NOT NULL,
+                address_book TEXT NOT NULL,
+                provider_contact_id TEXT NOT NULL,
+                deleted_at TEXT NOT NULL,
+                PRIMARY KEY (contact_id, address_book)
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create deleted_contacts table: {}", e)))?;
 
         self.conn
             .execute(

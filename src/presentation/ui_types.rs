@@ -404,7 +404,12 @@ pub enum UIUpdate {
     /// into a shape of this module's own. Copied, four of its counts were
     /// named here and the rest were left behind, so a count the sync had
     /// gathered could never reach the sentence built from it.
-    ContactsSyncComplete(crate::application::contacts_sync::SyncResult),
+    ///
+    /// Behind a box, because it is much the largest thing this enum carries and
+    /// every other update would otherwise be the size of a whole sync result.
+    /// It grows by a set of contacts each time a count is added, so the boxing
+    /// is not a one-off.
+    ContactsSyncComplete(Box<crate::application::contacts_sync::SyncResult>),
     /// Calendar events loaded for display
     CalendarEventsLoaded(Vec<CalendarEventItem>),
     /// Calendar sync completed

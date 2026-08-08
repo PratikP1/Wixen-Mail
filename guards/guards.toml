@@ -121,9 +121,11 @@ file = "src/application/contacts_sync.rs"
 before = """    if another_address_book_still_has_them(local, address_book) {"""
 after = """    if false {"""
 red = [
-    "application::contacts_sync::tests::test_a_person_one_address_book_deleted_and_the_other_still_holds_is_one_person",
+    "application::contacts_sync::tests::test_a_change_waiting_only_for_the_address_book_that_deleted_them_stops_waiting",
     "application::contacts_sync::tests::test_a_google_deletion_leaves_the_change_outlook_is_still_owed_where_it_is",
+    "application::contacts_sync::tests::test_a_person_one_address_book_deleted_and_the_other_still_holds_is_one_person",
     "application::contacts_sync::tests::test_an_outlook_deletion_leaves_the_change_google_is_still_owed_where_it_is",
+    "application::contacts_sync::tests::test_work_waiting_for_nobody_in_particular_survives_one_address_book_letting_go",
 ]
 
 # ── The deletion warning, read three wrong ways ─────────────────────────────
@@ -155,6 +157,7 @@ before = """    if the_copy_here_holds_work_nobody_has_sent(local) {"""
 after = """    if this_address_book_is_still_owed_the_change(local, &AddressBook::Microsoft) {"""
 red = [
     "application::contacts_sync::tests::test_a_contact_google_deleted_takes_a_waiting_change_with_it_and_says_so",
+    "application::contacts_sync::tests::test_a_deletion_says_what_went_with_it_whatever_the_contact_says_of_itself",
 ]
 
 [[guard]]
@@ -307,7 +310,12 @@ after = """    fn and(&self, others: &Contacts) -> Contacts {
         )
     }"""
 red = [
+    "application::contacts_sync::tests::test_a_change_a_setting_held_back_survives_the_read_in_the_same_sync",
+    "application::contacts_sync::tests::test_a_contact_both_address_books_knew_is_deleted_at_both_and_counted_once",
     "application::contacts_sync::tests::test_a_contact_one_address_book_moved_is_not_also_called_unchanged",
+    "application::contacts_sync::tests::test_a_first_sync_of_people_both_address_books_hold_counts_each_person_once",
+    "application::contacts_sync::tests::test_a_person_one_address_book_deleted_and_the_other_still_holds_is_one_person",
+    "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
     "application::contacts_sync::tests::test_folding_two_address_books_together_counts_one_contact_once",
     "application::contacts_sync::tests::test_folding_two_address_books_together_keeps_every_count",
     "application::contacts_sync::tests::test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice",
@@ -322,6 +330,7 @@ before = """    let untouched = result
 after = """    let untouched = result.unchanged.clone();"""
 red = [
     "application::contacts_sync::tests::test_a_contact_one_address_book_moved_is_not_also_called_unchanged",
+    "application::contacts_sync::tests::test_a_person_one_address_book_deleted_and_the_other_still_holds_is_one_person",
 ]
 
 # ── Created, updated and deleted are one person each ────────────────────────
@@ -510,4 +519,121 @@ after = """    result.waiting_on_the_setting.holds(contact_id)
 }"""
 red = [
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
+]
+
+# ── A contact deleted here ──────────────────────────────────────────────────
+#
+# The deletion used to stop at this computer. The row went, the product said
+# "deleted", nothing was left to say it had happened, and the next read wrote
+# her back down. Three runs reported it before it was fixed, and it was live
+# with the shipped settings the whole time, so each half of the fix is written
+# down here.
+
+[[guard]]
+name = "a deletion made here leaves a note for the address books that knew her"
+file = "src/data/message_cache/contacts.rs"
+before = """                 FROM contact_identities WHERE contact_id = ?1",
+                params![contact_id, chrono::Utc::now().to_rfc3339()],"""
+after = """                 FROM contact_identities WHERE contact_id = ?1 AND 1 = 0",
+                params![contact_id, chrono::Utc::now().to_rfc3339()],"""
+red = [
+    "application::contacts_sync::tests::test_a_contact_both_address_books_knew_is_deleted_at_both_and_counted_once",
+    "application::contacts_sync::tests::test_a_contact_deleted_here_does_not_come_back_from_the_read_that_follows",
+    "application::contacts_sync::tests::test_a_contact_deleted_here_is_deleted_at_google_too",
+    "application::contacts_sync::tests::test_a_contact_deleted_here_is_deleted_at_outlook_too",
+    "application::contacts_sync::tests::test_a_contact_deleted_here_that_also_held_an_unsent_edit_is_deleted_not_sent",
+    "application::contacts_sync::tests::test_a_contact_outlook_still_holds_does_not_come_back_after_google_took_the_deletion",
+    "application::contacts_sync::tests::test_a_deletion_allow_changes_held_back_is_still_waiting_afterwards",
+    "application::contacts_sync::tests::test_a_deletion_the_address_book_refused_is_kept_and_said",
+    "application::contacts_sync::tests::test_an_address_book_that_has_never_heard_of_her_is_not_asked_again",
+    "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_deletion_the_summary_said_was_waiting",
+    "data::message_cache::contacts::tests::test_deleting_a_contact_leaves_a_note_for_every_address_book_that_knew_her",
+    "data::message_cache::contacts::tests::test_telling_one_address_book_leaves_the_other_still_owed_the_deletion",
+]
+
+[[guard]]
+name = "the Google read does not undo a deletion Google has not taken"
+file = "src/application/contacts_sync.rs"
+before = """        if a_deletion_is_still_owed_for(&deletions_google_is_still_owed, &person.resource_name) {
+            continue;
+        }"""
+after = """        if false {
+            continue;
+        }"""
+red = [
+    "application::contacts_sync::tests::test_a_contact_deleted_here_does_not_come_back_from_the_read_that_follows",
+]
+
+[[guard]]
+name = "the Outlook read does not undo a deletion Outlook has not taken"
+file = "src/application/contacts_sync.rs"
+before = """        if a_deletion_is_still_owed_for(&deletions_outlook_is_still_owed, &ms_contact.id) {
+            continue;
+        }"""
+after = """        if false {
+            continue;
+        }"""
+red = [
+    "application::contacts_sync::tests::test_a_contact_outlook_still_holds_does_not_come_back_after_google_took_the_deletion",
+]
+
+[[guard]]
+name = "an address book that says she is gone is not asked to delete her"
+file = "src/application/contacts_sync.rs"
+before = """    cache.drop_synced_contact(&local.id)?;"""
+after = """    cache.delete_contact(&local.id)?;"""
+red = [
+    "application::contacts_sync::tests::test_a_contact_google_deleted_is_not_sent_back_to_google_as_a_deletion",
+]
+
+[[guard]]
+name = "a deletion a setting held back is kept, not forgotten"
+file = "src/application/contacts_sync.rs"
+before = """            result.waiting_on_the_setting.note(&note.contact_id);
+            return false;"""
+after = """            result.waiting_on_the_setting.note(&note.contact_id);
+            let _ = cache.forget_deleted_contact(&note.contact_id, &note.address_book);
+            return false;"""
+red = [
+    "application::contacts_sync::tests::test_a_contact_deleted_here_does_not_come_back_from_the_read_that_follows",
+    "application::contacts_sync::tests::test_a_contact_outlook_still_holds_does_not_come_back_after_google_took_the_deletion",
+    "application::contacts_sync::tests::test_a_deletion_allow_changes_held_back_is_still_waiting_afterwards",
+    "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_deletion_the_summary_said_was_waiting",
+]
+
+[[guard]]
+name = "a deletion the address book refused is kept, not forgotten"
+file = "src/application/contacts_sync.rs"
+before = """                "Contact {} could not be deleted in {address_book_called}: {refused}",
+                note.contact_id
+            ));
+            return false;"""
+after = """                "Contact {} could not be deleted in {address_book_called}: {refused}",
+                note.contact_id
+            ));
+            let _ = cache.forget_deleted_contact(&note.contact_id, &note.address_book);
+            return false;"""
+red = [
+    "application::contacts_sync::tests::test_a_deletion_the_address_book_refused_is_kept_and_said",
+]
+
+[[guard]]
+name = "a deletion that reached the address book is said"
+file = "src/application/contacts_sync.rs"
+before = """    if !result.deleted_remote.is_empty() {"""
+after = """    if false {"""
+red = [
+    "application::contacts_sync::tests::test_the_summary_says_a_deletion_reached_the_address_book",
+    "application::contacts_sync::tests::test_two_deletions_that_reached_the_address_book_are_not_read_out_in_the_singular",
+]
+
+[[guard]]
+name = "folding two results keeps the deletions that went out"
+file = "src/application/contacts_sync.rs"
+before = """        self.deleted_remote = self.deleted_remote.and(&other.deleted_remote);
+"""
+after = ""
+red = [
+    "application::contacts_sync::tests::test_a_contact_both_address_books_knew_is_deleted_at_both_and_counted_once",
+    "application::contacts_sync::tests::test_folding_two_address_books_together_keeps_every_count",
 ]

@@ -255,6 +255,37 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A contact you delete is now deleted in your address book too.** Deleting a
+  contact took it off this computer and told nobody. The next sync read your
+  address book, found the person still there and wrote them down again, so a
+  contact you had deleted came back after the product had said "deleted". A new
+  installation already allows changes to contacts, so this happened to anybody
+  who deleted one.
+
+  Deleting a contact now leaves a note for each address book that knew them, and
+  the next sync sends the deletion to each of those address books under the name
+  that address book uses for the person. A note is cleared only once that
+  address book has taken the deletion, so a deletion your provider refuses, or
+  one that Allow Changes is holding back, waits and goes later instead of being
+  lost. Until it goes, the sync no longer puts the person back.
+
+  Somebody in two address books is one person. The deletion goes to both, and
+  the sync counts them once: "Contacts sync: 0 created, 0 updated, 0 deleted, 1
+  deletion sent to your address book". That clause is new, and the count behind it is
+  new: there was one with the same name before, nothing could ever set it, and
+  it was taken out rather than left able to report deletions that had not
+  happened.
+
+  A contact who only ever lived here leaves no note, because there is nowhere to
+  send one. An address book answering that it has no such contact, which is what
+  it says about somebody you had already deleted from a phone, counts as the
+  deletion having happened. Where the address book is the one saying the person
+  is gone, nothing is sent back to it.
+
+  Known limitation: none of this has run against a real account. Deleting a
+  calendar, a task list, a note folder or a contact group is still local only,
+  and the question asked before it says so.
+
 - **Somebody one address book deletes and the other still has stays here, and
   is counted once.** Google saying it had deleted somebody took the whole
   contact off this computer, and that included Outlook's name for her and any
