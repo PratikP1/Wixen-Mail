@@ -13,13 +13,21 @@
 # found by hand three commits later.
 #
 # Each entry below is that measurement written down so a machine can take it
-# again. `scripts/guards.sh` applies `before` -> `after`, runs the tests named
-# in `red`, and requires every one of them to fail.
+# again. `scripts/guards.sh` applies `before` -> `after`, runs the whole
+# library, and requires the tests that failed to be exactly the ones named in
+# `red`.
 #
-# Adding one: take the break by hand first and write down what really went red.
-# A `red` list longer than the truth makes the run fail; shorter, and the guard
-# is recorded as weaker than it is, which is the thing this file exists to
-# stop.
+# Exactly, in both directions. It used to run only the named tests, which could
+# see a `red` list longer than the truth and never a shorter one. So a record
+# could quietly fall behind: "an edit written here and then lost is still
+# counted and said" named eight tests for a break that reddens seventeen,
+# because a later commit gave the function two new callers and nobody measured
+# it again. Nine tests were guarding something nobody had written down and
+# every run said the record was right. A record shorter than the truth is the
+# thing this file exists to stop, so the run now notices.
+#
+# Adding one: take the break by hand first and write down what really went red,
+# all of it. Do not write down the tests you expected.
 #
 # `before` has to appear exactly once in the file. When it stops appearing, the
 # run fails and says so, which is the signal that somebody moved the code a
@@ -74,6 +82,7 @@ before = """    matches!(status, 400 | 409) && (said.contains("failed_preconditi
 after = """    false"""
 red = [
     "application::contacts_sync::tests::test_a_change_google_had_moved_past_is_sent_again_rather_than_lost",
+    "application::contacts_sync::tests::test_a_change_that_cannot_be_sent_again_is_kept_rather_than_replaced_by_the_read",
     "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
     "application::contacts_sync::tests::test_the_two_answers_an_address_book_gives_to_an_old_marker_are_both_read",
 ]
@@ -242,6 +251,7 @@ after = """        "Calendar sync: {} created, {} updated",
 red = [
     "application::calendar::tests::test_an_event_microsoft_says_is_gone_is_removed_and_counted_once",
     "application::calendar::tests::test_every_clause_at_once_is_still_read_as_sentences",
+    "application::calendar::tests::test_one_change_waiting_and_one_thing_wrong_are_not_read_out_in_the_plural",
 ]
 
 # ── A clause never decides how it joins to its neighbours ───────────────────
@@ -401,8 +411,13 @@ before = """    match count {
 after = """    match count {
         0 => format!("""
 red = [
+    "application::allowed::tests::test_a_waiting_change_names_the_one_place_that_can_send_it",
     "application::calendar::tests::test_one_change_waiting_and_one_thing_wrong_are_not_read_out_in_the_plural",
+    "application::contacts_sync::tests::test_a_change_a_setting_held_back_survives_the_read_in_the_same_sync",
+    "application::contacts_sync::tests::test_a_change_google_had_moved_past_is_sent_again_rather_than_lost",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
+    "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
+    "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
 ]
 
 [[guard]]
@@ -426,7 +441,10 @@ before = """    if the_copy_here_was_written_here(the_copy_it_replaces) {
     }"""
 after = """    result.replaced.note(&merged.id);"""
 red = [
+    "application::contacts_sync::tests::test_an_address_books_own_copy_does_not_freeze_the_contact_against_the_other_one",
     "application::contacts_sync::tests::test_an_edit_an_address_book_replaced_is_said_once_and_not_on_every_later_sync",
+    "application::contacts_sync::tests::test_only_work_typed_here_is_sent_again_over_googles_newer_copy",
+    "application::contacts_sync::tests::test_only_work_typed_here_is_sent_again_over_the_address_books_newer_copy",
 ]
 
 [[guard]]
@@ -459,6 +477,42 @@ red = [
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
 ]
 
+# ── Sending a change again over a newer copy ────────────────────────────────
+#
+# An address book that has moved past a change refuses it. The push then reads
+# the copy it holds now and sends the change again on top of that, which is
+# right for work somebody typed here and wrong for a copy that came from the
+# other address book: sending that again puts one address book's older words
+# over the other's newer ones on nobody's authority. The gate is the same
+# question the merge asks, it is written out twice, once per provider, and
+# neither copy of it was written down here until now.
+
+[[guard]]
+name = "only work typed here is sent again over Google's newer copy"
+file = "src/application/contacts_sync.rs"
+before = """        if sent.as_ref().is_err_and(the_address_book_had_moved_past_it)
+            && the_copy_here_was_written_here(&contact)
+        {
+            match google.the_copy_it_holds_now(token, &name_there).await {"""
+after = """        if sent.as_ref().is_err_and(the_address_book_had_moved_past_it) {
+            match google.the_copy_it_holds_now(token, &name_there).await {"""
+red = [
+    "application::contacts_sync::tests::test_only_work_typed_here_is_sent_again_over_googles_newer_copy",
+]
+
+[[guard]]
+name = "only work typed here is sent again over Outlook's newer copy"
+file = "src/application/contacts_sync.rs"
+before = """        if sent.as_ref().is_err_and(the_address_book_had_moved_past_it)
+            && the_copy_here_was_written_here(&contact)
+        {
+            match ms_client.the_copy_it_holds_now(token, &name_there).await {"""
+after = """        if sent.as_ref().is_err_and(the_address_book_had_moved_past_it) {
+            match ms_client.the_copy_it_holds_now(token, &name_there).await {"""
+red = [
+    "application::contacts_sync::tests::test_only_work_typed_here_is_sent_again_over_the_address_books_newer_copy",
+]
+
 # ── A change no setting let out ─────────────────────────────────────────────
 #
 # The push runs first and the read runs after it, in the same sync. A change a
@@ -481,8 +535,12 @@ after = """    let _ = (the_copy_here, result, still_built_on_an_old_copy);
     answer"""
 red = [
     "application::contacts_sync::tests::test_a_change_a_setting_held_back_survives_the_read_in_the_same_sync",
-    "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
+    "application::contacts_sync::tests::test_a_change_google_had_moved_past_is_sent_again_rather_than_lost",
+    "application::contacts_sync::tests::test_a_change_outlook_had_moved_past_is_sent_again_rather_than_lost",
     "application::contacts_sync::tests::test_a_change_that_cannot_be_sent_again_is_kept_rather_than_replaced_by_the_read",
+    "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
+    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said",
+    "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
 ]
 
@@ -514,8 +572,11 @@ before = """    result.waiting_on_the_setting.holds(contact_id)
 after = """    result.waiting_on_how_far_a_change_goes.holds(contact_id)"""
 red = [
     "application::contacts_sync::tests::test_a_change_a_setting_held_back_survives_the_read_in_the_same_sync",
+    "application::contacts_sync::tests::test_a_change_google_had_moved_past_is_sent_again_rather_than_lost",
+    "application::contacts_sync::tests::test_a_change_outlook_had_moved_past_is_sent_again_rather_than_lost",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
     "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said",
+    "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
 ]
 
@@ -572,6 +633,7 @@ after = """        if false {
         }"""
 red = [
     "application::contacts_sync::tests::test_a_contact_deleted_here_does_not_come_back_from_the_read_that_follows",
+    "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_deletion_the_summary_said_was_waiting",
 ]
 
 [[guard]]

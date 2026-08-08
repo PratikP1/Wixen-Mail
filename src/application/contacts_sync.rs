@@ -9516,6 +9516,53 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_only_work_typed_here_is_sent_again_over_googles_newer_copy() {
+        // The Google half of the gate above. The rule is written out once per
+        // provider, and only the Outlook copy of it was covered: dropping
+        // `the_copy_here_was_written_here` from the Google push reddened
+        // nothing at all in the library, so that half was being kept right by
+        // hand.
+        const GOOGLES_OWN_NEW_WORDS: &str = "Alice Brown";
+        let cache = a_cache("only_work_typed_here_is_forced_at_google");
+        a_copy_from_outlook_google_has_not_had(&cache);
+        let google = ScriptedGoogle {
+            accepts_a_change: true,
+            people: vec![a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                GOOGLES_OWN_NEW_WORDS,
+                "etag-2",
+            )],
+            the_copy_it_holds: Some(a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                GOOGLES_OWN_NEW_WORDS,
+                "etag-2",
+            )),
+            ..Default::default()
+        };
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
+
+        assert_eq!(
+            google.changed.borrow().len(),
+            1,
+            "a copy nobody typed here was forced over Google's newer one"
+        );
+        let stored = the_contact_under(&cache, "local-in-both-books");
+        assert_eq!(
+            stored.name, GOOGLES_OWN_NEW_WORDS,
+            "Google's own update was refused to hold on to a copy nobody typed here"
+        );
+        assert_eq!(
+            result.replaced.count(),
+            0,
+            "nobody's work was lost and somebody was told it was: {result:?}"
+        );
+    }
+
     #[test]
     fn test_the_two_answers_an_address_book_gives_to_an_old_marker_are_both_read() {
         // Read from each provider's documentation rather than from a live
@@ -9597,6 +9644,21 @@ mod tests {
         contact.last_synced_at = Some("2026-01-01T00:00:00Z".to_string());
         for identity in &mut contact.known_to {
             identity.change_is_waiting = identity.address_book == AddressBook::Microsoft;
+        }
+        cache
+            .save_contact(&contact)
+            .expect("a contact to be stored");
+        contact
+    }
+
+    /// The same thing the other way round: a copy that came from Outlook and
+    /// is on its way to Google, which is nobody's work either.
+    fn a_copy_from_outlook_google_has_not_had(cache: &MessageCache) -> ContactEntry {
+        let mut contact = a_contact_in_both_books(true);
+        contact.name = THE_ADDRESS_BOOKS_OWN_WORDS.to_string();
+        contact.last_synced_at = Some("2026-01-01T00:00:00Z".to_string());
+        for identity in &mut contact.known_to {
+            identity.change_is_waiting = identity.address_book == AddressBook::Google;
         }
         cache
             .save_contact(&contact)
