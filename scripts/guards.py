@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -34,6 +33,17 @@ class Guard:
     before: str
     after: str
     red: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Measured:
+    """What a break really did, against what the record says it does."""
+
+    stayed_green: list[str]
+    also_went_red: list[str]
+
+    def agrees_with_the_record(self) -> bool:
+        return not self.stayed_green and not self.also_went_red
 
 
 class Wrong(Exception):
@@ -67,29 +77,39 @@ def read_record() -> list[Guard]:
     return guards
 
 
-def run_the_named_tests(names: tuple[str, ...]) -> dict[str, str]:
-    """Each named test, and whether it passed. One build, one run."""
+def run_the_whole_library() -> dict[str, str]:
+    """Every test in the library, and whether it passed. One build, one run.
+
+    The whole suite and not only the tests a record names. Running the named
+    ones answers "would these go red", and leaves the question that matters
+    just as much unasked: did anything else. A record naming eight tests for a
+    break that reddens seventeen reads as a guard on eight, the other nine are
+    guarding something nobody wrote down, and nothing ever says so. That is the
+    thing `guards/guards.toml` exists to stop, and it happened to a record in
+    that file.
+
+    It costs the whole suite per guard rather than a handful of tests. That is
+    the price of the answer; there is no way to learn what a break reddens
+    without running everything it could redden.
+    """
     finished = subprocess.run(
-        ["cargo", "test", "--lib", "--", "--exact", *names],
+        ["cargo", "test", "--lib"],
         cwd=ROOT,
         capture_output=True,
         text=True,
     )
     said = finished.stdout + finished.stderr
     verdicts = {name: verdict for name, verdict in VERDICT.findall(said)}
-    missing = [name for name in names if name not in verdicts]
-    if missing:
+    if not verdicts:
         raise Wrong(
-            "the test harness never ran "
-            + ", ".join(missing)
-            + ".\nEither the name is wrong or the build failed:\n"
+            "the test harness ran nothing at all, so the break did not build:\n"
             + said[-4000:]
         )
     return verdicts
 
 
-def measure(guard: Guard, scratch: Path) -> list[str]:
-    """Apply the break, run the tests it should redden, put the file back."""
+def measure(guard: Guard, scratch: Path) -> Measured:
+    """Apply the break, run the library, put the file back."""
     found = guard.file.read_text(encoding="utf-8").count(guard.before)
     if found != 1:
         raise Wrong(
@@ -103,18 +123,58 @@ def measure(guard: Guard, scratch: Path) -> list[str]:
     kept = scratch / str(guard.file.relative_to(ROOT)).replace("\\", "__")
     kept.write_bytes(guard.file.read_bytes())
     try:
+        # The break is written with the bytes the file already uses. Written in
+        # text mode this turns every line of the file into CRLF on Windows for
+        # the length of the run, and a build in the middle of it compiles a
+        # converted file.
         broken = guard.file.read_text(encoding="utf-8").replace(
             guard.before, guard.after
         )
-        guard.file.write_text(broken, encoding="utf-8")
-        verdicts = run_the_named_tests(guard.red)
+        guard.file.write_bytes(broken.encode("utf-8"))
+        verdicts = run_the_whole_library()
     finally:
         # The bytes, not the timestamps: a restored file with its old
         # modification time reads to cargo as one that never changed, and the
         # next run answers out of the broken binary.
         guard.file.write_bytes(kept.read_bytes())
         kept.unlink()
-    return [name for name in guard.red if verdicts[name] != "FAILED"]
+
+    never_ran = [name for name in guard.red if name not in verdicts]
+    if never_ran:
+        raise Wrong(
+            "the test harness never ran "
+            + ", ".join(never_ran)
+            + ".\nEither the name is wrong or the test has gone."
+        )
+    named = set(guard.red)
+    went_red = {name for name, verdict in verdicts.items() if verdict == "FAILED"}
+    return Measured(
+        stayed_green=[name for name in guard.red if name not in went_red],
+        also_went_red=sorted(went_red - named),
+    )
+
+
+def say_what_it_found(guard: Guard, measured: Measured) -> None:
+    if measured.stayed_green:
+        print(
+            f"   {len(measured.stayed_green)} of {len(guard.red)} named tests "
+            "stayed green with the guard broken:"
+        )
+        for name in measured.stayed_green:
+            print(f"       {name}")
+    if measured.also_went_red:
+        print(
+            f"   {len(measured.also_went_red)} tests went red that this record "
+            "does not name:"
+        )
+        for name in measured.also_went_red:
+            print(f"       {name}")
+    if measured.stayed_green or measured.also_went_red:
+        print()
+    elif len(guard.red) == 1:
+        print("   the one test named went red, and nothing else did")
+    else:
+        print(f"   all {len(guard.red)} tests named went red, and nothing else did")
 
 
 def main() -> int:
@@ -139,9 +199,9 @@ def main() -> int:
             return 1
 
     header = (
-        "== 1 guard, one build =="
+        "== 1 guard, one build and one run of the library =="
         if len(guards) == 1
-        else f"== {len(guards)} guards, one build each =="
+        else f"== {len(guards)} guards, one build and one run of the library each =="
     )
     print(f"{header}\n")
     slipped: list[str] = []
@@ -150,24 +210,14 @@ def main() -> int:
         for guard in guards:
             print(f"-- {guard.name}")
             try:
-                still_green = measure(guard, scratch)
+                measured = measure(guard, scratch)
             except Wrong as wrong:
                 print(f"   {wrong}\n")
                 slipped.append(guard.name)
                 continue
-            if still_green:
-                print(
-                    f"   {len(still_green)} of {len(guard.red)} named tests "
-                    "stayed green with the guard broken:"
-                )
-                for name in still_green:
-                    print(f"       {name}")
-                print()
+            say_what_it_found(guard, measured)
+            if not measured.agrees_with_the_record():
                 slipped.append(guard.name)
-            elif len(guard.red) == 1:
-                print("   the one test named went red")
-            else:
-                print(f"   all {len(guard.red)} tests named went red")
 
     # Both ways written out rather than one built from parts. Three words have
     # to agree in number and this project has already read out "1 changes are
@@ -182,15 +232,17 @@ def main() -> int:
         for name in slipped:
             print(f"    {name}")
         print(
-            "\nEach one is a test whose name still promises something it no "
-            "longer\nchecks. Measure it by hand and either restore what it "
-            "discriminates or\nwrite down what it really does now."
+            "\nA named test that stayed green is a test whose name still "
+            "promises\nsomething it no longer checks. A test that went red "
+            "and is not named is\na guard nobody wrote down, and a record "
+            "shorter than the truth is what\nthis file exists to stop. Either "
+            "way: measure it by hand and write down\nwhat it really does now."
         )
         return 1
     print(
-        "The guard still goes red when what it defends breaks."
+        "The guard still goes red when what it defends breaks, and nothing else does."
         if len(guards) == 1
-        else f"All {len(guards)} guards still go red when what they defend breaks."
+        else f"All {len(guards)} guards redden exactly the tests their records name."
     )
     return 0
 

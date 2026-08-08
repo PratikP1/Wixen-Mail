@@ -158,12 +158,16 @@ scripts/guards.sh deletion     # only the guards whose names match
 ```
 
 `guards/guards.toml` holds, for each guard, the exact edit that should break it
-and the tests that should go red when it does. The script applies each one and
-requires every named test to fail. Run it after a change that touches code a
-guard is about. When a recorded break no longer matches the file the run fails
-and says so: that is the moment to measure that guard by hand again, not to
-edit the record until it applies. Add an entry the same way, by taking the
-break by hand first and writing down what really went red.
+and the tests that should go red when it does. The script applies each one, runs
+the whole library, and requires the tests that failed to be exactly the ones
+named. Both directions, because a run that only ever asked whether the named
+tests went red could not see a record falling behind: one named eight tests for
+a break that reddens seventeen, and said so for three commits. Run it after a
+change that touches code a guard is about, with nothing else building at the
+same time. When a recorded break no longer matches the file the run fails and
+says so: that is the moment to measure that guard by hand again, not to edit the
+record until it applies. Add an entry the same way, by taking the break by hand
+first and writing down all of what really went red.
 
 `application::filters`, `due`, `tagging` and `sign_off` are clean as of
 2026-08-01: 157 mutants, 141 caught, 16 that would not compile, none missed. It
