@@ -1110,7 +1110,9 @@ after = """        if self.email.trim() == looking_for {
     }"""
 red = [
     "application::contacts_sync::tests::test_a_person_the_address_book_spells_in_capitals_is_the_one_here",
+    "data::message_cache::contacts::tests::test_a_card_repeating_the_addresses_already_held_changes_nothing_about_them",
     "data::message_cache::contacts::tests::test_a_card_whose_address_is_written_in_capitals_is_the_same_person",
+    "data::message_cache::contacts::tests::test_two_cards_one_address_each_are_one_person_holding_both_addresses",
 ]
 
 [[guard]]
@@ -1122,9 +1124,17 @@ before = """        self.every_address_in_the_list()
     }"""
 after = """        false
     }"""
+# It reaches further than it did. Joining a card's addresses onto the ones
+# already held asks this same question of every address on the card, so a
+# reading that sees only the main line now also relabels and duplicates
+# addresses on an import that should have changed nothing.
 red = [
     "application::contacts_sync::tests::test_a_person_the_address_book_writes_to_at_her_second_address_is_the_one_here",
     "data::message_cache::contacts::tests::test_a_card_carrying_somebodys_second_address_is_that_person",
+    "data::message_cache::contacts::tests::test_a_card_repeating_the_addresses_already_held_changes_nothing_about_them",
+    "data::message_cache::contacts::tests::test_importing_a_card_does_not_forget_a_change_still_waiting_to_be_sent",
+    "data::message_cache::contacts::tests::test_importing_a_card_that_changed_nothing_queues_nothing",
+    "data::message_cache::contacts::tests::test_two_cards_one_address_each_are_one_person_holding_both_addresses",
 ]
 
 [[guard]]
@@ -1178,6 +1188,7 @@ after = """    fn waiting_for_the_address_books(contact: ContactEntry) -> Contac
 red = [
     "application::contacts_sync::tests::test_what_an_imported_card_says_reaches_the_address_book_that_holds_her",
     "data::message_cache::contacts::tests::test_a_card_for_somebody_new_is_work_waiting_rather_than_a_copy_of_an_address_book",
+    "data::message_cache::contacts::tests::test_a_card_naming_an_address_she_does_not_hold_yet_adds_it_to_the_ones_she_has",
     "data::message_cache::contacts::tests::test_a_card_that_does_change_a_contact_stored_by_an_older_version_is_queued",
     "data::message_cache::contacts::tests::test_importing_a_card_queues_its_contents_for_every_address_book_that_holds_her",
 ]
@@ -1190,10 +1201,21 @@ after = """        let _ = (folded, held);
         true"""
 red = [
     "application::contacts_sync::tests::test_an_import_that_changed_nobody_sends_nothing_to_the_address_book",
+    "data::message_cache::contacts::tests::test_a_card_repeating_the_addresses_already_held_changes_nothing_about_them",
     "data::message_cache::contacts::tests::test_importing_a_card_does_not_forget_a_change_still_waiting_to_be_sent",
     "data::message_cache::contacts::tests::test_importing_a_card_that_changed_nothing_queues_nothing",
     "data::message_cache::contacts::tests::test_re_importing_a_backup_does_not_queue_a_contact_stored_by_an_older_version",
 ]
+
+# Measured again when a card's addresses started joining onto the ones already
+# held, and it now defends something narrower than it did. It used to be the
+# reason a backup of an older row read as no change: the card's list replaced
+# the stored nothing, so the two records only matched through this stand-in.
+# The list joins now, and a card saying nothing new hands the stored value back
+# untouched, so those two records match without it. What is left is the join
+# itself, which reads this to learn which addresses a row already holds. Both
+# named tests that used to redden here stay green, measured, and the record was
+# cut to what really fails.
 
 [[guard]]
 name = "an address with no list beside it is the address it is"
@@ -1207,9 +1229,7 @@ before = """            emails_json: contact.emails_json.clone().or_else(|| {
             }),"""
 after = """            emails_json: contact.emails_json.clone(),"""
 red = [
-    "application::contacts_sync::tests::test_an_import_that_changed_nobody_sends_nothing_to_the_address_book",
     "data::message_cache::contacts::tests::test_a_card_adding_an_address_to_a_row_with_no_list_keeps_the_one_on_its_main_line",
-    "data::message_cache::contacts::tests::test_re_importing_a_backup_does_not_queue_a_contact_stored_by_an_older_version",
 ]
 
 # -- What a card may do to the addresses somebody already holds --------------
