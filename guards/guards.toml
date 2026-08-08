@@ -1250,7 +1250,9 @@ after = """        let every_address = from_card.emails_json.clone().or_else(|| 
 red = [
     "data::message_cache::contacts::tests::test_a_card_matched_by_address_keeps_the_addresses_it_is_silent_about",
     "data::message_cache::contacts::tests::test_a_card_naming_an_address_she_does_not_hold_yet_adds_it_to_the_ones_she_has",
+    "data::message_cache::contacts::tests::test_a_card_naming_one_address_twice_adds_it_once",
     "data::message_cache::contacts::tests::test_a_card_repeating_the_addresses_already_held_changes_nothing_about_them",
+    "data::message_cache::contacts::tests::test_an_address_the_card_adds_keeps_the_label_the_card_gave_it",
     "data::message_cache::contacts::tests::test_two_cards_one_address_each_are_one_person_holding_both_addresses",
 ]
 
@@ -1262,22 +1264,72 @@ red = [
 [[guard]]
 name = "an address she already holds is not written down again"
 file = "src/data/message_cache/contacts.rs"
-before = """        let new_to_her: Vec<super::EmailEntry> = from_card
-            .every_address_in_the_list()
-            .into_iter()
-            .filter(|arriving| !held.is_written_to_at(&arriving.address))
-            .collect();"""
+before = """        let mut new_to_her: Vec<super::EmailEntry> = Vec::new();
+        for arriving in from_card.every_address_in_the_list() {
+            // Asked of what this card has already added as well as of what she
+            // is stored as being written to at. A card written by a program
+            // that merged two records names one address on two lines, and not
+            // always spelled the same way, and asking only the stored list
+            // writes it down twice.
+            let hers = held.is_written_to_at(&arriving.address)
+                || new_to_her.iter().any(|added| {
+                    added
+                        .address
+                        .trim()
+                        .eq_ignore_ascii_case(arriving.address.trim())
+                });
+            if !hers {
+                new_to_her.push(arriving);
+            }
+        }"""
 after = """        let new_to_her: Vec<super::EmailEntry> = from_card.every_address_in_the_list();"""
 red = [
     "application::contacts_sync::tests::test_an_import_that_changed_nobody_sends_nothing_to_the_address_book",
     "data::message_cache::contacts::tests::test_a_card_adding_an_address_to_a_row_with_no_list_keeps_the_one_on_its_main_line",
     "data::message_cache::contacts::tests::test_a_card_matched_by_address_keeps_the_addresses_it_is_silent_about",
     "data::message_cache::contacts::tests::test_a_card_naming_an_address_she_does_not_hold_yet_adds_it_to_the_ones_she_has",
+    "data::message_cache::contacts::tests::test_a_card_naming_one_address_twice_adds_it_once",
     "data::message_cache::contacts::tests::test_a_card_repeating_the_addresses_already_held_changes_nothing_about_them",
+    "data::message_cache::contacts::tests::test_an_address_the_card_adds_keeps_the_label_the_card_gave_it",
     "data::message_cache::contacts::tests::test_importing_a_card_does_not_forget_a_change_still_waiting_to_be_sent",
     "data::message_cache::contacts::tests::test_importing_a_card_that_changed_nothing_queues_nothing",
     "data::message_cache::contacts::tests::test_re_importing_a_backup_does_not_queue_a_contact_stored_by_an_older_version",
     "data::message_cache::contacts::tests::test_two_cards_one_address_each_are_one_person_holding_both_addresses",
+]
+
+# The narrow half of the same rule, and the one found by trying to break the
+# wide half with a card nobody here had written yet. A card from a program that
+# merged two records names one address on two lines, sometimes spelled two
+# ways. Asked only about the stored list, both lines are new to her.
+
+[[guard]]
+name = "an address the card names twice is added once"
+file = "src/data/message_cache/contacts.rs"
+before = """            let hers = held.is_written_to_at(&arriving.address)
+                || new_to_her.iter().any(|added| {
+                    added
+                        .address
+                        .trim()
+                        .eq_ignore_ascii_case(arriving.address.trim())
+                });"""
+after = """            let hers = held.is_written_to_at(&arriving.address);"""
+red = [
+    "data::message_cache::contacts::tests::test_a_card_naming_one_address_twice_adds_it_once",
+]
+
+# The card is the only thing that knows anything about an address nobody here
+# has recorded, so the label it carries is the only label there is.
+
+[[guard]]
+name = "an address the card adds keeps the label the card gave it"
+file = "src/data/message_cache/contacts.rs"
+before = """                new_to_her.push(arriving);"""
+after = """                new_to_her.push(super::EmailEntry {
+                    label: Self::NO_LABEL.to_string(),
+                    address: arriving.address,
+                });"""
+red = [
+    "data::message_cache::contacts::tests::test_an_address_the_card_adds_keeps_the_label_the_card_gave_it",
 ]
 
 # A row written before the lists existed has its address on its main line and

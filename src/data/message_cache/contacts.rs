@@ -491,11 +491,24 @@ impl MessageCache {
         from_card: &ContactEntry,
         held: &ContactEntry,
     ) -> Option<String> {
-        let new_to_her: Vec<super::EmailEntry> = from_card
-            .every_address_in_the_list()
-            .into_iter()
-            .filter(|arriving| !held.is_written_to_at(&arriving.address))
-            .collect();
+        let mut new_to_her: Vec<super::EmailEntry> = Vec::new();
+        for arriving in from_card.every_address_in_the_list() {
+            // Asked of what this card has already added as well as of what she
+            // is stored as being written to at. A card written by a program
+            // that merged two records names one address on two lines, and not
+            // always spelled the same way, and asking only the stored list
+            // writes it down twice.
+            let hers = held.is_written_to_at(&arriving.address)
+                || new_to_her.iter().any(|added| {
+                    added
+                        .address
+                        .trim()
+                        .eq_ignore_ascii_case(arriving.address.trim())
+                });
+            if !hers {
+                new_to_her.push(arriving);
+            }
+        }
         if new_to_her.is_empty() {
             // Nothing on the card she is not already written to at, so the
             // stored list is left exactly as it stands rather than written out
@@ -4410,6 +4423,65 @@ END:VCARD";
             ]
         );
         assert!(alice.pending, "an address she did not have is a change");
+    }
+
+    #[test]
+    fn test_a_card_naming_one_address_twice_adds_it_once() {
+        // A card written by a program that merged two records names the same
+        // address on two lines, and not always spelled the same way. Asked
+        // only about the stored list, both lines are new to her, and she ends
+        // up written to at one address twice. That list is what goes to Google
+        // and to Outlook.
+        let cache = a_cache("vcard_same_address_twice");
+        cache
+            .save_contact(&alice_at_two_addresses())
+            .expect("the contact to save");
+
+        cache
+            .import_contacts_from_vcard(
+                "test@example.com",
+                "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice Smith\r\n\
+                 EMAIL:alice@example.com\r\nEMAIL:alice@second.example\r\n\
+                 EMAIL:Alice@Second.Example\r\nEND:VCARD\r\n",
+            )
+            .expect("the import to run");
+
+        assert_eq!(
+            the_addresses(&the_only_contact(&cache)),
+            [
+                "alice@example.com",
+                "a.smith@work.example",
+                "alice@second.example"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_an_address_the_card_adds_keeps_the_label_the_card_gave_it() {
+        // The card is the only thing that knows anything about an address
+        // nobody here has recorded, so the label it carries is the only label
+        // there is. Written down as no label, every address an import adds is
+        // read out as "Other".
+        let cache = a_cache("vcard_added_address_label");
+        cache
+            .save_contact(&alice_at_two_addresses())
+            .expect("the contact to save");
+
+        cache
+            .import_contacts_from_vcard(
+                "test@example.com",
+                "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice Smith\r\n\
+                 EMAIL:alice@example.com\r\nEMAIL;TYPE=HOME:alice@second.example\r\n\
+                 END:VCARD\r\n",
+            )
+            .expect("the import to run");
+
+        let alice = the_only_contact(&cache);
+        let list: Vec<crate::data::message_cache::EmailEntry> =
+            serde_json::from_str(alice.emails_json.as_deref().expect("an address list"))
+                .expect("the address list to read");
+        let labels: Vec<&str> = list.iter().map(|entry| entry.label.as_str()).collect();
+        assert_eq!(labels, ["Home", "Work", "Home"]);
     }
 
     #[test]

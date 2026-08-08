@@ -298,7 +298,8 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   An imported card now adds addresses and takes none away. It still wins
   everywhere else it says something: a company, a job title, a photo or a phone
   number written on a card replaces what is stored, and everything the card is
-  silent about is kept as it was.
+  silent about is kept as it was. A card that names one address on two lines,
+  which is what a program that merged two records writes, adds it once.
 
   What that costs: importing a card can no longer remove an address. Removing
   one is done in the contact editor, where it is one person deciding about one
