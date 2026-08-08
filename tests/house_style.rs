@@ -159,6 +159,131 @@ fn test_nothing_offers_a_setting_per_account_that_no_screen_writes() {
     );
 }
 
+// ── What a new installation allows ──────────────────────────────────────────
+//
+// One answer lives in the code, `data::config`'s `default_allowed`, and the
+// same sentence about it has been written wrongly into the changelog four
+// times. The wording differs every time, so a check for a sentence would not
+// have caught the next one; this reads what the prose claims and asks the
+// code.
+
+/// Ways a document says it is talking about what a new installation does.
+///
+/// Four copies of one false claim, worded four ways, which is why this is a
+/// list of phrases rather than a sentence to look for.
+const SAYING_THIS_IS_WHAT_YOU_START_WITH: &[&str] = &[
+    "the default",
+    "by default",
+    "a new account starts with",
+    "a new installation",
+    "how the program is shipped",
+    "how this is shipped",
+    "out of the box",
+    "when you install",
+    "starts out with",
+];
+
+/// The two copies of the claim another change is correcting, by their wording.
+///
+/// Named rather than merely counted, so a fifth copy fails whatever it says,
+/// and a second copy of either of these fails too. They can go as soon as the
+/// entries holding them are corrected; nothing here requires them to still be
+/// needed, because a check that goes red when somebody fixes the thing it is
+/// about is a check that teaches people to delete checks.
+const STILL_TO_BE_CORRECTED: &[&str] = &[
+    "which is what a new account starts with",
+    "which is how the program is shipped",
+];
+
+/// How much of a sentence after the name of the setting is still about it.
+const AS_FAR_AS_THE_CLAIM_REACHES: usize = 140;
+
+/// Every claim in one document that a new installation changes nothing.
+///
+/// Read from the flattened words of a line and the two after it, because a
+/// sentence in a document is wrapped wherever it reaches the margin and each of
+/// these four claims is split across a line break.
+///
+/// The name of the setting comes from the code that names it, so renaming the
+/// section keeps this pointed at the right sentences, and this file never
+/// writes that name out. Written out it would match itself, the same way the
+/// dash characters above are built from their code points.
+fn claims_a_new_installation_changes_nothing(text: &str) -> Vec<(usize, String)> {
+    let named = wixen_mail::application::allowed::SETTINGS_SECTION;
+    let lines: Vec<&str> = text.lines().collect();
+    let mut claims = Vec::new();
+    for (at, _) in lines.iter().enumerate() {
+        let run = lines[at..lines.len().min(at + 3)]
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        // Only where the name starts on this line, so one claim is one report
+        // rather than one for every line that can see it.
+        let Some(starts_at) = lines[at].find(named).and(run.find(named)) else {
+            continue;
+        };
+        let claim: String = run[starts_at..]
+            .chars()
+            .take(AS_FAR_AS_THE_CLAIM_REACHES)
+            .collect();
+        let says_off = claim
+            .split_whitespace()
+            .any(|word| word.trim_matches(|c: char| !c.is_alphanumeric()) == "off");
+        if says_off
+            && SAYING_THIS_IS_WHAT_YOU_START_WITH
+                .iter()
+                .any(|phrase| claim.contains(phrase))
+        {
+            claims.push((at + 1, claim));
+        }
+    }
+    claims
+}
+
+#[test]
+fn test_nothing_says_a_new_installation_changes_nothing_while_it_changes_contacts() {
+    // What a new installation allows is one value in the code. Prose about it
+    // is checked against that value rather than against a sentence written
+    // here, so if the shipped answer ever becomes "change nothing" this check
+    // goes quiet on its own instead of having to be remembered.
+    let shipped = wixen_mail::data::config::AppConfig::default().allowed_changes;
+    let mut claimed = Vec::new();
+    if shipped.anything() {
+        for path in ours() {
+            let Ok(text) = fs::read_to_string(&path) else {
+                continue;
+            };
+            for (line, claim) in claims_a_new_installation_changes_nothing(&text) {
+                claimed.push(format!("{}:{line}: {claim}", path.display()));
+            }
+        }
+    }
+
+    let (excused, wrong): (Vec<String>, Vec<String>) = claimed
+        .into_iter()
+        .partition(|claim| STILL_TO_BE_CORRECTED.iter().any(|old| claim.contains(old)));
+
+    assert!(
+        wrong.is_empty(),
+        "a new installation may change tasks, contacts and the calendar, and may \
+         not send or change mail. Saying it changes nothing sends somebody to \
+         their real address book believing it is safe from this. The code's own \
+         answer is mail {}, personal information {}:\n  {}",
+        shipped.mail,
+        shipped.personal_information,
+        wrong.join("\n  ")
+    );
+    for old in STILL_TO_BE_CORRECTED {
+        assert!(
+            excused.iter().filter(|claim| claim.contains(old)).count() <= 1,
+            "\"{old}\" is one of the two copies still to be corrected, and it has \
+             been written again:\n  {}",
+            excused.join("\n  ")
+        );
+    }
+}
+
 /// Documents somebody reads, as opposed to source and configuration.
 fn documents() -> Vec<PathBuf> {
     let mut found = Vec::new();

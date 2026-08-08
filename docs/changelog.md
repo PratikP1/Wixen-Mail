@@ -451,8 +451,8 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   change that the same sync had just thrown away, and turning it on sent
   nothing.
 
-  Both settings did it. With Allow Changes off, which is the default, one edit to
-  one contact both address books hold was read out as "Contacts sync: 0 created,
+  Both settings did it. With Allow Changes off, one edit to one contact both
+  address books hold was read out as "Contacts sync: 0 created,
   1 updated, 0 deleted, 1 of your change replaced by the address book. 1 change
   is waiting here: turn on Allow Changes in Settings to send it." Both
   halves of that were about the same contact, and by the end of the sync the
@@ -494,10 +494,10 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   taken from an address book.
 
   The part that waits on a setting: every contact in the account was also marked
-  as having a change waiting for each address book that knows it. With Allow
-  Changes off, which is the default, nothing was sent. With it on, the next sync
-  would push your whole Google and Outlook address book back to those providers,
-  with the photos already gone.
+  as having a change waiting for each address book that knows it. A new
+  installation allows changes to contacts, so the next sync pushed your whole
+  Google and Outlook address book back to those providers, with the photos
+  already gone. With Allow Changes turned off, nothing was sent.
 
   A contact you did not change is now left exactly as it is, which means nothing
   is written for it at all. A contact you did change is still marked as waiting
