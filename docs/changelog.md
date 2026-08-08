@@ -255,6 +255,45 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A contact change a setting holds back is still there when you turn the
+  setting on.** A contacts sync sends your changes first and then reads the
+  address book. Where a setting stopped the sending, the read that followed in
+  the same sync wrote the address book's copy over your change and stopped it
+  waiting. So the line after the sync told you to turn a setting on to send a
+  change that the same sync had just thrown away, and turning it on sent
+  nothing.
+
+  Both settings did it. With Allow Changes off, which is the default, one edit to
+  one contact both address books hold was read out as "Contacts sync: 0 created,
+  1 updated, 0 deleted, 1 of your change replaced by the address book. 1 change
+  is waiting here: turn on Allow Changes for this account to send it." Both
+  halves of that were about the same contact, and by the end of the sync the
+  change was gone. With "Send a change to a contact to every address book that
+  has that contact" off as well, a second sentence named that setting and it did
+  nothing either.
+
+  The same sync now says "Contacts sync: 0 created, 0 updated, 0 deleted. 1
+  change is waiting here: turn on Allow Changes for this account to send it."
+  Your change is still on the contact, and turning the setting on really does
+  send it.
+
+  What that costs, said plainly: while the setting is off, that one contact stops
+  taking updates from the address book, because taking them would be writing over
+  your change. The sync says so on every run for as long as it lasts. And your
+  change is held against the version marker it was made against, so if the
+  address book has moved its own copy on in the meantime, it can turn the change
+  down once you do allow it. That is the ordinary tie, the address book wins it,
+  and the line after the sync says your change was replaced.
+
+- **A setting stops being blamed for holding back a change that has already
+  gone.** When "Send a change to a contact to every address book that has that
+  contact" is off and your change had already been replaced by the address book
+  it came from, what was left waiting for the other address book was that address
+  book's own copy rather than anything you wrote. Every later sync went on saying
+  "1 change is not going to your other address book", for ever. It is now said
+  while what is waiting is your work, which is the same rule the "replaced by the
+  address book" line already followed.
+
 - **Editing one contact no longer rewrites every contact in the account.** The
   contact manager hands back its whole list whenever anything in it changes, and
   every row in that list was written back as though you had edited all of them.
@@ -339,14 +378,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 - **One contact you changed once is now said once, not once per address book.**
   The line after a contacts sync counts people, and a person kept in both Google
   and Outlook is one person. Until now each address book counted its own copy of
-  her, so one edit to one contact was read out as "0 created, 2 updated, 0
-  deleted, 2 of your changes replaced by the address book. 2 changes are waiting
-  here". Every number in that sentence was double, and the same edit was
-  described twice as lost.
+  her, so every number about that one person was double: one edit to one contact
+  was read out as "2 updated" and as "2 of your changes replaced by the address
+  book", and the same edit was described twice as lost.
 
-  The same sync now says "0 created, 1 updated, 0 deleted, 1 of your change
-  replaced by the address book. 1 change is waiting here: turn on Allow Changes
-  for this account to send it."
+  One edit to a contact both address books hold, where both of them turn the
+  change down and then replace it with their own copy, now says "Contacts sync:
+  0 created, 1 updated, 0 deleted, 1 of your change replaced by the address
+  book, 2 errors". The errors really are two. Every other number counts people;
+  these count what went wrong, and two address books refusing the same change is
+  two things to look at.
 
   Two smaller faults in the same sentence go with it. A contact one address book
   changed while the other left its copy alone was counted as updated and as

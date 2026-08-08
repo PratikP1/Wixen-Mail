@@ -37,39 +37,25 @@
 [[guard]]
 name = "the Google merge asks what the whole contact is owed"
 file = "src/application/contacts_sync.rs"
-before = """
-                let answer = whose_copy_wins(
-                    the_copy_here_holds_work_nobody_has_sent(local),
-                    arrived_at.as_deref(),
-                    last_seen.as_deref(),
-                );"""
-after = """
-                let answer = whose_copy_wins(
-                    this_address_book_is_still_owed_the_change(local, &AddressBook::Google),
-                    arrived_at.as_deref(),
-                    last_seen.as_deref(),
-                );"""
+before = """                        the_copy_here_holds_work_nobody_has_sent(local),
+                        arrived_at.as_deref(),"""
+after = """                        this_address_book_is_still_owed_the_change(local, &AddressBook::Google),
+                        arrived_at.as_deref(),"""
 red = [
     "application::contacts_sync::tests::test_a_change_only_outlook_still_needs_is_not_written_over_quietly_by_google",
     "application::contacts_sync::tests::test_a_change_only_outlook_still_needs_survives_a_google_read_that_moved_nothing",
     "application::contacts_sync::tests::test_a_contact_typed_here_that_google_already_holds_is_not_lost_without_a_word",
+    "application::contacts_sync::tests::test_an_edit_an_address_book_replaced_is_said_once_and_not_on_every_later_sync",
+    "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
 ]
 
 [[guard]]
 name = "the Microsoft merge asks what the whole contact is owed"
 file = "src/application/contacts_sync.rs"
-before = """
-                let answer = whose_copy_wins(
-                    the_copy_here_holds_work_nobody_has_sent(local),
-                    arrived_at,
-                    last_seen.as_deref(),
-                );"""
-after = """
-                let answer = whose_copy_wins(
-                    this_address_book_is_still_owed_the_change(local, &AddressBook::Microsoft),
-                    arrived_at,
-                    last_seen.as_deref(),
-                );"""
+before = """                        the_copy_here_holds_work_nobody_has_sent(local),
+                        arrived_at,"""
+after = """                        this_address_book_is_still_owed_the_change(local, &AddressBook::Microsoft),
+                        arrived_at,"""
 red = [
     "application::contacts_sync::tests::test_a_change_only_google_still_needs_is_not_written_over_quietly_by_outlook",
     "application::contacts_sync::tests::test_a_change_only_google_still_needs_survives_an_outlook_read_that_moved_nothing",
@@ -249,7 +235,6 @@ after = """    fn and(&self, others: &Contacts) -> Contacts {
         )
     }"""
 red = [
-    "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
     "application::contacts_sync::tests::test_a_contact_one_address_book_moved_is_not_also_called_unchanged",
     "application::contacts_sync::tests::test_folding_two_address_books_together_counts_one_contact_once",
     "application::contacts_sync::tests::test_folding_two_address_books_together_keeps_every_count",
@@ -270,12 +255,25 @@ red = [
 [[guard]]
 name = "a change the other setting holds back is noted on the way past"
 file = "src/application/contacts_sync.rs"
-before = """                result.waiting_on_how_far_a_change_goes.note(&contact.id);
+before = """                if the_copy_here_was_written_here(&contact) {
+                    result.waiting_on_how_far_a_change_goes.note(&contact.id);
+                }
                 return None;"""
 after = """                return None;"""
 red = [
     "application::contacts_sync::tests::test_a_change_held_from_the_other_address_book_by_the_setting_is_said",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
+]
+
+[[guard]]
+name = "the other setting is named only while the change is somebody's work"
+file = "src/application/contacts_sync.rs"
+before = """                if the_copy_here_was_written_here(&contact) {
+                    result.waiting_on_how_far_a_change_goes.note(&contact.id);
+                }"""
+after = """                result.waiting_on_how_far_a_change_goes.note(&contact.id);"""
+red = [
+    "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
 ]
 
 [[guard]]
@@ -288,7 +286,6 @@ after = """    match count {
 red = [
     "application::calendar::tests::test_one_change_waiting_and_one_thing_wrong_are_not_read_out_in_the_plural",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
-    "application::contacts_sync::tests::test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice",
 ]
 
 [[guard]]
@@ -334,4 +331,75 @@ red = [
     "application::contacts_sync::tests::test_a_contact_typed_here_that_google_already_holds_is_not_lost_without_a_word",
     "application::contacts_sync::tests::test_an_edit_an_address_book_replaced_is_said_once_and_not_on_every_later_sync",
     "application::contacts_sync::tests::test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice",
+]
+
+# ── A change no setting let out ─────────────────────────────────────────────
+#
+# The push runs first and the read runs after it, in the same sync. A change a
+# setting refused was offered to nobody before the read arrived to replace it,
+# so the summary named a setting to turn on to send something that was already
+# gone. Turning it on then sent nothing, twice over: once for each setting.
+
+[[guard]]
+name = "a change no setting let out is kept, not replaced"
+file = "src/application/contacts_sync.rs"
+before = """    if answer == WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere
+        && the_copy_here_was_written_here(the_copy_here)
+        && a_setting_stopped_this_sync_sending(&the_copy_here.id, result)
+    {
+        return WhoseCopyWins::KeepWhatIsHere;
+    }
+    answer"""
+after = """    let _ = (the_copy_here, result);
+    answer"""
+red = [
+    "application::contacts_sync::tests::test_a_change_a_setting_held_back_survives_the_read_in_the_same_sync",
+    "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
+    "application::contacts_sync::tests::test_a_kept_change_the_address_book_then_refuses_is_replaced_and_said",
+    "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
+]
+
+[[guard]]
+name = "only work somebody typed here is kept against an address book"
+file = "src/application/contacts_sync.rs"
+before = """        && the_copy_here_was_written_here(the_copy_here)
+        && a_setting_stopped_this_sync_sending(&the_copy_here.id, result)"""
+after = """        && a_setting_stopped_this_sync_sending(&the_copy_here.id, result)"""
+red = [
+    "application::contacts_sync::tests::test_an_address_books_own_copy_does_not_freeze_the_contact_against_the_other_one",
+]
+
+[[guard]]
+name = "a change this sync stopped waiting is not a change waiting here"
+file = "src/application/contacts_sync.rs"
+before = """    result.waiting_on_the_setting.forget(&merged.id);
+    let version = version_given_by(&merged, address_book);"""
+after = """    let version = version_given_by(&merged, address_book);"""
+red = [
+    "application::contacts_sync::tests::test_an_address_books_own_copy_does_not_freeze_the_contact_against_the_other_one",
+]
+
+[[guard]]
+name = "Allow Changes is one of the two settings that keeps a change"
+file = "src/application/contacts_sync.rs"
+before = """    result.waiting_on_the_setting.holds(contact_id)
+        || result.waiting_on_how_far_a_change_goes.holds(contact_id)"""
+after = """    result.waiting_on_how_far_a_change_goes.holds(contact_id)"""
+red = [
+    "application::contacts_sync::tests::test_a_change_a_setting_held_back_survives_the_read_in_the_same_sync",
+    "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
+    "application::contacts_sync::tests::test_a_kept_change_the_address_book_then_refuses_is_replaced_and_said",
+    "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
+]
+
+[[guard]]
+name = "how far a change goes is the other of the two settings that keeps it"
+file = "src/application/contacts_sync.rs"
+before = """    result.waiting_on_the_setting.holds(contact_id)
+        || result.waiting_on_how_far_a_change_goes.holds(contact_id)
+}"""
+after = """    result.waiting_on_the_setting.holds(contact_id)
+}"""
+red = [
+    "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
 ]
