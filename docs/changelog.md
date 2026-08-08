@@ -287,6 +287,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The changelog said this program changes nothing at your provider until
+  you say so.** A new installation allows changes to tasks, contacts and the
+  calendar at Google or Microsoft. It does not allow mail to be sent, moved
+  or deleted. Two entries further down claimed the opposite, and eight
+  comments in the source said the same thing in their own words, so somebody
+  reading either could have pointed this at a real address book believing
+  Allow Changes was holding everything on this computer. What the program
+  does has not changed. What changed is that it no longer says it is safer
+  than it is.
+
 - **One person is one contact, whichever of their addresses is written down.**
   A contact card, and an address book's own copy of somebody, were matched to
   the person already here by their main address alone and letter for letter.
@@ -865,10 +875,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   or Outlook's copy of that contact straight over your change: the name, the
   email addresses, the phone numbers, the company, the job title, the notes and
   every other field either address book holds. Your edit went, and the status
-  line called it an ordinary update. With Allow Changes turned off, which is
-  what a new account starts with, this happened to every contact you edited,
-  every time, because the change could never be sent and so was never anything
-  but the newer copy.
+  line called it an ordinary update. With Allow Changes turned off, this
+  happened to every contact you edited, every time, because the change could
+  never be sent and so was never anything but the newer copy.
 
   A sync now works out whether your address book has actually touched its own
   copy since it was last read, using the version marker the address book gives
@@ -1112,9 +1121,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   read-only it was worse, because the sync said the opposite out loud: "nothing
   is written over it, so nothing is lost", in the same pass that removed the row
   it was talking about. The same thing happened on a calendar you can write to
-  whenever Allow Changes was off, which is how the program is shipped: the
-  summary said the change was waiting for you to turn the setting on, and the
-  row holding that change had already gone.
+  whenever Allow Changes was off: the summary said the change was waiting for
+  you to turn the setting on, and the row holding that change had already
+  gone.
 
   Being unable to save is one thing and losing the words with no word about it
   is another, so the sync now says which calendar it is and what it means:

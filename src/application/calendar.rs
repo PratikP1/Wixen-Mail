@@ -562,9 +562,10 @@ fn settled(
 /// A change nobody has sent yet exists only on this computer. Writing the
 /// provider's copy over it destroys the edit the next push was going to send and
 /// clears the waiting flag with it, so nothing ever tries again and the words
-/// somebody typed are gone with nothing said. Allow Changes off is the shipped
-/// default and refuses every push, so without this an edit to a Google or
-/// Outlook event could not survive a single sync.
+/// somebody typed are gone with nothing said. Any push can fail, and every push
+/// is refused for as long as Allow Changes is off, so without this an edit to a
+/// Google or Outlook event could not survive the first sync that could not send
+/// it.
 ///
 /// The calendar-server read has had this rule all along and these two did not.
 fn a_change_here_is_still_waiting(held: Option<&CalendarEventEntry>) -> bool {
@@ -4689,8 +4690,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_a_change_waiting_here_is_not_written_over_by_the_google_read_that_follows() {
-        // Allow Changes off is the shipped default, so the push is refused and
-        // the change keeps waiting. The read that followed then wrote Google's
+        // A new installation allows changes to the calendar, so Allow Changes
+        // is off here because somebody turned it off, and the push is refused
+        // and the change keeps waiting. The read that followed then wrote Google's
         // copy over it and cleared the flag with it, so the words somebody typed
         // were gone and nothing was left to try again. The same rule the
         // calendar-server read has always had, and for the same reason: a change

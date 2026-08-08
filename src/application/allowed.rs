@@ -2,8 +2,11 @@
 //!
 //! Reading mail into a local cache cannot hurt anybody. Sending a message,
 //! removing one from a server, or deleting a task at a provider can, and none
-//! of those paths has run for real yet. So they are switched off by default
-//! and turned on deliberately.
+//! of those paths has run for real yet. So they are two answers rather than
+//! one, and a new installation allows one of them: tasks, contacts and the
+//! calendar go up to a provider, and mail does not. Sending is the deliberate
+//! step afterwards, and `data::config`'s `default_allowed` is where that is
+//! written down.
 //!
 //! # Three places can say no, and any one of them is enough
 //!

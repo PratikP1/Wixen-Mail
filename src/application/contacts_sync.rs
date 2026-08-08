@@ -36,9 +36,9 @@
 //! The read has to know about the notes as well, because the push runs first
 //! and a deletion it could not send is still owed when the read arrives.
 //! `a_deletion_is_still_owed_for` is what stops the read putting her back, and
-//! it is not an unusual case: Allow Changes off is the shipped default for
-//! anybody who turns it off, and every sync in between would otherwise
-//! resurrect her.
+//! it is not an unusual case: a push fails whenever the network or the provider
+//! does, and it is refused outright for as long as Allow Changes is off, so
+//! every sync in between would otherwise resurrect her.
 //!
 //! The other direction is not this. An address book saying she is gone is
 //! answered with `drop_synced_contact`, which leaves no note: sending the
@@ -1671,9 +1671,9 @@ fn deletions_waiting_for(
 /// could not send is still owed when the pull arrives. Without this the read
 /// writes her straight back down: she is on the screen again, under a new
 /// identifier, with her own deletion still waiting to go out. That is exactly
-/// what somebody sees when they delete a contact and it comes back, and Allow
-/// Changes being off is the shipped default, so it is the ordinary case rather
-/// than the unusual one.
+/// what somebody sees when they delete a contact and it comes back, and it
+/// takes nothing unusual to get there: a push that failed, or Allow Changes
+/// turned off, is enough.
 fn a_deletion_is_still_owed_for(waiting: &[DeletedContact], provider_contact_id: &str) -> bool {
     waiting
         .iter()
@@ -8266,8 +8266,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_a_change_waiting_here_is_not_written_over_by_the_google_read_that_follows() {
-        // Pins the Google sync's use of the rule. Allow Changes off is the
-        // shipped default, so the push is refused and the change keeps
+        // Pins the Google sync's use of the rule. A new installation allows
+        // changes to contacts, so Allow Changes is off here because somebody
+        // turned it off, and the push is refused and the change keeps
         // waiting. The read that followed held Google's copy of every named
         // field over it, and Google had not touched its copy at all, so the
         // words somebody typed were gone with nothing said.
@@ -10266,10 +10267,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_a_deletion_allow_changes_held_back_is_still_waiting_afterwards() {
-        // The setting is the shipped default, so this is the ordinary case
-        // rather than the unusual one. The note has to survive until it can be
-        // sent, the way a pending change does, and the summary names the
-        // setting to turn on rather than reporting a failure.
+        // A new installation allows changes to contacts, so Allow Changes is
+        // off here because somebody turned it off. The note has to survive
+        // until it can be sent, the way a pending change does, and the summary
+        // names the setting to turn on rather than reporting a failure.
         let cache = a_cache("deletion_held_by_the_setting");
         somebody_deleted_here_that_only_google_knew(&cache);
         let google = ScriptedGoogle {

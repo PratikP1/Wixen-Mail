@@ -161,127 +161,792 @@ fn test_nothing_offers_a_setting_per_account_that_no_screen_writes() {
 
 // ── What a new installation allows ──────────────────────────────────────────
 //
-// One answer lives in the code, `data::config`'s `default_allowed`, and the
-// same sentence about it has been written wrongly into the changelog four
-// times. The wording differs every time, so a check for a sentence would not
-// have caught the next one; this reads what the prose claims and asks the
-// code.
+// One answer lives in the code: `data::config`'s `default_allowed`. Prose
+// contradicting it has now been written into this repository nine times in nine
+// wordings, and the check that stood here to stop the fifth missed every one of
+// the five that came after it. It held a list of the wordings already found, so
+// a new wording walked straight past, and it required the setting to be named
+// on the same line, which the copy in the module that defines the setting does
+// not do and never could.
+//
+// A list of wordings is always one wording behind. This reads the claim
+// instead. It finds prose that puts itself at installation time, works out
+// which of the two answers the sentence is about and whether it says anything
+// reaches a provider, and asks the code which is true. Nothing here writes down
+// what the shipped answer is, so if that answer changes this follows it.
 
-/// Ways a document says it is talking about what a new installation does.
+/// The files this rule reads: ours, apart from this one.
 ///
-/// Four copies of one false claim, worded four ways, which is why this is a
-/// list of phrases rather than a sentence to look for.
-const SAYING_THIS_IS_WHAT_YOU_START_WITH: &[&str] = &[
-    "the default",
-    "by default",
-    "a new account starts with",
-    "a new installation",
-    "how the program is shipped",
-    "how this is shipped",
+/// Left out for the reason the temporary-folder rule further down is left out
+/// of its own walk. A check like this is worth having only if something proves
+/// it can see, and proving that means writing the false sentences out in full,
+/// here. There is nothing to disguise them as either: the thing being read is
+/// ordinary English, so there is no equivalent of building a dash from its code
+/// point. Anything that walks past this comment and quiets a failure by
+/// loosening the reading below has turned a check into decoration.
+fn ours_apart_from_this_file() -> Vec<PathBuf> {
+    ours()
+        .into_iter()
+        .filter(|path| !path.ends_with("house_style.rs"))
+        .collect()
+}
+
+/// Words that put a sentence at installation time.
+///
+/// A closed class, and about *when* rather than about how somebody happened to
+/// word it. "default" on its own covers "the default", "by default" and "the
+/// shipped default", which between them are seven of the nine copies; the list
+/// this replaces held four whole wordings and so knew none of the five that
+/// followed.
+const PUTS_A_SENTENCE_AT_INSTALLATION_TIME: &[&str] = &[
+    "default",
+    "defaults",
+    "shipped",
+    "new installation",
+    "new install",
     "out of the box",
     "when you install",
+    "a new account starts",
     "starts out with",
 ];
 
-/// The two copies of the claim another change is correcting, by their wording.
+/// What a sentence says reaches a provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reaches {
+    /// Nothing goes out at all.
+    Nothing,
+    /// Something does.
+    Something,
+}
+
+/// Words saying nothing goes out, and words saying something does.
 ///
-/// Named rather than merely counted, so a fifth copy fails whatever it says,
-/// and a second copy of either of these fails too. They can go as soon as the
-/// entries holding them are corrected; nothing here requires them to still be
-/// needed, because a check that goes red when somebody fixes the thing it is
-/// about is a check that teaches people to delete checks.
-const STILL_TO_BE_CORRECTED: &[&str] = &[
-    "which is what a new account starts with",
-    "which is how the program is shipped",
+/// Short on purpose. These are the words English has for the two answers, not
+/// the words these nine sentences happened to use.
+const NOTHING_GOES_OUT: &[&str] = &[
+    "off",
+    "nothing",
+    "none",
+    "no",
+    "not",
+    "never",
+    "cannot",
+    "refuse",
+    "refuses",
+    "refused",
+    "read-only",
 ];
 
-/// How much of a sentence after the name of the setting is still about it.
-const AS_FAR_AS_THE_CLAIM_REACHES: usize = 140;
+/// The other half of [`NOTHING_GOES_OUT`].
+const SOMETHING_GOES_OUT: &[&str] = &[
+    "on",
+    "allow",
+    "allows",
+    "allowed",
+    "permit",
+    "permits",
+    "permitted",
+    "send",
+    "sends",
+    "sent",
+    "goes",
+    "reach",
+    "reaches",
+];
 
-/// Every claim in one document that a new installation changes nothing.
+/// Which of the two answers a sentence is about.
 ///
-/// Read from the flattened words of a line and the two after it, because a
-/// sentence in a document is wrapped wherever it reaches the margin and each of
-/// these four claims is split across a line break.
+/// `Allowed` is two booleans because the two cost different amounts to get
+/// wrong. A sentence saying mail is refused is true, the same sentence about
+/// tasks is false, and reading both as one claim would call the true one a lie.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Answer {
+    /// Sending a message, and changing or deleting one on a server.
+    Mail,
+    /// Tasks, contacts and the calendar.
+    PersonalInformation,
+    /// The sentence does not say, so it is a claim about both.
+    Either,
+}
+
+/// Words naming the mail answer, and words naming the other one.
+const NAMES_THE_MAIL_ANSWER: &[&str] = &["mail", "message", "messages", "mailbox", "inbox"];
+
+/// The other half of [`NAMES_THE_MAIL_ANSWER`].
+const NAMES_THE_OTHER_ANSWER: &[&str] = &[
+    "task",
+    "tasks",
+    "contact",
+    "contacts",
+    "calendar",
+    "calendars",
+    "event",
+    "events",
+];
+
+/// One run of prose: comment lines that follow one another, or a paragraph of a
+/// document, flattened into a single line with its source lines remembered.
 ///
-/// The name of the setting comes from the code that names it, so renaming the
-/// section keeps this pointed at the right sentences, and this file never
-/// writes that name out. Written out it would match itself, the same way the
-/// dash characters above are built from their code points.
-fn claims_a_new_installation_changes_nothing(text: &str) -> Vec<(usize, String)> {
-    let named = wixen_mail::application::allowed::SETTINGS_SECTION;
-    let lines: Vec<&str> = text.lines().collect();
-    let mut claims = Vec::new();
-    for (at, _) in lines.iter().enumerate() {
-        let run = lines[at..lines.len().min(at + 3)]
-            .join(" ")
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ");
-        // Only where the name starts on this line, so one claim is one report
-        // rather than one for every line that can see it.
-        let Some(starts_at) = lines[at].find(named).and(run.find(named)) else {
+/// Flattened because a sentence is wrapped wherever it reaches the margin, so a
+/// claim is as likely to be split across two lines as to sit on one. Read a
+/// line at a time, this rule missed the page it was written for.
+struct Prose {
+    text: String,
+    /// Where each source line starts in `text`, and which line it is.
+    starts: Vec<(usize, usize)>,
+    /// Whether this is a module's own documentation rather than a comment.
+    documents_the_module: bool,
+}
+
+impl Prose {
+    /// The source line an offset into `text` came from.
+    fn line_at(&self, offset: usize) -> usize {
+        self.starts
+            .iter()
+            .rev()
+            .find(|(start, _)| *start <= offset)
+            .map_or(0, |(_, line)| *line)
+    }
+}
+
+/// The prose of one line, or nothing when the line is code.
+///
+/// A rule about what a sentence claims has no business reading an identifier.
+/// `default_allowed` is the function that holds the answer, and split into
+/// words it reads as "default allowed", which is a claim nobody made.
+///
+/// A table in a document is left out as well. It is a list rather than a
+/// sentence, its cells run together into one long line with no sentence in it,
+/// and the one table here is right.
+fn the_prose_of(path: &Path, line: &str) -> Option<(String, bool)> {
+    let trimmed = line.trim_start();
+    let mut documents_the_module = false;
+    let words = match path.extension().and_then(|e| e.to_str()) {
+        Some("rs") => {
+            let after = trimmed.strip_prefix("//")?;
+            documents_the_module = after.starts_with('!');
+            after.trim_start_matches(['/', '!'])
+        }
+        Some("md") => {
+            if trimmed.starts_with('|') || line.starts_with("    ") || line.starts_with('\t') {
+                return None;
+            }
+            line
+        }
+        _ => trimmed.strip_prefix('#')?,
+    };
+    Some((
+        without_code_and_addresses(words).trim().to_string(),
+        documents_the_module,
+    ))
+}
+
+/// Every run of prose in one file.
+fn prose_in(path: &Path, text: &str) -> Vec<Prose> {
+    let markdown = path.extension().is_some_and(|e| e == "md");
+    let mut found: Vec<Prose> = Vec::new();
+    let mut inside_a_fence = false;
+    let mut previous = 0;
+
+    for (index, line) in text.lines().enumerate() {
+        let number = index + 1;
+        if markdown && line.trim_start().starts_with("```") {
+            inside_a_fence = !inside_a_fence;
+            previous = 0;
+            continue;
+        }
+        let words = if inside_a_fence {
+            None
+        } else {
+            the_prose_of(path, line).filter(|(words, _)| !words.is_empty())
+        };
+        let Some((words, documents_the_module)) = words else {
+            previous = 0;
             continue;
         };
-        let claim: String = run[starts_at..]
-            .chars()
-            .take(AS_FAR_AS_THE_CLAIM_REACHES)
-            .collect();
-        let says_off = claim
-            .split_whitespace()
-            .any(|word| word.trim_matches(|c: char| !c.is_alphanumeric()) == "off");
-        if says_off
-            && SAYING_THIS_IS_WHAT_YOU_START_WITH
-                .iter()
-                .any(|phrase| claim.contains(phrase))
-        {
-            claims.push((at + 1, claim));
+        match found.last_mut().filter(|_| number == previous + 1) {
+            Some(run) => {
+                run.starts.push((run.text.len() + 1, number));
+                run.text.push(' ');
+                run.text.push_str(&words);
+            }
+            None => found.push(Prose {
+                starts: vec![(0, number)],
+                text: words,
+                documents_the_module,
+            }),
+        }
+        previous = number;
+    }
+    found
+}
+
+/// Whether this run of prose is about the one setting this rule is about.
+///
+/// The setting by name, and one exception: the module documentation of the
+/// module that defines it. That is where the fifth copy sat, and it names
+/// nothing because it is the definition; it says "they" and means the paths it
+/// has just listed.
+///
+/// The exception is that module's documentation and not the whole file, because
+/// that file is also the one place where "the default" can honestly mean
+/// something else. `Allowed::default()` is nothing, deliberately, so that a
+/// value built without anybody deciding cannot damage anything, and the
+/// comments on its tests say so and are right.
+///
+/// Anything wider than this cries wolf, which is worse than useless. "Provider"
+/// on its own drags in the default task list, the default account, the default
+/// calendar and the setting that checks links against Google's lists, none of
+/// which is this.
+fn about_the_setting(prose: &Prose, path: &Path) -> bool {
+    let lowered = prose.text.to_lowercase();
+    lowered.contains(&wixen_mail::application::allowed::SETTINGS_SECTION.to_lowercase())
+        || (prose.documents_the_module && path.ends_with(WHERE_THE_SETTING_IS_DEFINED))
+}
+
+/// The module whose documentation is about this setting without naming it.
+const WHERE_THE_SETTING_IS_DEFINED: &str = "application/allowed.rs";
+
+/// A word of a run of prose, with where it starts.
+fn words_of(text: &str) -> Vec<(usize, String)> {
+    let mut words = Vec::new();
+    let mut at = 0;
+    for piece in text.split_inclusive(char::is_whitespace) {
+        let bare = piece.trim_matches(|c: char| !c.is_alphanumeric());
+        if !bare.is_empty() {
+            words.push((
+                at + (piece.len() - piece.trim_start().len()),
+                bare.to_lowercase(),
+            ));
+        }
+        at += piece.len();
+    }
+    words
+}
+
+/// Where the sentence around an offset starts and ends.
+///
+/// A sentence rather than the whole run, because a run says several things and
+/// only the sentence carrying the installation-time word is making this claim.
+fn the_sentence_around(text: &str, at: usize) -> (usize, usize) {
+    let ends_it = |c: char| matches!(c, '.' | '!' | '?' | ':' | ';');
+    let start = text[..at].rfind(ends_it).map_or(0, |found| found + 1);
+    let end = text[at..]
+        .find(ends_it)
+        .map_or(text.len(), |found| at + found);
+    (start, end)
+}
+
+/// The sentence with the name of the setting taken out.
+///
+/// "Allow Changes" is what the settings screen calls the section, so the word
+/// "Allow" in it is a label and not the sentence saying anything is allowed.
+/// Left in, every sentence naming the setting reads as permission.
+fn without_the_settings_name(sentence: &str) -> String {
+    let named = wixen_mail::application::allowed::SETTINGS_SECTION.to_lowercase();
+    let mut left = String::with_capacity(sentence.len());
+    let lowered = sentence.to_lowercase();
+    let mut at = 0;
+    while let Some(found) = lowered[at..].find(&named) {
+        left.push_str(&sentence[at..at + found]);
+        at += found + named.len();
+    }
+    left.push_str(&sentence[at..]);
+    left
+}
+
+/// What a sentence says reaches a provider, if it says anything.
+///
+/// Read from the word nearest the one that puts the sentence at installation
+/// time. That is where the claim is made: "off is the shipped default",
+/// "switched off by default", "a new installation allows tasks". A sentence
+/// carrying both answers is read from the one it puts beside that word, so
+/// "a new installation allows tasks, and this test turns that off" is read as
+/// permission and not as a refusal.
+///
+/// What it cannot read, so that a quiet run is not taken for more than it is. A
+/// sentence that carries no word from either list: "the setting is the shipped
+/// default" says which answer it is talking about and never says what that
+/// answer is, and one of the nine copies is exactly that. A negation of a
+/// negation. A conditional, "if it were off by default". And a claim spread
+/// over two sentences, because only the sentence carrying the word is read.
+fn what_it_says_reaches_a_provider(sentence: &str, marker_at: usize) -> Option<Reaches> {
+    let readable = without_the_settings_name(sentence);
+    let taken_out = sentence.len() - readable.len();
+    let words = words_of(&readable);
+    let marker_word = words
+        .iter()
+        .rposition(|(at, _)| *at <= marker_at.saturating_sub(taken_out))
+        .unwrap_or(0);
+
+    let said = negation_read_as_refusal(&words);
+
+    let mut nothing = None;
+    let mut something = None;
+    for (index, verdict) in said.iter().enumerate() {
+        let away = index.abs_diff(marker_word);
+        match verdict {
+            Some(Reaches::Nothing) => {
+                nothing = Some(nothing.map_or(away, |near: usize| near.min(away)));
+            }
+            Some(Reaches::Something) => {
+                something = Some(something.map_or(away, |near: usize| near.min(away)));
+            }
+            None => {}
+        }
+    }
+    match (nothing, something) {
+        (None, None) => None,
+        (Some(_), None) => Some(Reaches::Nothing),
+        (None, Some(_)) => Some(Reaches::Something),
+        // A tie is a sentence that says both things at the same distance, which
+        // is a sentence nobody should be named for on a tie-break. It goes to
+        // permission, and what that costs is a genuinely ambiguous refusal
+        // going unsaid.
+        (Some(near), Some(far)) => Some(if near < far {
+            Reaches::Nothing
+        } else {
+            Reaches::Something
+        }),
+    }
+}
+
+/// What each word says, with a negated permission read as a refusal.
+///
+/// "sends nothing" is not the sentence permitting anything, and neither is
+/// "allows none of it" or "is not sent". A word from one list standing next to
+/// a word from the other is a negation, and what the pair means is the refusal.
+fn negation_read_as_refusal(words: &[(usize, String)]) -> Vec<Option<Reaches>> {
+    let mut said: Vec<Option<Reaches>> = words
+        .iter()
+        .map(|(_, word)| {
+            if NOTHING_GOES_OUT.contains(&word.as_str()) {
+                Some(Reaches::Nothing)
+            } else if SOMETHING_GOES_OUT.contains(&word.as_str()) {
+                Some(Reaches::Something)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let refused = |at: usize| said.get(at) == Some(&Some(Reaches::Nothing));
+    let negated: Vec<usize> = (0..said.len())
+        .filter(|at| said[*at] == Some(Reaches::Something))
+        .filter(|at| at.checked_sub(1).is_some_and(refused) || refused(at + 1))
+        .collect();
+    for at in negated {
+        said[at] = None;
+    }
+    said
+}
+
+/// Which of the two answers a sentence is about.
+fn which_answer_it_is_about(sentence: &str) -> Answer {
+    let lowered = sentence.to_lowercase();
+    let words = words_of(&lowered);
+    let named = |names: &[&str]| words.iter().any(|(_, word)| names.contains(&word.as_str()));
+    let mail = named(NAMES_THE_MAIL_ANSWER);
+    let other = named(NAMES_THE_OTHER_ANSWER)
+        || lowered.contains("personal information")
+        || lowered.contains("address book");
+
+    match (mail, other) {
+        (true, false) => Answer::Mail,
+        (false, true) => Answer::PersonalInformation,
+        _ => Answer::Either,
+    }
+}
+
+/// One sentence claiming what a new installation lets out.
+struct Claim {
+    line: usize,
+    sentence: String,
+    answer: Answer,
+    reaches: Option<Reaches>,
+}
+
+/// Every claim in one file about what a new installation lets out.
+///
+/// One report per sentence rather than one per word, so "the shipped default",
+/// which carries two of the installation-time words, is one claim.
+fn claims_about_a_new_installation(path: &Path, text: &str) -> Vec<Claim> {
+    let mut claims = Vec::new();
+    for prose in prose_in(path, text) {
+        if !about_the_setting(&prose, path) {
+            continue;
+        }
+        let lowered = prose.text.to_lowercase();
+        let mut said_already: Vec<(usize, usize)> = Vec::new();
+        for phrase in PUTS_A_SENTENCE_AT_INSTALLATION_TIME {
+            for at in whole_words_at(&lowered, phrase) {
+                let (start, end) = the_sentence_around(&prose.text, at);
+                if said_already.contains(&(start, end)) {
+                    continue;
+                }
+                said_already.push((start, end));
+                let sentence = prose.text[start..end].trim().to_string();
+                claims.push(Claim {
+                    line: prose.line_at(at),
+                    answer: which_answer_it_is_about(&sentence),
+                    reaches: what_it_says_reaches_a_provider(&prose.text[start..end], at - start),
+                    sentence,
+                });
+            }
         }
     }
     claims
 }
 
+/// Every place a phrase appears as a whole word rather than inside one.
+///
+/// "default" is a word here and half of `default_allowed` there, and the second
+/// is the code holding the answer rather than a sentence about it.
+fn whole_words_at(lowered: &str, phrase: &str) -> Vec<usize> {
+    let mut found = Vec::new();
+    let mut at = 0;
+    while let Some(offset) = lowered[at..].find(phrase) {
+        let start = at + offset;
+        let end = start + phrase.len();
+        let before = lowered[..start].chars().next_back();
+        let after = lowered[end..].chars().next();
+        if !before.is_some_and(|c| c.is_alphanumeric() || c == '_')
+            && !after.is_some_and(|c| c.is_alphanumeric() || c == '_')
+        {
+            found.push(start);
+        }
+        at = end;
+    }
+    found
+}
+
+/// What the code says a new installation lets out, for one of the two answers.
+fn the_shipped_answer(answer: Answer) -> bool {
+    let shipped = wixen_mail::data::config::AppConfig::default().allowed_changes;
+    match answer {
+        Answer::Mail => shipped.mail,
+        Answer::PersonalInformation => shipped.personal_information,
+        Answer::Either => shipped.anything(),
+    }
+}
+
+/// Whether a claim agrees with the code, or `None` when it cannot be read.
+fn agrees_with_the_code(claim: &Claim) -> Option<bool> {
+    claim
+        .reaches
+        .map(|reaches| (reaches == Reaches::Something) == the_shipped_answer(claim.answer))
+}
+
 #[test]
 fn test_nothing_says_a_new_installation_changes_nothing_while_it_changes_contacts() {
-    // What a new installation allows is one value in the code. Prose about it
-    // is checked against that value rather than against a sentence written
-    // here, so if the shipped answer ever becomes "change nothing" this check
-    // goes quiet on its own instead of having to be remembered.
-    let shipped = wixen_mail::data::config::AppConfig::default().allowed_changes;
-    let mut claimed = Vec::new();
-    if shipped.anything() {
-        for path in ours() {
-            let Ok(text) = fs::read_to_string(&path) else {
-                continue;
-            };
-            for (line, claim) in claims_a_new_installation_changes_nothing(&text) {
-                claimed.push(format!("{}:{line}: {claim}", path.display()));
+    // What a new installation allows is one value in the code, and every
+    // sentence about it here is checked against that value rather than against
+    // a sentence written down. If the shipped answer ever becomes "change
+    // nothing" this goes quiet on its own instead of having to be remembered.
+    let mut wrong = Vec::new();
+
+    for path in ours_apart_from_this_file() {
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        for claim in claims_about_a_new_installation(&path, &text) {
+            if agrees_with_the_code(&claim) == Some(false) {
+                wrong.push(format!(
+                    "{}:{}: reads as {:?} about {:?}, and the code says {}: {}",
+                    path.display(),
+                    claim.line,
+                    claim.reaches,
+                    claim.answer,
+                    the_shipped_answer(claim.answer),
+                    claim.sentence
+                ));
             }
         }
     }
 
-    let (excused, wrong): (Vec<String>, Vec<String>) = claimed
-        .into_iter()
-        .partition(|claim| STILL_TO_BE_CORRECTED.iter().any(|old| claim.contains(old)));
-
+    let shipped = wixen_mail::data::config::AppConfig::default().allowed_changes;
     assert!(
         wrong.is_empty(),
-        "a new installation may change tasks, contacts and the calendar, and may \
-         not send or change mail. Saying it changes nothing sends somebody to \
-         their real address book believing it is safe from this. The code's own \
-         answer is mail {}, personal information {}:\n  {}",
+        "a new installation may change tasks, contacts and the calendar, and \
+         may not send or change mail. Saying it changes nothing sends somebody \
+         to their real address book believing it is safe from this. The code's \
+         own answer is mail {}, personal information {}:\n  {}",
         shipped.mail,
         shipped.personal_information,
         wrong.join("\n  ")
     );
-    for old in STILL_TO_BE_CORRECTED {
-        assert!(
-            excused.iter().filter(|claim| claim.contains(old)).count() <= 1,
-            "\"{old}\" is one of the two copies still to be corrected, and it has \
-             been written again:\n  {}",
-            excused.join("\n  ")
+}
+
+#[test]
+fn test_no_comment_names_the_shipped_answer_without_saying_what_it_is() {
+    // The ninth copy is "The setting is the shipped default", above a test that
+    // turns the setting off. It names which answer it is talking about and
+    // never says what that answer is, so there is nothing in the sentence to
+    // compare with the code, and the reading above passes over it in silence.
+    //
+    // What is left is the shape: a comment that calls something the shipped
+    // answer while leaving the reader to supply it from the code around it.
+    // That is the sentence that goes stale without anybody being able to see
+    // it has, so it is refused outright. Say what the answer is and the check
+    // above will hold you to it.
+    //
+    // Source only. A document says "Default" in the heading of a table whose
+    // cells carry the answer, and a table is not a sentence.
+    let mut unsaid = Vec::new();
+
+    for path in ours_apart_from_this_file() {
+        if path.extension().is_none_or(|kind| kind != "rs") {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        for claim in claims_about_a_new_installation(&path, &text) {
+            if claim.reaches.is_none() {
+                unsaid.push(format!(
+                    "{}:{}: {}",
+                    path.display(),
+                    claim.line,
+                    claim.sentence
+                ));
+            }
+        }
+    }
+
+    assert!(
+        unsaid.is_empty(),
+        "these call something the answer a new installation starts with and do \
+         not say what that answer is, so nothing can tell whether they are \
+         still true:\n  {}",
+        unsaid.join("\n  ")
+    );
+}
+
+/// One claim read out of a piece of writing, for the test below.
+fn the_claim_in(path: &str, writing: &str) -> Option<Claim> {
+    let mut claims = claims_about_a_new_installation(Path::new(path), writing);
+    assert!(
+        claims.len() <= 1,
+        "{} claims read out of one piece of writing",
+        claims.len()
+    );
+    claims.pop()
+}
+
+#[test]
+fn test_the_new_installation_check_can_tell_the_two_apart() {
+    // Proving the measurement, in both directions, which is the half the check
+    // this replaces was never given. It was taken red once against a sentence
+    // it already knew and never against one it did not, and five wordings
+    // walked past it afterwards.
+    //
+    // Every sentence below is copied out of the tree rather than invented:
+    // the nine false copies as they stood, and the corrections that replaced
+    // them. Written out here because this file is left out of the walk, for
+    // the reason on `ours_apart_from_this_file`.
+    let false_when_it_was_written = [
+        (
+            "src/application/allowed.rs",
+            "//! removing one from a server, or deleting a task at a provider can, and none\n\
+             //! of those paths has run for real yet. So they are switched off by default\n\
+             //! and turned on deliberately.\n",
+        ),
+        (
+            "src/application/calendar.rs",
+            "/// somebody typed are gone with nothing said. Allow Changes off is the shipped\n\
+             /// default and refuses every push, so without this an edit to a Google or\n\
+             /// Outlook event could not survive a single sync.\n",
+        ),
+        (
+            "src/application/calendar.rs",
+            "        // Allow Changes off is the shipped default, so the push is refused and\n\
+             \x20       // the change keeps waiting.\n",
+        ),
+        (
+            "src/application/caldav_sync.rs",
+            "        // Allow Changes off is the shipped default, so this is what the sync\n\
+             \x20       // does on a computer nobody has configured.\n",
+        ),
+        (
+            "src/application/contacts_sync.rs",
+            "//! it is not an unusual case: Allow Changes off is the shipped default for\n\
+             //! anybody who turns it off, and every sync in between would otherwise\n\
+             //! resurrect her.\n",
+        ),
+        (
+            "src/application/contacts_sync.rs",
+            "/// what somebody sees when they delete a contact and it comes back, and Allow\n\
+             /// Changes being off is the shipped default, so it is the ordinary case rather\n\
+             /// than the unusual one.\n",
+        ),
+        (
+            "docs/changelog.md",
+            "  line called it an ordinary update. With Allow Changes turned off, which is\n\
+             \x20 what a new account starts with, this happened to every contact you edited.\n",
+        ),
+        (
+            "docs/changelog.md",
+            "  whenever Allow Changes was off, which is how the program is shipped: the\n\
+             \x20 summary said the change was waiting for you to turn the setting on.\n",
+        ),
+        // Wordings nobody has written yet, which is the half a list of the
+        // wordings already found can never cover.
+        (
+            "src/application/calendar.rs",
+            "// Out of the box, Allow Changes lets nothing reach a provider.\n",
+        ),
+        (
+            "src/application/calendar.rs",
+            "// When you install it, Allow Changes refuses every change to a contact.\n",
+        ),
+        (
+            "docs/ALPHA_TESTING.md",
+            "A new installation sends none of your calendar to anybody, because Allow\nChanges starts out with both halves off.\n",
+        ),
+    ];
+    for (path, writing) in false_when_it_was_written {
+        let claim = the_claim_in(path, writing)
+            .unwrap_or_else(|| panic!("no claim was read at all out of:\n{writing}"));
+        assert_eq!(
+            agrees_with_the_code(&claim),
+            Some(false),
+            "read as {:?} about {:?}: {}",
+            claim.reaches,
+            claim.answer,
+            claim.sentence
         );
     }
+
+    // And the corrections that replaced them, which have to leave it quiet or
+    // the check cries wolf and somebody turns it off.
+    let true_and_left_alone = [
+        (
+            "src/application/allowed.rs",
+            "//! of those paths has run for real yet. So they are two answers rather than\n\
+             //! one, and a new installation allows one of them: tasks, contacts and the\n\
+             //! calendar go up to a provider, and mail does not.\n",
+        ),
+        (
+            "src/application/calendar.rs",
+            "        // A new installation allows changes to the calendar, so Allow Changes\n\
+             \x20       // is off here because somebody turned it off.\n",
+        ),
+        (
+            "src/application/contacts_sync.rs",
+            "        // A new installation allows changes to contacts, so Allow Changes is\n\
+             \x20       // off here because somebody turned it off.\n",
+        ),
+        // The mail half really is refused, so the same shape of sentence about
+        // mail is true. Read as one answer rather than two, this would be
+        // called a lie.
+        (
+            "docs/ALPHA_TESTING.md",
+            "Allow Changes leaves sending mail off in a new installation, and a message\nthat has gone cannot be recalled.\n",
+        ),
+    ];
+    for (path, writing) in true_and_left_alone {
+        let claim = the_claim_in(path, writing)
+            .unwrap_or_else(|| panic!("no claim was read at all out of:\n{writing}"));
+        assert_eq!(
+            agrees_with_the_code(&claim),
+            Some(true),
+            "read as {:?} about {:?}: {}",
+            claim.reaches,
+            claim.answer,
+            claim.sentence
+        );
+    }
+
+    // Both halves of the same sentence, which is what makes the reading a
+    // reading rather than a search for the word "off". One is true and one is
+    // not, and they differ only in which answer they name.
+    let about_mail = the_claim_in(
+        "docs/ALPHA_TESTING.md",
+        "Under Allow Changes, a new installation sends no message anywhere.\n",
+    )
+    .expect("a claim about mail");
+    assert_eq!(about_mail.answer, Answer::Mail);
+    assert_eq!(agrees_with_the_code(&about_mail), Some(true));
+
+    let about_the_rest = the_claim_in(
+        "docs/ALPHA_TESTING.md",
+        "Under Allow Changes, a new installation sends no contact anywhere.\n",
+    )
+    .expect("a claim about the other answer");
+    assert_eq!(about_the_rest.answer, Answer::PersonalInformation);
+    assert_eq!(agrees_with_the_code(&about_the_rest), Some(false));
+
+    // Nothing to read, which is the shape the second check is about and the
+    // one place this reading gives up.
+    let says_nothing = the_claim_in(
+        "src/application/contacts_sync.rs",
+        "        // Allow Changes is at the shipped default here, so this is the ordinary\n\
+         \x20       // case rather than the unusual one.\n",
+    )
+    .expect("a claim naming the answer without saying what it is");
+    assert_eq!(agrees_with_the_code(&says_nothing), None);
+
+    // Out of scope, and every one of these was a false alarm before the scope
+    // was drawn where it is. None of them is about this setting.
+    for (path, writing) in [
+        (
+            "src/application/tasks_sync.rs",
+            "/// a task made here is filed in the account's first list, which is the\n\
+             /// provider's own default list.\n",
+        ),
+        (
+            "src/presentation/managers.rs",
+            "// Both providers return their default list first.\n",
+        ),
+        (
+            "docs/PROVIDER_SETUP.md",
+            "This is the default for Gmail and for any provider we do not recognise.\n",
+        ),
+        // The type's own default really is nothing, deliberately, and its
+        // tests say so. That is a different default in the one file where
+        // both live, which is why only the module documentation is read.
+        (
+            "src/application/allowed.rs",
+            "        // The important default. A value built without anybody deciding\n\
+             \x20       // should be the one that cannot damage somebody's mail.\n",
+        ),
+        // A table is a list, and the one in the testing page is right.
+        (
+            "docs/ALPHA_TESTING.md",
+            "Allow Changes covers two things.\n\n| | What it covers | Default |\n|---|---|---|\n| Mail | Sending | **Off** |\n",
+        ),
+        // And a fenced example in a document is not a claim the document makes.
+        (
+            "docs/ALPHA_TESTING.md",
+            "Allow Changes covers two things.\n\n```\nAllow Changes is off by default.\n```\n",
+        ),
+    ] {
+        assert!(
+            the_claim_in(path, writing).is_none(),
+            "a false alarm, on prose that is not about this setting:\n{writing}"
+        );
+    }
+
+    // And the walk has to be reading the tree, or all of the above passes over
+    // an empty list.
+    let walked = ours_apart_from_this_file();
+    assert!(
+        walked.len() > 100,
+        "only {} files checked, so the walk is broken",
+        walked.len()
+    );
+    assert!(
+        walked.iter().any(|f| f.ends_with("allowed.rs")),
+        "the module that defines the setting is not being read"
+    );
+    assert!(
+        walked.iter().any(|f| f.ends_with("changelog.md")),
+        "the changelog is not being read, and four of the nine copies were in it"
+    );
+    assert!(
+        !walked.iter().any(|f| f.ends_with("house_style.rs")),
+        "this file is in the walk, so the sentences above would fail it"
+    );
 }
 
 /// Documents somebody reads, as opposed to source and configuration.

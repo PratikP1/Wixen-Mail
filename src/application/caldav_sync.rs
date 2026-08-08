@@ -2767,11 +2767,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_a_change_waiting_on_the_allow_changes_setting_survives_the_read_that_follows() {
-        // Allow Changes off is the shipped default, so this is what the sync
-        // does on a computer nobody has configured. The summary says the change
-        // is waiting for the setting to be turned on, and the row holding it
-        // was deleted in the same pass, so turning the setting on sends
-        // nothing.
+        // A new installation allows changes to the calendar, so Allow Changes
+        // is off here because somebody turned it off. The summary says the
+        // change is waiting for the setting to be turned on, and the row
+        // holding it was deleted in the same pass, so turning the setting on
+        // sends nothing.
         let cache = temp_cache("gate_shut_keeps_the_row");
         let mut calendar = container("cal-gate-shut", "acct");
         let (address, listening) = answering_in_turn(
