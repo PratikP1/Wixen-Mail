@@ -737,17 +737,9 @@ fn populate_contacts_filtered(
 ) {
     list.delete_all_items();
     index_map.clear();
-    let q = query.to_lowercase();
     for (i, c) in contacts.iter().enumerate() {
-        if !q.is_empty() {
-            let matches = c.name.to_lowercase().contains(&q)
-                || c.primary_email().to_lowercase().contains(&q)
-                || c.primary_phone().contains(&q)
-                || c.company.to_lowercase().contains(&q)
-                || c.nickname.to_lowercase().contains(&q);
-            if !matches {
-                continue;
-            }
+        if !worth_showing(c, query) {
+            continue;
         }
         let display_idx = index_map.len() as i64;
         index_map.push(i);
@@ -761,6 +753,32 @@ fn populate_contacts_filtered(
         list.set_item_text_by_column(display_idx, 2, c.primary_phone());
         list.set_item_text_by_column(display_idx, 3, &c.company);
     }
+}
+
+/// Whether one contact answers what somebody typed in the search box.
+///
+/// Every address and every number the contact holds, not the first of each.
+/// The list shows one address per row, so searching only that one meant that
+/// the address you have for somebody, which is the address you would type,
+/// found nobody whenever it was one of her others. `ContactEntry::
+/// is_written_to_at` in the data layer draws the same line for the same
+/// reason.
+///
+/// An empty box is not a filter, so everybody is worth showing.
+///
+/// Written apart from the list it fills because a `ListCtrl` needs a window
+/// and this decision does not.
+fn worth_showing(contact: &ContactEntry, query: &str) -> bool {
+    let looking_for = query.trim().to_lowercase();
+    if looking_for.is_empty() {
+        return true;
+    }
+    let holds = |value: &str| value.to_lowercase().contains(&looking_for);
+    holds(&contact.name)
+        || holds(&contact.company)
+        || holds(&contact.nickname)
+        || contact.emails.iter().any(|e| holds(&e.address))
+        || contact.phones.iter().any(|p| holds(&p.number))
 }
 
 // ── Contact Edit: Tabbed Dialog ─────────────────────────────────────────────
@@ -2308,6 +2326,89 @@ pub fn choose_from_list(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Somebody with two addresses and two numbers, which is the ordinary
+    /// shape of a contact and the shape the search used to half ignore.
+    fn a_contact_with_two_of_everything() -> ContactEntry {
+        ContactEntry {
+            id: "c1".to_string(),
+            name: "Grace Hopper".to_string(),
+            given_name: "Grace".to_string(),
+            family_name: "Hopper".to_string(),
+            nickname: String::new(),
+            company: "Navy".to_string(),
+            department: String::new(),
+            job_title: String::new(),
+            emails: vec![
+                EmailItem {
+                    label: "Personal".to_string(),
+                    address: "grace@example.com".to_string(),
+                },
+                EmailItem {
+                    label: "Work".to_string(),
+                    address: "g.hopper@navy.example".to_string(),
+                },
+            ],
+            phones: vec![
+                PhoneItem {
+                    label: "Home".to_string(),
+                    number: "555 0100".to_string(),
+                },
+                PhoneItem {
+                    label: "Mobile".to_string(),
+                    number: "555 0101".to_string(),
+                },
+            ],
+            addresses: Vec::new(),
+            birthday: String::new(),
+            website: String::new(),
+            relationship: String::new(),
+            notes: String::new(),
+            custom_fields: Vec::new(),
+            avatar_url: String::new(),
+            favorite: false,
+        }
+    }
+
+    #[test]
+    fn test_a_contact_is_found_by_an_address_that_is_not_her_first() {
+        // The address you have for somebody is the address you would type,
+        // and it is as likely to be her work one as her personal one. Only
+        // the first was searched, so typing the one you have found nobody and
+        // the list said there was no such person.
+        assert!(worth_showing(
+            &a_contact_with_two_of_everything(),
+            "g.hopper@navy.example"
+        ));
+    }
+
+    #[test]
+    fn test_a_contact_is_found_by_a_number_that_is_not_her_first() {
+        assert!(worth_showing(&a_contact_with_two_of_everything(), "0101"));
+    }
+
+    #[test]
+    fn test_a_contact_is_found_by_an_address_typed_in_capitals() {
+        assert!(worth_showing(
+            &a_contact_with_two_of_everything(),
+            "Grace@Example.com"
+        ));
+    }
+
+    #[test]
+    fn test_somebody_the_search_does_not_name_is_left_out() {
+        // The other direction. A filter that shows everybody is not a filter.
+        assert!(!worth_showing(
+            &a_contact_with_two_of_everything(),
+            "lovelace"
+        ));
+    }
+
+    #[test]
+    fn test_an_empty_search_box_shows_everybody() {
+        assert!(worth_showing(&a_contact_with_two_of_everything(), ""));
+        assert!(worth_showing(&a_contact_with_two_of_everything(), "   "));
+    }
 
     #[test]
     fn test_address_labels_us() {

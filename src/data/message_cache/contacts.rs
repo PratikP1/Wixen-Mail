@@ -23,6 +23,13 @@ pub struct CardsRead {
     pub with_no_email_address: usize,
     /// Contacts read out of the file that the database would not take.
     pub not_written_down: usize,
+    /// Contacts the import left waiting to go to an address book.
+    ///
+    /// Counted and said, because it is the part of an import that leaves this
+    /// computer. Somebody importing an old backup to look through it is
+    /// entitled to know it is on its way to their real address book before
+    /// the next sync sends it, not afterwards.
+    pub waiting_to_be_sent: usize,
 }
 
 impl CardsRead {
@@ -35,6 +42,7 @@ impl CardsRead {
         self.added += other.added;
         self.with_no_email_address += other.with_no_email_address;
         self.not_written_down += other.not_written_down;
+        self.waiting_to_be_sent += other.waiting_to_be_sent;
     }
 }
 
@@ -130,67 +138,6 @@ impl MessageCache {
             .commit()
             .map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
         Ok(())
-    }
-
-    /// Which contact an account already holds at this address, if any, whole
-    /// and with the address books that know it.
-    ///
-    /// Whole rather than the identifier alone, because what is stored is what
-    /// an incoming card is folded into, and every field the card does not
-    /// carry has to come from somewhere.
-    ///
-    /// Nothing for an empty address, so two contacts with only a phone number
-    /// never merge into one another.
-    fn contact_holding(&self, account_id: &str, email: &str) -> Result<Option<ContactEntry>> {
-        if email.is_empty() {
-            return Ok(None);
-        }
-        let held = self.conn.query_row(
-            "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
-                    avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
-                    nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
-                    pending, given_name, family_name
-             FROM contacts WHERE account_id = ?1 AND email = ?2 LIMIT 1",
-            params![account_id, email],
-            Self::contact_from_row,
-        );
-        let mut held = match held {
-            Ok(contact) => contact,
-            Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
-            Err(other) => {
-                return Err(Error::Other(format!(
-                    "Failed to look a contact up by address: {}",
-                    other
-                )));
-            }
-        };
-        held.known_to = self.address_books_that_know(&held.id)?;
-        Ok(Some(held))
-    }
-
-    /// Every address book that knows one contact.
-    ///
-    /// One contact's worth rather than the whole account's, because this is
-    /// asked once per card in a file somebody is importing.
-    fn address_books_that_know(&self, contact_id: &str) -> Result<Vec<ProviderIdentity>> {
-        let mut stmt = self
-            .conn
-            .prepare(
-                "SELECT address_book, provider_contact_id, provider_version, change_is_waiting
-                 FROM contact_identities WHERE contact_id = ?1 ORDER BY address_book",
-            )
-            .map_err(|e| Error::Other(format!("Failed to prepare identity query: {}", e)))?;
-        stmt.query_map(params![contact_id], |row| {
-            Ok(ProviderIdentity {
-                address_book: AddressBook::from_stored(&row.get::<_, String>(0)?),
-                provider_contact_id: row.get(1)?,
-                provider_version: row.get(2)?,
-                change_is_waiting: row.get(3)?,
-            })
-        })
-        .map_err(|e| Error::Other(format!("Failed to query contact identities: {}", e)))?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| Error::Other(format!("Failed to collect contact identities: {}", e)))
     }
 
     /// Every address book identity in an account, by contact.
@@ -364,6 +311,11 @@ impl MessageCache {
         vcard_data: &str,
     ) -> Result<CardsRead> {
         let mut read = CardsRead::default();
+        // Read once, not once per card. The match is asked of every address a
+        // contact holds and of every address the card names, which no lookup
+        // of one column can answer, and a folder of two hundred cards would
+        // otherwise read the whole address book two hundred times.
+        let mut held = self.get_contacts_for_account(account_id)?;
         for entry in Self::cards_in(vcard_data) {
             let Some(from_card) = Self::contact_from_vcard_block(account_id, &entry) else {
                 // The one rule that turns a card away, so this counts one
@@ -372,12 +324,27 @@ impl MessageCache {
                 read.with_no_email_address += 1;
                 continue;
             };
-            // A card carries no identifier this application keeps, so the
+            // A card carries no identifier this application keeps, so an
             // address is what says the same card read twice is one person.
-            let held = self.contact_holding(account_id, &from_card.email)?;
-            let contact = Self::a_card_over_what_is_held(from_card, held.as_ref());
+            let already_here = held
+                .iter()
+                .position(|contact| contact.shares_an_address_with(&from_card));
+            let contact =
+                Self::a_card_over_what_is_held(from_card, already_here.map(|at| &held[at]));
             match self.save_contact(&contact) {
-                Ok(_) => read.added += 1,
+                Ok(_) => {
+                    read.added += 1;
+                    if contact.pending {
+                        read.waiting_to_be_sent += 1;
+                    }
+                    // The running copy is kept in step so a second card for
+                    // the same person, later in the same file, folds into the
+                    // row the first one wrote instead of making another.
+                    match already_here {
+                        Some(at) => held[at] = contact,
+                        None => held.push(contact),
+                    }
+                }
                 Err(e) => {
                     read.not_written_down += 1;
                     tracing::warn!("vCard import skipped contact '{}': {}", contact.email, e)
@@ -420,16 +387,15 @@ impl MessageCache {
     ///   Written flat as "vcard", an import relabelled a Gmail contact as one
     ///   that came from a file, and that label is read when deciding whether an
     ///   address book already has somebody.
-    /// - `last_synced_at`: a card is not an address book and carries no time
-    ///   at which one last spoke. `contacts_sync` reads an empty one as "this
-    ///   copy was written on this computer", so writing today's date into it
-    ///   made an unsent local contact look like a copy taken from Google.
     /// - `pending`, and the flag on each identity: the record of work owed to
-    ///   an address book. An import is not what sends it and must not be what
-    ///   forgets it either.
+    ///   an address book. An import must not forget what somebody else has
+    ///   not sent yet, and where the card says something new it adds to that
+    ///   record rather than replacing it. See [`waiting_for_the_address_books`].
     ///
     /// A field added to a contact later falls through unless somebody names it
     /// here, which is the safe direction: it keeps what is stored.
+    ///
+    /// [`waiting_for_the_address_books`]: MessageCache::waiting_for_the_address_books
     fn a_card_over_what_is_held(
         from_card: ContactEntry,
         held: Option<&ContactEntry>,
@@ -441,9 +407,9 @@ impl MessageCache {
             if fresh.name.is_empty() {
                 fresh.name = Self::email_local_part_or_unknown(&fresh.email);
             }
-            return fresh;
+            return Self::waiting_for_the_address_books(fresh);
         };
-        ContactEntry {
+        let folded = ContactEntry {
             // A card with no `FN` says nothing about what somebody is called,
             // and the stand-in built out of an address is for a person nobody
             // here has a name for, not for replacing the name they have.
@@ -477,7 +443,96 @@ impl MessageCache {
                 .custom_fields_json
                 .or_else(|| held.custom_fields_json.clone()),
             ..held.clone()
+        };
+        match Self::the_card_changed_something(&folded, held) {
+            true => Self::waiting_for_the_address_books(folded),
+            false => folded,
         }
+    }
+
+    /// Whether folding this card in changed anything about the person.
+    ///
+    /// Re-importing the same file, or importing a backup of this address book,
+    /// changes nobody. Queued anyway, every contact in the file would be sent
+    /// to Google and to Outlook for no reason, and each of those sends can
+    /// lose a tie against a copy that has moved on. The same question
+    /// `presentation::contact_convert::holds_a_change` asks of the contact
+    /// editor, answered the same way: the whole record against the whole
+    /// record, so a field added later is asked about without anybody
+    /// remembering to name it here.
+    fn the_card_changed_something(folded: &ContactEntry, held: &ContactEntry) -> bool {
+        Self::what_the_record_says(folded) != Self::what_the_record_says(held)
+    }
+
+    /// One record with everything that can differ while the person does not
+    /// put in one form, so that two records can be compared.
+    ///
+    /// Three fields need it:
+    ///
+    /// - `vcard_raw` is the card this contact was last imported from, kept as
+    ///   the only record of what really arrived. It is shown nowhere and sent
+    ///   nowhere, and a card carrying the same facts differs from the last one
+    ///   in its spacing and the order of its lines. Counted, every import
+    ///   would be a change and this question would be worth nothing.
+    /// - `emails_json` and `phones_json`, where there is none. A row written
+    ///   before the lists existed holds one address and one number on its main
+    ///   lines and nothing else, which is the same person as a row holding a
+    ///   list of exactly that address and that number with no label chosen for
+    ///   either. That is also exactly what writing such a row out to a card
+    ///   and reading the card back produces, since a card with no `TYPE` on a
+    ///   line reads back as [`NO_LABEL`]. Left alone, re-importing a backup
+    ///   queued every contact an older version had stored.
+    ///
+    /// [`NO_LABEL`]: MessageCache::NO_LABEL
+    fn what_the_record_says(contact: &ContactEntry) -> ContactEntry {
+        ContactEntry {
+            vcard_raw: None,
+            emails_json: contact.emails_json.clone().or_else(|| {
+                serde_json::to_string(&[super::EmailEntry {
+                    label: Self::NO_LABEL.to_string(),
+                    address: contact.email.clone(),
+                }])
+                .ok()
+            }),
+            phones_json: contact.phones_json.clone().or_else(|| {
+                contact.phone.as_ref().and_then(|number| {
+                    serde_json::to_string(&[super::PhoneEntry {
+                        label: Self::NO_LABEL.to_string(),
+                        number: number.clone(),
+                    }])
+                    .ok()
+                })
+            }),
+            ..contact.clone()
+        }
+    }
+
+    /// The contact, with what the card said waiting to go to every address
+    /// book that holds her.
+    ///
+    /// Importing a card is a deliberate act, the same as an edit made in the
+    /// contact editor, and an edit is sent. Left unqueued, what a card said
+    /// was written here and then written over by the next read from the
+    /// address book that holds her, with nothing said about either.
+    ///
+    /// Every address book that knows her, not whichever one syncs first, for
+    /// the reason `contact_convert::to_stored` gives: one deliberate change
+    /// reaches all of them.
+    ///
+    /// `last_synced_at` is emptied for the reason that function empties it.
+    /// `contacts_sync` reads an empty one as "this copy was written on this
+    /// computer", which is what tells somebody's work from a copy taken from
+    /// an address book, and a card somebody chose to import is their work. A
+    /// card carries no time at which an address book last spoke, so writing
+    /// today's date there, which is what a card for somebody new used to do,
+    /// said the opposite.
+    fn waiting_for_the_address_books(mut contact: ContactEntry) -> ContactEntry {
+        contact.pending = true;
+        contact.last_synced_at = None;
+        for identity in &mut contact.known_to {
+            identity.change_is_waiting = true;
+        }
+        contact
     }
 
     /// Export contacts to vCard 3.0 format
@@ -2102,12 +2157,14 @@ mod tests {
             added: 2,
             with_no_email_address: 3,
             not_written_down: 1,
+            waiting_to_be_sent: 2,
         };
 
         whole_folder.absorb(CardsRead {
             added: 20,
             with_no_email_address: 30,
             not_written_down: 10,
+            waiting_to_be_sent: 20,
         });
 
         assert_eq!(
@@ -2116,6 +2173,7 @@ mod tests {
                 added: 22,
                 with_no_email_address: 33,
                 not_written_down: 11,
+                waiting_to_be_sent: 22,
             }
         );
     }
@@ -4035,17 +4093,22 @@ END:VCARD";
         // `pending` and the flag on each identity are the record of work owed
         // to an address book. An import that cleared them would drop somebody's
         // edit on the floor, silently, because nothing else records it.
+        //
+        // Asked of a card that changes nothing, which is where forgetting is
+        // the only thing that can happen: a card that changes something marks
+        // every address book anyway, so it could not tell a flag kept from a
+        // flag set.
         let cache = a_cache("vcard_keeps_pending");
         let mut held = a_stored_contact_in_both_address_books();
         held.pending = true;
         held.known_to[0].change_is_waiting = true;
         cache.save_contact(&held).expect("the contact to save");
+        let card = cache
+            .export_contacts_to_vcard("test@example.com")
+            .expect("the export to run");
 
         cache
-            .import_contacts_from_vcard(
-                "test@example.com",
-                &a_card_naming("Grace Hopper", "grace@example.com"),
-            )
+            .import_contacts_from_vcard("test@example.com", &card)
             .expect("the import to run");
 
         let grace = the_only_contact(&cache);
@@ -4116,5 +4179,231 @@ END:VCARD";
             .expect("the import to run");
 
         assert_eq!(the_only_contact(&cache).name, "Grace Hopper");
+    }
+
+    // ── Which addresses say a card is somebody already here ─────────────────
+    //
+    // A card carries no identifier this application keeps, so an address is
+    // the whole of what matches it to a person. Matched on the main line only,
+    // and letter for letter, an import made a second row for somebody already
+    // in the address book, and the two then went to the provider as two
+    // people.
+
+    #[test]
+    fn test_a_card_carrying_somebodys_second_address_is_that_person() {
+        // Any address a contact holds is that contact's. Asked of the main
+        // line alone, a card written to somebody's work address made a second
+        // row for a person already here, with the address books that know her
+        // left on the first one.
+        let cache = a_cache("vcard_second_address");
+        cache
+            .save_contact(&a_stored_contact_in_both_address_books())
+            .expect("the contact to save");
+
+        cache
+            .import_contacts_from_vcard(
+                "test@example.com",
+                &a_card_naming("Grace Hopper", "grace@home.example"),
+            )
+            .expect("the import to run");
+
+        let grace = the_only_contact(&cache);
+        assert_eq!(grace.id_in(&AddressBook::Google), Some("people/c1"));
+    }
+
+    #[test]
+    fn test_a_card_whose_address_is_written_in_capitals_is_the_same_person() {
+        // The domain of an address means the same in any case by definition,
+        // and no mail system anybody uses treats the part before the @ as
+        // case sensitive either. A card exported by a program that writes
+        // addresses as they were typed made a second row for everybody in it.
+        let cache = a_cache("vcard_capitals");
+        cache
+            .save_contact(&a_stored_contact_in_both_address_books())
+            .expect("the contact to save");
+
+        cache
+            .import_contacts_from_vcard(
+                "test@example.com",
+                &a_card_naming("Grace Hopper", "Grace@Example.com"),
+            )
+            .expect("the import to run");
+
+        let grace = the_only_contact(&cache);
+        assert_eq!(grace.id_in(&AddressBook::Google), Some("people/c1"));
+    }
+
+    #[test]
+    fn test_two_cards_for_two_people_are_still_two_contacts() {
+        // The other direction, and the one a wider match puts at risk. Two
+        // people who share nothing must not be folded into one.
+        let cache = a_cache("vcard_two_people");
+
+        cache
+            .import_contacts_from_vcard(
+                "test@example.com",
+                &format!(
+                    "{}{}",
+                    a_card_naming("Grace Hopper", "grace@example.com"),
+                    a_card_naming("Ada Lovelace", "ada@example.com")
+                ),
+            )
+            .expect("the import to run");
+
+        let stored = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("the contacts to read back");
+        assert_eq!(stored.len(), 2, "{:?}", the_names(&stored));
+    }
+
+    /// The names stored, for a failure message that says who is there.
+    fn the_names(stored: &[ContactEntry]) -> Vec<&str> {
+        stored.iter().map(|c| c.name.as_str()).collect()
+    }
+
+    // ── What an import owes the address books that hold the person ──────────
+
+    #[test]
+    fn test_importing_a_card_queues_its_contents_for_every_address_book_that_holds_her() {
+        // A card is a deliberate act, the same as an edit made in the contact
+        // editor, and an edit is sent. Left unqueued, what the card says was
+        // written here and then written over by the next read from the address
+        // book that holds her, and nothing said so.
+        let cache = a_cache("vcard_queues_the_change");
+        cache
+            .save_contact(&a_stored_contact_in_both_address_books())
+            .expect("the contact to save");
+
+        cache
+            .import_contacts_from_vcard(
+                "test@example.com",
+                "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Grace Hopper\r\n\
+                 EMAIL:grace@example.com\r\nTITLE:Written on the card\r\nEND:VCARD\r\n",
+            )
+            .expect("the import to run");
+
+        let grace = the_only_contact(&cache);
+        assert!(grace.pending, "the card's contents are not waiting to go");
+        let mut waiting: Vec<&str> = grace
+            .known_to
+            .iter()
+            .filter(|identity| identity.change_is_waiting)
+            .map(|identity| identity.address_book.as_stored())
+            .collect();
+        waiting.sort_unstable();
+        assert_eq!(waiting, ["gmail", "outlook"]);
+        assert_eq!(
+            grace.last_synced_at, None,
+            "an import is somebody's work, not a copy taken from an address book"
+        );
+    }
+
+    #[test]
+    fn test_importing_a_card_that_changed_nothing_queues_nothing() {
+        // Re-importing the same file, or importing a backup of this address
+        // book, changes nobody. Queued anyway, every contact in the file would
+        // be sent to Google and to Outlook for no reason, and each one carries
+        // the risk of losing a tie against a copy that had moved on.
+        let cache = a_cache("vcard_changed_nothing");
+        let held = a_stored_contact_in_both_address_books();
+        cache.save_contact(&held).expect("the contact to save");
+        let card = cache
+            .export_contacts_to_vcard("test@example.com")
+            .expect("the export to run");
+
+        cache
+            .import_contacts_from_vcard("test@example.com", &card)
+            .expect("the import to run");
+
+        let grace = the_only_contact(&cache);
+        assert!(
+            !grace.pending,
+            "an import that changed nothing queued a push"
+        );
+        assert!(
+            !grace
+                .known_to
+                .iter()
+                .any(|identity| identity.change_is_waiting),
+            "{:?}",
+            grace.known_to
+        );
+        assert_eq!(grace.last_synced_at, held.last_synced_at);
+    }
+
+    /// A contact stored before the address and phone lists existed: one
+    /// address and one number, on the main lines, with no list beside them.
+    fn a_contact_from_before_the_lists_existed() -> ContactEntry {
+        let mut grace = a_stored_contact_in_both_address_books();
+        grace.emails_json = None;
+        grace.phones_json = None;
+        grace.phone = Some("+1 555 0100".to_string());
+        grace
+    }
+
+    #[test]
+    fn test_re_importing_a_backup_does_not_queue_a_contact_stored_by_an_older_version() {
+        // An address with no list beside it is the same person as a list of
+        // that one address with no label chosen, and a card written from
+        // either says the same thing. Read as a change, importing a backup
+        // sent every contact an older version had stored to Google and to
+        // Outlook, which is the largest push this program can make and none of
+        // it is anybody's work.
+        let cache = a_cache("vcard_older_row_backup");
+        let held = a_contact_from_before_the_lists_existed();
+        cache.save_contact(&held).expect("the contact to save");
+        let backup = cache
+            .export_contacts_to_vcard("test@example.com")
+            .expect("the export to run");
+
+        let read = cache
+            .import_contacts_from_vcard("test@example.com", &backup)
+            .expect("the import to run");
+
+        assert_eq!(read.waiting_to_be_sent, 0, "{read:?}");
+        assert!(!the_only_contact(&cache).pending);
+    }
+
+    #[test]
+    fn test_a_card_that_does_change_a_contact_stored_by_an_older_version_is_queued() {
+        // The other direction for the same row, so the rule above is not just
+        // "an older row never counts as changed".
+        let cache = a_cache("vcard_older_row_changed");
+        cache
+            .save_contact(&a_contact_from_before_the_lists_existed())
+            .expect("the contact to save");
+
+        let read = cache
+            .import_contacts_from_vcard(
+                "test@example.com",
+                "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Grace Hopper\r\n\
+                 EMAIL:grace@example.com\r\nTITLE:Written on the card\r\nEND:VCARD\r\n",
+            )
+            .expect("the import to run");
+
+        assert_eq!(read.waiting_to_be_sent, 1, "{read:?}");
+        assert!(the_only_contact(&cache).pending);
+    }
+
+    #[test]
+    fn test_a_card_for_somebody_new_is_work_waiting_rather_than_a_copy_of_an_address_book() {
+        // No address book knows her yet, so there is no flag to set on one.
+        // What offers a contact made here to an address book is the contact's
+        // own `pending` with an empty `last_synced_at` beside it, and a card
+        // wrote neither: it wrote today's date, which says this copy came from
+        // an address book, about somebody no address book has ever seen.
+        let cache = a_cache("vcard_nobody_knows_her");
+
+        cache
+            .import_contacts_from_vcard(
+                "test@example.com",
+                &a_card_naming("Ada Lovelace", "ada@example.com"),
+            )
+            .expect("the import to run");
+
+        let ada = the_only_contact(&cache);
+        assert!(ada.known_to.is_empty(), "{:?}", ada.known_to);
+        assert!(ada.pending, "a card for somebody new is waiting for nobody");
+        assert_eq!(ada.last_synced_at, None);
     }
 }

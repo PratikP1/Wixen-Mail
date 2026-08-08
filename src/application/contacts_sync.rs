@@ -820,11 +820,18 @@ fn the_address_book_had_moved_past_it(error: &Error) -> bool {
 /// An empty address matches nothing, so a contact with only a phone number is
 /// never mistaken for another one. There is no third answer: a contact this
 /// address book cannot claim is simply new here.
+///
+/// "The same address" means any address either copy holds, compared without
+/// case. [`ContactEntry::shares_an_address_with`] is the whole of that rule
+/// and says why. Asked of the main line alone, letter for letter, an address
+/// book that writes to somebody at her work address handed back a second row
+/// for a person already here, and so did one that spells her address in
+/// capitals.
 fn the_stored_contact_this_is<'a>(
     locals: &'a [ContactEntry],
     address_book: &AddressBook,
     provider_contact_id: &str,
-    email: &str,
+    arriving: &ContactEntry,
 ) -> Option<&'a ContactEntry> {
     if let Some(same_person) = locals
         .iter()
@@ -832,12 +839,9 @@ fn the_stored_contact_this_is<'a>(
     {
         return Some(same_person);
     }
-    if email.is_empty() {
-        return None;
-    }
     locals
         .iter()
-        .find(|c| c.email == email && c.id_in(address_book).is_none())
+        .find(|c| c.shares_an_address_with(arriving) && c.id_in(address_book).is_none())
 }
 
 // ── Whose copy wins ─────────────────────────────────────────────────────────
@@ -2027,7 +2031,7 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
             &locals,
             &AddressBook::Google,
             &person.resource_name,
-            &remote_contact.email,
+            &remote_contact,
         ) {
             Some(local) => {
                 let arrived_at = version_marker(&person.etag);
@@ -2215,7 +2219,7 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
             &locals,
             &AddressBook::Microsoft,
             &ms_contact.id,
-            &remote_contact.email,
+            &remote_contact,
         ) {
             Some(local) => {
                 let arrived_at = ms_contact.odata_etag.as_deref().filter(|m| !m.is_empty());
@@ -4438,6 +4442,12 @@ mod tests {
         stored
     }
 
+    /// The copy of somebody arriving from an address book, when all a test
+    /// cares about is the address it names.
+    fn arriving_at(email: &str) -> ContactEntry {
+        a_local_contact("Whoever The Address Book Sent", email)
+    }
+
     /// The decision-8 test: a person in both address books is one contact.
     #[test]
     fn test_a_contact_the_other_address_book_holds_is_adopted_rather_than_skipped() {
@@ -4452,7 +4462,7 @@ mod tests {
             &locals,
             &AddressBook::Google,
             "people/c1",
-            "alice@example.com",
+            &arriving_at("alice@example.com"),
         );
 
         assert_eq!(found.map(|c| c.name.as_str()), Some("Alice Smith"));
@@ -4474,7 +4484,7 @@ mod tests {
             &locals,
             &AddressBook::Google,
             "AAMkAGI2",
-            "someone-else@example.com",
+            &arriving_at("someone-else@example.com"),
         );
 
         assert!(found.is_none());
@@ -4493,7 +4503,7 @@ mod tests {
             &locals,
             &AddressBook::Google,
             "people/c9",
-            "alice@example.com",
+            &arriving_at("alice@example.com"),
         );
 
         assert!(found.is_none());
@@ -4512,7 +4522,7 @@ mod tests {
             &locals,
             &AddressBook::Google,
             "people/c1",
-            "moved@example.com",
+            &arriving_at("moved@example.com"),
         );
 
         assert_eq!(found.map(|c| c.name.as_str()), Some("Alice Smith"));
@@ -4526,7 +4536,7 @@ mod tests {
             &locals,
             &AddressBook::Google,
             "people/c1",
-            "alice@example.com",
+            &arriving_at("alice@example.com"),
         );
 
         assert_eq!(found.map(|c| c.name.as_str()), Some("Alice Smith"));
@@ -4534,10 +4544,101 @@ mod tests {
 
     #[test]
     fn test_a_person_nobody_has_stored_yet_is_new() {
-        let found =
-            the_stored_contact_this_is(&[], &AddressBook::Google, "people/c1", "alice@example.com");
+        let found = the_stored_contact_this_is(
+            &[],
+            &AddressBook::Google,
+            "people/c1",
+            &arriving_at("alice@example.com"),
+        );
 
         assert!(found.is_none());
+    }
+
+    // ── Which addresses say a person here and a person there are one ────────
+    //
+    // A person holds several addresses and any of them is hers, which is what
+    // `contact_identities` already says about the names an address book gives
+    // her. Asked of the main line alone, letter for letter, the same person
+    // came down from an address book as a second row.
+
+    #[test]
+    fn test_a_person_the_address_book_writes_to_at_her_second_address_is_the_one_here() {
+        // Alice is written to at her work address in Google and at her
+        // personal one here. Two rows for one person, both then pushed, is two
+        // Alices in the address book as well.
+        let mut here = a_local_contact("Alice Smith", "alice@example.com");
+        here.emails_json = Some(
+            "[{\"label\":\"Personal\",\"address\":\"alice@example.com\"},\
+             {\"label\":\"Work\",\"address\":\"a.smith@work.example\"}]"
+                .to_string(),
+        );
+        let locals = vec![here];
+
+        let found = the_stored_contact_this_is(
+            &locals,
+            &AddressBook::Google,
+            "people/c1",
+            &arriving_at("a.smith@work.example"),
+        );
+
+        assert_eq!(found.map(|c| c.name.as_str()), Some("Alice Smith"));
+    }
+
+    #[test]
+    fn test_a_person_the_address_book_spells_in_capitals_is_the_one_here() {
+        // A domain means the same in any case by definition, and no mail
+        // system anybody uses treats the part in front of the @ as case
+        // sensitive either.
+        let locals = vec![a_local_contact("Alice Smith", "alice@example.com")];
+
+        let found = the_stored_contact_this_is(
+            &locals,
+            &AddressBook::Google,
+            "people/c1",
+            &arriving_at("Alice@Example.com"),
+        );
+
+        assert_eq!(found.map(|c| c.name.as_str()), Some("Alice Smith"));
+    }
+
+    #[test]
+    fn test_a_person_here_at_the_address_the_address_book_keeps_second_is_the_same_person() {
+        // The same rule read from the other side. The address book writes to
+        // her at two addresses and only the second is the one stored here.
+        let locals = vec![a_local_contact("Alice Smith", "a.smith@work.example")];
+        let mut arriving = a_local_contact("Alice Smith", "alice@example.com");
+        arriving.emails_json = Some(
+            "[{\"label\":\"Personal\",\"address\":\"alice@example.com\"},\
+             {\"label\":\"Work\",\"address\":\"a.smith@work.example\"}]"
+                .to_string(),
+        );
+
+        let found =
+            the_stored_contact_this_is(&locals, &AddressBook::Google, "people/c1", &arriving);
+
+        assert_eq!(found.map(|c| c.name.as_str()), Some("Alice Smith"));
+    }
+
+    #[test]
+    fn test_two_people_who_share_no_address_are_still_two_people() {
+        // The direction a wider match puts at risk. Folded together, one
+        // person's address book copy is written over the other's row.
+        let mut here = a_local_contact("Alice Smith", "alice@example.com");
+        here.emails_json = Some(
+            "[{\"label\":\"Personal\",\"address\":\"alice@example.com\"},\
+             {\"label\":\"Work\",\"address\":\"a.smith@work.example\"}]"
+                .to_string(),
+        );
+        let locals = vec![here];
+
+        let found = the_stored_contact_this_is(
+            &locals,
+            &AddressBook::Google,
+            "people/c1",
+            &arriving_at("bob@example.com"),
+        );
+
+        assert!(found.is_none(), "{:?}", found.map(|c| c.name.as_str()));
     }
 
     // ── Contacts with no email address ──────────────────────────────────────
@@ -4553,14 +4654,20 @@ mod tests {
             "",
         )];
 
-        let found = the_stored_contact_this_is(&locals, &AddressBook::Google, "people/c2", "");
+        let found = the_stored_contact_this_is(
+            &locals,
+            &AddressBook::Google,
+            "people/c2",
+            &arriving_at(""),
+        );
 
         assert!(found.is_none());
     }
 
     #[test]
     fn test_the_first_contact_with_no_email_address_is_still_stored() {
-        let found = the_stored_contact_this_is(&[], &AddressBook::Google, "people/c1", "");
+        let found =
+            the_stored_contact_this_is(&[], &AddressBook::Google, "people/c1", &arriving_at(""));
 
         assert!(found.is_none());
     }
@@ -6801,6 +6908,83 @@ mod tests {
                 .and_then(|b| b.date.as_ref())
                 .map(|d| (d.year, d.month, d.day)),
             Some((1906, 12, 9))
+        );
+    }
+
+    // ── An imported card is a change, and it goes ───────────────────────────
+    //
+    // Both halves of the claim the changelog makes, taken through the whole
+    // path rather than at the row: read a file, run a sync, look at what left.
+    // Until this, an import reached Google only when something else had
+    // already queued that contact, so the same file sent one person's details
+    // out and left the next person's here, and the document said neither of
+    // them went.
+
+    /// Somebody Google holds and nobody has changed, so the only thing that
+    /// can queue her is the import.
+    fn a_contact_google_holds_with_nothing_waiting(cache: &MessageCache) {
+        let mut alice = a_local_contact("Alice Smith", "alice@example.com");
+        alice.id = "local-c1".to_string();
+        alice.job_title = Some("Engineer".to_string());
+        alice.source_provider = Some(GOOGLE_ADDRESS_BOOK.to_string());
+        alice.last_synced_at = Some("2026-01-01T00:00:00Z".to_string());
+        alice.known_to = vec![ProviderIdentity {
+            address_book: AddressBook::Google,
+            provider_contact_id: "people/c1".to_string(),
+            provider_version: Some("etag-1".to_string()),
+            change_is_waiting: false,
+        }];
+        cache.save_contact(&alice).expect("a contact to be stored");
+    }
+
+    #[tokio::test]
+    async fn test_what_an_imported_card_says_reaches_the_address_book_that_holds_her() {
+        let cache = a_cache("imported_card_goes_out");
+        a_contact_google_holds_with_nothing_waiting(&cache);
+        cache
+            .import_contacts_from_vcard(
+                AN_ACCOUNT,
+                "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice Smith\r\n\
+                 EMAIL:alice@example.com\r\nTITLE:Written on the card\r\nEND:VCARD\r\n",
+            )
+            .expect("the import to run");
+        let google = an_address_book_that_takes_changes();
+
+        sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+            .await
+            .expect("a sync");
+
+        let changed = google.changed.borrow();
+        assert_eq!(changed.len(), 1, "{changed:?}");
+        assert_eq!(changed[0].0, "people/c1");
+        assert_eq!(
+            changed[0].1.organizations.first().map(|o| o.title.as_str()),
+            Some("Written on the card")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_import_that_changed_nobody_sends_nothing_to_the_address_book() {
+        // The other direction. Re-reading the same file, or reading a backup
+        // of this address book, must not push everybody in it.
+        let cache = a_cache("imported_card_changed_nothing");
+        a_contact_google_holds_with_nothing_waiting(&cache);
+        let card = cache
+            .export_contacts_to_vcard(AN_ACCOUNT)
+            .expect("the export to run");
+        cache
+            .import_contacts_from_vcard(AN_ACCOUNT, &card)
+            .expect("the import to run");
+        let google = an_address_book_that_takes_changes();
+
+        sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+            .await
+            .expect("a sync");
+
+        assert!(
+            google.changed.borrow().is_empty(),
+            "{:?}",
+            google.changed.borrow()
         );
     }
 

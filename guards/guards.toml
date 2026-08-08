@@ -274,6 +274,7 @@ red = [
     "application::calendar::tests::test_one_change_waiting_and_one_thing_wrong_are_not_read_out_in_the_plural",
     "application::contacts_sync::tests::test_every_clause_one_sync_can_say_is_still_read_as_sentences",
     "application::contacts_sync::tests::test_one_thing_going_wrong_is_not_read_out_as_one_errors",
+    "application::contacts_sync::tests::test_the_summary_says_a_deletion_reached_the_address_book",
     "application::mail_sync::tests::test_a_folder_holding_one_message_does_not_say_one_messages",
     "application::tasks_sync::tests::test_a_list_that_went_is_said_rather_than_left_to_be_noticed",
     "application::tasks_sync::tests::test_every_clause_at_once_is_still_read_as_sentences",
@@ -439,14 +440,23 @@ after = """fn the_copy_here_was_written_here(contact: &ContactEntry) -> bool {
     false
 }"""
 red = [
+    "application::contacts_sync::tests::test_a_change_a_setting_held_back_survives_the_read_in_the_same_sync",
+    "application::contacts_sync::tests::test_a_change_google_had_moved_past_is_sent_again_rather_than_lost",
     "application::contacts_sync::tests::test_a_change_google_replaced_is_counted_as_a_loss_as_well_as_stored",
+    "application::contacts_sync::tests::test_a_change_held_from_the_other_address_book_by_the_setting_is_said",
     "application::contacts_sync::tests::test_a_change_only_google_still_needs_is_not_written_over_quietly_by_outlook",
     "application::contacts_sync::tests::test_a_change_only_outlook_still_needs_is_not_written_over_quietly_by_google",
+    "application::contacts_sync::tests::test_a_change_outlook_had_moved_past_is_sent_again_rather_than_lost",
     "application::contacts_sync::tests::test_a_change_outlook_replaced_is_counted_as_a_loss_as_well_as_stored",
+    "application::contacts_sync::tests::test_a_change_that_cannot_be_sent_again_is_kept_rather_than_replaced_by_the_read",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
     "application::contacts_sync::tests::test_a_contact_typed_here_that_google_already_holds_is_not_lost_without_a_word",
+    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said",
     "application::contacts_sync::tests::test_an_edit_an_address_book_replaced_is_said_once_and_not_on_every_later_sync",
+    "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
     "application::contacts_sync::tests::test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice",
+    "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
+    "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
 ]
 
 # ── A change no setting let out ─────────────────────────────────────────────
@@ -794,4 +804,178 @@ after = """    if false {
     }"""
 red = [
     "presentation::managers::tests::test_saving_an_event_nobody_changed_leaves_it_settled",
+]
+
+# -- Which addresses say two records are one person -------------------------
+#
+# A contact card carries no identifier this application keeps, and neither does
+# an address book's answer about somebody it has never handed this computer an
+# identifier for. An address is the whole of what matches the two, so the rule
+# for reading an address is load bearing in a way it does not look. Asked of
+# the main line alone, and letter for letter, one person became two rows, one
+# of which was still joined to Google and Outlook and one of which was then
+# offered to them as somebody new.
+
+[[guard]]
+name = "an address is matched however it is spelled"
+file = "src/data/message_cache/mod.rs"
+before = """        if self.email.trim().eq_ignore_ascii_case(looking_for) {
+            return true;
+        }
+        self.every_address_in_the_list()
+            .iter()
+            .any(|held| held.address.trim().eq_ignore_ascii_case(looking_for))
+    }"""
+after = """        if self.email.trim() == looking_for {
+            return true;
+        }
+        self.every_address_in_the_list()
+            .iter()
+            .any(|held| held.address.trim() == looking_for)
+    }"""
+red = [
+    "application::contacts_sync::tests::test_a_person_the_address_book_spells_in_capitals_is_the_one_here",
+    "data::message_cache::contacts::tests::test_a_card_whose_address_is_written_in_capitals_is_the_same_person",
+]
+
+[[guard]]
+name = "every address a contact holds is hers"
+file = "src/data/message_cache/mod.rs"
+before = """        self.every_address_in_the_list()
+            .iter()
+            .any(|held| held.address.trim().eq_ignore_ascii_case(looking_for))
+    }"""
+after = """        false
+    }"""
+red = [
+    "application::contacts_sync::tests::test_a_person_the_address_book_writes_to_at_her_second_address_is_the_one_here",
+    "data::message_cache::contacts::tests::test_a_card_carrying_somebodys_second_address_is_that_person",
+]
+
+[[guard]]
+name = "the address the other copy keeps second is asked about too"
+file = "src/data/message_cache/mod.rs"
+before = """        other
+            .every_address_in_the_list()
+            .iter()
+            .any(|entry| self.is_written_to_at(&entry.address))
+    }"""
+after = """        false
+    }"""
+red = [
+    "application::contacts_sync::tests::test_a_person_here_at_the_address_the_address_book_keeps_second_is_the_same_person",
+]
+
+# The coupling rather than the rule. The importer and the sync both have to ask
+# the one question, and the sync is where asking a narrower one duplicates
+# somebody in a real address book rather than only here.
+
+[[guard]]
+name = "the sync asks the same question about an address as the import"
+file = "src/application/contacts_sync.rs"
+before = """        .find(|c| c.shares_an_address_with(arriving) && c.id_in(address_book).is_none())"""
+after = """        .find(|c| c.email == arriving.email && c.id_in(address_book).is_none())"""
+red = [
+    "application::contacts_sync::tests::test_a_person_here_at_the_address_the_address_book_keeps_second_is_the_same_person",
+    "application::contacts_sync::tests::test_a_person_the_address_book_spells_in_capitals_is_the_one_here",
+    "application::contacts_sync::tests::test_a_person_the_address_book_writes_to_at_her_second_address_is_the_one_here",
+]
+
+# -- An imported card is a change, and only when it is one ------------------
+#
+# Two halves that pull against each other. What a card says has to reach the
+# address books that hold the person, or the next read writes over it and
+# nothing says so. What a card does not change must not be sent, or reading a
+# backup of this address book pushes every contact in it.
+
+[[guard]]
+name = "an imported card is queued for the address books that hold her"
+file = "src/data/message_cache/contacts.rs"
+before = """    fn waiting_for_the_address_books(mut contact: ContactEntry) -> ContactEntry {
+        contact.pending = true;
+        contact.last_synced_at = None;
+        for identity in &mut contact.known_to {
+            identity.change_is_waiting = true;
+        }
+        contact"""
+after = """    fn waiting_for_the_address_books(contact: ContactEntry) -> ContactEntry {
+        contact"""
+red = [
+    "application::contacts_sync::tests::test_what_an_imported_card_says_reaches_the_address_book_that_holds_her",
+    "data::message_cache::contacts::tests::test_a_card_for_somebody_new_is_work_waiting_rather_than_a_copy_of_an_address_book",
+    "data::message_cache::contacts::tests::test_a_card_that_does_change_a_contact_stored_by_an_older_version_is_queued",
+    "data::message_cache::contacts::tests::test_importing_a_card_queues_its_contents_for_every_address_book_that_holds_her",
+]
+
+[[guard]]
+name = "an import that changed nothing is not queued"
+file = "src/data/message_cache/contacts.rs"
+before = """        Self::what_the_record_says(folded) != Self::what_the_record_says(held)"""
+after = """        let _ = (folded, held);
+        true"""
+red = [
+    "application::contacts_sync::tests::test_an_import_that_changed_nobody_sends_nothing_to_the_address_book",
+    "data::message_cache::contacts::tests::test_importing_a_card_does_not_forget_a_change_still_waiting_to_be_sent",
+    "data::message_cache::contacts::tests::test_importing_a_card_that_changed_nothing_queues_nothing",
+    "data::message_cache::contacts::tests::test_re_importing_a_backup_does_not_queue_a_contact_stored_by_an_older_version",
+]
+
+[[guard]]
+name = "an address with no list beside it is the address it is"
+file = "src/data/message_cache/contacts.rs"
+before = """            emails_json: contact.emails_json.clone().or_else(|| {
+                serde_json::to_string(&[super::EmailEntry {
+                    label: Self::NO_LABEL.to_string(),
+                    address: contact.email.clone(),
+                }])
+                .ok()
+            }),"""
+after = """            emails_json: contact.emails_json.clone(),"""
+red = [
+    "application::contacts_sync::tests::test_an_import_that_changed_nobody_sends_nothing_to_the_address_book",
+    "data::message_cache::contacts::tests::test_re_importing_a_backup_does_not_queue_a_contact_stored_by_an_older_version",
+]
+
+# The part of an import that leaves this computer is said at the time rather
+# than left to the sync summary afterwards. Afterwards is too late to decide
+# against it.
+
+[[guard]]
+name = "an import says how many contacts are on their way out"
+file = "src/application/importing_contacts.rs"
+before = """    if read.waiting_to_be_sent > 0 {"""
+after = """    if false {"""
+red = [
+    "application::importing_contacts::tests::test_an_import_says_how_many_contacts_are_on_their_way_to_the_address_book",
+    "application::importing_contacts::tests::test_one_contact_on_its_way_to_the_address_book_is_said_in_the_singular",
+]
+
+[[guard]]
+name = "the contacts on their way out are counted as they are written"
+file = "src/data/message_cache/contacts.rs"
+before = """                    if contact.pending {
+                        read.waiting_to_be_sent += 1;
+                    }"""
+after = """                    if false {
+                        read.waiting_to_be_sent += 1;
+                    }"""
+red = [
+    "data::message_cache::contacts::tests::test_a_card_that_does_change_a_contact_stored_by_an_older_version_is_queued",
+]
+
+# The same rule where somebody looks for a person rather than where two records
+# are folded together. The list shows one address per row, so searching only
+# that one meant the address you have for somebody found nobody whenever it was
+# one of her others.
+
+[[guard]]
+name = "the contacts list finds a person by any address she holds"
+file = "src/presentation/wx_managers.rs"
+before = """        || contact.emails.iter().any(|e| holds(&e.address))
+        || contact.phones.iter().any(|p| holds(&p.number))"""
+after = """        || holds(contact.primary_email())
+        || holds(contact.primary_phone())"""
+red = [
+    "presentation::wx_managers::tests::test_a_contact_is_found_by_a_number_that_is_not_her_first",
+    "presentation::wx_managers::tests::test_a_contact_is_found_by_an_address_that_is_not_her_first",
 ]

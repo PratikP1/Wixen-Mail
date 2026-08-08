@@ -415,6 +415,71 @@ pub struct ContactEntry {
 }
 
 impl ContactEntry {
+    /// Whether this contact is written to at that address.
+    ///
+    /// Every address the contact holds, not only the one on the main line. A
+    /// person has a work address and a personal one, and either of them is
+    /// hers: that is the same answer [`ProviderIdentity`] already gives about
+    /// the names her address books use, and asking only the main line made a
+    /// card written to her work address, and an address book's copy of her
+    /// under it, into a second person.
+    ///
+    /// Compared without case. The domain half of an address means the same
+    /// however it is written, by definition, and no mail system anybody uses
+    /// treats the half in front of the `@` as case sensitive either. Compared
+    /// letter for letter, `Alice@Example.com` and `alice@example.com` were two
+    /// people.
+    ///
+    /// Case is folded the ASCII way, which is what `LOWER` in the searches
+    /// beside this does, so a local part written in a script with its own
+    /// idea of case is compared as it stands. An address like that is rare
+    /// and the two readings agree for every ASCII address, which is all of
+    /// them in practice.
+    ///
+    /// Nothing matches an empty address, so two contacts with only a phone
+    /// number never become one another.
+    pub fn is_written_to_at(&self, address: &str) -> bool {
+        let looking_for = address.trim();
+        if looking_for.is_empty() {
+            return false;
+        }
+        if self.email.trim().eq_ignore_ascii_case(looking_for) {
+            return true;
+        }
+        self.every_address_in_the_list()
+            .iter()
+            .any(|held| held.address.trim().eq_ignore_ascii_case(looking_for))
+    }
+
+    /// Whether these two records are one person, which is whether they share
+    /// an address.
+    ///
+    /// Asked of both lists rather than of one, because either side can be the
+    /// one holding the address the other keeps second. A copy of somebody
+    /// arriving from an address book carries her whole list, and so does a
+    /// contact card.
+    pub fn shares_an_address_with(&self, other: &ContactEntry) -> bool {
+        if self.is_written_to_at(&other.email) {
+            return true;
+        }
+        other
+            .every_address_in_the_list()
+            .iter()
+            .any(|entry| self.is_written_to_at(&entry.address))
+    }
+
+    /// The stored list of addresses, or nothing when there is no readable one.
+    ///
+    /// A list that will not read is treated as no list rather than as an
+    /// error: the main line still names the person, and a row written by an
+    /// older version has no list at all.
+    fn every_address_in_the_list(&self) -> Vec<EmailEntry> {
+        self.emails_json
+            .as_deref()
+            .and_then(|json| serde_json::from_str::<Vec<EmailEntry>>(json).ok())
+            .unwrap_or_default()
+    }
+
     /// What this address book calls the contact, when it knows it at all.
     pub fn id_in(&self, address_book: &AddressBook) -> Option<&str> {
         self.known_to

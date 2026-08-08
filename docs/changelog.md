@@ -81,6 +81,38 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **What an imported card says now reaches your address books.** Import
+  Contacts used to write what a card said into the record here and stop there.
+  The next read from Google or Outlook wrote that address book's own copy back
+  over it, so a card corrected a contact until the next sync undid the
+  correction, and nothing said so. It was not even consistent: a card folded
+  into somebody who already had a change waiting went out with that change, so
+  one file could send one person's details to Google and leave the next
+  person's here.
+
+  Importing a card is something you did on purpose, the same as an edit in the
+  contact editor, and an edit is sent. So an import is now treated as one.
+  What a card changed is queued for every address book that holds the person,
+  and a card for somebody nobody holds yet is offered to your address book the
+  way a contact typed here already is.
+
+  What that costs, said plainly. Importing a file of old contacts puts those
+  people in your real Google or Outlook address book. The import says so at
+  the time rather than leaving you to find out from the next sync: "Imported
+  40 contacts. 40 contacts are waiting to be sent to your address book."
+  Whether they may go is one of the things Allow Changes decides, and the sync
+  says what it is holding back.
+
+  A card that changed nobody sends nothing. Reading the same file again, or
+  reading a backup of what is already here, is not a change and is not queued.
+  That holds for a contact stored before Wixen Mail kept lists of addresses,
+  whose one address and one number read back from a card as a list of exactly
+  those; read as a change, importing a backup would have sent every contact an
+  older version had stored.
+
+  Known limitation: none of this has run against a real Google or Outlook
+  account.
+
 - **One name for the setting that decides what may be sent: Allow Changes.**
   A sync tells you to turn on Allow Changes. The settings section was headed
   Allowed Changes, and the two boxes in it started "Let Wixen Mail". Three
@@ -254,6 +286,45 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   nothing. `docs/privacy.md` says what each of them does.
 
 ### Fixed
+
+- **One person is one contact, whichever of their addresses is written down.**
+  A contact card, and an address book's own copy of somebody, were matched to
+  the person already here by their main address alone and letter for letter.
+  Two ways that made a second row for one person:
+
+  - The card, or the address book, wrote to one of her other addresses.
+    Somebody with a personal address here and a work address as well came back
+    as two people, and only one of the two was still joined to Google and
+    Outlook. The other was then offered to your address book as a new person.
+  - The address was spelled with capitals in it. `Alice@Example.com` and
+    `alice@example.com` were two people.
+
+  Any address a contact holds is now that contact's, on both sides of the
+  question, and addresses are compared without regard to case. The domain half
+  of an address means the same however it is written, by definition, and no
+  mail system anybody uses treats the half in front of the @ as case sensitive
+  either. Two people who share no address are still two people.
+
+- **Searching your contacts finds somebody by any address or number she has.**
+  The search box above the contact list looked at the first address and the
+  first number only. The address you have for somebody is as likely to be her
+  work one as her personal one, so typing the address you have found nobody
+  and the list read out as empty. It now looks at every address and every
+  number on the contact, still without regard to case.
+
+- **Import Contacts and Export Contacts work on the account you are looking
+  at.** Both named a fixed word rather than the account. Everything else in
+  contacts works on the account you are looking at: the list is drawn from it,
+  a sync runs for it, and a contact belongs to it. So with any account signed
+  in, a file of cards was read into a part of the database nothing reads. The
+  count said the contacts had arrived, the list did not change, and no sync
+  ever saw them. Export had the matching half and wrote out a file with
+  nothing in it whatever the list was showing.
+
+  With no account chosen, both now say "Choose an account first. Contacts
+  belong to the account whose address book holds them" instead of appearing to
+  work. The contacts list is also filled again as soon as an import finishes,
+  so what arrived is on the screen rather than only in the announcement.
 
 - **The calendar sync now says when a change can never be sent.** A change could
   be left waiting with nothing anywhere able to send it, and nothing told you.
@@ -441,9 +512,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   the card, because the card is saying which addresses that person has, and
   that is what makes re-importing a corrected card able to correct anything.
 
-  Known limitation: an import still sends nothing to Google or Outlook. What a
-  card changes stays on this computer, and the next sync of an address book that
-  holds the person can write its own copy back over it.
+  What an import changes is now sent to the address books that hold the
+  person. That is new in this release and is described under "What an
+  imported card says now reaches your address books".
 
 - **Editing a contact no longer loses a postal address written by an older
   version.** This one is about old data rather than anything that can be created
