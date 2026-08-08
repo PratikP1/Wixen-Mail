@@ -493,6 +493,42 @@ fn test_the_calendar_sync_says_what_nothing_can_send() {
     );
 }
 
+/// Importing and exporting contact cards name the account being looked at.
+///
+/// Both named a fixed word instead. Every other part of the contacts module
+/// works on `active_account_id`: the list is drawn from it, the sync runs for
+/// it, and a contact belongs to it. So with any account signed in, a file of
+/// cards was read into a corner of the database nothing reads, the count said
+/// the contacts had arrived, the list did not change, and no sync ever saw
+/// them. Export had the matching half and wrote out an empty file.
+///
+/// Read from the source because reaching either handler needs a window, a
+/// dialog somebody clicks through and a folder of files. What is asked here is
+/// only that neither call passes a literal, which is the whole of the defect.
+#[test]
+fn test_importing_and_exporting_cards_use_the_account_being_looked_at() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    for call in ["import_contacts_from_vcard(", "export_contacts_to_vcard("] {
+        for (at, _) in app.match_indices(call) {
+            let handed = &app[at + call.len()..];
+            assert!(
+                !handed.starts_with('"'),
+                "{call} is handed a fixed account, so what it reads or writes \
+                 is not the account whose contacts are on the screen"
+            );
+        }
+    }
+    assert!(
+        app.contains("import_contacts_from_vcard(&account_id, &data)"),
+        "nothing imports cards into the account being looked at"
+    );
+    assert!(
+        app.contains("export_contacts_to_vcard(&account_id)"),
+        "nothing exports the cards of the account being looked at"
+    );
+}
+
 /// The account dialog asks for the name recipients see.
 ///
 /// This pins that the code asks for the right thing. It can never mean a

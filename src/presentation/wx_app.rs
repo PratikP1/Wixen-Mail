@@ -1491,7 +1491,21 @@ impl WxMailApp {
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
                 let a11y = a11y.clone();
+                let state = state.clone();
                 move |_| {
+                    // The account being looked at, because that is whose
+                    // address book these contacts join and whose sync sends
+                    // them. Named as a fixed word instead, an import filed
+                    // everything where no panel and no sync ever looks.
+                    let Some(account_id) = lock_state(&state).active_account_id.clone() else {
+                        let said = crate::application::importing_contacts::CHOOSE_AN_ACCOUNT_FIRST;
+                        send_status(&ui_tx, &runtime, said);
+                        let _ = a11y.announce(
+                            said,
+                            crate::presentation::accessibility::announcements::Priority::Normal,
+                        );
+                        return;
+                    };
                     let dlg =
                         DirDialog::builder(&frame, "Select folder with .vcf files", "").build();
                     if dlg.show_modal() == ID_OK
@@ -1507,7 +1521,7 @@ impl WxMailApp {
                             if vcf_path.is_file() {
                                 if let Ok(data) = std::fs::read_to_string(vcf_path)
                                     && let Ok(one_file) =
-                                        cache.import_contacts_from_vcard("default", &data)
+                                        cache.import_contacts_from_vcard(&account_id, &data)
                                 {
                                     read.absorb(one_file);
                                 }
@@ -1522,7 +1536,7 @@ impl WxMailApp {
                                         .unwrap_or(false)
                                         && let Ok(data) = std::fs::read_to_string(entry.path())
                                         && let Ok(one_file) =
-                                            cache.import_contacts_from_vcard("default", &data)
+                                            cache.import_contacts_from_vcard(&account_id, &data)
                                     {
                                         read.absorb(one_file);
                                     }
@@ -1537,6 +1551,16 @@ impl WxMailApp {
                                 &msg,
                                 crate::presentation::accessibility::announcements::Priority::Normal,
                             );
+                            // The list is drawn from what is stored, so
+                            // without this the contacts that just arrived are
+                            // announced and not shown until something else
+                            // reloads the panel.
+                            load_module_data(
+                                PimModule::Contacts,
+                                &message_cache,
+                                Some(account_id.clone()),
+                                &ui_tx,
+                            );
                         } else {
                             send_status(&ui_tx, &runtime, "No cache available for import");
                         }
@@ -1548,9 +1572,23 @@ impl WxMailApp {
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
                 let a11y = a11y.clone();
+                let state = state.clone();
                 move |_| {
+                    // The account being looked at, for the reason Import gives.
+                    // Named as a fixed word instead, Export wrote out a file
+                    // with nothing in it whatever the list was showing.
+                    let Some(account_id) = lock_state(&state).active_account_id.clone() else {
+                        let said =
+                            crate::application::importing_contacts::CHOOSE_AN_ACCOUNT_FIRST;
+                        send_status(&ui_tx, &runtime, said);
+                        let _ = a11y.announce(
+                            said,
+                            crate::presentation::accessibility::announcements::Priority::Normal,
+                        );
+                        return;
+                    };
                     if let Some(cache) = &message_cache {
-                        match cache.export_contacts_to_vcard("default") {
+                        match cache.export_contacts_to_vcard(&account_id) {
                             Ok(vcard_data) => {
                                 let dlg = DirDialog::builder(&frame, "Select export folder", "").build();
                                 if dlg.show_modal() == ID_OK
