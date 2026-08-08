@@ -430,6 +430,17 @@ impl MsGraphClient {
         with_retry(3, || self.api_post(&url, token, contact)).await
     }
 
+    /// Read one contact back, with the version marker Outlook holds for it now.
+    ///
+    /// Asked when a change is turned down for carrying a marker Outlook has
+    /// moved past. Addressed the same careful way as a change, because a
+    /// character that ends a path or starts a query would ask about some other
+    /// contact or about none.
+    pub async fn get_contact(&self, token: &str, contact_id: &str) -> Result<MsGraphContact> {
+        let url = format!("{}/me/contacts/{}", self.base, in_a_path(contact_id));
+        with_retry(3, || self.api_get(&url, token)).await
+    }
+
     /// Update an existing contact.
     ///
     /// The identifier is Graph's to choose and this program's to hand back
@@ -753,6 +764,26 @@ mod tests {
             request.contains(r#"{"displayName":"Alice Smith"}"#),
             "{request}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_reading_one_contact_back_asks_about_that_contact_and_escapes_its_name() {
+        // What a change turned down for an old marker asks next. The
+        // identifier is Graph's to choose and goes into the address the same
+        // careful way a change's does: raw, a character that ends a path or
+        // starts a query asks about some other contact or about none.
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        graph
+            .get_contact("a-token", "AAMk/2?x")
+            .await
+            .expect("the copy Outlook holds");
+
+        let request = heard(listening, "the read of one contact")
+            .await
+            .expect("a request");
+        assert_eq!(asked_for(&request), "GET /me/contacts/AAMk%2F2%3Fx");
     }
 
     #[tokio::test]

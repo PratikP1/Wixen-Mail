@@ -255,6 +255,44 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A change your address book has moved past is sent again instead of being
+  thrown away.** Google and Outlook both hand out a version marker with their
+  copy of a contact, and both turn down a change built against an older one.
+  That is the ordinary case on a real account rather than a rare one: a phone or
+  a webmail tab moves the other copy between one sync and the next.
+
+  What happened before, with the settings this ships with. The first sync said
+  "1 change is waiting here: turn on Allow Changes in Settings to send it".
+  Turning it on and syncing again sent the change carrying the marker from
+  before, both address books turned it down, and the read that followed in the
+  same sync wrote their copy over your edit. That sync read out "0 created, 1
+  updated, 0 deleted, 1 of your change replaced by the address book, 2 errors".
+  Nothing was sent, and the instruction had been about work the same sync then
+  destroyed.
+
+  A change turned down for that reason is not a change that failed. Wixen Mail
+  now asks the address book what it holds for that one contact, puts the change
+  on the marker that comes back, and sends it again, so your edit reaches the
+  address book on the sync you asked for.
+
+  What that costs, said plainly. The address book had changed that contact as
+  well, and what it changed in the fields shown here is written over. The sync
+  says so: "A contact you had changed was changed in your address book as well,
+  and what you have here was sent over it." The copy that lost is still on the
+  phone or the web page that made it, and the edit made here is nowhere else,
+  which is why that is the one that wins. Fields the address book holds and
+  Wixen Mail never sends are left alone.
+
+  Known limitations: none of this has run against a real Google or Outlook
+  account. The two answers now read as "your copy is out of date", 400 with
+  FAILED_PRECONDITION from Google and 412 from Outlook, come from each
+  provider's documentation rather than from a live sync, and a refusal worded
+  some other way still ends the old way, with the address book's copy winning
+  and the sync saying your change was replaced. A change that failed to go
+  because the network dropped ends the old way too. If the address book will not
+  hand its own copy over, nothing is sent, the sync says so in one error line,
+  and your edit stays here to be sent next time rather than being replaced.
+
 - **Importing a contact card no longer takes that person off your address
   books.** Import Contacts reads a .vcf file, or a folder of them, and folds
   each card into the contact it matches by email address. For somebody who is

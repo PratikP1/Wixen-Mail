@@ -29,12 +29,47 @@
 //! marker with its copy of a contact and refuses a change that does not carry
 //! the marker it last gave. Both markers are sent from here: Google reads the
 //! marker inside the change, Outlook reads it from an `If-Match` header. So if
-//! the copy here won a tie, the marker held here would stay stale for ever:
-//! every push would be refused, every sync would report the same problem, and
-//! nothing would ever break the deadlock. Letting the address book win takes
-//! its new marker along with its copy, so the next change somebody makes can be
-//! sent. A calendar event is sent with no marker, which is why that module could
-//! decide the other way.
+//! the copy here won a tie and nothing else changed, the marker held here would
+//! stay stale for ever: every push would be refused, every sync would report the
+//! same problem, and nothing would ever break the deadlock. Letting the address
+//! book win takes its new marker along with its copy, so the next change
+//! somebody makes can be sent. A calendar event is sent with no marker, which is
+//! why that module could decide the other way.
+//!
+//! # A change the address book has moved past is built again, not thrown away
+//!
+//! That is what happens to a tie nobody was trying to send. A tie somebody was
+//! trying to send is settled before the read ever sees it, and it is settled the
+//! other way.
+//!
+//! A change turned down for carrying a marker the address book has moved past
+//! is not a change that failed. It is a change built on a copy that is out of
+//! date, which is a thing with a remedy: ask the address book what it holds now,
+//! put the change on that copy's marker, and send it again. That is what
+//! `push_changed_contacts_to_google` and its Outlook twin do, and it is what a
+//! mail client ordinarily does with a change that meets a newer copy.
+//!
+//! What that costs, said plainly, because it is the same cost the other
+//! direction had: the address book had changed that contact too, and what it
+//! changed in the fields this program shows is now overwritten. So it is
+//! counted and said, in [`SyncResult::sent_over_a_newer_copy`], the way a loss
+//! the other way is counted and said in [`SyncResult::replaced`]. Fields the
+//! address book holds and this program never sends are untouched, because a
+//! change carries only the fields it names.
+//!
+//! Why this way round rather than the address book's copy winning again. The
+//! edit was made here, deliberately, and the sync had already told somebody it
+//! was waiting to be sent; a sync that answers "waiting to be sent" and then
+//! deletes the thing it was talking about is an instruction that does nothing.
+//! The address book's own change is still there to be seen on the phone or the
+//! web page that made it, and the sentence says it was overwritten. Neither is
+//! true of the edit, which exists nowhere else.
+//!
+//! Deciding it needs the base copy, and there is not one. What is stored here is
+//! the address book's copy from the last read with somebody's edit on top, and
+//! nothing keeps the two apart, so nothing here can tell which fields somebody
+//! touched. A field by field merge would need that. This is the honest whole
+//! record answer instead.
 //!
 //! # Two questions that look like one
 //!
@@ -68,9 +103,10 @@
 //!
 //! Kept, and not sent behind the address book's back. The copy here keeps the
 //! marker the edit was made against, so once the setting is on, an address book
-//! that has moved its own copy since can turn the change down, and then the
-//! ordinary tie decides it and somebody is told. Nothing is frozen for ever
-//! against an address book, and nothing is written there over a newer copy.
+//! that has moved its own copy since turns the change down, and the change is
+//! built again on the copy it holds now and sent. Nothing is frozen for ever
+//! against an address book, and nothing goes there under a marker it did not
+//! give.
 //!
 //! Losing an edit is still losing an edit, so it is counted and said. Both
 //! [`SyncResult::replaced`] and [`SyncResult::deleted_with_a_change_waiting`]
@@ -221,6 +257,15 @@ pub struct SyncResult {
     /// was thrown away has to be told, or a change that was made and lost
     /// looks exactly like a change that never saved.
     pub replaced: Contacts,
+    /// Changes made here that went out over a copy the address book had moved
+    /// on since.
+    ///
+    /// The honest half of the other ending. The address book turned the change
+    /// down for being built on a copy it has moved past, the change was built
+    /// again on the copy it holds now and taken, and whatever it had changed in
+    /// the fields this program shows is gone. Somebody looking at a contact
+    /// they also edited on their phone has to be told which copy won.
+    pub sent_over_a_newer_copy: Contacts,
     /// Contacts removed here because the address book deleted them, that still
     /// held a change nobody had sent.
     ///
@@ -257,6 +302,9 @@ impl SyncResult {
             .waiting_on_how_far_a_change_goes
             .and(&other.waiting_on_how_far_a_change_goes);
         self.replaced = self.replaced.and(&other.replaced);
+        self.sent_over_a_newer_copy = self
+            .sent_over_a_newer_copy
+            .and(&other.sent_over_a_newer_copy);
         self.deleted_with_a_change_waiting = self
             .deleted_with_a_change_waiting
             .and(&other.deleted_with_a_change_waiting);
@@ -277,6 +325,7 @@ impl SyncResult {
             .and(&self.waiting_on_the_setting)
             .and(&self.waiting_on_how_far_a_change_goes)
             .and(&self.replaced)
+            .and(&self.sent_over_a_newer_copy)
             .and(&self.deleted_with_a_change_waiting)
     }
 }
@@ -680,6 +729,40 @@ fn is_expired_sync_token(error: &Error) -> bool {
     )
 }
 
+// ── When a change is built on a copy the address book has moved past ────────
+
+/// Outlook's answer to a change whose `If-Match` marker is not the current one.
+const THE_MARKER_WAS_NOT_THE_CURRENT_ONE: u16 = 412;
+
+/// Whether an address book turned a change down because its own copy has moved
+/// on since the marker the change was built against.
+///
+/// The one refusal worth answering by building the change again. Everything
+/// else, a dropped connection, an expired sign-in, a contact that is not there,
+/// is either retried by the client underneath or is nothing this can mend, and
+/// sending the same change again over one of those would be sending it twice.
+///
+/// Two answers because the two address books say it differently. Outlook weighs
+/// the marker in an `If-Match` header, so its answer is the HTTP one. Google
+/// carries the marker inside the change, so a marker it has moved past is a
+/// fault in the request: 400, with `FAILED_PRECONDITION` and the word etag in
+/// the body. Both were read from the providers' documentation and neither has
+/// been seen from a live account, so a refusal worded some other way falls
+/// through to the ordinary tie, which is what happened to all of them before.
+fn the_address_book_had_moved_past_it(error: &Error) -> bool {
+    let Error::Api {
+        status, message, ..
+    } = error
+    else {
+        return false;
+    };
+    if *status == THE_MARKER_WAS_NOT_THE_CURRENT_ONE {
+        return true;
+    }
+    let said = message.to_ascii_lowercase();
+    matches!(status, 400 | 409) && (said.contains("failed_precondition") || said.contains("etag"))
+}
+
 // ── Matching a provider's copy of a person to a stored contact ──────────────
 
 /// Which stored contact, if any, this address book's copy of a person is.
@@ -921,11 +1004,21 @@ fn a_change_here_that_lost(
 /// about work that was already gone: turning it on sent nothing, because by
 /// then there was nothing left to send.
 ///
-/// Refused by a setting, and not merely unsent. A push that failed at the
-/// network is tried again at the top of the next sync, before anything is read,
-/// so nothing is holding it back and the ordinary tie is the honest answer. A
-/// push a setting refuses cannot succeed until somebody changes the setting,
-/// and until then every sync would throw the same edit away again.
+/// Two reasons, and both of them are reasons this sync could never have won.
+/// A setting refused the push, and nothing but changing the setting will let it
+/// out. Or the address book turned the change down for being built on a copy it
+/// has moved past, and building it again on the copy it holds now did not get
+/// in either. Throwing the edit away in either case is the application losing
+/// somebody's work over its own arrangements.
+///
+/// A push that failed at the network is not kept, and that is a live gap rather
+/// than a decision that reads well: where the address book had also moved its
+/// copy, the read that follows still replaces the edit and says so. It is left
+/// this way because a change kept for any reason at all freezes the contact
+/// against that address book until the push works, and a push failing for a
+/// reason that never clears would freeze it for good. The refusals above both
+/// clear: one when the setting is turned on, the other on the next sync, which
+/// builds the change again on what the address book holds by then.
 ///
 /// Only what somebody typed here is held back this way. Once an address book's
 /// copy has replaced the edit, what is still waiting is that address book's own
@@ -937,10 +1030,12 @@ fn keep_a_change_this_sync_could_not_send(
     answer: WhoseCopyWins,
     the_copy_here: &ContactEntry,
     result: &SyncResult,
+    still_built_on_an_old_copy: &Contacts,
 ) -> WhoseCopyWins {
     if answer == WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere
         && the_copy_here_was_written_here(the_copy_here)
-        && a_setting_stopped_this_sync_sending(&the_copy_here.id, result)
+        && (a_setting_stopped_this_sync_sending(&the_copy_here.id, result)
+            || still_built_on_an_old_copy.holds(&the_copy_here.id))
     {
         return WhoseCopyWins::KeepWhatIsHere;
     }
@@ -1057,6 +1152,19 @@ pub(crate) trait GoogleContactBook {
         provider_contact_id: &str,
         person: &GooglePerson,
     ) -> Result<GooglePerson>;
+    /// What this address book holds for one contact right now, with the
+    /// version marker that goes with it.
+    ///
+    /// Asked for one contact and not for the whole address book. It is asked
+    /// after a change is turned down for carrying a marker the address book has
+    /// moved past, and the read that follows in the same sync cannot answer it:
+    /// it asks only for what has changed since the last run, and the copy that
+    /// moved on may have been read on a run before this one.
+    async fn the_copy_it_holds_now(
+        &self,
+        token: &str,
+        provider_contact_id: &str,
+    ) -> Result<GooglePerson>;
 }
 
 impl GoogleContactBook for GoogleApiClient {
@@ -1083,6 +1191,14 @@ impl GoogleContactBook for GoogleApiClient {
     ) -> Result<GooglePerson> {
         GoogleApiClient::update_contact(self, token, provider_contact_id, person).await
     }
+
+    async fn the_copy_it_holds_now(
+        &self,
+        token: &str,
+        provider_contact_id: &str,
+    ) -> Result<GooglePerson> {
+        GoogleApiClient::get_contact(self, token, provider_contact_id).await
+    }
 }
 
 /// What a contacts sync asks of a Microsoft address book.
@@ -1101,6 +1217,13 @@ pub(crate) trait MicrosoftContactBook {
         token: &str,
         provider_contact_id: &str,
         contact: &MsGraphContact,
+    ) -> Result<MsGraphContact>;
+    /// What this address book holds for one contact right now, for the reason
+    /// written on the Google side.
+    async fn the_copy_it_holds_now(
+        &self,
+        token: &str,
+        provider_contact_id: &str,
     ) -> Result<MsGraphContact>;
 }
 
@@ -1128,6 +1251,14 @@ impl MicrosoftContactBook for MsGraphClient {
         contact: &MsGraphContact,
     ) -> Result<MsGraphContact> {
         MsGraphClient::update_contact(self, token, provider_contact_id, contact).await
+    }
+
+    async fn the_copy_it_holds_now(
+        &self,
+        token: &str,
+        provider_contact_id: &str,
+    ) -> Result<MsGraphContact> {
+        MsGraphClient::get_contact(self, token, provider_contact_id).await
     }
 }
 
@@ -1244,6 +1375,24 @@ pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
                 "{} changes are not going to your other address books: turn on \
                  sending a change to every address book that has the contact",
                 result.waiting_on_how_far_a_change_goes.count()
+            )
+        });
+    }
+    if !result.sent_over_a_newer_copy.is_empty() {
+        // A whole sentence for the same reason as the one below it: something
+        // was overwritten and the person is the only one who can decide whether
+        // that matters. Theirs is the copy that won, so this is not a loss of
+        // their work, but the address book had moved that contact on and what
+        // it had changed is gone.
+        said.sentence(if result.sent_over_a_newer_copy.count() == 1 {
+            "A contact you had changed was changed in your address book as well, and \
+             what you have here was sent over it"
+                .to_string()
+        } else {
+            format!(
+                "{} contacts you had changed were changed in your address book as well, \
+                 and what you have here was sent over them",
+                result.sent_over_a_newer_copy.count()
             )
         });
     }
@@ -1385,6 +1534,11 @@ fn version_given_by(contact: &ContactEntry, address_book: &AddressBook) -> Optio
 /// A change that cannot be sent keeps its flag for this address book and is
 /// tried again next time. Failing once is not a reason to drop somebody's
 /// edit, and a refusal by one address book leaves the other's alone.
+///
+/// Answers with the changes it offered and could not get in, because the
+/// address book had moved past the copy they were built on and building them
+/// again did not work either. Those must survive the read that follows in the
+/// same sync; [`keep_a_change_this_sync_could_not_send`] is what keeps them.
 async fn push_changed_contacts_to_google<B: GoogleContactBook>(
     cache: &MessageCache,
     google: &B,
@@ -1392,8 +1546,9 @@ async fn push_changed_contacts_to_google<B: GoogleContactBook>(
     account_id: &str,
     how_far: HowFarAChangeGoes,
     result: &mut SyncResult,
-) {
+) -> Contacts {
     let book = AddressBook::Google;
+    let mut still_built_on_an_old_copy = Contacts::default();
     for (contact, name_there) in changes_waiting_for(cache, account_id, &book, how_far, result) {
         let mut person = contact_to_google_person(&contact);
         person.resource_name = name_there.clone();
@@ -1401,7 +1556,35 @@ async fn push_changed_contacts_to_google<B: GoogleContactBook>(
         // handed out for this contact.
         person.etag = version_given_by(&contact, &book).unwrap_or_default();
 
-        let sent = google.update_contact(token, &name_there, &person).await;
+        let mut sent = google.update_contact(token, &name_there, &person).await;
+        if sent.as_ref().is_err_and(the_address_book_had_moved_past_it)
+            && the_copy_here_was_written_here(&contact)
+        {
+            match google.the_copy_it_holds_now(token, &name_there).await {
+                Ok(newer) => {
+                    person.etag = newer.etag.clone();
+                    sent = google.update_contact(token, &name_there, &person).await;
+                    match &sent {
+                        Ok(_) => result.sent_over_a_newer_copy.note(&contact.id),
+                        Err(_) => still_built_on_an_old_copy.note(&contact.id),
+                    }
+                }
+                Err(unreadable) => {
+                    still_built_on_an_old_copy.note(&contact.id);
+                    // One thing went wrong, so it is said once. The refusal
+                    // that started this is inside this sentence rather than
+                    // counted beside it: two of them for one contact nobody
+                    // could reach reads out as "2 errors".
+                    result.errors.push(format!(
+                        "Google has changed contact {} since your change was made here, and \
+                         its copy could not be read to send the change again: {unreadable}",
+                        contact.id
+                    ));
+                    continue;
+                }
+            }
+        }
+
         if let Ok(now_there) = &sent {
             write_down(
                 cache,
@@ -1411,6 +1594,7 @@ async fn push_changed_contacts_to_google<B: GoogleContactBook>(
         }
         count_the_attempt(&sent.map(|_| ()), &contact.id, "Google", result);
     }
+    still_built_on_an_old_copy
 }
 
 /// Send Microsoft every change made here to a contact it already holds. Same
@@ -1422,8 +1606,9 @@ async fn push_changed_contacts_to_microsoft<B: MicrosoftContactBook>(
     account_id: &str,
     how_far: HowFarAChangeGoes,
     result: &mut SyncResult,
-) {
+) -> Contacts {
     let book = AddressBook::Microsoft;
+    let mut still_built_on_an_old_copy = Contacts::default();
     for (contact, name_there) in changes_waiting_for(cache, account_id, &book, how_far, result) {
         let mut changed = contact_to_ms_contact(&contact);
         // The version this change was built on. Outlook refuses a change that
@@ -1433,7 +1618,32 @@ async fn push_changed_contacts_to_microsoft<B: MicrosoftContactBook>(
         // never part of the body.
         changed.odata_etag = version_given_by(&contact, &book);
 
-        let sent = ms_client.update_contact(token, &name_there, &changed).await;
+        let mut sent = ms_client.update_contact(token, &name_there, &changed).await;
+        if sent.as_ref().is_err_and(the_address_book_had_moved_past_it)
+            && the_copy_here_was_written_here(&contact)
+        {
+            match ms_client.the_copy_it_holds_now(token, &name_there).await {
+                Ok(newer) => {
+                    changed.odata_etag = newer.odata_etag.clone();
+                    sent = ms_client.update_contact(token, &name_there, &changed).await;
+                    match &sent {
+                        Ok(_) => result.sent_over_a_newer_copy.note(&contact.id),
+                        Err(_) => still_built_on_an_old_copy.note(&contact.id),
+                    }
+                }
+                Err(unreadable) => {
+                    still_built_on_an_old_copy.note(&contact.id);
+                    // Said once, for the reason written on the Google side.
+                    result.errors.push(format!(
+                        "Outlook has changed contact {} since your change was made here, and \
+                         its copy could not be read to send the change again: {unreadable}",
+                        contact.id
+                    ));
+                    continue;
+                }
+            }
+        }
+
         if let Ok(now_there) = &sent {
             write_down(
                 cache,
@@ -1449,6 +1659,7 @@ async fn push_changed_contacts_to_microsoft<B: MicrosoftContactBook>(
         }
         count_the_attempt(&sent.map(|_| ()), &contact.id, "Microsoft", result);
     }
+    still_built_on_an_old_copy
 }
 
 // ── Google Contacts Sync ────────────────────────────────────────────────────
@@ -1463,7 +1674,9 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
 ) -> Result<SyncResult> {
     let mut result = SyncResult::default();
 
-    push_changed_contacts_to_google(cache, google, token, account_id, how_far, &mut result).await;
+    let still_built_on_an_old_copy =
+        push_changed_contacts_to_google(cache, google, token, account_id, how_far, &mut result)
+            .await;
 
     // Load sync state
     let state = cache.get_sync_state(account_id, CONTACTS_SYNC, GOOGLE_ADDRESS_BOOK)?;
@@ -1527,6 +1740,7 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                     ),
                     local,
                     &result,
+                    &still_built_on_an_old_copy,
                 );
                 // Nothing to write for either of these, and they are counted
                 // apart: a change kept here is still owed to somebody, and a
@@ -1650,8 +1864,15 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
 ) -> Result<SyncResult> {
     let mut result = SyncResult::default();
 
-    push_changed_contacts_to_microsoft(cache, ms_client, token, account_id, how_far, &mut result)
-        .await;
+    let still_built_on_an_old_copy = push_changed_contacts_to_microsoft(
+        cache,
+        ms_client,
+        token,
+        account_id,
+        how_far,
+        &mut result,
+    )
+    .await;
 
     // Load sync state
     let state = cache.get_sync_state(account_id, CONTACTS_SYNC, MICROSOFT_ADDRESS_BOOK)?;
@@ -1699,6 +1920,7 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                     ),
                     local,
                     &result,
+                    &still_built_on_an_old_copy,
                 );
                 // Nothing to write for either of these, and they are counted
                 // apart: a change kept here is still owed to somebody, and a
@@ -4647,6 +4869,34 @@ mod tests {
             .expect("a contact to be stored");
     }
 
+    /// What Google says to a change built on a copy it has moved past.
+    ///
+    /// Its own words, so the sync's reading of them is what is being tested
+    /// rather than a shape invented here. The People API answers a change whose
+    /// `person.etag` is not the current one with HTTP 400 and a body naming
+    /// `FAILED_PRECONDITION`. Read from the documentation and not from a live
+    /// account, which is written down in the report for this change.
+    fn googles_answer_to_a_marker_it_has_moved_past() -> Error {
+        Error::Api {
+            status: 400,
+            provider: "google".to_string(),
+            message: "{\"error\":{\"code\":400,\"message\":\"Request person.etag is different \
+                      than the current person.etag. Clear local cache and get the latest \
+                      person.\",\"status\":\"FAILED_PRECONDITION\"}}"
+                .to_string(),
+        }
+    }
+
+    /// What Outlook says to the same thing. Graph weighs the marker in an
+    /// `If-Match` header, so its answer is the HTTP one: 412.
+    fn outlooks_answer_to_a_marker_it_has_moved_past() -> Error {
+        Error::Api {
+            status: 412,
+            provider: "microsoft".to_string(),
+            message: "The If-Match header value does not match the current ETag".to_string(),
+        }
+    }
+
     /// A Google address book that answers from a script rather than a socket.
     #[derive(Default)]
     struct ScriptedGoogle {
@@ -4666,6 +4916,18 @@ mod tests {
         /// Whether a change comes back refused by the write gate rather than
         /// by Google, which is what an account open for reading only answers.
         the_account_is_read_only: bool,
+        /// The copy this address book holds, for a test where the marker a
+        /// change carries is weighed rather than ignored.
+        ///
+        /// `None` means the script takes a change carrying any marker at all,
+        /// which is what every script here did before this existed and is why
+        /// nothing could reach the path where a real address book turns a
+        /// change down for being built on a copy it has moved past.
+        the_copy_it_holds: Option<GooglePerson>,
+        /// Whether asking this address book for its own copy of a contact
+        /// fails, which is how a test reaches the ending where a change turned
+        /// down for an old marker cannot be built again.
+        the_copy_cannot_be_read_back: bool,
         /// Every contact this test sent outward.
         sent: std::cell::RefCell<Vec<GooglePerson>>,
         /// Every change this test sent outward, and the identifier it was sent
@@ -4727,11 +4989,32 @@ mod tests {
             if !self.accepts_a_change {
                 return Err(Error::Protocol("Google refused the change".to_string()));
             }
+            if let Some(held) = &self.the_copy_it_holds {
+                if person.etag != held.etag {
+                    return Err(googles_answer_to_a_marker_it_has_moved_past());
+                }
+            }
             Ok(GooglePerson {
                 resource_name: provider_contact_id.to_string(),
                 etag: "etag-after".to_string(),
                 ..person.clone()
             })
+        }
+
+        async fn the_copy_it_holds_now(
+            &self,
+            _token: &str,
+            provider_contact_id: &str,
+        ) -> Result<GooglePerson> {
+            if self.the_copy_cannot_be_read_back {
+                return Err(Error::Network("Google could not be reached".to_string()));
+            }
+            self.the_copy_it_holds
+                .clone()
+                .filter(|held| held.resource_name == provider_contact_id)
+                .ok_or_else(|| {
+                    Error::Protocol("nothing in this test reads a copy back".to_string())
+                })
         }
     }
 
@@ -4749,6 +5032,9 @@ mod tests {
         /// this existed, so both markers came back empty and no test could see
         /// whether the one that arrived was kept.
         the_version_it_gives_back: Option<String>,
+        /// The copy this address book holds, for the same reason as on the
+        /// Google side: without one, a change carrying any marker is taken.
+        the_copy_it_holds: Option<MsGraphContact>,
         sent: std::cell::RefCell<Vec<MsGraphContact>>,
         changed: std::cell::RefCell<Vec<(String, MsGraphContact)>>,
     }
@@ -4800,11 +5086,29 @@ mod tests {
             if !self.accepts_a_change {
                 return Err(Error::Protocol("Microsoft refused the change".to_string()));
             }
+            if let Some(held) = &self.the_copy_it_holds {
+                if contact.odata_etag != held.odata_etag {
+                    return Err(outlooks_answer_to_a_marker_it_has_moved_past());
+                }
+            }
             Ok(MsGraphContact {
                 id: provider_contact_id.to_string(),
                 odata_etag: self.the_version_it_gives_back.clone(),
                 ..contact.clone()
             })
+        }
+
+        async fn the_copy_it_holds_now(
+            &self,
+            _token: &str,
+            provider_contact_id: &str,
+        ) -> Result<MsGraphContact> {
+            self.the_copy_it_holds
+                .clone()
+                .filter(|held| held.id == provider_contact_id)
+                .ok_or_else(|| {
+                    Error::Protocol("nothing in this test reads a copy back".to_string())
+                })
         }
     }
 
@@ -5444,6 +5748,7 @@ mod tests {
             waiting_on_the_setting: Contacts::these(["waiting on allow changes 1"]),
             waiting_on_how_far_a_change_goes: Contacts::these(["waiting on how far 1"]),
             replaced: Contacts::these(["replaced 1"]),
+            sent_over_a_newer_copy: Contacts::these(["sent over a newer copy 1"]),
             deleted_with_a_change_waiting: Contacts::these(["deleted with a change 1"]),
             errors: vec!["one".to_string()],
         });
@@ -5457,6 +5762,7 @@ mod tests {
             waiting_on_the_setting: Contacts::these(["waiting on allow changes 2"]),
             waiting_on_how_far_a_change_goes: Contacts::these(["waiting on how far 2"]),
             replaced: Contacts::these(["replaced 2"]),
+            sent_over_a_newer_copy: Contacts::these(["sent over a newer copy 2"]),
             deleted_with_a_change_waiting: Contacts::these(["deleted with a change 2"]),
             errors: vec!["two".to_string()],
         });
@@ -5479,6 +5785,10 @@ mod tests {
                     "waiting on how far 2"
                 ]),
                 replaced: Contacts::these(["replaced 1", "replaced 2"]),
+                sent_over_a_newer_copy: Contacts::these([
+                    "sent over a newer copy 1",
+                    "sent over a newer copy 2"
+                ]),
                 deleted_with_a_change_waiting: Contacts::these([
                     "deleted with a change 1",
                     "deleted with a change 2"
@@ -8053,13 +8363,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_a_kept_change_the_address_book_then_refuses_is_replaced_and_said() {
+    async fn test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said()
+     {
         // The other ending, and the one that says this does not freeze a
-        // contact for ever. Keeping a change no setting let out keeps the
-        // marker it was made against, so once the setting is on, an address
-        // book that has moved its own copy since can turn the change down.
-        // That is the ordinary tie: the address book wins, somebody is told,
-        // and the marker here is brought up to date so the next change can go.
+        // contact for ever. A change the address book turns down for a reason
+        // of its own, which is anything but the marker, is not sent, and the
+        // read that follows decides the ordinary tie: the address book wins,
+        // somebody is told, and the marker here is brought up to date so the
+        // next change can go.
+        //
+        // A refusal because the marker is out of date is the other half and is
+        // not this. That one has an answer better than losing the edit, and
+        // `test_a_change_google_had_moved_past_is_sent_again_rather_than_lost`
+        // is where it is pinned. This script turns every change down whatever
+        // it carries, which is why it lands here.
         let cache = a_cache("a_kept_change_the_book_refuses");
         a_contact_both_address_books_are_owed(&cache);
         let google_that_refuses = ScriptedGoogle {
@@ -8129,6 +8446,399 @@ mod tests {
             what_the_contacts_sync_did(&second).contains("1 of your change replaced by the"),
             "the edit went with nobody told: {}",
             what_the_contacts_sync_did(&second)
+        );
+    }
+
+    // ── A change built on a copy the address book has moved past ────────────
+    //
+    // The case a real account meets and no script here could reach: a phone or
+    // a webmail tab moves the other copy, so the marker the change carries is
+    // no longer the current one and the address book turns the change down.
+    // Losing the edit to the read that follows would make every instruction
+    // about sending it false.
+
+    #[tokio::test]
+    async fn test_a_change_google_had_moved_past_is_sent_again_rather_than_lost() {
+        let cache = a_cache("google_moved_past_the_change");
+        a_contact_both_address_books_are_owed(&cache);
+
+        // The account is open for reading only, so nothing goes out and the
+        // summary says a change is waiting. Google has moved its own copy on
+        // to etag-2 in the meantime, and the read leaves the marker here at
+        // etag-1 to keep the edit.
+        let read_only = ScriptedGoogle {
+            people: vec![a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "etag-2",
+            )],
+            the_account_is_read_only: true,
+            ..Default::default()
+        };
+        let first = sync_google_contacts(
+            &cache,
+            &read_only,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a first sync");
+        assert_eq!(
+            what_the_contacts_sync_did(&first),
+            "Contacts sync: 0 created, 0 updated, 0 deleted. 1 change is waiting here: \
+             turn on Allow Changes in Settings to send it."
+        );
+
+        // Allow Changes on, and this time the address book weighs the marker.
+        // Nothing new to read, which is the ordinary case: the marker from the
+        // first sync is stored, so the second sync asks only for what has
+        // changed since and Google has nothing more to say.
+        let google = ScriptedGoogle {
+            accepts_a_change: true,
+            the_copy_it_holds: Some(a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "etag-2",
+            )),
+            ..Default::default()
+        };
+        let second =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a second sync");
+
+        let stored = the_contact_under(&cache, "local-in-both-books");
+        assert_eq!(
+            stored.name, THE_WORDS_TYPED_HERE,
+            "the sync that was told to send the edit threw it away instead"
+        );
+        let offered = google.changed.borrow();
+        assert_eq!(
+            offered.len(),
+            2,
+            "the change was turned down for carrying an old marker and never \
+             offered again: {offered:?}"
+        );
+        assert_eq!(
+            offered[0].1.etag, THE_GOOGLE_MARKER_LAST_SEEN,
+            "the first attempt carried something other than the marker held here"
+        );
+        assert_eq!(
+            offered[1].1.etag, "etag-2",
+            "the change went out again carrying the marker Google had just refused"
+        );
+        assert_eq!(
+            offered[1]
+                .1
+                .names
+                .first()
+                .map(|name| name.unstructured_name.as_str()),
+            Some(THE_WORDS_TYPED_HERE),
+            "what went out the second time was not the edit"
+        );
+        assert!(
+            !still_owed_the_change(&stored, &AddressBook::Google),
+            "Google took the change and is still down as owed it"
+        );
+        assert_eq!(
+            stored
+                .known_to
+                .iter()
+                .find(|identity| identity.address_book == AddressBook::Google)
+                .and_then(|identity| identity.provider_version.as_deref()),
+            Some("etag-after"),
+            "the marker Google gave for what it now holds was not kept, so the \
+             next change is refused for the same reason"
+        );
+        assert_eq!(
+            second.replaced.count(),
+            0,
+            "the edit was sent and something still counted it as lost: {second:?}"
+        );
+        assert!(
+            second.errors.is_empty(),
+            "a change that went through was reported as a failure: {:?}",
+            second.errors
+        );
+        let said = what_the_contacts_sync_did(&second);
+        assert!(said.contains("1 sent"), "{said}");
+        assert!(
+            said.contains(
+                "A contact you had changed was changed in your address book as well, and \
+                 what you have here was sent over it"
+            ),
+            "the address book's own change was overwritten with nothing said: {said}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_outlook_had_moved_past_is_sent_again_rather_than_lost() {
+        // The same thing on the other side. Outlook weighs the marker in an
+        // If-Match header and answers 412 rather than Google's 400, so the two
+        // answers have to be read separately and both are.
+        let cache = a_cache("outlook_moved_past_the_change");
+        a_contact_both_address_books_are_owed(&cache);
+
+        let read_only = ScriptedMicrosoft {
+            contacts: vec![a_microsoft_contact_at_version(
+                OUTLOOKS_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "W/\"2\"",
+            )],
+            the_account_is_read_only: true,
+            ..Default::default()
+        };
+        sync_microsoft_contacts(
+            &cache,
+            &read_only,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a first sync");
+
+        let outlook = ScriptedMicrosoft {
+            accepts_a_change: true,
+            the_version_it_gives_back: Some("W/\"3\"".to_string()),
+            the_copy_it_holds: Some(a_microsoft_contact_at_version(
+                OUTLOOKS_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "W/\"2\"",
+            )),
+            ..Default::default()
+        };
+        let second = sync_microsoft_contacts(
+            &cache,
+            &outlook,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a second sync");
+
+        let stored = the_contact_under(&cache, "local-in-both-books");
+        assert_eq!(
+            stored.name, THE_WORDS_TYPED_HERE,
+            "the sync that was told to send the edit threw it away instead"
+        );
+        let offered = outlook.changed.borrow();
+        assert_eq!(
+            offered.len(),
+            2,
+            "the change was turned down for carrying an old marker and never \
+             offered again: {offered:?}"
+        );
+        assert_eq!(
+            offered[0].1.odata_etag.as_deref(),
+            Some(THE_OUTLOOK_MARKER_LAST_SEEN)
+        );
+        assert_eq!(
+            offered[1].1.odata_etag.as_deref(),
+            Some("W/\"2\""),
+            "the change went out again carrying the marker Outlook had just refused"
+        );
+        assert_eq!(
+            offered[1].1.display_name, THE_WORDS_TYPED_HERE,
+            "what went out the second time was not the edit"
+        );
+        assert!(!still_owed_the_change(&stored, &AddressBook::Microsoft));
+        assert_eq!(
+            stored
+                .known_to
+                .iter()
+                .find(|identity| identity.address_book == AddressBook::Microsoft)
+                .and_then(|identity| identity.provider_version.as_deref()),
+            Some("W/\"3\""),
+            "the marker Outlook gave for what it now holds was not kept"
+        );
+        assert_eq!(second.replaced.count(), 0, "{second:?}");
+        assert!(second.errors.is_empty(), "{:?}", second.errors);
+    }
+
+    #[tokio::test]
+    async fn test_a_change_that_cannot_be_sent_again_is_kept_rather_than_replaced_by_the_read() {
+        // The unhappy ending of the same path. The address book turns the
+        // change down for carrying an old marker and then will not hand its own
+        // copy over, so there is nothing to build the change on again. The edit
+        // has to survive the read that follows in the same sync, or a sync that
+        // failed to send it would be the sync that destroyed it.
+        let cache = a_cache("the_copy_cannot_be_read_back");
+        a_contact_both_address_books_are_owed(&cache);
+        let google = ScriptedGoogle {
+            accepts_a_change: true,
+            people: vec![a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "etag-2",
+            )],
+            the_copy_it_holds: Some(a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "etag-2",
+            )),
+            the_copy_cannot_be_read_back: true,
+            ..Default::default()
+        };
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
+
+        let stored = the_contact_under(&cache, "local-in-both-books");
+        assert_eq!(
+            stored.name, THE_WORDS_TYPED_HERE,
+            "the read in the same sync destroyed an edit that had just failed to go"
+        );
+        assert!(
+            still_owed_the_change(&stored, &AddressBook::Google),
+            "Google is no longer owed a change Google never took"
+        );
+        assert_eq!(
+            stored
+                .known_to
+                .iter()
+                .find(|identity| identity.address_book == AddressBook::Google)
+                .and_then(|identity| identity.provider_version.as_deref()),
+            Some(THE_GOOGLE_MARKER_LAST_SEEN),
+            "the marker moved on without the change going, so the next sync \
+             believes there is nothing to reconcile"
+        );
+        assert_eq!(
+            result.replaced.count(),
+            0,
+            "nothing replaced the edit and somebody was told it had: {result:?}"
+        );
+        assert_eq!(
+            result.errors.len(),
+            1,
+            "a change that did not go was reported as a clean run: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_only_work_typed_here_is_sent_again_over_the_address_books_newer_copy() {
+        // The gate on the whole path. What waits for Outlook after Google has
+        // won a tie is Google's own copy rather than anybody's work, and
+        // forcing that over a copy Outlook has moved on since would push one
+        // address book's old words over the other's new ones on nobody's
+        // authority. The ordinary tie is right for that one, so the change is
+        // left refused and the read decides it.
+        let cache = a_cache("only_work_typed_here_is_forced");
+        a_copy_from_google_outlook_has_not_had(&cache);
+        const OUTLOOKS_OWN_NEW_WORDS: &str = "Alice Brown";
+        let outlook = ScriptedMicrosoft {
+            accepts_a_change: true,
+            contacts: vec![a_microsoft_contact_at_version(
+                OUTLOOKS_NAME_FOR_HER,
+                OUTLOOKS_OWN_NEW_WORDS,
+                "W/\"2\"",
+            )],
+            the_copy_it_holds: Some(a_microsoft_contact_at_version(
+                OUTLOOKS_NAME_FOR_HER,
+                OUTLOOKS_OWN_NEW_WORDS,
+                "W/\"2\"",
+            )),
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &outlook,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        assert_eq!(
+            outlook.changed.borrow().len(),
+            1,
+            "a copy nobody typed here was forced over Outlook's newer one"
+        );
+        let stored = the_contact_under(&cache, "local-in-both-books");
+        assert_eq!(
+            stored.name, OUTLOOKS_OWN_NEW_WORDS,
+            "Outlook's own update was refused to hold on to a copy nobody typed here"
+        );
+        assert_eq!(
+            result.replaced.count(),
+            0,
+            "nobody's work was lost and somebody was told it was: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_the_two_answers_an_address_book_gives_to_an_old_marker_are_both_read() {
+        // Read from each provider's documentation rather than from a live
+        // account. Google answers a change whose `person.etag` is not current
+        // with 400 and a body naming FAILED_PRECONDITION; Outlook weighs an
+        // `If-Match` header and answers 412. Reading neither leaves the whole
+        // path unreachable, and reading too much sends a change again over an
+        // error that has nothing to do with the marker.
+        assert!(the_address_book_had_moved_past_it(
+            &googles_answer_to_a_marker_it_has_moved_past()
+        ));
+        assert!(the_address_book_had_moved_past_it(
+            &outlooks_answer_to_a_marker_it_has_moved_past()
+        ));
+        assert!(!the_address_book_had_moved_past_it(&Error::Api {
+            status: 404,
+            provider: "google".to_string(),
+            message: "the contact is not there".to_string(),
+        }));
+        assert!(!the_address_book_had_moved_past_it(&Error::Api {
+            status: 500,
+            provider: "microsoft".to_string(),
+            message: "something went wrong at our end".to_string(),
+        }));
+        assert!(!the_address_book_had_moved_past_it(&Error::Network(
+            "the connection dropped".to_string()
+        )));
+        assert!(!the_address_book_had_moved_past_it(&Error::Security(
+            crate::service::outward::refusal("change something in this account")
+        )));
+    }
+
+    #[test]
+    fn test_a_change_sent_over_a_newer_copy_is_said_and_not_only_counted() {
+        let one = what_the_contacts_sync_did(&SyncResult {
+            updated_remote: however_many(1),
+            sent_over_a_newer_copy: however_many(1),
+            ..Default::default()
+        });
+        assert!(
+            one.contains(
+                "A contact you had changed was changed in your address book as well, and \
+                 what you have here was sent over it"
+            ),
+            "{one}"
+        );
+
+        let several = what_the_contacts_sync_did(&SyncResult {
+            updated_remote: however_many(2),
+            sent_over_a_newer_copy: however_many(2),
+            ..Default::default()
+        });
+        assert!(
+            several.contains(
+                "2 contacts you had changed were changed in your address book as well, and \
+                 what you have here was sent over them"
+            ),
+            "{several}"
+        );
+
+        let quiet = what_the_contacts_sync_did(&SyncResult {
+            updated_remote: however_many(1),
+            ..Default::default()
+        });
+        assert!(
+            !quiet.contains("as well"),
+            "said on a sync where nothing was overwritten: {quiet}"
         );
     }
 

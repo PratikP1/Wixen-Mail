@@ -540,6 +540,24 @@ impl GoogleApiClient {
         with_retry(3, || self.api_post(&url, token, person)).await
     }
 
+    /// Read one contact back, with the version marker Google holds for it now.
+    ///
+    /// Asked when a change is turned down for carrying a marker Google has
+    /// moved past. The whole address book is not read for this: the answer
+    /// needed is about one person, and the incremental read that follows in the
+    /// same sync cannot give it, because it reports only what has changed since
+    /// the last run.
+    ///
+    /// The same field list as a read of the whole address book, so what comes
+    /// back is the same shape as what a sync already knows how to fold in.
+    pub async fn get_contact(&self, token: &str, resource_name: &str) -> Result<GooglePerson> {
+        let url = format!(
+            "{}/{}?personFields={PERSON_FIELDS}",
+            self.people_base, resource_name,
+        );
+        with_retry(3, || self.api_get(&url, token)).await
+    }
+
     /// Update an existing contact.
     ///
     /// `resource_name` is e.g. "people/c1234567890".
@@ -915,6 +933,35 @@ mod tests {
         // somebody's contact photo.
         assert!(!asked.contains("metadata"), "{request}");
         assert!(!asked.contains("photos"), "{request}");
+    }
+
+    #[tokio::test]
+    async fn test_reading_one_contact_back_asks_about_that_contact_and_not_the_address_book() {
+        // What a change turned down for an old marker asks next. Reading the
+        // whole address book to answer it would download everything somebody
+        // has to learn one marker, and the incremental read in the same sync
+        // cannot answer it at all.
+        let (google, listening) = a_google_client_talking_to_itself().await;
+
+        google
+            .get_contact("a-token", "people/c1")
+            .await
+            .expect("the copy Google holds");
+
+        let request = heard(listening, "the read of one contact")
+            .await
+            .expect("a request");
+        let asked = asked_for(&request);
+        assert!(asked.starts_with("GET /people/c1?"), "{request}");
+        assert!(
+            asked.contains("personFields="),
+            "a read with no field list comes back with a name and nothing else: {request}"
+        );
+        assert!(
+            asked.contains("names") && asked.contains("emailAddresses"),
+            "the same field list as a read of the whole address book, so what comes \
+             back is the shape a sync already knows how to fold in: {request}"
+        );
     }
 
     #[tokio::test]
