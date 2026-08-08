@@ -437,21 +437,26 @@ fn the_sentence_around(text: &str, at: usize) -> (usize, usize) {
     (start, end)
 }
 
-/// The sentence with the name of the setting taken out.
+/// The sentence with the name of the setting blanked out.
 ///
 /// "Allow Changes" is what the settings screen calls the section, so the word
 /// "Allow" in it is a label and not the sentence saying anything is allowed.
 /// Left in, every sentence naming the setting reads as permission.
+///
+/// Blanked rather than cut out, so every other word stays where it was and an
+/// offset into the sentence still means what it meant. Cut out, a name after
+/// the word being read moved that word, and the reading landed on its
+/// neighbour.
 fn without_the_settings_name(sentence: &str) -> String {
-    let named = wixen_mail::application::allowed::SETTINGS_SECTION.to_lowercase();
-    let mut left = String::with_capacity(sentence.len());
+    let named = wixen_mail::application::allowed::SETTINGS_SECTION;
     let lowered = sentence.to_lowercase();
+    let mut left = sentence.to_string();
     let mut at = 0;
-    while let Some(found) = lowered[at..].find(&named) {
-        left.push_str(&sentence[at..at + found]);
-        at += found + named.len();
+    while let Some(found) = lowered[at..].find(&named.to_lowercase()) {
+        let start = at + found;
+        left.replace_range(start..start + named.len(), &" ".repeat(named.len()));
+        at = start + named.len();
     }
-    left.push_str(&sentence[at..]);
     left
 }
 
@@ -472,11 +477,10 @@ fn without_the_settings_name(sentence: &str) -> String {
 /// over two sentences, because only the sentence carrying the word is read.
 fn what_it_says_reaches_a_provider(sentence: &str, marker_at: usize) -> Option<Reaches> {
     let readable = without_the_settings_name(sentence);
-    let taken_out = sentence.len() - readable.len();
     let words = words_of(&readable);
     let marker_word = words
         .iter()
-        .rposition(|(at, _)| *at <= marker_at.saturating_sub(taken_out))
+        .rposition(|(at, _)| *at <= marker_at)
         .unwrap_or(0);
 
     let said = negation_read_as_refusal(&words);
@@ -856,6 +860,18 @@ fn test_the_new_installation_check_can_tell_the_two_apart() {
             claim.sentence
         );
     }
+
+    // A sentence naming the setting after the word being read. The name is
+    // blanked rather than cut out for this: cut out, everything after it moved
+    // and the reading landed on a word three back, which here is the other
+    // answer.
+    let named_afterwards = the_claim_in(
+        "docs/ALPHA_TESTING.md",
+        "Nothing goes out unless a new installation turns Allow Changes on.\n",
+    )
+    .expect("a claim with the setting named after the word being read");
+    assert_eq!(named_afterwards.reaches, Some(Reaches::Something));
+    assert_eq!(agrees_with_the_code(&named_afterwards), Some(true));
 
     // Both halves of the same sentence, which is what makes the reading a
     // reading rather than a search for the word "off". One is true and one is
