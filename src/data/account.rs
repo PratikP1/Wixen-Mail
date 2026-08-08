@@ -417,9 +417,21 @@ impl AccountManager {
         self.accounts.iter_mut().find(|a| a.id == id)
     }
 
+    /// Add an account, refusing a mailbox this already holds.
+    ///
+    /// The address is compared without regard to case, because an address
+    /// means the same however it is written. Compared letter for letter, the
+    /// same mailbox typed a second time with a capital in it became a second
+    /// account with an identifier of its own, and everything is filed under
+    /// that identifier: the second account has its own mail, its own contacts
+    /// and its own calendar, and neither of the two shows what the other has.
     pub fn add_account(&mut self, account: Account) -> Result<String, String> {
         account.validate()?;
-        if self.accounts.iter().any(|a| a.email == account.email) {
+        if self
+            .accounts
+            .iter()
+            .any(|a| a.email.trim().eq_ignore_ascii_case(account.email.trim()))
+        {
             return Err(format!(
                 "Account with email {} already exists",
                 account.email
@@ -721,6 +733,38 @@ mod tests {
         let account2 = create_valid_account("Test2", "test@example.com");
         manager.add_account(account1).unwrap();
         assert!(manager.add_account(account2).is_err());
+    }
+
+    #[test]
+    fn test_the_same_mailbox_typed_with_capitals_is_still_the_same_mailbox() {
+        // One mailbox, two rows. Every account carries its own identifier and
+        // everything stored is filed under it, so the second one gets its own
+        // mail, its own contacts and its own calendar, and neither shows what
+        // the other has. An address means the same however it is written.
+        let mut manager = AccountManager::new();
+        manager
+            .add_account(create_valid_account("Work", "test@example.com"))
+            .expect("the first account to be added");
+
+        let second = manager.add_account(create_valid_account("Work", "Test@Example.COM"));
+
+        assert!(second.is_err(), "the same mailbox was added twice");
+    }
+
+    #[test]
+    fn test_two_different_mailboxes_are_still_two_accounts() {
+        // The other direction, so refusing a duplicate cannot become refusing
+        // a second account.
+        let mut manager = AccountManager::new();
+        manager
+            .add_account(create_valid_account("Work", "test@example.com"))
+            .expect("the first account to be added");
+
+        manager
+            .add_account(create_valid_account("Home", "other@example.com"))
+            .expect("a second mailbox to be added");
+
+        assert_eq!(manager.get_accounts().len(), 2);
     }
 
     #[test]

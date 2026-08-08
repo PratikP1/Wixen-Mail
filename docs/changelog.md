@@ -305,6 +305,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   mail system anybody uses treats the half in front of the @ as case sensitive
   either. Two people who share no address are still two people.
 
+- **Adding the same mailbox twice is refused however its address is typed.**
+  Adding an account already set up was refused, but only when the address was
+  typed exactly as before. "Test@Example.com" alongside "test@example.com"
+  made a second account for one mailbox, and everything is filed per account,
+  so the second one had its own mail, its own contacts and its own calendar
+  and neither showed what the other held.
+
 - **Searching your contacts finds somebody by any address or number she has.**
   The search box above the contact list looked at the first address and the
   first number only. The address you have for somebody is as likely to be her

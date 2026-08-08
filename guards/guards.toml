@@ -979,3 +979,17 @@ red = [
     "presentation::wx_managers::tests::test_a_contact_is_found_by_a_number_that_is_not_her_first",
     "presentation::wx_managers::tests::test_a_contact_is_found_by_an_address_that_is_not_her_first",
 ]
+
+# The same rule about an address where it decides whether a mailbox is one this
+# already holds. Everything stored is filed under an account's identifier, so a
+# second account for one mailbox is a second mailbox as far as the rest of the
+# program is concerned.
+
+[[guard]]
+name = "one mailbox is one account however its address is written"
+file = "src/data/account.rs"
+before = """            .any(|a| a.email.trim().eq_ignore_ascii_case(account.email.trim()))"""
+after = """            .any(|a| a.email == account.email)"""
+red = [
+    "data::account::tests::test_the_same_mailbox_typed_with_capitals_is_still_the_same_mailbox",
+]
