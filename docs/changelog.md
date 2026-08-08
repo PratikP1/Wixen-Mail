@@ -288,6 +288,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   an event moved into it could never be sent. Nothing has been moved. A calendar
   you can change can hold it."
 
+- **Saving an event you did not change no longer sends the whole event back to
+  your provider.** Opening an event, pressing Save and typing nothing marked the
+  event as changed. The next sync wrote the whole record back to Google or
+  Outlook, including everything on the event this program keeps no copy of,
+  which it overwrote with what it does not know.
+
+  An event nobody changed is now left exactly as it is, and nothing is sent. An
+  event you did change is sent as before, and a change you made and have not
+  sent yet still goes, so opening it and pressing Save cannot lose it.
+
+  One case still counts as a change when nothing was typed: a repeating event
+  opened on one of its later days. The editor is filled with the day you were
+  standing on and the stored event starts from another day, so the two differ.
+  That is what happened for every event before this change, so nothing is worse
+  than it was.
+
 - **A calendar or task list you made here is no longer promised back from your
   provider.** The question asked before deleting one said "It will come back at
   the next sync" whenever the open account was a Google or Outlook one. That is

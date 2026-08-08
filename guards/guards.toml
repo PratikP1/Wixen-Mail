@@ -780,3 +780,18 @@ after = """        format!("A {}", thing(kind))"""
 red = [
     "application::pim_command::tests::test_the_refusal_names_the_kind_with_the_article_that_belongs_with_it",
 ]
+
+# ── An edit that was not an edit ────────────────────────────────────────────
+
+[[guard]]
+name = "a save that changed nothing leaves the row alone"
+file = "src/presentation/managers.rs"
+before = """    if !holds_a_change(data, &stored) {
+        return stored;
+    }"""
+after = """    if false {
+        return stored;
+    }"""
+red = [
+    "presentation::managers::tests::test_saving_an_event_nobody_changed_leaves_it_settled",
+]

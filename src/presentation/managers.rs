@@ -617,7 +617,8 @@ pub fn manage_calendar(
     report(tx, rt, "calendar events", failures);
 }
 
-/// The stored event with what the editor changed folded into it.
+/// The stored event with what the editor changed folded into it, or the stored
+/// event exactly as it is when the editor changed nothing.
 ///
 /// The editor asks about the summary, the dates and times, whether it is all
 /// day, the place, the notes and the alert. An event carries more than that:
@@ -629,6 +630,15 @@ fn event_with_edits(
     stored: crate::data::message_cache::CalendarEventEntry,
     data: &wx_calendar::CalendarEventData,
 ) -> crate::data::message_cache::CalendarEventEntry {
+    // A row nobody changed is handed straight back, untouched, which is the
+    // answer the contact editor already gives and for the same reason. The
+    // alternative is a row rebuilt from the editor that happens to match: it
+    // is marked as waiting to be sent, so the next sync writes the whole
+    // record back to the provider, over every field this program does not
+    // model. Opening an event and pressing Save without typing did that.
+    if !holds_a_change(data, &stored) {
+        return stored;
+    }
     let edited = event_entry(stored.id.clone(), &stored.account_id, data);
     let alerts = alerts_with_the_first_at(stored.reminders_json.as_deref(), data.reminder_minutes);
     crate::data::message_cache::CalendarEventEntry {
@@ -657,6 +667,39 @@ fn event_with_edits(
         created_at: stored.created_at,
         ..edited
     }
+}
+
+/// Whether what the editor returned is a change to the event stored.
+///
+/// Asked by filling the editor from the stored event again and comparing that
+/// with what came back. The dialog fills its boxes from exactly this, keeps
+/// them untouched for a row nobody typed in, and hands back what they hold, so
+/// the two are equal for an untouched event and differ for an edited one.
+///
+/// The other way of answering it was to have the dialog say whether anything
+/// was typed. That was not taken because opening the editor and pressing Save
+/// is not a change, and a change here costs a full-record write at Google or
+/// Outlook of every field this program does not model.
+///
+/// # What this comparison cannot see
+///
+/// The editor holds nine things and an event carries more than twenty: which
+/// calendar it is in, its category, how it repeats, who is coming, the second
+/// and third alerts, and the identity the provider knows it by. The editor
+/// cannot have changed any of them, which is exactly why a row this answers
+/// false for is handed back untouched rather than rebuilt.
+///
+/// A repeating event is the one case where this says "changed" for an event
+/// nobody typed in: the list row is the day somebody was standing on, and the
+/// stored row is the day the series starts from. That is the answer the code
+/// gave before this existed, for every event, so it loses nothing.
+fn holds_a_change(
+    returned: &wx_calendar::CalendarEventData,
+    stored: &crate::data::message_cache::CalendarEventEntry,
+) -> bool {
+    wx_calendar::CalendarEventData::as_shown(
+        &crate::presentation::ui_types::CalendarEventItem::from_entry(stored),
+    ) != *returned
 }
 
 /// One alert, written the way both providers read one.
@@ -2706,6 +2749,50 @@ mod tests {
             vec![(15, "popup".to_string()), (1440, "email".to_string())],
             "the row waiting to be sent has lost an alert"
         );
+    }
+
+    #[test]
+    fn test_saving_an_event_nobody_changed_leaves_it_settled() {
+        // Measured before this existed: open an event Google already holds,
+        // press Save without typing, and the row is marked as waiting to be
+        // sent. The next sync then writes the whole record back to the
+        // provider, including every field this program does not model, which
+        // it overwrites with what it does not know.
+        let mut stored = event_entry("e1".to_string(), "acct", &data(false));
+        stored.pending = false;
+        stored.provider_event_id = Some("uid-1".to_string());
+        stored.calendar_id = Some("cal-1".to_string());
+        stored.reminders_json = Some(an_alert(15));
+
+        // Exactly what the editor is filled with, which is what it hands back
+        // when nobody types in it.
+        let untouched = wx_calendar::CalendarEventData::as_shown(
+            &crate::presentation::ui_types::CalendarEventItem::from_entry(&stored),
+        );
+        let saved = event_with_edits(stored.clone(), &untouched);
+
+        assert!(
+            !saved.pending,
+            "a save that changed nothing queued a full overwrite at the provider"
+        );
+        assert_eq!(saved.summary, stored.summary);
+        assert_eq!(saved.start_datetime, stored.start_datetime);
+        assert_eq!(saved.reminders_json, stored.reminders_json);
+    }
+
+    #[test]
+    fn test_an_event_already_waiting_is_still_waiting_after_a_save_that_changed_nothing() {
+        // The dangerous half of leaving it alone. A change made and not yet
+        // sent must not stop waiting because somebody opened it and pressed
+        // Save: that is the edit gone with nothing said.
+        let mut stored = event_entry("e1".to_string(), "acct", &data(false));
+        stored.pending = true;
+
+        let untouched = wx_calendar::CalendarEventData::as_shown(
+            &crate::presentation::ui_types::CalendarEventItem::from_entry(&stored),
+        );
+
+        assert!(event_with_edits(stored, &untouched).pending);
     }
 
     #[test]
