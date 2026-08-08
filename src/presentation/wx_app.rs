@@ -4709,6 +4709,41 @@ fn folder_label(folder: &crate::data::message_cache::CachedFolder) -> String {
     }
 }
 
+// ── What the status line says a module holds ────────────────────────────────
+//
+// Said on the status line and read out on every switch into a module, so these
+// are heard far more often than anything a sync says. Built here rather than in
+// the match arm that shows them, because a window arm needs a wxWidgets frame
+// and so can be reached by nothing.
+
+/// What a module says once its list is in, such as "3 folders loaded".
+///
+/// `thing` is the singular. `service::caldav::how_many` picks the word, the
+/// same as every sync summary, rather than an eighth answer to the same
+/// question.
+fn how_many_loaded(count: usize, thing: &str) -> String {
+    format!("{} loaded", crate::service::caldav::how_many(count, thing))
+}
+
+/// What a mailbox holds, said whenever its message list arrives.
+///
+/// "unread" is the same word either way, so only the first count picks a word.
+fn what_a_mailbox_holds(count: usize, unread: usize) -> String {
+    format!(
+        "{}, {unread} unread",
+        crate::service::caldav::how_many(count, "message")
+    )
+}
+
+/// How many folders the account really has, said after the folder list is
+/// stored.
+fn how_many_on_the_server(count: usize) -> String {
+    format!(
+        "{} on the server",
+        crate::service::caldav::how_many(count, "folder")
+    )
+}
+
 /// Give a page the way out that its own Back button and Escape key already call.
 ///
 /// Every document this application renders carries a Back button as its first
@@ -6358,7 +6393,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 }
                 folder_tree.expand(&root);
             }
-            let msg = format!("{} folders loaded", folders.len());
+            let msg = how_many_loaded(folders.len(), "folder");
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "folders");
         }
@@ -6377,7 +6412,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             tracing::info!("Message list now holds {} rows", messages.len());
             msg_list.set_item_count(messages.len() as i64);
             let unread = messages.iter().filter(|m| !m.read).count();
-            let msg = format!("{} messages, {} unread", messages.len(), unread);
+            let msg = what_a_mailbox_holds(messages.len(), unread);
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Normal, "messages");
         }
@@ -6614,7 +6649,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 }
                 pim.cal_tree.expand(&root);
             }
-            let msg = format!("{} calendars loaded", containers.len());
+            let msg = how_many_loaded(containers.len(), "calendar");
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "calendars");
         }
@@ -6644,7 +6679,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 pim.reminders_tree.expand(&root);
             }
 
-            let msg = format!("{} reminders loaded", reminders.len());
+            let msg = how_many_loaded(reminders.len(), "reminder");
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "reminders");
         }
@@ -6657,7 +6692,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 }
                 pim.tasks_tree.expand(&root);
             }
-            let msg = format!("{} task lists loaded", lists.len());
+            let msg = how_many_loaded(lists.len(), "task list");
             frame.set_status_text(&msg, 0);
         }
         UIUpdate::TasksLoaded(tasks) => {
@@ -6666,7 +6701,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // each cell as it paints. Filling row by row is what put a
             // ceiling of a few thousand items on these lists.
             pim.task_list.set_item_count(tasks.len() as i64);
-            let msg = format!("{} tasks loaded", tasks.len());
+            let msg = how_many_loaded(tasks.len(), "task");
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "tasks");
         }
@@ -6689,7 +6724,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // each cell as it paints. Filling row by row is what put a
             // ceiling of a few thousand items on these lists.
             pim.note_list.set_item_count(notes.len() as i64);
-            let msg = format!("{} notes loaded", notes.len());
+            let msg = how_many_loaded(notes.len(), "note");
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "notes");
         }
@@ -6702,7 +6737,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // each cell as it paints. Filling row by row is what put a
             // ceiling of a few thousand items on these lists.
             pim.contact_list.set_item_count(contacts.len() as i64);
-            let msg = format!("{} contacts loaded", contacts.len());
+            let msg = how_many_loaded(contacts.len(), "contact");
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "contacts");
         }
@@ -9152,9 +9187,8 @@ fn spawn_mail_sync(
                     return;
                 }
             };
-        say(UIUpdate::StatusUpdated(format!(
-            "{} folders on the server",
-            stored.len()
+        say(UIUpdate::StatusUpdated(how_many_on_the_server(
+            stored.len(),
         )));
 
         // A watch that fires names one folder, and re-reading the whole
@@ -10975,6 +11009,40 @@ mod tests {
         let state = Arc::new(StdMutex::new(WxUIState::default()));
         lock_state(&state).outbox_count = 7;
         assert_eq!(lock_state(&state).outbox_count, 7);
+    }
+}
+
+#[cfg(test)]
+mod what_the_status_line_says {
+    use super::{how_many_loaded, how_many_on_the_server, what_a_mailbox_holds};
+
+    #[test]
+    fn test_a_mailbox_holding_one_message_does_not_say_one_messages() {
+        // Said on the status line and read out on every switch into the
+        // mailbox, so a mailbox with one message in it says this several times
+        // an hour. "unread" is the same word either way and stays as it is.
+        assert_eq!(what_a_mailbox_holds(1, 0), "1 message, 0 unread");
+        assert_eq!(what_a_mailbox_holds(1, 1), "1 message, 1 unread");
+        assert_eq!(what_a_mailbox_holds(4, 2), "4 messages, 2 unread");
+        assert_eq!(what_a_mailbox_holds(0, 0), "0 messages, 0 unread");
+    }
+
+    #[test]
+    fn test_a_module_holding_one_thing_does_not_say_one_things() {
+        // Seven modules said this and every one of them said it the same wrong
+        // way. The word to use is the singular, so a two-word thing works
+        // without a second rule.
+        assert_eq!(how_many_loaded(1, "folder"), "1 folder loaded");
+        assert_eq!(how_many_loaded(20, "folder"), "20 folders loaded");
+        assert_eq!(how_many_loaded(1, "task list"), "1 task list loaded");
+        assert_eq!(how_many_loaded(3, "task list"), "3 task lists loaded");
+        assert_eq!(how_many_loaded(0, "note"), "0 notes loaded");
+    }
+
+    #[test]
+    fn test_an_account_with_one_folder_does_not_say_one_folders() {
+        assert_eq!(how_many_on_the_server(1), "1 folder on the server");
+        assert_eq!(how_many_on_the_server(12), "12 folders on the server");
     }
 }
 

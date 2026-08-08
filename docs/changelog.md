@@ -255,6 +255,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The status line says "1 message" rather than "1 messages".** The line at the
+  bottom of the window, which is also read out on every switch into a module,
+  put the number in front of a plural word whatever the number was. A mailbox
+  holding one message said "1 messages, 0 unread", an account with one folder
+  said "1 folders on the server", and the same went for folders, calendars,
+  reminders, task lists, tasks, notes and contacts as each list arrived. This is
+  heard far more often than any of the sync lines that had the same fault,
+  because it is said on every switch between modules.
+
+  All nine ask the routine the sync summaries already ask, so there is one place
+  to get this right rather than ten. They are worked out where they can be
+  checked rather than inside the window code, which is why nothing could reach
+  them to check them before.
+
+  Known limitation: none of these has been heard with a screen reader.
+
 - **A contacts sync no longer counts the same person twice.** The line after a
   sync says how many contacts were created, changed and deleted. A person kept
   in both Google and Outlook arrives from whichever address book is read first
