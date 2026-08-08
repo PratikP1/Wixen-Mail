@@ -2497,6 +2497,7 @@ mod tests {
         // with whatever it holds.
         let cache = test_cache();
         let mut stored = event_entry("e1".to_string(), "acct", &data(false));
+        stored.pending = false;
         stored.reminders_json = Some(TWO_ALERTS.to_string());
         cache
             .save_calendar_event(&stored)
@@ -2519,6 +2520,10 @@ mod tests {
             .get_event_by_id("e1")
             .expect("a read")
             .expect("the event");
+        assert!(
+            back.pending,
+            "an edit nothing will send is an edit that only happened here"
+        );
         assert_eq!(
             alerts_on(&back),
             vec![(15, "popup".to_string()), (1440, "email".to_string())],
