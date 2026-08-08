@@ -56,4 +56,10 @@ if ! command -v python >/dev/null 2>&1; then
     exit 1
 fi
 
+# The wording rule this script's own output has to follow, checked before the
+# output is written. The product keeps a guard called "a count and the thing it
+# counts agree in number" for exactly this, and the tool that measures that
+# guard printed "1 tests went red". Milliseconds, and it fails the run.
+python -m doctest scripts/guards.py
+
 exec python scripts/guards.py "$@"

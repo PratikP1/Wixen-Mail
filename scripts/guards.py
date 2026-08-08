@@ -154,18 +154,70 @@ def measure(guard: Guard, scratch: Path) -> Measured:
     )
 
 
+def how_many(count: int, thing: str) -> str:
+    """A count with the thing it counts, so a line reads as a sentence.
+
+    The product keeps one routine for this, `how_many` in
+    `src/service/caldav.rs`, and `guards/guards.toml` guards it under the name
+    "a count and the thing it counts agree in number". This is that rule
+    written again rather than that routine called, and the reason is what this
+    script does: it breaks the tree on purpose and runs the suite against the
+    break. Reaching the product's answer means building and running the crate,
+    so half the time the code holding the wording is the code that will not
+    compile, and a script that cannot say what it found until the thing under
+    test builds is worse than six words written twice.
+
+    Written again, and then checked, which is the part that was missing when
+    this file printed "1 tests went red":
+
+    >>> how_many(1, "test")
+    '1 test'
+    >>> how_many(2, "test")
+    '2 tests'
+    >>> how_many(0, "named test")
+    '0 named tests'
+    """
+    return f"1 {thing}" if count == 1 else f"{count} {thing}s"
+
+
 def say_what_it_found(guard: Guard, measured: Measured) -> None:
+    """Print what the break really did, against what the record says.
+
+    The lines themselves, and not only the routine that words them, because
+    the defect this checks for was a count written straight into a line here
+    while the routine sat unused two functions away:
+
+    >>> one = Guard("a guard", Path("nowhere.rs"), "a", "b", ("first",))
+    >>> say_what_it_found(one, Measured(stayed_green=[], also_went_red=["other"]))
+       1 test went red that this record does not name:
+           other
+    <BLANKLINE>
+    >>> say_what_it_found(one, Measured(stayed_green=["first"], also_went_red=[]))
+       1 of 1 named test stayed green with the guard broken:
+           first
+    <BLANKLINE>
+    >>> three = Guard("a guard", Path("nowhere.rs"), "a", "b", ("a", "b", "c"))
+    >>> say_what_it_found(three, Measured(stayed_green=["a"], also_went_red=[]))
+       1 of 3 named tests stayed green with the guard broken:
+           a
+    <BLANKLINE>
+    >>> say_what_it_found(three, Measured(stayed_green=[], also_went_red=[]))
+       all 3 tests named went red, and nothing else did
+    >>> say_what_it_found(one, Measured(stayed_green=[], also_went_red=[]))
+       the one test named went red, and nothing else did
+    """
     if measured.stayed_green:
         print(
-            f"   {len(measured.stayed_green)} of {len(guard.red)} named tests "
-            "stayed green with the guard broken:"
+            f"   {len(measured.stayed_green)} of "
+            f"{how_many(len(guard.red), 'named test')} stayed green with the "
+            "guard broken:"
         )
         for name in measured.stayed_green:
             print(f"       {name}")
     if measured.also_went_red:
         print(
-            f"   {len(measured.also_went_red)} tests went red that this record "
-            "does not name:"
+            f"   {how_many(len(measured.also_went_red), 'test')} went red that "
+            "this record does not name:"
         )
         for name in measured.also_went_red:
             print(f"       {name}")
@@ -174,7 +226,10 @@ def say_what_it_found(guard: Guard, measured: Measured) -> None:
     elif len(guard.red) == 1:
         print("   the one test named went red, and nothing else did")
     else:
-        print(f"   all {len(guard.red)} tests named went red, and nothing else did")
+        print(
+            f"   all {how_many(len(guard.red), 'test')} named went red, and "
+            "nothing else did"
+        )
 
 
 def main() -> int:
