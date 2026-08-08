@@ -255,6 +255,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The calendar sync now says when a change can never be sent.** A change could
+  be left waiting with nothing anywhere able to send it, and nothing told you.
+  The row waited for ever and every sync looked straight past it. Three ways in:
+  the event is in a calendar you can only read, it is in a calendar made on this
+  computer that no account holds, or it is in no calendar at all, which is where
+  every event made from the calendar window starts.
+
+  Each of those now gets a sentence in the sync summary, one for the calendar
+  rather than one for each change, and it says the words are kept here and
+  nothing is written over them, so nothing is lost, and what to do to have the
+  change saved. It is said on every sync, because nothing resolves it on its
+  own and saying it once means the person who was away that time never hears it.
+
+  A calendar feed already had a sentence like this and it only counted events the
+  feed itself names, so an event you moved into the feed's calendar, or made in
+  it, was the one change most likely to be waiting and the one never mentioned.
+  It is counted by asking the calendar what is waiting in it now.
+
 - **A calendar or task list you made here is no longer promised back from your
   provider.** The question asked before deleting one said "It will come back at
   the next sync" whenever the open account was a Google or Outlook one. That is

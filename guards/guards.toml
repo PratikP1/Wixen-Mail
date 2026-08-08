@@ -692,3 +692,57 @@ after = """        ContainerKind::TaskList => true,"""
 red = [
     "presentation::managers::where_a_container_came_from::test_a_task_list_is_read_from_its_identifier",
 ]
+
+# ── A change that nothing anywhere can send ─────────────────────────────────
+#
+# A row can be left waiting to be sent with nothing able to send it, and until
+# these existed nothing said so: the push saw the calendar was not its own,
+# dropped the row without counting it, and did the same on every sync from
+# then on. The move that put it there had already announced itself as done.
+
+[[guard]]
+name = "a change in a calendar that can only be read is said"
+file = "src/application/calendar.rs"
+before = """    if container.is_read_only {
+        return Some(Nowhere::OnlyReadable);
+    }"""
+after = """    if false {
+        return Some(Nowhere::OnlyReadable);
+    }"""
+red = [
+    "application::calendar::tests::test_a_change_in_a_calendar_the_account_can_only_read_is_said_rather_than_dropped",
+    "application::calendar::tests::test_one_sentence_for_the_calendar_rather_than_one_for_every_change",
+]
+
+[[guard]]
+name = "a change in a calendar no account holds is said"
+file = "src/application/calendar.rs"
+before = """    (!PROVIDERS_A_CHANGE_CAN_REACH.contains(&came_from)).then_some(Nowhere::MadeHere)"""
+after = """    None"""
+red = [
+    "application::calendar::tests::test_a_change_in_a_calendar_made_on_this_computer_is_said",
+]
+
+[[guard]]
+name = "a calendar with a pass of its own is not warned about twice"
+file = "src/application/calendar.rs"
+before = """    if CALENDARS_WITH_A_PASS_OF_THEIR_OWN.contains(&came_from) {
+        return None;
+    }"""
+after = """    if false {
+        return None;
+    }"""
+red = [
+    "application::calendar::tests::test_a_calendar_with_a_pass_of_its_own_is_left_to_say_it_itself",
+]
+
+[[guard]]
+name = "what a feed cannot save is counted by asking the calendar"
+file = "src/application/caldav_sync.rs"
+before = """    let waiting = changes_waiting(cache, calendar, account_id, &mut result).len();"""
+after = """    let waiting = 0;"""
+red = [
+    "application::caldav_sync::tests::test_a_change_to_an_event_in_a_subscribed_feed_survives_the_next_refresh_and_is_said",
+    "application::caldav_sync::tests::test_a_change_waiting_on_an_event_a_feed_has_stopped_carrying_is_kept_and_said",
+    "application::caldav_sync::tests::test_an_event_the_feed_never_carried_is_counted_as_one_that_cannot_be_saved",
+]

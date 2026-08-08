@@ -9653,6 +9653,21 @@ fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
             }
         }
 
+        // Last, after every pass, so that a change one of them has just sent
+        // is no longer waiting and is not reported as one nothing can send.
+        //
+        // Once for the account rather than inside a pass: a change in a
+        // calendar made on this computer is invisible to all four of them, and
+        // an account signed in to Google and to Outlook runs two passes that
+        // would each say the same sentence about the same row.
+        match crate::application::calendar::changes_nothing_can_send(&cache, aid) {
+            Ok(said) => total_cannot_be_saved.extend(said),
+            Err(e) => total_errors.push(format!(
+                "The changes waiting to be sent could not be read: {}",
+                e
+            )),
+        }
+
         handle.block_on(async {
             let _ = tx
                 .send(UIUpdate::CalendarSyncComplete {

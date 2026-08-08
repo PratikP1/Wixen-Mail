@@ -470,6 +470,29 @@ fn test_a_read_receipt_names_the_message_it_is_about() {
     );
 }
 
+/// The calendar sync asks whether anything can send what is still waiting.
+///
+/// The sweep is a plain function over the account's rows, so it is tested
+/// properly in `application::calendar`. What no test there can say is whether
+/// the sync calls it: reaching the sync means a window, an account and a
+/// runtime, and it is the calling that was missing before. A change nothing
+/// can send waits for ever and is looked at again on every sync, and the only
+/// place anybody learns that is the summary this feeds.
+#[test]
+fn test_the_calendar_sync_says_what_nothing_can_send() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    assert!(
+        app.contains("changes_nothing_can_send(&cache, aid)"),
+        "the calendar sync never asks what nothing can send, so a change that \
+         waits for ever is passed over in silence on every sync"
+    );
+    assert!(
+        app.contains("Ok(said) => total_cannot_be_saved.extend(said)"),
+        "the answer is asked for and dropped, which reaches nobody"
+    );
+}
+
 /// The account dialog asks for the name recipients see.
 ///
 /// This pins that the code asks for the right thing. It can never mean a

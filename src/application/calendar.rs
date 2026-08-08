@@ -315,6 +315,136 @@ fn whose_change(
     }
 }
 
+/// The calendars whose own pass says this, so this one leaves them alone.
+///
+/// A calendar held on a calendar server and a published feed are each synced
+/// one at a time, and each pass already says, naming that calendar, that a
+/// change to it can never be sent. Saying it here as well puts the same
+/// sentence in one summary twice, which is how a sentence somebody needs stops
+/// being heard.
+const CALENDARS_WITH_A_PASS_OF_THEIR_OWN: [&str; 2] =
+    [CALDAV, crate::application::calendar_source::FROM_A_FEED];
+
+/// Why nothing anywhere will ever send a change to this calendar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Nowhere {
+    /// The calendar can only be read: a feed, or one a server marks read-only.
+    OnlyReadable,
+    /// The calendar was made on this computer, so no account holds it.
+    MadeHere,
+    /// The change is in no calendar at all.
+    NoCalendar,
+}
+
+impl Nowhere {
+    /// The reason, in the middle of a sentence, and with no pronoun in it: the
+    /// same words have to read properly after "1 change" and after "9 changes".
+    const fn because(self) -> &'static str {
+        match self {
+            Self::OnlyReadable => "this is a calendar this program can only read",
+            Self::MadeHere => "this calendar was made on this computer and no account holds it",
+            Self::NoCalendar => "there is no calendar to send to",
+        }
+    }
+
+    /// Which calendar the way out names.
+    const fn a_calendar(self) -> &'static str {
+        match self {
+            Self::OnlyReadable => "you can change",
+            Self::MadeHere | Self::NoCalendar => "your account holds",
+        }
+    }
+}
+
+/// What somebody is told about changes in a calendar nothing will ever send.
+///
+/// One sentence for the calendar rather than one for each change, and said on
+/// every sync rather than once, because nothing here resolves it and somebody
+/// who was away from the screen that time would otherwise never hear it at all.
+///
+/// Not an error and not a count. Nothing went wrong and nothing is lost, so
+/// counting it as a failure would teach somebody to stop reading the count that
+/// means one, and a count could not carry the calendar's name, which is the
+/// useful part.
+///
+/// The way out it names is adding the event to a calendar that can be written
+/// to, and never moving this one there. Moving a change out of a calendar this
+/// program can only read is refused, for the same reason the change cannot be
+/// sent, and naming a way out that does not work is worse than naming none.
+pub(crate) fn cannot_be_saved(calendar: Option<&str>, waiting: usize, why: Nowhere) -> String {
+    let named = match calendar {
+        Some(name) => format!("{name}: "),
+        None => String::new(),
+    };
+    format!(
+        "{named}{} made here cannot be sent, because {}. What you typed is kept on this \
+         computer and nothing is written over it, so nothing is lost, but no sync will ever \
+         send it. Adding the event to a calendar {} is the only way to have it saved.",
+        crate::service::caldav::how_many(waiting, "change"),
+        why.because(),
+        why.a_calendar(),
+    )
+}
+
+/// Why nothing will ever send a change to this calendar, when nothing will.
+///
+/// Asked of the calendar rather than of a provider, because that is the shape
+/// of the question: [`whose_change`] answers "not mine" for a calendar another
+/// provider holds, and both passes answering "not mine" is not the same as
+/// nobody being able to send it.
+fn nothing_can_send(container: Option<&CalendarContainer>) -> Option<Nowhere> {
+    let Some(container) = container else {
+        // In no calendar, or in one that is no longer there. Every event made
+        // from the calendar window is stored in no calendar at all.
+        return Some(Nowhere::NoCalendar);
+    };
+    let came_from = container.source_provider.as_deref().unwrap_or_default();
+    if CALENDARS_WITH_A_PASS_OF_THEIR_OWN.contains(&came_from) {
+        return None;
+    }
+    if container.is_read_only {
+        return Some(Nowhere::OnlyReadable);
+    }
+    (!PROVIDERS_A_CHANGE_CAN_REACH.contains(&came_from)).then_some(Nowhere::MadeHere)
+}
+
+/// Every change waiting where nothing will ever send it, one sentence each.
+///
+/// The gap this closes: [`waiting_for`] drops a change nothing can send without
+/// counting it or saying a word, so the row waits for ever and is looked at
+/// again on every sync, and the person who moved the appointment was told it
+/// moved. Three ways in: a calendar this account may only read, a calendar made
+/// on this computer that no account holds, and an event in no calendar at all.
+///
+/// Run once for the account rather than inside a provider's pass. Both passes
+/// see the same rows, so reporting it there says it twice on an account signed
+/// in to Google and to Outlook, and neither pass runs at all on an account
+/// signed in to neither, which is where a change made on this computer sits.
+pub fn changes_nothing_can_send(cache: &MessageCache, account_id: &str) -> Result<Vec<String>> {
+    let mut counted: Vec<(Option<String>, Nowhere, usize)> = Vec::new();
+    for event in cache.pending_calendar_events(account_id)? {
+        let container = event
+            .calendar_id
+            .as_deref()
+            .and_then(|id| cache.get_calendar(id).ok().flatten());
+        let Some(why) = nothing_can_send(container.as_ref()) else {
+            continue;
+        };
+        let name = container.map(|container| container.name);
+        match counted
+            .iter_mut()
+            .find(|(already, was, _)| *already == name && *was == why)
+        {
+            Some((_, _, waiting)) => *waiting += 1,
+            None => counted.push((name, why, 1)),
+        }
+    }
+    Ok(counted
+        .into_iter()
+        .map(|(name, why, waiting)| cannot_be_saved(name.as_deref(), waiting, why))
+        .collect())
+}
+
 /// Everything waiting to go to one provider, with the calendar at it to send to.
 fn waiting_for(
     cache: &MessageCache,
@@ -338,6 +468,12 @@ fn waiting_for(
             match whose_change(cache, event.calendar_id.as_deref(), provider, the_main_one) {
                 // The flag stays set rather than being cleared, because moving
                 // the event into a calendar the provider holds should send it.
+                //
+                // Nothing is said here about either of them, and that is on
+                // purpose. This pass only knows "not mine", and both passes
+                // saying that is not the same as nobody being able to send it.
+                // Whether anybody can is asked once for the account, by
+                // [`changes_nothing_can_send`], which is what says so.
                 WhoseChange::Theirs | WhoseChange::StaysHere => None,
                 WhoseChange::Ours(at_the_provider) => Some((event, at_the_provider)),
             }
@@ -2552,6 +2688,188 @@ mod tests {
         TempHome::named(label, |dir| {
             MessageCache::new(dir.to_path_buf(), None).expect("a cache in a directory of its own")
         })
+    }
+
+    /// A calendar of the account's, saying where it came from and whether this
+    /// program may write to it.
+    fn a_calendar_from(
+        id: &str,
+        name: &str,
+        came_from: Option<&str>,
+        readable_only: bool,
+    ) -> CalendarContainer {
+        CalendarContainer {
+            name: name.to_string(),
+            source_provider: came_from.map(str::to_string),
+            is_read_only: readable_only,
+            ..make_calendar(id, name, true)
+        }
+    }
+
+    /// A change somebody made here, waiting in the calendar named.
+    fn a_change_waiting(cache: &MessageCache, id: &str, calendar_id: Option<&str>) {
+        let mut event = make_event(id, "Dentist", calendar_id);
+        event.pending = true;
+        cache
+            .save_calendar_event(&event)
+            .expect("the change to be stored");
+    }
+
+    #[test]
+    fn test_a_change_in_a_calendar_the_account_can_only_read_is_said_rather_than_dropped() {
+        // Measured before this existed: the push finds the calendar is one it
+        // may only read, leaves the row alone, counts nothing and says
+        // nothing, and does the same on every sync from then on.
+        let cache = temp_cache("read_only_is_said");
+        cache
+            .save_calendar(&a_calendar_from(
+                "term-dates",
+                "Term dates",
+                Some(GOOGLE),
+                true,
+            ))
+            .expect("the calendar to store");
+        a_change_waiting(&cache, "e1", Some("term-dates"));
+
+        let said = changes_nothing_can_send(&cache, "test").expect("the changes to be readable");
+
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert!(said[0].contains("Term dates"), "{}", said[0]);
+        assert!(said[0].contains("only read"), "{}", said[0]);
+        assert!(said[0].contains("nothing is lost"), "{}", said[0]);
+    }
+
+    #[test]
+    fn test_a_change_in_a_calendar_made_on_this_computer_is_said() {
+        // No account holds this calendar, so no pass will ever look at it.
+        // Every change filed here waits for ever and nothing mentions it.
+        let cache = temp_cache("made_here_is_said");
+        cache
+            .save_calendar(&a_calendar_from("mine", "Bin days", None, false))
+            .expect("the calendar to store");
+        a_change_waiting(&cache, "e1", Some("mine"));
+
+        let said = changes_nothing_can_send(&cache, "test").expect("the changes to be readable");
+
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert!(said[0].contains("Bin days"), "{}", said[0]);
+        assert!(said[0].contains("made on this computer"), "{}", said[0]);
+    }
+
+    #[test]
+    fn test_a_change_in_no_calendar_at_all_is_said() {
+        // Every event made from the calendar window is stored in no calendar
+        // and marked as waiting, so this is the ordinary case rather than a
+        // corner of one.
+        let cache = temp_cache("no_calendar_is_said");
+        a_change_waiting(&cache, "e1", None);
+
+        let said = changes_nothing_can_send(&cache, "test").expect("the changes to be readable");
+
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert!(said[0].contains("no calendar"), "{}", said[0]);
+        assert!(said[0].contains("nothing is lost"), "{}", said[0]);
+    }
+
+    #[test]
+    fn test_a_change_a_sync_will_send_is_not_said() {
+        // The other half. A sentence that is always said is one nobody reads,
+        // and it would arrive on every sync of a working account.
+        let cache = temp_cache("sendable_is_quiet");
+        cache
+            .save_calendar(&a_calendar_from(
+                "cal-google",
+                "Google Calendar",
+                Some(GOOGLE),
+                false,
+            ))
+            .expect("the calendar to store");
+        a_change_waiting(&cache, "e1", Some("cal-google"));
+
+        assert!(
+            changes_nothing_can_send(&cache, "test")
+                .expect("the changes to be readable")
+                .is_empty(),
+            "a change the next push will send was reported as one nothing can send"
+        );
+    }
+
+    #[test]
+    fn test_a_settled_row_is_not_said_either() {
+        // Nothing is waiting on it, so there is nothing anybody needs to hear.
+        let cache = temp_cache("settled_is_quiet");
+        cache
+            .save_calendar(&a_calendar_from(
+                "term-dates",
+                "Term dates",
+                Some(GOOGLE),
+                true,
+            ))
+            .expect("the calendar to store");
+        cache
+            .save_calendar_event(&make_event("e1", "Dentist", Some("term-dates")))
+            .expect("the event to store");
+
+        assert!(
+            changes_nothing_can_send(&cache, "test")
+                .expect("the changes to be readable")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_a_calendar_with_a_pass_of_its_own_is_left_to_say_it_itself() {
+        // A calendar server's calendar and a published feed are each synced on
+        // their own and each already says this, in that calendar's name. Said
+        // here as well, somebody hears the same sentence twice in one summary.
+        let cache = temp_cache("their_own_pass");
+        cache
+            .save_calendar(&a_calendar_from(
+                "on-a-server",
+                "Shared",
+                Some(CALDAV),
+                true,
+            ))
+            .expect("the calendar to store");
+        cache
+            .save_calendar(&a_calendar_from(
+                "a-feed",
+                "Term dates",
+                Some(crate::application::calendar_source::FROM_A_FEED),
+                true,
+            ))
+            .expect("the feed to store");
+        a_change_waiting(&cache, "e1", Some("on-a-server"));
+        a_change_waiting(&cache, "e2", Some("a-feed"));
+
+        assert!(
+            changes_nothing_can_send(&cache, "test")
+                .expect("the changes to be readable")
+                .is_empty(),
+            "the same sentence would be said twice in one summary"
+        );
+    }
+
+    #[test]
+    fn test_one_sentence_for_the_calendar_rather_than_one_for_every_change() {
+        // A warning repeated once per event on every sync is how a warning
+        // somebody needs stops being read.
+        let cache = temp_cache("one_sentence");
+        cache
+            .save_calendar(&a_calendar_from(
+                "term-dates",
+                "Term dates",
+                Some(GOOGLE),
+                true,
+            ))
+            .expect("the calendar to store");
+        a_change_waiting(&cache, "e1", Some("term-dates"));
+        a_change_waiting(&cache, "e2", Some("term-dates"));
+
+        let said = changes_nothing_can_send(&cache, "test").expect("the changes to be readable");
+
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert!(said[0].contains("2 changes"), "{}", said[0]);
     }
 
     #[test]

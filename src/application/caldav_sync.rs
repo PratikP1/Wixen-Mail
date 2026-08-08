@@ -345,17 +345,16 @@ fn say_the_change_cannot_be_saved(
     if waiting == 0 {
         return;
     }
-    // Not an error. Nothing went wrong and nothing is lost, so counting it as
-    // a failure would teach somebody to stop reading the count that means one.
-    result.changes_that_cannot_be_saved.push(format!(
-        "{}: {} made here cannot be sent, because this is a calendar this \
-         program can only read. What you typed is kept on this computer and \
-         nothing is written over it, so nothing is lost, but no sync will ever \
-         send it. Adding the event to a calendar you can change is the only \
-         way to have it saved.",
-        calendar.name,
-        crate::service::caldav::how_many(waiting, "change"),
-    ));
+    // The words themselves are in `application::calendar`, because the pass
+    // over the account says the same thing about a calendar that has no pass
+    // of its own, and two copies of a sentence drift the moment one is edited.
+    result
+        .changes_that_cannot_be_saved
+        .push(crate::application::calendar::cannot_be_saved(
+            Some(&calendar.name),
+            waiting,
+            crate::application::calendar::Nowhere::OnlyReadable,
+        ));
 }
 
 /// How far back a calendar server is asked about, in days.
@@ -629,7 +628,6 @@ pub async fn refresh_subscription(
     // There is no transaction to reach for here, so the order is what stops a
     // feed that fails halfway through from leaving an empty calendar behind.
     let mut in_feed = std::collections::HashSet::new();
-    let mut kept_here = 0;
     for remote in &remote_events {
         in_feed.insert(remote.uid.as_str());
 
@@ -642,7 +640,6 @@ pub async fn refresh_subscription(
         // calendar-server read, for the same reason, and here it is the whole
         // of what protects the row rather than a race with the push.
         if already.is_some_and(|held| held.pending) {
-            kept_here += 1;
             continue;
         }
 
@@ -670,17 +667,19 @@ pub async fn refresh_subscription(
     for event in &held {
         if let Some(uid) = event.provider_event_id.as_deref()
             && !in_feed.contains(uid)
+            && may_be_taken_off_this_computer(event, &WhatTheAnswerCovers::AllOfIt)
+            && cache.drop_synced_calendar_event(&event.id)?
         {
-            if !may_be_taken_off_this_computer(event, &WhatTheAnswerCovers::AllOfIt) {
-                kept_here += 1;
-                continue;
-            }
-            if cache.drop_synced_calendar_event(&event.id)? {
-                result.deleted += 1;
-            }
+            result.deleted += 1;
         }
     }
-    say_the_change_cannot_be_saved(calendar, kept_here, &mut result);
+    // Every change waiting in this calendar, asked of the calendar rather than
+    // counted up as the two loops above went past. Counted there, it only ever
+    // saw rows the feed names: an event moved into this calendar, or made in
+    // it here, carries no identity from the feed, so neither loop reached it
+    // and the one change most likely to be waiting was the one never said.
+    let waiting = changes_waiting(cache, calendar, account_id, &mut result).len();
+    say_the_change_cannot_be_saved(calendar, waiting, &mut result);
 
     Ok(result)
 }
@@ -2694,6 +2693,75 @@ mod tests {
         assert!(
             said.contains("Term dates"),
             "the row was kept and nobody was told why saving never takes: {said:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_feed_with_nothing_waiting_in_it_says_nothing_about_saving() {
+        // The other half of the sentence above. Said on every refresh of every
+        // subscribed calendar, it is a sentence about a problem nobody has,
+        // and the one time it is true nobody is still listening.
+        let cache = temp_cache("feed_with_nothing_waiting");
+        let mut calendar = container("sub-quiet", "acct");
+        calendar.name = "Term dates".to_string();
+        calendar.source_provider = Some("subscription".to_string());
+
+        let (address, _heard) =
+            answering("200 OK", "text/calendar; charset=utf-8", ics_feed(&["f-1"])).await;
+        calendar.subscription_url = Some(format!("http://{address}/feed.ics"));
+
+        let result =
+            refresh_subscription(&cache, &ICalSubscriptionClient::new(), &calendar, "acct")
+                .await
+                .expect("the refresh to finish");
+
+        assert!(
+            result.changes_that_cannot_be_saved.is_empty(),
+            "a refresh with nothing waiting in it warned about saving: {:?}",
+            result.changes_that_cannot_be_saved
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_the_feed_never_carried_is_counted_as_one_that_cannot_be_saved() {
+        // The count used to fall out of the two loops that read the feed, so
+        // it only ever saw rows the feed names. An event moved into this
+        // calendar, or made in it here, carries no identity from the feed, is
+        // named by neither loop, and was passed over in silence: the row waits
+        // for ever and every refresh looks straight past it.
+        let cache = temp_cache("feed_never_carried_it");
+        let mut calendar = container("sub-never-carried", "acct");
+        calendar.name = "Term dates".to_string();
+        calendar.source_provider = Some("subscription".to_string());
+
+        let mut moved_in = held_event("moved-in", "unused", &calendar.id, "acct");
+        moved_in.provider_event_id = None;
+        moved_in.summary = "Dentist".to_string();
+        moved_in.pending = true;
+        cache
+            .save_calendar_event(&moved_in)
+            .expect("the moved event to store");
+
+        let (address, _heard) =
+            answering("200 OK", "text/calendar; charset=utf-8", ics_feed(&["f-1"])).await;
+        calendar.subscription_url = Some(format!("http://{address}/feed.ics"));
+
+        let result =
+            refresh_subscription(&cache, &ICalSubscriptionClient::new(), &calendar, "acct")
+                .await
+                .expect("the refresh to finish");
+
+        let said = result.changes_that_cannot_be_saved.join(" ");
+        assert!(
+            said.contains("Term dates"),
+            "a change nothing will ever send was passed over without a word: {said:?}"
+        );
+        assert!(
+            cache
+                .get_event_by_id(&moved_in.id)
+                .expect("the calendar to be readable")
+                .is_some_and(|held| held.pending),
+            "the row holding the change was not left alone"
         );
     }
 
