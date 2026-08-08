@@ -630,7 +630,14 @@ fn event_with_edits(
     data: &wx_calendar::CalendarEventData,
 ) -> crate::data::message_cache::CalendarEventEntry {
     let edited = event_entry(stored.id.clone(), &stored.account_id, data);
+    let alerts = alerts_with_the_first_at(stored.reminders_json.as_deref(), data.reminder_minutes);
     crate::data::message_cache::CalendarEventEntry {
+        // Built from the alerts already on the event rather than from the one
+        // box, which cannot hold a second alert or say how somebody is alerted.
+        // Rebuilt from the box, an event with a popup at fifteen minutes and an
+        // email the day before came back with the popup alone, and the row was
+        // marked as waiting to be sent, so the loss went up to the provider.
+        reminders_json: alerts,
         provider_event_id: stored.provider_event_id,
         calendar_id: stored.calendar_id,
         time_zone: stored.time_zone,
@@ -658,6 +665,48 @@ fn event_with_edits(
 /// alert, because the two drifted apart the moment one of them was corrected.
 fn an_alert(minutes: i64) -> String {
     format!("[{{\"minutes\":{minutes},\"method\":\"popup\"}}]")
+}
+
+/// The alerts already on an event, with the first one set to what the box holds.
+///
+/// The editor has one box, holding minutes, and it is filled from the first
+/// alert. So the first alert is the only one it speaks for, and the rest of
+/// them come from the event being replaced, the same way the attendees and the
+/// repeat rule do. The first alert also keeps the method it was stored with:
+/// there is no control that could have changed it, and Google drops an alert
+/// that does not say how somebody is alerted.
+///
+/// Zero in the box takes off the alert the box was showing and leaves the
+/// others. It means "not the one I am looking at", and the ones it never showed
+/// are not somebody's to lose here.
+///
+/// An event with no alerts stored, or with something in that column that will
+/// not read as a list, is answered by the box alone. That matches
+/// `ui_types::first_reminder_minutes`, which shows no alert for the same input.
+fn alerts_with_the_first_at(stored: Option<&str>, minutes: i32) -> Option<String> {
+    let held: Vec<serde_json::Value> = stored
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
+        .and_then(|parsed| parsed.as_array().cloned())
+        .unwrap_or_default();
+    let Some((first, rest)) = held.split_first() else {
+        return (minutes > 0).then(|| an_alert(i64::from(minutes)));
+    };
+
+    let mut kept: Vec<serde_json::Value> = Vec::with_capacity(held.len());
+    if minutes > 0 {
+        let mut first = first.clone();
+        match first.as_object_mut() {
+            Some(alert) => {
+                alert.insert("minutes".to_string(), serde_json::json!(minutes));
+            }
+            // Not an alert at all, so there is nothing in it worth keeping and
+            // the box is the whole of what is known about it.
+            None => first = serde_json::json!({"minutes": minutes, "method": "popup"}),
+        }
+        kept.push(first);
+    }
+    kept.extend(rest.iter().cloned());
+    (!kept.is_empty()).then(|| serde_json::Value::Array(kept).to_string())
 }
 
 /// Turn what the editor captured into what the cache stores.
@@ -1995,6 +2044,319 @@ mod tests {
         );
     }
 
+    /// The two task lists a move goes between, so the rows have somewhere real
+    /// to point at.
+    fn two_task_lists(cache: &MessageCache, from: &str, to: &str) {
+        for id in [from, to] {
+            cache
+                .save_task_list(&crate::data::message_cache::TaskListEntry {
+                    id: id.to_string(),
+                    account_id: "acct".to_string(),
+                    name: id.to_string(),
+                    color: String::new(),
+                    display_order: 0,
+                    created_at: now_stamp(),
+                })
+                .expect("a list to file into");
+        }
+    }
+
+    /// A task nothing is waiting to send, filed in the list named.
+    fn a_settled_task(id: &str, list_id: &str) -> crate::data::message_cache::TaskEntry {
+        crate::data::message_cache::TaskEntry {
+            id: id.to_string(),
+            account_id: "acct".to_string(),
+            task_list_id: Some(list_id.to_string()),
+            title: "Book the dentist".to_string(),
+            description: None,
+            due_date: None,
+            is_completed: false,
+            completed_at: None,
+            priority: "normal".to_string(),
+            display_order: 0,
+            parent_task_id: None,
+            created_at: now_stamp(),
+            updated_at: now_stamp(),
+            remote_updated: None,
+            pending: false,
+        }
+    }
+
+    /// An event nothing is waiting to send, filed in the calendar named.
+    fn a_settled_event(
+        id: &str,
+        calendar_id: &str,
+        provider_event_id: Option<&str>,
+    ) -> crate::data::message_cache::CalendarEventEntry {
+        crate::data::message_cache::CalendarEventEntry {
+            calendar_id: Some(calendar_id.to_string()),
+            provider_event_id: provider_event_id.map(str::to_string),
+            pending: false,
+            ..event_entry(id.to_string(), "acct", &data(false))
+        }
+    }
+
+    #[test]
+    fn test_moving_a_task_made_here_puts_it_in_the_queue_to_be_sent() {
+        // The whole point of a move. Filed here and never sent leaves the two
+        // ends disagreeing for ever, and the status line says "moved".
+        let cache = test_cache();
+        two_task_lists(&cache, "list-a", "list-b");
+        cache
+            .save_task(&a_settled_task("t1", "list-a"))
+            .expect("a task to move");
+
+        file_under(
+            &cache,
+            crate::application::new_item::ItemKind::Task,
+            "t1",
+            "list-b",
+            "acct",
+        )
+        .expect("the move to be written");
+
+        let waiting = cache.pending_tasks("acct").expect("the queue");
+        assert_eq!(
+            waiting
+                .iter()
+                .map(|task| task.task_list_id.clone().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["list-b".to_string()],
+            "the task moved here and nothing will send it"
+        );
+    }
+
+    #[test]
+    fn test_moving_an_event_made_here_puts_it_in_the_queue_to_be_sent() {
+        let cache = test_cache();
+        cache
+            .save_calendar_event(&a_settled_event("e1", "cal-a", None))
+            .expect("an event to move");
+
+        file_under(
+            &cache,
+            crate::application::new_item::ItemKind::Event,
+            "e1",
+            "cal-b",
+            "acct",
+        )
+        .expect("the move to be written");
+
+        let waiting = cache.pending_calendar_events("acct").expect("the queue");
+        assert_eq!(
+            waiting
+                .iter()
+                .map(|event| event.calendar_id.clone().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["cal-b".to_string()],
+            "the event moved here and nothing will send it"
+        );
+    }
+
+    #[test]
+    fn test_moving_a_task_the_provider_holds_is_refused_and_writes_nothing() {
+        // Google is never asked to move a task to another list. Writing the
+        // move here alone leaves the two ends disagreeing, and marking the row
+        // to be sent asks Google to update a task in a list it is not in,
+        // which is refused on this sync and on every sync after it.
+        let cache = test_cache();
+        two_task_lists(&cache, "google:list-a", "google:list-b");
+        cache
+            .save_task(&a_settled_task("google:t1", "google:list-a"))
+            .expect("a task Google holds");
+
+        let refused = file_under(
+            &cache,
+            crate::application::new_item::ItemKind::Task,
+            "google:t1",
+            "google:list-b",
+            "acct",
+        )
+        .expect_err("a move nothing can send is refused");
+        assert!(
+            refused.to_string().contains("Nothing has been moved"),
+            "the refusal has to say the move did not happen: {refused}"
+        );
+
+        let held = cache.get_all_tasks_for_account("acct").expect("the task");
+        assert_eq!(
+            held.first().and_then(|task| task.task_list_id.as_deref()),
+            Some("google:list-a"),
+            "the task was moved here anyway"
+        );
+        assert!(
+            cache.pending_tasks("acct").expect("the queue").is_empty(),
+            "a move nothing can carry out was queued to be sent"
+        );
+    }
+
+    #[test]
+    fn test_moving_an_event_the_provider_holds_is_refused_and_writes_nothing() {
+        let cache = test_cache();
+        cache
+            .save_calendar_event(&a_settled_event("e1", "cal-a", Some("uid-1")))
+            .expect("an event a server holds");
+
+        let refused = file_under(
+            &cache,
+            crate::application::new_item::ItemKind::Event,
+            "e1",
+            "cal-b",
+            "acct",
+        )
+        .expect_err("a move nothing can send is refused");
+        assert!(
+            refused.to_string().contains("Nothing has been moved"),
+            "the refusal has to say the move did not happen: {refused}"
+        );
+
+        let held = cache
+            .get_all_events_for_account("acct")
+            .expect("the event back");
+        assert_eq!(
+            held.first().and_then(|event| event.calendar_id.as_deref()),
+            Some("cal-a"),
+            "the event was moved here anyway"
+        );
+        assert!(
+            cache
+                .pending_calendar_events("acct")
+                .expect("the queue")
+                .is_empty(),
+            "a move nothing can carry out was queued to be sent"
+        );
+    }
+
+    /// A window state with one account open, which is all the move command
+    /// reads out of it.
+    fn looking_at(account_id: &str) -> Arc<StdMutex<WxUIState>> {
+        Arc::new(StdMutex::new(WxUIState {
+            active_account_id: Some(account_id.to_string()),
+            ..WxUIState::default()
+        }))
+    }
+
+    #[test]
+    fn test_a_task_the_provider_holds_is_told_no_before_the_chooser_opens() {
+        // The refusal has to reach the command, not sit in a function nothing
+        // calls, and it has to come before the window: working through a tree
+        // of lists to reach an answer that is thrown away is worse than being
+        // told at the start.
+        let cache = test_cache();
+        two_task_lists(&cache, "google:list-a", "google:list-b");
+        cache
+            .save_task(&a_settled_task("google:t1", "google:list-a"))
+            .expect("a task Google holds");
+
+        let offered = where_it_could_go(
+            &cache,
+            &looking_at("acct"),
+            crate::application::new_item::ItemKind::Task,
+            "google:t1",
+            "Book the dentist",
+        )
+        .expect("an answer");
+
+        match offered.offer {
+            Offer::Said(sentence) => {
+                assert!(
+                    sentence.contains("Book the dentist"),
+                    "the refusal has to name the task: {sentence}"
+                );
+                assert!(
+                    sentence.contains("Nothing has been moved"),
+                    "the refusal has to say the move did not happen: {sentence}"
+                );
+            }
+            Offer::Ask(branches) => {
+                panic!("a move nothing can send was offered a chooser: {branches:?}")
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_task_made_here_is_still_offered_the_other_lists() {
+        // The other half of the same rule. Refusing everything would be a
+        // refusal that is always true and never useful.
+        let cache = test_cache();
+        two_task_lists(&cache, "list-a", "list-b");
+        cache
+            .save_task(&a_settled_task("t1", "list-a"))
+            .expect("a task made here");
+
+        let offered = where_it_could_go(
+            &cache,
+            &looking_at("acct"),
+            crate::application::new_item::ItemKind::Task,
+            "t1",
+            "Book the dentist",
+        )
+        .expect("an answer");
+
+        match offered.offer {
+            Offer::Ask(branches) => assert_eq!(
+                branches
+                    .iter()
+                    .flat_map(|branch| branch.places.iter())
+                    .map(|place| place.id.clone())
+                    .collect::<Vec<_>>(),
+                vec!["list-b".to_string()],
+                "the list it is already in should not be offered"
+            ),
+            Offer::Said(sentence) => panic!("a move that works was refused: {sentence}"),
+        }
+    }
+
+    #[test]
+    fn test_moving_a_note_happens_with_nobody_to_tell() {
+        // A note lives on this computer and nowhere else, so there is no
+        // provider to refuse and nothing to queue.
+        let cache = test_cache();
+        for id in ["folder-a", "folder-b"] {
+            cache
+                .save_note_folder(&crate::data::message_cache::NoteFolderEntry {
+                    id: id.to_string(),
+                    account_id: "acct".to_string(),
+                    name: id.to_string(),
+                    display_order: 0,
+                    created_at: now_stamp(),
+                })
+                .expect("a folder to file into");
+        }
+        cache
+            .save_note(&crate::data::message_cache::NoteEntry {
+                id: "n1".to_string(),
+                account_id: "acct".to_string(),
+                folder_id: Some("folder-a".to_string()),
+                title: "Wiring colours".to_string(),
+                body: "Brown is live".to_string(),
+                format: "plain".to_string(),
+                pinned: false,
+                created_at: now_stamp(),
+                updated_at: now_stamp(),
+            })
+            .expect("a note to move");
+
+        file_under(
+            &cache,
+            crate::application::new_item::ItemKind::Note,
+            "n1",
+            "folder-b",
+            "acct",
+        )
+        .expect("the move to be written");
+
+        assert_eq!(
+            cache
+                .get_note("n1")
+                .expect("a read")
+                .expect("the note")
+                .folder_id
+                .as_deref(),
+            Some("folder-b")
+        );
+    }
+
     fn data(all_day: bool) -> wx_calendar::CalendarEventData {
         wx_calendar::CalendarEventData {
             summary: "Standup".to_string(),
@@ -2009,6 +2371,33 @@ mod tests {
         }
     }
 
+    /// Two alerts, the second of a kind the editor has no box for.
+    const TWO_ALERTS: &str =
+        "[{\"minutes\":15,\"method\":\"popup\"},{\"minutes\":1440,\"method\":\"email\"}]";
+
+    /// The alerts on an event, as pairs of lead time and method.
+    ///
+    /// Compared as parsed values rather than as text, so a test says which
+    /// alert is wrong instead of printing two lines of JSON that differ
+    /// somewhere.
+    fn alerts_on(entry: &crate::data::message_cache::CalendarEventEntry) -> Vec<(i64, String)> {
+        let Some(json) = entry.reminders_json.as_deref() else {
+            return Vec::new();
+        };
+        let parsed: serde_json::Value = serde_json::from_str(json).expect("valid JSON");
+        parsed
+            .as_array()
+            .expect("a list of alerts")
+            .iter()
+            .map(|alert| {
+                (
+                    alert["minutes"].as_i64().expect("a lead time"),
+                    alert["method"].as_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect()
+    }
+
     #[test]
     fn test_editing_an_event_keeps_what_the_dialog_never_asked_about() {
         let mut stored = event_entry("e1".to_string(), "acct", &data(false));
@@ -2018,6 +2407,9 @@ mod tests {
         stored.recurrence_rule = Some("FREQ=WEEKLY".to_string());
         stored.attendees_json = Some("[{\"email\":\"sam@example.com\"}]".to_string());
         stored.status = "tentative".to_string();
+        // A second alert, because one is the case where dropping the rest and
+        // keeping them look exactly the same.
+        stored.reminders_json = Some(TWO_ALERTS.to_string());
 
         let mut renamed = data(false);
         renamed.summary = "Renamed".to_string();
@@ -2033,6 +2425,105 @@ mod tests {
             Some("[{\"email\":\"sam@example.com\"}]")
         );
         assert_eq!(edited.status, "tentative");
+        assert_eq!(
+            alerts_on(&edited),
+            vec![(15, "popup".to_string()), (1440, "email".to_string())],
+            "correcting a spelling took an alert off the event"
+        );
+    }
+
+    #[test]
+    fn test_the_alert_box_changes_the_first_alert_and_leaves_the_others() {
+        // The box holds the first alert's lead time and nothing else, so that
+        // is what it may write. The method it was stored with stays, because
+        // the editor has no control that could have changed it.
+        let mut stored = event_entry("e1".to_string(), "acct", &data(false));
+        stored.reminders_json = Some(
+            "[{\"minutes\":15,\"method\":\"email\"},{\"minutes\":1440,\"method\":\"popup\"}]"
+                .to_string(),
+        );
+
+        let mut later = data(false);
+        later.reminder_minutes = 30;
+
+        assert_eq!(
+            alerts_on(&event_with_edits(stored, &later)),
+            vec![(30, "email".to_string()), (1440, "popup".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_clearing_the_alert_box_takes_off_the_one_it_was_showing() {
+        // Zero in the box means "not the alert I am looking at". The editor
+        // never showed the second one, so it is not somebody's to lose here.
+        let mut stored = event_entry("e1".to_string(), "acct", &data(false));
+        stored.reminders_json = Some(TWO_ALERTS.to_string());
+
+        let mut none = data(false);
+        none.reminder_minutes = 0;
+
+        assert_eq!(
+            alerts_on(&event_with_edits(stored, &none)),
+            vec![(1440, "email".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_clearing_the_only_alert_leaves_nothing_rather_than_an_empty_list() {
+        let stored = event_entry("e1".to_string(), "acct", &data(false));
+        let mut none = data(false);
+        none.reminder_minutes = 0;
+
+        assert_eq!(event_with_edits(stored, &none).reminders_json, None);
+    }
+
+    #[test]
+    fn test_setting_an_alert_on_an_event_that_had_none_stores_a_whole_one() {
+        let mut stored = event_entry("e1".to_string(), "acct", &data(false));
+        stored.reminders_json = None;
+
+        assert_eq!(
+            alerts_on(&event_with_edits(stored, &data(false))),
+            vec![(15, "popup".to_string())],
+            "an alert with no method is one Google drops"
+        );
+    }
+
+    #[test]
+    fn test_an_event_saved_after_an_edit_still_has_every_alert_on_disk() {
+        // Through the storage, because the conversion keeping the second alert
+        // and the row coming back with one is the failure that matters. This
+        // is also where `pending` gets read, and the row goes to the provider
+        // with whatever it holds.
+        let cache = test_cache();
+        let mut stored = event_entry("e1".to_string(), "acct", &data(false));
+        stored.reminders_json = Some(TWO_ALERTS.to_string());
+        cache
+            .save_calendar_event(&stored)
+            .expect("the event to store");
+
+        let mut renamed = data(false);
+        renamed.summary = "Renamed".to_string();
+        let edited = event_with_edits(
+            cache
+                .get_event_by_id("e1")
+                .expect("a read")
+                .expect("the event"),
+            &renamed,
+        );
+        cache
+            .save_calendar_event(&edited)
+            .expect("the edit to save");
+
+        let back = cache
+            .get_event_by_id("e1")
+            .expect("a read")
+            .expect("the event");
+        assert_eq!(
+            alerts_on(&back),
+            vec![(15, "popup".to_string()), (1440, "email".to_string())],
+            "the row waiting to be sent has lost an alert"
+        );
     }
 
     #[test]
@@ -2224,6 +2715,74 @@ fn move_item(
     id: &str,
     name: &str,
 ) -> Option<crate::common::Result<String>> {
+    use crate::application::destinations::Moving;
+
+    let Offered {
+        holder,
+        account_id,
+        offer,
+    } = where_it_could_go(cache, state, kind, id, name)?;
+    let branches = match offer {
+        // Nothing was asked and nothing was written. The sentence is the whole
+        // answer, and it is a plain one rather than a failure: no window opened
+        // and no row changed.
+        Offer::Said(sentence) => return Some(Ok(sentence)),
+        Offer::Ask(branches) => branches,
+    };
+
+    let into = crate::presentation::wx_destination::ask(
+        frame,
+        Moving::Item(holder),
+        false,
+        &branches,
+        None,
+    )?;
+    let landed = branches
+        .iter()
+        .flat_map(|branch| branch.places.iter())
+        .find(|place| place.id == into)
+        .map(|place| place.name.clone())
+        .unwrap_or_else(|| into.clone());
+
+    Some(
+        file_under(cache, kind, id, &into, &account_id)
+            .map(|()| crate::application::pim_command::moved(name, &landed)),
+    )
+}
+
+/// What the move command found before any window opened.
+struct Offered {
+    holder: crate::application::new_item::ContainerKind,
+    /// The account the item and its containers are looked up in.
+    account_id: String,
+    offer: Offer,
+}
+
+/// Either the sentence that replaces the chooser, or the tree to put in it.
+#[derive(Debug)]
+enum Offer {
+    /// Nothing was asked and nothing was written. This says why.
+    Said(String),
+    /// Everywhere the item could go.
+    Ask(Vec<crate::application::destinations::Branch>),
+}
+
+/// Work out what the move command can offer, without opening anything.
+///
+/// Split from [`move_item`] because every decision worth making happens before
+/// the chooser and none of it could be reached in a test through a window:
+/// which account, whether the move can be told to whoever holds the item, and
+/// what is left to offer once the container it is already in is taken out.
+///
+/// `None` when there is no account open or the kind is one nothing holds, which
+/// are both silences rather than answers.
+fn where_it_could_go(
+    cache: &MessageCache,
+    state: &Arc<StdMutex<WxUIState>>,
+    kind: crate::application::new_item::ItemKind,
+    id: &str,
+    name: &str,
+) -> Option<Offered> {
     use crate::application::destinations::{Branch, Destination, Moving, anywhere, offer};
 
     let holder = kind.kept_in()?;
@@ -2238,6 +2797,19 @@ fn move_item(
             .unwrap_or_else(|| id.clone());
         (id, name)
     };
+    let said = |account_id: String, sentence: String| {
+        Some(Offered {
+            holder,
+            account_id,
+            offer: Offer::Said(sentence),
+        })
+    };
+
+    // Asked before the chooser, so nobody works through a tree of twenty
+    // calendars to answer a question whose answer is thrown away.
+    if let Err(refused) = moving_can_be_told(cache, kind, id, name, &account_id) {
+        return said(account_id, refused);
+    }
 
     let account_for_lookup = account_id.clone();
     let places: Vec<Destination> = containers_in(cache, holder, &account_id)
@@ -2260,30 +2832,17 @@ fn move_item(
         held_in(cache, kind, id, &account_for_lookup).as_deref(),
     );
     if !anywhere(&branches) {
-        return Some(Ok(crate::presentation::wx_destination::nowhere(
-            Moving::Item(holder),
-        )
-        .to_string()));
+        return said(
+            account_for_lookup,
+            crate::presentation::wx_destination::nowhere(Moving::Item(holder)).to_string(),
+        );
     }
 
-    let into = crate::presentation::wx_destination::ask(
-        frame,
-        Moving::Item(holder),
-        false,
-        &branches,
-        None,
-    )?;
-    let landed = branches
-        .iter()
-        .flat_map(|branch| branch.places.iter())
-        .find(|place| place.id == into)
-        .map(|place| place.name.clone())
-        .unwrap_or_else(|| into.clone());
-
-    Some(
-        file_under(cache, kind, id, &into, &account_for_lookup)
-            .map(|()| crate::application::pim_command::moved(name, &landed)),
-    )
+    Some(Offered {
+        holder,
+        account_id: account_for_lookup,
+        offer: Offer::Ask(branches),
+    })
 }
 
 /// Which container an item is in now, so it is not offered as a destination.
@@ -2320,11 +2879,61 @@ fn held_in(
     }
 }
 
+/// Whether the move can be told to whoever holds the item, or why it cannot.
+///
+/// An item no provider has seen yet can go anywhere: the push creates it, and
+/// it creates it in whichever container the row names by then, so the move goes
+/// up with it. An item a provider already holds cannot, for the reasons in
+/// [`crate::application::pim_command::cannot_be_moved`], which is also where
+/// the sentence lives.
+///
+/// A note is held by nobody. It never leaves this computer, so there is no
+/// second copy for a move here to disagree with.
+fn moving_can_be_told(
+    cache: &MessageCache,
+    kind: crate::application::new_item::ItemKind,
+    id: &str,
+    name: &str,
+    account_id: &str,
+) -> std::result::Result<(), String> {
+    use crate::application::new_item::ItemKind;
+
+    let held_elsewhere = match kind {
+        ItemKind::Event => cache
+            .get_all_events_for_account(account_id)
+            .ok()
+            .into_iter()
+            .flatten()
+            .find(|event| event.id == id)
+            // The same question the push asks to decide between creating an
+            // event and updating one.
+            .is_some_and(|event| event.provider_event_id.is_some()),
+        ItemKind::Task => crate::application::tasks_sync::a_provider_holds(id),
+        ItemKind::Note | ItemKind::Mail | ItemKind::Contact | ItemKind::Reminder => false,
+    };
+    match kind.kept_in().filter(|_| held_elsewhere) {
+        Some(holder) => Err(crate::application::pim_command::cannot_be_moved(
+            kind, holder, name,
+        )),
+        None => Ok(()),
+    }
+}
+
 /// Write the item into its new container.
 ///
 /// Read, change, write, rather than an UPDATE naming one column, because the
 /// same rows are what the sync compares against and a partial write would send
 /// up an item with everything else blanked.
+///
+/// The move is marked as waiting to be sent, the way ticking a task off is.
+/// Without that the row changed here and `pending_tasks` and
+/// `pending_calendar_events` never saw it, so nothing ever pushed it and the
+/// status line said "moved" for a change that reached nobody.
+///
+/// Refused for an item a provider already holds, rather than written and
+/// queued. [`moving_can_be_told`] is asked before the chooser opens as well, so
+/// nobody is made to answer a question whose answer is thrown away; asking here
+/// too is what makes it impossible to write one of those moves by any route.
 fn file_under(
     cache: &MessageCache,
     kind: crate::application::new_item::ItemKind,
@@ -2335,6 +2944,10 @@ fn file_under(
     use crate::application::new_item::ItemKind;
     use crate::common::Error;
 
+    if let Err(refused) = moving_can_be_told(cache, kind, id, "", account_id) {
+        return Err(Error::Other(refused));
+    }
+
     match kind {
         ItemKind::Event => {
             let mut event = cache
@@ -2343,6 +2956,7 @@ fn file_under(
                 .find(|e| e.id == id)
                 .ok_or_else(|| Error::Other("That event is no longer there".into()))?;
             event.calendar_id = Some(into.to_string());
+            event.pending = true;
             cache.save_calendar_event(&event)
         }
         ItemKind::Task => {
@@ -2352,6 +2966,7 @@ fn file_under(
                 .find(|t| t.id == id)
                 .ok_or_else(|| Error::Other("That task is no longer there".into()))?;
             task.task_list_id = Some(into.to_string());
+            task.pending = true;
             cache.save_task(&task)
         }
         ItemKind::Note => {

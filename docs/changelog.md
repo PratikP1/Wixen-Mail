@@ -255,6 +255,32 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Editing an event keeps every alert on it, not just the first.** The event
+  editor has one alert box, and it is filled from the first alert on the event.
+  Saving rebuilt the alerts from that box alone, so an event with a popup
+  fifteen minutes before and an email the day before came back with the popup
+  only. The row was also marked as waiting to be sent, so the missing alert went
+  up to Google or Outlook on the next sync. The alerts now come from the event
+  being replaced. The box sets the lead time of the first alert and leaves the
+  rest alone, including how that alert reaches you, which the editor has no
+  control for. Clearing the box to zero takes off the alert it was showing and
+  keeps the others.
+
+- **Moving a task or an event no longer says "moved" when nothing was sent.**
+  Move to another list or calendar wrote the new list or calendar here and did
+  not mark the item as waiting to be sent, so nothing ever told Google or
+  Outlook and the status line still said it had moved. An item made on this
+  computer is now queued, and the next sync creates it in the list or calendar
+  you chose. An item that came from your account is refused with the reason
+  instead, and the refusal comes before the chooser opens rather than after you
+  have picked somewhere. Nothing is written for a refused move.
+
+  Known limitation: no move is sent to Google or Outlook as a move. Moving an
+  item they hold means deleting it where it is and creating it again where it is
+  going, and that is not built, which is why those are refused. A move of an
+  item made on this computer reaches them only as that item being created in the
+  list or calendar it ended up in.
+
 - **Nothing offers a setting per account any more, because there is not one.**
   The first-run screen and the testing page both said you could set what Wixen
   Mail is allowed to change per account, and the line after a sync told you to

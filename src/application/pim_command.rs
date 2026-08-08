@@ -13,7 +13,7 @@
 //! item", and it has to be short enough that nobody learns to answer before it
 //! finishes.
 
-use crate::application::new_item::ItemKind;
+use crate::application::new_item::{ContainerKind, ItemKind};
 
 /// A command that acts on whatever is selected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,6 +123,33 @@ pub fn moved(name: &str, into: &str) -> String {
     }
 }
 
+/// What to say when the item is one a provider holds and the move cannot be sent.
+///
+/// Neither Google nor Microsoft is asked here to move a task to another list or
+/// an event to another calendar. Doing it means deleting the item where it is,
+/// creating it again where it is going, and writing the identity that comes
+/// back over the old one, and none of that is built. Filing it in the new
+/// container on this computer alone leaves the two ends disagreeing: the next
+/// push would ask the provider to update an item in a container it is not in,
+/// which is refused every time, and the next pull would put it back where the
+/// provider still has it.
+///
+/// So the move is refused and the reason said. It names what does work, because
+/// "not yet" on its own leaves somebody with nothing to try.
+pub fn cannot_be_moved(kind: ItemKind, holder: ContainerKind, name: &str) -> String {
+    let named = match name.trim() {
+        "" => format!("This {}", thing(kind)),
+        title => format!("\"{title}\""),
+    };
+    format!(
+        "{named} is held by the account it came from, and moving one of those to another \
+         {} is not something this can do yet. Nothing has been moved. A {} made on this \
+         computer can be moved.",
+        holder.label().to_lowercase(),
+        thing(kind)
+    )
+}
+
 /// What to say after a toggle, which has to name the new state.
 ///
 /// "Done" rather than "toggled". The whole point of a toggle is that you
@@ -219,6 +246,30 @@ mod tests {
         // and "moved" without a destination leaves somebody who chose from a
         // tree of twenty lists no way to know where they landed.
         assert_eq!(moved("Buy milk", "Shopping"), "Buy milk moved to Shopping");
+    }
+
+    #[test]
+    fn test_a_refused_move_says_it_did_not_happen_and_what_does_work() {
+        // "Not yet" on its own leaves somebody trying it again on the next
+        // task, and a refusal that does not say the row is untouched reads
+        // exactly like a move that half worked.
+        let said = cannot_be_moved(ItemKind::Task, ContainerKind::TaskList, "Book the dentist");
+
+        assert!(said.contains("Book the dentist"), "{said}");
+        assert!(said.contains("task list"), "{said}");
+        assert!(said.contains("Nothing has been moved"), "{said}");
+        assert!(
+            said.contains("made on this computer can be moved"),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn test_a_refused_move_of_an_untitled_row_is_still_a_sentence() {
+        let said = cannot_be_moved(ItemKind::Event, ContainerKind::Calendar, "  ");
+
+        assert!(said.starts_with("This event is held"), "{said}");
+        assert!(said.contains("another calendar"), "{said}");
     }
 
     #[test]

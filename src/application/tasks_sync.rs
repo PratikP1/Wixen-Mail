@@ -398,6 +398,18 @@ impl Provider {
     }
 }
 
+/// Whether a provider holds the task with this identifier.
+///
+/// The identifier is the whole answer. A task the provider sent carries the
+/// prefix it was filed under; one made here does not, and the push tells them
+/// apart the same way to decide between creating and updating.
+///
+/// Asked outside the sync by anything that has to know whether a change can be
+/// told to a provider at all, so that the prefixes stay known in one place.
+pub(crate) fn a_provider_holds(task_id: &str) -> bool {
+    !Provider::made_here(task_id)
+}
+
 /// What a task sync asks of a service.
 ///
 /// Named for what it is rather than for either provider's HTTP. Saying it in
@@ -1657,6 +1669,19 @@ mod tests {
                 Some("2026-07-01T10:00:00Z")
             ),
             Resolution::Nothing
+        );
+    }
+
+    #[test]
+    fn test_a_prefixed_identifier_says_a_provider_holds_the_task() {
+        // Asked outside this module by anything deciding whether a change can
+        // be told to a provider at all, so both providers and the case with no
+        // prefix are all named here rather than left to one example.
+        assert!(a_provider_holds("google:t1"));
+        assert!(a_provider_holds("ms:t1"));
+        assert!(
+            !a_provider_holds("task-1a2b"),
+            "a task made here has nobody to tell"
         );
     }
 
