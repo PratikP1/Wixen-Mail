@@ -287,6 +287,44 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Correcting an event's spelling no longer moves it to a different time of
+  day.** Changing anything about an event that came from Google, Outlook or a
+  calendar server, even just its title, rebuilt its start and end from the two
+  boxes in the event editor. Those boxes hold a date and a clock and have
+  nowhere to put a time zone, so the zone the provider sent was dropped. The
+  event then went back with its clock face read as a time on this computer: a
+  nine o'clock meeting in Kolkata reached Google as nine o'clock here, nine and
+  a half hours out, and nothing said so. Sent to a calendar server the same
+  edit wrote a time in no zone at all, which every client reads in its own.
+
+  A date or time box nobody typed in now keeps the moment exactly as the
+  provider sent it, down to the seconds. A box somebody did type in is read in
+  the zone the event is in rather than the zone this computer is in, so moving
+  a meeting to half past ten means half past ten where the meeting is.
+
+  This covers events carrying an offset such as `+05:30`, events written in
+  universal time, events named in a zone such as `Europe/London`, whole-day
+  events, repeating events, and events made here, which have no zone to keep
+  and are still read as times on this computer.
+
+  Which events were affected: those whose provider sent a time with an offset
+  or a trailing `Z` and no zone name beside it, which is most timed events from
+  Google. An event whose stored copy names its zone was never moved by this,
+  because the name was kept and the name is what both providers read.
+
+  Known limitation: an event carrying an offset and naming no zone, moved to a
+  date on the other side of a daylight saving change, keeps the offset it had
+  and lands an hour out. Nothing stored on such an event says what its zone's
+  rules are. Where the event does name a zone, the name decides and this does
+  not happen.
+
+  Events already sent at the wrong time cannot be put right from here. The hour
+  of day survived, so the event still reads as the time you set it, but the
+  provider now holds that hour in this computer's zone and nothing here
+  remembers which zone it should have been. Putting one right means opening it
+  in Google Calendar, Outlook or your calendar server and setting its zone
+  there.
+
 - **The changelog said this program changes nothing at your provider until
   you say so.** A new installation allows changes to tasks, contacts and the
   calendar at Google or Microsoft. It does not allow mail to be sent, moved

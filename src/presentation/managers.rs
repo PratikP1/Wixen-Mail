@@ -641,6 +641,23 @@ fn event_with_edits(
     }
     let edited = event_entry(stored.id.clone(), &stored.account_id, data);
     let alerts = alerts_with_the_first_at(stored.reminders_json.as_deref(), data.reminder_minutes);
+    // What the two date boxes were filled from, which is not always the column
+    // they are written back to: a whole-day event fills them from its date
+    // columns and keeps midnight in the other pair.
+    let shown = crate::presentation::ui_types::CalendarEventItem::from_entry(&stored);
+    let named_zone = stored.time_zone.as_deref();
+    let start = moment_after_the_edit(
+        &shown.start,
+        &edited.start_datetime,
+        &stored.start_datetime,
+        named_zone,
+    );
+    let end = moment_after_the_edit(
+        &shown.end,
+        &edited.end_datetime,
+        &stored.end_datetime,
+        named_zone,
+    );
     crate::data::message_cache::CalendarEventEntry {
         // Built from the alerts already on the event rather than from the one
         // box, which cannot hold a second alert or say how somebody is alerted.
@@ -648,6 +665,8 @@ fn event_with_edits(
         // email the day before came back with the popup alone, and the row was
         // marked as waiting to be sent, so the loss went up to the provider.
         reminders_json: alerts,
+        start_datetime: start,
+        end_datetime: end,
         provider_event_id: stored.provider_event_id,
         calendar_id: stored.calendar_id,
         time_zone: stored.time_zone,
@@ -667,6 +686,86 @@ fn event_with_edits(
         created_at: stored.created_at,
         ..edited
     }
+}
+
+/// The part of a stored moment that says which zone its clock face was in.
+///
+/// A trailing `Z`, or an offset such as `+05:30`. Empty for a clock face that
+/// names no zone, which is what an event from Graph and one made here both
+/// store, and empty for a bare date, which has no time of day to be in a zone.
+///
+/// Looked for after the tenth character, so the two dashes in the date are not
+/// read as the sign of an offset.
+fn zone_marker(stored: &str) -> &str {
+    let Some(after_the_date) = stored.get(10..) else {
+        return "";
+    };
+    match after_the_date.find(['Z', 'z', '+', '-']) {
+        Some(at) => &after_the_date[at..],
+        None => "",
+    }
+}
+
+/// What to store for one of the editor's two dates, after it has been through
+/// the editor.
+///
+/// The editor shows ten characters of date and five of clock and has nowhere to
+/// put a zone, so it cannot be what decides one. Three values answer that:
+/// `shown` is what the box was filled with, `rebuilt` is what the editor handed
+/// back, and `stored` is the value on the record being replaced.
+///
+/// A box that reads back as it was filled is a box nobody typed in, and the
+/// stored value is handed back byte for byte, keeping the seconds and the
+/// offset the provider sent. That is the contacts editor's answer for the saved
+/// photo and the card an import came from, reached the same way.
+///
+/// A box somebody really did type in is read in the zone the event is already
+/// in rather than the zone this computer is in: the clock face is the person's
+/// and the zone is the event's. Before this, correcting a spelling wrote
+/// "2026-07-27 09:00" over "2026-07-27T09:00:00+05:30", and the Google writer,
+/// with nothing left to say which zone that clock face meant, sent it as nine
+/// in the morning here. Nine in the morning in Kolkata reached somebody's real
+/// calendar nine and a half hours out.
+///
+/// A whole day, and a timed event whose time box is empty, have no clock face
+/// to place in a zone, so they are stored as the bare date the editor gave.
+///
+/// Which zone a moved clock face is placed in is decided by `named_zone` first
+/// and by the marker on `shown` only when there is no name. A name knows its
+/// own summer time and an offset does not: an event stored as nine o'clock at
+/// `-04:00` and moved to December, with that offset stapled back on, reaches
+/// the provider as eight o'clock. Both writers read a clock face with a zone
+/// name beside it, and the name is kept on the record either way.
+///
+/// # What this still cannot do
+///
+/// An event carrying an offset and no zone name, moved across a summer-time
+/// change, keeps the offset it had and lands an hour out. Nothing stored says
+/// what the zone's rules are, so the choice is between an hour and the whole
+/// difference between two zones, and the offset is the smaller of the two.
+fn moment_after_the_edit(
+    shown: &str,
+    rebuilt: &str,
+    stored: &str,
+    named_zone: Option<&str>,
+) -> String {
+    /// The two slices the editor is filled from: the date, and the clock that
+    /// follows the separator. `as_shown` reads exactly these.
+    fn as_the_editor_reads_it(value: &str) -> (Option<&str>, Option<&str>) {
+        (value.get(..10), value.get(11..16))
+    }
+
+    if as_the_editor_reads_it(shown) == as_the_editor_reads_it(rebuilt) {
+        return stored.to_string();
+    }
+    let (Some(date), Some(clock)) = as_the_editor_reads_it(rebuilt) else {
+        return rebuilt.to_string();
+    };
+    let marker = match named_zone.map(str::trim) {
+        Some(named) if !named.is_empty() => "",
+        _ => zone_marker(shown),
+    };
+    format!("{date}T{clock}:00{marker}")
 }
 
 /// Whether what the editor returned is a change to the event stored.
@@ -2793,6 +2892,386 @@ mod tests {
         );
 
         assert!(event_with_edits(stored, &untouched).pending);
+    }
+
+    // ── The zone a moment was in has to survive an edit ──────────────────
+
+    /// An event a provider sent, stored with the times exactly as they arrived.
+    fn as_a_provider_sent_it(
+        start: &str,
+        end: &str,
+    ) -> crate::data::message_cache::CalendarEventEntry {
+        let mut stored = event_entry("e1".to_string(), "acct", &data(false));
+        stored.pending = false;
+        stored.source_provider = Some("gmail".to_string());
+        stored.provider_event_id = Some("uid-1".to_string());
+        stored.start_datetime = start.to_string();
+        stored.end_datetime = end.to_string();
+        stored
+    }
+
+    /// What the editor hands back when the only box typed in was the summary.
+    ///
+    /// Built the way the calendar panel builds it, from the row on the screen,
+    /// so the boxes hold what somebody really saw rather than what a test
+    /// author would have put there.
+    fn only_the_summary_retyped(
+        stored: &crate::data::message_cache::CalendarEventEntry,
+        name: &str,
+    ) -> wx_calendar::CalendarEventData {
+        let mut back = wx_calendar::CalendarEventData::as_shown(
+            &crate::presentation::ui_types::CalendarEventItem::from_entry(stored),
+        );
+        back.summary = name.to_string();
+        back
+    }
+
+    /// The instant a stored event's start reaches Google as.
+    ///
+    /// Read as an instant rather than compared as text: two spellings of one
+    /// moment are the same appointment, and two moments spelled alike are not.
+    fn the_instant_google_is_told(
+        entry: &crate::data::message_cache::CalendarEventEntry,
+    ) -> chrono::DateTime<chrono::Utc> {
+        let sent = crate::application::calendar::local_to_google_event(entry)
+            .expect("an event Google can be told about");
+        let start = sent.start.expect("a start").date_time.expect("a time");
+        chrono::DateTime::parse_from_rfc3339(&start)
+            .expect("a moment in time")
+            .with_timezone(&chrono::Utc)
+    }
+
+    #[test]
+    fn test_correcting_a_spelling_keeps_the_offset_the_provider_sent() {
+        // The sharpest shape of this: the editor shows ten characters of date
+        // and five of clock and has nowhere to put a zone, so rebuilding the
+        // event from it wrote back "2026-07-27 09:00". Nothing then said which
+        // zone that clock face meant, so it was read as a time on this
+        // computer and nine in the morning in Kolkata went to Google as nine in
+        // the morning here.
+        let stored =
+            as_a_provider_sent_it("2026-07-27T09:00:00+05:30", "2026-07-27T09:15:00+05:30");
+        let renamed = only_the_summary_retyped(&stored, "Stand-up");
+
+        let edited = event_with_edits(stored.clone(), &renamed);
+
+        assert_eq!(edited.summary, "Stand-up", "the change asked for happens");
+        assert_eq!(
+            edited.start_datetime, stored.start_datetime,
+            "a box nobody typed in rewrote the moment the provider sent"
+        );
+        assert_eq!(edited.end_datetime, stored.end_datetime);
+        assert_eq!(
+            the_instant_google_is_told(&edited),
+            the_instant_google_is_told(&stored),
+            "correcting a spelling moved the event to a different time of day"
+        );
+    }
+
+    #[test]
+    fn test_correcting_a_spelling_keeps_a_moment_written_in_universal_time() {
+        let stored = as_a_provider_sent_it("2026-07-27T09:00:00Z", "2026-07-27T09:15:00Z");
+        let renamed = only_the_summary_retyped(&stored, "Stand-up");
+
+        let edited = event_with_edits(stored.clone(), &renamed);
+
+        assert_eq!(edited.start_datetime, stored.start_datetime);
+        assert_eq!(edited.end_datetime, stored.end_datetime);
+        assert_eq!(
+            the_instant_google_is_told(&edited),
+            the_instant_google_is_told(&stored)
+        );
+    }
+
+    #[test]
+    fn test_correcting_a_spelling_keeps_the_moment_to_the_second() {
+        // The editor's clock box holds hours and minutes, so it cannot say
+        // anything about the seconds. Graph writes seven digits of fraction and
+        // Google writes whole seconds; rebuilding either from the boxes rounded
+        // the moment to the minute on the row that then goes to the provider.
+        for (start, end) in [
+            ("2026-07-27T09:00:45+05:30", "2026-07-27T09:15:45+05:30"),
+            ("2026-07-27T09:00:45.0000000", "2026-07-27T09:15:45.0000000"),
+            ("2026-07-27T09:00:45Z", "2026-07-27T09:15:45Z"),
+        ] {
+            let stored = as_a_provider_sent_it(start, end);
+            let renamed = only_the_summary_retyped(&stored, "Stand-up");
+
+            let edited = event_with_edits(stored.clone(), &renamed);
+
+            assert_eq!(
+                edited.start_datetime, stored.start_datetime,
+                "for {start:?}"
+            );
+            assert_eq!(edited.end_datetime, stored.end_datetime, "for {start:?}");
+        }
+    }
+
+    #[test]
+    fn test_correcting_a_spelling_keeps_a_clock_face_and_the_zone_it_is_named_in() {
+        // What Graph sends: a clock face with no offset on it, and the zone
+        // named in a column beside it. Both halves have to come back, because
+        // either one alone is an hour nobody meant.
+        let mut stored = as_a_provider_sent_it("2026-07-27T09:00:00", "2026-07-27T09:15:00");
+        stored.source_provider = Some("outlook".to_string());
+        stored.time_zone = Some("Asia/Kolkata".to_string());
+        let renamed = only_the_summary_retyped(&stored, "Stand-up");
+
+        let edited = event_with_edits(stored.clone(), &renamed);
+
+        assert_eq!(edited.start_datetime, stored.start_datetime);
+        assert_eq!(edited.time_zone.as_deref(), Some("Asia/Kolkata"));
+
+        let sent = crate::application::calendar::local_to_ms_event(&edited).expect("an event");
+        let start = sent.start.expect("a start");
+        assert_eq!(start.date_time, "2026-07-27T09:00:00");
+        assert_eq!(start.time_zone, "Asia/Kolkata");
+    }
+
+    #[test]
+    fn test_correcting_a_spelling_on_a_calendar_server_event_keeps_it_in_universal_time() {
+        // Google was not the only writer this reached. A calendar server is
+        // sent the trailing Z when the stored value has one and a floating time
+        // when it does not, and a floating time is read by every client in its
+        // own zone: the appointment is at nine wherever you happen to open it.
+        let mut stored = as_a_provider_sent_it("2026-03-05T09:00:00Z", "2026-03-05T10:00:00Z");
+        stored.source_provider = Some("caldav".to_string());
+        let renamed = only_the_summary_retyped(&stored, "Stand-up");
+
+        let edited = event_with_edits(stored, &renamed);
+        let sent = crate::application::caldav_sync::local_to_caldav_event(&edited);
+
+        assert!(
+            sent.ical_data.contains("DTSTART:20260305T090000Z"),
+            "the event reached the calendar server as a time in no zone at all: {}",
+            sent.ical_data
+        );
+    }
+
+    #[test]
+    fn test_correcting_a_spelling_on_a_whole_day_event_keeps_the_dates_it_arrived_with() {
+        // A whole day from Google keeps the day in one pair of columns and
+        // midnight in universal time in the other. The editor is shown the day
+        // and cannot say anything about the other pair.
+        let mut stored = as_a_provider_sent_it("2026-07-27T00:00:00Z", "2026-07-28T00:00:00Z");
+        stored.is_all_day = true;
+        stored.start_date = Some("2026-07-27".to_string());
+        stored.end_date = Some("2026-07-28".to_string());
+        let renamed = only_the_summary_retyped(&stored, "Bank holiday");
+
+        let edited = event_with_edits(stored.clone(), &renamed);
+
+        assert_eq!(edited.summary, "Bank holiday");
+        assert!(edited.is_all_day);
+        assert_eq!(edited.start_date.as_deref(), Some("2026-07-27"));
+        assert_eq!(edited.end_date.as_deref(), Some("2026-07-28"));
+        assert_eq!(
+            edited.start_datetime, stored.start_datetime,
+            "a day nobody typed in rewrote the other pair of columns"
+        );
+        assert_eq!(edited.end_datetime, stored.end_datetime);
+    }
+
+    #[test]
+    fn test_correcting_a_spelling_on_a_repeating_event_keeps_the_offset() {
+        // The row on the screen is one day of the series, so the boxes hold
+        // that day rather than the day the series starts from and this reads as
+        // a move. The zone still has to survive it.
+        let mut stored =
+            as_a_provider_sent_it("2026-07-27T09:00:00+05:30", "2026-07-27T09:15:00+05:30");
+        stored.recurrence_rule = Some("FREQ=WEEKLY".to_string());
+        let row = crate::presentation::ui_types::CalendarEventItem::shown_days(
+            &stored,
+            chrono::NaiveDate::from_ymd_opt(2026, 8, 1).expect("a date"),
+            chrono::NaiveDate::from_ymd_opt(2026, 8, 31).expect("a date"),
+        );
+        let day = row.first().expect("a day the series falls on");
+        let mut renamed = wx_calendar::CalendarEventData::as_shown(day);
+        renamed.summary = "Stand-up".to_string();
+
+        let edited = event_with_edits(stored, &renamed);
+
+        assert_eq!(edited.summary, "Stand-up");
+        assert!(
+            edited.start_datetime.ends_with("+05:30"),
+            "the series went back to the provider with its zone stripped: {}",
+            edited.start_datetime
+        );
+        assert_eq!(
+            edited.start_datetime, "2026-08-03T09:00:00+05:30",
+            "the clock face still reads nine in the morning where the event is"
+        );
+        assert_eq!(edited.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+    }
+
+    #[test]
+    fn test_correcting_a_spelling_on_an_event_made_here_leaves_its_time_alone() {
+        // Nothing sent this one, so the clock face really does mean a time on
+        // this computer and there is no zone to keep. It must not grow one.
+        let stored = event_entry("e1".to_string(), "acct", &data(false));
+        let renamed = only_the_summary_retyped(&stored, "Stand-up");
+
+        let edited = event_with_edits(stored.clone(), &renamed);
+
+        assert_eq!(edited.summary, "Stand-up");
+        assert_eq!(edited.start_datetime, stored.start_datetime);
+        assert_eq!(edited.end_datetime, stored.end_datetime);
+        assert_eq!(edited.time_zone, None);
+    }
+
+    #[test]
+    fn test_moving_an_event_to_a_different_time_moves_it_in_the_zone_it_is_in() {
+        // The case that has to keep working. Somebody really did type in the
+        // box, so the event moves, and half past ten means half past ten where
+        // the event is rather than half past ten on this computer.
+        let stored =
+            as_a_provider_sent_it("2026-07-27T09:00:00+05:30", "2026-07-27T09:15:00+05:30");
+        let mut moved = only_the_summary_retyped(&stored, "Standup");
+        moved.start_time = "10:30".to_string();
+        moved.end_time = "11:00".to_string();
+
+        let edited = event_with_edits(stored, &moved);
+
+        assert_eq!(edited.start_datetime, "2026-07-27T10:30:00+05:30");
+        assert_eq!(edited.end_datetime, "2026-07-27T11:00:00+05:30");
+        assert_eq!(
+            the_instant_google_is_told(&edited),
+            chrono::DateTime::parse_from_rfc3339("2026-07-27T10:30:00+05:30")
+                .expect("a moment")
+                .with_timezone(&chrono::Utc)
+        );
+    }
+
+    #[test]
+    fn test_moving_an_event_written_in_universal_time_keeps_it_there() {
+        let stored = as_a_provider_sent_it("2026-07-27T09:00:00Z", "2026-07-27T09:15:00Z");
+        let mut moved = only_the_summary_retyped(&stored, "Standup");
+        moved.start_time = "10:30".to_string();
+        moved.end_time = "11:00".to_string();
+
+        let edited = event_with_edits(stored, &moved);
+
+        assert_eq!(edited.start_datetime, "2026-07-27T10:30:00Z");
+        assert_eq!(edited.end_datetime, "2026-07-27T11:00:00Z");
+    }
+
+    #[test]
+    fn test_moving_an_event_named_in_a_zone_keeps_the_name_and_moves_the_clock() {
+        let mut stored = as_a_provider_sent_it("2026-07-27T09:00:00", "2026-07-27T09:15:00");
+        stored.time_zone = Some("Asia/Kolkata".to_string());
+        let mut moved = only_the_summary_retyped(&stored, "Standup");
+        moved.start_time = "10:30".to_string();
+        moved.end_time = "11:00".to_string();
+
+        let edited = event_with_edits(stored, &moved);
+
+        assert_eq!(edited.start_datetime, "2026-07-27T10:30:00");
+        assert_eq!(edited.end_datetime, "2026-07-27T11:00:00");
+        assert_eq!(edited.time_zone.as_deref(), Some("Asia/Kolkata"));
+    }
+
+    #[test]
+    fn test_moving_an_event_that_names_a_zone_across_summer_time_keeps_the_clock_face() {
+        // The name is what knows when the clocks go back. Stapling July's
+        // offset onto a December date sends the provider eight o'clock for an
+        // event somebody set at nine, so where a name is stored it decides,
+        // and the clock face goes out bare beside it.
+        let mut stored =
+            as_a_provider_sent_it("2026-07-27T09:00:00-04:00", "2026-07-27T09:15:00-04:00");
+        stored.time_zone = Some("America/New_York".to_string());
+        let mut moved = only_the_summary_retyped(&stored, "Standup");
+        moved.start_date = "2026-12-15".to_string();
+        moved.end_date = "2026-12-15".to_string();
+
+        let edited = event_with_edits(stored, &moved);
+
+        assert_eq!(edited.start_datetime, "2026-12-15T09:00:00");
+        assert_eq!(edited.time_zone.as_deref(), Some("America/New_York"));
+
+        let sent = crate::application::calendar::local_to_google_event(&edited).expect("an event");
+        let start = sent.start.expect("a start");
+        assert_eq!(start.date_time.as_deref(), Some("2026-12-15T09:00:00"));
+        assert_eq!(start.time_zone.as_deref(), Some("America/New_York"));
+    }
+
+    #[test]
+    fn test_moving_an_event_with_an_offset_and_no_zone_name_keeps_the_offset() {
+        // Named rather than hidden. An event carrying an offset and no zone
+        // name has nothing on it that knows when the clocks change, so a move
+        // across one lands an hour out. That is the smaller of the two errors
+        // available: reading the clock face on this computer instead would put
+        // an event in Kolkata nine and a half hours out.
+        let stored =
+            as_a_provider_sent_it("2026-07-27T09:00:00-04:00", "2026-07-27T09:15:00-04:00");
+        let mut moved = only_the_summary_retyped(&stored, "Standup");
+        moved.start_date = "2026-12-15".to_string();
+        moved.end_date = "2026-12-15".to_string();
+
+        let edited = event_with_edits(stored, &moved);
+
+        assert_eq!(edited.start_datetime, "2026-12-15T09:00:00-04:00");
+    }
+
+    #[test]
+    fn test_putting_a_time_on_a_whole_day_event_does_not_borrow_midnights_zone() {
+        // The whole-day columns hold midnight in universal time, which is not a
+        // zone anybody chose for this event. A time typed into a box that was
+        // empty is a time on this computer, and taking the Z off midnight would
+        // have made nine in the morning here into nine in the morning in
+        // Greenwich.
+        let mut stored = as_a_provider_sent_it("2026-07-27T00:00:00Z", "2026-07-28T00:00:00Z");
+        stored.is_all_day = true;
+        stored.start_date = Some("2026-07-27".to_string());
+        stored.end_date = Some("2026-07-28".to_string());
+
+        let mut timed = only_the_summary_retyped(&stored, "Bank holiday");
+        timed.is_all_day = false;
+        timed.start_time = "09:00".to_string();
+        timed.end_date = "2026-07-27".to_string();
+        timed.end_time = "17:00".to_string();
+
+        let edited = event_with_edits(stored, &timed);
+
+        assert!(!edited.is_all_day);
+        assert_eq!(edited.start_datetime, "2026-07-27T09:00:00");
+        assert_eq!(edited.end_datetime, "2026-07-27T17:00:00");
+        assert_eq!(
+            edited.start_date, None,
+            "a timed event has no date-only pair"
+        );
+    }
+
+    #[test]
+    fn test_taking_the_time_off_an_event_makes_it_a_whole_day_without_a_stray_zone() {
+        let stored =
+            as_a_provider_sent_it("2026-07-27T09:00:00+05:30", "2026-07-27T09:15:00+05:30");
+        let mut whole_day = only_the_summary_retyped(&stored, "Standup");
+        whole_day.is_all_day = true;
+
+        let edited = event_with_edits(stored, &whole_day);
+
+        assert!(edited.is_all_day);
+        assert_eq!(edited.start_datetime, "2026-07-27");
+        assert_eq!(edited.end_datetime, "2026-07-27");
+        assert_eq!(edited.start_date.as_deref(), Some("2026-07-27"));
+    }
+
+    #[test]
+    fn test_moving_a_whole_day_event_to_another_day_moves_it() {
+        let mut stored = as_a_provider_sent_it("2026-07-27T00:00:00Z", "2026-07-28T00:00:00Z");
+        stored.is_all_day = true;
+        stored.start_date = Some("2026-07-27".to_string());
+        stored.end_date = Some("2026-07-28".to_string());
+        let mut moved = only_the_summary_retyped(&stored, "Bank holiday");
+        moved.start_date = "2026-08-31".to_string();
+        moved.end_date = "2026-09-01".to_string();
+
+        let edited = event_with_edits(stored, &moved);
+
+        assert_eq!(edited.start_date.as_deref(), Some("2026-08-31"));
+        assert_eq!(edited.end_date.as_deref(), Some("2026-09-01"));
+        assert_eq!(edited.start_datetime, "2026-08-31");
+        assert_eq!(edited.end_datetime, "2026-09-01");
     }
 
     #[test]

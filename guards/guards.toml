@@ -868,6 +868,91 @@ red = [
     "presentation::managers::tests::test_saving_an_event_nobody_changed_leaves_it_settled",
 ]
 
+# ── The zone a moment was in, across an edit ────────────────────────────────
+#
+# The event editor shows ten characters of date and five of clock and has
+# nowhere to put a zone. Rebuilding an edited event from those two boxes wrote
+# "2026-07-27 09:00" over "2026-07-27T09:00:00+05:30", and the Google writer,
+# with nothing left saying which zone that clock face meant, read it as a time
+# on this computer: correcting a spelling moved a nine o'clock meeting in
+# Kolkata to nine o'clock here, nine and a half hours out, in somebody's real
+# calendar.
+
+[[guard]]
+name = "an edited event's times come from the record, not from the two boxes"
+file = "src/presentation/managers.rs"
+before = """    let start = moment_after_the_edit(
+        &shown.start,
+        &edited.start_datetime,
+        &stored.start_datetime,
+        named_zone,
+    );
+    let end = moment_after_the_edit(
+        &shown.end,
+        &edited.end_datetime,
+        &stored.end_datetime,
+        named_zone,
+    );"""
+after = """    let start = edited.start_datetime.clone();
+    let end = edited.end_datetime.clone();"""
+red = [
+    "presentation::managers::tests::test_correcting_a_spelling_keeps_a_clock_face_and_the_zone_it_is_named_in",
+    "presentation::managers::tests::test_correcting_a_spelling_keeps_a_moment_written_in_universal_time",
+    "presentation::managers::tests::test_correcting_a_spelling_keeps_the_moment_to_the_second",
+    "presentation::managers::tests::test_correcting_a_spelling_keeps_the_offset_the_provider_sent",
+    "presentation::managers::tests::test_correcting_a_spelling_on_a_calendar_server_event_keeps_it_in_universal_time",
+    "presentation::managers::tests::test_correcting_a_spelling_on_a_repeating_event_keeps_the_offset",
+    "presentation::managers::tests::test_correcting_a_spelling_on_a_whole_day_event_keeps_the_dates_it_arrived_with",
+    "presentation::managers::tests::test_moving_an_event_named_in_a_zone_keeps_the_name_and_moves_the_clock",
+    "presentation::managers::tests::test_moving_an_event_that_names_a_zone_across_summer_time_keeps_the_clock_face",
+    "presentation::managers::tests::test_moving_an_event_to_a_different_time_moves_it_in_the_zone_it_is_in",
+    "presentation::managers::tests::test_moving_an_event_with_an_offset_and_no_zone_name_keeps_the_offset",
+    "presentation::managers::tests::test_moving_an_event_written_in_universal_time_keeps_it_there",
+    "presentation::managers::tests::test_putting_a_time_on_a_whole_day_event_does_not_borrow_midnights_zone",
+]
+
+[[guard]]
+name = "a box nobody typed in keeps the moment the provider sent"
+file = "src/presentation/managers.rs"
+before = """    if as_the_editor_reads_it(shown) == as_the_editor_reads_it(rebuilt) {
+        return stored.to_string();
+    }"""
+after = """    if false {
+        return stored.to_string();
+    }"""
+red = [
+    "presentation::managers::tests::test_correcting_a_spelling_keeps_the_moment_to_the_second",
+    "presentation::managers::tests::test_correcting_a_spelling_on_a_whole_day_event_keeps_the_dates_it_arrived_with",
+    "presentation::managers::tests::test_correcting_a_spelling_on_an_event_made_here_leaves_its_time_alone",
+]
+
+[[guard]]
+name = "a clock face somebody moved keeps the zone the event was in"
+file = "src/presentation/managers.rs"
+before = """    let marker = match named_zone.map(str::trim) {
+        Some(named) if !named.is_empty() => "",
+        _ => zone_marker(shown),
+    };"""
+after = """    let marker = "";"""
+red = [
+    "presentation::managers::tests::test_correcting_a_spelling_on_a_repeating_event_keeps_the_offset",
+    "presentation::managers::tests::test_moving_an_event_to_a_different_time_moves_it_in_the_zone_it_is_in",
+    "presentation::managers::tests::test_moving_an_event_with_an_offset_and_no_zone_name_keeps_the_offset",
+    "presentation::managers::tests::test_moving_an_event_written_in_universal_time_keeps_it_there",
+]
+
+[[guard]]
+name = "a zone named on the event beats an offset frozen on another date"
+file = "src/presentation/managers.rs"
+before = """    let marker = match named_zone.map(str::trim) {
+        Some(named) if !named.is_empty() => "",
+        _ => zone_marker(shown),
+    };"""
+after = """    let marker = zone_marker(shown);"""
+red = [
+    "presentation::managers::tests::test_moving_an_event_that_names_a_zone_across_summer_time_keeps_the_clock_face",
+]
+
 # -- Which addresses say two records are one person -------------------------
 #
 # A contact card carries no identifier this application keeps, and neither does
