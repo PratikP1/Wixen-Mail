@@ -2761,3 +2761,151 @@ fn test_the_answer_enter_gives_is_decided_somewhere() {
         "the two answers no longer differ by the one flag that separates them"
     );
 }
+
+/// Where a control is given the answer it shows, when that answer is a fixed
+/// one rather than the stored one.
+///
+/// The other half of the same defect, and the worse half. A control nothing
+/// hands back changes nothing. A control that shows a fixed answer *and* is
+/// handed back writes that answer over the stored one when somebody presses
+/// OK, so opening the settings window and closing it turns a setting off.
+///
+/// Three of the four found in this file were checkboxes told `true` or `false`
+/// outright, so this is the same three defects read a second way. It matters
+/// because of what the check above asks for: told to hand a control back,
+/// somebody could hand back one that still shows a fixed answer, and that
+/// swaps a control nothing reads for a control that overwrites.
+///
+/// A choice built on a fixed position is the same fault unless something moves
+/// it afterwards. Two are built that way on purpose, because the builder wants
+/// a selection before the stored answer has been worked out, and both are then
+/// set from it.
+fn shows_a_fixed_answer(body: &str, name: &str) -> Option<String> {
+    for told in ["true", "false"] {
+        let literal = format!("{name}.set_value({told});");
+        if body.lines().any(|line| line.trim() == literal) {
+            return Some(format!("is told {told} outright"));
+        }
+    }
+    let built = the_statement_binding(body, name)?;
+    let fixed = built
+        .split_once("with_selection(Some(")?
+        .1
+        .split_once(')')?
+        .0
+        .trim()
+        .parse::<u32>()
+        .is_ok();
+    let moved = body.contains(&format!("{name}.set_selection("));
+    (fixed && !moved).then(|| "is built on a fixed position and never moved".to_string())
+}
+
+/// The statement that binds a name, from its `let` to the end of the statement.
+fn the_statement_binding(body: &str, name: &str) -> Option<String> {
+    let opener = format!("let {name} = ");
+    let at = body.find(&opener)?;
+    let mut statement = String::new();
+    for line in body[at..].lines() {
+        statement.push_str(line);
+        if line.trim_end().ends_with(';') {
+            return Some(statement);
+        }
+        statement.push(' ');
+    }
+    None
+}
+
+/// Every control of the settings dialog showing an answer it did not read.
+fn controls_showing_a_fixed_answer(text: &str) -> Vec<String> {
+    let mut fixed = Vec::new();
+    for builder in tab_builders(text) {
+        for (offset, name) in controls_built_in(&builder.body) {
+            if let Some(how) = shows_a_fixed_answer(&builder.body, &name) {
+                fixed.push(format!(
+                    "{WHERE_THE_SETTINGS_ARE_BUILT}:{}: {name} {how}",
+                    builder.first_line + offset
+                ));
+            }
+        }
+    }
+    fixed
+}
+
+#[test]
+fn test_no_settings_control_shows_an_answer_it_did_not_read() {
+    let text =
+        fs::read_to_string(WHERE_THE_SETTINGS_ARE_BUILT).expect("the settings dialog to be read");
+
+    let fixed = controls_showing_a_fixed_answer(&text);
+
+    assert!(
+        fixed.is_empty(),
+        "these show a fixed answer rather than the one in the settings file. A \
+         screen reader reads out the fixed one, and pressing OK writes it over \
+         what somebody chose:\n  {}",
+        fixed.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_fixed_answer_check_can_tell_the_two_apart() {
+    // The three that stood in this file, as they stood, and the shapes that
+    // are right. Written out here because this file is left out of the walk.
+    let told_outright = "fn build_example_tab(panel: &Panel, config: &AppConfig) -> CheckBox {\n\
+        \x20   let sig_cb = CheckBox::builder(panel).with_label(\"Sign it\").build();\n\
+        \x20   sig_cb.set_value(true);\n\
+        \x20   sig_cb\n\
+        }\n";
+    let named = controls_showing_a_fixed_answer(told_outright);
+    assert_eq!(named.len(), 1, "{named:?}");
+    assert!(named[0].contains("sig_cb"), "{named:?}");
+
+    let from_the_file = "fn build_example_tab(panel: &Panel, config: &AppConfig) -> CheckBox {\n\
+        \x20   let sig_cb = CheckBox::builder(panel).with_label(\"Sign it\").build();\n\
+        \x20   sig_cb.set_value(config.add_signature_automatically);\n\
+        \x20   sig_cb\n\
+        }\n";
+    assert!(
+        controls_showing_a_fixed_answer(from_the_file).is_empty(),
+        "a control filled from the settings file was named"
+    );
+
+    // A choice on a fixed position with nothing moving it, and the same choice
+    // moved to the stored answer afterwards, which is what two of the real
+    // ones do.
+    let stuck = "fn build_example_tab(panel: &Panel, config: &AppConfig) -> Choice {\n\
+        \x20   let format_choice = Choice::builder(panel)\n\
+        \x20       .with_choices(format_choices)\n\
+        \x20       .with_selection(Some(0))\n\
+        \x20       .build();\n\
+        \x20   format_choice\n\
+        }\n";
+    assert_eq!(controls_showing_a_fixed_answer(stuck).len(), 1);
+
+    let moved = "fn build_example_tab(panel: &Panel, config: &AppConfig) -> Choice {\n\
+        \x20   let style_choice = Choice::builder(panel)\n\
+        \x20       .with_choices(offered)\n\
+        \x20       .with_selection(Some(0))\n\
+        \x20       .build();\n\
+        \x20   style_choice.set_selection(chosen as u32);\n\
+        \x20   style_choice\n\
+        }\n";
+    assert!(
+        controls_showing_a_fixed_answer(moved).is_empty(),
+        "a choice set from the stored answer afterwards was named"
+    );
+
+    // A position worked out from the settings file is not a fixed one, and it
+    // is how most of the choices here are built.
+    let worked_out = "fn build_example_tab(panel: &Panel, config: &AppConfig) -> Choice {\n\
+        \x20   let theme_choice = Choice::builder(panel)\n\
+        \x20       .with_choices(theme_choices)\n\
+        \x20       .with_selection(Some(theme_idx))\n\
+        \x20       .build();\n\
+        \x20   theme_choice\n\
+        }\n";
+    assert!(
+        controls_showing_a_fixed_answer(worked_out).is_empty(),
+        "a choice built on a position read from the settings file was named"
+    );
+}
