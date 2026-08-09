@@ -721,6 +721,9 @@ after = """        if false {
             continue;
         }"""
 red = [
+    "application::calendar::tests::test_a_deletion_in_a_calendar_made_here_holds_across_three_syncs",
+    "application::calendar::tests::test_a_deletion_in_a_read_only_calendar_of_this_account_holds_across_three_syncs",
+    "application::calendar::tests::test_a_deletion_of_an_event_in_no_calendar_holds_across_three_syncs",
     "application::calendar::tests::test_an_event_this_computer_deleted_is_not_written_back_by_a_later_sync",
     "application::calendar::tests::test_an_event_this_computer_deleted_is_not_written_back_by_the_read_that_follows",
 ]
@@ -755,24 +758,50 @@ after = """        let sent = delete_google_event(google, token, &at_google, pro
         if sent.is_ok() {
             let _ = cache.forget_deleted_calendar_event(&note.id);
         }"""
+# Remeasured when the clearing itself started refusing notes with a provider
+# identity: that refusal defuses this break's same-sync half, because the note
+# it wrongly clears survives the clearing and still masks the read. The push
+# never marks it taken, which is what the two tests left here see.
 red = [
     "application::calendar::tests::test_an_event_deleted_here_is_deleted_at_the_provider_and_stops_being_owed",
     "application::calendar::tests::test_an_event_this_computer_deleted_is_not_written_back_by_a_later_sync",
-    "application::calendar::tests::test_an_event_this_computer_deleted_is_not_written_back_by_the_read_that_follows",
 ]
 
 [[guard]]
 name = "the calendar server read does not write back an event deleted here"
 file = "src/application/caldav_sync.rs"
-before = """        if deleted_here.holds(&remote.uid) {
+# The comment line is part of the break because the feed refresh now asks the
+# same question in the same words a page further down, and a break has to land
+# on exactly one of them.
+before = """        // nothing left to say it was ever deleted.
+        if deleted_here.holds(&remote.uid) {
             continue;
         }"""
 after = """        if false {
             continue;
         }"""
 red = [
+    "application::caldav_sync::tests::test_a_deletion_with_no_address_at_the_server_is_kept_and_masks_the_read",
     "application::caldav_sync::tests::test_an_event_this_computer_deleted_is_not_written_back_by_a_later_caldav_sync",
     "application::caldav_sync::tests::test_an_event_this_computer_deleted_is_not_written_back_by_the_read_that_follows",
+]
+
+[[guard]]
+name = "the feed refresh does not write back an event deleted here"
+file = "src/application/caldav_sync.rs"
+# The fourth read beside the three above, and the one the mask was forgotten
+# from when it was added to its siblings. A feed carries the whole calendar on
+# every refresh, so without this mask a deletion made here is undone at the
+# very next refresh however carefully the note was kept.
+before = """        // question was first added.
+        if deleted_here.holds(&remote.uid) {
+            continue;
+        }"""
+after = """        if false {
+            continue;
+        }"""
+red = [
+    "application::caldav_sync::tests::test_an_event_deleted_here_is_not_written_back_by_a_feed_refresh",
 ]
 
 [[guard]]
@@ -788,6 +817,46 @@ red = [
     "application::tasks_sync::tests::test_a_task_this_computer_deleted_is_not_written_back_by_a_later_sync",
     "application::tasks_sync::tests::test_a_task_this_computer_deleted_is_not_written_back_by_outlook",
     "application::tasks_sync::tests::test_a_task_this_computer_deleted_is_not_written_back_by_the_read_that_follows",
+]
+
+# ── What the clearing itself refuses ───────────────────────────────────────
+#
+# Every mask above is built from the notes' provider identities, so a note
+# with one is load-bearing for as long as any provider could hand the event
+# back. Three callers each decided for themselves whether a note was safe to
+# clear, one decided wrong for three kinds of calendar at once, and every
+# wrong answer resurrected a deleted event. The answer lives in the delete
+# statement now: a note with a provider identity is refused, a note with none
+# masks nothing and drains. Both directions are guarded, because widening the
+# refusal is a table that grows for ever and narrowing it is a deleted event
+# back on the screen.
+
+[[guard]]
+name = "forgetting a calendar deletion a provider could still hand back is refused"
+file = "src/data/message_cache/calendar.rs"
+before = """                "DELETE FROM deleted_calendar_events
+                 WHERE id = ?1 AND provider_event_id IS NULL","""
+after = """                "DELETE FROM deleted_calendar_events WHERE id = ?1","""
+red = [
+    "application::caldav_sync::tests::test_a_deletion_with_no_address_at_the_server_is_kept_and_masks_the_read",
+    "application::calendar::tests::test_a_deletion_in_a_calendar_made_here_holds_across_three_syncs",
+    "application::calendar::tests::test_a_deletion_in_a_read_only_calendar_of_this_account_holds_across_three_syncs",
+    "application::calendar::tests::test_a_deletion_in_a_subscribed_calendar_is_kept_so_the_feed_cannot_hand_it_back",
+    "application::calendar::tests::test_a_deletion_of_an_event_in_no_calendar_holds_across_three_syncs",
+    "data::message_cache::calendar::tests::test_forgetting_a_deletion_a_provider_could_still_hand_back_is_refused",
+]
+
+[[guard]]
+name = "a calendar deletion no provider ever held still drains"
+file = "src/data/message_cache/calendar.rs"
+before = """                "DELETE FROM deleted_calendar_events
+                 WHERE id = ?1 AND provider_event_id IS NULL","""
+after = """                "DELETE FROM deleted_calendar_events
+                 WHERE id = ?1 AND 1 = 0","""
+red = [
+    "application::caldav_sync::tests::test_an_event_the_server_never_had_leaves_no_request",
+    "application::calendar::tests::test_an_event_that_never_reached_the_provider_leaves_no_request",
+    "data::message_cache::calendar::tests::test_forgetting_a_deletion_no_provider_ever_held_lets_the_row_go",
 ]
 
 # ── What lets a deletion go ────────────────────────────────────────────────

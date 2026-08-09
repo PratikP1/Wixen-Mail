@@ -136,9 +136,13 @@ async fn push_to_the_calendar_server(
 
     for note in deletions_waiting(cache, calendar, account_id, result) {
         let Some(at) = worth_sending(note.event_url.as_deref()) else {
-            // Nothing at the server was ever at an address this computer
-            // knows, so there is nothing to ask it to delete and the note is
-            // cleared rather than carried for ever.
+            // No address this computer knows, so there is nothing to ask the
+            // server to delete. The clearing itself decides what the note is
+            // still worth: one with no name from any server masks nothing and
+            // is let go, and one written before addresses were stored keeps
+            // its name and is kept with it, because the server still holds
+            // the event and the note is what stops the read below writing it
+            // back down.
             let _ = cache.forget_deleted_calendar_event(&note.id);
             continue;
         };
@@ -638,6 +642,8 @@ pub async fn refresh_subscription(
         .iter()
         .filter_map(|e| e.provider_event_id.as_deref().map(|uid| (uid, e)))
         .collect();
+    let deleted_here =
+        crate::application::calendar::events_deleted_here(cache, account_id, &mut result);
 
     // Everything the feed carries is written down before anything is removed.
     // There is no transaction to reach for here, so the order is what stops a
@@ -645,6 +651,16 @@ pub async fn refresh_subscription(
     let mut in_feed = std::collections::HashSet::new();
     for remote in &remote_events {
         in_feed.insert(remote.uid.as_str());
+
+        // An event somebody deleted on this computer. The feed goes on
+        // carrying it for as long as its publisher does, and writing it back
+        // down puts it on the screen again with nothing left to say it was
+        // ever deleted. The same question the other three reads ask, asked
+        // here too because this is the read that was forgotten when the
+        // question was first added.
+        if deleted_here.holds(&remote.uid) {
+            continue;
+        }
 
         let already = held_by_uid.get(remote.uid.as_str()).copied();
 
@@ -1245,6 +1261,54 @@ mod tests {
             .expect("the calendar to be readable");
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].provider_event_id.as_deref(), Some("this-time"));
+    }
+
+    #[tokio::test]
+    async fn test_an_event_deleted_here_is_not_written_back_by_a_feed_refresh() {
+        // A feed carries the whole calendar and goes on carrying an event for
+        // as long as its publisher does, so a deletion made here meets it
+        // again on every refresh. The other three reads ask what was deleted
+        // here before writing anything down, and this one did not: the known
+        // trap of a guard added to three loops and not the fourth beside
+        // them.
+        let cache = temp_cache("feed_deletion_holds");
+        let mut calendar = container("sub-deletion", "acct");
+        calendar.source_provider = Some("subscription".to_string());
+        cache
+            .save_calendar_event(&held_event("local-1", "feed-1", &calendar.id, "acct"))
+            .expect("the event the feed carried last time");
+        cache
+            .delete_calendar_event("local-1")
+            .expect("the event to be deleted here");
+
+        for pass in 1..=3 {
+            let (address, _heard) = answering(
+                "200 OK",
+                "text/calendar; charset=utf-8",
+                ics_feed(&["feed-1"]),
+            )
+            .await;
+            calendar.subscription_url = Some(format!("http://{address}/feed.ics"));
+            refresh_subscription(&cache, &ICalSubscriptionClient::new(), &calendar, "acct")
+                .await
+                .expect("the refresh to finish");
+            assert!(
+                cache
+                    .get_event_by_provider_id("acct", "feed-1")
+                    .expect("the calendar to be readable")
+                    .is_none(),
+                "an event this computer deleted came back on refresh {pass}"
+            );
+        }
+
+        assert_eq!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the notes")
+                .len(),
+            1,
+            "the note is what masks every refresh from now on, and it went"
+        );
     }
 
     /// An event in a calendar with a change on it that has not been sent.
@@ -2602,6 +2666,60 @@ mod tests {
                 .expect("the notes")
                 .is_empty(),
             "a note nobody could ever act on was kept for ever"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_with_no_address_at_the_server_is_kept_and_masks_the_read() {
+        // A note written before addresses were stored carries the server's
+        // name for the event and no address. Nothing can be asked to delete
+        // it, but the server still holds the event and goes on naming it, so
+        // the note is the only thing standing between the deletion and the
+        // read that follows. It was cleared as if the server had never held
+        // the event, and the same sync wrote the event back down.
+        let cache = temp_cache("push_delete_no_address");
+        let mut calendar = container("cal-delete-no-address", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::plain(multi_status(&["e-1"])),
+                Answer::plain(multi_status(&["e-1"])),
+                Answer::plain(multi_status(&["e-1"])),
+            ],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let going = a_change_waiting_in(&cache, &calendar, Some("e-1"), None);
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the deletion to be noted");
+        let server = CalDavClient::allowed_to_change_things();
+
+        for pass in 1..=3 {
+            sync_caldav_calendar(&cache, &server, &calendar, "acct", "user", "secret")
+                .await
+                .expect("the sync to finish");
+            assert!(
+                cache
+                    .get_event_by_provider_id("acct", "e-1")
+                    .expect("the calendar to be readable")
+                    .is_none(),
+                "an event this computer deleted came back on sync {pass}"
+            );
+        }
+
+        heard(listening, "three reads")
+            .await
+            .expect("three requests");
+        assert_eq!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the notes")
+                .len(),
+            1,
+            "the note with no address is still the only thing masking the \
+             read, and it went"
         );
     }
 

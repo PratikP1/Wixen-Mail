@@ -287,6 +287,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A calendar event you deleted could come back; now it stays deleted whatever
+  kind of calendar held it.** The record saying "this was deleted here" was
+  thrown away whenever the deletion had nowhere to be sent: an event in no
+  calendar, in a calendar the account may only read, in a calendar made on
+  this computer, or in a subscribed feed. The provider or the feed still knew
+  the event, so the next sync wrote it back onto the screen as though the
+  deletion had quietly failed. The record is now kept for as long as anything
+  could hand the event back, and the feed refresh, the one read that never
+  asked what was deleted here, asks now. An event at a calendar server whose
+  stored address is missing is covered the same way: the deletion cannot be
+  sent, but it no longer comes back.
+
+  Known limitations: a record kept this way is kept for good, because nothing
+  ever takes the deletion off this computer's hands. That is the price of the
+  event staying deleted. And deleting an event out of a calendar the account
+  may only read deletes it on this computer only: the provider still holds it,
+  and this program cannot ask for it to go.
+
 - **A task change held back by Allow Changes is no longer called a problem.**
   With Allow Changes off, a task you had edited or deleted here was reported
   as an error after every sync, forever: "1 problem" on the status line, with

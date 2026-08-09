@@ -20,9 +20,11 @@ pub struct DeletedCalendarEvent {
     ///
     /// A calendar server deletes an event by its own address, and an address
     /// cannot be worked out from an identifier. Nothing for a note written
-    /// before this existed, and nothing for an event no server ever held,
-    /// which is the same case and is handled the same way: no request is made
-    /// and the note is cleared rather than carried for ever.
+    /// before this existed, and nothing for an event no server ever held.
+    /// Either way no request is made, and what happens to the note is decided
+    /// by `provider_event_id` alone: without one the note masks nothing and
+    /// is cleared, with one the server can still hand the event back and the
+    /// note is kept to stand in the way.
     pub event_url: Option<String>,
     /// Whether the provider has taken it yet.
     pub so_far: TheDeletionSoFar,
@@ -444,20 +446,31 @@ impl MessageCache {
         Ok(())
     }
 
-    /// Drop the note outright, because nothing at any provider can hand this
+    /// Drop the note outright, when nothing at any provider can hand the
     /// event back.
     ///
-    /// Only for an event no provider ever held, or one whose calendar has gone.
-    /// Anywhere a provider could still name it, use
-    /// [`Self::the_provider_took_the_deletion_of_an_event`] instead.
-    pub fn forget_deleted_calendar_event(&self, event_id: &str) -> Result<()> {
-        self.conn
+    /// A note that carries a provider's name for the event is refused, and
+    /// the answer says whether the row went. The name is the whole of what
+    /// masks the reads: as long as a provider could hand the event back under
+    /// it, the note is the only thing standing between the deletion and a
+    /// sync that writes the event back down. Three callers each decided for
+    /// themselves whether a note was safe to drop, one of them got it wrong
+    /// three ways, and every wrong answer resurrected a deleted event, so the
+    /// one right answer lives here, beside the delete it guards.
+    ///
+    /// For a note the provider has taken, use
+    /// [`Self::the_provider_took_the_deletion_of_an_event`] instead: the note
+    /// stays, masking the reads, until the sweep releases it by the clock.
+    pub fn forget_deleted_calendar_event(&self, event_id: &str) -> Result<bool> {
+        let removed = self
+            .conn
             .execute(
-                "DELETE FROM deleted_calendar_events WHERE id = ?1",
+                "DELETE FROM deleted_calendar_events
+                 WHERE id = ?1 AND provider_event_id IS NULL",
                 params![event_id],
             )
             .map_err(|e| Error::Other(format!("Failed to clear a deletion: {}", e)))?;
-        Ok(())
+        Ok(removed > 0)
     }
 
     /// Delete a calendar event by the name the provider gave it.
@@ -1418,15 +1431,69 @@ mod tests {
         assert_eq!(notes[0].id, "evt-1");
         assert_eq!(notes[0].provider_event_id.as_deref(), Some("uid-1"));
         assert_eq!(notes[0].calendar_id.as_deref(), Some("cal-1"));
+    }
 
+    #[test]
+    fn test_forgetting_a_deletion_a_provider_could_still_hand_back_is_refused() {
+        // The note's provider identity is the whole of what masks the reads:
+        // as long as a provider could name the event again, the note is the
+        // only thing standing between the deletion and a sync that writes the
+        // event back down. Three callers cleared such notes and every one of
+        // them resurrected the event, so the refusal lives here, where every
+        // caller present and future gets the same answer.
+        let cache = temp_cache("cal_forget_refused");
         cache
+            .save_calendar_event(&make_event("evt-1", "acct", "uid-1", "Standup"))
+            .expect("the event");
+        cache
+            .delete_calendar_event("evt-1")
+            .expect("the event to be deleted here");
+
+        let removed = cache
             .forget_deleted_calendar_event("evt-1")
-            .expect("the provider to have been told");
+            .expect("the deletions to be reachable");
+
+        assert!(
+            !removed,
+            "a note a provider could still hand the event back for was let go"
+        );
+        assert_eq!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the deletions")
+                .len(),
+            1,
+            "the note is gone, so the next read that names uid-1 writes the \
+             event back down"
+        );
+    }
+
+    #[test]
+    fn test_forgetting_a_deletion_no_provider_ever_held_lets_the_row_go() {
+        // The other direction, so the refusal cannot grow too wide. An event
+        // made here and deleted before it ever synced has no provider identity,
+        // masks nothing, and can never be sent, so its note has to drain or
+        // the table grows by one such row for ever.
+        let cache = temp_cache("cal_forget_never_synced");
+        let mut event = make_event("evt-1", "acct", "uid-1", "Never sent");
+        event.provider_event_id = None;
+        cache.save_calendar_event(&event).expect("the event");
+        cache
+            .delete_calendar_event("evt-1")
+            .expect("the event to be deleted here");
+
+        let removed = cache
+            .forget_deleted_calendar_event("evt-1")
+            .expect("the deletions to be reachable");
+
+        assert!(removed, "a note nothing could ever act on was kept");
         assert!(
             cache
                 .deleted_calendar_events("acct")
                 .expect("the deletions")
-                .is_empty()
+                .is_empty(),
+            "a note no provider ever held has to drain rather than be carried \
+             for ever"
         );
     }
 

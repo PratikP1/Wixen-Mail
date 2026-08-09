@@ -561,8 +561,13 @@ fn deletions_for(
                 WhoseChange::Ours(at_the_provider) => Some((note, at_the_provider)),
                 WhoseChange::Theirs => None,
                 WhoseChange::StaysHere => {
-                    // Nothing at any provider ever held it, so the note is
-                    // cleared rather than carried for ever.
+                    // Nobody's to send, which is not the same as nothing at
+                    // any provider holding it: an event in no calendar, in a
+                    // read-only calendar, or filed into one made here can
+                    // still be handed back under the provider's name for it.
+                    // The clearing itself refuses any note carrying such a
+                    // name, so this drops only what no provider ever held and
+                    // keeps the rest standing between the event and the reads.
                     let _ = cache.forget_deleted_calendar_event(&note.id);
                     None
                 }
@@ -4903,6 +4908,117 @@ mod tests {
         );
     }
 
+    /// Run three Google syncs against a server that names evt1 in every
+    /// answer, and require the deletion of evt1 to hold through all of them.
+    ///
+    /// Three rather than two, because the failure being pinned is a note
+    /// dropped in one sync and the event handed back by the next: two syncs
+    /// prove the drop, the third proves nothing is left leaking.
+    async fn three_syncs_keep_the_deletion(cache: &MessageCache, deleted_out_of: &str) {
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                what_google_answers_with("evt1", "Standup"),
+                what_google_answers_with("evt1", "Standup"),
+                what_google_answers_with("evt1", "Standup"),
+            ],
+        )
+        .await;
+        let google = GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        for pass in 1..=3 {
+            sync_google_calendar(cache, &google, "a-token", "acct")
+                .await
+                .expect("the sync to finish");
+            assert!(
+                cache
+                    .get_event_by_provider_id("acct", "evt1")
+                    .expect("the calendar to be readable")
+                    .is_none(),
+                "an event deleted out of {deleted_out_of} came back on sync {pass}"
+            );
+        }
+
+        heard(listening, "three reads")
+            .await
+            .expect("three requests");
+        assert_eq!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the deletions")
+                .len(),
+            1,
+            "the note is the only thing standing between the event and a read \
+             still naming it, and it went"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_of_an_event_in_no_calendar_holds_across_three_syncs() {
+        // An event in no calendar is nobody's to send, and the push took that
+        // answer for "no provider ever held it" and dropped the note. The
+        // note's provider identity says Google did: the read in the very same
+        // sync is still handed the event, and the note is the only thing that
+        // stops it being written back down.
+        let cache = temp_cache("google_deletion_holds_no_calendar");
+        let mut going = an_event_stored_here();
+        going.provider_event_id = Some("evt1".to_string());
+        cache.save_calendar_event(&going).expect("the event");
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the event to be deleted here");
+
+        three_syncs_keep_the_deletion(&cache, "no calendar").await;
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_in_a_read_only_calendar_of_this_account_holds_across_three_syncs() {
+        // A calendar this account may only read. No deletion can ever be sent
+        // to it, and that answer was taken for "no provider holds the event",
+        // which is the other question: Google holds it, goes on naming it,
+        // and only the note stops the read writing it back down.
+        let cache = temp_cache("google_deletion_holds_read_only");
+        let mut theirs = cache
+            .ensure_provider_calendar("acct", GOOGLE, GOOGLE_CALENDAR_NAME)
+            .expect("the provider's calendar");
+        theirs.is_read_only = true;
+        cache
+            .save_calendar(&theirs)
+            .expect("the calendar marked read-only");
+        let mut going = an_event_stored_here();
+        going.calendar_id = Some(theirs.id.clone());
+        going.provider_event_id = Some("evt1".to_string());
+        cache.save_calendar_event(&going).expect("the event");
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the event to be deleted here");
+
+        three_syncs_keep_the_deletion(&cache, "a read-only calendar").await;
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_in_a_calendar_made_here_holds_across_three_syncs() {
+        // A Google-held event filed by hand into a calendar made on this
+        // computer, which moving an event does and keeps. The deletion is
+        // nobody's to send, but Google still holds the event under its own
+        // name and goes on naming it, so dropping the note hands it back.
+        let cache = temp_cache("google_deletion_holds_made_here");
+        let made_here = a_calendar_from("cal-made-here", "Planning", Some("local"), false);
+        cache
+            .save_calendar(&made_here)
+            .expect("the calendar made here");
+        let mut going = an_event_stored_here();
+        going.calendar_id = Some(made_here.id.clone());
+        going.provider_event_id = Some("evt1".to_string());
+        cache.save_calendar_event(&going).expect("the event");
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the event to be deleted here");
+
+        three_syncs_keep_the_deletion(&cache, "a calendar made here").await;
+    }
+
     /// Make the next Outlook read start afresh rather than follow the marker.
     ///
     /// Graph hands back a marker addressed to Graph, which a test server cannot
@@ -5364,11 +5480,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_a_deletion_in_a_subscribed_calendar_is_not_carried_for_ever() {
-        // A feed is read and never written, so there is nothing at any provider
-        // to delete and no pass that will ever send this. Keeping the note
-        // means every sync from now on walks a queue that only grows.
-        let cache = temp_cache("push_google_forgets_a_feeds_deletion");
+    async fn test_a_deletion_in_a_subscribed_calendar_is_kept_so_the_feed_cannot_hand_it_back() {
+        // A feed is read and never written, so no pass will ever send this
+        // deletion. That used to be read as leave to clear the note, and the
+        // feed still names the event on every refresh, so the note is the
+        // only thing standing between the deletion and the event coming
+        // back. The price of keeping it is a row the sweep never releases,
+        // and the price of clearing it was a deleted event on the screen
+        // again.
+        let cache = temp_cache("push_google_keeps_a_feeds_deletion");
         let going = a_pending_event_in(
             &cache,
             crate::application::calendar_source::FROM_A_FEED,
@@ -5394,12 +5514,13 @@ mod tests {
             .await
             .expect("one request");
         assert_eq!(requests.len(), 1);
-        assert!(
+        assert_eq!(
             cache
                 .deleted_calendar_events("acct")
                 .expect("the deletions")
-                .is_empty(),
-            "a note no pass can ever act on is being carried for ever"
+                .len(),
+            1,
+            "the note the next feed refresh is masked by was thrown away"
         );
     }
 
