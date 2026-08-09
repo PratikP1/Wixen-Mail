@@ -794,6 +794,17 @@ pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Opti
     // Normalize to RFC 3339
     let dtstart = normalize_ical_datetime(&dtstart_raw);
 
+    // The zone first, because the cancelled days are counted in it: a
+    // cancellation carrying a zone of its own is moved into the event's, or
+    // into UTC when the start already says UTC, so the stored bare digits
+    // mean what the document meant.
+    let time_zone = ical_parameter(block, "DTSTART", TIME_ZONE_PARAMETER);
+    let exception_dates = cancelled_days_in_the_events_zone(
+        block.lines(),
+        time_zone.as_deref(),
+        says_utc(&dtstart_raw),
+    );
+
     Some(CalDavEvent {
         url: url.to_string(),
         uid,
@@ -806,9 +817,9 @@ pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Opti
         dtend: dtend.map(|d| normalize_ical_datetime(&d)),
         is_all_day,
         status,
-        time_zone: ical_parameter(block, "DTSTART", TIME_ZONE_PARAMETER),
+        time_zone,
         recurrence_rule: extract_ical_property(block, "RRULE"),
-        exception_dates: every_ical_property(block.lines(), "EXDATE"),
+        exception_dates,
     })
 }
 
@@ -1011,27 +1022,128 @@ fn extract_ical_property(ical: &str, property: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Every value a property carries, joined by commas, or nothing if it has none.
+/// Every day a series calls off, joined by commas and counted in the event's
+/// own zone, or nothing if it calls off none.
 ///
-/// A property that can be given more than once needs all of them. The days a
-/// series calls off are written either as one line with commas or as a line
+/// A series may name its cancelled days on one line with commas or on a line
 /// each, and both mean the same thing, so keeping only the first line loses
-/// every cancelled day but one.
+/// every cancelled day but one. Every value is kept, and each is stored the
+/// way the event's own times are told: a value that says it is UTC or names a
+/// bare day is kept as written, and a clock face carrying a zone of its own is
+/// moved into the event's zone, because the stored column holds bare values
+/// and dropping the zone without moving the clock renames the instant. Nine in
+/// New York stored as bare digits on a London series reads back as nine in
+/// London, four hours early, and the meeting somebody cancelled is announced
+/// while the one they kept is called off.
 ///
 /// Lines rather than a document, because the other source of these is Google,
 /// which sends the repeat rule and the called-off days as separate strings of
 /// one list instead of as a calendar document. Both are property lines and both
 /// end up in the same column, so they are read by this one function and the two
 /// paths cannot drift into storing two shapes.
-pub(crate) fn every_ical_property<'a>(
+pub(crate) fn cancelled_days_in_the_events_zone<'a>(
     lines: impl IntoIterator<Item = &'a str>,
-    property: &str,
+    events_zone: Option<&str>,
+    start_says_utc: bool,
 ) -> Option<String> {
-    let found: Vec<&str> = lines
-        .into_iter()
-        .filter_map(|line| value_named_on(line, property))
-        .collect();
-    (!found.is_empty()).then(|| found.join(","))
+    let mut kept: Vec<String> = Vec::new();
+    for line in lines {
+        let Some(value) = value_named_on(line, "EXDATE") else {
+            continue;
+        };
+        let its_own_zone = parameter_named_on(line, "EXDATE", TIME_ZONE_PARAMETER);
+        for one in value
+            .split(',')
+            .map(str::trim)
+            .filter(|one| !one.is_empty())
+        {
+            kept.push(a_cancelled_day_in_the_events_zone(
+                one,
+                its_own_zone.as_deref(),
+                events_zone,
+                start_says_utc,
+            ));
+        }
+    }
+    (!kept.is_empty()).then(|| kept.join(","))
+}
+
+/// One cancelled value, told the way the event's own times are told.
+///
+/// Only a clock face naming a zone different from the event's is converted,
+/// and the conversion renames one concrete instant into the event's zone, or
+/// into UTC when the event's start already says UTC. The series' own
+/// wall-clock times are never touched: a nine o'clock meeting stays at nine
+/// o'clock across a clock change, which is what the calendar standard means by
+/// a clock face with a zone name beside it.
+///
+/// A value this cannot move is kept as it was written rather than guessed at:
+/// a zone the timezone database does not know, a time the clocks skipped, or
+/// an event with no zone of its own to move the value into. The digits then
+/// mean what they meant before this function existed.
+fn a_cancelled_day_in_the_events_zone(
+    one: &str,
+    its_own_zone: Option<&str>,
+    events_zone: Option<&str>,
+    start_says_utc: bool,
+) -> String {
+    use chrono::TimeZone;
+    let Some(named) = its_own_zone else {
+        return one.to_string();
+    };
+    if Some(named) == events_zone {
+        return one.to_string();
+    }
+    match form_of_a_cancelled_day(one) {
+        // Says its instant by itself, or names a whole day with no hour to
+        // move: kept as written.
+        CancelledDayForm::SaysUtc | CancelledDayForm::WholeDay => return one.to_string(),
+        CancelledDayForm::ClockFace => {}
+    }
+    let (Some(clock), Ok(its_zone)) = (the_wire_clock_face(one), named.parse::<chrono_tz::Tz>())
+    else {
+        return one.to_string();
+    };
+    let instant = match its_zone.from_local_datetime(&clock) {
+        chrono::LocalResult::Single(instant) => instant,
+        // The hour the clocks repeat: the first passing of the named time.
+        chrono::LocalResult::Ambiguous(first, _) => first,
+        // The hour the clocks skip: the named time never happened, and
+        // inventing a neighbouring one would call off a day nobody named.
+        chrono::LocalResult::None => return one.to_string(),
+    };
+    if let Some(into) = events_zone.and_then(|zone| zone.parse::<chrono_tz::Tz>().ok()) {
+        return instant
+            .with_timezone(&into)
+            .naive_local()
+            .format(WIRE_CLOCK_FACE)
+            .to_string();
+    }
+    if start_says_utc {
+        return instant
+            .with_timezone(&chrono::Utc)
+            .format("%Y%m%dT%H%M%SZ")
+            .to_string();
+    }
+    one.to_string()
+}
+
+/// How a calendar document writes a clock face: `20260305T090000`.
+const WIRE_CLOCK_FACE: &str = "%Y%m%dT%H%M%S";
+
+/// The clock face a wire value holds, when it holds a whole one.
+///
+/// Read out of the digits rather than the punctuation, the same way the
+/// occurrence reader takes a stored day apart: the letter between date and
+/// time may be written in either case, and anything past the fourteenth digit
+/// is a fraction of a second, which cannot move a day.
+fn the_wire_clock_face(one: &str) -> Option<chrono::NaiveDateTime> {
+    let digits: String = one.chars().filter(char::is_ascii_digit).collect();
+    let date = chrono::NaiveDate::parse_from_str(digits.get(..8)?, "%Y%m%d").ok()?;
+    let figures = |from: usize, to: usize| digits.get(from..to)?.parse::<u32>().ok();
+    let clock =
+        chrono::NaiveTime::from_hms_opt(figures(8, 10)?, figures(10, 12)?, figures(12, 14)?)?;
+    Some(date.and_time(clock))
 }
 
 /// An instant written the way a calendar server expects to read it.
@@ -1057,11 +1169,14 @@ const TIME_ZONE_PARAMETER: &str = "TZID";
 ///
 /// The letter that says so means the same in either case, the same as every
 /// name around it. One answer for it, in one place, because it is asked on the
-/// way in and twice on the way out: read as a capital only, a start stored from
+/// way in, on the way out, and by the occurrence reader deciding which zone a
+/// cancelled day is counted in: read as a capital only, a start stored from
 /// a server writing in small letters lost the letter on the way back out and a
 /// nine o'clock UTC meeting was sent as nine o'clock in no zone at all, and a
-/// cancelled day was given a zone on top of the UTC it already declared.
-fn says_utc(written: &str) -> bool {
+/// cancelled day was given a zone on top of the UTC it already declared. Two
+/// copies of this answer is how those splits start, so the occurrence reader
+/// asks this one rather than keeping its own.
+pub(crate) fn says_utc(written: &str) -> bool {
     written.ends_with(['Z', 'z'])
 }
 
@@ -1085,30 +1200,38 @@ fn says_utc(written: &str) -> bool {
 /// property name in a file whose defects all come from there being more than
 /// one.
 fn ical_parameter(ical: &str, property: &str, parameter: &str) -> Option<String> {
-    for line in ical.lines() {
-        let line = line.trim();
-        if !names_the_property(line, property) {
-            continue;
-        }
-        // Parameters sit between the name and the first colon, so a line whose
-        // first punctuation is the colon carries none.
-        let (Some(semicolon), Some(colon)) = (line.find(';'), line.find(':')) else {
+    ical.lines()
+        .find_map(|line| parameter_named_on(line, property, parameter))
+}
+
+/// One parameter off one line, or nothing if the line is another property's.
+///
+/// The line-by-line half of [`ical_parameter`], on its own because a property
+/// that may be given on several lines can carry a different parameter on each:
+/// two cancelled days may each name a zone of their own, and a reader that
+/// asks the document rather than the line takes the first line's answer for
+/// both.
+fn parameter_named_on(line: &str, property: &str, parameter: &str) -> Option<String> {
+    let line = line.trim();
+    if !names_the_property(line, property) {
+        return None;
+    }
+    // Parameters sit between the name and the first colon, so a line whose
+    // first punctuation is the colon carries none.
+    let (semicolon, colon) = (line.find(';')?, line.find(':')?);
+    if semicolon > colon {
+        return None;
+    }
+    for part in line[semicolon + 1..colon].split(';') {
+        let Some((named, value)) = part.split_once('=') else {
             continue;
         };
-        if semicolon > colon {
+        if !named.trim().eq_ignore_ascii_case(parameter) {
             continue;
         }
-        for part in line[semicolon + 1..colon].split(';') {
-            let Some((named, value)) = part.split_once('=') else {
-                continue;
-            };
-            if !named.trim().eq_ignore_ascii_case(parameter) {
-                continue;
-            }
-            let value = unquoted(value.trim());
-            if !value.is_empty() {
-                return Some(value.to_string());
-            }
+        let value = unquoted(value.trim());
+        if !value.is_empty() {
+            return Some(value.to_string());
         }
     }
     None
@@ -1265,16 +1388,82 @@ fn the_properties_this_program_owns(event: &CalDavEvent) -> Vec<String> {
         lines.push(format!("RRULE:{}", without_the_property_name(rule)));
     }
     if let Some(called_off) = worth_sending(event.exception_dates.as_deref()) {
-        let zone = if says_utc(called_off) && !event.is_all_day {
-            String::new()
-        } else {
-            zone
-        };
-        lines.push(format!("EXDATE{zone}:{called_off}"));
+        lines.extend(cancelled_day_lines(
+            called_off,
+            crate::common::moment::the_zone_named(event.time_zone.as_deref()),
+        ));
     }
 
     if let Some(state) = worth_sending(Some(event.status.as_str())) {
         lines.push(format!("STATUS:{state}"));
+    }
+    lines
+}
+
+/// The three forms a stored cancelled day takes, which decide its label.
+///
+/// The one answer both sides use: the writer groups values onto lines by it,
+/// and the reader keeps or converts a value by it. Deciding the label from the
+/// whole comma-joined list, as the writer once did, read only the last value:
+/// one order sent a UTC value under a zone label, which says two things about
+/// one instant and a careful server refuses, and the other order sent a clock
+/// face with no label at all, which is an hour wrong for half the year.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CancelledDayForm {
+    /// Says it is UTC already, so it names its instant by itself.
+    SaysUtc,
+    /// A clock face, read in whatever zone is named beside it.
+    ClockFace,
+    /// A bare day, with no hour on it at all.
+    WholeDay,
+}
+
+/// Which form one stored cancelled value takes.
+fn form_of_a_cancelled_day(one: &str) -> CancelledDayForm {
+    if says_utc(one) {
+        return CancelledDayForm::SaysUtc;
+    }
+    let bytes = one.as_bytes();
+    if bytes.len() == 8 && bytes.iter().all(u8::is_ascii_digit) {
+        return CancelledDayForm::WholeDay;
+    }
+    CancelledDayForm::ClockFace
+}
+
+/// The cancelled days of a series written as document lines, one line per
+/// form, each labelled as the values on it say.
+///
+/// Values that say they are UTC go out bare, clock faces go out under the
+/// event's own zone when it names one, and bare days go out marked as dates.
+/// A whole-day series' cancelled days land on the date line by their form, so
+/// nothing here asks whether the event is all-day and nothing can disagree
+/// with the values themselves.
+fn cancelled_day_lines(called_off: &str, zone: Option<&str>) -> Vec<String> {
+    let mut says_for_itself: Vec<&str> = Vec::new();
+    let mut clock_faces: Vec<&str> = Vec::new();
+    let mut whole_days: Vec<&str> = Vec::new();
+    for one in called_off
+        .split(',')
+        .map(str::trim)
+        .filter(|one| !one.is_empty())
+    {
+        match form_of_a_cancelled_day(one) {
+            CancelledDayForm::SaysUtc => says_for_itself.push(one),
+            CancelledDayForm::ClockFace => clock_faces.push(one),
+            CancelledDayForm::WholeDay => whole_days.push(one),
+        }
+    }
+    let mut lines = Vec::new();
+    if !says_for_itself.is_empty() {
+        lines.push(format!("EXDATE:{}", says_for_itself.join(",")));
+    }
+    match (clock_faces.as_slice(), zone) {
+        ([], _) => {}
+        (faces, Some(named)) => lines.push(format!("EXDATE;TZID={named}:{}", faces.join(","))),
+        (faces, None) => lines.push(format!("EXDATE:{}", faces.join(","))),
+    }
+    if !whole_days.is_empty() {
+        lines.push(format!("EXDATE;VALUE=DATE:{}", whole_days.join(",")));
     }
     lines
 }
@@ -2375,6 +2564,12 @@ mod tests {
         // A cancelled day, which a server may write on one line or on several,
         // and which every reader before this dropped. Shown, it is a meeting
         // somebody turns up to that is not happening.
+        //
+        // The second value carries a zone of its own on a meeting whose start
+        // says it is UTC, so it is stored as the instant it names, in the
+        // form the start uses. This test once pinned the digits kept bare,
+        // which read back an hour wrong for half the year once the writer
+        // dressed them in UTC.
         let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:series-1\r\n\
                     SUMMARY:Standup\r\nDTSTART:20260305T090000Z\r\nDTEND:20260305T091500Z\r\n\
                     RRULE:FREQ=WEEKLY\r\nEXDATE:20260312T090000Z\r\n\
@@ -2385,8 +2580,9 @@ mod tests {
         assert_eq!(event.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
         assert_eq!(
             event.exception_dates.as_deref(),
-            Some("20260312T090000Z,20260326T090000"),
-            "every line, not the first one only"
+            Some("20260312T090000Z,20260326T090000Z"),
+            "every line, not the first one only, each naming the instant it \
+             named on arrival"
         );
     }
 
@@ -2585,6 +2781,178 @@ mod tests {
         assert!(
             ical.contains("EXDATE:20260312t080000z"),
             "a cancelled day that says it is UTC was given a zone as well:\n{ical}"
+        );
+    }
+
+    #[test]
+    fn test_a_mixed_list_of_cancelled_days_splits_by_what_each_value_says() {
+        // A series can hold cancelled days in two forms at once: one saying it
+        // is UTC and one a clock face in the meeting's own zone. They were
+        // written on one line wearing whichever label the LAST value earned,
+        // so one order sent a UTC value under a zone label, which says two
+        // things about one instant, and the other order sent the clock face
+        // with no zone at all, which is an hour wrong for half the year.
+        for stored in [
+            "20260312T090000Z,20260326T090000",
+            "20260326T090000,20260312T090000Z",
+        ] {
+            let event = CalDavEvent {
+                dtstart: "2026-03-05T09:00:00".to_string(),
+                dtend: None,
+                time_zone: Some("Europe/London".to_string()),
+                recurrence_rule: Some("FREQ=WEEKLY".to_string()),
+                exception_dates: Some(stored.to_string()),
+                ..an_event_to_send()
+            };
+
+            let ical = build_ical_vevent(&event);
+
+            assert!(
+                ical.contains("EXDATE:20260312T090000Z\r\n"),
+                "for {stored}:\n{ical}"
+            );
+            assert!(
+                ical.contains("EXDATE;TZID=Europe/London:20260326T090000\r\n"),
+                "for {stored}:\n{ical}"
+            );
+            assert!(
+                !ical
+                    .lines()
+                    .any(|line| line.contains("TZID=") && says_utc(line)),
+                "a value that says it is UTC was given a zone as well:\n{ical}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_clock_face_cancellation_keeps_the_zone_even_when_the_start_is_utc() {
+        // The cancelled day's label was borrowed from the start. A start that
+        // says it is UTC carries no zone, so a cancelled day written as a
+        // clock face in the event's own zone went out with no zone either,
+        // and a nine o'clock London cancellation read as nine o'clock
+        // wherever the server keeps its clock.
+        let event = CalDavEvent {
+            dtstart: "2026-03-05T09:00:00Z".to_string(),
+            dtend: None,
+            time_zone: Some("Europe/London".to_string()),
+            recurrence_rule: Some("FREQ=WEEKLY".to_string()),
+            exception_dates: Some("20260312T090000".to_string()),
+            ..an_event_to_send()
+        };
+
+        let ical = build_ical_vevent(&event);
+
+        assert!(
+            ical.contains("EXDATE;TZID=Europe/London:20260312T090000\r\n"),
+            "{ical}"
+        );
+        assert!(
+            !ical.contains("DTSTART;TZID="),
+            "a start that says it is UTC must not be given a zone as well:\n{ical}"
+        );
+    }
+
+    #[test]
+    fn test_a_cancelled_day_keeps_its_own_instant_when_its_zone_differs_from_the_meetings() {
+        // A cancellation may arrive naming a zone of its own. The reader took
+        // the digits and dropped the zone, and the writer then dressed those
+        // digits in the meeting's zone: nine in New York became nine in
+        // London, four hours early, and the meeting somebody cancelled was
+        // announced while the one they kept was called off.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:zone-3\r\nSUMMARY:Standup\r\n\
+                    DTSTART;TZID=Europe/London:20260305T090000\r\nRRULE:FREQ=WEEKLY\r\n\
+                    EXDATE;TZID=America/New_York:20260312T090000\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(event.time_zone.as_deref(), Some("Europe/London"));
+        assert_eq!(
+            event.exception_dates.as_deref(),
+            Some("20260312T130000"),
+            "nine in the morning in New York on 12 March 2026 is one in the \
+             afternoon in London"
+        );
+    }
+
+    #[test]
+    fn test_a_cancelled_day_in_a_zone_on_a_utc_meeting_is_stored_as_the_instant_it_names() {
+        // The same loss on a meeting whose start says it is UTC: the zone came
+        // off the cancellation and the bare digits were later written back out
+        // as UTC, which renames the instant. Stored as the instant the value
+        // names, in the form the start uses.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:zone-4\r\nSUMMARY:Standup\r\n\
+                    DTSTART:20260305T090000Z\r\nRRULE:FREQ=WEEKLY\r\n\
+                    EXDATE;TZID=Europe/London:20260326T090000\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(
+            event.exception_dates.as_deref(),
+            Some("20260326T090000Z"),
+            "nine in London on 26 March 2026 is nine UTC, said the way the \
+             start says it"
+        );
+    }
+
+    #[test]
+    fn test_a_cancelled_time_the_clocks_skipped_is_kept_as_it_was_written() {
+        // Half past two on the night the clocks in New York spring forward
+        // never happens. There is no instant to convert, and inventing a
+        // neighbouring one would cancel a meeting nobody named, so the value
+        // is kept as it was written.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:zone-5\r\nSUMMARY:Standup\r\n\
+                    DTSTART;TZID=Europe/London:20260305T090000\r\nRRULE:FREQ=WEEKLY\r\n\
+                    EXDATE;TZID=America/New_York:20260308T023000\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(event.exception_dates.as_deref(), Some("20260308T023000"));
+    }
+
+    #[test]
+    fn test_a_cancelled_time_the_clocks_repeat_is_taken_at_its_first_passing() {
+        // Half past one on the night the clocks in New York fall back happens
+        // twice. The first passing is taken, the same answer everything else
+        // here gives an ambiguous hour: half past one EDT is half past five in
+        // London, where the clocks went back the week before.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:zone-6\r\nSUMMARY:Standup\r\n\
+                    DTSTART;TZID=Europe/London:20260305T090000\r\nRRULE:FREQ=WEEKLY\r\n\
+                    EXDATE;TZID=America/New_York:20261101T013000\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
+
+        assert_eq!(event.exception_dates.as_deref(), Some("20261101T053000"));
+    }
+
+    #[test]
+    fn test_cancelled_days_written_out_and_read_back_name_the_same_instants() {
+        // The reader and the writer share this file, so a document this
+        // program writes has to come back through its own reader naming the
+        // same instants. It did not: the writer's one label and the reader's
+        // dropped parameters each renamed a value the other had kept.
+        let event = CalDavEvent {
+            dtstart: "2026-03-05T09:00:00".to_string(),
+            dtend: None,
+            time_zone: Some("Europe/London".to_string()),
+            recurrence_rule: Some("FREQ=WEEKLY".to_string()),
+            exception_dates: Some("20260312T090000Z,20260326T090000".to_string()),
+            ..an_event_to_send()
+        };
+
+        let written = build_ical_vevent(&event);
+        let read_back = parse_ical_vevent(&written, "", None).expect("the document to read");
+
+        assert_eq!(read_back.dtstart, "2026-03-05T09:00:00");
+        assert_eq!(read_back.time_zone.as_deref(), Some("Europe/London"));
+        assert_eq!(
+            read_back.exception_dates.as_deref(),
+            Some("20260312T090000Z,20260326T090000"),
+            "a cancelled day changed its meaning between going out and \
+             coming back:\n{written}"
         );
     }
 

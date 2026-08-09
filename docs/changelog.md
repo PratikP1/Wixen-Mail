@@ -287,6 +287,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A cancelled day of a repeating meeting keeps its exact moment on the way
+  to and from a calendar server.** A series can mark its cancelled days two
+  ways at once: as an instant in universal time, or as a clock face in the
+  meeting's own time zone. Sent to the server, all of them went out on one
+  line under one label, chosen by looking only at the last value, so a
+  cancelled day could claim universal time and a zone at the same time, which
+  a careful server refuses outright, or lose its zone and sit an hour wrong
+  for half the year. Each kind now goes on its own line, labelled as the
+  value itself says. Reading is fixed the same way: a cancellation that
+  arrives naming a different zone from its own meeting used to have the zone
+  thrown away, which quietly renamed the moment; it is now converted into the
+  meeting's zone, so the day that goes quiet is the day that was cancelled.
+  The meeting's own times are never converted: a nine o'clock meeting stays
+  at nine o'clock when the clocks change.
+
 - **A calendar event you deleted could come back; now it stays deleted whatever
   kind of calendar held it.** The record saying "this was deleted here" was
   thrown away whenever the deletion had nowhere to be sent: an event in no

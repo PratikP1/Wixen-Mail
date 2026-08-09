@@ -1289,7 +1289,7 @@ fn further_off_for(provider: &str) -> &'static str {
 /// One line is the right answer for the repeat rule, which an event has at most
 /// one of. It is the wrong answer for the days called off, which an event may
 /// name on as many lines as it likes, so those go through
-/// `service::caldav::every_ical_property` instead.
+/// `service::caldav::cancelled_days_in_the_events_zone` instead.
 ///
 /// The property name is kept on the value rather than stripped, because a
 /// calendar server's rule arrives without one and both shapes end up in the
@@ -1390,6 +1390,19 @@ pub fn google_event_to_local(
         "busy"
     };
 
+    // Every called-off line, read by the same routine a calendar server's
+    // days go through, so both sources leave the one column in one shape. An
+    // event may name its called-off days on as many lines as it likes, and
+    // keeping the first left every later cancellation on the calendar. A
+    // cancellation naming a different zone from the series itself is moved
+    // into the series' own zone rather than stripped bare, because bare
+    // digits are read in the series' zone and the instant would be renamed.
+    let exception_dates = crate::service::caldav::cancelled_days_in_the_events_zone(
+        event.recurrence.iter().map(String::as_str),
+        crate::common::moment::the_zone_named(time_zone.as_deref()),
+        crate::service::caldav::says_utc(&start_datetime),
+    );
+
     let now = chrono::Utc::now().to_rfc3339();
     CalendarEventEntry {
         id: uuid::Uuid::new_v4().to_string(),
@@ -1414,14 +1427,7 @@ pub fn google_event_to_local(
         // sends the called-off days and the extra days in the same list, and
         // storing one of those as the rule would repeat nothing at all.
         recurrence_rule: only_the_line_naming(&event.recurrence, "RRULE"),
-        // Every called-off line, read by the same function a calendar server's
-        // days go through, so both sources leave the one column in one shape.
-        // An event may name its called-off days on as many lines as it likes,
-        // and keeping the first left every later cancellation on the calendar.
-        exception_dates: crate::service::caldav::every_ical_property(
-            event.recurrence.iter().map(String::as_str),
-            "EXDATE",
-        ),
+        exception_dates,
         categories: String::new(),
         source_provider: Some("gmail".to_string()),
         etag: Some(event.etag.clone()),
@@ -2210,6 +2216,38 @@ mod tests {
         let local = google_event_to_local(&event, "test@gmail.com", "cal-google");
 
         assert_eq!(local.exception_dates.as_deref(), Some("20260312T100000"));
+    }
+
+    #[test]
+    fn test_a_google_cancellation_in_another_zone_is_stored_in_the_events_own_zone() {
+        // Google may write the cancelled day in a different zone from the
+        // series itself. Taking the digits and dropping the zone renamed the
+        // instant: nine in New York was stored as nine in London, four hours
+        // early. The value is converted into the event's own zone instead, by
+        // the same routine a calendar server's days go through.
+        let event = GoogleEvent {
+            id: "series-6".to_string(),
+            summary: Some("Thursday stand-up".to_string()),
+            start: Some(GoogleEventDateTime {
+                date_time: Some("2026-03-05T09:00:00Z".to_string()),
+                date: None,
+                time_zone: Some("Europe/London".to_string()),
+            }),
+            recurrence: vec![
+                "RRULE:FREQ=WEEKLY".to_string(),
+                "EXDATE;TZID=America/New_York:20260312T090000".to_string(),
+            ],
+            ..Default::default()
+        };
+
+        let local = google_event_to_local(&event, "test@gmail.com", "cal-google");
+
+        assert_eq!(
+            local.exception_dates.as_deref(),
+            Some("20260312T130000"),
+            "nine in the morning in New York on 12 March 2026 is one in the \
+             afternoon in London"
+        );
     }
 
     #[test]

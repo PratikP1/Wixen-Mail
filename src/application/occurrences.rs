@@ -204,7 +204,10 @@ fn the_day_called_off(
 ) -> Option<chrono::NaiveDate> {
     let stamp: String = one.chars().filter(char::is_ascii_digit).collect();
     let written = chrono::NaiveDate::parse_from_str(stamp.get(..8)?, "%Y%m%d").ok()?;
-    let (Some(offset), true) = (the_events_offset, says_universal_time(one)) else {
+    let (Some(offset), true) = (
+        the_events_offset,
+        crate::service::caldav::says_utc(one.trim_end()),
+    ) else {
         return Some(written);
     };
     let Some(clock) = the_clock_face_in(stamp.get(8..)?) else {
@@ -217,15 +220,6 @@ fn the_day_called_off(
             .with_timezone(&offset)
             .date_naive(),
     )
-}
-
-/// Whether a called-off value says it is already in universal time.
-///
-/// The letter means the same in either case, the same as every other name a
-/// calendar document carries. Read as a capital only, a server writing in small
-/// letters would have every cancellation counted in the wrong zone.
-fn says_universal_time(one: &str) -> bool {
-    one.trim_end().ends_with(['Z', 'z'])
 }
 
 /// The clock face six digits name, or nothing when there are not six of them.

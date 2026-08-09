@@ -1972,3 +1972,46 @@ red = [
     "application::tasks_sync::tests::test_a_change_waiting_on_the_setting_is_said_as_a_sentence_not_a_problem",
     "application::tasks_sync::tests::test_two_syncs_with_the_setting_off_both_say_waiting_and_never_error",
 ]
+
+# ── The days a series calls off, crossing time zones whole ──────────────────
+#
+# A cancelled day is one value in a comma-joined column, and each value says
+# for itself what it is: an instant in UTC, a clock face in the meeting's own
+# zone, or a bare day. The writer once labelled the whole list by its last
+# value, so one order claimed UTC and a zone at once and the other lost the
+# zone entirely; the reader once stripped each line's own zone, so a nine in
+# New York was stored as a nine in London. Both sides answer through one form
+# now, and each direction is measured here.
+
+[[guard]]
+name = "cancelled days go out grouped by what each value says"
+file = "src/service/caldav.rs"
+before = """        match form_of_a_cancelled_day(one) {
+            CancelledDayForm::SaysUtc => says_for_itself.push(one),
+            CancelledDayForm::ClockFace => clock_faces.push(one),
+            CancelledDayForm::WholeDay => whole_days.push(one),
+        }"""
+after = """        clock_faces.push(one);"""
+red = [
+    "service::caldav::tests::test_a_birthday_sent_to_a_calendar_server_still_happens_every_year",
+    "service::caldav::tests::test_a_cancelled_day_in_utc_gets_no_zone_even_when_the_meeting_it_belongs_to_has_one",
+    "service::caldav::tests::test_a_mixed_list_of_cancelled_days_splits_by_what_each_value_says",
+    "service::caldav::tests::test_a_time_stored_with_a_small_z_still_goes_back_out_saying_it_is_utc",
+]
+
+[[guard]]
+name = "a cancelled day arriving in another zone is moved into the meeting's own"
+file = "src/service/caldav.rs"
+before = """    if Some(named) == events_zone {
+        return one.to_string();
+    }"""
+after = """    if Some(named) != events_zone {
+        return one.to_string();
+    }"""
+red = [
+    "application::calendar::tests::test_a_google_cancellation_in_another_zone_is_stored_in_the_events_own_zone",
+    "service::caldav::tests::test_a_cancelled_day_in_a_zone_on_a_utc_meeting_is_stored_as_the_instant_it_names",
+    "service::caldav::tests::test_a_cancelled_day_keeps_its_own_instant_when_its_zone_differs_from_the_meetings",
+    "service::caldav::tests::test_a_cancelled_time_the_clocks_repeat_is_taken_at_its_first_passing",
+    "service::caldav::tests::test_a_changed_day_of_a_series_is_kept_when_the_server_sends_it_with_the_series",
+]
