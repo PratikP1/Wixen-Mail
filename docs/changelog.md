@@ -287,6 +287,40 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Importing an address book that splits a person across cards no longer makes
+  two contacts of them.** Several address books export one card per address
+  rather than one card carrying the whole list. What says two records are one
+  person here is an address they share, and two such cards share none, so on a
+  first import, when nothing is stored for that person yet, both cards were
+  written down. Every person their address book had split arrived here twice,
+  and both halves were queued to go to your real address book.
+
+  Two cards in one file are now one person when they are the same card apart
+  from the addresses on them, which is what a per-address export writes. Anything
+  the two cards disagree about keeps them apart, so two people who happen to
+  share a name are still two people. A card with no name on it is never joined to
+  anything. This applies to cards in the file being read, never to a contact you
+  already hold: an address book is entitled to hold two people with one name, and
+  folding a card into one of them would put a stranger's address on somebody
+  real.
+
+  The count now says how many people the file wrote down rather than how many
+  cards did the writing. Two cards for one person used to be announced as
+  "Imported 2 contacts. 2 contacts are waiting to be sent to your address book"
+  with one contact in front of you.
+
+  Known limitation: two people with the same name, and nothing recorded for
+  either but one address each, are read as one person holding both addresses.
+  Nothing is deleted and mail to either address still reaches somebody, but it is
+  the wrong answer. The narrower rule that avoids it, asking the cards to agree
+  on something besides the name, would leave the commonest shape of export there
+  is, a name and an address, duplicating everybody.
+
+  How this was measured: through the import, with the cards a per-address export
+  writes, with two people who share a name, with a card that matches somebody
+  already stored, and with cards carrying no name. Nothing has run against a real
+  address book.
+
 - **A whole-day event sent to a calendar server is written as a day.** The
   document writer turned a whole-day event's stored value into a date by taking
   the dashes out of it. That works for an event made here, which stores a bare

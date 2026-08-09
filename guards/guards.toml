@@ -1455,6 +1455,7 @@ red = [
     "data::message_cache::contacts::tests::test_a_card_naming_an_address_she_does_not_hold_yet_adds_it_to_the_ones_she_has",
     "data::message_cache::contacts::tests::test_a_card_that_does_change_a_contact_stored_by_an_older_version_is_queued",
     "data::message_cache::contacts::tests::test_importing_a_card_queues_its_contents_for_every_address_book_that_holds_her",
+    "data::message_cache::contacts::tests::test_two_cards_for_somebody_nobody_here_holds_are_one_person",
 ]
 
 [[guard]]
@@ -1514,6 +1515,7 @@ after = """        let every_address = from_card.emails_json.clone().or_else(|| 
 red = [
     "data::message_cache::contacts::tests::test_a_card_matched_by_address_keeps_the_addresses_it_is_silent_about",
     "data::message_cache::contacts::tests::test_a_card_naming_an_address_she_does_not_hold_yet_adds_it_to_the_ones_she_has",
+    "data::message_cache::contacts::tests::test_two_cards_for_somebody_nobody_here_holds_are_one_person",
     "data::message_cache::contacts::tests::test_a_card_naming_one_address_twice_adds_it_once",
     "data::message_cache::contacts::tests::test_a_card_repeating_the_addresses_already_held_changes_nothing_about_them",
     "data::message_cache::contacts::tests::test_an_address_the_card_adds_keeps_the_label_the_card_gave_it",
@@ -1651,14 +1653,37 @@ red = [
 [[guard]]
 name = "the contacts on their way out are counted as they are written"
 file = "src/data/message_cache/contacts.rs"
-before = """                    if contact.pending {
-                        read.waiting_to_be_sent += 1;
+before = """                    if still_owed {
+                        waiting.insert(row);
                     }"""
 after = """                    if false {
-                        read.waiting_to_be_sent += 1;
+                        waiting.insert(row);
                     }"""
 red = [
     "data::message_cache::contacts::tests::test_a_card_that_does_change_a_contact_stored_by_an_older_version_is_queued",
+    "data::message_cache::contacts::tests::test_two_cards_for_somebody_nobody_here_holds_are_one_person",
+]
+
+# -- Two cards in one file for a person nobody here holds -------------------
+#
+# An address is what says two records are one person, and there is one pair of
+# cards it cannot answer for: the two an address book writes when it exports one
+# card per address, for somebody this account does not hold yet. Neither card
+# names an address the other has and neither matches anything stored, so both
+# were written down and both were queued. A first import of an exported address
+# book duplicated every person that address book had split across cards.
+#
+# The break makes the card-against-card question always answer no, which is
+# where this started.
+
+[[guard]]
+name = "two cards that are one card but for the address are one person"
+file = "src/data/message_cache/contacts.rs"
+before = """        Self::the_card_apart_from_its_addresses(earlier)
+            == Self::the_card_apart_from_its_addresses(arriving)"""
+after = """        false"""
+red = [
+    "data::message_cache::contacts::tests::test_two_cards_for_somebody_nobody_here_holds_are_one_person",
 ]
 
 # The same rule where somebody looks for a person rather than where two records
