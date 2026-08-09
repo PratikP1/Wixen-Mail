@@ -77,6 +77,38 @@ def read_record() -> list[Guard]:
     return guards
 
 
+def why_no_test_was_named(status: int, said: str) -> str:
+    """Why a run named no test, saying only the part that is known.
+
+    It fails two ways and the wording named one of them for both: a run that
+    built and named no test read as a break that did not build, which is a
+    cause nobody established. What separates them is the status cargo exited
+    with, and neither reading is a guess.
+
+    >>> print(why_no_test_was_named(101, "error[E0308]: mismatched types"))
+    the break did not build, so no test ran. cargo exited 101 and said:
+    error[E0308]: mismatched types
+    >>> print(why_no_test_was_named(0, "running 0 tests"))
+    the break built and the run named no test. cargo exited 0 and said:
+    running 0 tests
+
+    And the case that made this worth writing down. Cargo said nothing at all,
+    so the old line ended at a colon with nothing after it, under a cause it
+    had not established:
+
+    >>> print(why_no_test_was_named(1, "  \\n  "))
+    the break did not build, so no test ran. cargo exited 1 and said nothing at all.
+    """
+    which = (
+        "the break built and the run named no test"
+        if status == 0
+        else "the break did not build, so no test ran"
+    )
+    if not said.strip():
+        return f"{which}. cargo exited {status} and said nothing at all."
+    return f"{which}. cargo exited {status} and said:\n{said[-4000:]}"
+
+
 def run_the_whole_library() -> dict[str, str]:
     """Every test in the library, and whether it passed. One build, one run.
 
@@ -101,10 +133,7 @@ def run_the_whole_library() -> dict[str, str]:
     said = finished.stdout + finished.stderr
     verdicts = {name: verdict for name, verdict in VERDICT.findall(said)}
     if not verdicts:
-        raise Wrong(
-            "the test harness ran nothing at all, so the break did not build:\n"
-            + said[-4000:]
-        )
+        raise Wrong(why_no_test_was_named(finished.returncode, said))
     return verdicts
 
 
