@@ -50,9 +50,29 @@ group changes nothing about their contact.
 | Your calendar or contacts server | Syncing, if you set one up | The events and contacts |
 | Google or Microsoft sign-in | When you sign in with a browser | The sign-in, in your browser |
 | Google Safe Browsing | Only if you switch it on, see below | Four bytes, and only sometimes |
+| Whoever a sender points a picture at | Showing a message in the preview pane or a conversation window | The request for the picture, which says the message was opened |
 
-Nothing else. There is no server belonging to this project, so there is nowhere for anything
-to go even by accident.
+Nothing else is asked for by this program on its own account. There is no server belonging
+to this project, so there is nowhere for anything to go even by accident. The last row is
+the sender choosing, not this program, and the section below says what it means.
+
+## Pictures a message points at
+
+A message can carry its pictures or point at them. Where it points at one, the address the
+sender wrote is left in the message, and a surface that shows the message in a browser asks
+that address for the picture. Two surfaces do that: the preview pane, which is off until
+you switch it on in the View menu, and the conversation window. The window a message opens
+into when you press Enter on it is a text control and asks nobody for anything.
+
+The request tells whoever is at the other end that the message was opened and roughly when.
+Senders use that on purpose: a picture the size of a full stop, with a different address
+for every recipient, is how a mailing list learns who read it.
+
+There is no setting for this yet. The Reading tab in Settings says so, where a switch for
+it would be. Until there is one, the way to avoid it is to leave the preview pane off and
+read a message in its own window, which is what happens unless you ask for the preview.
+
+This was read out of the code rather than measured on the wire.
 
 ## Reading your messages to mark suspicious ones
 
