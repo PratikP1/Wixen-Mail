@@ -761,9 +761,11 @@ fn moment_after_the_edit(
     let (Some(date), Some(clock)) = as_the_editor_reads_it(rebuilt) else {
         return rebuilt.to_string();
     };
-    let marker = match named_zone.map(str::trim) {
-        Some(named) if !named.is_empty() => "",
-        _ => zone_marker(shown),
+    // The same answer the three writers give, asked in the one place all four
+    // can reach. Four copies of this question gave three different answers.
+    let marker = match crate::common::moment::the_zone_named(named_zone) {
+        Some(_) => "",
+        None => zone_marker(shown),
     };
     format!("{date}T{clock}:00{marker}")
 }

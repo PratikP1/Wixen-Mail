@@ -1508,6 +1508,14 @@ fn moment_for_google(stored: &str, zone: Option<&str>) -> Option<GoogleEventDate
     use crate::common::moment::Moment;
     use chrono::TimeZone;
 
+    // A name of no letters names nothing, and the answer comes from
+    // `common::moment` so that this writer, the Graph writer, the event editor
+    // and the calendar-server writer give one answer rather than four. This one
+    // asked `is_empty` with no trim, so a name of a single space was passed
+    // through as a zone and Graph was given the same event five and a half
+    // hours earlier.
+    let named = crate::common::moment::the_zone_named(zone);
+
     // The shapes come from `common::moment` rather than a list kept here,
     // because the same column is read for saying a date out loud and that list
     // knew two shapes fewer.
@@ -1518,7 +1526,7 @@ fn moment_for_google(stored: &str, zone: Option<&str>) -> Option<GoogleEventDate
             return Some(GoogleEventDateTime {
                 date_time: Some(stored.trim().to_string()),
                 date: None,
-                time_zone: zone.map(str::to_string),
+                time_zone: named.map(str::to_string),
             });
         }
         Moment::ClockFace(clock) => clock,
@@ -1528,7 +1536,7 @@ fn moment_for_google(stored: &str, zone: Option<&str>) -> Option<GoogleEventDate
         Moment::WholeDay(day) => day.and_hms_opt(0, 0, 0)?,
     };
 
-    if let Some(named) = zone.filter(|named| !named.is_empty()) {
+    if let Some(named) = named {
         return Some(GoogleEventDateTime {
             date_time: Some(clock.format(GOOGLE_WALL_CLOCK).to_string()),
             date: None,
@@ -1563,16 +1571,20 @@ pub fn local_to_google_event(event: &CalendarEventEntry) -> Result<GoogleEvent> 
 
     let (start, end) = if event.is_all_day {
         let (first_day, over) = whole_day_bounds(event);
+        // The same question the timed branch asks, asked here too. A whole day
+        // has no hour to place in a zone, so a name of no letters is nothing to
+        // send and this branch sent it.
+        let named = crate::common::moment::the_zone_named(zone).map(str::to_string);
         (
             Some(GoogleEventDateTime {
                 date: Some(first_day),
                 date_time: None,
-                time_zone: event.time_zone.clone(),
+                time_zone: named.clone(),
             }),
             Some(GoogleEventDateTime {
                 date: Some(over),
                 date_time: None,
-                time_zone: event.time_zone.clone(),
+                time_zone: named,
             }),
         )
     } else {
@@ -1807,10 +1819,10 @@ fn wall_clock_for_graph(stored: &str, zone: Option<&str>) -> Option<MsDateTimeTi
     use crate::common::moment::Moment;
     use chrono::TimeZone;
 
-    // An empty name names nothing, which is the answer the Google side already
-    // gives it. Passed through, it reached Graph as a `timeZone` of "" beside a
-    // clock face, which is an hour nobody named.
-    let named = zone.map(str::trim).filter(|named| !named.is_empty());
+    // A name of no letters names nothing. The answer comes from
+    // `common::moment` so that the four writers reading this column give one
+    // answer rather than four; this side trimmed and the Google side did not.
+    let named = crate::common::moment::the_zone_named(zone);
 
     // The shapes come from `common::moment` rather than a list kept here. This
     // list and the one the reader kept disagreed by two shapes, both of them
@@ -4093,6 +4105,75 @@ mod tests {
             graph.date_time,
             graph.time_zone
         );
+    }
+
+    #[test]
+    fn test_a_zone_name_that_names_nothing_sends_both_providers_the_same_hour() {
+        // A name of one space is not a name. The Graph writer trimmed before
+        // asking and the Google writer did not, so one event went out as an
+        // hour on this computer and the same event went out as a clock face in
+        // a zone called " ", which is an hour nobody named. The empty string is
+        // here as well because the two cases have to answer the same, and
+        // fixing one side of a pair is how this arrived.
+        for naming_nothing in ["", " ", "   ", "\t"] {
+            let event = CalendarEventEntry {
+                time_zone: Some(naming_nothing.to_string()),
+                ..an_event_stored_here()
+            };
+
+            let graph = local_to_ms_event(&event)
+                .expect("a time Graph could read")
+                .start
+                .expect("a start");
+            let google = local_to_google_event(&event)
+                .expect("a time Google could read")
+                .start
+                .expect("a start");
+
+            assert_eq!(
+                google.time_zone, None,
+                "Google was given a zone called {naming_nothing:?}"
+            );
+            let moment = google.date_time.expect("a timed event carries a time");
+            let Ok(told) = chrono::DateTime::parse_from_rfc3339(&moment) else {
+                panic!(
+                    "Google was told {moment:?} and nothing that says which hour \
+                     that is, for a zone stored as {naming_nothing:?}"
+                );
+            };
+            assert_eq!(
+                graph_named_utc(&graph),
+                told.with_timezone(&chrono::Utc),
+                "one provider was told {:?} in {:?} and the other {moment:?}, for \
+                 a zone stored as {naming_nothing:?}",
+                graph.date_time,
+                graph.time_zone
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_whole_day_event_is_not_given_a_zone_name_that_names_nothing() {
+        // The same question on the other branch. A whole-day event has no hour
+        // to place in a zone, and the name went to Google untouched, so a row
+        // holding a space was a date with a zone called " " beside it.
+        for naming_nothing in ["", " ", "   "] {
+            let mut birthday = an_event_stored_here();
+            birthday.is_all_day = true;
+            birthday.start_date = Some("2026-03-06".to_string());
+            birthday.end_date = Some("2026-03-07".to_string());
+            birthday.time_zone = Some(naming_nothing.to_string());
+
+            let start = local_to_google_event(&birthday)
+                .expect("a date Google could read")
+                .start
+                .expect("a start");
+
+            assert_eq!(
+                start.time_zone, None,
+                "Google was given a zone called {naming_nothing:?}"
+            );
+        }
     }
 
     /// The instant Graph was given, for a start it was told is in universal

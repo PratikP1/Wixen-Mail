@@ -1234,7 +1234,11 @@ fn the_properties_this_program_owns(event: &CalDavEvent) -> Vec<String> {
         (event.dtstart.replace('-', ""), ";VALUE=DATE".to_string())
     } else {
         let start = denormalize_ical_datetime(&event.dtstart);
-        let zone = match &event.time_zone {
+        // Through `common::moment` because a name of no letters is a question
+        // four writers were each answering for themselves. This one answered it
+        // by not asking: an empty name went out as `TZID=` and a space as
+        // `TZID= `, and neither is a calendar document.
+        let zone = match crate::common::moment::the_zone_named(event.time_zone.as_deref()) {
             Some(named) if !says_utc(&start) => format!(";TZID={named}"),
             _ => String::new(),
         };
@@ -2495,6 +2499,59 @@ mod tests {
         assert!(
             ical.contains("EXDATE:20260312t080000z"),
             "a cancelled day that says it is UTC was given a zone as well:\n{ical}"
+        );
+    }
+
+    #[test]
+    fn test_a_zone_name_that_names_nothing_is_left_off_the_document() {
+        // A name of no letters is not a name. Written out as one it gives
+        // `DTSTART;TZID=:20260305T090000`, and a space gives `TZID= `, neither
+        // of which is a calendar document: a server that checks what it is sent
+        // refuses the whole change, and one that does not stores a meeting in a
+        // zone whose name is nothing. The two provider writers and the event
+        // editor already answer an empty name this way and this did not.
+        for naming_nothing in ["", " ", "   ", "\t"] {
+            let stored = CalDavEvent {
+                dtstart: "2026-03-05T09:00:00".to_string(),
+                dtend: Some("2026-03-05T09:30:00".to_string()),
+                time_zone: Some(naming_nothing.to_string()),
+                ..an_event_to_send()
+            };
+
+            let ical = build_ical_vevent(&stored);
+
+            assert!(
+                ical.contains("DTSTART:20260305T090000"),
+                "for a zone stored as {naming_nothing:?}:\n{ical}"
+            );
+            assert!(
+                ical.contains("DTEND:20260305T093000"),
+                "for a zone stored as {naming_nothing:?}:\n{ical}"
+            );
+            assert!(
+                !ical.contains("TZID"),
+                "a zone called {naming_nothing:?} was written into the document:\n{ical}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_zone_name_written_with_spaces_round_it_still_names_its_zone() {
+        // The other half of the same trim, and the one that would be lost by
+        // refusing anything that needs trimming. A name is still a name with a
+        // space in front of it.
+        let stored = CalDavEvent {
+            dtstart: "2026-03-05T09:00:00".to_string(),
+            dtend: None,
+            time_zone: Some("  Europe/London  ".to_string()),
+            ..an_event_to_send()
+        };
+
+        let ical = build_ical_vevent(&stored);
+
+        assert!(
+            ical.contains("DTSTART;TZID=Europe/London:20260305T090000"),
+            "{ical}"
         );
     }
 

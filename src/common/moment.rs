@@ -85,6 +85,24 @@ pub fn read(stored: &str) -> Option<Moment> {
         .map(Moment::WholeDay)
 }
 
+/// The zone a stored clock face is named in, when the name names one.
+///
+/// A blank name is not a name. It says nothing about which hour a clock face
+/// beside it means, so the answer is the same as no name at all, and every
+/// writer that reads this column has to give that answer or one event goes to
+/// two places at two different hours. Four of them each decided separately:
+/// the Graph writer trimmed and the Google writer did not, so a name of one
+/// space sent Graph an hour on this computer turned into universal time and
+/// sent Google a clock face in a zone called " ". The calendar-server writer
+/// asked neither question and wrote `DTSTART;TZID=:20260305T090000`, which is
+/// not a calendar document at all.
+///
+/// Trimmed rather than refused, so a name with a space in front of it is still
+/// the zone it names.
+pub fn the_zone_named(stored: Option<&str>) -> Option<&str> {
+    stored.map(str::trim).filter(|named| !named.is_empty())
+}
+
 /// The clock face a stored value holds, when it holds one and no offset.
 fn clock_face(stored: &str) -> Option<NaiveDateTime> {
     let trimmed = stored.trim();
@@ -175,6 +193,27 @@ mod tests {
             read("  2026-07-27T09:00:00  "),
             Some(Moment::ClockFace(clock("2026-07-27 09:00:00")))
         );
+    }
+
+    #[test]
+    fn test_a_zone_name_of_nothing_but_space_names_no_zone() {
+        for naming_nothing in ["", " ", "   ", "\t", "\r\n"] {
+            assert_eq!(
+                the_zone_named(Some(naming_nothing)),
+                None,
+                "for a zone stored as {naming_nothing:?}"
+            );
+        }
+        assert_eq!(the_zone_named(None), None);
+    }
+
+    #[test]
+    fn test_a_zone_name_with_space_round_it_is_still_the_zone_it_names() {
+        assert_eq!(
+            the_zone_named(Some("  Europe/London  ")),
+            Some("Europe/London")
+        );
+        assert_eq!(the_zone_named(Some("UTC")), Some("UTC"));
     }
 
     /// A moment carrying an offset is not a clock face, so a caller asking

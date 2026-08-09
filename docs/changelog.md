@@ -287,6 +287,32 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **An event whose zone name is blank no longer goes to two places at two
+  different times.** A stored event carries a zone name beside its clock face. A
+  name that is empty, or nothing but spaces, names no zone, and four different
+  pieces of this program each decided for themselves what to do about that. They
+  gave three different answers.
+
+  What that did. Sent to Google, an event whose zone name was a single space
+  went out as a clock face in a zone called " ". Sent to Outlook, the same event
+  went out as an hour on this computer turned into universal time. Those are
+  different moments, so one event was in two calendars at two different times,
+  five and a half hours apart for somebody in Kolkata. Sent to a calendar
+  server, the same event produced `DTSTART;TZID=:20260305T090000`, which is not
+  a calendar document at all: a server that checks what it is sent refuses the
+  whole change, and one that does not stores a meeting in a zone whose name is
+  nothing.
+
+  There is now one answer, in one place, and all four ask it. A name of nothing
+  but spaces means no name, which sends the hour the event really means. A name
+  with spaces around it is still the zone it names, so " Europe/London " is
+  Europe/London rather than a refusal.
+
+  How this was measured: through each of the four writers, with the name stored
+  as empty, as one space, as several and as a tab, and by comparing the moment
+  the two providers were given rather than only the shape each was sent. Nothing
+  has run against a real account or a real calendar server.
+
 - **A cancelled day of a repeating meeting is no longer shown.** Servers write a
   cancellation in one of two ways: as a day and time in the meeting's own zone,
   or as the same instant written in universal time. Only the first was honoured.

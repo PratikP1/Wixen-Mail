@@ -1181,9 +1181,9 @@ red = [
 [[guard]]
 name = "a clock face somebody moved keeps the zone the event was in"
 file = "src/presentation/managers.rs"
-before = """    let marker = match named_zone.map(str::trim) {
-        Some(named) if !named.is_empty() => "",
-        _ => zone_marker(shown),
+before = """    let marker = match crate::common::moment::the_zone_named(named_zone) {
+        Some(_) => "",
+        None => zone_marker(shown),
     };"""
 after = """    let marker = "";"""
 red = [
@@ -1197,9 +1197,9 @@ red = [
 [[guard]]
 name = "a zone named on the event beats an offset frozen on another date"
 file = "src/presentation/managers.rs"
-before = """    let marker = match named_zone.map(str::trim) {
-        Some(named) if !named.is_empty() => "",
-        _ => zone_marker(shown),
+before = """    let marker = match crate::common::moment::the_zone_named(named_zone) {
+        Some(_) => "",
+        None => zone_marker(shown),
     };"""
 after = """    let marker = zone_marker(shown);"""
 red = [
@@ -1209,9 +1209,9 @@ red = [
 [[guard]]
 name = "an empty zone name on an edited event names nothing"
 file = "src/presentation/managers.rs"
-before = """    let marker = match named_zone.map(str::trim) {
-        Some(named) if !named.is_empty() => "",
-        _ => zone_marker(shown),
+before = """    let marker = match crate::common::moment::the_zone_named(named_zone) {
+        Some(_) => "",
+        None => zone_marker(shown),
     };"""
 after = """    let marker = match named_zone {
         Some(_) => "",
@@ -1243,6 +1243,7 @@ after = """                return Some(MsDateTimeTimeZone {
                     time_zone: COORDINATED_UNIVERSAL_TIME.to_string(),
                 });"""
 red = [
+    "application::calendar::tests::test_a_zone_name_that_names_nothing_sends_both_providers_the_same_hour",
     "application::calendar::tests::test_the_two_providers_are_given_the_same_hour_in_the_shape_each_one_reads",
 ]
 
@@ -1286,6 +1287,36 @@ red = [
     "presentation::managers::tests::test_moving_an_event_that_names_a_zone_across_summer_time_keeps_the_clock_face",
     "presentation::managers::tests::test_moving_an_events_time_leaves_a_moment_that_is_read_out_as_a_date",
     "presentation::read_aloud::tests::test_every_shape_a_stored_moment_takes_is_read_as_a_date",
+]
+
+# -- What a zone name of no letters means -----------------------------------
+#
+# Four writers read the zone-name column to decide where a clock face stands:
+# the Google converter, the Graph converter, the event editor and the calendar
+# server's document writer. Each answered "is this name a name" for itself and
+# they gave three different answers. Google asked is_empty with no trim, so a
+# name of one space was a zone; Graph trimmed, so the same event went to the two
+# providers five and a half hours apart. The calendar server's writer asked
+# nothing and wrote `DTSTART;TZID=:20260305T090000`, which is not a calendar
+# document.
+#
+# The break makes a blank name a name again. Eight tests in four modules go red,
+# which is the shape of the thing: one answer, read by every writer.
+
+[[guard]]
+name = "a zone name of no letters names no zone"
+file = "src/common/moment.rs"
+before = """    stored.map(str::trim).filter(|named| !named.is_empty())"""
+after = """    stored"""
+red = [
+    "application::calendar::tests::test_a_whole_day_event_is_not_given_a_zone_name_that_names_nothing",
+    "application::calendar::tests::test_a_zone_name_that_names_nothing_sends_both_providers_the_same_hour",
+    "application::calendar::tests::test_an_event_stored_with_no_zone_worth_the_name_is_sent_as_a_moment",
+    "common::moment::tests::test_a_zone_name_of_nothing_but_space_names_no_zone",
+    "common::moment::tests::test_a_zone_name_with_space_round_it_is_still_the_zone_it_names",
+    "presentation::managers::tests::test_a_zone_name_that_names_nothing_does_not_get_to_decide",
+    "service::caldav::tests::test_a_zone_name_that_names_nothing_is_left_off_the_document",
+    "service::caldav::tests::test_a_zone_name_written_with_spaces_round_it_still_names_its_zone",
 ]
 
 # -- Which addresses say two records are one person -------------------------
