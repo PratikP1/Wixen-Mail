@@ -73,9 +73,11 @@ client here bothers.
 month first, spoken or numeric, twelve or twenty-four hour, taken from Windows
 by default and changeable.
 
-**Nothing writes to a server until it is allowed to.** Set per capability, with
-the safest answer winning, so an alpha build cannot quietly reorganise a real
-mailbox.
+**Nothing changes at a server without permission, and permission is split by
+cost.** Under Allow Changes, a new installation allows one of the two: tasks,
+contacts and the calendar go up to a provider, and mail does not. Three places
+can each say no, the safest answer wins, and the command line can only ever
+narrow, so an alpha build cannot quietly send or delete anybody's mail.
 
 **Feedback on more than one channel, bounded.** Speech, an earcon, braille and
 the status line, distinguishable from each other, and rate limited so a syncing

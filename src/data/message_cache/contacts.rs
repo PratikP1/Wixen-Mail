@@ -3814,8 +3814,8 @@ mod tests {
     fn test_a_contact_stored_by_an_older_build_is_not_waiting_to_be_sent() {
         // Nothing here could disagree with an address book before this shipped,
         // so nothing stored before it is waiting to be sent anywhere. The
-        // column defaults to that answer, which is why upgrading writes
-        // nothing to anybody's address book.
+        // column holds that answer for every row an older build stored, which
+        // is why upgrading writes nothing to anybody's address book.
         let dir = a_directory_holding_an_older_database("older_pending");
 
         let cache =

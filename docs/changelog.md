@@ -287,6 +287,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Two pages stopped saying that everything is held back until you say so.**
+  The comparison page promised that nothing writes to a server before you
+  permit it, and the front of the testing page said sending was switched off
+  from the first run. Both were true when they were written, and neither is
+  true now: a new installation allows changes to tasks, contacts and the
+  calendar to go to your provider, and only mail is held for you. The table
+  on the testing page has said the true answer all along, nine lines below a
+  sentence saying otherwise. Both pages now say which half starts on, which
+  half starts off, and why the two answers are split.
+
+  The check that compares prose with the code's answer used to read only
+  prose that names Allow Changes, and neither page does, which is how these
+  two wordings walked past it and became the tenth and eleventh of their
+  family. It now also reads a sentence that says something is written and
+  names where to, whatever the sentence calls the setting, if it calls it
+  anything. It reads what stands before an "until" as the answer a fresh
+  copy gives. And it tells the word for a program starting from the word for
+  a value starting. Both wordings are pinned in its corpus beside the true
+  sentences that have to stay quiet.
+
 - **Events sent to a calendar server now carry the time zone rules their
   document relies on.** The calendar format requires it: every time written
   in a named zone must be able to find that zone's rules in the same

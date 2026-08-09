@@ -15,8 +15,12 @@ a copy of what you send in Sent, changing which folders you are subscribed to,
 and sending changes to your tasks, contacts or calendar back to Google or
 Microsoft. None of that has run against a real account. Expect bugs.
 
-Wixen Mail starts with sending switched off for exactly that reason. You can
-turn it on, and the next section says how, but read this first.
+Wixen Mail splits that answer in two, under a setting called Allow Changes.
+Mail starts switched off: a message that has been sent cannot be recalled.
+Changing your tasks, contacts and calendar starts switched on: those changes
+go to your provider, and a task in the wrong place can be moved back. The
+next section says what each answer covers and how to change it, but read
+this first.
 
 ## What Wixen Mail is allowed to change
 

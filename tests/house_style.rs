@@ -96,11 +96,11 @@ fn test_no_dashes_that_should_be_punctuation() {
     );
 }
 
-/// The promise that sends somebody looking for a control nothing writes.
+/// The promises that send somebody looking for a control nothing writes.
 ///
-/// Built from two pieces so that this line is not itself a match. Written out
-/// whole it would fail on the file that defines it, the same way the dash
-/// characters above are built from their code points.
+/// Built from two pieces so that these lines are not themselves a match.
+/// Written out whole they would fail on the file that defines them, the same
+/// way the dash characters above are built from their code points.
 ///
 /// `AppConfig::allowed_per_account` is read and honoured, and the settings
 /// screen writes the application-wide answer only, so nothing outside that
@@ -108,7 +108,14 @@ fn test_no_dashes_that_should_be_punctuation() {
 /// screen both offered it. The shape they recommended is not one the code can
 /// take either: a per-account entry can only ever narrow what the application
 /// allows, never widen it.
-const A_CONTROL_NO_SCREEN_WRITES: &str = concat!("set it ", "per account");
+///
+/// A family rather than one phrase, because the promise came back in different
+/// words: the getting-started page offered the same absent control as "for
+/// each account separately" and walked past a check that knew one wording.
+const A_CONTROL_NO_SCREEN_WRITES: &[&str] = &[
+    concat!("set it ", "per account"),
+    concat!("for each account ", "separately"),
+];
 
 /// Each line of a document with the one after it, as one run of words.
 ///
@@ -143,7 +150,10 @@ fn test_nothing_offers_a_setting_per_account_that_no_screen_writes() {
             continue;
         };
         for (number, run) in a_line_and_the_one_after_it(&text) {
-            if run.contains(A_CONTROL_NO_SCREEN_WRITES) {
+            if A_CONTROL_NO_SCREEN_WRITES
+                .iter()
+                .any(|offered| run.contains(offered))
+            {
                 offered.push(format!("{}:{number}: {run}", path.display()));
             }
         }
@@ -162,12 +172,15 @@ fn test_nothing_offers_a_setting_per_account_that_no_screen_writes() {
 // ── What a new installation allows ──────────────────────────────────────────
 //
 // One answer lives in the code: `data::config`'s `default_allowed`. Prose
-// contradicting it has now been written into this repository nine times in nine
-// wordings, and the check that stood here to stop the fifth missed every one of
-// the five that came after it. It held a list of the wordings already found, so
-// a new wording walked straight past, and it required the setting to be named
-// on the same line, which the copy in the module that defines the setting does
-// not do and never could.
+// contradicting it has now been written into this repository eleven times in
+// eleven wordings, and the check that stood here to stop the fifth missed
+// every one of the five that came after it. It held a list of the wordings
+// already found, so a new wording walked straight past, and it required the
+// setting to be named on the same line, which the copy in the module that
+// defines the setting does not do and never could. The tenth and eleventh
+// copies were caught by hand, not by the reading: both sat in pages that
+// never name the setting, which is the scope door that
+// `the_sentence_is_read` was then widened to close.
 //
 // A list of wordings is always one wording behind. This reads the claim
 // instead. It finds prose that puts itself at installation time, works out
@@ -203,8 +216,9 @@ fn test_nothing_offers_a_setting_per_account_that_no_screen_writes() {
 // `PUTS_A_SENTENCE_AT_INSTALLATION_TIME`. Read them before trusting a quiet
 // run. The short version is that a word from either list used about something
 // other than what leaves this computer still beats the word making the claim
-// when it sits nearer, and that this reads one sentence that names the setting
-// and nothing else.
+// when it sits nearer, and that a sentence is read only through one of two
+// doors: a run that names the setting, or a sentence that both says something
+// is written and names the far end it reaches.
 
 /// The files this rule reads: ours, apart from this one.
 ///
@@ -243,11 +257,23 @@ fn ours_apart_from_this_file() -> Vec<PathBuf> {
 /// every change to a contact". None of them is closeable by another word, only
 /// by another wording, which is the thing this list stopped being.
 ///
-/// The scope rule is the other half of the same limit. Prose that never names
-/// the setting is not read at all, so "By default your contacts stay on this
-/// computer" is quiet. That is deliberate, for the reason on
-/// [`about_the_setting`], and it is still a false sentence nobody is told
-/// about.
+/// The scope rule is the other half of the same limit. A sentence that
+/// neither names the setting nor says what leaves this computer is not read
+/// at all, so "By default your contacts stay on this computer" is quiet. That
+/// is deliberate, for the reason on [`the_sentence_is_read`], and it is still
+/// a false sentence nobody is told about.
+///
+/// "starts" only counts followed by a word for a state, because English uses
+/// the same word for a thing being launched and for where a value begins.
+/// "Wixen Mail starts with sending switched off" is the eleventh copy putting
+/// itself at installation time, and each completion here is a state it could
+/// have been written with. The launch sense was measured crying wolf three
+/// ways before this narrowed: "A change takes effect the next time Wixen Mail
+/// starts", "a later change starts reading one of these off the server",
+/// "forever starts at the second one". Bare "start" stays out entirely: "To
+/// use a real account with nothing at risk, start Wixen Mail with
+/// `--read-only`" is somebody being told to launch the program, in a run that
+/// names the setting.
 const PUTS_A_SENTENCE_AT_INSTALLATION_TIME: &[&str] = &[
     "default",
     "defaults",
@@ -258,6 +284,11 @@ const PUTS_A_SENTENCE_AT_INSTALLATION_TIME: &[&str] = &[
     "out of the box",
     "a new account starts",
     "starts out with",
+    "starts with",
+    "starts switched",
+    "starts allowed",
+    "starts on",
+    "starts off",
 ];
 
 /// What a sentence says reaches a provider.
@@ -551,6 +582,68 @@ fn about_the_setting(prose: &Prose, path: &Path) -> bool {
 /// The module whose documentation is about this setting without naming it.
 const WHERE_THE_SETTING_IS_DEFINED: &str = "application/allowed.rs";
 
+/// Whether one sentence's claim about a new installation is read at all.
+///
+/// One question with two doors in, and each door has its own width because
+/// each was measured at its width.
+///
+/// The first door is the run: prose that names the setting, or the module
+/// documentation that defines it, is read whole, because the name in one
+/// sentence is what its neighbours are about. That is [`about_the_setting`],
+/// unchanged.
+///
+/// The second door is the sentence alone: a sentence that says something is
+/// written and names the far end it reaches is about this setting whether or
+/// not it says so, because the setting is the only thing standing between the
+/// two. This door let the tenth and eleventh copies be read; both sat in
+/// pages whose runs never name Allow Changes. It is one sentence wide and not
+/// one run wide, measured: the run holding "Keep a copy of sent mail on this
+/// computer" carries "sent" and "server" in its neighbouring sentences, and
+/// read at run width its true "Off unless you turn it on" sentence would be
+/// named for claims two other sentences made.
+fn the_sentence_is_read(prose: &Prose, path: &Path, sentence: &str) -> bool {
+    about_the_setting(prose, path) || about_something_leaving_this_computer(sentence)
+}
+
+/// A sentence that says something is written out, and names where to.
+///
+/// Both halves are required. The act alone drags in every sentence about
+/// sending a message somebody composed; the far end alone drags in every
+/// sentence about what a provider holds. "Sent" is deliberately absent from
+/// the act list even though it is in [`SOMETHING_GOES_OUT`]: the Sent folder
+/// is named across the changelog beside "server" constantly, and both copies
+/// this door was built for survive without it, one on "writes" and one on
+/// "sending".
+fn about_something_leaving_this_computer(sentence: &str) -> bool {
+    let lowered = sentence.to_lowercase();
+    let words = words_of(&lowered);
+    let has = |acts: &[&str]| words.iter().any(|(_, word)| acts.contains(&word.as_str()));
+    has(THE_ACT_OF_WRITING)
+        && (has(THE_FAR_END)
+            || lowered.contains(&THE_PRODUCTS_NAME.to_lowercase())
+            || lowered.contains("address book"))
+}
+
+/// Words for the act of writing something out to somewhere else.
+const THE_ACT_OF_WRITING: &[&str] = &[
+    "writes", "write", "send", "sends", "sending", "change", "changes",
+];
+
+/// Words naming the far end a write reaches. "Address book" and the product's
+/// own name are checked as phrases beside these.
+const THE_FAR_END: &[&str] = &[
+    "server",
+    "servers",
+    "provider",
+    "providers",
+    "google",
+    "outlook",
+    "microsoft",
+];
+
+/// The product's name, which is a label rather than a word about mail.
+const THE_PRODUCTS_NAME: &str = "Wixen Mail";
+
 /// A word of a run of prose, with where it starts.
 fn words_of(text: &str) -> Vec<(usize, String)> {
     let mut words = Vec::new();
@@ -603,25 +696,35 @@ fn the_answer_to_a_question(text: &str, ends_at: usize) -> Option<(usize, usize)
     (!text[start..end].trim().is_empty()).then_some((start, end))
 }
 
-/// The sentence with the name of the setting blanked out.
+/// The sentence with the names that are labels blanked out.
 ///
 /// "Allow Changes" is what the settings screen calls the section, so the word
 /// "Allow" in it is a label and not the sentence saying anything is allowed.
 /// Left in, every sentence naming the setting reads as permission.
 ///
+/// The product's name is the same trap from the other side. The word "mail"
+/// in "Wixen Mail" is a label and not the sentence saying which answer it is
+/// about. Left in, "Wixen Mail starts with sending switched off" read as a
+/// claim about mail, which really is off, and a sentence that is false about
+/// tasks and contacts agreed with the code.
+///
 /// Blanked rather than cut out, so every other word stays where it was and an
 /// offset into the sentence still means what it meant. Cut out, a name after
 /// the word being read moved that word, and the reading landed on its
 /// neighbour.
-fn without_the_settings_name(sentence: &str) -> String {
-    let named = wixen_mail::application::allowed::SETTINGS_SECTION;
-    let lowered = sentence.to_lowercase();
+fn without_the_names_that_are_labels(sentence: &str) -> String {
     let mut left = sentence.to_string();
-    let mut at = 0;
-    while let Some(found) = lowered[at..].find(&named.to_lowercase()) {
-        let start = at + found;
-        left.replace_range(start..start + named.len(), &" ".repeat(named.len()));
-        at = start + named.len();
+    for named in [
+        wixen_mail::application::allowed::SETTINGS_SECTION,
+        THE_PRODUCTS_NAME,
+    ] {
+        let lowered = left.to_lowercase();
+        let mut at = 0;
+        while let Some(found) = lowered[at..].find(&named.to_lowercase()) {
+            let start = at + found;
+            left.replace_range(start..start + named.len(), &" ".repeat(named.len()));
+            at = start + named.len();
+        }
     }
     left
 }
@@ -684,7 +787,7 @@ fn without_the_settings_name(sentence: &str) -> String {
 /// against it walked past in ten minutes, and the sentence above that list said
 /// a fifth copy would fail whatever it said.
 fn what_it_says_reaches_a_provider(sentence: &str, marker_at: usize) -> Option<Reaches> {
-    let readable = without_the_settings_name(sentence);
+    let readable = without_the_names_that_are_labels(sentence);
     let words = words_of(&readable);
     let marker_word = words
         .iter()
@@ -792,8 +895,12 @@ fn a_preposition_here(words: &[(usize, String)], at: usize) -> bool {
 }
 
 /// Which of the two answers a sentence is about.
+///
+/// Read with the label names blanked, for the reason on
+/// [`without_the_names_that_are_labels`]: the "mail" in the product's name
+/// says nothing about which answer a sentence means.
 fn which_answer_it_is_about(sentence: &str) -> Answer {
-    let lowered = sentence.to_lowercase();
+    let lowered = without_the_names_that_are_labels(sentence).to_lowercase();
     let words = words_of(&lowered);
     let named = |names: &[&str]| words.iter().any(|(_, word)| names.contains(&word.as_str()));
     let mail = named(NAMES_THE_MAIL_ANSWER);
@@ -823,15 +930,14 @@ struct Claim {
 fn claims_about_a_new_installation(path: &Path, text: &str) -> Vec<Claim> {
     let mut claims = Vec::new();
     for prose in prose_in(path, text) {
-        if !about_the_setting(&prose, path) {
-            continue;
-        }
         let lowered = prose.text.to_lowercase();
         let mut said_already: Vec<(usize, usize)> = Vec::new();
         for phrase in PUTS_A_SENTENCE_AT_INSTALLATION_TIME {
             for at in whole_words_at(&lowered, phrase) {
                 let (start, end) = the_sentence_around(&prose.text, at);
-                if said_already.contains(&(start, end)) {
+                if said_already.contains(&(start, end))
+                    || !the_sentence_is_read(&prose, path, &prose.text[start..end])
+                {
                     continue;
                 }
                 said_already.push((start, end));
@@ -855,8 +961,101 @@ fn claims_about_a_new_installation(path: &Path, text: &str) -> Vec<Claim> {
                 });
             }
         }
+        // A sentence can put itself at installation time from the other side,
+        // by describing the state that stands "until" somebody grants a
+        // permission. Everything after the "until" is the later state, so the
+        // claim is read with it blanked. A sentence a marker word already
+        // claimed is not read twice.
+        //
+        // Documents only. A source comment saying "Google is owed it and
+        // cannot have it until Allow Changes is on" sits beside the test that
+        // just turned the setting off, and is describing the state it built,
+        // not the state that ships. A document speaks to somebody who has
+        // configured nothing, which is what makes its "until" a claim about
+        // the shipped answer. A source comment that really claims the
+        // shipped answer says "default" or "ships" and the words above read
+        // it.
+        let a_document = path.extension().is_some_and(|kind| kind == "md");
+        if !a_document {
+            continue;
+        }
+        for at in until_a_permission_at(&lowered) {
+            let (start, end) = the_sentence_around(&prose.text, at);
+            if said_already.contains(&(start, end))
+                || !the_sentence_is_read(&prose, path, &prose.text[start..end])
+            {
+                continue;
+            }
+            said_already.push((start, end));
+            let claimed = the_shipped_state_before_the_until(&prose.text[start..end], at - start);
+            claims.push(Claim {
+                line: prose.line_at(at),
+                answer: which_answer_it_is_about(&claimed),
+                reaches: what_it_says_reaches_a_provider(&claimed, at - start),
+                sentence: prose.text[start..end].trim().to_string(),
+            });
+        }
     }
     claims
+}
+
+/// Every "until" that hands its sentence over to a permission, within the
+/// next three words of the same sentence.
+///
+/// "until it is allowed to" and "until you turn it on" put a sentence at
+/// installation time from the other side: what stands before the "until" is
+/// claimed as the shipped state, and what follows it is the state after
+/// somebody acts.
+///
+/// "unless" is deliberately not read this way, and the difference carries the
+/// whole rule. "Nothing goes anywhere unless Allow Changes is on for that
+/// account", in a dated changelog entry, describes the gate as it stands
+/// whenever you read it and claims nothing about which way the setting ships;
+/// it is true and must stay quiet. "Nothing writes to a server until it is
+/// allowed to" says the refusal is where a new installation begins, and the
+/// code says the opposite for tasks, contacts and the calendar.
+///
+/// Three words of reach, measured against the wordings this was built for:
+/// "until it is allowed" holds its permission three words out.
+fn until_a_permission_at(lowered: &str) -> Vec<usize> {
+    whole_words_at(lowered, "until")
+        .into_iter()
+        .filter(|&at| {
+            let (_, end) = the_sentence_around(lowered, at);
+            words_of(&lowered[at + "until".len()..end])
+                .iter()
+                .take(HOW_FAR_A_PERMISSION_COMPLETES_AN_UNTIL)
+                .any(|(_, word)| A_PERMISSION_AFTER_UNTIL.contains(&word.as_str()))
+        })
+        .collect()
+}
+
+/// Words that complete an "until" into a permission granted later.
+const A_PERMISSION_AFTER_UNTIL: &[&str] = &[
+    "allow",
+    "allows",
+    "allowed",
+    "turn",
+    "turns",
+    "turned",
+    "on",
+    "permit",
+    "permits",
+    "permitted",
+];
+
+/// How many words past "until" its permission can stand.
+const HOW_FAR_A_PERMISSION_COMPLETES_AN_UNTIL: usize = 3;
+
+/// The sentence with everything after its "until" blanked, because those
+/// words describe the state after somebody acts, and the claim being checked
+/// is about the state before.
+fn the_shipped_state_before_the_until(sentence: &str, until_at: usize) -> String {
+    let mut before = sentence.to_string();
+    let from = until_at + "until".len();
+    let blank = " ".repeat(before.len() - from);
+    before.replace_range(from.., &blank);
+    before
 }
 
 /// Every place a phrase appears as a whole word rather than inside one.
@@ -1124,6 +1323,34 @@ fn test_the_new_installation_check_can_tell_the_two_apart() {
             "// By default Allow Changes keeps a task on this computer and sends it\n\
              // nowhere.\n",
         ),
+        // The tenth and eleventh copies, found in the tree after everything
+        // above was already being read. Neither names the setting, so the
+        // scope rule passed over both, which is what the second door below
+        // exists to close: a sentence about the act of writing and the far
+        // end it reaches is read even when no run around it names Allow
+        // Changes.
+        //
+        // The comparison page's copy. "until it is allowed to" puts the
+        // sentence at installation time by describing the state before
+        // somebody acts, and everything after "until" is the later state, so
+        // the claim is read with it blanked: "Nothing writes to a server",
+        // which the code contradicts for tasks, contacts and the calendar.
+        (
+            "docs/comparison.md",
+            "**Nothing writes to a server until it is allowed to.** Set per capability, with\n\
+             the safest answer winning, so an alpha build cannot quietly reorganise a real\n\
+             mailbox.\n",
+        ),
+        // The testing page's copy. It sat nine lines above the table stating
+        // the true answer. "starts with" is the marker, and the product's
+        // name has to be blanked before the claim is read: left in, the word
+        // "mail" in "Wixen Mail" made this a claim about mail, which really
+        // is off, and a false sentence agreed with the code.
+        (
+            "docs/ALPHA_TESTING.md",
+            "Wixen Mail starts with sending switched off for exactly that reason. You can\n\
+             turn it on, and the next section says how, but read this first.\n",
+        ),
     ];
     for (path, writing) in false_when_it_was_written {
         let claim = the_claim_in(path, writing)
@@ -1180,6 +1407,39 @@ of them.
         (
             "docs/ALPHA_TESTING.md",
             "Allow Changes leaves sending mail off in a new installation, and a message\nthat has gone cannot be recalled.\n",
+        ),
+        // The corrections that replaced the tenth and eleventh copies. The
+        // comparison page's, held by the second door and by the run door at
+        // once, in the shape the module documentation already proved: the
+        // claim stops at the colon and the halves after it carry no marker.
+        (
+            "docs/comparison.md",
+            "**Nothing changes at a server without permission, and permission is split by\ncost.** Under Allow Changes, a new installation allows one of the two: tasks,\ncontacts and the calendar go up to a provider, and mail does not. Three places\ncan each say no, the safest answer wins, and the command line can only ever\nnarrow, so an alpha build cannot quietly send or delete anybody's mail.\n",
+        ),
+        // The testing page's, one snippet per answer because each sentence is
+        // its own claim. The mail half first.
+        (
+            "docs/ALPHA_TESTING.md",
+            "Wixen Mail splits that answer in two, under a setting called Allow Changes.\nMail starts switched off: a message that has been sent cannot be recalled.\n",
+        ),
+        // And the half about everything else, which is the half the old
+        // wording lied about.
+        (
+            "docs/ALPHA_TESTING.md",
+            "Wixen Mail splits that answer in two, under a setting called Allow Changes.\nChanging your tasks, contacts and calendar starts switched on: those changes\ngo to your provider, and a task in the wrong place can be moved back.\n",
+        ),
+        // A true sentence the second door reads with no setting named
+        // anywhere near it: the act, the far end, and the product's name
+        // blanked before the answer is read.
+        (
+            "docs/ALPHA_TESTING.md",
+            "Wixen Mail tells you a message asked and, by default, sends nothing.\n",
+        ),
+        // A true "until": the claim before the "until" is the mail half, and
+        // the code agrees.
+        (
+            "docs/ALPHA_TESTING.md",
+            "Wixen Mail sends no mail to a server until you allow it.\n",
         ),
     ];
     for (path, writing) in true_and_left_alone {
@@ -1270,6 +1530,57 @@ of them.
             "docs/ALPHA_TESTING.md",
             "Allow Changes covers two things.\n\n```\nAllow Changes is off by default.\n```\n",
         ),
+        // The width of the second door, pinned. Written against the reading:
+        // the marker sits in one sentence and the act and the far end sit in
+        // the next, the shape of the changelog's keep-a-copy entry. Read one
+        // sentence at a time nothing here is a claim; read one run at a time
+        // the first sentence would be one, and "sent" in "Sent folder" would
+        // be what it says goes out.
+        (
+            "docs/changelog.md",
+            "The copy saved here starts in the account's Sent folder. Checking for mail\nsends nothing to the server for it.\n",
+        ),
+        // "unless" against "until", pinned on the real sentence. This one
+        // describes the gate as it stands whenever you read it and claims
+        // nothing about which way the setting ships; it is true today
+        // whatever the default is. Reading "unless" the way "until" is read
+        // would name a dated entry for a claim it does not make.
+        (
+            "docs/changelog.md",
+            "  Nothing goes anywhere unless Allow Changes is on for that account.\n",
+        ),
+        // Bare "start" against "starts", pinned on the real paragraph. "start
+        // Wixen Mail with --read-only" is somebody being told to launch the
+        // program, in a run that names the setting; read as an
+        // installation-time marker it would be named for a sentence about a
+        // command-line flag.
+        (
+            "docs/ALPHA_TESTING.md",
+            "Change them in Settings, under Allow Changes. The answer covers every account\nyou have signed in, so there is no way to leave one account read only and\nallow everything on another. To use a real account with nothing at risk, start\nWixen Mail with `--read-only`, which is next.\n",
+        ),
+        // The launch sense of "starts", pinned on the two sentences that
+        // cried wolf while the word was a bare marker. Neither is about a
+        // value beginning anywhere; each is the program or a behaviour being
+        // set going.
+        (
+            "docs/changelog.md",
+            "- A change takes effect the next time Wixen Mail starts, not while the dialog is open.\n",
+        ),
+        (
+            "src/application/caldav_sync.rs",
+            "/// If a later change starts reading one of these off the server, that field\n\
+             /// has to come out of here, or the server's copy will be thrown away instead.\n",
+        ),
+        // An "until" in a source comment, pinned. It sits beside the test
+        // that just turned the setting off and describes the state the test
+        // built, which is why the "until" reading holds for documents only.
+        (
+            "src/application/contacts_sync.rs",
+            "        // The same one contact and one edit, with a change goes only to the\n\
+             \x20       // address book it came from. Google is owed it and cannot have it until\n\
+             \x20       // Allow Changes is on; Outlook is owed it and will not get it while\n\
+             \x20       // this setting is off.\n",
+        ),
     ] {
         assert!(
             the_claim_in(path, writing).is_none(),
@@ -1292,6 +1603,10 @@ of them.
     assert!(
         walked.iter().any(|f| f.ends_with("changelog.md")),
         "the changelog is not being read, and four of the nine copies were in it"
+    );
+    assert!(
+        walked.iter().any(|f| f.ends_with("comparison.md")),
+        "the comparison page is not being read, and the tenth copy was in it"
     );
     assert!(
         !walked.iter().any(|f| f.ends_with("house_style.rs")),

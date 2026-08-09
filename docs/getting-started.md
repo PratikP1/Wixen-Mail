@@ -15,7 +15,8 @@ only copy.
 
 The first screen you see asks what Wixen Mail may change at your provider. The
 answer it starts on allows nothing to your mail. You can change it later in the
-Tools menu, under Settings, and you can set it for each account separately.
+Tools menu, under Settings, and the answer covers every account you have
+signed in.
 
 [What is worth testing, and what is known to be broken](ALPHA_TESTING.md) has
 the fuller list.
