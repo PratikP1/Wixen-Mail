@@ -443,7 +443,8 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
   Known limitation: there is still no way to stop that fetch. Blocking it is a
   feature nobody has built, and the Reading tab now says so rather than
-  implying it is done. What is written here was read out of the code, not
+  implying it is done. [What Wixen Mail sends, and where](privacy.md) now has
+  a section on it. What is written here was read out of the code, not
   measured on the wire.
 
 - **The signature setting on the Compose tab does something now.**
@@ -490,9 +491,11 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   Known limitation: two people with the same name, and nothing recorded for
   either but one address each, are read as one person holding both addresses.
   Nothing is deleted and mail to either address still reaches somebody, but it is
-  the wrong answer. The narrower rule that avoids it, asking the cards to agree
-  on something besides the name, would leave the commonest shape of export there
-  is, a name and an address, duplicating everybody.
+  the wrong answer. The joined card is queued like any other import, so with
+  Allow Changes on it is then sent to your real address book. The narrower rule
+  that avoids it, asking the cards to agree on something besides the name, would
+  leave the commonest shape of export there is, a name and an address,
+  duplicating everybody.
 
   How this was measured: through the import, with the cards a per-address export
   writes, with two people who share a name, with a card that matches somebody

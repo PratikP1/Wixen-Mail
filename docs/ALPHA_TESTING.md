@@ -103,6 +103,12 @@ Written down so you do not spend time reporting things already on the list.
   which folders you are subscribed to, and the three syncs that push changes.
 - **A task cannot be moved between lists.** It goes into your provider's
   default list when you make it. Moving and copying work for mail only so far.
+- **Importing a file can join two people who share a name.** Two cards in one
+  imported file are read as one person when nothing but their addresses tells
+  them apart. Two people with the same name, and nothing else on their cards,
+  come out as one contact holding both addresses, and that joined contact is
+  then sent to your real address book. Turning Allow Changes off before the
+  next sync holds it back.
 - **Conversations on Gmail are worked out from the message headers**, so a
   conversation here may be split differently from the same one in Gmail's web
   interface. Gmail publishes its own grouping and the library this is built on
