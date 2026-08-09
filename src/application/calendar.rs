@@ -481,7 +481,62 @@ fn waiting_for(
         .collect()
 }
 
+/// Every event this computer deleted, under the names the providers know.
+///
+/// What the read asks before it writes anything down. Every note the account
+/// holds, taken or still owed, and not only the ones this pass could send:
+/// `application::deletions` says why the second question is not the first.
+///
+/// Not narrowed to one calendar, deliberately. A provider identifier names one
+/// event, and "did somebody delete it here" does not depend on which pass is
+/// asking.
+pub(crate) fn events_deleted_here(
+    cache: &MessageCache,
+    account_id: &str,
+    result: &mut CalendarSyncResult,
+) -> crate::application::deletions::DeletedHere {
+    match cache.deleted_calendar_events(account_id) {
+        Ok(notes) => notes
+            .into_iter()
+            .filter_map(|note| note.provider_event_id)
+            .collect(),
+        Err(e) => {
+            // Said rather than swallowed. Read as "nothing was deleted", a
+            // database that will not answer turns into a sync that writes back
+            // down everything somebody deleted.
+            result.errors.push(format!(
+                "What was deleted here could not be read, so this sync may put \
+                 back events you deleted: {e}"
+            ));
+            crate::application::deletions::DeletedHere::default()
+        }
+    }
+}
+
+/// Let go of the deletions that have been remembered long enough.
+///
+/// At the start of a sync, so that the push and the read that follow both work
+/// from the same answer. `application::deletions` says what makes this
+/// terminate.
+pub(crate) fn forget_the_deletions_remembered_long_enough(
+    cache: &MessageCache,
+    result: &mut CalendarSyncResult,
+) {
+    if let Err(e) = crate::application::deletions::let_go_of_what_was_remembered_long_enough(
+        cache,
+        chrono::Utc::now(),
+    ) {
+        result
+            .errors
+            .push(format!("Old deletions could not be let go of: {e}"));
+    }
+}
+
 /// Every deletion the provider has not been told about.
+///
+/// Only the ones still owed. A note the provider has taken is kept so that no
+/// read writes the event back down, and sending it again would ask the provider
+/// on every sync from now on to delete something it has already deleted.
 fn deletions_for(
     cache: &MessageCache,
     account_id: &str,
@@ -500,6 +555,7 @@ fn deletions_for(
     };
     notes
         .into_iter()
+        .filter(|note| note.so_far.still_owed())
         .filter_map(|note| {
             match whose_change(cache, note.calendar_id.as_deref(), provider, the_main_one) {
                 WhoseChange::Ours(at_the_provider) => Some((note, at_the_provider)),
@@ -599,7 +655,10 @@ async fn push_to_google(
         };
         let sent = delete_google_event(google, token, &at_google, provider_event_id).await;
         if sent.is_ok() {
-            let _ = cache.forget_deleted_calendar_event(&note.id);
+            let _ = cache.the_provider_took_the_deletion_of_an_event(
+                &note.id,
+                &crate::application::deletions::written(chrono::Utc::now()),
+            );
         }
         record(sent, "Deleting an event from Google Calendar", result);
     }
@@ -640,7 +699,10 @@ async fn push_to_microsoft(
         };
         let sent = delete_ms_event(ms_client, token, &at_microsoft, provider_event_id).await;
         if sent.is_ok() {
-            let _ = cache.forget_deleted_calendar_event(&note.id);
+            let _ = cache.the_provider_took_the_deletion_of_an_event(
+                &note.id,
+                &crate::application::deletions::written(chrono::Utc::now()),
+            );
         }
         record(sent, "Deleting an event from Outlook Calendar", result);
     }
@@ -669,7 +731,9 @@ pub async fn sync_google_calendar(
     account_id: &str,
 ) -> Result<CalendarSyncResult> {
     let mut result = CalendarSyncResult::default();
+    forget_the_deletions_remembered_long_enough(cache, &mut result);
     push_to_google(cache, google, token, account_id, &mut result).await;
+    let deleted_here = events_deleted_here(cache, account_id, &mut result);
 
     let state = cache.get_sync_state(account_id, "calendar", GOOGLE)?;
     let sync_token = state.as_ref().and_then(|s| s.sync_token.as_deref());
@@ -715,6 +779,13 @@ pub async fn sync_google_calendar(
 
     for event in &remote_events {
         if event.id.is_empty() {
+            continue;
+        }
+
+        // An event somebody deleted on this computer. Google is still naming
+        // it, and writing it back down puts it on the screen again with
+        // nothing left to say it was ever deleted.
+        if deleted_here.holds(&event.id) {
             continue;
         }
 
@@ -844,7 +915,9 @@ pub async fn sync_microsoft_calendar(
     account_id: &str,
 ) -> Result<CalendarSyncResult> {
     let mut result = CalendarSyncResult::default();
+    forget_the_deletions_remembered_long_enough(cache, &mut result);
     push_to_microsoft(cache, ms_client, token, account_id, &mut result).await;
+    let deleted_here = events_deleted_here(cache, account_id, &mut result);
 
     let state = cache.get_sync_state(account_id, "calendar", MICROSOFT)?;
     let delta_link = state.as_ref().and_then(|s| s.delta_link.as_deref());
@@ -874,6 +947,12 @@ pub async fn sync_microsoft_calendar(
 
     for event in &remote_events {
         if event.id.is_empty() {
+            continue;
+        }
+
+        // An event somebody deleted on this computer, for the reason written
+        // beside the same question in the Google read.
+        if deleted_here.holds(&event.id) {
             continue;
         }
 
@@ -4550,7 +4629,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_an_event_deleted_here_is_deleted_at_the_provider_and_the_note_is_forgotten() {
+    async fn test_an_event_deleted_here_is_deleted_at_the_provider_and_stops_being_owed() {
         let cache = temp_cache("push_google_gone");
         let going = a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, Some("evt1"));
         cache
@@ -4579,17 +4658,35 @@ mod tests {
             "{}",
             requests[0]
         );
-        assert!(
+        assert_eq!(
+            the_deletions_still_owed(&cache),
+            0,
+            "a deletion the provider carried out is still being asked for"
+        );
+        // And the note itself stays, because it is the only thing that stops a
+        // read still naming the event writing it back down.
+        assert_eq!(
             cache
                 .deleted_calendar_events("acct")
                 .expect("the deletions")
-                .is_empty(),
-            "a deletion the provider carried out is still being asked for"
+                .len(),
+            1,
+            "nothing is left to stop the next read putting the event back"
         );
     }
 
+    /// How many deletions the providers have still to be told about.
+    fn the_deletions_still_owed(cache: &MessageCache) -> usize {
+        cache
+            .deleted_calendar_events("acct")
+            .expect("the deletions")
+            .iter()
+            .filter(|note| note.so_far.still_owed())
+            .count()
+    }
+
     #[tokio::test]
-    async fn test_an_event_deleted_here_is_deleted_at_outlook_and_the_note_is_forgotten() {
+    async fn test_an_event_deleted_here_is_deleted_at_outlook_and_stops_being_owed() {
         // The twin of the Google one. Without this, the whole Outlook deletion
         // path could hand back success without asking Graph anything, and the
         // note would be cleared on the strength of it: the appointment stays in
@@ -4624,12 +4721,317 @@ mod tests {
             "{}",
             requests[0]
         );
+        assert_eq!(
+            the_deletions_still_owed(&cache),
+            0,
+            "a deletion the provider carried out is still being asked for"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_this_computer_deleted_is_not_written_back_by_the_read_that_follows() {
+        // The push runs before the read in the same sync. Google takes the
+        // deletion and the list it answers with still names the event, which is
+        // the ordinary case rather than an unusual one: a list answered from a
+        // copy written a moment before the delete landed says exactly this.
+        // Nothing here may write the event back down, and every failed deletion
+        // is the same shape, so this does not rest on how quickly Google
+        // catches up.
+        let cache = temp_cache("google_read_after_the_deletion_went");
+        let going = a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, Some("evt1"));
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the event to be deleted here");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                "{}".to_string(),
+                what_google_answers_with("evt1", "Standup"),
+            ],
+        )
+        .await;
+
+        let result = sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        heard(listening, "a deletion and a read")
+            .await
+            .expect("two requests");
+        assert_eq!(
+            result.created, 0,
+            "the event this computer deleted was written back down: {result:?}"
+        );
+        assert!(
+            cache
+                .get_event_by_provider_id("acct", "evt1")
+                .expect("the calendar to be readable")
+                .is_none(),
+            "an event this computer deleted came back in the sync that deleted it"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_this_computer_deleted_is_not_written_back_by_a_later_sync() {
+        // The same rule, one sync later. The sync that deleted it has finished
+        // and Google is still naming the event, so a rule that only held for
+        // the sync that did the deleting hands it straight back.
+        let cache = temp_cache("google_read_a_sync_later");
+        let going = a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, Some("evt1"));
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the event to be deleted here");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                "{}".to_string(),
+                what_google_answers_with("evt1", "Standup"),
+                what_google_answers_with("evt1", "Standup"),
+            ],
+        )
+        .await;
+        let google = GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        sync_google_calendar(&cache, &google, "a-token", "acct")
+            .await
+            .expect("the first sync to finish");
+        let result = sync_google_calendar(&cache, &google, "a-token", "acct")
+            .await
+            .expect("the second sync to finish");
+
+        heard(listening, "a deletion and two reads")
+            .await
+            .expect("three requests");
+        assert_eq!(
+            result.created, 0,
+            "the event came back on the sync after the one that deleted it: {result:?}"
+        );
+        assert!(
+            cache
+                .get_event_by_provider_id("acct", "evt1")
+                .expect("the calendar to be readable")
+                .is_none(),
+            "an event this computer deleted came back on a later sync"
+        );
+    }
+
+    /// Make the next Outlook read start afresh rather than follow the marker.
+    ///
+    /// Graph hands back a marker addressed to Graph, which a test server cannot
+    /// answer. A marker Graph has stopped honouring leaves the next read in the
+    /// same place, so this is the ordinary case rather than a contrivance.
+    fn forget_the_delta_marker(cache: &MessageCache) {
+        let state = cache
+            .get_sync_state("acct", "calendar", MICROSOFT)
+            .expect("the sync state to be readable")
+            .expect("a sync state after a sync");
+        cache
+            .save_sync_state(&SyncState {
+                delta_link: None,
+                ..state
+            })
+            .expect("the sync state to be writable");
+    }
+
+    #[tokio::test]
+    async fn test_an_event_this_computer_deleted_is_not_written_back_by_outlook() {
+        // The Outlook half. Graph takes the deletion and its delta still names
+        // the event.
+        let cache = temp_cache("outlook_read_after_the_deletion_went");
+        let going = a_pending_event_in(&cache, MICROSOFT, MICROSOFT_CALENDAR_NAME, Some("evt1"));
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the event to be deleted here");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                "{}".to_string(),
+                delta_reply(&[graph_event("evt1", "Standup")]),
+            ],
+        )
+        .await;
+
+        let result = sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        heard(listening, "a deletion and a read")
+            .await
+            .expect("two requests");
+        assert_eq!(
+            result.created, 0,
+            "the event this computer deleted was written back down: {result:?}"
+        );
+        assert!(
+            cache
+                .get_event_by_provider_id("acct", "evt1")
+                .expect("the calendar to be readable")
+                .is_none(),
+            "an event this computer deleted came back from Outlook"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_outlook_took_the_deletion_for_stays_gone_on_a_later_sync() {
+        let cache = temp_cache("outlook_read_a_sync_later");
+        let going = a_pending_event_in(&cache, MICROSOFT, MICROSOFT_CALENDAR_NAME, Some("evt1"));
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the event to be deleted here");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                "{}".to_string(),
+                delta_reply(&[graph_event("evt1", "Standup")]),
+                delta_reply(&[graph_event("evt1", "Standup")]),
+            ],
+        )
+        .await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        sync_microsoft_calendar(&cache, &graph, "a-token", "acct")
+            .await
+            .expect("the first sync to finish");
+        // The delta marker Graph handed back points at Graph, so the second
+        // read is made to start afresh, which is what a marker Graph has
+        // stopped honouring does anyway.
+        forget_the_delta_marker(&cache);
+        let result = sync_microsoft_calendar(&cache, &graph, "a-token", "acct")
+            .await
+            .expect("the second sync to finish");
+
+        heard(listening, "a deletion and two reads")
+            .await
+            .expect("three requests");
+        assert_eq!(
+            result.created, 0,
+            "the event came back on the sync after the one that deleted it: {result:?}"
+        );
+        assert!(
+            cache
+                .get_event_by_provider_id("acct", "evt1")
+                .expect("the calendar to be readable")
+                .is_none(),
+            "an event this computer deleted came back from Outlook on a later sync"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_the_provider_took_is_let_go_of_once_it_is_old_enough() {
+        // The other end of the rule. A note kept for ever is a table that only
+        // grows, so what is remembered is let go of by the clock, whatever the
+        // provider does or does not go on saying.
+        let cache = temp_cache("google_lets_go_of_an_old_deletion");
+        let going = a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, Some("evt1"));
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the event to be deleted here");
+        cache
+            .the_provider_took_the_deletion_of_an_event(
+                &going.id,
+                &crate::application::deletions::written(chrono::Utc::now()),
+            )
+            .expect("the provider to have taken it");
+        let by_then = chrono::Utc::now()
+            + crate::application::deletions::HOW_LONG_A_DELETION_IS_REMEMBERED
+            + chrono::Duration::days(1);
+
+        crate::application::deletions::let_go_of_what_was_remembered_long_enough(&cache, by_then)
+            .expect("the sweep to run");
+
         assert!(
             cache
                 .deleted_calendar_events("acct")
                 .expect("the deletions")
                 .is_empty(),
-            "a deletion the provider carried out is still being asked for"
+            "a deletion remembered long enough is still in the table"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_sync_lets_go_of_a_deletion_it_has_remembered_long_enough() {
+        // The sweep only drains anything if a sync really calls it. Wired
+        // nowhere it is a rule that says "remembered for ever" and a table
+        // that only grows, and nothing else in the suite would notice.
+        let cache = temp_cache("a_sync_drains_the_notes");
+        let going = a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, Some("evt1"));
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the event to be deleted here");
+        let long_ago = chrono::Utc::now()
+            - crate::application::deletions::HOW_LONG_A_DELETION_IS_REMEMBERED
+            - chrono::Duration::days(1);
+        cache
+            .the_provider_took_the_deletion_of_an_event(
+                &going.id,
+                &crate::application::deletions::written(long_ago),
+            )
+            .expect("a deletion Google took a long time ago");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{\"items\":[],\"nextSyncToken\":\"marker-1\"}".to_string()],
+        )
+        .await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        heard(listening, "the read").await.expect("one request");
+        assert!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the deletions")
+                .is_empty(),
+            "a sync never let go of a deletion it had remembered long enough, \
+             so the table only grows"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_nobody_has_taken_is_never_let_go_of_by_the_clock() {
+        // The half that must not be swept. A note still owed is work rather
+        // than a memory: dropped, the event stays deleted here and present at
+        // the provider for ever, after the product had said it was deleted.
+        let cache = temp_cache("google_keeps_an_owed_deletion");
+        let going = a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, Some("evt1"));
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the event to be deleted here");
+        let much_later = chrono::Utc::now() + chrono::Duration::days(365);
+
+        crate::application::deletions::let_go_of_what_was_remembered_long_enough(
+            &cache, much_later,
+        )
+        .expect("the sweep to run");
+
+        assert_eq!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the deletions")
+                .len(),
+            1,
+            "a deletion nobody has taken was dropped, so nothing will ever send it"
         );
     }
 

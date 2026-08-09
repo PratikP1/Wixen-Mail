@@ -147,7 +147,10 @@ async fn push_to_the_calendar_server(
         // every sync from now on with nothing they could do about it.
         let sent = caldav.delete_event(at, username, password, None).await;
         if sent.is_ok() {
-            let _ = cache.forget_deleted_calendar_event(&note.id);
+            let _ = cache.the_provider_took_the_deletion_of_an_event(
+                &note.id,
+                &crate::application::deletions::written(chrono::Utc::now()),
+            );
         }
         crate::application::calendar::record(
             sent,
@@ -289,6 +292,10 @@ fn changes_waiting(
 }
 
 /// Every deletion in this calendar the server has not been told about.
+///
+/// Only the ones still owed. A note the server has taken is kept so that no
+/// read writes the event back down, and sending it again would ask the server
+/// on every sync from now on to delete something it has already deleted.
 fn deletions_waiting(
     cache: &MessageCache,
     calendar: &CalendarContainer,
@@ -298,7 +305,10 @@ fn deletions_waiting(
     match cache.deleted_calendar_events(account_id) {
         Ok(notes) => notes
             .into_iter()
-            .filter(|note| note.calendar_id.as_deref() == Some(calendar.id.as_str()))
+            .filter(|note| {
+                note.so_far.still_owed()
+                    && note.calendar_id.as_deref() == Some(calendar.id.as_str())
+            })
             .collect(),
         Err(e) => {
             result.errors.push(format!(
@@ -471,6 +481,7 @@ pub async fn sync_caldav_calendar(
         return Ok(result);
     }
 
+    crate::application::calendar::forget_the_deletions_remembered_long_enough(cache, &mut result);
     let just_sent = push_to_the_calendar_server(
         cache,
         caldav,
@@ -480,6 +491,8 @@ pub async fn sync_caldav_calendar(
         &mut result,
     )
     .await;
+    let deleted_here =
+        crate::application::calendar::events_deleted_here(cache, account_id, &mut result);
 
     // Ask for six months back and a year forward. Held rather than worked out
     // twice: the pass at the end has to know which stretch of time the answer
@@ -525,6 +538,13 @@ pub async fn sync_caldav_calendar(
         just_sent.iter().map(String::as_str).collect();
     for remote in &remote_events {
         seen_uids.insert(remote.uid.as_str());
+
+        // An event somebody deleted on this computer. The server is still
+        // naming it, and writing it back down puts it on the screen again with
+        // nothing left to say it was ever deleted.
+        if deleted_here.holds(&remote.uid) {
+            continue;
+        }
 
         let already = local_uids
             .get(remote.uid.as_str())
@@ -2370,8 +2390,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_an_event_deleted_here_is_deleted_at_the_calendar_server_and_the_note_is_forgotten()
-     {
+    async fn test_an_event_deleted_here_is_deleted_at_the_calendar_server_and_stops_being_owed() {
         let cache = temp_cache("push_delete");
         let mut calendar = container("cal-delete", "acct");
         let (address, listening) = answering_in_turn(
@@ -2419,9 +2438,126 @@ mod tests {
             cache
                 .deleted_calendar_events("acct")
                 .expect("the notes")
-                .is_empty(),
-            "the server was told and the note was kept, so it will be told again \
-             on every sync from now on"
+                .iter()
+                .all(|note| !note.so_far.still_owed()),
+            "the server was told and the deletion is still owed, so it will be \
+             told again on every sync from now on"
+        );
+        // And the note itself stays, because it is the only thing that stops a
+        // read still naming the event writing it back down.
+        assert_eq!(
+            cache
+                .deleted_calendar_events("acct")
+                .expect("the notes")
+                .len(),
+            1,
+            "nothing is left to stop the next read putting the event back"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_this_computer_deleted_is_not_written_back_by_the_read_that_follows() {
+        // The server takes the deletion and the read that follows in the same
+        // sync still names the event. Nothing may write it back down: the row
+        // would be on the screen again with nothing left to say it was ever
+        // deleted.
+        let cache = temp_cache("push_delete_then_read");
+        let mut calendar = container("cal-delete-then-read", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::plain(String::new()),
+                Answer::plain(multi_status(&["e-1"])),
+            ],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let going = a_change_waiting_in(
+            &cache,
+            &calendar,
+            Some("e-1"),
+            Some(format!("http://{address}/cal/e-1.ics")),
+        );
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the deletion to be noted");
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        heard(listening, "a deletion and the calendar")
+            .await
+            .expect("two requests");
+        assert_eq!(
+            result.created, 0,
+            "the event this computer deleted was written back down: {result:?}"
+        );
+        assert!(
+            cache
+                .get_event_by_provider_id("acct", "e-1")
+                .expect("the calendar to be readable")
+                .is_none(),
+            "an event this computer deleted came back in the sync that deleted it"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_event_this_computer_deleted_is_not_written_back_by_a_later_caldav_sync() {
+        // One sync later, with the server still naming it. A rule that only
+        // held for the sync that did the deleting hands it straight back.
+        let cache = temp_cache("push_delete_then_read_later");
+        let mut calendar = container("cal-delete-then-read-later", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::plain(String::new()),
+                Answer::plain(multi_status(&["e-1"])),
+                Answer::plain(multi_status(&["e-1"])),
+            ],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let going = a_change_waiting_in(
+            &cache,
+            &calendar,
+            Some("e-1"),
+            Some(format!("http://{address}/cal/e-1.ics")),
+        );
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the deletion to be noted");
+        let server = CalDavClient::allowed_to_change_things();
+
+        sync_caldav_calendar(&cache, &server, &calendar, "acct", "user", "secret")
+            .await
+            .expect("the first sync to finish");
+        let result = sync_caldav_calendar(&cache, &server, &calendar, "acct", "user", "secret")
+            .await
+            .expect("the second sync to finish");
+
+        heard(listening, "a deletion and two reads")
+            .await
+            .expect("three requests");
+        assert_eq!(
+            result.created, 0,
+            "the event came back on the sync after the one that deleted it: {result:?}"
+        );
+        assert!(
+            cache
+                .get_event_by_provider_id("acct", "e-1")
+                .expect("the calendar to be readable")
+                .is_none(),
+            "an event this computer deleted came back on a later sync"
         );
     }
 

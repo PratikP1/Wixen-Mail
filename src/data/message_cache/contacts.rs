@@ -2,6 +2,7 @@
 
 use super::{
     AddressBook, ContactEntry, ContactGroup, DeletedContact, MessageCache, ProviderIdentity,
+    TheDeletionSoFar,
 };
 use crate::common::{Error, Result};
 use rusqlite::params;
@@ -863,7 +864,13 @@ impl MessageCache {
         Ok(())
     }
 
-    /// Every deletion no address book has been told about yet.
+    /// Every contact this computer deleted, whether her address books have
+    /// been told or not.
+    ///
+    /// Both, because two questions are asked of this list. The push asks what
+    /// it still has to send and reads [`DeletedContact::so_far`] to find it;
+    /// the read asks who this computer deleted, which a note an address book
+    /// has taken answers just as much as one still owed.
     ///
     /// Ordered by contact and then by address book, so a summary built from
     /// these reads the same way twice running.
@@ -871,7 +878,8 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT contact_id, account_id, address_book, provider_contact_id, deleted_at
+                "SELECT contact_id, account_id, address_book, provider_contact_id, deleted_at,
+                        taken_at
                  FROM deleted_contacts WHERE account_id = ?1
                  ORDER BY deleted_at, contact_id, address_book",
             )
@@ -883,6 +891,7 @@ impl MessageCache {
                 address_book: AddressBook::from_stored(&row.get::<_, String>(2)?),
                 provider_contact_id: row.get(3)?,
                 deleted_at: row.get(4)?,
+                so_far: TheDeletionSoFar::from_stored(row.get(5)?),
             })
         })
         .map_err(|e| Error::Other(format!("Failed to query deletions: {}", e)))?
@@ -890,10 +899,43 @@ impl MessageCache {
         .map_err(|e| Error::Other(format!("Failed to read a deletion: {}", e)))
     }
 
-    /// This address book has been told, so it is owed nothing more.
+    /// This address book has taken the deletion.
+    ///
+    /// The note stays. It stops being work the push has and becomes the only
+    /// thing standing between the contact and a read that is still naming her:
+    /// dropping it here is what let somebody deleted come back in the very sync
+    /// that deleted her. `let_go_of_deletions_taken_before` releases it later.
+    ///
+    /// One address book at a time, for the reason
+    /// [`Self::forget_deleted_contact`] gives.
+    ///
+    /// The moment comes from the caller, written by `deletions::written`, so
+    /// that the stamp on a note and the cutoff it is compared against are
+    /// written the same way.
+    pub fn the_address_book_took_the_deletion(
+        &self,
+        contact_id: &str,
+        address_book: &AddressBook,
+        taken_at: &str,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE deleted_contacts SET taken_at = ?3
+                 WHERE contact_id = ?1 AND address_book = ?2",
+                params![contact_id, address_book.as_stored(), taken_at],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record a taken deletion: {}", e)))?;
+        Ok(())
+    }
+
+    /// Drop the note outright, because no address book can hand her back
+    /// under this name.
     ///
     /// One address book at a time. Clearing the whole contact here would leave
     /// the other one still holding somebody the product said was deleted.
+    ///
+    /// Where an address book could still name her, use
+    /// [`Self::the_address_book_took_the_deletion`] instead.
     pub fn forget_deleted_contact(
         &self,
         contact_id: &str,
@@ -3803,6 +3845,7 @@ mod tests {
             .deleted_contacts("test@example.com")
             .expect("the deletions waiting to be sent")
             .into_iter()
+            .filter(|note| note.so_far.still_owed())
             .map(|note| {
                 (
                     note.address_book.as_stored().to_string(),
@@ -3874,6 +3917,88 @@ mod tests {
             the_deletions_waiting(&cache),
             vec![("outlook".to_string(), "AAMk1".to_string())]
         );
+    }
+
+    #[test]
+    fn test_an_address_book_that_took_a_deletion_keeps_the_note_and_stops_being_owed() {
+        // Both halves. Still owed, the deletion is sent again on every sync
+        // against somebody who is not there. Dropped altogether, nothing is
+        // left to stop the read that follows writing her back down, which is
+        // what let a deleted contact come back in the sync that deleted her.
+        let cache = a_cache("an_address_book_took_it");
+        cache
+            .save_contact(&a_contact_two_address_books_know("alice-1", "Alice Smith"))
+            .expect("the contact to save");
+        cache
+            .delete_contact("alice-1")
+            .expect("the contact to be deleted");
+
+        cache
+            .the_address_book_took_the_deletion(
+                "alice-1",
+                &AddressBook::Google,
+                "2026-08-09T09:00:00+00:00",
+            )
+            .expect("Google's note to be marked as taken");
+
+        assert_eq!(
+            the_deletions_waiting(&cache),
+            vec![("outlook".to_string(), "AAMk1".to_string())],
+            "Google is still being asked to delete somebody it has deleted"
+        );
+        assert_eq!(
+            cache
+                .deleted_contacts("test@example.com")
+                .expect("the notes")
+                .len(),
+            2,
+            "nothing is left to stop the next read putting her back"
+        );
+    }
+
+    #[test]
+    fn test_a_deletion_written_before_deletions_were_remembered_reads_as_still_owed() {
+        // The case every existing database is in. The table gains one column,
+        // so it has to open, keep every note in it, and read the new column as
+        // a deletion nobody has taken, which is the truth: until this shipped a
+        // note an address book had taken was dropped on the spot.
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let conn = rusqlite::Connection::open(dir.path().join("message_cache.db"))
+            .expect("a database to open");
+        conn.execute(
+            "CREATE TABLE deleted_contacts (
+                contact_id TEXT NOT NULL,
+                account_id TEXT NOT NULL,
+                address_book TEXT NOT NULL,
+                provider_contact_id TEXT NOT NULL,
+                deleted_at TEXT NOT NULL,
+                PRIMARY KEY (contact_id, address_book)
+            )",
+            params![],
+        )
+        .expect("the deletions table as it was");
+        conn.execute(
+            "INSERT INTO deleted_contacts
+                (contact_id, account_id, address_book, provider_contact_id, deleted_at)
+             VALUES ('alice-1', 'test@example.com', 'gmail', 'people/c1', '2026-01-01T00:00:00Z')",
+            params![],
+        )
+        .expect("a deletion written before this shipped");
+        drop(conn);
+
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
+
+        let notes = cache
+            .deleted_contacts("test@example.com")
+            .expect("the notes");
+        assert_eq!(
+            notes.len(),
+            1,
+            "a note somebody's deletion depended on went"
+        );
+        assert_eq!(notes[0].provider_contact_id, "people/c1");
+        assert_eq!(notes[0].so_far, TheDeletionSoFar::StillOwed);
     }
 
     #[test]

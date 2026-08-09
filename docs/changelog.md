@@ -287,6 +287,44 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **An event, a task or a contact you delete no longer comes back on the next
+  sync.** The note saying you had deleted something was thrown away the moment
+  Google, Outlook or your calendar server accepted the deletion. The read that
+  runs straight afterwards in the same sync then found the provider still naming
+  the thing, found nothing stored here under that name, and wrote it back down.
+  It was on the screen again under the provider's own identifier, with nothing
+  left to say it had ever been deleted, which reads as the deletion having
+  quietly failed.
+
+  This was live for calendar events at Google, at Outlook and at a calendar
+  server, and for tasks at Google and at Outlook. Contacts were fixed in the
+  previous round of changes, but only for the sync that did the deleting: run
+  the same sync again with the address book still naming her and she came back.
+  All three now follow one rule, written down in one place.
+
+  The rule is that something deleted on this computer is remembered until the
+  provider has taken the deletion, and for seven days after that, and no read
+  writes down anything the memory names. A deletion nobody has taken yet is not
+  a memory, it is work still owed, and it is kept for as long as that stays
+  true.
+
+  What finally lets a memory go is the clock and nothing else, so the record
+  drains rather than growing for ever. Seven days outlasts a provider's list
+  answering from a copy written just before the deletion landed, and covers the
+  machine being shut for a weekend before the next sync runs.
+
+  Known limitations. A provider that takes a deletion and then goes on listing
+  the thing for more than a week will hand it back, and nothing here can tell
+  that apart from somebody creating it again elsewhere. Deleting an event from a
+  subscribed calendar feed is a different case and is not covered: a feed is
+  published somewhere else and only read here, so nothing can delete anything in
+  it, and the event returns on the next refresh.
+
+  How this was measured: the whole way round in each sync, from deleting the
+  item, through the provider answering the deletion with success, to the
+  provider's next list still naming it, in the sync that did the deleting and in
+  the sync after it. None of this has run against a real account.
+
 - **A date stored by Outlook, or by this program's own event editor, is read out
   as a date again.** An event whose time is stored as `2026-07-27T09:00:00` was
   handed back unchanged, so the words the reading asked to have said were that

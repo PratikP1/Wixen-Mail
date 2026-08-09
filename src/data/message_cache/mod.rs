@@ -312,26 +312,63 @@ pub struct ProviderIdentity {
     pub change_is_waiting: bool,
 }
 
+/// How far a deletion somebody made on this computer has got.
+///
+/// The same two answers for a contact, an event and a task, so one type says
+/// it for all three. Two questions are asked of a note and they used to be the
+/// same question: the push asks what it still has to send, and the read asks
+/// what this computer deleted. They stop being the same answer at the worst
+/// possible moment, because a note dropped as soon as the provider took it
+/// leaves the read with nothing to consult while the provider's own list is
+/// still naming the thing.
+///
+/// See `application::deletions` for the rule and for what lets a note go.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TheDeletionSoFar {
+    /// No provider has taken it yet, so the push still has it to send.
+    StillOwed,
+    /// The provider took it, at this moment. Kept from here on so that no read
+    /// writes the thing back down, and let go of by the clock.
+    TakenAt(String),
+}
+
+impl TheDeletionSoFar {
+    /// What a stored `taken_at` column means.
+    pub fn from_stored(taken_at: Option<String>) -> Self {
+        match taken_at {
+            Some(at) => Self::TakenAt(at),
+            None => Self::StillOwed,
+        }
+    }
+
+    /// Whether the push still has this deletion to send.
+    pub fn still_owed(&self) -> bool {
+        matches!(self, Self::StillOwed)
+    }
+}
+
 /// A contact deleted here that one address book has not been told about.
 ///
 /// One of these per address book that knew her, because a contact is one
 /// person in as many address books as hold her and each has its own name for
 /// her. Deleting her at Google says nothing to Outlook, so each is owed the
-/// deletion separately and each is forgotten separately once it has been told.
+/// deletion separately and each is let go of separately.
 ///
 /// A deleted row cannot carry a flag, so the fact of the deletion has to
 /// outlive it. Without this a contact deleted here comes back on the next
 /// read, after the product has already said she was deleted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeletedContact {
-    /// The identifier the row here had, which is what the note is forgotten by.
+    /// The identifier the row here had, which is what the note is found by.
     pub contact_id: String,
     pub account_id: String,
-    /// The address book still owed the deletion.
+    /// The address book owed the deletion, or the one that took it.
     pub address_book: AddressBook,
     /// What that address book calls her, which is how it finds her to delete.
     pub provider_contact_id: String,
     pub deleted_at: String,
+    /// Whether that address book has taken it yet.
+    pub so_far: TheDeletionSoFar,
 }
 
 /// Contact entry for account address book
@@ -806,6 +843,8 @@ pub struct DeletedTask {
     /// The list it was in, which the provider needs to find it again.
     pub task_list_id: Option<String>,
     pub deleted_at: String,
+    /// Whether the provider has taken it yet.
+    pub so_far: TheDeletionSoFar,
 }
 
 /// Note folder entry (container for notes)
@@ -1160,8 +1199,9 @@ impl MessageCache {
         // of them has its own name for her. `contact_identities` is keyed the
         // same way and for the same reason.
         //
-        // A row goes when its own address book has been told, so the table
-        // empties as the deletion lands rather than growing for ever.
+        // A row is kept after its address book takes the deletion, so that no
+        // read writes her back down, and let go of by the clock afterwards.
+        // `application::deletions` holds the rule and what makes it terminate.
         self.conn
             .execute(
                 "CREATE TABLE IF NOT EXISTS deleted_contacts (
@@ -1170,6 +1210,7 @@ impl MessageCache {
                 address_book TEXT NOT NULL,
                 provider_contact_id TEXT NOT NULL,
                 deleted_at TEXT NOT NULL,
+                taken_at TEXT,
                 PRIMARY KEY (contact_id, address_book)
             )",
                 [],
@@ -1407,14 +1448,17 @@ impl MessageCache {
         // back on the next sync, which is worse than not syncing at all: it
         // reads as the deletion having silently failed.
         //
-        // The row goes when the provider has been told.
+        // The row is kept after the provider takes the deletion, so that no
+        // read writes the task back down, and let go of by the clock
+        // afterwards. `application::deletions` holds the rule.
         self.conn
             .execute(
                 "CREATE TABLE IF NOT EXISTS deleted_tasks (
                 id TEXT PRIMARY KEY,
                 account_id TEXT NOT NULL,
                 task_list_id TEXT,
-                deleted_at TEXT NOT NULL
+                deleted_at TEXT NOT NULL,
+                taken_at TEXT
             )",
                 [],
             )
@@ -1427,7 +1471,9 @@ impl MessageCache {
         // outlive the row. Without this an event deleted here comes back on the
         // next sync, which reads as the deletion having silently failed.
         //
-        // The row goes when the provider has been told.
+        // The row is kept after the provider takes the deletion, so that no
+        // read writes the event back down, and let go of by the clock
+        // afterwards. `application::deletions` holds the rule.
         self.conn
             .execute(
                 "CREATE TABLE IF NOT EXISTS deleted_calendar_events (
@@ -1436,7 +1482,8 @@ impl MessageCache {
                 provider_event_id TEXT,
                 calendar_id TEXT,
                 deleted_at TEXT NOT NULL,
-                event_url TEXT
+                event_url TEXT,
+                taken_at TEXT
             )",
                 [],
             )
@@ -1681,6 +1728,14 @@ impl MessageCache {
         // them: until this shipped no deletion had ever been sent anywhere, so
         // none of them was ever going to be.
         self.ensure_column_exists("deleted_calendar_events", "event_url", "TEXT")?;
+        // When the provider took each deletion. Nothing for every note already
+        // written, which is the right answer for all of them: a note that
+        // survived to be read here is one no provider has taken, because until
+        // this shipped a note was dropped the moment one did.
+        self.ensure_column_exists("deleted_calendar_events", "taken_at", "TEXT")?;
+        self.ensure_column_exists("deleted_contacts", "taken_at", "TEXT")?;
+        self.ensure_column_exists("deleted_tasks", "taken_at", "TEXT")?;
+
         self.ensure_column_exists(
             "message_filter_rules",
             "match_type",
@@ -2270,6 +2325,40 @@ impl MessageCache {
                 "{} events belonged to no calendar and have been filed under the one their own server syncs into",
                 filed
             );
+        }
+        Ok(())
+    }
+
+    /// Let go of every deletion a provider took before this moment.
+    ///
+    /// The one thing that keeps the three notes tables from growing for ever.
+    /// A note is kept after the provider takes it, so that no read writes the
+    /// thing back down, and this is what finally releases it. Only notes a
+    /// provider has taken: one still owed is work rather than a memory, and
+    /// dropping it would leave the thing deleted here and present at the
+    /// provider after the product had said "deleted".
+    ///
+    /// All three tables in one call, because it is one rule and three copies
+    /// of a rule drift the moment one of them is edited.
+    ///
+    /// `application::deletions` decides the moment and says why.
+    pub fn let_go_of_deletions_taken_before(&self, cutoff: &str) -> Result<()> {
+        for table in [
+            "deleted_contacts",
+            "deleted_calendar_events",
+            "deleted_tasks",
+        ] {
+            self.conn
+                .execute(
+                    &format!("DELETE FROM {table} WHERE taken_at IS NOT NULL AND taken_at < ?1"),
+                    rusqlite::params![cutoff],
+                )
+                .map_err(|e| {
+                    Error::Other(format!(
+                        "Failed to let go of the deletions in {table}: {}",
+                        e
+                    ))
+                })?;
         }
         Ok(())
     }

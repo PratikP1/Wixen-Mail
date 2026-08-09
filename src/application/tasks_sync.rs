@@ -65,6 +65,7 @@
 //! moves to a surviving list and keeps waiting to be sent. Where there is no
 //! surviving list to move it to, the list stays and the reason is said.
 
+use crate::application::deletions::DeletedHere;
 use crate::application::summing_up::SummingUp;
 use crate::common::{Error, Result};
 use crate::data::message_cache::{MessageCache, TaskEntry};
@@ -533,6 +534,51 @@ fn or_say_why<T>(read: Result<Vec<T>>, what: &str, result: &mut TaskSyncResult) 
     }
 }
 
+/// Every task this computer deleted, under the names the providers know.
+///
+/// What the read asks before it writes anything down. Every note the account
+/// holds, taken or still owed, and not only what this pass could send:
+/// `application::deletions` says why the second question is not the first.
+///
+/// Not narrowed to one provider, deliberately. A task id here carries the
+/// provider that gave it, so the two cannot be confused, and "did somebody
+/// delete it here" does not depend on which pass is asking.
+fn tasks_deleted_here(
+    cache: &MessageCache,
+    account_id: &str,
+    result: &mut TaskSyncResult,
+) -> DeletedHere {
+    match cache.deleted_tasks(account_id) {
+        Ok(notes) => notes.into_iter().map(|note| note.id).collect(),
+        Err(e) => {
+            // Said rather than swallowed. Read as "nothing was deleted", a
+            // database that will not answer turns into a sync that writes back
+            // down everything somebody deleted.
+            result.errors.push(format!(
+                "What was deleted here could not be read, so this sync may put back \
+                 tasks you deleted: {e}"
+            ));
+            DeletedHere::default()
+        }
+    }
+}
+
+/// Let go of the deletions that have been remembered long enough.
+///
+/// At the start of a sync, so that the push and the read that follow both work
+/// from the same answer. `application::deletions` says what makes this
+/// terminate.
+fn forget_the_deletions_remembered_long_enough(cache: &MessageCache, result: &mut TaskSyncResult) {
+    if let Err(e) = crate::application::deletions::let_go_of_what_was_remembered_long_enough(
+        cache,
+        chrono::Utc::now(),
+    ) {
+        result
+            .errors
+            .push(format!("Old deletions could not be let go of: {e}"));
+    }
+}
+
 /// Send everything changed here that the provider has not been told about.
 ///
 /// Runs before the pull. The other order would send a value the pull had just
@@ -556,6 +602,13 @@ async fn push_tasks<S: TaskService>(
         "The deletions waiting to be sent could not be read",
         result,
     ) {
+        if !gone.so_far.still_owed() {
+            // The provider has taken this one. The note is kept so that no
+            // read writes the task back down, and sending it again would ask
+            // the provider on every sync from now on to delete something it
+            // has already deleted.
+            continue;
+        }
         if Provider::made_here(&gone.id) {
             // Made here and never sent, so there is nothing at the other end
             // to delete. The tombstone is cleared rather than carried forever.
@@ -581,7 +634,10 @@ async fn push_tasks<S: TaskService>(
         };
         match sent {
             Ok(()) => {
-                let _ = cache.forget_deleted_task(&gone.id);
+                let _ = cache.the_provider_took_the_deletion_of_a_task(
+                    &gone.id,
+                    &crate::application::deletions::written(chrono::Utc::now()),
+                );
                 result.sent += 1;
             }
             Err(e) if refused_for_permission(&e) => result.needs_sign_in = true,
@@ -694,6 +750,7 @@ pub(crate) async fn sync_google_tasks<S: TaskService>(
     account_id: &str,
 ) -> Result<TaskSyncResult> {
     let mut result = TaskSyncResult::default();
+    forget_the_deletions_remembered_long_enough(cache, &mut result);
     push_tasks(
         cache,
         service,
@@ -703,6 +760,7 @@ pub(crate) async fn sync_google_tasks<S: TaskService>(
         &mut result,
     )
     .await;
+    let deleted_here = tasks_deleted_here(cache, account_id, &mut result);
 
     let lists = service.google_lists(token).await?;
     // Every list the response carried, gathered before anything is saved,
@@ -780,7 +838,7 @@ pub(crate) async fn sync_google_tasks<S: TaskService>(
                 continue;
             }
             arrived_everywhere.push(stored.id.clone());
-            take_or_skip(cache, &held, stored, &mut result);
+            take_or_skip(cache, &held, &deleted_here, stored, &mut result);
         }
     }
 
@@ -820,9 +878,16 @@ pub(crate) async fn sync_google_tasks<S: TaskService>(
 fn take_or_skip(
     cache: &MessageCache,
     held: &[TaskEntry],
+    deleted_here: &DeletedHere,
     stored: TaskEntry,
     result: &mut TaskSyncResult,
 ) {
+    // A task somebody deleted on this computer. The provider is still naming
+    // it, and writing it back down puts it on the screen again with nothing
+    // left to say it was ever deleted.
+    if deleted_here.holds(&stored.id) {
+        return;
+    }
     match resolution_for(held, &stored) {
         Resolution::Nothing => result.unchanged += 1,
         Resolution::Push => result.unchanged += 1,
@@ -1015,6 +1080,7 @@ pub(crate) async fn sync_microsoft_tasks<S: TaskService>(
     account_id: &str,
 ) -> Result<TaskSyncResult> {
     let mut result = TaskSyncResult::default();
+    forget_the_deletions_remembered_long_enough(cache, &mut result);
     push_tasks(
         cache,
         service,
@@ -1024,6 +1090,7 @@ pub(crate) async fn sync_microsoft_tasks<S: TaskService>(
         &mut result,
     )
     .await;
+    let deleted_here = tasks_deleted_here(cache, account_id, &mut result);
 
     let lists = service.ms_lists(token).await?;
     // Graph does not say when a task has gone, so what is gone is what did not
@@ -1096,7 +1163,7 @@ pub(crate) async fn sync_microsoft_tasks<S: TaskService>(
             }
             let stored = ms_task_to_entry(task, account_id, &entry.id);
             arrived_everywhere.push(stored.id.clone());
-            take_or_skip(cache, &held, stored, &mut result);
+            take_or_skip(cache, &held, &deleted_here, stored, &mut result);
         }
     }
 
@@ -1137,6 +1204,15 @@ mod tests {
         TempHome::named(name, |dir| {
             MessageCache::new(dir.to_path_buf(), None).expect("a cache")
         })
+    }
+
+    /// An account where nothing has been deleted on this computer.
+    ///
+    /// What the tests about whose copy wins are set in. A read is asked what
+    /// was deleted here before it is asked anything else, so a test about the
+    /// stamps has to say that the answer is nobody.
+    fn nobody_deleted_anything() -> DeletedHere {
+        DeletedHere::default()
     }
 
     /// A task service that answers from a script rather than a socket.
@@ -3399,7 +3475,13 @@ mod tests {
         };
         let mut result = TaskSyncResult::default();
 
-        take_or_skip(&cache, &[], arriving, &mut result);
+        take_or_skip(
+            &cache,
+            &[],
+            &nobody_deleted_anything(),
+            arriving,
+            &mut result,
+        );
 
         assert_eq!(result.stored, 1);
         assert_eq!(result.unchanged, 0);
@@ -3430,7 +3512,13 @@ mod tests {
         };
         let mut result = TaskSyncResult::default();
 
-        take_or_skip(&cache, std::slice::from_ref(&held), arriving, &mut result);
+        take_or_skip(
+            &cache,
+            std::slice::from_ref(&held),
+            &nobody_deleted_anything(),
+            arriving,
+            &mut result,
+        );
 
         assert_eq!(result.unchanged, 1);
         assert_eq!(result.stored, 0);
@@ -3471,7 +3559,13 @@ mod tests {
         };
         let mut result = TaskSyncResult::default();
 
-        take_or_skip(&cache, std::slice::from_ref(&held), arriving, &mut result);
+        take_or_skip(
+            &cache,
+            std::slice::from_ref(&held),
+            &nobody_deleted_anything(),
+            arriving,
+            &mut result,
+        );
 
         assert_eq!(result.unchanged, 1);
         assert_eq!(result.stored, 0);
@@ -3497,7 +3591,13 @@ mod tests {
         };
         let mut result = TaskSyncResult::default();
 
-        take_or_skip(&cache, std::slice::from_ref(&held), arriving, &mut result);
+        take_or_skip(
+            &cache,
+            std::slice::from_ref(&held),
+            &nobody_deleted_anything(),
+            arriving,
+            &mut result,
+        );
 
         assert_eq!(result.stored, 1);
         assert_eq!(result.replaced, 0, "a loss was invented");
@@ -3524,7 +3624,13 @@ mod tests {
         };
         let mut result = TaskSyncResult::default();
 
-        take_or_skip(&cache, std::slice::from_ref(&held), arriving, &mut result);
+        take_or_skip(
+            &cache,
+            std::slice::from_ref(&held),
+            &nobody_deleted_anything(),
+            arriving,
+            &mut result,
+        );
 
         assert_eq!(result.replaced, 1, "a lost edit was not counted");
         assert!(
@@ -3610,10 +3716,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_a_deletion_the_provider_accepted_is_counted_once_and_stops_being_carried() {
+    async fn test_a_deletion_the_provider_accepted_is_counted_once_and_stops_being_owed() {
         // The success half of a deletion, which nothing had ever run: the
-        // count, and the tombstone being forgotten so the same deletion is not
-        // sent again on every sync for the life of the account.
+        // count, and the tombstone stopping being owed so the same deletion is
+        // not sent again on every sync for the life of the account.
+        //
+        // The tombstone itself stays, because it is the only thing that stops
+        // a read still naming the task writing it back down.
         let cache = a_cache("accepted_deletion");
         a_list(&cache, "google:list");
         cache
@@ -3647,12 +3756,144 @@ mod tests {
             !result.needs_sign_in,
             "an accepted deletion asked somebody to sign in"
         );
+        let notes = cache.deleted_tasks("acc-1").expect("the deletions");
         assert!(
-            cache
-                .deleted_tasks("acc-1")
-                .expect("the deletions")
-                .is_empty(),
-            "a deletion the provider took is still being carried"
+            notes.iter().all(|note| !note.so_far.still_owed()),
+            "a deletion the provider took is still being sent"
+        );
+        assert_eq!(
+            notes.len(),
+            1,
+            "nothing is left to stop the next read putting the task back"
+        );
+    }
+
+    /// A provider that takes a change and still lists one task in one list.
+    ///
+    /// The shape the deletion rule is about: the push is answered, and the read
+    /// that follows in the same sync goes on naming what was just deleted.
+    fn a_provider_that_still_lists(id: &str) -> Scripted {
+        Scripted {
+            google_lists: vec![GoogleTaskList {
+                id: "list".to_string(),
+                title: "My Tasks".to_string(),
+            }],
+            google_tasks: std::collections::HashMap::from([(
+                "list".to_string(),
+                vec![GoogleTask {
+                    id: id.to_string(),
+                    title: "Ring the clinic".to_string(),
+                    status: "needsAction".to_string(),
+                    ..Default::default()
+                }],
+            )]),
+            ms_lists: vec![MsTodoList {
+                id: "list".to_string(),
+                display_name: "My Tasks".to_string(),
+            }],
+            ms_tasks: std::collections::HashMap::from([(
+                "list".to_string(),
+                vec![MsTodoTask {
+                    id: id.to_string(),
+                    title: "Ring the clinic".to_string(),
+                    status: "notStarted".to_string(),
+                    ..Default::default()
+                }],
+            )]),
+            writes: Writes::Accepted,
+            ..Scripted::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_task_this_computer_deleted_is_not_written_back_by_the_read_that_follows() {
+        // Google takes the deletion and the list it answers with still names
+        // the task. Written back down it is on the screen again under the same
+        // name with nothing left to say it was ever deleted.
+        let cache = a_cache("task_deleted_then_read");
+        a_list(&cache, "google:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "google:t1".to_string(),
+                task_list_id: Some("google:list".to_string()),
+                ..task("x")
+            })
+            .expect("a task");
+        cache.delete_task("google:t1").expect("a deletion");
+
+        let result =
+            sync_google_tasks(&cache, &a_provider_that_still_lists("t1"), "token", "acc-1")
+                .await
+                .expect("the sync runs");
+
+        assert!(
+            cache.find_task("google:t1").expect("a lookup").is_none(),
+            "a task this computer deleted came back in the sync that deleted it"
+        );
+        assert_eq!(
+            result.stored, 0,
+            "the task this computer deleted was written back down: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_task_this_computer_deleted_is_not_written_back_by_a_later_sync() {
+        // The same rule one sync later, with Google still naming it.
+        let cache = a_cache("task_deleted_then_read_later");
+        a_list(&cache, "google:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "google:t1".to_string(),
+                task_list_id: Some("google:list".to_string()),
+                ..task("x")
+            })
+            .expect("a task");
+        cache.delete_task("google:t1").expect("a deletion");
+        let service = a_provider_that_still_lists("t1");
+
+        sync_google_tasks(&cache, &service, "token", "acc-1")
+            .await
+            .expect("the first sync runs");
+        let result = sync_google_tasks(&cache, &service, "token", "acc-1")
+            .await
+            .expect("the second sync runs");
+
+        assert!(
+            cache.find_task("google:t1").expect("a lookup").is_none(),
+            "a task this computer deleted came back on a later sync"
+        );
+        assert_eq!(
+            result.stored, 0,
+            "the task came back on the sync after the one that deleted it: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_task_this_computer_deleted_is_not_written_back_by_outlook() {
+        // The Outlook half of the same thing.
+        let cache = a_cache("ms_task_deleted_then_read");
+        a_list(&cache, "ms:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "ms:t1".to_string(),
+                task_list_id: Some("ms:list".to_string()),
+                ..task("x")
+            })
+            .expect("a task");
+        cache.delete_task("ms:t1").expect("a deletion");
+
+        let result =
+            sync_microsoft_tasks(&cache, &a_provider_that_still_lists("t1"), "token", "acc-1")
+                .await
+                .expect("the sync runs");
+
+        assert!(
+            cache.find_task("ms:t1").expect("a lookup").is_none(),
+            "a task this computer deleted came back from Outlook"
+        );
+        assert_eq!(
+            result.stored, 0,
+            "the task this computer deleted was written back down: {result:?}"
         );
     }
 

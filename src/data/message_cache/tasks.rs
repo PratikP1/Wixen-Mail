@@ -1,7 +1,9 @@
 //! Task and TaskList CRUD operations.
 
 use crate::common::{Error, Result};
-use crate::data::message_cache::{DeletedTask, MessageCache, TaskEntry, TaskListEntry};
+use crate::data::message_cache::{
+    DeletedTask, MessageCache, TaskEntry, TaskListEntry, TheDeletionSoFar,
+};
 
 impl MessageCache {
     // ── Task Lists ──────────────────────────────────────────────────────────
@@ -273,12 +275,18 @@ impl MessageCache {
         Ok(tasks)
     }
 
-    /// Every deletion the provider has not been told about.
+    /// Every task this computer deleted, whether the provider has been told or
+    /// not.
+    ///
+    /// Both, because two questions are asked of this list. The push asks what
+    /// it still has to send and reads [`DeletedTask::so_far`] to find it; the
+    /// read asks what this computer deleted, which a note the provider has
+    /// taken answers just as much as one still owed.
     pub fn deleted_tasks(&self, account_id: &str) -> Result<Vec<DeletedTask>> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, account_id, task_list_id, deleted_at
+                "SELECT id, account_id, task_list_id, deleted_at, taken_at
                  FROM deleted_tasks WHERE account_id = ?1 ORDER BY deleted_at",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare deletions query: {}", e)))?;
@@ -289,6 +297,7 @@ impl MessageCache {
                     account_id: row.get(1)?,
                     task_list_id: row.get(2)?,
                     deleted_at: row.get(3)?,
+                    so_far: TheDeletionSoFar::from_stored(row.get(4)?),
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query deletions: {}", e)))?;
@@ -299,7 +308,37 @@ impl MessageCache {
         Ok(gone)
     }
 
-    /// The provider has been told about this deletion.
+    /// The provider has taken this deletion.
+    ///
+    /// The note stays. It stops being work the push has and becomes the only
+    /// thing standing between the task and a read that is still naming it:
+    /// dropping it here is what let a task somebody deleted come back in the
+    /// very sync that deleted it. `let_go_of_deletions_taken_before` releases
+    /// it later.
+    ///
+    /// The moment comes from the caller, written by `deletions::written`, so
+    /// that the stamp on a note and the cutoff it is compared against are
+    /// written the same way.
+    pub fn the_provider_took_the_deletion_of_a_task(
+        &self,
+        task_id: &str,
+        taken_at: &str,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE deleted_tasks SET taken_at = ?2 WHERE id = ?1",
+                rusqlite::params![task_id, taken_at],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record a taken deletion: {}", e)))?;
+        Ok(())
+    }
+
+    /// Drop the note outright, because nothing at any provider can hand this
+    /// task back.
+    ///
+    /// Only for a task no provider ever held, or one whose list has gone.
+    /// Anywhere a provider could still name it, use
+    /// [`Self::the_provider_took_the_deletion_of_a_task`] instead.
     pub fn forget_deleted_task(&self, task_id: &str) -> Result<()> {
         self.conn
             .execute(
@@ -745,6 +784,68 @@ mod tests {
         cache.forget_deleted_task("google:t1").unwrap();
 
         assert!(cache.deleted_tasks("acct-1").unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_a_deletion_the_provider_took_is_kept_and_read_back_as_taken() {
+        // The whole rule rests on this column surviving a round trip. A note
+        // that goes when the provider takes it leaves nothing to stop the read
+        // that follows writing the task straight back down.
+        let cache = test_cache();
+        let list = cache.ensure_default_task_list("acct-1").unwrap();
+        synced_task(&cache, "google:t1", &list.id);
+        cache.delete_task("google:t1").unwrap();
+
+        cache
+            .the_provider_took_the_deletion_of_a_task("google:t1", "2026-08-09T09:00:00+00:00")
+            .unwrap();
+
+        let notes = cache.deleted_tasks("acct-1").unwrap();
+        assert_eq!(notes.len(), 1, "the note went when the provider took it");
+        assert!(
+            !notes[0].so_far.still_owed(),
+            "a deletion the provider took is still being sent"
+        );
+    }
+
+    #[test]
+    fn test_a_deletion_written_before_deletions_were_remembered_reads_as_still_owed() {
+        // The case every existing database is in. The table gains one column,
+        // so it has to open, keep every note in it, and read the new column as
+        // a deletion nobody has taken, which is the truth: until this shipped a
+        // note a provider had taken was dropped on the spot.
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let conn = rusqlite::Connection::open(dir.path().join("message_cache.db"))
+            .expect("a database to open");
+        conn.execute(
+            "CREATE TABLE deleted_tasks (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                task_list_id TEXT,
+                deleted_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .expect("the deletions table as it was");
+        conn.execute(
+            "INSERT INTO deleted_tasks (id, account_id, task_list_id, deleted_at)
+             VALUES ('google:t1', 'acct-1', 'google:list', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .expect("a deletion written before this shipped");
+        drop(conn);
+
+        let cache =
+            MessageCache::new(dir.path().to_path_buf(), None).expect("the older database to open");
+
+        let notes = cache.deleted_tasks("acct-1").expect("the notes");
+        assert_eq!(
+            notes.len(),
+            1,
+            "a note somebody's deletion depended on went"
+        );
+        assert_eq!(notes[0].task_list_id.as_deref(), Some("google:list"));
+        assert_eq!(notes[0].so_far, TheDeletionSoFar::StillOwed);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! Calendar event and sync state persistence operations
 
-use super::{CalendarEventEntry, MessageCache, SyncState};
+use super::{CalendarEventEntry, MessageCache, SyncState, TheDeletionSoFar};
 use crate::common::{Error, Result};
 use rusqlite::params;
 
@@ -24,6 +24,8 @@ pub struct DeletedCalendarEvent {
     /// which is the same case and is handled the same way: no request is made
     /// and the note is cleared rather than carried for ever.
     pub event_url: Option<String>,
+    /// Whether the provider has taken it yet.
+    pub so_far: TheDeletionSoFar,
 }
 
 /// SQL column list for calendar events (used in all SELECT queries).
@@ -383,12 +385,19 @@ impl MessageCache {
         Ok(removed > 0)
     }
 
-    /// Every deletion the provider has not been told about, oldest first.
+    /// Every event this computer deleted, oldest first, whether the provider
+    /// has been told or not.
+    ///
+    /// Both, because two questions are asked of this list. The push asks what
+    /// it still has to send and reads [`DeletedCalendarEvent::so_far`] to find
+    /// it; the read asks what this computer deleted, which a note the provider
+    /// has taken answers just as much as one still owed.
     pub fn deleted_calendar_events(&self, account_id: &str) -> Result<Vec<DeletedCalendarEvent>> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, account_id, provider_event_id, calendar_id, deleted_at, event_url
+                "SELECT id, account_id, provider_event_id, calendar_id, deleted_at, event_url,
+                        taken_at
                  FROM deleted_calendar_events WHERE account_id = ?1 ORDER BY deleted_at",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare deletions query: {}", e)))?;
@@ -401,6 +410,7 @@ impl MessageCache {
                     calendar_id: row.get(3)?,
                     deleted_at: row.get(4)?,
                     event_url: row.get(5)?,
+                    so_far: TheDeletionSoFar::from_stored(row.get(6)?),
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query deletions: {}", e)))?
@@ -409,7 +419,37 @@ impl MessageCache {
         Ok(gone)
     }
 
-    /// The provider has been told about this deletion.
+    /// The provider has taken this deletion.
+    ///
+    /// The note stays. It stops being work the push has and becomes the only
+    /// thing standing between the event and a read that is still naming it:
+    /// dropping it here is what let an event somebody deleted come back in the
+    /// very sync that deleted it. `let_go_of_deletions_taken_before` releases
+    /// it later.
+    ///
+    /// The moment comes from the caller, written by `deletions::written`, so
+    /// that the stamp on a note and the cutoff it is compared against are
+    /// written the same way.
+    pub fn the_provider_took_the_deletion_of_an_event(
+        &self,
+        event_id: &str,
+        taken_at: &str,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE deleted_calendar_events SET taken_at = ?2 WHERE id = ?1",
+                params![event_id, taken_at],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record a taken deletion: {}", e)))?;
+        Ok(())
+    }
+
+    /// Drop the note outright, because nothing at any provider can hand this
+    /// event back.
+    ///
+    /// Only for an event no provider ever held, or one whose calendar has gone.
+    /// Anywhere a provider could still name it, use
+    /// [`Self::the_provider_took_the_deletion_of_an_event`] instead.
     pub fn forget_deleted_calendar_event(&self, event_id: &str) -> Result<()> {
         self.conn
             .execute(
@@ -1023,6 +1063,38 @@ mod tests {
             notes[0].event_url, None,
             "an address nobody ever stored has to read as nothing, which is the \
              case the sync already has to handle"
+        );
+        assert_eq!(
+            notes[0].so_far,
+            TheDeletionSoFar::StillOwed,
+            "a note written before deletions were remembered has to read as one \
+             still owed, because until then a note a provider had taken was \
+             dropped on the spot"
+        );
+    }
+
+    #[test]
+    fn test_a_deletion_the_provider_took_is_read_back_as_one_the_provider_took() {
+        // The column carries the whole rule, so a value that does not survive
+        // a round trip through the database is a read that writes the event
+        // back down on the next sync.
+        let cache = temp_cache("a_deletion_the_provider_took");
+        cache
+            .save_calendar_event(&make_event("evt-1", "acct", "uid-1", "Standup"))
+            .expect("an event");
+        cache
+            .delete_calendar_event("evt-1")
+            .expect("the event to be deleted here");
+        cache
+            .the_provider_took_the_deletion_of_an_event("evt-1", "2026-08-09T09:00:00+00:00")
+            .expect("the provider to have taken it");
+
+        let notes = cache.deleted_calendar_events("acct").expect("the notes");
+
+        assert_eq!(notes.len(), 1, "the note went when the provider took it");
+        assert!(
+            !notes[0].so_far.still_owed(),
+            "a deletion the provider took is still being sent"
         );
     }
 
