@@ -1720,3 +1720,52 @@ after = """            .any(|a| a.email == account.email)"""
 red = [
     "data::account::tests::test_the_same_mailbox_typed_with_capitals_is_still_the_same_mailbox",
 ]
+
+# ── Which answer Enter gives, and who hears what a choice costs ─────────────
+#
+# A message box with Yes and No on it gives Yes to Enter unless it is told
+# otherwise. Both questions asked before a deletion were built that way, so
+# somebody who pressed Enter partway through hearing one had deleted the thing
+# and nothing here can undo it. The flag is what stops that, and it is one word
+# at the end of a line, which is the kind of thing a later edit takes off
+# without noticing.
+
+[[guard]]
+name = "a deletion that cannot be undone does not let Enter answer Yes"
+file = "src/presentation/asking.rs"
+before = """    yes_no_where_enter_answers_yes() | ENTER_DOES_NOT_ANSWER_YES"""
+after = """    yes_no_where_enter_answers_yes()"""
+red = [
+    "presentation::asking::tests::test_a_question_that_cannot_be_undone_does_not_let_enter_answer_yes",
+]
+
+# What each first-run answer costs is the button's description, which is what a
+# screen reader reading through Microsoft Active Accessibility says when the
+# button takes focus. That is the moment the decision is made. It went missing
+# once already: three buttons that read correctly and three explanations of
+# what each one costs that nobody ever heard.
+
+[[guard]]
+name = "what each first-run answer costs rides on the button"
+file = "src/presentation/wx_first_run.rs"
+before = """        set_accessible_name_and_description(&button, choice.label(), choice.explanation());"""
+after = """        set_accessible_name(&button, choice.label());"""
+red = [
+    "presentation::first_run::tests::test_what_each_answer_costs_rides_on_the_button_and_on_the_screen",
+]
+
+# The compose tab's signature answer. It was on the screen, hard-set to ticked
+# and read back by nothing, for as long as the settings screen has existed, so
+# a screen reader announced a setting that was not there. Reading it and then
+# handing the composer the stored signature anyway would be the same defect
+# with more code in it.
+
+[[guard]]
+name = "a composer opens with no signature when somebody asked for none"
+file = "src/application/sign_off.rs"
+before = """    if automatically { stored } else { "" }"""
+after = """    stored"""
+red = [
+    "application::sign_off::tests::test_a_composer_opens_with_nothing_when_somebody_asked_for_no_signature",
+    "application::sign_off::tests::test_a_message_opened_with_no_signature_is_not_signed_at_all",
+]
