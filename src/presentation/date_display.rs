@@ -506,28 +506,26 @@ fn plural(count: i64, unit: &str) -> String {
 
 /// Read a stored timestamp.
 ///
-/// Accepts RFC 3339, which is what sync writes, and the plainer forms that
-/// reach the cache from other places.
+/// The shapes are `common::moment`'s rather than a list kept here. This module
+/// had its own, which knew RFC 3339 and three space-separated forms and neither
+/// of the two Microsoft Graph writes. Nothing answered for those, so every
+/// reading of an Outlook event was the stored string itself,
+/// "2026-07-27T09:00:00", handed to the announcement as the words to say.
+///
+/// A moment carrying its own offset is moved to this computer's zone, because
+/// what somebody wants to hear is the hour they will be sitting down at. A
+/// clock face names an hour and nothing else, so it is read as an hour here. A
+/// whole day is midnight here; [`spoken`] asks the stored value whether it said
+/// anything about the time of day before reading a clock out.
 fn parse(stored: &str) -> Option<DateTime<Local>> {
-    let trimmed = stored.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
+    use crate::common::moment::Moment;
 
-    if let Ok(parsed) = DateTime::parse_from_rfc3339(trimmed) {
-        return Some(parsed.with_timezone(&Local));
+    let here = |clock: NaiveDateTime| Local.from_local_datetime(&clock).single();
+    match crate::common::moment::read(stored)? {
+        Moment::Fixed(at) => Some(at.with_timezone(&Local)),
+        Moment::ClockFace(clock) => here(clock),
+        Moment::WholeDay(day) => here(day.and_hms_opt(0, 0, 0)?),
     }
-    for format in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"] {
-        if let Ok(naive) = NaiveDateTime::parse_from_str(trimmed, format) {
-            return Local.from_local_datetime(&naive).single();
-        }
-        if let Ok(date) = chrono::NaiveDate::parse_from_str(trimmed, format) {
-            return Local
-                .from_local_datetime(&date.and_hms_opt(0, 0, 0)?)
-                .single();
-        }
-    }
-    None
 }
 
 #[cfg(test)]

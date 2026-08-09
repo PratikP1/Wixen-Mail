@@ -420,19 +420,14 @@ impl WhatTheAnswerCovers {
 /// zone moves it by hours and the window it is being placed in is months wide,
 /// so the only thing that decides here is the day.
 fn a_moment(stored: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    use crate::common::moment::Moment;
     use chrono::TimeZone;
-    let stored = stored.trim();
-    if let Ok(at) = chrono::DateTime::parse_from_rfc3339(stored) {
-        return Some(at.with_timezone(&chrono::Utc));
-    }
-    let clock = crate::application::calendar::CLOCK_FACES
-        .iter()
-        .find_map(|shape| chrono::NaiveDateTime::parse_from_str(stored, shape).ok())
-        .or_else(|| {
-            chrono::NaiveDate::parse_from_str(stored, WHOLE_DAY_DATE)
-                .ok()?
-                .and_hms_opt(0, 0, 0)
-        })?;
+
+    let clock = match crate::common::moment::read(stored)? {
+        Moment::Fixed(at) => return Some(at.with_timezone(&chrono::Utc)),
+        Moment::ClockFace(clock) => clock,
+        Moment::WholeDay(day) => day.and_hms_opt(0, 0, 0)?,
+    };
     chrono::Local
         .from_local_datetime(&clock)
         .earliest()
@@ -738,7 +733,10 @@ fn carry_over_local_only(merged: &mut CalendarEventEntry, held: &CalendarEventEn
 }
 
 /// How a whole-day date is written.
-const WHOLE_DAY_DATE: &str = "%Y-%m-%d";
+///
+/// The shape itself is named in `common::moment`, beside the clock faces, so
+/// nothing here can write a date the readers do not know.
+const WHOLE_DAY_DATE: &str = crate::common::moment::WHOLE_DAY;
 
 /// When an event ends, for a calendar that did not say.
 ///
@@ -2920,22 +2918,25 @@ mod tests {
             "a whole-day event is stored as a date with no time and is inside the window"
         );
 
-        // The shape this program's own editor writes: a space instead of a T,
-        // no seconds and no zone. An event made here and never yet named by a
-        // read keeps that shape for as long as it lives, so failing to place it
-        // would leave every event made in this program out of the removal pass
+        // The two shapes this program's own editor has written: a space, no
+        // seconds and no zone, which is what older rows still hold, and the T
+        // with seconds it writes now. An event made here and never yet named by
+        // a read keeps its shape for as long as it lives, so failing to place
+        // one would leave events made in this program out of the removal pass
         // for good and let a calendar fill up with events the server dropped.
         let clock = (chrono::Utc::now() + chrono::Duration::days(2)).naive_utc();
-        let mut as_the_editor_writes_it = at(2);
-        as_the_editor_writes_it.start_datetime = clock.format("%Y-%m-%d %H:%M").to_string();
-        as_the_editor_writes_it.end_datetime = (clock + chrono::Duration::hours(1))
-            .format("%Y-%m-%d %H:%M")
-            .to_string();
-        assert!(
-            stretch.would_have_named(&as_the_editor_writes_it),
-            "an event written the way this program's own editor writes one was \
-             not placed in the window at all"
-        );
+        for shape in ["%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S"] {
+            let mut as_the_editor_writes_it = at(2);
+            as_the_editor_writes_it.start_datetime = clock.format(shape).to_string();
+            as_the_editor_writes_it.end_datetime = (clock + chrono::Duration::hours(1))
+                .format(shape)
+                .to_string();
+            assert!(
+                stretch.would_have_named(&as_the_editor_writes_it),
+                "an event written the way this program's own editor writes one, \
+                 as {shape}, was not placed in the window at all"
+            );
+        }
 
         let mut unreadable = at(0);
         unreadable.start_datetime = "sometime next week".to_string();

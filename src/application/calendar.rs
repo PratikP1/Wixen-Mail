@@ -1354,7 +1354,10 @@ pub fn google_event_to_local(
 }
 
 /// How a bare date is written everywhere this program stores one.
-const WHOLE_DAY: &str = "%Y-%m-%d";
+///
+/// The shape itself is named in `common::moment`, beside the clock faces, so
+/// nothing here can write a date the readers do not know.
+const WHOLE_DAY: &str = crate::common::moment::WHOLE_DAY;
 
 /// How somebody is alerted when what is stored does not say.
 ///
@@ -1423,27 +1426,28 @@ const GOOGLE_WALL_CLOCK: &str = "%Y-%m-%dT%H:%M:%S";
 /// Nothing is returned for a value that is none of these shapes, so an
 /// unreadable time is refused rather than sent as an hour nobody meant.
 fn moment_for_google(stored: &str, zone: Option<&str>) -> Option<GoogleEventDateTime> {
+    use crate::common::moment::Moment;
     use chrono::TimeZone;
 
-    if chrono::DateTime::parse_from_rfc3339(stored).is_ok() {
-        return Some(GoogleEventDateTime {
-            date_time: Some(stored.to_string()),
-            date: None,
-            time_zone: zone.map(str::to_string),
-        });
-    }
-
-    let clock = CLOCK_FACES
-        .iter()
-        .find_map(|shape| chrono::NaiveDateTime::parse_from_str(stored, shape).ok())
-        .or_else(|| {
-            // A timed event whose time was left blank is stored as a bare date,
-            // which the editor here really does write. Midnight is what the
-            // Graph side already makes of it.
-            chrono::NaiveDate::parse_from_str(stored, "%Y-%m-%d")
-                .ok()
-                .and_then(|day| day.and_hms_opt(0, 0, 0))
-        })?;
+    // The shapes come from `common::moment` rather than a list kept here,
+    // because the same column is read for saying a date out loud and that list
+    // knew two shapes fewer.
+    let clock = match crate::common::moment::read(stored)? {
+        // Already an instant, and Google wants an instant, so it goes back
+        // exactly as it was stored rather than rebuilt from its parts.
+        Moment::Fixed(_) => {
+            return Some(GoogleEventDateTime {
+                date_time: Some(stored.trim().to_string()),
+                date: None,
+                time_zone: zone.map(str::to_string),
+            });
+        }
+        Moment::ClockFace(clock) => clock,
+        // A timed event whose time was left blank is stored as a bare date,
+        // which the editor here really does write. Midnight is what the Graph
+        // side already makes of it.
+        Moment::WholeDay(day) => day.and_hms_opt(0, 0, 0)?,
+    };
 
     if let Some(named) = zone.filter(|named| !named.is_empty()) {
         return Some(GoogleEventDateTime {
@@ -1700,25 +1704,6 @@ const GRAPH_WALL_CLOCK: &str = "%Y-%m-%dT%H:%M:%S";
 /// What the zone is called when a time already said which moment it meant.
 const COORDINATED_UNIVERSAL_TIME: &str = "UTC";
 
-/// The shapes a stored time arrives in that are a clock face already.
-///
-/// Graph writes seven digits of fraction, this program's own editor writes a
-/// space and no seconds, and a whole day is a bare date. None of the three
-/// carries an offset, so each keeps its clock face and the zone stored with it.
-///
-/// Shared with the calendar-server sync, which has to place a stored event
-/// inside the stretch of time it asked the server about. Two copies of this list
-/// would agree today and drift the first time either was edited, and the cost of
-/// their disagreeing is an event nobody can place, which that sync then keeps
-/// for ever.
-pub(crate) const CLOCK_FACES: [&str; 5] = [
-    "%Y-%m-%dT%H:%M:%S%.f",
-    "%Y-%m-%dT%H:%M:%S",
-    "%Y-%m-%dT%H:%M",
-    "%Y-%m-%d %H:%M:%S",
-    "%Y-%m-%d %H:%M",
-];
-
 /// A stored time, written the way Graph reads one.
 ///
 /// A time that carries its own offset already says which moment it means, so it
@@ -1740,59 +1725,58 @@ pub(crate) const CLOCK_FACES: [&str; 5] = [
 /// Nothing is returned for a value that is none of these shapes, so an unreadable
 /// time is refused rather than sent as an hour nobody meant.
 fn wall_clock_for_graph(stored: &str, zone: Option<&str>) -> Option<MsDateTimeTimeZone> {
+    use crate::common::moment::Moment;
     use chrono::TimeZone;
-
-    if let Ok(moment) = chrono::DateTime::parse_from_rfc3339(stored) {
-        return Some(MsDateTimeTimeZone {
-            date_time: moment
-                .with_timezone(&chrono::Utc)
-                .format(GRAPH_WALL_CLOCK)
-                .to_string(),
-            time_zone: COORDINATED_UNIVERSAL_TIME.to_string(),
-        });
-    }
 
     // An empty name names nothing, which is the answer the Google side already
     // gives it. Passed through, it reached Graph as a `timeZone` of "" beside a
     // clock face, which is an hour nobody named.
     let named = zone.map(str::trim).filter(|named| !named.is_empty());
 
-    for shape in CLOCK_FACES {
-        let Ok(clock) = chrono::NaiveDateTime::parse_from_str(stored, shape) else {
-            continue;
-        };
-        let Some(named) = named else {
-            // `earliest` rather than one answer, because the hour a clock skips
-            // forward over does not exist and an event refused for being an hour
-            // that never happened helps nobody. The same choice as the Google
-            // side, for the same reason.
-            let here = chrono::Local.from_local_datetime(&clock).earliest()?;
-            return Some(MsDateTimeTimeZone {
-                date_time: here
-                    .with_timezone(&chrono::Utc)
-                    .format(GRAPH_WALL_CLOCK)
-                    .to_string(),
-                time_zone: COORDINATED_UNIVERSAL_TIME.to_string(),
-            });
-        };
-        return Some(MsDateTimeTimeZone {
-            date_time: clock.format(GRAPH_WALL_CLOCK).to_string(),
-            time_zone: named.to_string(),
-        });
+    // The shapes come from `common::moment` rather than a list kept here. This
+    // list and the one the reader kept disagreed by two shapes, both of them
+    // ones Graph itself sends.
+    match crate::common::moment::read(stored)? {
+        Moment::Fixed(moment) => Some(MsDateTimeTimeZone {
+            date_time: moment
+                .with_timezone(&chrono::Utc)
+                .format(GRAPH_WALL_CLOCK)
+                .to_string(),
+            time_zone: COORDINATED_UNIVERSAL_TIME.to_string(),
+        }),
+        Moment::ClockFace(clock) => {
+            let Some(named) = named else {
+                // `earliest` rather than one answer, because the hour a clock
+                // skips forward over does not exist and an event refused for
+                // being an hour that never happened helps nobody. The same
+                // choice as the Google side, for the same reason.
+                let here = chrono::Local.from_local_datetime(&clock).earliest()?;
+                return Some(MsDateTimeTimeZone {
+                    date_time: here
+                        .with_timezone(&chrono::Utc)
+                        .format(GRAPH_WALL_CLOCK)
+                        .to_string(),
+                    time_zone: COORDINATED_UNIVERSAL_TIME.to_string(),
+                });
+            };
+            Some(MsDateTimeTimeZone {
+                date_time: clock.format(GRAPH_WALL_CLOCK).to_string(),
+                time_zone: named.to_string(),
+            })
+        }
+        // A whole day, which Graph is told is a whole day and therefore wants
+        // at midnight. Moving that midnight into universal time would make it
+        // some other hour and Graph refuses a whole-day event that does not
+        // start on one, so this one really is a clock face left where it
+        // stands.
+        Moment::WholeDay(day) => Some(MsDateTimeTimeZone {
+            date_time: day
+                .and_hms_opt(0, 0, 0)?
+                .format(GRAPH_WALL_CLOCK)
+                .to_string(),
+            time_zone: named.unwrap_or(COORDINATED_UNIVERSAL_TIME).to_string(),
+        }),
     }
-
-    // A whole day, which Graph is told is a whole day and therefore wants at
-    // midnight. Moving that midnight into universal time would make it some
-    // other hour and Graph refuses a whole-day event that does not start on
-    // one, so this one really is a clock face left where it stands.
-    let whole_day = chrono::NaiveDate::parse_from_str(stored, "%Y-%m-%d").ok()?;
-    Some(MsDateTimeTimeZone {
-        date_time: whole_day
-            .and_hms_opt(0, 0, 0)?
-            .format(GRAPH_WALL_CLOCK)
-            .to_string(),
-        time_zone: named.unwrap_or(COORDINATED_UNIVERSAL_TIME).to_string(),
-    })
 }
 
 /// What a stored event becomes on its way to Graph.

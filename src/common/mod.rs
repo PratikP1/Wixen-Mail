@@ -5,6 +5,9 @@
 pub mod answering;
 pub mod error;
 pub mod logging;
+/// The shapes a stored moment takes, read here rather than listed again in
+/// every module that reads one.
+pub mod moment;
 pub mod paths;
 /// A value and the temporary folder it lives in, removed together.
 #[cfg(test)]

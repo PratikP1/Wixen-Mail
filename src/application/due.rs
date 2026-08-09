@@ -175,23 +175,22 @@ pub fn what_is_due<'a>(
 }
 
 /// Read a stored time, in the forms the cache holds.
+///
+/// The shapes are `common::moment`'s. The list kept here knew two of them and
+/// neither had a `T` in it, so a reminder whose time came from Outlook or from
+/// the event editor was read as nothing and never went off.
 fn parse(stored: &str) -> Option<DateTime<Local>> {
+    use crate::common::moment::Moment;
     use chrono::TimeZone;
-    let trimmed = stored.trim();
-    if let Ok(parsed) = DateTime::parse_from_rfc3339(trimmed) {
-        return Some(parsed.with_timezone(&Local));
+
+    let here = |clock: chrono::NaiveDateTime| Local.from_local_datetime(&clock).single();
+    match crate::common::moment::read(stored)? {
+        Moment::Fixed(at) => Some(at.with_timezone(&Local)),
+        Moment::ClockFace(clock) => here(clock),
+        // A date with no time is due at the start of that day, which is what a
+        // reminder set for a day means.
+        Moment::WholeDay(day) => here(day.and_hms_opt(0, 0, 0)?),
     }
-    for format in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"] {
-        if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(trimmed, format) {
-            return Local.from_local_datetime(&naive).single();
-        }
-    }
-    // A date with no time is due at the start of that day, which is what a
-    // reminder set for a day means.
-    chrono::NaiveDate::parse_from_str(trimmed, "%Y-%m-%d")
-        .ok()
-        .and_then(|date| date.and_hms_opt(0, 0, 0))
-        .and_then(|at| Local.from_local_datetime(&at).single())
 }
 
 /// The stored form of a moment, for writing a snooze back.
@@ -238,6 +237,31 @@ mod tests {
         assert_eq!(due.len(), 1);
         assert_eq!(due[0].id, "r1");
         assert!(!due[0].late, "due this minute is not overdue");
+    }
+
+    /// A reminder stored in any of the shapes the cache holds comes due.
+    ///
+    /// This module kept a list of two shapes and neither of them had a `T` in
+    /// it, so a reminder whose time came down from Outlook, or was written by
+    /// the event editor, was read as nothing at all and never went off. Nothing
+    /// said so: an unreadable time and a time that has not arrived yet are both
+    /// an empty answer here.
+    #[test]
+    fn test_a_reminder_goes_off_whichever_shape_its_time_was_stored_in() {
+        for stored in [
+            "2026-07-26T09:00:00",
+            "2026-07-26T09:00:00.0000000",
+            "2026-07-26T09:00",
+            "2026-07-26 09:00:00",
+            "2026-07-26 09:00",
+        ] {
+            let rows = one("r1", stored);
+
+            let due = what_is_due(borrowed(&rows), at("2026-07-26 09:00"), &nothing_raised());
+
+            assert_eq!(due.len(), 1, "stored as {stored}");
+            assert!(!due[0].late, "stored as {stored}");
+        }
     }
 
     #[test]

@@ -287,6 +287,40 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A date stored by Outlook, or by this program's own event editor, is read out
+  as a date again.** An event whose time is stored as `2026-07-27T09:00:00` was
+  handed back unchanged, so the words the reading asked to have said were that
+  string. It now reads "July 27, 2026 at 9:00 AM".
+
+  Two separate things put values of that shape into the cache. Microsoft Graph
+  writes the time on every event as `2026-07-27T09:00:00.0000000`, and the code
+  that turns a stored value into words has never known that shape, so every
+  event from an Outlook calendar has read out this way for as long as Outlook
+  calendars have worked. The event editor here started writing
+  `2026-07-27T09:00:00` in the previous round of changes, so events made and
+  moved on this computer joined them.
+
+  Underneath, the part that reads a stored time and the part that writes one
+  each kept their own list of the shapes a stored moment can take, and the two
+  lists disagreed by exactly those two shapes. There is now one list, in one
+  place, and everything that reads a stored time uses it.
+
+  The same change fixes a reminder that never went off. The reminder code kept a
+  third list, of two shapes, and neither had a `T` in it, so a reminder whose
+  time came from Outlook or from the event editor was read as no time at all and
+  was passed over silently on every check.
+
+  A whole-day date still reads as a day with no clock reading on it, and a
+  stored value that is none of the known shapes is still said as it stands
+  rather than dropped or guessed at.
+
+  How this was measured: the whole way round, from moving a time in the event
+  editor, through the value that lands in the stored column, to the words the
+  row hands to the announcement when you press Space on it.
+
+  Not verified: no screen reader run. What was checked is the text asked to be
+  said, not how any particular screen reader says it.
+
 - **Importing two cards for one person no longer makes two contacts and loses an
   address at your address book.** Several address books export one card per
   address rather than one card carrying the whole list. Reading a file like

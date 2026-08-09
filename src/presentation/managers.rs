@@ -3194,6 +3194,80 @@ mod tests {
         assert_eq!(start.time_zone.as_deref(), Some("America/New_York"));
     }
 
+    /// Fixed rather than read from the machine, so this reads the same
+    /// wherever it runs.
+    fn aloud() -> crate::presentation::read_aloud::Reading {
+        use crate::presentation::date_display::{
+            Clock, DateOrder, DateSettings, DateStyle, DateWording,
+        };
+        use chrono::TimeZone;
+        crate::presentation::read_aloud::Reading {
+            dates: DateSettings {
+                style: DateStyle::Absolute,
+                order: DateOrder::MonthFirst,
+                wording: DateWording::Verbal,
+                clock: Clock::TwelveHour,
+            },
+            now: chrono::Local
+                .with_ymd_and_hms(2026, 7, 26, 12, 0, 0)
+                .single()
+                .expect("a real moment"),
+        }
+    }
+
+    /// Move an event's time and listen to the row afterwards.
+    ///
+    /// The whole way round: the editor writes the moment, the cache column
+    /// holds it, and the reading turns it back into words. Asserting on the
+    /// stored column alone is what let this through. `2026-07-27T10:30:00` is
+    /// a correct thing to store, and the reader did not know that shape, so the
+    /// words the reading asked to have said were the stored string itself.
+    #[test]
+    fn test_moving_an_events_time_leaves_a_moment_that_is_read_out_as_a_date() {
+        use crate::presentation::read_aloud::ReadAloud;
+
+        let stored = as_a_provider_sent_it("2026-07-27 09:00", "2026-07-27 09:15");
+        let mut moved = only_the_summary_retyped(&stored, "Standup");
+        moved.start_time = "10:30".to_string();
+        moved.end_time = "11:00".to_string();
+
+        let edited = event_with_edits(stored, &moved);
+
+        assert_eq!(edited.start_datetime, "2026-07-27T10:30:00");
+        let said = crate::presentation::ui_types::CalendarEventItem::from_entry(&edited)
+            .read_short(aloud());
+        assert_eq!(said, "Standup. July 27, 2026 at 10:30 AM");
+    }
+
+    /// Whatever the editor writes, the shared shapes can read.
+    ///
+    /// The three endings it can put on a moment: nothing at all, the offset the
+    /// provider sent, and a `Z`. A writer that invents a fourth shape breaks
+    /// every reading of that event, and this is the check that would say so
+    /// rather than a bug report from somebody who heard it.
+    #[test]
+    fn test_every_moment_the_editor_writes_is_a_shape_the_shared_reader_knows() {
+        for sent in [
+            "2026-07-27T09:00:00",
+            "2026-07-27T09:00:00+05:30",
+            "2026-07-27T09:00:00Z",
+            "2026-07-27 09:00",
+            "2026-07-27",
+        ] {
+            let stored = as_a_provider_sent_it(sent, sent);
+            let mut moved = only_the_summary_retyped(&stored, "Standup");
+            moved.start_time = "10:30".to_string();
+            moved.end_time = "11:00".to_string();
+
+            let written = event_with_edits(stored, &moved).start_datetime;
+
+            assert!(
+                crate::common::moment::read(&written).is_some(),
+                "stored as {sent}, the editor wrote {written}, which nothing can read"
+            );
+        }
+    }
+
     #[test]
     fn test_moving_an_event_with_an_offset_and_no_zone_name_keeps_the_offset() {
         // Named rather than hidden. An event carrying an offset and no zone

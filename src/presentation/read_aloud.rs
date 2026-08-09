@@ -949,6 +949,68 @@ mod tests {
         );
     }
 
+    /// Every shape a stored moment arrives in is read as a date, not spelled
+    /// out.
+    ///
+    /// Asked here rather than of `date_display::parse` because this reading is
+    /// the text handed to the announcement, and a parser checked on its own
+    /// says nothing about what that text ends up being. Graph writes seven
+    /// digits of fraction and this program's own editor writes a `T` and
+    /// seconds, and the reading for both was the stored string unchanged.
+    ///
+    /// The two that carry their own offset are checked by shape rather than by
+    /// wording, because the hour they land on is this computer's and the test
+    /// has to read the same on every machine it runs on.
+    #[test]
+    fn test_every_shape_a_stored_moment_takes_is_read_as_a_date() {
+        let read = |start: &str| {
+            let mut moved = event();
+            moved.start = start.to_string();
+            moved.end = String::new();
+            moved.read_short(aloud())
+        };
+
+        for zoneless in [
+            "2026-07-27T10:30:00",
+            "2026-07-27T10:30:00.0000000",
+            "2026-07-27T10:30",
+            "2026-07-27 10:30:00",
+            "2026-07-27 10:30:00.0000000",
+            "2026-07-27 10:30",
+        ] {
+            assert_eq!(
+                read(zoneless),
+                "Standup. July 27, 2026 at 10:30 AM",
+                "stored as {zoneless}"
+            );
+        }
+
+        for carries_its_own_offset in ["2026-07-27T10:30:00+05:30", "2026-07-27T10:30:00Z"] {
+            let said = read(carries_its_own_offset);
+            assert!(
+                said.contains(", 2026 at ") && !said.contains('T'),
+                "stored as {carries_its_own_offset}, read as {said}"
+            );
+        }
+    }
+
+    /// A whole day is a date and no clock reading, and a value nothing here
+    /// understands is still said as it stands rather than dropped or panicked
+    /// over.
+    #[test]
+    fn test_a_whole_day_keeps_its_shape_and_an_unreadable_moment_is_still_said() {
+        let read = |start: &str| {
+            let mut moved = event();
+            moved.start = start.to_string();
+            moved.end = String::new();
+            moved.read_short(aloud())
+        };
+
+        assert_eq!(read("2026-07-27"), "Standup. July 27, 2026");
+        assert_eq!(read("not a moment"), "Standup. not a moment");
+        assert_eq!(read("2026-13-45T99:99:99"), "Standup. 2026-13-45T99:99:99");
+    }
+
     #[test]
     fn test_an_all_day_event_says_so_in_the_short_reading_too() {
         // The short form is what the first Space press gives, so an all day

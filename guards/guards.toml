@@ -984,6 +984,7 @@ before = """    let start = moment_after_the_edit(
 after = """    let start = edited.start_datetime.clone();
     let end = edited.end_datetime.clone();"""
 red = [
+    "presentation::managers::tests::test_a_zone_name_that_names_nothing_does_not_get_to_decide",
     "presentation::managers::tests::test_correcting_a_spelling_keeps_a_clock_face_and_the_zone_it_is_named_in",
     "presentation::managers::tests::test_correcting_a_spelling_keeps_a_moment_written_in_universal_time",
     "presentation::managers::tests::test_correcting_a_spelling_keeps_the_moment_to_the_second",
@@ -996,6 +997,7 @@ red = [
     "presentation::managers::tests::test_moving_an_event_to_a_different_time_moves_it_in_the_zone_it_is_in",
     "presentation::managers::tests::test_moving_an_event_with_an_offset_and_no_zone_name_keeps_the_offset",
     "presentation::managers::tests::test_moving_an_event_written_in_universal_time_keeps_it_there",
+    "presentation::managers::tests::test_moving_an_events_time_leaves_a_moment_that_is_read_out_as_a_date",
     "presentation::managers::tests::test_putting_a_time_on_a_whole_day_event_does_not_borrow_midnights_zone",
 ]
 
@@ -1023,6 +1025,7 @@ before = """    let marker = match named_zone.map(str::trim) {
     };"""
 after = """    let marker = "";"""
 red = [
+    "presentation::managers::tests::test_a_zone_name_that_names_nothing_does_not_get_to_decide",
     "presentation::managers::tests::test_correcting_a_spelling_on_a_repeating_event_keeps_the_offset",
     "presentation::managers::tests::test_moving_an_event_to_a_different_time_moves_it_in_the_zone_it_is_in",
     "presentation::managers::tests::test_moving_an_event_with_an_offset_and_no_zone_name_keeps_the_offset",
@@ -1065,20 +1068,62 @@ red = [
 [[guard]]
 name = "an hour with no zone means an hour here, to Outlook as well as to Google"
 file = "src/application/calendar.rs"
-before = """            let here = chrono::Local.from_local_datetime(&clock).earliest()?;
-            return Some(MsDateTimeTimeZone {
-                date_time: here
-                    .with_timezone(&chrono::Utc)
-                    .format(GRAPH_WALL_CLOCK)
-                    .to_string(),
-                time_zone: COORDINATED_UNIVERSAL_TIME.to_string(),
-            });"""
-after = """            return Some(MsDateTimeTimeZone {
-                date_time: clock.format(GRAPH_WALL_CLOCK).to_string(),
-                time_zone: COORDINATED_UNIVERSAL_TIME.to_string(),
-            });"""
+before = """                let here = chrono::Local.from_local_datetime(&clock).earliest()?;
+                return Some(MsDateTimeTimeZone {
+                    date_time: here
+                        .with_timezone(&chrono::Utc)
+                        .format(GRAPH_WALL_CLOCK)
+                        .to_string(),
+                    time_zone: COORDINATED_UNIVERSAL_TIME.to_string(),
+                });"""
+after = """                return Some(MsDateTimeTimeZone {
+                    date_time: clock.format(GRAPH_WALL_CLOCK).to_string(),
+                    time_zone: COORDINATED_UNIVERSAL_TIME.to_string(),
+                });"""
 red = [
     "application::calendar::tests::test_the_two_providers_are_given_the_same_hour_in_the_shape_each_one_reads",
+]
+
+# -- The shapes a stored moment can take ------------------------------------
+#
+# One column in one table, written five ways by four sources, and read by the
+# announcement, by the two provider writers, by the calendar-server sync and by
+# the reminder check. Three of those kept a list of the shapes and each knew a
+# different subset. The two the reader was missing are the two Microsoft Graph
+# writes, so every Outlook event was handed to the announcement as the stored
+# string, and nothing was red: an unreadable moment comes back exactly as it was
+# stored, which is the right fallback and looks the same as a date nobody has
+# checked.
+#
+# The break takes the two shapes written with a T back out. Twelve tests in five
+# modules go red, which is the shape of the thing: one list, read everywhere.
+
+[[guard]]
+name = "a moment written with a T is one the reader knows"
+file = "src/common/moment.rs"
+before = """const CLOCK_FACES: [&str; 4] = [
+    "%Y-%m-%dT%H:%M:%S%.f",
+    "%Y-%m-%dT%H:%M",
+    "%Y-%m-%d %H:%M:%S%.f",
+    "%Y-%m-%d %H:%M",
+];"""
+after = """const CLOCK_FACES: [&str; 2] = [
+    "%Y-%m-%d %H:%M:%S%.f",
+    "%Y-%m-%d %H:%M",
+];"""
+red = [
+    "application::caldav_sync::tests::test_what_an_answer_covers_decides_which_absences_mean_anything",
+    "application::calendar::tests::test_every_shape_a_stored_time_comes_in_reaches_microsoft_readable",
+    "application::due::tests::test_a_reminder_goes_off_whichever_shape_its_time_was_stored_in",
+    "common::moment::tests::test_a_fraction_of_a_second_is_read_whichever_separator_it_uses",
+    "common::moment::tests::test_a_value_padded_with_spaces_is_still_the_moment_it_names",
+    "common::moment::tests::test_an_offset_is_not_mistaken_for_a_clock_face",
+    "common::moment::tests::test_every_zoneless_shape_the_cache_holds_is_read_as_a_clock_face",
+    "presentation::managers::tests::test_correcting_a_spelling_keeps_a_clock_face_and_the_zone_it_is_named_in",
+    "presentation::managers::tests::test_every_moment_the_editor_writes_is_a_shape_the_shared_reader_knows",
+    "presentation::managers::tests::test_moving_an_event_that_names_a_zone_across_summer_time_keeps_the_clock_face",
+    "presentation::managers::tests::test_moving_an_events_time_leaves_a_moment_that_is_read_out_as_a_date",
+    "presentation::read_aloud::tests::test_every_shape_a_stored_moment_takes_is_read_as_a_date",
 ]
 
 # -- Which addresses say two records are one person -------------------------
