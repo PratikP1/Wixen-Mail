@@ -297,6 +297,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   sync, with nothing typed again. Calendar and contact changes already said
   this; task changes now say the same sentence.
 
+- **The working-day hours apply as soon as they are saved.** The calendar's
+  note about an event before or after the working day was built from the
+  hours read when the application started, so changing them in Settings
+  looked like a setting that did nothing until the next start. The rows now
+  use the hours that were just saved.
+
 - **A date without a time is spoken as a date again, not as hours since
   midnight.** Under the relative date style, the one the product ships with, a
   task due on a day was announced "Due: 12 hours ago" at noon of that very day,

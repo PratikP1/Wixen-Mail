@@ -412,6 +412,12 @@ pub enum UIUpdate {
     ContactsSyncComplete(Box<crate::application::contacts_sync::SyncResult>),
     /// Calendar events loaded for display
     CalendarEventsLoaded(Vec<CalendarEventItem>),
+    /// The working-day hours were saved in Settings.
+    ///
+    /// Carried as an update rather than applied where it was saved, because
+    /// the calendar rows read the hours from shared state and repainting the
+    /// list may only happen on the thread that owns it.
+    WorkingDayChanged(crate::application::reading_habits::WorkingDay),
     /// Calendar sync completed
     CalendarSyncComplete {
         created: usize,

@@ -240,6 +240,11 @@ pub struct WxUIState {
     /// Which note the editor is currently showing, so a save knows what it is
     /// writing back to.
     pub selected_note_id: Option<String>,
+    /// The hours somebody works, so a calendar row outside them says so.
+    ///
+    /// In state rather than captured by the paint callback, so saving new
+    /// hours in Settings changes what the rows say without a restart.
+    pub working_day: crate::application::reading_habits::WorkingDay,
 }
 
 impl Default for WxUIState {
@@ -271,6 +276,7 @@ impl Default for WxUIState {
             tasks: Vec::new(),
             events: Vec::new(),
             selected_note_id: None,
+            working_day: crate::application::reading_habits::WorkingDay::default(),
         }
     }
 }
@@ -709,8 +715,10 @@ impl WxMailApp {
                 .map(date_settings_from)
                 .unwrap_or_default();
             // The hours somebody actually works, so an event outside them
-            // says so. Read once here rather than per painted cell.
-            let working_day = stored_config
+            // says so. Written into state rather than held here: the paint
+            // callback reads state, so a save in Settings can change what the
+            // rows say without a restart.
+            lock_state(&state).working_day = stored_config
                 .as_ref()
                 .map(|cfg| {
                     crate::application::reading_habits::WorkingDay::from_setting(
@@ -1043,7 +1051,7 @@ impl WxMailApp {
                             .get(row)
                             .map(|c| pim_rows::contact_cell(c, column)),
                         "calendar" => s.events.get(row).map(|e| {
-                            pim_rows::event_cell(e, column, date_settings, now, working_day)
+                            pim_rows::event_cell(e, column, date_settings, now, s.working_day)
                         }),
                         "reminders" => s
                             .reminders
@@ -6363,11 +6371,19 @@ fn handle_settings(
                     &new_config.feedback_channels,
                 ),
             );
+            // Through the same reading every other consumer uses, so the
+            // running application never holds a pair the stored copy would
+            // have been corrected to.
+            let working_day = crate::application::reading_habits::WorkingDay::from_setting(
+                new_config.working_day_starts,
+                new_config.working_day_ends,
+            );
             *mgr.app_config_mut() = *new_config;
             if let Err(e) = mgr.save() {
                 tracing::error!("Failed to save settings: {}", e);
                 send_status(tx, rt, &format!("Settings save error: {}", e));
             } else {
+                let _ = tx.try_send(UIUpdate::WorkingDayChanged(working_day));
                 send_status(tx, rt, "Settings saved");
             }
         }
@@ -6629,6 +6645,17 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             for err in &result.errors {
                 tracing::warn!("Contacts sync error: {}", err);
             }
+        }
+        UIUpdate::WorkingDayChanged(day) => {
+            let rows = {
+                let mut s = lock_state(state);
+                s.working_day = *day;
+                s.events.len()
+            };
+            // Setting the count again is what makes a virtual list ask for
+            // every visible cell afresh; nothing here announces anything,
+            // because the row text is the announcement.
+            pim.cal_event_list.set_item_count(rows as i64);
         }
         UIUpdate::CalendarEventsLoaded(events) => {
             lock_state(state).events = events.clone();
@@ -10132,6 +10159,18 @@ mod tests {
                 "a change that was put back said nothing about it: {said}"
             );
         }
+    }
+
+    #[test]
+    fn test_the_state_starts_with_the_usual_working_day() {
+        // The calendar's paint callback reads the working day from state, so
+        // state has to hold a sensible answer before the stored settings are
+        // read, and after them it holds whatever was saved: that is what lets
+        // a save in Settings change the rows without a restart.
+        assert_eq!(
+            super::WxUIState::default().working_day,
+            crate::application::reading_habits::WorkingDay::default()
+        );
     }
 
     /// A message, for tests that only care that one exists.
