@@ -57,9 +57,23 @@ pub fn ask_what_is_allowed(parent: &Frame) -> Allowed {
     // in every announcement about the control and a four-sentence one is read
     // in full each time somebody arrows past.
     //
-    // The visible label is marked as belonging to the button rather than
-    // named in its own right, so it is not read twice: once as the button's
-    // description and again as the text underneath it.
+    // It is in the accessibility tree twice, and nothing here can take one
+    // of them out. There is no way through this binding to say that a piece
+    // of text belongs to a control: what `set_accessible_name` writes is a
+    // name, and a static text's name is its own words whether anything sets
+    // one or not. So what each answer costs is heard as the button's
+    // description when the button takes focus, and again as the text under
+    // it when a screen reader reads the window from the top.
+    //
+    // Both are kept on purpose. The description is the copy that reaches a
+    // reader working through Microsoft Active Accessibility at the moment
+    // the decision is being made, and it was missing once: three buttons
+    // that read correctly and three explanations of what each one costs that
+    // nobody ever heard. The words on screen are the only copy a sighted
+    // reader gets, and the only copy a reader working through UI Automation
+    // gets, because a description set here never reaches that tree at all.
+    // Dropping either takes the sentence away from somebody, so what it
+    // costs is hearing it twice on the way down the window.
     let group = StaticBoxSizerBuilder::new_with_label(
         Orientation::Vertical,
         &dialog,

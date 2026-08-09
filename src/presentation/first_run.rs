@@ -205,6 +205,41 @@ mod tests {
     }
 
     #[test]
+    fn test_what_each_answer_costs_rides_on_the_button_and_on_the_screen() {
+        // Both, deliberately, because the two reach different people and
+        // dropping either takes the sentence away from somebody.
+        //
+        // The description is what a screen reader working through Microsoft
+        // Active Accessibility reads when the button takes focus, which is the
+        // moment somebody is deciding. It was missing once: three radio
+        // buttons that read correctly and three explanations of what each one
+        // costs that nobody ever heard.
+        //
+        // The words on screen are the only copy a sighted reader gets, and the
+        // only copy a reader working through UI Automation gets, because a
+        // description set here never reaches that tree at all.
+        //
+        // Read from the source, the same way the focus rule above is, because
+        // reaching the real answer needs a window. Whether a screen reader
+        // speaks either of them is a separate question and this is not it.
+        let window = the_window_that_draws_it();
+
+        assert!(
+            window.contains(
+                "set_accessible_name_and_description(&button, choice.label(), choice.explanation())"
+            ),
+            "what an answer costs is no longer the button's description, so \
+             nobody hears it at the moment they are choosing"
+        );
+        assert!(
+            window.contains(".with_label(choice.explanation())"),
+            "what an answer costs is no longer on the screen, so a sighted \
+             reader and a reader working through UI Automation have no copy \
+             of it at all"
+        );
+    }
+
+    #[test]
     fn test_the_choices_go_from_safest_to_riskiest() {
         // Safest at the top, so arrowing down widens. The other order would
         // mean arrowing down to become safer, having started on the riskiest
