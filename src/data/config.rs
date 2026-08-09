@@ -82,10 +82,10 @@ pub struct AppConfig {
     pub check_spelling_before_send: bool,
     /// What Wixen Mail may change at a server, for every account.
     ///
-    /// Defaults to tasks, contacts and calendar but not mail. A config file
-    /// written before this existed gets that too, which is the point: an
-    /// upgrade should take permissions away rather than carry on sending from
-    /// code that has never been proved.
+    /// Defaults to `default_allowed` below, which names the answer instead of
+    /// saying it again. A config file written before this existed gets the same
+    /// thing, which is the point: an upgrade should take permissions away
+    /// rather than carry on sending from code that has never been proved.
     #[serde(default = "default_allowed")]
     pub allowed_changes: crate::application::allowed::Allowed,
     /// What one account may change, when it differs from the setting above.
@@ -256,9 +256,17 @@ pub struct AppConfig {
 
 /// What a new or upgraded installation may change.
 ///
-/// Tasks, contacts and the calendar, but not mail. Somebody can point this at
-/// their real account and use it all day, and the worst that happens is a task
-/// in the wrong place. Sending is the deliberate step afterwards.
+/// `Allowed::FOR_TESTING` holds the answer and the reason for it. This names it
+/// rather than saying it a second time, and that is the whole point: a sentence
+/// repeating a fact the code already holds goes stale on its own, and nothing
+/// here could have stopped it. The check in `tests/house_style.rs` reads prose
+/// that names the setting the way the settings screen does, and no line in this
+/// file does, so a sentence here claiming the opposite of the truth was
+/// measured passing every test in the project.
+///
+/// Ten of those sentences have been written wrong in this repository. A
+/// sentence a check reads may state the answer, because it will be held to it.
+/// A sentence no check reads should name the answer instead.
 fn default_allowed() -> crate::application::allowed::Allowed {
     crate::application::allowed::Allowed::FOR_TESTING
 }
