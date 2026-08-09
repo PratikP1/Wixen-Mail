@@ -174,6 +174,37 @@ fn test_nothing_offers_a_setting_per_account_that_no_screen_writes() {
 // which of the two answers the sentence is about and whether it says anything
 // reaches a provider, and asks the code which is true. Nothing here writes down
 // what the shipped answer is, so if that answer changes this follows it.
+//
+// It reads English with word lists, so it cannot be complete, and the thing it
+// must not do is say it is. An earlier version of this comment said a fifth
+// copy of the sentence would fail whatever it said. Ten minutes of trying broke
+// that: "everything about a person stays on this computer, and no contact is
+// ever sent to Google" was quiet against the whole tree, because "on" is a
+// preposition far more often than it is a switch position and it sat between
+// the installation-time word and the negative that was making the claim.
+//
+// So, measured rather than hoped for. What it catches, each taken from a
+// sentence written to get past it and then written into the test below:
+//
+//   * the nine wordings already in the tree, and the corrections that
+//     replaced them, told apart from each other
+//   * a preposition standing between the two: "stays on this computer",
+//     "keeps your tasks on your own machine"
+//   * a preposition whose object is a place word: "stored on here"
+//   * a refusal said with a place or a person rather than with "not":
+//     "kept here and sent nowhere"
+//   * either half said about the other: the same sentence about mail and
+//     about contacts gets two answers, because the code holds two
+//   * installation time said as a bare word: "on a fresh install",
+//     "Allow Changes ships switched on"
+//
+// What walks past it, every one of these measured against the whole tree
+// rather than reasoned about, is on `what_it_says_reaches_a_provider` and on
+// `PUTS_A_SENTENCE_AT_INSTALLATION_TIME`. Read them before trusting a quiet
+// run. The short version is that a word from either list used about something
+// other than what leaves this computer still beats the word making the claim
+// when it sits nearer, and that this reads one sentence that names the setting
+// and nothing else.
 
 /// The files this rule reads: ours, apart from this one.
 ///
@@ -193,19 +224,38 @@ fn ours_apart_from_this_file() -> Vec<PathBuf> {
 
 /// Words that put a sentence at installation time.
 ///
-/// A closed class, and about *when* rather than about how somebody happened to
-/// word it. "default" on its own covers "the default", "by default" and "the
-/// shipped default", which between them are seven of the nine copies; the list
-/// this replaces held four whole wordings and so knew none of the five that
-/// followed.
+/// About *when* rather than about how somebody happened to word it, and cut
+/// back to the bare word wherever a bare word will do. "default" on its own
+/// covers "the default", "by default" and "the shipped default", which between
+/// them are seven of the nine copies; the list this replaces held four whole
+/// wordings and so knew none of the five that followed.
+///
+/// The same mistake was still here in the second half of the list, though. It
+/// held "new installation" and "new install", so "on a fresh install" walked
+/// past, and "shipped" without "ships", so "Allow Changes ships switched on for
+/// mail" walked past. Both are the bare word now.
+///
+/// It is not a closed class and this file should stop saying it is. English has
+/// more ways of putting a sentence at installation time than a list can hold,
+/// and each of these was measured walking past the whole tree: "As it comes,
+/// Allow Changes sends no contact to Google", "Allow Changes arrives refusing
+/// every change to a contact", "Straight after setup, Allow Changes refuses
+/// every change to a contact". None of them is closeable by another word, only
+/// by another wording, which is the thing this list stopped being.
+///
+/// The scope rule is the other half of the same limit. Prose that never names
+/// the setting is not read at all, so "By default your contacts stay on this
+/// computer" is quiet. That is deliberate, for the reason on
+/// [`about_the_setting`], and it is still a false sentence nobody is told
+/// about.
 const PUTS_A_SENTENCE_AT_INSTALLATION_TIME: &[&str] = &[
     "default",
     "defaults",
     "shipped",
-    "new installation",
-    "new install",
+    "ships",
+    "installation",
+    "install",
     "out of the box",
-    "when you install",
     "a new account starts",
     "starts out with",
 ];
@@ -235,6 +285,14 @@ const NOTHING_GOES_OUT: &[&str] = &[
     "refuses",
     "refused",
     "read-only",
+    // English says a refusal with a place or a person as readily as with
+    // "not", and a sentence built that way carries no other negative for the
+    // reading to find: "a contact is kept here and sent nowhere" was quiet
+    // against the whole tree.
+    "nowhere",
+    "nobody",
+    "neither",
+    "nor",
 ];
 
 /// The other half of [`NOTHING_GOES_OUT`].
@@ -252,6 +310,92 @@ const SOMETHING_GOES_OUT: &[&str] = &[
     "goes",
     "reach",
     "reaches",
+];
+
+/// Words above that English uses as prepositions as well.
+///
+/// "on" is the whole list and it is the reason this exists. It is the word for
+/// a switch that is on, and it is also one of the commonest prepositions in the
+/// language, and this project's own prose says "on this computer" and "on a
+/// server" constantly. Read as a switch wherever it appeared, it let a false
+/// sentence stand between the installation-time word and the negative that was
+/// really making the claim, and the sentence came out as permission:
+/// "everything about a person stays *on* this computer, and no contact is ever
+/// sent to Google" agreed with the code and was said about nothing.
+///
+/// [`A_NUMBER_AFTER_ONE_OF_THESE_IS_NOT_THE_COUNT`] is the same word doing the
+/// same damage to a different rule, found the same way.
+const ALSO_A_PREPOSITION: &[&str] = &["on"];
+
+/// Words that cannot begin what a preposition is about.
+///
+/// A preposition takes a noun phrase. The word for a switch takes nothing, so
+/// what follows it is the rest of the sentence: a form of "be" ("on is the
+/// shipped default"), a conjunction ("on, and mail is off"), another
+/// preposition ("on by default", "on in a new installation", "on for tasks"),
+/// or an adverb ("turned on deliberately"). None of those can be what a
+/// preposition is about, and every one of them is a closed class apart from the
+/// adverbs.
+///
+/// Three prepositions are deliberately missing: "to", "with" and "about". Each
+/// completes a phrasal verb where "on" is a particle and no switch is meant,
+/// and each would hand the sentence back the reading this rule exists to take
+/// away: "the sync moves on to the next contact", "carries on with the sync",
+/// "goes on about it". Left out, those read as a preposition and say nothing,
+/// which is the quiet direction rather than the wrong one.
+///
+/// No place word is here either, for the same reason from the other end. "on
+/// here" and "on there" are a preposition and its object, and "stored on here
+/// by default" walked past a first version of this list that held "here".
+///
+/// Getting this wrong in the other direction, by leaving out something that
+/// really does follow a switch, costs a sentence being read as saying nothing.
+/// In source that is [`test_no_comment_names_the_shipped_answer_without_saying_what_it_is`]
+/// failing, which is loud. Getting it wrong in this direction, by letting a
+/// preposition through, is the silent miss above.
+const WHAT_A_PREPOSITION_IS_NEVER_ABOUT: &[&str] = &[
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "and",
+    "or",
+    "but",
+    "so",
+    "because",
+    "unless",
+    "until",
+    "while",
+    "though",
+    "although",
+    "if",
+    "when",
+    "after",
+    "before",
+    "since",
+    "yet",
+    "by",
+    "in",
+    "for",
+    "from",
+    "at",
+    "already",
+    "again",
+    "instead",
+    "anyway",
+    "too",
+    "also",
+    "only",
+    "just",
+    "now",
+    "out",
+    "deliberately",
+    "explicitly",
+    "automatically",
+    "permanently",
 ];
 
 /// Which of the two answers a sentence is about.
@@ -469,12 +613,45 @@ fn without_the_settings_name(sentence: &str) -> String {
 /// "a new installation allows tasks, and this test turns that off" is read as
 /// permission and not as a refusal.
 ///
-/// What it cannot read, so that a quiet run is not taken for more than it is. A
-/// sentence that carries no word from either list: "the setting is the shipped
-/// default" says which answer it is talking about and never says what that
-/// answer is, and one of the nine copies is exactly that. A negation of a
-/// negation. A conditional, "if it were off by default". And a claim spread
-/// over two sentences, because only the sentence carrying the word is read.
+/// What it cannot read, so that a quiet run is not taken for more than it is.
+/// Every one of these was measured walking past the whole tree, and the wording
+/// that did it is written beside it so somebody can measure it again.
+///
+/// 1. A word from either list used about something other than what leaves this
+///    computer, sitting nearer the installation-time word than the word making
+///    the claim. "By default whatever goes into your address book stays there
+///    under Allow Changes, and Google is told nothing" reads as permission:
+///    "goes" is two words away and is about what arrives, "nothing" is thirteen
+///    away and is the claim. This is the family the preposition belonged to,
+///    and closing "on" closed the commonest member, not the family. There is no
+///    reading here that can tell an incidental verb from a claiming one.
+/// 2. A sentence naming both answers is one claim about both, so a true half
+///    hides a false one. "By default Allow Changes sends your calendar to
+///    Google and sends your mail there too" is half right and goes unsaid.
+/// 3. A sentence that carries no word from either list. "The setting is the
+///    shipped default" says which answer it is about and never says what that
+///    answer is, and one of the nine copies is exactly that. In source
+///    [`test_no_comment_names_the_shipped_answer_without_saying_what_it_is`]
+///    refuses it outright. In a document nothing does.
+/// 4. A negation of a negation. "Out of the box, nothing stops a message
+///    reaching the server" reads as a refusal, which is what the code says, so
+///    it is quiet while saying the opposite.
+/// 5. A claim spread over two sentences, because only the sentence carrying the
+///    installation-time word is read. "Allow Changes has one answer by default.
+///    Nothing about a contact goes to Google" is caught in source by the check
+///    above, for saying nothing, and is quiet in a document.
+/// 6. A sentence about the setting that quotes or denies a wording rather than
+///    making a claim. "It would be wrong to say Allow Changes is off by default
+///    for contacts" is true and is named. That one is loud rather than quiet,
+///    which is the direction to be wrong in, but it is still wrong.
+///
+/// Six is what has been measured, not what exists. This compares English prose
+/// with a value in the code, and no list of six can be the whole of what a
+/// person can write, so a quiet run means these six were looked for and no
+/// wrong sentence of a shape already known was found. It does not mean the
+/// prose is true. The list before this one named four and the fifth thing tried
+/// against it walked past in ten minutes, and the sentence above that list said
+/// a fifth copy would fail whatever it said.
 fn what_it_says_reaches_a_provider(sentence: &str, marker_at: usize) -> Option<Reaches> {
     let readable = without_the_settings_name(sentence);
     let words = words_of(&readable);
@@ -483,7 +660,7 @@ fn what_it_says_reaches_a_provider(sentence: &str, marker_at: usize) -> Option<R
         .rposition(|(at, _)| *at <= marker_at)
         .unwrap_or(0);
 
-    let said = negation_read_as_refusal(&words);
+    let said = what_each_word_says(&words);
 
     let mut nothing = None;
     let mut something = None;
@@ -515,34 +692,72 @@ fn what_it_says_reaches_a_provider(sentence: &str, marker_at: usize) -> Option<R
     }
 }
 
-/// What each word says, with a negated permission read as a refusal.
+/// What each word says, with a preposition and a negated permission read as
+/// what they really are.
 ///
 /// "sends nothing" is not the sentence permitting anything, and neither is
 /// "allows none of it" or "is not sent". A word from one list standing next to
 /// a word from the other is a negation, and what the pair means is the refusal.
-fn negation_read_as_refusal(words: &[(usize, String)]) -> Vec<Option<Reaches>> {
-    let mut said: Vec<Option<Reaches>> = words
-        .iter()
-        .map(|(_, word)| {
-            if NOTHING_GOES_OUT.contains(&word.as_str()) {
-                Some(Reaches::Nothing)
-            } else if SOMETHING_GOES_OUT.contains(&word.as_str()) {
-                Some(Reaches::Something)
-            } else {
-                None
-            }
-        })
+fn what_each_word_says(words: &[(usize, String)]) -> Vec<Option<Reaches>> {
+    let mut said: Vec<Option<Reaches>> = (0..words.len())
+        .map(|at| what_one_word_says(words, at))
         .collect();
 
     let refused = |at: usize| said.get(at) == Some(&Some(Reaches::Nothing));
     let negated: Vec<usize> = (0..said.len())
         .filter(|at| said[*at] == Some(Reaches::Something))
-        .filter(|at| at.checked_sub(1).is_some_and(refused) || refused(at + 1))
+        .filter(|at| {
+            (1..=A_NEGATION_REACHES_THIS_FAR)
+                .any(|away| at.checked_sub(away).is_some_and(refused) || refused(at + away))
+        })
         .collect();
     for at in negated {
         said[at] = None;
     }
     said
+}
+
+/// How far a negative reaches to turn a permission into a refusal.
+///
+/// Two words, because English puts a pronoun or an adverb between a verb and
+/// its negative as readily as it puts them side by side: "sends it nowhere",
+/// "sends her nothing", "is hardly ever sent". One word was the window until
+/// "By default Allow Changes keeps a task on this computer and sends it
+/// nowhere" was measured walking past the whole tree, with "it" holding the
+/// two apart. It buys "nothing is allowed" as well, which one word never read.
+///
+/// Two rather than the whole sentence, because reading the whole sentence is
+/// what the nearest-word rule is for. A sentence can carry a refusal about one
+/// answer and a permission about the other, and swallowing every permission
+/// that shares a sentence with a refusal would read "a new installation allows
+/// tasks, and this test turns that off" as a refusal.
+const A_NEGATION_REACHES_THIS_FAR: usize = 2;
+
+/// What one word says, or nothing when it is not saying which way it is set.
+fn what_one_word_says(words: &[(usize, String)], at: usize) -> Option<Reaches> {
+    let word = words[at].1.as_str();
+    if NOTHING_GOES_OUT.contains(&word) {
+        return Some(Reaches::Nothing);
+    }
+    if SOMETHING_GOES_OUT.contains(&word) && !a_preposition_here(words, at) {
+        return Some(Reaches::Something);
+    }
+    None
+}
+
+/// Whether the word here is a preposition rather than the word for a switch.
+///
+/// Decided by what follows it, because that is the difference: a preposition is
+/// about the noun phrase after it and the word for a switch is about nothing.
+/// So "on this computer" and "on a server" are places, and "on by default",
+/// "on is the shipped default" and "turns it on" are answers.
+fn a_preposition_here(words: &[(usize, String)], at: usize) -> bool {
+    if !ALSO_A_PREPOSITION.contains(&words[at].1.as_str()) {
+        return false;
+    }
+    words
+        .get(at + 1)
+        .is_some_and(|(_, next)| !WHAT_A_PREPOSITION_IS_NEVER_ABOUT.contains(&next.as_str()))
 }
 
 /// Which of the two answers a sentence is about.
@@ -806,6 +1021,58 @@ fn test_the_new_installation_check_can_tell_the_two_apart() {
         (
             "docs/ALPHA_TESTING.md",
             "A new installation sends none of your calendar to anybody, because Allow\nChanges starts out with both halves off.\n",
+        ),
+        // A preposition standing between the installation-time word and the
+        // negative. This project's prose says "on this computer" constantly,
+        // and the first reading counted every one of them as the word for a
+        // switch that is on. Both of these were quiet against the whole tree.
+        (
+            "src/application/calendar.rs",
+            "// By default everything about a person stays on this computer under Allow\n\
+             // Changes, and no contact is ever sent to Google.\n",
+        ),
+        (
+            "src/application/contacts_sync.rs",
+            "// Allow Changes defaults to holding personal information on this computer,\n\
+             // so a contact edited here never reaches Google.\n",
+        ),
+        // Written against the reading above rather than found in the tree,
+        // which is the half a corpus of what people have already written can
+        // never cover. Each is a different grammatical shape and each was
+        // measured walking past before the reading was widened to hold it.
+        //
+        // A refusal said with a place word rather than with "not".
+        (
+            "src/application/contacts_sync.rs",
+            "// By default a contact is kept here and sent nowhere under Allow Changes.\n",
+        ),
+        // A preposition whose object is a place word, which is the one word
+        // that can follow "on" both ways round.
+        (
+            "src/application/calendar.rs",
+            "// Nothing about a contact is stored on here by default, says Allow Changes.\n",
+        ),
+        // The other half of a wrong sentence, said about mail. The two answers
+        // cost different amounts to get wrong and this is the expensive one:
+        // it tells somebody a message can go out when nothing sends it.
+        (
+            "src/application/allowed.rs",
+            "/// Allow Changes ships switched on for mail.\n",
+        ),
+        // The installation-time word in a wording the list did not hold. It
+        // held "new install" and not "fresh install", which is a list of
+        // wordings being one wording behind in the other half of the reading.
+        (
+            "docs/ALPHA_TESTING.md",
+            "On a fresh install, Allow Changes sends no contact anywhere.\n",
+        ),
+        // A negative held one word away from the verb it negates, which is
+        // where English puts a pronoun. "sent nowhere" was read and "sends it
+        // nowhere" was not.
+        (
+            "src/application/tasks_sync.rs",
+            "// By default Allow Changes keeps a task on this computer and sends it\n\
+             // nowhere.\n",
         ),
     ];
     for (path, writing) in false_when_it_was_written {
