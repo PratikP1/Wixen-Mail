@@ -1583,9 +1583,12 @@ fn confirm_spelling(parent: &Dialog, data: &ComposeData) -> bool {
         return true;
     };
 
-    // Send is the default, so Enter sends. Somebody who meant to send and
-    // heard the warning should not have to find a button, and the words are in
-    // the question, so the decision can be made from hearing it alone.
+    // Enter sends, deliberately, and this is the one question in the program
+    // where that is the right way round. Somebody who meant to send and heard
+    // the warning should not have to find a button, and the words are in the
+    // question, so the decision can be made from hearing it alone. The two
+    // deletion questions answer Enter with No for the opposite reason; see
+    // `presentation::asking`.
     let asker = MessageDialog::builder(
         parent,
         // The buttons are Yes and No, which this builder cannot relabel, so
@@ -1599,7 +1602,7 @@ Send it anyway?"
         ),
         "Check the spelling",
     )
-    .with_style(MessageDialogStyle::YesNo | MessageDialogStyle::IconQuestion)
+    .with_style(crate::presentation::asking::yes_no_where_enter_answers_yes())
     .build();
     let answer = asker.show_modal();
     asker.destroy();

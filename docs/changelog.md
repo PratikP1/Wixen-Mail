@@ -287,6 +287,29 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Enter no longer answers yes to a deletion you have not finished hearing.**
+  The question asked before deleting a contact, a task, a note, an event or a
+  reminder, and the one asked before deleting a list, a calendar or a notebook
+  with everything in it, both arrived with Yes waiting on Enter. That is what a
+  Windows message box does unless it is told otherwise. Press Enter partway
+  through the question and the thing was gone, and none of it can be undone.
+
+  Both questions now open with No waiting on Enter, so answering without
+  hearing the end of it does nothing. Yes is still one Tab or one letter away.
+
+  Anybody can be caught by this and it costs more if you are listening rather
+  than reading: hearing a question takes longer, so there is more of it left
+  when your finger moves, and Enter is how you answer everything when you work
+  by keyboard, so it is already on its way.
+
+  The composer's question about a message the spell checker has doubts about
+  still answers Enter with yes, and that stays deliberate. Somebody who meant
+  to send and heard the warning should not have to go looking for a button, a
+  message can be written again, and the whole question is in the words.
+
+  Known limitation: this has not been through a screen reader. What was
+  measured is the style the code hands the message box.
+
 - **The signature setting on the Compose tab does something now.**
   "Automatically insert signature on new messages" was built ticked, handed
   back by nothing and saved by nothing. A screen reader announced it as on, it

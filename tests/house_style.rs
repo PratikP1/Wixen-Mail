@@ -2600,3 +2600,97 @@ fn test_the_forgotten_control_check_can_tell_the_two_apart() {
         "a name is being matched inside a longer one"
     );
 }
+
+// ── Which answer Enter gives on a yes or no question ────────────────────────
+//
+// A wxWidgets message box with Yes and No answers makes Yes the one Enter
+// gives unless it is told otherwise. Two of the three questions in this
+// program are asked before something that cannot be undone: deleting a
+// contact, a task, a note, an event or a reminder, and deleting a list, a
+// calendar or a notebook with everything in it. Both had Yes waiting on
+// Enter, so somebody who pressed Enter partway through hearing the question
+// had deleted the thing before the sentence finished.
+//
+// Anybody can be caught by that and it costs a screen reader user more, for
+// two reasons. Hearing the question takes longer than reading it, so there is
+// more of it left when the finger moves; and Enter is how a person working by
+// keyboard answers everything, so it is already moving.
+//
+// The third is the composer asking whether to send a message the spell checker
+// has doubts about. Yes on Enter there is deliberate: somebody who meant to
+// send and heard the warning should not have to go looking for a button, and
+// the whole question is in the words, so it can be answered from hearing it.
+// It says so where it is asked.
+//
+// So the answer Enter gives is a decision each of the three has to make on
+// purpose, and the way to make somebody make it is to leave nowhere else to
+// write the style. Both answers live in `presentation::asking` and nothing
+// else names the flag.
+
+/// Where the two answers to that question live.
+const WHERE_THE_ANSWER_ENTER_GIVES_IS_DECIDED: &str = "src/presentation/asking.rs";
+
+/// The style flag that puts Yes and No on a message box.
+///
+/// Built from two pieces so this line is not itself a match, the same way the
+/// dash characters at the top of this file are built from their code points.
+/// Written out whole it would fail on the file that defines it.
+const A_QUESTION_WITH_TWO_ANSWERS: &str = concat!("MessageDialogStyle", "::YesNo");
+
+#[test]
+fn test_only_one_module_says_which_answer_enter_gives() {
+    let mut written = Vec::new();
+
+    for path in ours_apart_from_this_file() {
+        if path.extension().is_none_or(|kind| kind != "rs") {
+            continue;
+        }
+        if path.ends_with(Path::new(WHERE_THE_ANSWER_ENTER_GIVES_IS_DECIDED)) {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        for (number, line) in text.lines().enumerate() {
+            if line.contains(A_QUESTION_WITH_TWO_ANSWERS) {
+                written.push(format!(
+                    "{}:{}: {}",
+                    path.display(),
+                    number + 1,
+                    line.trim()
+                ));
+            }
+        }
+    }
+
+    assert!(
+        written.is_empty(),
+        "a message box with Yes and No answers gives Yes to Enter unless it is \
+         told otherwise, and somebody who presses Enter partway through hearing \
+         the question has answered it. Which answer Enter gives is a decision, \
+         so it is made in {WHERE_THE_ANSWER_ENTER_GIVES_IS_DECIDED} and \
+         nowhere else. These write the style themselves:\n  {}",
+        written.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_answer_enter_gives_is_decided_somewhere() {
+    // Without this the check above passes once somebody deletes the module it
+    // points at, which would leave every question written by hand again and
+    // nothing to notice.
+    let decided = fs::read_to_string(WHERE_THE_ANSWER_ENTER_GIVES_IS_DECIDED)
+        .expect("the module that decides which answer Enter gives");
+
+    assert!(
+        decided.contains(A_QUESTION_WITH_TWO_ANSWERS),
+        "{WHERE_THE_ANSWER_ENTER_GIVES_IS_DECIDED} no longer builds the style, \
+         so the check above is passing over a rule nobody keeps"
+    );
+    assert_eq!(
+        wixen_mail::presentation::asking::yes_no_where_enter_answers_no(),
+        wixen_mail::presentation::asking::yes_no_where_enter_answers_yes()
+            | wixen_mail::presentation::asking::ENTER_DOES_NOT_ANSWER_YES,
+        "the two answers no longer differ by the one flag that separates them"
+    );
+}

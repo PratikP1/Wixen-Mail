@@ -1259,8 +1259,12 @@ pub fn pim_command(
     if command == PimCommand::Delete {
         // Confirmed, always. Nothing here can be undone, and a Delete key is
         // one row away from every other key somebody might have meant.
+        //
+        // Enter answers No. It answered Yes until now, which meant somebody who
+        // pressed it partway through hearing the question had deleted the
+        // thing. See `presentation::asking`.
         let asked = MessageDialog::builder(frame, &confirm_delete(kind, &name), "Delete")
-            .with_style(MessageDialogStyle::YesNo | MessageDialogStyle::IconQuestion)
+            .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
             .build()
             .show_modal();
         if asked != ID_YES {
@@ -3529,8 +3533,11 @@ pub fn delete_container(
         where_it_came_from(&cache, kind, &id),
     );
 
+    // Enter answers No. This one takes everything the list, calendar or
+    // notebook holds with it, so it is the most expensive question in the
+    // program to answer by accident. See `presentation::asking`.
     let confirm = MessageDialog::builder(frame, &asked, &format!("Delete {}", kind.label()))
-        .with_style(MessageDialogStyle::YesNo | MessageDialogStyle::IconQuestion)
+        .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
         .build();
     let answer = confirm.show_modal();
     confirm.destroy();
