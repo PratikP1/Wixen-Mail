@@ -1,31 +1,41 @@
 # Implementation status
 
-_Last updated: 2026-07-26_
+_Last updated: 2026-08-09_
 
 This file is the canonical answer to "does this work yet". It is written to be
 believed, so anything not finished is listed as not finished.
 
-Wixen Mail is **pre-beta**, at version `0.1.0-alpha.10`. It can send mail. It
-cannot receive mail.
+Wixen Mail is **pre-beta**. It can send and receive mail. Reading mail is the
+part that has been used; everything that writes to a server is experimental,
+and [the testing guide](ALPHA_TESTING.md) says what that means before anything
+else. The changelog says what is in each release, so this page does not name a
+version number that would go stale between updates.
 
 ## Can you use it today
 
 | Task | State |
 |------|-------|
-| Send a message | Yes, over SMTP with TLS |
-| Read your inbox | No, IMAP is not implemented |
-| Download mail with POP3 | No, POP3 is not implemented |
+| Send a message | Yes, over SMTP with TLS, signed in with a password or with OAuth |
+| Read your inbox | Yes, over IMAP with TLS |
+| Download mail with POP3 | Yes, and mail is left on the server unless you turn that off |
 | Keep contacts, calendar, tasks, notes, reminders | Yes, stored locally and shown in their panels |
-| Sync contacts and calendars with a provider | Partly, see below |
+| Sync contacts and calendars with a provider | Built, and never yet run against a live account |
 | Use it entirely from the keyboard | Yes |
 | Use it with a screen reader | Yes for what exists, and not yet verified against NVDA |
 
 ## What works
 
-**Sending.** SMTP through `lettre`, with TLS and STARTTLS. Composing queues the
-message in a local outbox and flushes it, so a send that fails is retried rather
-than lost. Failures say whether the problem is the transport or the account's
-configuration.
+**Sending.** SMTP with TLS and STARTTLS, signed in with a password or with
+OAuth. Composing queues the message in a local outbox and flushes it, so a
+send that fails is retried rather than lost. Failures say whether the problem
+is the transport or the account's configuration. A draft can be saved, by
+hand or automatically.
+
+**Receiving.** IMAP with TLS and STARTTLS: folders, messages, search,
+threading worked out from message headers, and fetching older mail a page at
+a time. POP3 with the same protections and its own folders on this computer;
+mail stays on the POP server unless the account is told to remove it. OAuth
+sign-in works for receiving as well as sending.
 
 **Local storage.** A SQLite cache holds messages, contacts, contact groups,
 calendars, calendar events, reminders, task lists, tasks, note folders, and
@@ -40,39 +50,31 @@ loads its records from the cache. Notes can be edited and saved.
 **Accessibility.** Every list, tree, and text field carries an accessible name
 through a `wxAccessible`. Announcements are prioritised, deduplicated, coalesced
 by topic, and bounded to four per second, with anything dropped reported rather
-than silently discarded. Message reading can be muted with `Ctrl+Shift+M`, and
+than silently discarded. Message reading can be muted with `Ctrl+M`, and
 that preference persists. Check menu items report their real state.
 
-**Provider sync.** Google and Microsoft Graph clients for contacts and calendars.
-These are reachable from the menus. They have not been exercised against live
-accounts.
+**Provider sync.** Google and Microsoft Graph clients for contacts and
+calendars, a calendar-server client for calendars added by their address, and
+subscription feeds. All are reachable from the menus, a change made here is
+pushed back when Allow Changes permits it, and a repeating event is shown on
+the days it lands on. None of it has been exercised against a live account.
 
 ## What does not work
-
-**Receiving mail.** `service::protocols::imap` and `service::protocols::pop3`
-perform no network I/O. Every call returns fabricated data. Nothing in the window
-is wired to them, deliberately: showing invented folders and messages as your own
-mail would be worse than showing none. This is the largest single piece of
-outstanding work.
-
-**OAuth sending.** The SMTP layer authenticates with a password and has no
-XOAUTH2 support, so an account configured for OAuth is refused with a message
-saying so.
-
-**Drafts.** Save Draft says it is not implemented, because it is not.
 
 **Threaded view.** Present in the View menu and disabled. The data model carries
 thread identifiers; nothing groups by them.
 
-**Calendars by address.** There is a client for reading a calendar from a server
-by its address, and one for a subscription feed, and no way to enter either
-address. Nothing can create such a calendar, so neither client ever runs. Reading
-one is written and tested against canned replies; sending a change back is not
-written at all, so an event made or changed here would stay on this computer.
+**Folder management.** A folder cannot be created, renamed or deleted, and a
+whole folder cannot be marked read or emptied.
 
-**Repeating events.** A repeating event is stored with the rule it repeats by,
-and nothing turns that rule into the days it lands on, so it is shown once and
-nothing says it comes round again. This is true of every calendar provider.
+**Moving a task between lists.** A task goes into your provider's default list
+when you make it, and moving and copying work for mail only.
+
+**Anything that writes, against a real account.** Sending, deleting, moving,
+copying, filing a copy in Sent, read receipts, subscriptions, and the syncs
+that push changes are all built, and none of them has ever run against a real
+account. [What is worth testing, and what is known to be
+broken](ALPHA_TESTING.md) keeps the fuller list.
 
 ## Quality gates
 
@@ -91,7 +93,7 @@ scans it on both of Windows' accessibility channels: Axe.Windows over the UI
 Automation tree, which is what Narrator reads, and `scripts/msaa-names.ps1` over
 the MSAA tree, which is what NVDA reads for native controls.
 
-The second one is new, and until it existed no accessible name in this
+The second one exists because until it did, no accessible name in this
 application had ever been measured. For an edit box or a button, Windows
 supplies its own UI Automation provider that shadows the MSAA object underneath
 it, and `set_accessible_name` writes only to MSAA. So the UI Automation scan
@@ -99,12 +101,14 @@ reported the system's name for those controls and never the one the code set,
 and every `set_accessible_name` call in the tree could have been deleted without
 it noticing.
 
-424 tests pass: 394 unit and 30 integration. Several are fuzz tests over
-generated hostile input, covering the HTML renderer, the CalDAV and iCalendar
-parsers, OAuth token expiry, and account validation.
+3362 tests pass: 3282 unit and 80 integration, measured 2026-08-09 with
+`cargo test --all-targets`. Several are fuzz tests over generated hostile
+input, covering the HTML renderer, the calendar-document parsers, OAuth token
+expiry, and account validation.
 
-The accessibility scan reports five findings, all inside WebView2's own
-accessibility tree rather than this application's controls.
+When the accessibility scan was last read, on 2026-07-26, it reported five
+findings, all inside WebView2's own accessibility tree rather than this
+application's controls.
 
 ## Known gaps in verification
 
@@ -117,14 +121,14 @@ CalDAV accounts.
 
 ## Which tests would fail if the code were wrong
 
-Red/green started at commit 182 of 344, so most of the tests here were written
-after the code they cover. A test written that way describes what the code
-does rather than specifying what it should do, and cannot fail for the bug it
-was written alongside. Mutation testing measures the difference: it alters the
-code and reruns the suite, and reports anything nothing caught.
+Red/green started at commit 182 of 344, so many of the older tests here were
+written after the code they cover. A test written that way describes what the
+code does rather than specifying what it should do, and cannot fail for the bug
+it was written alongside. Mutation testing measures the difference: it alters
+the code and reruns the suite, and reports anything nothing caught.
 
 Run it with `scripts/mutants.sh <dir>`. A whole-tree run is about two days, so
-it is used scoped.
+it is used scoped. The table below is from 2026-07-26.
 
 | Module | Caught | Missed | What that means |
 |---|---|---|---|
@@ -137,8 +141,13 @@ thing a survivor can mean, and the more useful one: Rust never reports a public
 item in a lib crate as unused, so three dead container deletions had survived
 two dead-code passes.
 
-Line coverage is 60.4% (`cargo llvm-cov --lib --summary-only`). The least
-covered modules are `service/protocols/imap.rs` at 28%, `service/google_api.rs`
-at 35% and `service/microsoft_graph.rs` at 37%. That is the same fact as never
-having been run against a live account rather than a separate problem, and no
-amount of test writing substitutes for it.
+A later sweep, on 2026-08-01, took the message filters, due dates, tagging and
+signatures modules through the same measurement: 157 mutants, 141 caught, 16
+that would not compile, and none missed.
+
+Line coverage was 60.4% when last measured, on 2026-07-26, with
+`cargo llvm-cov --lib --summary-only`. A great deal has landed since, so that
+number is the last measurement rather than today's answer. The least covered
+code then was the network transport, which is the same fact as never having
+been run against a live account rather than a separate problem, and no amount
+of test writing substitutes for it.

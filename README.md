@@ -55,7 +55,7 @@ after a build can be treated as fresh and report success without linting
 anything. The script touches `src/lib.rs` first to force the work.
 
 ```bash
-# Just the tests (394 unit, 30 integration)
+# Just the tests
 cargo test --all-targets
 
 # Just a build
@@ -89,18 +89,17 @@ cargo build
 
 ## Status
 
-All quality gates pass clean (`cargo fmt`, `cargo clippy`, `cargo test`).
-150 unit tests and 25 integration tests passing with 0 warnings.
+The project is pre-beta. It can send and receive mail, over IMAP, POP3 and
+SMTP, and it can sync contacts, calendars and tasks with Google and Microsoft.
+Reading mail is the part that has been used. Everything that writes to a
+server is experimental, has never run against a real account, and is gated by
+a setting called Allow Changes, which
+[the testing guide](docs/ALPHA_TESTING.md) explains before anything else.
 
-The project is pre-beta, at `0.1.0-alpha.12`. **It can send mail and it cannot
-receive mail:** the IMAP and POP3 modules perform no network I/O yet, and nothing
-in the window is wired to them, because showing invented folders as your own mail
-would be worse than showing none.
-
-What does work: sending, local storage for contacts, calendars, tasks, notes and
-reminders with their panels, and the accessibility layer. See
-[what is built and what is not](docs/IMPLEMENTATION_STATUS.md), which is written
-to be believed rather than to sell the project.
+Nothing here has been verified with a real screen reader yet, and for this
+project that is the bar that matters. See
+[what is built and what is not](docs/IMPLEMENTATION_STATUS.md), which is
+written to be believed rather than to sell the project.
 
 ## Contributing
 

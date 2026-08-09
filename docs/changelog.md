@@ -307,6 +307,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   a value starting. Both wordings are pinned in its corpus beside the true
   sentences that have to stay quiet.
 
+- **The status page and the README answer "does this work yet" truthfully
+  again.** Both said mail cannot be received, that IMAP and POP3 do no
+  network work, that OAuth sending is missing, that a draft cannot be saved,
+  that a calendar cannot be added by its address or written back to, and
+  that a repeating event is shown once. Every one of those became false as
+  the work landed, and the pages kept saying it. Both also named versions
+  long gone and test counts far below the real ones. They now describe what
+  is built, date-stamp every measurement they quote, and name no version at
+  all, and a new check refuses a version on either page that the code does
+  not ship.
+
 - **Events sent to a calendar server now carry the time zone rules their
   document relies on.** The calendar format requires it: every time written
   in a named zone must be able to find that zone's rules in the same

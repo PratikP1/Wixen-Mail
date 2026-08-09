@@ -2370,6 +2370,128 @@ fn test_the_changelog_does_not_claim_in_prose_that_a_list_is_everything() {
     );
 }
 
+/// Every version-shaped run in one line: three dotted numbers, and whatever
+/// prerelease or build suffix rides on them.
+///
+/// Three numbers rather than two, so "OAuth 2.0", "WCAG 2.2" and "60.4%" are
+/// not versions. A digit or a dot on either side disqualifies a match, so the
+/// "0.0" inside "10.0.26200" is not read as a second version.
+fn versions_named_in(line: &str) -> Vec<String> {
+    let characters: Vec<char> = line.chars().collect();
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at < characters.len() {
+        let follows_a_word = at.checked_sub(1).is_some_and(|before| {
+            characters[before].is_alphanumeric() || characters[before] == '.'
+        });
+        if !characters[at].is_ascii_digit() || follows_a_word {
+            at += 1;
+            continue;
+        }
+        let mut end = at;
+        let mut dots = 0;
+        loop {
+            while end < characters.len() && characters[end].is_ascii_digit() {
+                end += 1;
+            }
+            if dots < 2
+                && end < characters.len()
+                && characters[end] == '.'
+                && characters.get(end + 1).is_some_and(|c| c.is_ascii_digit())
+            {
+                dots += 1;
+                end += 1;
+            } else {
+                break;
+            }
+        }
+        if dots == 2 && !characters.get(end).is_some_and(|c| *c == '.') {
+            if characters.get(end).is_some_and(|c| *c == '-' || *c == '+') {
+                end += 1;
+                while end < characters.len()
+                    && (characters[end].is_alphanumeric()
+                        || characters[end] == '.'
+                        || characters[end] == '-')
+                {
+                    end += 1;
+                }
+            }
+            found.push(characters[at..end].iter().collect());
+        }
+        at = end.max(at + 1);
+    }
+    found
+}
+
+/// The two documents that describe the product as it stands today.
+///
+/// Only these two. The changelog and the development history are dated
+/// records of versions that really shipped, and correcting a version in a
+/// record would be falsifying it.
+const THE_STATUS_PAGES: &[&str] = &["README.md", "docs/IMPLEMENTATION_STATUS.md"];
+
+#[test]
+fn test_no_status_page_names_a_version_the_code_does_not_ship() {
+    // The status page said `0.1.0-alpha.10` and the README said
+    // `0.1.0-alpha.12` while the code shipped 0.20.0, which is two breaks of
+    // the same rule, and the second break is where the rule gets a check
+    // rather than another correction.
+    //
+    // What this rule costs: if a status page names the running version, every
+    // version bump fails this test until that page is touched too. That is
+    // the point rather than a false alarm; a page that wants to stay out of
+    // the way should point at the changelog instead of naming a number.
+    let shipped = env!("CARGO_PKG_VERSION");
+    let mut wrong = Vec::new();
+
+    for path in THE_STATUS_PAGES {
+        let text = fs::read_to_string(path).expect("a status page to be readable");
+        for (number, line) in text.lines().enumerate() {
+            for version in versions_named_in(line) {
+                if version != shipped {
+                    wrong.push(format!(
+                        "{path}:{}: names {version}, and the code ships {shipped}",
+                        number + 1
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(
+        wrong.is_empty(),
+        "these pages answer \"does this work yet\", so a version they name is \
+         believed, and each of these is not the version the code ships:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_version_reading_can_see_one() {
+    // Proving the measurement: the shapes that were really in the two pages,
+    // and the neighbours that must not match.
+    assert_eq!(
+        versions_named_in("at version `0.1.0-alpha.10`. It can send mail."),
+        vec!["0.1.0-alpha.10".to_string()]
+    );
+    assert_eq!(
+        versions_named_in("The project is pre-beta, at `0.1.0-alpha.12`."),
+        vec!["0.1.0-alpha.12".to_string()]
+    );
+    assert_eq!(
+        versions_named_in("a build carries 0.5.0+g64c73dd"),
+        vec!["0.5.0+g64c73dd".to_string()]
+    );
+    for quiet in [
+        "OAuth 2.0 and WCAG 2.2 are not versions",
+        "coverage is 60.4%",
+        "Windows 10.0.26200.1 has four numbers",
+        "commit 4f887c0 is a hash",
+    ] {
+        assert_eq!(versions_named_in(quiet), Vec::<String>::new(), "{quiet}");
+    }
+}
+
 #[test]
 fn test_the_count_check_can_see_a_count_that_disagrees() {
     // Proving the measurement. A check that reads nothing passes, and from
