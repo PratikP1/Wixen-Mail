@@ -2015,3 +2015,120 @@ red = [
     "service::caldav::tests::test_a_cancelled_time_the_clocks_repeat_is_taken_at_its_first_passing",
     "service::caldav::tests::test_a_changed_day_of_a_series_is_kept_when_the_server_sends_it_with_the_series",
 ]
+
+# ── The timezone rules a document must carry ────────────────────────────────
+#
+# The calendar standard requires a VTIMEZONE component for every TZID a
+# document uses. No document this program wrote defined any, which a strict
+# server refuses whole and a lenient one quietly guesses at. The rules are
+# derived from the same timezone database every conversion here uses, the
+# zones defined are the ones the produced document really names, and a zone
+# the database cannot describe is refused at the create path and passed
+# through with a warning at the change path, where the server has already
+# accepted its own document.
+
+[[guard]]
+name = "a document built from nothing defines every zone it names"
+file = "src/service/caldav.rs"
+before = """    for zone in time_zones_named_on(&owned) {
+        if let Some(rules) =
+            crate::service::vtimezone::timezone_rules_for(&zone, the_year_the_event_is_in(event))
+        {
+            lines.extend(rules);
+        }
+    }
+"""
+after = ""
+red = [
+    "service::caldav::tests::test_a_document_built_from_nothing_defines_the_zone_it_names",
+    "service::caldav::tests::test_a_written_document_read_back_through_our_own_reader_keeps_every_instant",
+]
+
+[[guard]]
+name = "a change into a document that defines no zone adds the rules"
+file = "src/service/caldav.rs"
+before = """    for zone in time_zones_named_on(&meant) {
+        if timezone_ids_defined(&written).contains(&zone) {
+            continue;
+        }"""
+after = """    for zone in time_zones_named_on(&meant) {
+        if true {
+            continue;
+        }"""
+red = [
+    "service::caldav::writing_tests::test_a_change_into_a_document_that_defines_no_zone_adds_the_rules",
+]
+
+[[guard]]
+name = "a zone already defined in the document is not defined again"
+file = "src/service/caldav.rs"
+before = """        if timezone_ids_defined(&written).contains(&zone) {
+            continue;
+        }"""
+after = """        if false {
+            continue;
+        }"""
+red = [
+    "service::caldav::writing_tests::test_a_change_into_a_document_already_defining_the_zone_adds_no_second_copy",
+]
+
+[[guard]]
+name = "the zones defined are the document's own, never the zone column"
+file = "src/service/caldav.rs"
+before = """    for zone in time_zones_named_on(&owned) {"""
+after = """    for zone in crate::common::moment::the_zone_named(event.time_zone.as_deref()).map(str::to_string) {"""
+red = [
+    "service::caldav::tests::test_a_document_that_names_no_zone_defines_none",
+]
+
+[[guard]]
+name = "a zone the document leaves undefined is reported before anything is sent"
+file = "src/service/caldav.rs"
+before = """        if !defined.contains(&zone) {
+            return Some(zone);
+        }"""
+after = """        let _ = zone;"""
+red = [
+    "application::caldav_sync::tests::test_a_change_naming_a_zone_the_writer_cannot_describe_stays_waiting",
+    "service::caldav::writing_tests::test_a_zone_the_document_leaves_undefined_is_named_before_anything_is_sent",
+]
+
+[[guard]]
+name = "a name the timezone database does not know writes no rules"
+file = "src/service/vtimezone.rs"
+before = """    let zone: Tz = tzid.parse().ok()?;"""
+after = """    let zone: Tz = tzid.parse().unwrap_or(Tz::UTC);"""
+red = [
+    "application::caldav_sync::tests::test_a_change_naming_a_zone_the_writer_cannot_describe_stays_waiting",
+    "service::vtimezone::tests::test_a_name_that_names_no_zone_writes_nothing",
+]
+
+[[guard]]
+name = "a zone that follows no yearly rule lists its days rather than guessing"
+file = "src/service/vtimezone.rs"
+before = """            format!("RDATE:{}", onsets.join(",")),"""
+after = """            "RRULE:FREQ=YEARLY;BYMONTH=1;BYDAY=1SU".to_string(),"""
+red = [
+    "service::vtimezone::tests::test_a_zone_whose_changes_follow_no_yearly_rule_lists_its_days_rather_than_guessing",
+]
+
+[[guard]]
+name = "the offsets written are the zone's own"
+file = "src/service/vtimezone.rs"
+before = """    let sign = if seconds < 0 { '-' } else { '+' };"""
+after = """    let sign = if seconds < 0 { '+' } else { '-' };"""
+red = [
+    "service::caldav::tests::test_a_written_document_read_back_through_our_own_reader_keeps_every_instant",
+    "service::vtimezone::tests::test_a_zone_that_never_changes_writes_one_block_and_no_rule",
+    "service::vtimezone::tests::test_the_rules_for_a_zone_that_changes_carry_both_offsets_and_both_change_rules",
+    "service::vtimezone::tests::test_the_rules_for_a_zone_that_counts_weeks_forward",
+]
+
+[[guard]]
+name = "the counted weekday of a change rule is the one the zone changes on"
+file = "src/service/vtimezone.rs"
+before = """    let nth_of = |onset: &NaiveDateTime| (onset.day() - 1) / 7 + 1;"""
+after = """    let nth_of = |onset: &NaiveDateTime| (onset.day() - 1) / 7;"""
+red = [
+    "service::vtimezone::tests::test_the_rules_for_a_zone_that_counts_weeks_forward",
+]

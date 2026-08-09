@@ -906,6 +906,77 @@ fn names_the_event(component: Option<&str>) -> bool {
     component.is_some_and(|name| name.eq_ignore_ascii_case("VEVENT"))
 }
 
+/// Whether a component name is the timezone block's, whatever case it is
+/// written in.
+fn names_the_timezone(component: Option<&str>) -> bool {
+    component.is_some_and(|name| name.eq_ignore_ascii_case("VTIMEZONE"))
+}
+
+/// Every zone the document defines rules for, in the order defined.
+///
+/// Walked with the same component markers everything else here walks, never
+/// a second parser: a writer defining a zone this reader could not see
+/// defined would add the same definition again on every change.
+fn timezone_ids_defined(lines: &[String]) -> Vec<String> {
+    let mut defined = Vec::new();
+    let mut inside = 0_usize;
+    for line in lines {
+        if names_the_timezone(component_opened(line)) {
+            inside += 1;
+            continue;
+        }
+        if names_the_timezone(component_closed(line)) {
+            inside = inside.saturating_sub(1);
+            continue;
+        }
+        if inside == 0 {
+            continue;
+        }
+        if let Some(id) = value_named_on(line, "TZID") {
+            defined.push(id.to_string());
+        }
+    }
+    defined
+}
+
+/// The first zone a document names and never defines, or nothing when every
+/// named zone is defined.
+///
+/// Asked of the built document rather than re-decided from the event, so it
+/// cannot disagree with what the writer really wrote: an all-day or UTC
+/// event names no zone on any line and must not be refused over the zone
+/// column it never used. The create path asks this before anything is sent,
+/// because a document that names a zone and defines it nowhere is refused
+/// whole by a strict server and quietly guessed at by a lenient one.
+pub fn zone_left_undefined(document: &str) -> Option<String> {
+    let lines = unfolded(document);
+    let defined = timezone_ids_defined(&lines);
+    let mut inside = 0_usize;
+    for line in &lines {
+        if names_the_timezone(component_opened(line)) {
+            inside += 1;
+            continue;
+        }
+        if names_the_timezone(component_closed(line)) {
+            inside = inside.saturating_sub(1);
+            continue;
+        }
+        if inside > 0 {
+            continue;
+        }
+        let Some(property) = property_name(line) else {
+            continue;
+        };
+        let Some(zone) = parameter_named_on(line, property, TIME_ZONE_PARAMETER) else {
+            continue;
+        };
+        if !defined.contains(&zone) {
+            return Some(zone);
+        }
+    }
+    None
+}
+
 /// The component a line opens, as in `BEGIN:VEVENT`, if it opens one.
 fn component_opened(line: &str) -> Option<&str> {
     component_named_after(line, "BEGIN:")
@@ -1129,7 +1200,10 @@ fn a_cancelled_day_in_the_events_zone(
 }
 
 /// How a calendar document writes a clock face: `20260305T090000`.
-const WIRE_CLOCK_FACE: &str = "%Y%m%dT%H%M%S";
+///
+/// Shared with the timezone rules writer, so the onsets it lists and the
+/// values written here cannot drift into two shapes of the same instant.
+pub(crate) const WIRE_CLOCK_FACE: &str = "%Y%m%dT%H%M%S";
 
 /// The clock face a wire value holds, when it holds a whole one.
 ///
@@ -1300,25 +1374,75 @@ fn normalize_ical_datetime(dt: &str) -> String {
 
 /// Build iCalendar VCALENDAR/VEVENT string from event properties.
 ///
-/// The zone named on the event is not written out. A zone and a trailing Z on
-/// the same time are not valid together, and writing one properly means
-/// sending the timezone rules with it. Used for an event the server has never
-/// seen; a change to one it already holds goes through
-/// [`ical_with_the_event_changed`] instead.
+/// The zone named on the event is written onto its times, and the rules for
+/// every zone the document names are written into the document too, because
+/// the calendar standard requires a `VTIMEZONE` component for every `TZID` a
+/// document uses and a strict server refuses the whole document without one.
+/// The zones defined are the ones the produced lines really name, never the
+/// event's zone column: a whole-day or UTC event names no zone on any line,
+/// and defining one anyway would be the writer and its own document
+/// disagreeing about what the document says.
+///
+/// A zone the timezone database does not know is left undefined here, because
+/// this writer has no way to report anything; [`zone_left_undefined`] is how
+/// the sending path sees it and refuses before anything goes out.
+///
+/// Used for an event the server has never seen; a change to one it already
+/// holds goes through [`ical_with_the_event_changed`] instead.
 pub fn build_ical_vevent(event: &CalDavEvent) -> String {
+    let owned = the_properties_this_program_owns(event);
     let mut lines = vec![
         "BEGIN:VCALENDAR".to_string(),
         "VERSION:2.0".to_string(),
         "PRODID:-//Wixen Mail//NONSGML v1.0//EN".to_string(),
-        "BEGIN:VEVENT".to_string(),
-        format!("UID:{}", event.uid),
     ];
-    lines.extend(the_properties_this_program_owns(event));
+    for zone in time_zones_named_on(&owned) {
+        if let Some(rules) =
+            crate::service::vtimezone::timezone_rules_for(&zone, the_year_the_event_is_in(event))
+        {
+            lines.extend(rules);
+        }
+    }
+    lines.push("BEGIN:VEVENT".to_string());
+    lines.push(format!("UID:{}", event.uid));
+    lines.extend(owned);
     lines.push(format!("DTSTAMP:{}", ical_utc_stamp(chrono::Utc::now())));
     lines.push("END:VEVENT".to_string());
     lines.push("END:VCALENDAR".to_string());
 
     written_out(&lines)
+}
+
+/// The year the event's start falls in, for anchoring a zone's rules.
+///
+/// The rules written for a zone are exact inside a window of years around
+/// this one, so it comes from the event rather than from the clock: an event
+/// years ahead anchored at today would sit at the window's edge for no
+/// reason. A start nothing can read anchors at today, which is the only year
+/// there is to offer.
+fn the_year_the_event_is_in(event: &CalDavEvent) -> i32 {
+    use chrono::Datelike;
+    crate::common::moment::read(&event.dtstart)
+        .map(|moment| moment.the_day().year())
+        .unwrap_or_else(|| chrono::Utc::now().year())
+}
+
+/// Every zone the lines name in a `TZID` parameter, first named first, once
+/// each.
+fn time_zones_named_on(lines: &[String]) -> Vec<String> {
+    let mut zones: Vec<String> = Vec::new();
+    for line in lines {
+        let Some(property) = property_name(line) else {
+            continue;
+        };
+        let Some(zone) = parameter_named_on(line, property, TIME_ZONE_PARAMETER) else {
+            continue;
+        };
+        if !zones.contains(&zone) {
+            zones.push(zone);
+        }
+    }
+    zones
 }
 
 /// Every property of an event this program has a value for.
@@ -1754,6 +1878,34 @@ pub fn ical_with_the_event_changed(
             continue;
         }
         written.push(line.clone());
+    }
+
+    // Every zone the change names has to be defined in the document going
+    // out. The server's own definitions were copied through above, so this
+    // adds rules only where the held document had none: a server that omitted
+    // them, or a document from before anything here wrote a zone. A zone the
+    // timezone database does not know is passed through as the server had it,
+    // said in the log rather than blocking the edit, because the server
+    // accepted its own document once already.
+    for zone in time_zones_named_on(&meant) {
+        if timezone_ids_defined(&written).contains(&zone) {
+            continue;
+        }
+        match crate::service::vtimezone::timezone_rules_for(&zone, the_year_the_event_is_in(event))
+        {
+            Some(rules) => {
+                let goes = written
+                    .iter()
+                    .position(|line| names_the_event(component_opened(line)))
+                    .unwrap_or(written.len());
+                written.splice(goes..goes, rules);
+            }
+            None => tracing::warn!(
+                "A change names the time zone {zone} and the document does not define it; \
+                 the rules for that zone are not known here, so the document was left as \
+                 the server had it"
+            ),
+        }
     }
 
     let mut document = written_out(&written);
@@ -2957,6 +3109,106 @@ mod tests {
     }
 
     #[test]
+    fn test_a_document_built_from_nothing_defines_the_zone_it_names() {
+        // RFC 5545: every TZID a document uses must be defined in that
+        // document by a VTIMEZONE component. Documents built here named the
+        // zone and defined it nowhere, which a strict server refuses whole
+        // and a lenient one quietly guesses at.
+        let event = CalDavEvent {
+            dtstart: "2026-03-05T09:00:00".to_string(),
+            dtend: Some("2026-03-05T10:00:00".to_string()),
+            time_zone: Some("Europe/London".to_string()),
+            ..an_event_to_send()
+        };
+
+        let ical = build_ical_vevent(&event);
+
+        let rules = ical
+            .find("BEGIN:VTIMEZONE")
+            .expect("the zone's rules in the document");
+        let the_event = ical.find("BEGIN:VEVENT").expect("the event");
+        assert!(
+            rules < the_event,
+            "the rules have to come before what uses them:\n{ical}"
+        );
+        assert!(ical.contains("TZID:Europe/London"), "{ical}");
+        // And the reader still reads the event, not the zone's own dates.
+        let read_back = parse_ical_vevent(&ical, "", None).expect("the document to read");
+        assert_eq!(read_back.time_zone.as_deref(), Some("Europe/London"));
+        assert_eq!(read_back.dtstart, "2026-03-05T09:00:00");
+        assert_eq!(read_back.summary, "Standup");
+    }
+
+    #[test]
+    fn test_a_document_that_names_no_zone_defines_none() {
+        // The zones defined are the ones the document really names, never the
+        // event's zone column. A whole-day event and a UTC event write no
+        // TZID on any line, so a definition would claim the document says
+        // something it does not.
+        let whole_day = CalDavEvent {
+            is_all_day: true,
+            dtstart: "2026-03-05".to_string(),
+            dtend: None,
+            time_zone: Some("Europe/London".to_string()),
+            ..an_event_to_send()
+        };
+        let said_in_utc = CalDavEvent {
+            time_zone: Some("Europe/London".to_string()),
+            ..an_event_to_send()
+        };
+
+        for event in [whole_day, said_in_utc] {
+            let ical = build_ical_vevent(&event);
+            assert!(
+                !ical.contains("VTIMEZONE"),
+                "a zone was defined that nothing in the document names:\n{ical}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_written_document_read_back_through_our_own_reader_keeps_every_instant() {
+        // The whole round trip: a zoned series with a mixed list of cancelled
+        // days goes out, comes back through this file's own reader, and every
+        // instant survives. The zone's rules travel in the same document,
+        // field by field, so a server reading them places the same instants.
+        let event = CalDavEvent {
+            dtstart: "2026-03-05T09:00:00".to_string(),
+            dtend: Some("2026-03-05T09:30:00".to_string()),
+            time_zone: Some("Europe/London".to_string()),
+            recurrence_rule: Some("FREQ=WEEKLY".to_string()),
+            exception_dates: Some("20260312T090000Z,20260326T090000".to_string()),
+            ..an_event_to_send()
+        };
+
+        let written = build_ical_vevent(&event);
+        let read_back = parse_ical_vevent(&written, "", None).expect("the document to read");
+
+        assert_eq!(read_back.dtstart, "2026-03-05T09:00:00");
+        assert_eq!(read_back.dtend.as_deref(), Some("2026-03-05T09:30:00"));
+        assert_eq!(read_back.time_zone.as_deref(), Some("Europe/London"));
+        assert_eq!(read_back.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+        assert_eq!(
+            read_back.exception_dates.as_deref(),
+            Some("20260312T090000Z,20260326T090000")
+        );
+        for rule in [
+            "TZID:Europe/London",
+            "TZOFFSETFROM:+0000",
+            "TZOFFSETTO:+0100",
+            "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU",
+            "TZOFFSETFROM:+0100",
+            "TZOFFSETTO:+0000",
+            "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU",
+        ] {
+            assert!(
+                written.contains(rule),
+                "the zone's rules are missing {rule}:\n{written}"
+            );
+        }
+    }
+
+    #[test]
     fn test_a_zone_name_that_names_nothing_is_left_off_the_document() {
         // A name of no letters is not a name. Written out as one it gives
         // `DTSTART;TZID=:20260305T090000`, and a space gives `TZID= `, neither
@@ -3015,9 +3267,10 @@ mod tests {
     /// file somebody was looking at and the file next to it kept matching
     /// capitals, so the reader and the writer disagreed and the disagreement
     /// cost somebody their work.
-    const FILES_THAT_READ_OR_WRITE_A_DOCUMENT: [&str; 7] = [
+    const FILES_THAT_READ_OR_WRITE_A_DOCUMENT: [&str; 8] = [
         "src/service/caldav.rs",
         "src/service/ical_subscription.rs",
+        "src/service/vtimezone.rs",
         "src/application/caldav_sync.rs",
         "src/application/calendar.rs",
         "src/application/occurrences.rs",
@@ -4539,6 +4792,88 @@ pub(crate) mod writing_tests {
             "",
         ]
         .join("\r\n")
+    }
+
+    #[test]
+    fn test_a_change_into_a_document_that_defines_no_zone_adds_the_rules() {
+        // A server that omitted the timezone rules from its own document, or
+        // stored one from before this program wrote any. The change writes a
+        // zone onto the times, so the document going back has to define it or
+        // a strict server refuses the whole change.
+        let held = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n\
+                    PRODID:-//Somebody Else//Their Calendar//EN\r\n\
+                    BEGIN:VEVENT\r\nUID:zone-7\r\nSUMMARY:Standup\r\n\
+                    DTSTART;TZID=Europe/London:20260305T090000\r\nSEQUENCE:1\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+        let event = CalDavEvent {
+            uid: "zone-7".to_string(),
+            dtstart: "2026-03-05T09:30:00".to_string(),
+            dtend: None,
+            time_zone: Some("Europe/London".to_string()),
+            ..an_event("zone-7")
+        };
+
+        let sent = ical_with_the_event_changed(held, &event).expect("the change to be written");
+
+        assert_eq!(
+            sent.matches("BEGIN:VTIMEZONE").count(),
+            1,
+            "the zone the change names is not defined once:\n{sent}"
+        );
+        assert!(sent.contains("TZID:Europe/London"), "{sent}");
+        assert!(
+            sent.find("BEGIN:VTIMEZONE").expect("the rules")
+                < sent.find("BEGIN:VEVENT").expect("the event"),
+            "the rules have to come before what uses them:\n{sent}"
+        );
+    }
+
+    #[test]
+    fn test_a_change_into_a_document_already_defining_the_zone_adds_no_second_copy() {
+        // The server's own definition is copied through, so adding one of
+        // ours beside it would say two things about one zone and double the
+        // document on every change.
+        let event = CalDavEvent {
+            dtstart: "2026-03-05T09:30:00".to_string(),
+            dtend: None,
+            time_zone: Some("Europe/London".to_string()),
+            ..an_event("e-1")
+        };
+
+        let sent = ical_with_the_event_changed(&a_document_the_server_holds("e-1"), &event)
+            .expect("the change to be written");
+
+        assert_eq!(
+            sent.matches("BEGIN:VTIMEZONE").count(),
+            1,
+            "a second definition of the same zone:\n{sent}"
+        );
+    }
+
+    #[test]
+    fn test_a_zone_the_document_leaves_undefined_is_named_before_anything_is_sent() {
+        // The question the create path asks of the document it built, so the
+        // answer comes from what was really written rather than from the
+        // event's zone column: an all-day or UTC event names no zone on any
+        // line and must not be refused over a column it never used.
+        let names_and_defines_nothing = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:u-1\r\n\
+                                         DTSTART:20260305T090000Z\r\n\
+                                         END:VEVENT\r\nEND:VCALENDAR\r\n";
+        assert_eq!(zone_left_undefined(names_and_defines_nothing), None);
+
+        let names_a_zone_it_never_defines = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:u-2\r\n\
+                                             DTSTART;TZID=Pacific Standard Time:20260305T090000\r\n\
+                                             END:VEVENT\r\nEND:VCALENDAR\r\n";
+        assert_eq!(
+            zone_left_undefined(names_a_zone_it_never_defines).as_deref(),
+            Some("Pacific Standard Time")
+        );
+
+        assert_eq!(
+            zone_left_undefined(&a_document_the_server_holds("u-3")),
+            None,
+            "the zone this document names is defined in it"
+        );
     }
 
     #[test]

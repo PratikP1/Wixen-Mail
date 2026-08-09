@@ -287,6 +287,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Events sent to a calendar server now carry the time zone rules their
+  document relies on.** The calendar format requires it: every time written
+  in a named zone must be able to find that zone's rules in the same
+  document. Documents written here named the zone and defined it nowhere,
+  which a strict server refuses outright and a lenient one quietly guesses
+  at. A new event now carries the rules for every zone its document names,
+  and a change to an event whose server copy left the rules out adds them.
+  A zone that moves its clocks on no yearly pattern has its change days
+  listed one by one instead of forced into a pattern that would misplace
+  meetings. An event naming a time zone this program has no rules for is
+  held back with a message naming the zone, rather than sent as a document
+  the server could misread; it stays waiting until the event's time zone is
+  changed to a known one.
+
 - **A cancelled day of a repeating meeting keeps its exact moment on the way
   to and from a calendar server.** A series can mark its cancelled days two
   ways at once: as an instant in universal time, or as a clock face in the

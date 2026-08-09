@@ -237,6 +237,22 @@ async fn send_one_change(
             Ok(going.uid)
         }
         WhereItLives::NotThereYet => {
+            // Refused before anything leaves. The zone column can hold a name
+            // the time zone database does not know, a provider's own spelling
+            // or a private one, and the document built for it would then name
+            // a zone and define it nowhere: a strict server refuses that
+            // whole, a lenient one quietly guesses at the hour. The question
+            // is asked of the built document, not of the column, so an
+            // all-day or UTC event whose lines name no zone is never held up.
+            if let Some(zone) = crate::service::caldav::zone_left_undefined(&going.ical_data) {
+                return Err(crate::common::Error::Other(format!(
+                    "This change was not sent: the event names the time zone \
+                     \"{zone}\", which is not in the list of time zones this \
+                     program knows, so the calendar server could put its \
+                     times at the wrong hour. The change is still waiting; \
+                     changing the event's time zone will let it go out."
+                )));
+            }
             let added = caldav
                 .create_event(calendar_url, username, password, &going)
                 .await?;
@@ -1919,6 +1935,71 @@ mod tests {
             .save_calendar_event(&event)
             .expect("the waiting change");
         event
+    }
+
+    #[tokio::test]
+    async fn test_a_change_naming_a_zone_the_writer_cannot_describe_stays_waiting() {
+        // An event can carry a zone name the time zone database does not
+        // know: a provider's own spelling, or a private name. The document
+        // built for it would name the zone and define it nowhere, which a
+        // strict server refuses whole and a lenient one quietly guesses at,
+        // so nothing is sent at all: the change stays waiting and the
+        // sentence names the zone.
+        let cache = temp_cache("push_create_unknown_zone");
+        let mut calendar = container("cal-unknown-zone", "acct");
+        let (address, listening) = answering("200 OK", "text/calendar", multi_status(&[])).await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let mut event = held_event("local-1", "unused", &calendar.id, "acct");
+        event.provider_event_id = None;
+        event.web_link = None;
+        event.etag = None;
+        event.pending = true;
+        event.time_zone = Some("Pacific Standard Time".to_string());
+        event.start_datetime = "2026-03-05T09:00:00".to_string();
+        event.end_datetime = "2026-03-05T10:00:00".to_string();
+        cache
+            .save_calendar_event(&event)
+            .expect("the waiting change");
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let request = heard(listening, "only the calendar read")
+            .await
+            .expect("one request");
+        assert!(
+            asked_for(&request).starts_with("REPORT"),
+            "something was sent for a document that cannot define its zone: {}",
+            asked_for(&request)
+        );
+        assert_eq!(result.sent, 0);
+        assert_eq!(result.errors.len(), 1, "{:?}", result.errors);
+        assert!(
+            result.errors[0].contains("Pacific Standard Time"),
+            "the sentence has to name the zone: {:?}",
+            result.errors
+        );
+        assert!(
+            result.errors[0].contains("still waiting"),
+            "the sentence has to say the change is waiting: {:?}",
+            result.errors
+        );
+        let still_waiting = cache
+            .pending_calendar_events("acct")
+            .expect("the waiting changes");
+        assert_eq!(
+            still_waiting.len(),
+            1,
+            "the change stopped waiting without being sent"
+        );
     }
 
     /// One header of a captured request, read without its name.

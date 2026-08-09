@@ -20,6 +20,7 @@ pub mod safety;
 pub mod security;
 pub mod spellcheck;
 pub mod tasks_api;
+pub mod vtimezone;
 
 pub use cache::CacheService;
 pub use caldav::{CalDavClient, CalDavEvent};
