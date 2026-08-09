@@ -412,7 +412,7 @@ fn build_compose_tab(
     // contact all open with it too. It said "on new messages" while being
     // hard-set to yes and read back by nothing, so it was narrower than the
     // truth and made no difference either way.
-    let sig_sec = section(panel, SIGNATURE_SECTION);
+    let sig_sec = section(panel, "Signatures");
     let sig_cb = CheckBox::builder(panel).with_label(SIGNATURE_LABEL).build();
     set_accessible_name_and_description(
         &sig_cb,
@@ -438,9 +438,6 @@ fn build_compose_tab(
     (preview_cb, keep_a_copy_cb, autosave_spin, sig_cb)
 }
 
-/// The heading over the signature setting.
-const SIGNATURE_SECTION: &str = "Signatures";
-
 /// One sentence, said once, in the label and in the accessible name.
 const SIGNATURE_LABEL: &str = "Start every message with my &signature";
 
@@ -448,7 +445,7 @@ const SIGNATURE_LABEL: &str = "Start every message with my &signature";
 const SIGNATURE_WHEN_THIS_IS_OFF: &str = "Off: a message starts empty. Your signature stays on the account and can \
      still be added by hand.";
 
-/// Reading settings: sort order, mark-as-read, threading.
+/// Reading settings: how the list is sorted, how a message opens, dates.
 #[allow(clippy::type_complexity)]
 fn build_reading_tab(
     panel: &Panel,
