@@ -1231,7 +1231,10 @@ fn the_properties_this_program_owns(event: &CalDavEvent) -> Vec<String> {
     // says_utc from a match on the capital here. It is asked the same way as
     // the other two so there is one answer to one question, not two.
     let (start, zone) = if event.is_all_day {
-        (event.dtstart.replace('-', ""), ";VALUE=DATE".to_string())
+        (
+            denormalize_ical_date(&event.dtstart),
+            ";VALUE=DATE".to_string(),
+        )
     } else {
         let start = denormalize_ical_datetime(&event.dtstart);
         // Through `common::moment` because a name of no letters is a question
@@ -1247,7 +1250,7 @@ fn the_properties_this_program_owns(event: &CalDavEvent) -> Vec<String> {
     lines.push(format!("DTSTART{zone}:{start}"));
     if let Some(end) = worth_sending(event.dtend.as_deref()) {
         let end = if event.is_all_day {
-            end.replace('-', "")
+            denormalize_ical_date(end)
         } else {
             denormalize_ical_datetime(end)
         };
@@ -1274,6 +1277,33 @@ fn the_properties_this_program_owns(event: &CalDavEvent) -> Vec<String> {
         lines.push(format!("STATUS:{state}"));
     }
     lines
+}
+
+/// How a calendar document writes a day with no time on it.
+const WHOLE_DAY_ON_THE_WIRE: &str = "%Y%m%d";
+
+/// A stored whole day written the way a calendar server reads a date.
+///
+/// `20260727`, out of whichever shape the cache holds the value in. Taking the
+/// dashes out was not enough: a whole-day event that came from Google or from
+/// Graph keeps the day in its date columns and midnight in its datetime column,
+/// and the datetime column is the one sent, so a Google birthday became
+/// `DTSTART;VALUE=DATE:20260727T00:00:00Z`. That is not a date, and a server
+/// that checks what it is sent refuses the whole change.
+///
+/// Nothing carries such an event here today, because the only route from those
+/// columns to this writer is moving the event into a calendar server's calendar
+/// and `presentation::managers::moving_can_be_told` refuses to move any event a
+/// provider already holds. This does not depend on that gate staying shut.
+///
+/// A value that is none of the shapes is handed on as it stands, the same
+/// answer [`denormalize_ical_datetime`] gives: this writer has no way to report
+/// anything, and a start left out is an event on no day at all.
+fn denormalize_ical_date(stored: &str) -> String {
+    match crate::common::moment::read(stored) {
+        Some(moment) => moment.the_day().format(WHOLE_DAY_ON_THE_WIRE).to_string(),
+        None => stored.trim().to_string(),
+    }
 }
 
 /// A stored date and time written the way a calendar server reads one.
@@ -2098,6 +2128,62 @@ mod tests {
 
         assert!(ical.contains("RRULE:FREQ=YEARLY"), "{ical}");
         assert!(ical.contains("EXDATE;VALUE=DATE:20270305"), "{ical}");
+    }
+
+    #[test]
+    fn test_a_whole_day_event_whose_column_holds_an_hour_still_goes_out_as_a_day() {
+        // What Google and Graph both store for a whole-day event: the day in
+        // the date columns and midnight in the datetime column, with a Z on
+        // Google's and seven digits of fraction on Graph's. Taking the dashes
+        // out of that gives `DTSTART;VALUE=DATE:20260727T00:00:00Z`, which is
+        // not a date, and a server that checks what it is sent refuses the
+        // whole change. Reached only by moving such an event into a calendar
+        // server's calendar, which `presentation::managers::moving_can_be_told`
+        // refuses today for any event a provider already holds.
+        for (held, day) in [
+            ("2026-07-27T00:00:00Z", "20260727"),
+            ("2026-07-27T00:00:00.0000000", "20260727"),
+            ("2026-07-27 00:00", "20260727"),
+            ("2026-07-27", "20260727"),
+        ] {
+            let stored = CalDavEvent {
+                is_all_day: true,
+                dtstart: held.to_string(),
+                dtend: Some(held.to_string()),
+                ..an_event_to_send()
+            };
+
+            let ical = build_ical_vevent(&stored);
+
+            assert!(
+                ical.contains(&format!("DTSTART;VALUE=DATE:{day}\r\n")),
+                "for a start held as {held:?}:\n{ical}"
+            );
+            assert!(
+                ical.contains(&format!("DTEND;VALUE=DATE:{day}\r\n")),
+                "for an end held as {held:?}:\n{ical}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_whole_day_date_nobody_can_read_is_sent_as_it_stands() {
+        // Refusing to send it is not on offer here: this writer has no way to
+        // report anything, and dropping the start would send an event with no
+        // day at all. Handed on as it stands, whatever a reader could make of
+        // it is still there.
+        let stored = CalDavEvent {
+            is_all_day: true,
+            dtstart: "not a date".to_string(),
+            dtend: None,
+            ..an_event_to_send()
+        };
+
+        assert!(
+            build_ical_vevent(&stored).contains("DTSTART;VALUE=DATE:not a date"),
+            "{}",
+            build_ical_vevent(&stored)
+        );
     }
 
     #[test]

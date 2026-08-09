@@ -62,6 +62,22 @@ pub enum Moment {
     WholeDay(NaiveDate),
 }
 
+impl Moment {
+    /// The day this moment falls on.
+    ///
+    /// A moment carrying an offset falls on the day it names in that offset,
+    /// which is the only day it can be said to fall on without knowing where
+    /// somebody is standing. A clock face and a whole day each carry their own
+    /// day already.
+    pub fn the_day(self) -> NaiveDate {
+        match self {
+            Moment::Fixed(moment) => moment.date_naive(),
+            Moment::ClockFace(clock) => clock.date(),
+            Moment::WholeDay(day) => day,
+        }
+    }
+}
+
 /// Read a stored moment, in every shape the cache holds one.
 ///
 /// Nothing is returned for a value that is none of them. That is not the same
@@ -193,6 +209,24 @@ mod tests {
             read("  2026-07-27T09:00:00  "),
             Some(Moment::ClockFace(clock("2026-07-27 09:00:00")))
         );
+    }
+
+    #[test]
+    fn test_the_day_a_moment_falls_on_is_read_from_every_shape() {
+        let day = NaiveDate::from_ymd_opt(2026, 7, 27).expect("a real day");
+        for stored in [
+            "2026-07-27T00:00:00Z",
+            "2026-07-27T00:00:00.0000000",
+            "2026-07-27 09:00",
+            "2026-07-27",
+            "2026-07-27T23:59:59+05:30",
+        ] {
+            assert_eq!(
+                read(stored).expect("a moment").the_day(),
+                day,
+                "stored as {stored}"
+            );
+        }
     }
 
     #[test]

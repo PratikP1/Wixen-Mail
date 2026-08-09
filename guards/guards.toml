@@ -1258,8 +1258,8 @@ red = [
 # stored, which is the right fallback and looks the same as a date nobody has
 # checked.
 #
-# The break takes the two shapes written with a T back out. Twelve tests in five
-# modules go red, which is the shape of the thing: one list, read everywhere.
+# The break takes the two shapes written with a T back out. Fourteen tests in
+# six modules go red, which is the shape of the thing: one list, read everywhere.
 
 [[guard]]
 name = "a moment written with a T is one the reader knows"
@@ -1282,11 +1282,37 @@ red = [
     "common::moment::tests::test_a_value_padded_with_spaces_is_still_the_moment_it_names",
     "common::moment::tests::test_an_offset_is_not_mistaken_for_a_clock_face",
     "common::moment::tests::test_every_zoneless_shape_the_cache_holds_is_read_as_a_clock_face",
+    "common::moment::tests::test_the_day_a_moment_falls_on_is_read_from_every_shape",
     "presentation::managers::tests::test_correcting_a_spelling_keeps_a_clock_face_and_the_zone_it_is_named_in",
     "presentation::managers::tests::test_every_moment_the_editor_writes_is_a_shape_the_shared_reader_knows",
     "presentation::managers::tests::test_moving_an_event_that_names_a_zone_across_summer_time_keeps_the_clock_face",
     "presentation::managers::tests::test_moving_an_events_time_leaves_a_moment_that_is_read_out_as_a_date",
     "presentation::read_aloud::tests::test_every_shape_a_stored_moment_takes_is_read_as_a_date",
+    "service::caldav::tests::test_a_whole_day_event_whose_column_holds_an_hour_still_goes_out_as_a_day",
+]
+
+# -- A whole day sent to a calendar server is a day ------------------------
+#
+# A whole-day event that came from Google or from Graph keeps the day in its
+# date columns and midnight in its datetime column, and the datetime column is
+# the one this writer is given. Taking the dashes out of that produced
+# DTSTART;VALUE=DATE:20260727T00:00:00Z, which is not a date, and a server that
+# checks what it is sent refuses the whole change. Nothing carries such an event
+# here today: the only route is moving it into a calendar server's calendar and
+# presentation::managers::moving_can_be_told refuses to move any event a
+# provider already holds. The guard is here so that removing that gate does not
+# quietly open this.
+
+[[guard]]
+name = "a whole day goes to a calendar server as a day"
+file = "src/service/caldav.rs"
+before = """        (
+            denormalize_ical_date(&event.dtstart),
+            ";VALUE=DATE".to_string(),
+        )"""
+after = """        (event.dtstart.replace('-', ""), ";VALUE=DATE".to_string())"""
+red = [
+    "service::caldav::tests::test_a_whole_day_event_whose_column_holds_an_hour_still_goes_out_as_a_day",
 ]
 
 # -- What a zone name of no letters means -----------------------------------

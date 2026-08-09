@@ -287,6 +287,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A whole-day event sent to a calendar server is written as a day.** The
+  document writer turned a whole-day event's stored value into a date by taking
+  the dashes out of it. That works for an event made here, which stores a bare
+  date, and not for one that came from Google or Outlook, which stores the day
+  in one place and midnight in another. The writer read the second, so a
+  birthday went out as `DTSTART;VALUE=DATE:20260727T00:00:00Z`, which is not a
+  date. A server that checks what it is sent refuses the whole change.
+
+  Nothing carries such an event to a calendar server today, because moving an
+  event that Google or Outlook already holds into another calendar is refused
+  before it starts. This is fixed rather than left to that refusal, so that
+  changing what moving an event is allowed to do does not quietly bring it back.
+
+  How this was measured: through the document writer, with the day held in each
+  of the four shapes this program stores one in. Nothing has run against a real
+  calendar server.
+
 - **An event whose zone name is blank no longer goes to two places at two
   different times.** A stored event carries a zone name beside its clock face. A
   name that is empty, or nothing but spaces, names no zone, and four different
