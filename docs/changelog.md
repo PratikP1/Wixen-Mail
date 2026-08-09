@@ -347,10 +347,10 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 - **The first-run screen now reads out the answer it is going to use.** The
   screen that asks what Wixen Mail may change put focus on "Read my mail, change
   nothing" and ticked the next answer down, which sends changes to your tasks,
-  contacts and calendar up to your provider. Somebody using a screen reader
-  heard the cautious answer, pressed Enter on the first thing they heard, and
-  had writing to their real address book, calendar and tasks switched on without
-  being told.
+  contacts and calendar up to your provider. So the answer announced on opening
+  was the cautious one and the answer Continue would act on was the next one
+  down: pressing Enter on what had just been read out switched on writing to a
+  real address book, calendar and tasks, and nothing said so.
 
   Focus now lands on the answer that is ticked, so what is announced is what
   Continue will do. Which answer the screen starts on has not changed: it is
