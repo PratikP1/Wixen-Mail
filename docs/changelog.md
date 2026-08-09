@@ -290,10 +290,10 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 - **Importing an address book that splits a person across cards no longer makes
   two contacts of them.** Several address books export one card per address
   rather than one card carrying the whole list. What says two records are one
-  person here is an address they share, and two such cards share none, so on a
-  first import, when nothing is stored for that person yet, both cards were
-  written down. Every person their address book had split arrived here twice,
-  and both halves were queued to go to your real address book.
+  person here is an address they share, and two such cards share none, so unless
+  you already hold that person at both of them, both cards were written down.
+  Every person their address book had split arrived here twice, and both halves
+  were queued to go to your real address book.
 
   Two cards in one file are now one person when they are the same card apart
   from the addresses on them, which is what a per-address export writes. Anything
@@ -302,7 +302,8 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   anything. This applies to cards in the file being read, never to a contact you
   already hold: an address book is entitled to hold two people with one name, and
   folding a card into one of them would put a stranger's address on somebody
-  real.
+  real. A card that matched somebody you already hold is still a card in the
+  file, so whether the two join does not turn on which of them matched her.
 
   The count now says how many people the file wrote down rather than how many
   cards did the writing. Two cards for one person used to be announced as

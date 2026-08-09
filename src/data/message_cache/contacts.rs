@@ -320,12 +320,15 @@ impl MessageCache {
         // of one column can answer, and a folder of two hundred cards would
         // otherwise read the whole address book two hundred times.
         let mut held = self.get_contacts_for_account(account_id)?;
-        // The cards in this file that made somebody new, and where each one's
-        // row sits in the running copy. Only these are matched card against
-        // card. See [`the_same_person_on_an_earlier_card`].
+        // Every card this file has written down, with the addresses taken off
+        // it and the row it went to. Matched card against card, never card
+        // against a stored contact. See
+        // [`the_same_person_on_an_earlier_card`]. Bared once here rather than
+        // at each comparison, because a file of two hundred cards asks this
+        // question twenty thousand times.
         //
         // [`the_same_person_on_an_earlier_card`]: MessageCache::the_same_person_on_an_earlier_card
-        let mut made_by_this_import: Vec<(usize, ContactEntry)> = Vec::new();
+        let mut cards_read_so_far: Vec<(usize, ContactEntry)> = Vec::new();
         // Which rows the file wrote, and which of them it left waiting, rather
         // than how many cards did the writing. Counting cards said "Imported 2
         // contacts. 2 contacts are waiting to be sent to your address book" for
@@ -342,19 +345,20 @@ impl MessageCache {
             };
             // A card carries no identifier this application keeps, so an
             // address is what says the same card read twice is one person.
+            let bared = Self::the_card_apart_from_its_addresses(&from_card);
             let already_here = held
                 .iter()
                 .position(|contact| contact.shares_an_address_with(&from_card))
                 .or_else(|| {
-                    made_by_this_import
+                    cards_read_so_far
                         .iter()
                         .find(|(_, earlier)| {
-                            Self::the_same_person_on_an_earlier_card(earlier, &from_card)
+                            Self::the_same_person_on_an_earlier_card(earlier, &bared)
                         })
                         .map(|(at, _)| *at)
                 });
             let contact =
-                Self::a_card_over_what_is_held(from_card.clone(), already_here.map(|at| &held[at]));
+                Self::a_card_over_what_is_held(from_card, already_here.map(|at| &held[at]));
             match self.save_contact(&contact) {
                 Ok(_) => {
                     let still_owed = contact.pending;
@@ -368,10 +372,10 @@ impl MessageCache {
                         }
                         None => {
                             held.push(contact);
-                            made_by_this_import.push((held.len() - 1, from_card));
                             held.len() - 1
                         }
                     };
+                    cards_read_so_far.push((row, bared));
                     written_down.insert(row);
                     if still_owed {
                         waiting.insert(row);
@@ -388,16 +392,16 @@ impl MessageCache {
         Ok(read)
     }
 
-    /// Whether a card names somebody an earlier card in the same file already
-    /// made, when no address says so.
+    /// Whether a card names the person an earlier card in the same file wrote
+    /// down, when no address says so.
     ///
-    /// An address is what usually answers this, and there are two cards it
-    /// cannot answer for: the ones an address book writes when it exports one
-    /// card per address for a person nobody here holds yet. Neither card names
-    /// an address the other has, and neither matches anything stored, so both
-    /// were written down and both were queued. A first import of somebody's
-    /// exported address book duplicated every person that address book had
-    /// split across cards, and sent both halves to a real address book.
+    /// An address is what usually answers this, and there is one pair of cards
+    /// it cannot answer for: the two an address book writes when it exports one
+    /// card per address, for somebody this account does not already hold at
+    /// both. Neither card names an address the other has, so both were written
+    /// down and both were queued. A first import of somebody's exported address
+    /// book duplicated every person that address book had split across cards,
+    /// and sent both halves to a real address book.
     ///
     /// The rule is that two cards in one file are one person when they are the
     /// same card apart from the addresses on them. A per-address export repeats
@@ -406,6 +410,14 @@ impl MessageCache {
     /// them apart. A card with no name on it is nobody, and never matches: a
     /// nameless card is named after its own address, so joining on the name
     /// alone would join every nameless card in the file.
+    ///
+    /// Both are cards from the file being read. This never asks the question of
+    /// a stored contact: one came from somewhere else, and an address book is
+    /// entitled to hold two people with one name, so folding a card into one of
+    /// them on the strength of the name would put a stranger's address on
+    /// somebody real. A card that matched a stored contact by address is still
+    /// a card in this file and is still compared, or whether two cards join
+    /// would turn on which of them happened to match her.
     ///
     /// # What this cannot tell apart
     ///
@@ -417,17 +429,13 @@ impl MessageCache {
     /// leave the commonest export shape of all, a name and an address, still
     /// duplicating everybody.
     ///
-    /// Asked only of cards this same import made, never of a contact the
-    /// account already held. A stored contact came from somewhere else, and an
-    /// address book is entitled to hold two people with one name; folding a
-    /// card into one of them on the strength of the name would put a stranger's
-    /// address on somebody real.
+    /// Both sides arrive with [`the_card_apart_from_its_addresses`] already
+    /// applied, because a file of two hundred cards asks this twenty thousand
+    /// times and each answer would otherwise copy two whole contacts.
+    ///
+    /// [`the_card_apart_from_its_addresses`]: MessageCache::the_card_apart_from_its_addresses
     fn the_same_person_on_an_earlier_card(earlier: &ContactEntry, arriving: &ContactEntry) -> bool {
-        if arriving.name.trim().is_empty() {
-            return false;
-        }
-        Self::the_card_apart_from_its_addresses(earlier)
-            == Self::the_card_apart_from_its_addresses(arriving)
+        !arriving.name.trim().is_empty() && earlier == arriving
     }
 
     /// One card with everything an address, or the reading of one card rather
@@ -4614,6 +4622,37 @@ END:VCARD";
         );
         assert_eq!(read.added, 1, "one person was written down twice");
         assert_eq!(read.waiting_to_be_sent, 1, "one person was sent twice");
+    }
+
+    #[test]
+    fn test_a_second_card_joins_the_person_the_first_card_matched() {
+        // The same pair of cards where the first one matched somebody already
+        // stored. She is held at one of her two addresses, the file names both,
+        // and whether the two cards are one person must not turn on which of
+        // them happened to match her: read the other way round the file gives
+        // one contact, so read this way it has to as well.
+        let cache = a_cache("vcard_second_card_joins_a_match");
+        let mut alice = a_contact("alice-1", "Alice Smith");
+        alice.email = "alice@example.com".to_string();
+        alice.emails_json = None;
+        cache.save_contact(&alice).expect("the contact to save");
+
+        cache
+            .import_contacts_from_vcard(
+                "test@example.com",
+                &format!(
+                    "{}{}",
+                    a_card_naming("Alice Smith", "alice@example.com"),
+                    a_card_naming("Alice Smith", "a.smith@work.example")
+                ),
+            )
+            .expect("the import to run");
+
+        let alice = the_only_contact(&cache);
+        assert_eq!(
+            the_addresses(&alice),
+            ["alice@example.com", "a.smith@work.example"]
+        );
     }
 
     #[test]

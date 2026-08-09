@@ -1495,6 +1495,7 @@ before = """            emails_json: contact.emails_json.clone().or_else(|| {
 after = """            emails_json: contact.emails_json.clone(),"""
 red = [
     "data::message_cache::contacts::tests::test_a_card_adding_an_address_to_a_row_with_no_list_keeps_the_one_on_its_main_line",
+    "data::message_cache::contacts::tests::test_a_second_card_joins_the_person_the_first_card_matched",
 ]
 
 # -- What a card may do to the addresses somebody already holds --------------
@@ -1520,6 +1521,7 @@ red = [
     "data::message_cache::contacts::tests::test_a_card_repeating_the_addresses_already_held_changes_nothing_about_them",
     "data::message_cache::contacts::tests::test_an_address_the_card_adds_keeps_the_label_the_card_gave_it",
     "data::message_cache::contacts::tests::test_two_cards_one_address_each_are_one_person_holding_both_addresses",
+    "data::message_cache::contacts::tests::test_a_second_card_joins_the_person_the_first_card_matched",
 ]
 
 # The other direction. Joining has its own way of going wrong: an address she
@@ -1561,6 +1563,7 @@ red = [
     "data::message_cache::contacts::tests::test_importing_a_card_that_changed_nothing_queues_nothing",
     "data::message_cache::contacts::tests::test_re_importing_a_backup_does_not_queue_a_contact_stored_by_an_older_version",
     "data::message_cache::contacts::tests::test_two_cards_one_address_each_are_one_person_holding_both_addresses",
+    "data::message_cache::contacts::tests::test_a_second_card_joins_the_person_the_first_card_matched",
 ]
 
 # The narrow half of the same rule, and the one found by trying to break the
@@ -1611,6 +1614,7 @@ after = """        let joined: Vec<super::EmailEntry> = held
             .every_address_in_the_list()"""
 red = [
     "data::message_cache::contacts::tests::test_a_card_adding_an_address_to_a_row_with_no_list_keeps_the_one_on_its_main_line",
+    "data::message_cache::contacts::tests::test_a_second_card_joins_the_person_the_first_card_matched",
 ]
 
 # -- What the first-run screen reads out is what it will do ------------------
@@ -1679,11 +1683,11 @@ red = [
 [[guard]]
 name = "two cards that are one card but for the address are one person"
 file = "src/data/message_cache/contacts.rs"
-before = """        Self::the_card_apart_from_its_addresses(earlier)
-            == Self::the_card_apart_from_its_addresses(arriving)"""
+before = """        !arriving.name.trim().is_empty() && earlier == arriving"""
 after = """        false"""
 red = [
     "data::message_cache::contacts::tests::test_two_cards_for_somebody_nobody_here_holds_are_one_person",
+    "data::message_cache::contacts::tests::test_a_second_card_joins_the_person_the_first_card_matched",
 ]
 
 # The same rule where somebody looks for a person rather than where two records
