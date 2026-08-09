@@ -310,6 +310,32 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   Known limitation: this has not been through a screen reader. What was
   measured is the style the code hands the message box.
 
+- **Settings no longer offers three answers nothing kept.** Each was on the
+  screen with a value a screen reader read out, and nothing anywhere saved that
+  value or read it back, so what it said was a setting somebody could not have.
+
+  "Default format", offering HTML or Plain Text, is gone from the Compose tab.
+  There is no such choice to make: one editor writes every message and nothing
+  asks which was wanted.
+
+  "Enable threaded view by default" is gone from the Reading tab. Threaded view
+  is not built. Its View menu item is there and disabled and says so, and a
+  default for something that cannot be switched on is a default for nothing.
+
+  "Load remote images in messages" is gone from the Reading tab, and a sentence
+  saying what happens stands where it was. It sat unticked, which reads as a
+  promise that pictures are not fetched, and nothing honoured it either way.
+  What happens: a picture a message points at rather than carries is left in
+  the message, and the preview pane and the conversation window show a message
+  in a browser, which fetches the picture and so tells the sender the message
+  was opened. The reading window, which is where a message opens when you press
+  Enter on it, shows text and fetches nothing.
+
+  Known limitation: there is still no way to stop that fetch. Blocking it is a
+  feature nobody has built, and the Reading tab now says so rather than
+  implying it is done. What is written here was read out of the code, not
+  measured on the wire.
+
 - **The signature setting on the Compose tab does something now.**
   "Automatically insert signature on new messages" was built ticked, handed
   back by nothing and saved by nothing. A screen reader announced it as on, it

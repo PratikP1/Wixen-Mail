@@ -615,11 +615,9 @@ fn build_reading_tab(
 
     // A checkbox reading "Load remote images in messages" used to sit here,
     // unticked, saved by nothing and read by nothing. Unticked is what a
-    // screen reader announced, and it was the opposite of what happens: a
-    // picture a message points at is fetched when the message is shown, which
-    // tells whoever sent it that the message was opened and roughly when. The
-    // sentence below says so, because being told the truth is worth more than
-    // a switch that was never wired to anything.
+    // screen reader announced, and nothing anywhere honoured it. The sentence
+    // below says what happens instead, because being told the truth is worth
+    // more than a switch that was never wired to anything.
     let images_note = StaticText::builder(panel)
         .with_label(REMOTE_IMAGES_ARE_FETCHED)
         .build();
@@ -747,11 +745,21 @@ fn build_reading_tab(
 
 /// What happens to a picture a message points at, said rather than switched.
 ///
-/// There is no setting for this yet. Saying so is the honest half of what the
-/// checkbox that used to stand here was claiming.
-const REMOTE_IMAGES_ARE_FETCHED: &str = "Pictures a message points at are fetched from wherever the sender put \
-     them when the message is shown, which tells the sender you opened it. \
-     There is no setting for this yet.";
+/// Narrower than the checkbox that used to stand here, and narrower than the
+/// first version of this sentence, which said a picture was fetched whenever a
+/// message was shown. The reading window is a text control and fetches
+/// nothing. The two surfaces that show a message body in a browser are the
+/// preview pane and the conversation window, and the address the sender wrote
+/// is still in the message on both of them.
+///
+/// Read rather than measured: the code leaves the address in the message and
+/// hands it to a browser, and nothing here refuses the request. No network
+/// trace has been taken.
+const REMOTE_IMAGES_ARE_FETCHED: &str = "A picture a message points at rather than carries is left in the message. \
+     The preview pane and the conversation window show a message in a browser, \
+     which fetches the picture and so tells the sender the message was opened. \
+     The reading window shows text and fetches nothing. There is no setting \
+     for this yet.";
 
 /// What the second level of the sort can be, in the order it is offered.
 ///
