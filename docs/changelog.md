@@ -287,6 +287,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A task change held back by Allow Changes is no longer called a problem.**
+  With Allow Changes off, a task you had edited or deleted here was reported
+  as an error after every sync, forever: "1 problem" on the status line, with
+  nothing saying what would fix it, about a change that was simply waiting on
+  the setting. The sync now counts it as waiting and says so in a sentence
+  that names the setting: "1 change is waiting here: turn on Allow Changes in
+  Settings to send it". Turning the setting on sends the change on the next
+  sync, with nothing typed again. Calendar and contact changes already said
+  this; task changes now say the same sentence.
+
 - **A date without a time is spoken as a date again, not as hours since
   midnight.** Under the relative date style, the one the product ships with, a
   task due on a day was announced "Due: 12 hours ago" at noon of that very day,

@@ -1844,3 +1844,62 @@ after = """                late: match moment {
 red = [
     "application::due::tests::test_a_reminder_for_a_day_is_not_called_overdue_during_that_day",
 ]
+
+# ── A task change no setting let out ────────────────────────────────────────
+#
+# With Allow Changes off, every pending task write was pushed into `errors`,
+# so the status line said "1 problem" on every sync, forever, about a change
+# that was simply waiting on a setting, and the sentence that names the
+# setting was never said. The calendar and contacts syncs had already been
+# through this; the tasks sync is the third module to grow the same defect,
+# which is why each piece of the fix is measured here.
+
+[[guard]]
+name = "a task deletion held by Allow Changes is a wait, not a problem"
+file = "src/application/tasks_sync.rs"
+before = """            Err(e) if crate::service::outward::was_refused_by_the_gate(&e) => {
+                result.waiting_on_the_setting += 1;
+            }
+            Err(e) if refused_for_permission(&e) => result.needs_sign_in = true,
+            Err(e) => result.errors.push(format!("Deleting a task: {e}")),"""
+after = """            Err(e) if refused_for_permission(&e) => result.needs_sign_in = true,
+            Err(e) => result.errors.push(format!("Deleting a task: {e}")),"""
+red = [
+    "application::tasks_sync::tests::test_a_deletion_held_by_allow_changes_waits_rather_than_failing",
+]
+
+[[guard]]
+name = "a task change held by Allow Changes is a wait, not a problem"
+file = "src/application/tasks_sync.rs"
+before = """            Err(e) if crate::service::outward::was_refused_by_the_gate(&e) => {
+                result.waiting_on_the_setting += 1;
+            }
+            Err(e) if refused_for_permission(&e) => result.needs_sign_in = true,
+            // The task's id, not its title."""
+after = """            Err(e) if refused_for_permission(&e) => result.needs_sign_in = true,
+            // The task's id, not its title."""
+red = [
+    "application::tasks_sync::tests::test_a_task_change_held_by_allow_changes_waits_rather_than_failing",
+    "application::tasks_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
+    "application::tasks_sync::tests::test_two_syncs_with_the_setting_off_both_say_waiting_and_never_error",
+]
+
+[[guard]]
+name = "the waiting count survives the two providers being folded together"
+file = "src/application/tasks_sync.rs"
+before = """        self.local_only += other.local_only;
+        self.waiting_on_the_setting += other.waiting_on_the_setting;"""
+after = """        self.local_only += other.local_only;"""
+red = [
+    "application::tasks_sync::tests::test_folding_two_providers_together_keeps_every_count",
+]
+
+[[guard]]
+name = "the waiting count is said as a sentence naming the setting"
+file = "src/application/tasks_sync.rs"
+before = """        if self.waiting_on_the_setting > 0 {"""
+after = """        if false {"""
+red = [
+    "application::tasks_sync::tests::test_a_change_waiting_on_the_setting_is_said_as_a_sentence_not_a_problem",
+    "application::tasks_sync::tests::test_two_syncs_with_the_setting_off_both_say_waiting_and_never_error",
+]

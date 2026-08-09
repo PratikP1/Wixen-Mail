@@ -101,6 +101,12 @@ pub struct TaskSyncResult {
     /// made has nowhere at the other end to go, and saying so once as a count
     /// is honest without turning into a line of complaint on every sync.
     pub local_only: usize,
+    /// Changes still waiting because the account is open for reading only.
+    ///
+    /// Counted rather than reported as a failure. Nothing went wrong: the
+    /// change is waiting on a setting, and one error per waiting task on every
+    /// sync from now on is how a warning somebody needs stops being read.
+    pub waiting_on_the_setting: usize,
     /// The provider refused a change because of what this application is
     /// allowed to do, rather than because of the change.
     ///
@@ -148,6 +154,7 @@ impl TaskSyncResult {
         self.deleted += other.deleted;
         self.sent += other.sent;
         self.local_only += other.local_only;
+        self.waiting_on_the_setting += other.waiting_on_the_setting;
         self.replaced += other.replaced;
         self.lists_removed += other.lists_removed;
         self.kept_elsewhere += other.kept_elsewhere;
@@ -201,6 +208,13 @@ impl TaskSyncResult {
             // status line that grows with the number of failures pushes
             // everything else off it.
             said.count(how_many(self.errors.len(), "problem"));
+        }
+        if self.waiting_on_the_setting > 0 {
+            // The calendar and contacts syncs say this too, so it is said in
+            // one place. Two copies of it drifted and only one was corrected.
+            said.sentence(crate::application::allowed::changes_waiting_here(
+                self.waiting_on_the_setting,
+            ));
         }
         if self.needs_sign_in {
             // Said rather than counted. An account signed in before this
@@ -640,6 +654,14 @@ async fn push_tasks<S: TaskService>(
                 );
                 result.sent += 1;
             }
+            // Held by Allow Changes before anything left the machine. Counted
+            // rather than pushed into `errors`, because nothing went wrong: as
+            // an error it is "1 problem" on every sync until the setting
+            // changes. Nothing else happens here on purpose. The tombstone is
+            // not marked taken, so turning the setting on still sends it.
+            Err(e) if crate::service::outward::was_refused_by_the_gate(&e) => {
+                result.waiting_on_the_setting += 1;
+            }
             Err(e) if refused_for_permission(&e) => result.needs_sign_in = true,
             Err(e) => result.errors.push(format!("Deleting a task: {e}")),
         }
@@ -671,6 +693,13 @@ async fn push_tasks<S: TaskService>(
         }
         match push_one(cache, service, token, provider, &list_id, &task).await {
             Ok(()) => result.sent += 1,
+            // Held by Allow Changes before anything left the machine, the same
+            // answer the deletions get above. The flag is only cleared on a
+            // send that landed, so the change is still here to send once the
+            // setting is on.
+            Err(e) if crate::service::outward::was_refused_by_the_gate(&e) => {
+                result.waiting_on_the_setting += 1;
+            }
             Err(e) if refused_for_permission(&e) => result.needs_sign_in = true,
             // The task's id, not its title. These go to the log file, and a
             // title is the person's own words in the same way a message body
@@ -1262,6 +1291,9 @@ mod tests {
         /// Refused because of what this application is allowed to do, which is
         /// the one refusal somebody can act on.
         RefusedOnPermission,
+        /// Refused by Allow Changes before anything left the machine, which is
+        /// a setting rather than a fault.
+        RefusedByTheGate,
     }
 
     impl Scripted {
@@ -1312,6 +1344,11 @@ mod tests {
                 Writes::RefusedOnPermission => Err(Error::Authentication(
                     crate::service::tasks_api::NEEDS_SIGN_IN.to_string(),
                 )),
+                // Built through the one constructor the gate itself uses, so
+                // the test cannot drift into a wording production never makes.
+                Writes::RefusedByTheGate => Err(Error::Security(crate::service::outward::refusal(
+                    "change a task",
+                ))),
             }
         }
     }
@@ -1569,6 +1606,7 @@ mod tests {
             deleted: 4,
             sent: 5,
             local_only: 6,
+            waiting_on_the_setting: 12,
             needs_sign_in: false,
             replaced: 7,
             lists_removed: 8,
@@ -1582,6 +1620,7 @@ mod tests {
             deleted: 40,
             sent: 50,
             local_only: 60,
+            waiting_on_the_setting: 120,
             needs_sign_in: false,
             replaced: 70,
             lists_removed: 80,
@@ -1597,6 +1636,7 @@ mod tests {
                 deleted: 44,
                 sent: 55,
                 local_only: 66,
+                waiting_on_the_setting: 132,
                 needs_sign_in: false,
                 replaced: 77,
                 lists_removed: 88,
@@ -1629,6 +1669,15 @@ mod tests {
         assert!(!refused_for_permission(&Error::Network(
             "Could not reach the task service".to_string()
         )));
+        // The Allow Changes refusal is the other question, answered by
+        // `was_refused_by_the_gate`. Folding the two together would tell
+        // somebody to sign in again when the fix is a setting.
+        assert!(!refused_for_permission(&Error::Security(
+            crate::service::outward::refusal("change a task")
+        )));
+        assert!(!crate::service::outward::was_refused_by_the_gate(
+            &Error::Authentication(crate::service::tasks_api::NEEDS_SIGN_IN.to_string())
+        ));
     }
 
     #[test]
@@ -1647,6 +1696,35 @@ mod tests {
         let said = result.summary();
 
         assert!(said.contains("Sign in to this account again"), "{said}");
+        assert!(!said.contains("problem"), "{said}");
+    }
+
+    #[test]
+    fn test_a_change_waiting_on_the_setting_is_said_as_a_sentence_not_a_problem() {
+        // Counted and never said is the same as not counted, and said as a
+        // problem it is "1 problem" on every sync until the setting changes.
+        // Compared against the one routine that writes the sentence, not a
+        // retyped copy of it, so the words cannot drift apart.
+        let one = TaskSyncResult {
+            waiting_on_the_setting: 1,
+            ..Default::default()
+        };
+        let said = one.summary();
+        assert!(
+            said.contains(&crate::application::allowed::changes_waiting_here(1)),
+            "{said}"
+        );
+        assert!(!said.contains("problem"), "{said}");
+
+        let three = TaskSyncResult {
+            waiting_on_the_setting: 3,
+            ..Default::default()
+        };
+        let said = three.summary();
+        assert!(
+            said.contains(&crate::application::allowed::changes_waiting_here(3)),
+            "{said}"
+        );
         assert!(!said.contains("problem"), "{said}");
     }
 
@@ -2548,6 +2626,11 @@ mod tests {
         // Refused for an ordinary reason, so it is a problem to report rather
         // than a reason to tell somebody to sign in again. The tombstone
         // survives, because failing once is not a reason to drop a deletion.
+        //
+        // The scripted provider turns every write down with an ordinary
+        // error. The real read-only client stood here once, but what it
+        // raises is the Allow Changes refusal, which is a wait rather than a
+        // problem.
         let cache = a_cache("refused_deletion");
         a_list(&cache, "google:list");
         cache
@@ -2562,7 +2645,7 @@ mod tests {
         let mut result = TaskSyncResult::default();
         push_tasks(
             &cache,
-            &TasksClient::new(),
+            &Scripted::default(),
             "token",
             "acc-1",
             Provider::Google,
@@ -2591,8 +2674,10 @@ mod tests {
     #[tokio::test]
     async fn test_a_task_in_a_list_the_provider_owns_is_sent_rather_than_kept_here() {
         // The sign of the list check, and what happens when the send is
-        // refused: the failure is reported against the task's id, and nothing
-        // claims the change reached the account.
+        // refused for an ordinary reason: the failure is reported against the
+        // task's id, and nothing claims the change reached the account. The
+        // scripted provider turns the send down with an ordinary error; the
+        // real read-only client raises the Allow Changes one, which is a wait.
         let cache = a_cache("sent_not_kept");
         a_list(&cache, "google:list");
         cache
@@ -2607,7 +2692,7 @@ mod tests {
         let mut result = TaskSyncResult::default();
         push_tasks(
             &cache,
-            &TasksClient::new(),
+            &Scripted::default(),
             "token",
             "acc-1",
             Provider::Google,
@@ -3664,6 +3749,15 @@ mod tests {
         }
     }
 
+    /// A service behind a closed Allow Changes gate. Nothing it is sent ever
+    /// leaves the machine, so every change is still here afterwards.
+    fn a_provider_whose_account_is_read_only() -> Scripted {
+        Scripted {
+            writes: Writes::RefusedByTheGate,
+            ..Scripted::default()
+        }
+    }
+
     #[tokio::test]
     async fn test_the_trait_the_sync_talks_through_still_asks_the_read_only_client() {
         // The sync never holds the client itself, it holds something that
@@ -4039,6 +4133,232 @@ mod tests {
                 .len(),
             1,
             "a change was dropped for having been refused once"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_held_by_allow_changes_waits_rather_than_failing() {
+        // The gate refuses before anything leaves the machine. Reported as an
+        // error, that is "1 problem" on the status line after every sync,
+        // forever, about a change that is simply waiting on a setting. The
+        // tombstone stays, so turning the setting on can still send it.
+        let cache = a_cache("deletion_waits_on_the_gate");
+        a_list(&cache, "google:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "google:t1".to_string(),
+                task_list_id: Some("google:list".to_string()),
+                ..task("x")
+            })
+            .expect("a task");
+        cache.delete_task("google:t1").expect("a deletion");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &a_provider_whose_account_is_read_only(),
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+
+        assert_eq!(
+            result.waiting_on_the_setting, 1,
+            "a change held by the gate was not counted as waiting"
+        );
+        assert!(
+            result.errors.is_empty(),
+            "a change waiting on a setting was reported as a problem: {:?}",
+            result.errors
+        );
+        assert!(
+            !result.needs_sign_in,
+            "the gate was read as a sign-in problem, which signing in cannot fix"
+        );
+        assert_eq!(result.sent, 0, "a refused deletion was counted as sent");
+        assert_eq!(
+            cache.deleted_tasks("acc-1").expect("the deletions").len(),
+            1,
+            "the tombstone went, so turning the setting on would send nothing"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_task_change_held_by_allow_changes_waits_rather_than_failing() {
+        // The same rule for a change as for a deletion. The flag stays set, so
+        // turning the setting on sends the change with nothing typed again.
+        let cache = a_cache("change_waits_on_the_gate");
+        a_list(&cache, "google:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "task-local-10".to_string(),
+                task_list_id: Some("google:list".to_string()),
+                pending: true,
+                ..task("x")
+            })
+            .expect("a task");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &a_provider_whose_account_is_read_only(),
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+
+        assert_eq!(
+            result.waiting_on_the_setting, 1,
+            "a change held by the gate was not counted as waiting"
+        );
+        assert!(
+            result.errors.is_empty(),
+            "a change waiting on a setting was reported as a problem: {:?}",
+            result.errors
+        );
+        assert!(
+            !result.needs_sign_in,
+            "the gate was read as a sign-in problem, which signing in cannot fix"
+        );
+        assert_eq!(result.sent, 0, "a refused change was counted as sent");
+        assert_eq!(
+            cache
+                .pending_tasks("acc-1")
+                .expect("the pending tasks")
+                .len(),
+            1,
+            "the flag was cleared, so turning the setting on would send nothing"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_two_syncs_with_the_setting_off_both_say_waiting_and_never_error() {
+        // The shape of the fault this pins: with Allow Changes off, every
+        // pending change was one more problem on the status line on every
+        // sync, forever. Two full syncs, because forever starts at the second
+        // one, and because the change has to survive the pull in between.
+        let cache = a_cache("two_syncs_with_the_setting_off");
+        a_list(&cache, "google:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "google:t10".to_string(),
+                task_list_id: Some("google:list".to_string()),
+                pending: true,
+                remote_updated: Some("2026-07-01T10:00:00Z".to_string()),
+                ..task("x")
+            })
+            .expect("a task edited here");
+        let while_it_is_off = Scripted {
+            writes: Writes::RefusedByTheGate,
+            google_lists: vec![GoogleTaskList {
+                id: "list".to_string(),
+                title: "My Tasks".to_string(),
+            }],
+            // The provider's copy is the one this computer already saw, so the
+            // pull leaves the edited row alone rather than sweeping it away
+            // and making the second sync pass for the wrong reason.
+            google_tasks: std::collections::HashMap::from([(
+                "list".to_string(),
+                vec![GoogleTask {
+                    id: "t10".to_string(),
+                    updated: Some("2026-07-01T10:00:00Z".to_string()),
+                    ..Default::default()
+                }],
+            )]),
+            ..Default::default()
+        };
+
+        for run in ["first", "second"] {
+            let result = sync_google_tasks(&cache, &while_it_is_off, "token", "acc-1")
+                .await
+                .expect("the sync runs");
+
+            assert_eq!(
+                result.waiting_on_the_setting, 1,
+                "the {run} sync did not count the change as waiting"
+            );
+            assert!(
+                result.errors.is_empty(),
+                "the {run} sync called a waiting change a problem: {:?}",
+                result.errors
+            );
+            let said = result.summary();
+            assert!(
+                said.contains(&crate::application::allowed::changes_waiting_here(1)),
+                "the {run} sync never named the setting: {said}"
+            );
+            assert!(!said.contains("problem"), "{said}");
+        }
+        assert_eq!(
+            cache
+                .pending_tasks("acc-1")
+                .expect("the pending tasks")
+                .len(),
+            1,
+            "the change stopped waiting without ever being sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting() {
+        // The whole of what "waiting" has to mean. If the flag did not survive
+        // the gated sync, turning the setting on would send nothing and the
+        // person would sit with the instruction already followed.
+        let cache = a_cache("change_waits_then_goes");
+        a_list(&cache, "google:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "google:t10".to_string(),
+                task_list_id: Some("google:list".to_string()),
+                pending: true,
+                remote_updated: Some("2026-07-01T10:00:00Z".to_string()),
+                ..task("x")
+            })
+            .expect("a task edited here");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &a_provider_whose_account_is_read_only(),
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+        assert_eq!(result.waiting_on_the_setting, 1, "{result:?}");
+
+        let once_it_is_on = Scripted {
+            writes: Writes::Accepted,
+            ..Scripted::default()
+        };
+        let mut second = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &once_it_is_on,
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut second,
+        )
+        .await;
+
+        assert_eq!(
+            second.sent, 1,
+            "the summary named a setting to turn on and turning it on sent nothing"
+        );
+        assert_eq!(second.waiting_on_the_setting, 0, "{second:?}");
+        assert!(second.errors.is_empty(), "{:?}", second.errors);
+        assert!(
+            cache
+                .pending_tasks("acc-1")
+                .expect("the pending tasks")
+                .is_empty(),
+            "the change went and is still marked as waiting to go"
         );
     }
 
