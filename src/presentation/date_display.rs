@@ -307,17 +307,29 @@ pub fn format_for_list(stored: &str, now: DateTime<Local>, settings: DateSetting
 ///
 /// Nothing stored is nothing said, rather than the word "none" or today's date.
 pub fn spoken(stored: &str, now: DateTime<Local>, settings: DateSettings) -> String {
+    use crate::common::moment::Moment;
+
     if stored.trim().is_empty() {
         return String::new();
     }
     // A day with no year names no moment, so nothing below can measure it or
-    // put a clock on it. Handled here rather than left to `parse`, which
-    // answers nothing for it and hands the reader "--03-14" character by
+    // put a clock on it. Handled here rather than left to the moment reader,
+    // which answers nothing for it and hands the reader "--03-14" character by
     // character.
     if stored.trim().starts_with(YEAR_LEFT_OUT) {
         return a_day_in_words(stored, settings);
     }
-    let Some(when) = parse(stored) else {
+    let Some(moment) = crate::common::moment::read(stored) else {
+        return stored.to_string();
+    };
+    // A whole day is a date under every style. Measured against now it would
+    // be read from its midnight, and "12 hours ago" at noon about a task due
+    // today is the reading calling it overdue. The birthday reading already
+    // refuses that; the rule is the same for every stored day.
+    if let Moment::WholeDay(day) = moment {
+        return date_part(day, settings);
+    }
+    let Some(when) = local_instant(moment) else {
         return stored.to_string();
     };
     if settings.style == DateStyle::RelativeWithinWeek
@@ -325,11 +337,7 @@ pub fn spoken(stored: &str, now: DateTime<Local>, settings: DateSettings) -> Str
     {
         return relative;
     }
-    if stored_carries_a_time(stored) {
-        absolute(when, settings)
-    } else {
-        date_part(when, settings)
-    }
+    absolute(when, settings)
 }
 
 /// How a stored date whose year nobody gave is written: "--03-14".
@@ -410,13 +418,34 @@ fn ordinal(day: u32) -> String {
     format!("{}{}", day, ending)
 }
 
+/// The hour of the day a stored moment is spoken at, when it names one.
+///
+/// Built on the same reading and the same zone conversion as [`spoken`], so
+/// anything judged by this hour, such as the calendar's out-of-hours note,
+/// judges the hour the cell beside it says. A whole day answers nothing: it
+/// names no hour, and midnight would put every one of them outside the working
+/// day. A value that is not a stored moment answers nothing too, rather than
+/// whatever number its characters happen to hold.
+pub fn the_hour_spoken(stored: &str) -> Option<u32> {
+    use crate::common::moment::Moment;
+
+    match crate::common::moment::read(stored)? {
+        Moment::WholeDay(_) => None,
+        names_an_hour => local_instant(names_an_hour).map(|when| when.hour()),
+    }
+}
+
 /// The full date and time.
 pub fn absolute(when: DateTime<Local>, settings: DateSettings) -> String {
     format!("{} at {}", date_part(when, settings), clock(when, settings))
 }
 
 /// The date, without the time.
-fn date_part(when: DateTime<Local>, settings: DateSettings) -> String {
+///
+/// Over anything with a calendar date on it rather than a full moment, so a
+/// whole day is written straight from the day it names and no midnight is
+/// constructed just to be left unsaid.
+fn date_part(when: impl Datelike, settings: DateSettings) -> String {
     let month = MONTHS[(when.month() - 1) as usize];
     match (settings.wording, settings.order) {
         (DateWording::Verbal, DateOrder::MonthFirst) => {
@@ -453,15 +482,6 @@ fn clock(when: DateTime<Local>, settings: DateSettings) -> String {
         // Padded, because that is how a twenty-four hour clock is written.
         Clock::TwentyFourHour => format!("{:02}:{:02}", when.hour(), when.minute()),
     }
-}
-
-/// Whether the stored value said anything about the time of day.
-///
-/// By what is written rather than by what it parsed to, because everything
-/// parses to a moment: a date alone becomes midnight, and once it has, midnight
-/// is indistinguishable from something genuinely due at midnight.
-fn stored_carries_a_time(stored: &str) -> bool {
-    stored.contains(':')
 }
 
 /// How long ago, if that is within the last week.
@@ -515,13 +535,18 @@ fn plural(count: i64, unit: &str) -> String {
 /// A moment carrying its own offset is moved to this computer's zone, because
 /// what somebody wants to hear is the hour they will be sitting down at. A
 /// clock face names an hour and nothing else, so it is read as an hour here. A
-/// whole day is midnight here; [`spoken`] asks the stored value whether it said
-/// anything about the time of day before reading a clock out.
+/// whole day is midnight here; [`spoken`] answers a whole day before it gets
+/// this far, so no reading treats that midnight as an hour somebody named.
 fn parse(stored: &str) -> Option<DateTime<Local>> {
+    crate::common::moment::read(stored).and_then(local_instant)
+}
+
+/// Where a parsed moment falls on this computer's clock.
+fn local_instant(moment: crate::common::moment::Moment) -> Option<DateTime<Local>> {
     use crate::common::moment::Moment;
 
     let here = |clock: NaiveDateTime| Local.from_local_datetime(&clock).single();
-    match crate::common::moment::read(stored)? {
+    match moment {
         Moment::Fixed(at) => Some(at.with_timezone(&Local)),
         Moment::ClockFace(clock) => here(clock),
         Moment::WholeDay(day) => here(day.and_hms_opt(0, 0, 0)?),
@@ -735,11 +760,59 @@ mod tests {
     }
 
     #[test]
+    fn test_a_whole_day_under_the_relative_style_is_a_date_and_never_an_hour_count() {
+        // The shipped default. A task due "2026-07-26" was measured from its
+        // midnight and announced as "12 hours ago" at noon, which calls a task
+        // due today overdue. A day is a date under every style, the same rule
+        // the birthday reading already keeps.
+        let relative = DateSettings {
+            style: DateStyle::RelativeWithinWeek,
+            ..settings()
+        };
+        let noon = at("2026-07-26 12:00");
+
+        assert_eq!(spoken("2026-07-26", noon, relative), "July 26, 2026");
+        assert_eq!(spoken("2026-07-25", noon, relative), "July 25, 2026");
+    }
+
+    #[test]
+    fn test_a_whole_day_in_the_future_stays_a_date_under_the_relative_style() {
+        // The boundary pin: the future side never went relative, and this
+        // holds it there.
+        let relative = DateSettings {
+            style: DateStyle::RelativeWithinWeek,
+            ..settings()
+        };
+
+        assert_eq!(
+            spoken("2026-07-30", at("2026-07-26 12:00"), relative),
+            "July 30, 2026"
+        );
+    }
+
+    #[test]
     fn test_nothing_stored_is_nothing_said() {
         // An empty due date is blank, not the word "none" and not today's date.
         for stored in ["", "   "] {
             assert_eq!(spoken(stored, at("2026-07-26 12:00"), settings()), "");
         }
+    }
+
+    #[test]
+    fn test_the_hour_spoken_comes_from_the_parsed_moment_not_the_characters() {
+        // The calendar's out-of-hours note judges the hour this answers, so it
+        // has to be the hour of the same parsed, locally-converted moment the
+        // cell speaks, not whatever digits sit after the first separator.
+        assert_eq!(the_hour_spoken("2026-07-27 19:00"), Some(19));
+        assert_eq!(the_hour_spoken("2026-07-27T09:00:00.0000000"), Some(9));
+        // A whole day names no hour, so it earns no note.
+        assert_eq!(the_hour_spoken("2026-07-27"), None);
+        // Garbage used to answer ninety-nine.
+        assert_eq!(the_hour_spoken("junk 99:00"), None);
+        assert_eq!(the_hour_spoken(""), None);
+        // An offset lands on this computer's own hour, so only the shape is
+        // asserted or the test would read differently machine to machine.
+        assert!(the_hour_spoken("2026-07-27T09:00:00Z").is_some());
     }
 
     #[test]

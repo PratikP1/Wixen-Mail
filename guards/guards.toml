@@ -1769,3 +1769,78 @@ red = [
     "application::sign_off::tests::test_a_composer_opens_with_nothing_when_somebody_asked_for_no_signature",
     "application::sign_off::tests::test_a_message_opened_with_no_signature_is_not_signed_at_all",
 ]
+
+# ── A day stored without a time is a date, never an hour count ──────────────
+#
+# The shipped date style is relative, and the one function every list cell,
+# reading and reminder alert gets its date wording from measured a whole day
+# from its midnight. A task due today was announced "Due: 12 hours ago" at
+# noon: the reading calling it overdue. The birthday reading always refused
+# this; the rule is now kept for every stored day. The break lets a whole day
+# fall through to the relative measurement again, which is where this started.
+
+[[guard]]
+name = "a whole day is spoken as a date under the relative style"
+file = "src/presentation/date_display.rs"
+before = """    if let Moment::WholeDay(day) = moment {
+        return date_part(day, settings);
+    }"""
+after = """    if let (Moment::WholeDay(day), DateStyle::Absolute) = (moment, settings.style) {
+        return date_part(day, settings);
+    }"""
+red = [
+    "application::due::tests::test_an_alert_for_a_day_reminder_says_the_day_not_an_hour_count",
+    "presentation::date_display::tests::test_a_whole_day_in_the_future_stays_a_date_under_the_relative_style",
+    "presentation::date_display::tests::test_a_whole_day_under_the_relative_style_is_a_date_and_never_an_hour_count",
+    "presentation::read_aloud::tests::test_a_note_updated_on_a_bare_date_is_a_date_under_the_shipped_default",
+    "presentation::read_aloud::tests::test_a_reminder_due_on_a_day_is_a_date_not_an_hour_count_under_the_shipped_default",
+    "presentation::read_aloud::tests::test_a_task_due_today_is_a_date_not_an_hour_count_under_the_shipped_default",
+    "presentation::read_aloud::tests::test_an_event_on_a_bare_date_is_a_date_not_an_hour_count_under_the_shipped_default",
+]
+
+# The hour the calendar's out-of-hours note judges comes from the same parsed,
+# locally-converted moment as the time spoken beside it. It used to be picked
+# out of the raw characters, which read ninety-nine out of garbage and called
+# it "after the working day", and read the stored hour of an offset-carrying
+# value while the cell beside it spoke the local one. The break is that sniff
+# put back.
+
+[[guard]]
+name = "the out-of-hours note judges the hour the cell speaks"
+file = "src/presentation/date_display.rs"
+before = """pub fn the_hour_spoken(stored: &str) -> Option<u32> {
+    use crate::common::moment::Moment;
+
+    match crate::common::moment::read(stored)? {
+        Moment::WholeDay(_) => None,
+        names_an_hour => local_instant(names_an_hour).map(|when| when.hour()),
+    }
+}"""
+after = """pub fn the_hour_spoken(stored: &str) -> Option<u32> {
+    let (_, time) = stored.trim().split_once([' ', 'T'])?;
+    time.split(':').next()?.parse().ok()
+}"""
+red = [
+    "presentation::date_display::tests::test_the_hour_spoken_comes_from_the_parsed_moment_not_the_characters",
+    "presentation::pim_rows::tests::test_garbage_in_a_start_time_earns_no_working_day_note",
+]
+
+# A reminder set for a day goes off at that day's start, which is deliberate,
+# and the late flag was measured in minutes, so from one past midnight the
+# alert called the whole day overdue. Late is now asked in the granularity the
+# reminder was stored in. The break puts the minute rule back on whole days.
+
+[[guard]]
+name = "a reminder for a day is not called overdue during that day"
+file = "src/application/due.rs"
+before = """                late: match moment {
+                    Moment::WholeDay(day) => now.date_naive() > day,
+                    _ => now.signed_duration_since(at) > Duration::minutes(1),
+                },"""
+after = """                late: match moment {
+                    Moment::WholeDay(_) => now.signed_duration_since(at) > Duration::minutes(1),
+                    _ => now.signed_duration_since(at) > Duration::minutes(1),
+                },"""
+red = [
+    "application::due::tests::test_a_reminder_for_a_day_is_not_called_overdue_during_that_day",
+]

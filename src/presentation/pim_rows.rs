@@ -37,12 +37,14 @@ fn date(stored: &str, dates: DateSettings, now: chrono::DateTime<chrono::Local>)
 
 /// The hour of the day a stored time falls in.
 ///
-/// Read out of the text rather than parsed into a moment, because that is all
-/// this needs, and because a stored value with no time in it should answer
-/// nothing rather than answering midnight.
+/// The answer comes from the parsed moment, converted to this computer's zone
+/// the same way as the time spoken beside it, so the out-of-hours note and the
+/// time in the cell can never disagree. A stored value with no time in it, or
+/// one that is not a moment at all, answers nothing rather than midnight or
+/// whatever number its characters hold.
 fn hour_of(stored: &str) -> Option<u8> {
-    let (_, time) = stored.trim().split_once([' ', 'T'])?;
-    time.split(':').next()?.parse().ok()
+    let hour = super::date_display::the_hour_spoken(stored)?;
+    u8::try_from(hour).ok()
 }
 
 /// Shown in a cell whose row is not loaded.
@@ -266,6 +268,19 @@ mod tests {
             event_cell(&all_day, 0, at_a_desk(), midday(), WorkingDay::default()),
             "All day"
         );
+    }
+
+    #[test]
+    fn test_garbage_in_a_start_time_earns_no_working_day_note() {
+        // The hour used to be picked out of the raw characters, so "junk
+        // 99:00" answered ninety-nine and the cell said "after the working
+        // day" about a value that names no hour at all.
+        let mut broken = event();
+        broken.start = "junk 99:00".to_string();
+
+        let cell = event_cell(&broken, 0, at_a_desk(), midday(), WorkingDay::default());
+
+        assert!(!cell.contains("working day"), "{cell}");
     }
 
     #[test]

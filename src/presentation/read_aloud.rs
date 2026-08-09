@@ -491,6 +491,21 @@ mod tests {
         }
     }
 
+    /// The settings people actually get. Nothing changes the date style until
+    /// somebody visits the settings screen, so this is the reading every list
+    /// ships with. Everything else mirrors [`aloud`], fixed so these read the
+    /// same wherever they run.
+    fn under_the_shipped_default() -> Reading {
+        use crate::presentation::date_display::DateStyle;
+        Reading {
+            dates: crate::presentation::date_display::DateSettings {
+                style: DateStyle::RelativeWithinWeek,
+                ..aloud().dates
+            },
+            ..aloud()
+        }
+    }
+
     fn message() -> MessageItem {
         MessageItem {
             uid: 1,
@@ -1009,6 +1024,66 @@ mod tests {
         assert_eq!(read("2026-07-27"), "Standup. July 27, 2026");
         assert_eq!(read("not a moment"), "Standup. not a moment");
         assert_eq!(read("2026-13-45T99:99:99"), "Standup. 2026-13-45T99:99:99");
+    }
+
+    #[test]
+    fn test_a_task_due_today_is_a_date_not_an_hour_count_under_the_shipped_default() {
+        // "Due: 12 hours ago" at noon is the reading calling a task due today
+        // overdue, in the one channel this product is for. A whole day is a
+        // date under every style, the rule the birthday reading already keeps.
+        let mut task = task();
+        task.due_date = Some("2026-07-26".to_string());
+
+        let said = task.read_short(under_the_shipped_default());
+
+        assert!(said.contains("Due: July 26, 2026"), "{said}");
+        assert!(!said.contains("ago"), "{said}");
+    }
+
+    #[test]
+    fn test_an_event_on_a_bare_date_is_a_date_not_an_hour_count_under_the_shipped_default() {
+        let mut moved = event();
+        moved.start = "2026-07-26".to_string();
+        moved.end = String::new();
+
+        assert_eq!(
+            moved.read_short(under_the_shipped_default()),
+            "Standup. July 26, 2026"
+        );
+    }
+
+    #[test]
+    fn test_a_reminder_due_on_a_day_is_a_date_not_an_hour_count_under_the_shipped_default() {
+        let mut reminder = reminder();
+        reminder.due_datetime = Some("2026-07-26".to_string());
+
+        let said = reminder.read_short(under_the_shipped_default());
+
+        assert!(said.contains("Due: July 26, 2026"), "{said}");
+        assert!(!said.contains("ago"), "{said}");
+    }
+
+    #[test]
+    fn test_a_note_updated_on_a_bare_date_is_a_date_under_the_shipped_default() {
+        let mut note = note();
+        note.updated_at = "2026-07-25".to_string();
+
+        let said = note.read_full(under_the_shipped_default());
+
+        assert!(said.contains("Updated: July 25, 2026"), "{said}");
+        assert!(!said.contains("ago"), "{said}");
+    }
+
+    #[test]
+    fn test_a_note_updated_hours_ago_still_reads_relatively_under_the_shipped_default() {
+        // The other half of the rule: a stored value that names an hour keeps
+        // the relative wording, which is the style doing its job.
+        let mut note = note();
+        note.updated_at = "2026-07-26 09:00".to_string();
+
+        let said = note.read_full(under_the_shipped_default());
+
+        assert!(said.contains("Updated: 3 hours ago"), "{said}");
     }
 
     #[test]

@@ -287,6 +287,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A date without a time is spoken as a date again, not as hours since
+  midnight.** Under the relative date style, the one the product ships with, a
+  task due on a day was announced "Due: 12 hours ago" at noon of that very day,
+  as though it were already overdue, and the same counting reached events,
+  reminders, notes and the reminder alert. A date with no time on it is now
+  always said as its date, the way a birthday already was. Values that do name
+  a time keep the relative wording: "3 hours ago" about this morning's meeting
+  is that style doing its job.
+
+  Two neighbours of the same mistake went with it. The calendar's note about
+  an event outside the working day now judges the same hour the cell speaks,
+  on this computer's clock, and a start value that is not a real time earns no
+  note rather than being read as an hour of the day. And a reminder set for a
+  day is no longer announced as overdue while that day is still going; it
+  becomes overdue once the day has passed.
+
 - **Enter no longer answers yes to a deletion you have not finished hearing.**
   The question asked before deleting a contact, a task, a note, an event or a
   reminder, and the one asked before deleting a list, a calendar or a notebook

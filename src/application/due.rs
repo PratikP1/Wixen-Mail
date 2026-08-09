@@ -147,11 +147,14 @@ pub fn what_is_due<'a>(
     now: DateTime<Local>,
     already: &std::collections::HashSet<String>,
 ) -> Vec<Due> {
+    use crate::common::moment::Moment;
+
     reminders
         .filter(|(_, _, _, completed)| !completed)
         .filter_map(|(id, title, when, _)| {
             let when = when?;
-            let at = parse(when)?;
+            let moment = crate::common::moment::read(when)?;
+            let at = local_instant(moment)?;
             if at > now {
                 return None;
             }
@@ -165,26 +168,33 @@ pub fn what_is_due<'a>(
                 id: id.to_string(),
                 title: title.to_string(),
                 when: when.to_string(),
-                // Anything more than a minute past is late. A reminder raised
-                // in the same minute it was due is on time, and calling that
-                // overdue would make every single one sound urgent.
-                late: now.signed_duration_since(at) > Duration::minutes(1),
+                // Late in the granularity the reminder was stored in. A
+                // reminder set for a day goes off at that day's start and is
+                // not overdue while the day is still going; measured in
+                // minutes it would be called overdue from one past midnight.
+                // For anything with a time, more than a minute past is late:
+                // a reminder raised in the same minute it was due is on time,
+                // and calling that overdue would make every one sound urgent.
+                late: match moment {
+                    Moment::WholeDay(day) => now.date_naive() > day,
+                    _ => now.signed_duration_since(at) > Duration::minutes(1),
+                },
             })
         })
         .collect()
 }
 
-/// Read a stored time, in the forms the cache holds.
+/// When a parsed moment arrives on this computer's clock.
 ///
-/// The shapes are `common::moment`'s. The list kept here knew two of them and
-/// neither had a `T` in it, so a reminder whose time came from Outlook or from
-/// the event editor was read as nothing and never went off.
-fn parse(stored: &str) -> Option<DateTime<Local>> {
+/// The shapes it is read from are `common::moment`'s. The list kept here knew
+/// two of them and neither had a `T` in it, so a reminder whose time came from
+/// Outlook or from the event editor was read as nothing and never went off.
+fn local_instant(moment: crate::common::moment::Moment) -> Option<DateTime<Local>> {
     use crate::common::moment::Moment;
     use chrono::TimeZone;
 
     let here = |clock: chrono::NaiveDateTime| Local.from_local_datetime(&clock).single();
-    match crate::common::moment::read(stored)? {
+    match moment {
         Moment::Fixed(at) => Some(at.with_timezone(&Local)),
         Moment::ClockFace(clock) => here(clock),
         // A date with no time is due at the start of that day, which is what a
@@ -205,7 +215,9 @@ mod tests {
     use std::collections::HashSet;
 
     fn at(text: &str) -> DateTime<Local> {
-        parse(text).expect("a real moment")
+        crate::common::moment::read(text)
+            .and_then(local_instant)
+            .expect("a real moment")
     }
 
     fn nothing_raised() -> HashSet<String> {
@@ -325,6 +337,28 @@ mod tests {
     }
 
     #[test]
+    fn test_a_reminder_for_a_day_is_not_called_overdue_during_that_day() {
+        // A reminder set for a day goes off at that day's start, which is
+        // deliberate. Calling it overdue at nine that morning is the flag
+        // being measured in minutes about a value stored in days.
+        let rows = one("r1", "2026-07-26");
+
+        let due = what_is_due(borrowed(&rows), at("2026-07-26 09:00"), &nothing_raised());
+
+        assert_eq!(due.len(), 1);
+        assert!(!due[0].late, "a reminder was called overdue on its own day");
+
+        // The moment the day it names has passed, it is late, and the
+        // existing boundary keeps it raised at exactly a day.
+        let next_day = what_is_due(borrowed(&rows), at("2026-07-27 00:00"), &nothing_raised());
+        assert_eq!(next_day.len(), 1);
+        assert!(
+            next_day[0].late,
+            "the day after the one it names, it is late"
+        );
+    }
+
+    #[test]
     fn test_a_reminder_that_is_not_due_yet_is_left_alone() {
         let rows = one("r1", "2026-07-26 10:00");
 
@@ -423,6 +457,30 @@ mod tests {
             due.spoken(at("2026-07-26 10:00"), spoken_settings())
                 .starts_with("Reminder, overdue:"),
         );
+    }
+
+    #[test]
+    fn test_an_alert_for_a_day_reminder_says_the_day_not_an_hour_count() {
+        // Under the shipped relative style, a reminder set for a day was
+        // announced "was due 9 hours ago" at nine in the morning of that very
+        // day: the alert calling today overdue, measured from a midnight the
+        // stored value never named.
+        use crate::presentation::date_display::DateStyle;
+        let relative = crate::presentation::date_display::DateSettings {
+            style: DateStyle::RelativeWithinWeek,
+            ..spoken_settings()
+        };
+        let due = Due {
+            id: "r1".to_string(),
+            title: "Call the bank".to_string(),
+            when: "2026-07-26".to_string(),
+            late: true,
+        };
+
+        let said = due.spoken(at("2026-07-26 09:00"), relative);
+
+        assert!(said.contains("July 26, 2026"), "{said}");
+        assert!(!said.contains("ago"), "{said}");
     }
 
     #[test]
