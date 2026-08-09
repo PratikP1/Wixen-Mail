@@ -581,6 +581,28 @@ fn the_sentence_around(text: &str, at: usize) -> (usize, usize) {
     (start, end)
 }
 
+/// Where the sentence answering a question starts and ends.
+///
+/// A question makes no claim, so a claim written as a question and its answer
+/// is not in the sentence carrying the installation-time word. "Which contacts
+/// does Allow Changes send by default? None of them" was quiet in both checks:
+/// the question carries a word for something going out, which agrees with the
+/// code, and the false half is in the answer.
+///
+/// `None` when the question is the last thing in its run of prose, which is a
+/// question nothing here answers.
+fn the_answer_to_a_question(text: &str, ends_at: usize) -> Option<(usize, usize)> {
+    if !text[ends_at..].starts_with('?') {
+        return None;
+    }
+    let after = ends_at + 1;
+    if after >= text.len() {
+        return None;
+    }
+    let (start, end) = the_sentence_around(text, after);
+    (!text[start..end].trim().is_empty()).then_some((start, end))
+}
+
 /// The sentence with the name of the setting blanked out.
 ///
 /// "Allow Changes" is what the settings screen calls the section, so the word
@@ -636,10 +658,19 @@ fn without_the_settings_name(sentence: &str) -> String {
 /// 4. A negation of a negation. "Out of the box, nothing stops a message
 ///    reaching the server" reads as a refusal, which is what the code says, so
 ///    it is quiet while saying the opposite.
-/// 5. A claim spread over two sentences, because only the sentence carrying the
-///    installation-time word is read. "Allow Changes has one answer by default.
-///    Nothing about a contact goes to Google" is caught in source by the check
-///    above, for saying nothing, and is quiet in a document.
+/// 5. A claim spread over two statements, because only the sentence carrying
+///    the installation-time word is read. "Allow Changes has one answer by
+///    default. Nothing about a contact goes to Google" is caught in source by
+///    the check above, for saying nothing, and is quiet in a document.
+///
+///    A question and its answer is the half of this that is read, and it was
+///    not. This entry used to claim the whole shape was caught in source, and
+///    "Which contacts does Allow Changes send by default? None of them" was
+///    silent in both checks: the question carries a word for something going
+///    out, which agrees with the code, so a claim was read and it was the
+///    wrong half. The answer is read now. What is still quiet is a question
+///    nothing in the same run of prose answers, which is what a heading in a
+///    document is.
 /// 6. A sentence about the setting that quotes or denies a wording rather than
 ///    making a claim. "It would be wrong to say Allow Changes is off by default
 ///    for contacts" is true and is named. That one is loud rather than quiet,
@@ -804,11 +835,22 @@ fn claims_about_a_new_installation(path: &Path, text: &str) -> Vec<Claim> {
                     continue;
                 }
                 said_already.push((start, end));
-                let sentence = prose.text[start..end].trim().to_string();
+                // A question claims nothing, so the claim is in what answers
+                // it. What the sentence is about is still read from both
+                // halves, because "which contacts" is in the question and the
+                // answer is "none of them".
+                let (reading, marker) = match the_answer_to_a_question(&prose.text, end) {
+                    Some(answer) => (answer, 0),
+                    None => ((start, end), at - start),
+                };
+                let sentence = prose.text[start..reading.1].trim().to_string();
                 claims.push(Claim {
                     line: prose.line_at(at),
                     answer: which_answer_it_is_about(&sentence),
-                    reaches: what_it_says_reaches_a_provider(&prose.text[start..end], at - start),
+                    reaches: what_it_says_reaches_a_provider(
+                        &prose.text[reading.0..reading.1],
+                        marker,
+                    ),
                     sentence,
                 });
             }
@@ -1066,6 +1108,14 @@ fn test_the_new_installation_check_can_tell_the_two_apart() {
             "docs/ALPHA_TESTING.md",
             "On a fresh install, Allow Changes sends no contact anywhere.\n",
         ),
+        // A question and the sentence that answers it. Only the sentence
+        // carrying the installation-time word is read, and here that sentence
+        // is the question, which claims nothing. The claim is in the answer.
+        (
+            "docs/ALPHA_TESTING.md",
+            "Which contacts does Allow Changes send by default? None of them.
+",
+        ),
         // A negative held one word away from the verb it negates, which is
         // where English puts a pronoun. "sent nowhere" was read and "sends it
         // nowhere" was not.
@@ -1106,6 +1156,23 @@ fn test_the_new_installation_check_can_tell_the_two_apart() {
             "src/application/contacts_sync.rs",
             "        // A new installation allows changes to contacts, so Allow Changes is\n\
              \x20       // off here because somebody turned it off.\n",
+        ),
+        // The answer to a question, when the answer agrees with the code. A
+        // check that reads the answer has to be quiet on a true one or it
+        // cries wolf on every question anybody writes.
+        (
+            "docs/ALPHA_TESTING.md",
+            "Which contacts does Allow Changes send by default? It sends every one 
+of them.
+",
+        ),
+        // And the same question about mail, where the true answer is the
+        // opposite one. This is the pair that makes it a reading rather than a
+        // search for a word.
+        (
+            "docs/ALPHA_TESTING.md",
+            "Which messages does Allow Changes send by default? None of them.
+",
         ),
         // The mail half really is refused, so the same shape of sentence about
         // mail is true. Read as one answer rather than two, this would be
