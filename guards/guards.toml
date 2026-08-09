@@ -199,7 +199,7 @@ file = "src/application/tasks_sync.rs"
 before = """        if self.sent > 0 {"""
 after = """        if false {"""
 red = [
-    "application::tasks_sync::tests::test_a_deletion_the_provider_accepted_is_counted_once_and_stops_being_carried",
+    "application::tasks_sync::tests::test_a_deletion_the_provider_accepted_is_counted_once_and_stops_being_owed",
     "application::tasks_sync::tests::test_a_local_change_the_provider_took_is_counted_and_stops_waiting",
     "application::tasks_sync::tests::test_every_clause_at_once_is_still_read_as_sentences",
     "application::tasks_sync::tests::test_the_summary_counts_what_went_up",
@@ -615,8 +615,10 @@ red = [
     "application::contacts_sync::tests::test_a_contact_deleted_here_is_deleted_at_outlook_too",
     "application::contacts_sync::tests::test_a_contact_deleted_here_that_also_held_an_unsent_edit_is_deleted_not_sent",
     "application::contacts_sync::tests::test_a_contact_google_took_the_deletion_for_is_not_written_back_by_the_same_read",
+    "application::contacts_sync::tests::test_a_contact_google_took_the_deletion_for_stays_gone_on_a_later_sync",
     "application::contacts_sync::tests::test_a_contact_outlook_still_holds_does_not_come_back_after_google_took_the_deletion",
     "application::contacts_sync::tests::test_a_contact_outlook_took_the_deletion_for_is_not_written_back_by_the_same_read",
+    "application::contacts_sync::tests::test_a_contact_outlook_took_the_deletion_for_stays_gone_on_a_later_sync",
     "application::contacts_sync::tests::test_a_deletion_allow_changes_held_back_is_still_waiting_afterwards",
     "application::contacts_sync::tests::test_a_deletion_the_address_book_refused_is_kept_and_said",
     "application::contacts_sync::tests::test_an_address_book_that_has_never_heard_of_her_is_not_asked_again",
@@ -692,19 +694,18 @@ red = [
 # breaks puts that exact defect back.
 
 [[guard]]
-name = "an address book that took a deletion is remembered, not forgotten"
-file = "src/application/contacts_sync.rs"
-before = """    if let Err(unwritten) = cache.the_address_book_took_the_deletion(
-        &note.contact_id,
-        &note.address_book,
-        &crate::application::deletions::written(chrono::Utc::now()),
-    ) {"""
-after = """    if let Err(unwritten) = cache.forget_deleted_contact(&note.contact_id, &note.address_book) {"""
+name = "an address book that took a deletion is remembered, not dropped"
+file = "src/data/message_cache/contacts.rs"
+before = """                "UPDATE deleted_contacts SET taken_at = ?3
+                 WHERE contact_id = ?1 AND address_book = ?2","""
+after = """                "DELETE FROM deleted_contacts
+                 WHERE contact_id = ?1 AND address_book = ?2 AND ?3 IS NOT NULL","""
 red = [
     "application::contacts_sync::tests::test_a_contact_google_took_the_deletion_for_is_not_written_back_by_the_same_read",
     "application::contacts_sync::tests::test_a_contact_google_took_the_deletion_for_stays_gone_on_a_later_sync",
     "application::contacts_sync::tests::test_a_contact_outlook_took_the_deletion_for_is_not_written_back_by_the_same_read",
     "application::contacts_sync::tests::test_a_contact_outlook_took_the_deletion_for_stays_gone_on_a_later_sync",
+    "data::message_cache::contacts::tests::test_telling_one_address_book_leaves_the_other_still_owed_the_deletion",
 ]
 
 [[guard]]
@@ -862,7 +863,11 @@ file = "src/application/contacts_sync.rs"
 before = """            result.waiting_on_the_setting.note(&note.contact_id);
             return;"""
 after = """            result.waiting_on_the_setting.note(&note.contact_id);
-            let _ = cache.forget_deleted_contact(&note.contact_id, &note.address_book);
+            let _ = cache.the_address_book_took_the_deletion(
+                &note.contact_id,
+                &note.address_book,
+                &crate::application::deletions::written(chrono::Utc::now()),
+            );
             return;"""
 red = [
     "application::contacts_sync::tests::test_a_contact_deleted_here_does_not_come_back_from_the_read_that_follows",
@@ -881,7 +886,11 @@ before = """                "Contact {} could not be deleted in {address_book_ca
 after = """                "Contact {} could not be deleted in {address_book_called}: {refused}",
                 note.contact_id
             ));
-            let _ = cache.forget_deleted_contact(&note.contact_id, &note.address_book);
+            let _ = cache.the_address_book_took_the_deletion(
+                &note.contact_id,
+                &note.address_book,
+                &crate::application::deletions::written(chrono::Utc::now()),
+            );
             return;"""
 red = [
     "application::contacts_sync::tests::test_a_deletion_the_address_book_refused_is_kept_and_said",

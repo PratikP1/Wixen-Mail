@@ -906,8 +906,13 @@ impl MessageCache {
     /// dropping it here is what let somebody deleted come back in the very sync
     /// that deleted her. `let_go_of_deletions_taken_before` releases it later.
     ///
-    /// One address book at a time, for the reason
-    /// [`Self::forget_deleted_contact`] gives.
+    /// One address book at a time. Marking the whole contact here would leave
+    /// the other one never told about somebody the product said was deleted.
+    ///
+    /// There is no counterpart that drops the note outright, unlike the events
+    /// and tasks tables. A contact no address book knew gets no note in the
+    /// first place, so every note that exists is one an address book will
+    /// either take, and then be remembered, or go on being owed.
     ///
     /// The moment comes from the caller, written by `deletions::written`, so
     /// that the stamp on a note and the cutoff it is compared against are
@@ -925,28 +930,6 @@ impl MessageCache {
                 params![contact_id, address_book.as_stored(), taken_at],
             )
             .map_err(|e| Error::Other(format!("Failed to record a taken deletion: {}", e)))?;
-        Ok(())
-    }
-
-    /// Drop the note outright, because no address book can hand her back
-    /// under this name.
-    ///
-    /// One address book at a time. Clearing the whole contact here would leave
-    /// the other one still holding somebody the product said was deleted.
-    ///
-    /// Where an address book could still name her, use
-    /// [`Self::the_address_book_took_the_deletion`] instead.
-    pub fn forget_deleted_contact(
-        &self,
-        contact_id: &str,
-        address_book: &AddressBook,
-    ) -> Result<()> {
-        self.conn
-            .execute(
-                "DELETE FROM deleted_contacts WHERE contact_id = ?1 AND address_book = ?2",
-                params![contact_id, address_book.as_stored()],
-            )
-            .map_err(|e| Error::Other(format!("Failed to clear a deletion: {}", e)))?;
         Ok(())
     }
 
@@ -3898,34 +3881,14 @@ mod tests {
 
     #[test]
     fn test_telling_one_address_book_leaves_the_other_still_owed_the_deletion() {
-        // One person, two address books, and one of them told. Forgetting the
-        // whole contact here would leave Outlook holding somebody the product
-        // said was deleted.
+        // Three halves, and each of them has been wrong here. Marking the whole
+        // contact would leave Outlook never told about somebody the product
+        // said was deleted. Leaving Google's note owed sends the deletion again
+        // on every sync against somebody who is not there. Dropping Google's
+        // note altogether leaves nothing to stop the read that follows writing
+        // her back down, which is what let a deleted contact come back in the
+        // sync that deleted her.
         let cache = a_cache("telling_one_address_book");
-        cache
-            .save_contact(&a_contact_two_address_books_know("alice-1", "Alice Smith"))
-            .expect("the contact to save");
-        cache
-            .delete_contact("alice-1")
-            .expect("the contact to be deleted");
-
-        cache
-            .forget_deleted_contact("alice-1", &AddressBook::Google)
-            .expect("Google's note to be cleared");
-
-        assert_eq!(
-            the_deletions_waiting(&cache),
-            vec![("outlook".to_string(), "AAMk1".to_string())]
-        );
-    }
-
-    #[test]
-    fn test_an_address_book_that_took_a_deletion_keeps_the_note_and_stops_being_owed() {
-        // Both halves. Still owed, the deletion is sent again on every sync
-        // against somebody who is not there. Dropped altogether, nothing is
-        // left to stop the read that follows writing her back down, which is
-        // what let a deleted contact come back in the sync that deleted her.
-        let cache = a_cache("an_address_book_took_it");
         cache
             .save_contact(&a_contact_two_address_books_know("alice-1", "Alice Smith"))
             .expect("the contact to save");
@@ -3944,7 +3907,8 @@ mod tests {
         assert_eq!(
             the_deletions_waiting(&cache),
             vec![("outlook".to_string(), "AAMk1".to_string())],
-            "Google is still being asked to delete somebody it has deleted"
+            "Google is still being asked to delete somebody it has deleted, \
+             or Outlook has stopped being owed the deletion"
         );
         assert_eq!(
             cache
