@@ -95,7 +95,7 @@ pub fn falls_on(
         (Some(opens), Some(closes)) => (closes - opens).num_days(),
         _ => 0,
     };
-    let called_off = days_called_off(event.exception_dates.as_deref());
+    let called_off = days_called_off(event.exception_dates.as_deref(), the_offset_on(&start));
     let days = rule
         .days_between(first, from, to)
         .into_iter()
@@ -147,7 +147,7 @@ fn same_day_as(stored: &str, day: chrono::NaiveDate) -> String {
     }
 }
 
-/// The days a series has called off.
+/// The days a series has called off, as days in the event's own zone.
 ///
 /// Written as whole date and times, `20261225T090000Z`, or as bare dates, and
 /// several of them separated by commas. Only the day is kept, because a day is
@@ -158,20 +158,96 @@ fn same_day_as(stored: &str, day: chrono::NaiveDate) -> String {
 /// A value that cannot be read is passed over rather than taken as calling off
 /// nothing or calling off everything. Dropping the whole series over one bad
 /// exclusion is how a calendar goes empty.
-fn days_called_off(written: Option<&str>) -> std::collections::HashSet<chrono::NaiveDate> {
+fn days_called_off(
+    written: Option<&str>,
+    the_events_offset: Option<chrono::FixedOffset>,
+) -> std::collections::HashSet<chrono::NaiveDate> {
     let Some(written) = written else {
         return std::collections::HashSet::new();
     };
     written
         .split(',')
         .filter_map(|one| {
-            let stamp: String = without_the_name_and_parameters(one.trim())
-                .chars()
-                .filter(char::is_ascii_digit)
-                .collect();
-            chrono::NaiveDate::parse_from_str(stamp.get(..8)?, "%Y%m%d").ok()
+            the_day_called_off(
+                without_the_name_and_parameters(one.trim()),
+                the_events_offset,
+            )
         })
         .collect()
+}
+
+/// The day one called-off value names, counted in the zone the event's own
+/// times are written in.
+///
+/// A value ending in the letter for universal time names an instant, and the
+/// day an instant falls on depends on where you are standing. A meeting at one
+/// in the morning in Kolkata is half past seven the evening before in
+/// Greenwich, so a server writing the cancellation as `20260809T193000Z` and
+/// this reader taking the first eight digits compared 9 August with 10 August,
+/// called nothing off, and announced the cancelled meeting. It works the other
+/// way round too: an evening meeting in New York is cancelled by a value dated
+/// the following morning.
+///
+/// The event's own offset is what the instant is turned into a day with,
+/// because the days the series is shown on are that event's clock face carried
+/// from day to day. Without one there is nothing to convert into, which is a
+/// timed event stored as a clock face and a whole-day event stored as a bare
+/// date. Both leave the digits standing, which is what they meant before this
+/// and what a cancellation written in the event's own zone means anyway.
+///
+/// A value carrying a numeric offset rather than the letter is not something
+/// the calendar standard allows in this property and nothing writes one, so it
+/// is read as a clock face. Named so it is not mistaken for handled.
+fn the_day_called_off(
+    one: &str,
+    the_events_offset: Option<chrono::FixedOffset>,
+) -> Option<chrono::NaiveDate> {
+    let stamp: String = one.chars().filter(char::is_ascii_digit).collect();
+    let written = chrono::NaiveDate::parse_from_str(stamp.get(..8)?, "%Y%m%d").ok()?;
+    let (Some(offset), true) = (the_events_offset, says_universal_time(one)) else {
+        return Some(written);
+    };
+    let Some(clock) = the_clock_face_in(stamp.get(8..)?) else {
+        return Some(written);
+    };
+    use chrono::TimeZone;
+    Some(
+        chrono::Utc
+            .from_utc_datetime(&written.and_time(clock))
+            .with_timezone(&offset)
+            .date_naive(),
+    )
+}
+
+/// Whether a called-off value says it is already in universal time.
+///
+/// The letter means the same in either case, the same as every other name a
+/// calendar document carries. Read as a capital only, a server writing in small
+/// letters would have every cancellation counted in the wrong zone.
+fn says_universal_time(one: &str) -> bool {
+    one.trim_end().ends_with(['Z', 'z'])
+}
+
+/// The clock face six digits name, or nothing when there are not six of them.
+///
+/// A cancellation with no time on it is a bare date, and there is no instant to
+/// convert. Anything past the sixth digit is a fraction of a second, which
+/// cannot move the day.
+fn the_clock_face_in(digits: &str) -> Option<chrono::NaiveTime> {
+    let figures = |from: usize, to: usize| digits.get(from..to)?.parse::<u32>().ok();
+    chrono::NaiveTime::from_hms_opt(figures(0, 2)?, figures(2, 4)?, figures(4, 6)?)
+}
+
+/// The offset a stored moment carries, when it carries one.
+///
+/// Read through `common::moment` rather than by looking for a sign, so this
+/// asks the same question of the column as everything else that reads it.
+fn the_offset_on(stored: &str) -> Option<chrono::FixedOffset> {
+    use crate::common::moment::Moment;
+    match crate::common::moment::read(stored)? {
+        Moment::Fixed(moment) => Some(*moment.offset()),
+        Moment::ClockFace(_) | Moment::WholeDay(_) => None,
+    }
 }
 
 /// One called-off day without the property name and parameters, if it has them.
@@ -1770,6 +1846,69 @@ mod tests {
         assert_eq!(
             starts(&shown),
             ["2026-03-05 09:00", "2026-03-19 09:00", "2026-04-02 09:00"]
+        );
+    }
+
+    #[test]
+    fn test_a_day_called_off_in_universal_time_is_still_called_off_here() {
+        // What many servers write: the cancellation as the instant it names,
+        // in universal time, whatever zone the event's own times are in. This
+        // meeting is at one in the morning in Kolkata, so the same instant is
+        // half past seven the evening before in Greenwich, and comparing the
+        // first eight digits of the two strings compares 9 August with 10
+        // August and calls nothing off. The cancelled meeting was announced on
+        // the day it had been cancelled for.
+        let mut event = an_event(
+            "2026-08-10T01:00:00+05:30",
+            "2026-08-10T01:30:00+05:30",
+            Some("FREQ=WEEKLY"),
+        );
+        event.exception_dates = Some("20260809T193000Z".to_string());
+        let (from, to) = between("2026-08-01", "2026-08-20");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            ["2026-08-17T01:00:00+05:30"]
+        );
+    }
+
+    #[test]
+    fn test_the_same_cancellation_written_in_the_events_own_zone_is_still_honoured() {
+        // The other spelling of the same cancellation, and the one that has
+        // always worked. Both have to, because which one arrives is the
+        // server's choice and neither is more correct than the other.
+        let mut event = an_event(
+            "2026-08-10T01:00:00+05:30",
+            "2026-08-10T01:30:00+05:30",
+            Some("FREQ=WEEKLY"),
+        );
+        event.exception_dates = Some("20260810T010000".to_string());
+        let (from, to) = between("2026-08-01", "2026-08-20");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            ["2026-08-17T01:00:00+05:30"]
+        );
+    }
+
+    #[test]
+    fn test_a_day_called_off_in_universal_time_does_not_call_off_the_day_before() {
+        // The other direction, and what a change that simply shifted the date
+        // would break. An evening meeting in New York is the same evening in
+        // New York whichever zone the cancellation is written in, and turning
+        // the instant into a day in the wrong zone moves it to the next
+        // morning and leaves the cancelled meeting on the calendar.
+        let mut event = an_event(
+            "2026-08-10T20:00:00-04:00",
+            "2026-08-10T21:00:00-04:00",
+            Some("FREQ=WEEKLY"),
+        );
+        event.exception_dates = Some("20260811T000000Z".to_string());
+        let (from, to) = between("2026-08-01", "2026-08-20");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            ["2026-08-17T20:00:00-04:00"]
         );
     }
 

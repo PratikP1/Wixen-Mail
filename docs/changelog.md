@@ -287,6 +287,30 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A cancelled day of a repeating meeting is no longer shown.** Servers write a
+  cancellation in one of two ways: as a day and time in the meeting's own zone,
+  or as the same instant written in universal time. Only the first was honoured.
+  The second was compared as text, eight characters at a time, so a meeting at
+  one in the morning in Kolkata cancelled as half past seven the evening before
+  in Greenwich was compared with the wrong date and stayed on the calendar. It
+  works the other way too: an evening meeting in New York, cancelled as the
+  following morning in Greenwich, kept the cancellation and lost the meeting.
+
+  A cancellation that names an instant is now turned into a day using the
+  meeting's own offset, so both spellings of one cancellation mean the same
+  thing. This affects meetings from a calendar server and from a subscribed
+  calendar feed, which are the two sources that keep the cancellation as the
+  server wrote it.
+
+  Known limitation: a meeting stored as a clock face with a zone name beside it,
+  rather than one carrying its own offset, still has its cancellations compared
+  as text. Turning an instant into a day there needs the zone's summer-time
+  rules, which this program does not carry.
+
+  How this was measured: through the code that works out which days a repeating
+  meeting falls on, with the meeting and the cancellation written the way a
+  server writes them. Nothing has run against a real calendar server.
+
 - **An event, a task or a contact you delete no longer comes back on the next
   sync.** The note saying you had deleted something was thrown away the moment
   Google, Outlook or your calendar server accepted the deletion. The read that
