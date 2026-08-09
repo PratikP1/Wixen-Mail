@@ -287,6 +287,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The signature setting on the Compose tab does something now.**
+  "Automatically insert signature on new messages" was built ticked, handed
+  back by nothing and saved by nothing. A screen reader announced it as on, it
+  could be ticked and unticked, and every message got the account's signature
+  either way, so what somebody was told and what happened were two different
+  things.
+
+  It is a real setting now, and its label says what it covers: "Start every
+  message with my signature". A reply, a forward and a message written to a
+  contact all open with the signature as well, so the old label was narrower
+  than what was happening. It arrives ticked, and a settings file written
+  before it existed reads as ticked, which is the behaviour every message has
+  had. Unticked, a message opens empty. The signature stays on the account,
+  the signature manager still edits it, and it can be put in by hand.
+
+  Known limitation: this has not been through a screen reader. What was
+  measured is the text the code produces and that the window reads the setting.
+
 - **Importing an address book that splits a person across cards no longer makes
   two contacts of them.** Several address books export one card per address
   rather than one card carrying the whole list. What says two records are one

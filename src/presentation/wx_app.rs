@@ -5790,7 +5790,7 @@ fn open_compose(
         ComposeMode::Draft(data) => data.id.clone(),
         _ => None,
     }));
-    let (autosave, preview_first) = crate::data::config::ConfigManager::load_stored()
+    let (autosave, preview_first, sign_it) = crate::data::config::ConfigManager::load_stored()
         .map(|mgr| {
             let cfg = mgr.app_config();
             (
@@ -5798,15 +5798,16 @@ fn open_compose(
                     cfg.draft_autosave_minutes,
                 ),
                 cfg.preview_before_send,
+                cfg.add_signature_automatically,
             )
         })
-        .unwrap_or_else(|_| (Default::default(), true));
+        .unwrap_or_else(|_| (Default::default(), true, true));
 
     // The account's default signature, for the account this is being sent from
     // rather than whichever was last looked at. Signatures could be written,
     // named and marked as the default, and none of that ever reached a message
     // because nothing read them back.
-    let signature = {
+    let stored_signature = {
         let account = lock_state(state)
             .accounts
             .get(active as usize)
@@ -5825,6 +5826,10 @@ fn open_compose(
             _ => String::new(),
         }
     };
+    // Whether it is put there without being asked is the compose tab's
+    // "Start every message with my signature". The rule is in `sign_off` so
+    // that a test can reach it; this window cannot be reached by one.
+    let signature = crate::application::sign_off::opens_with(sign_it, &stored_signature);
 
     let saver = {
         let state = state.clone();
@@ -5855,7 +5860,7 @@ fn open_compose(
         &names,
         active,
         preview_first,
-        &signature,
+        signature,
         autosave,
         a11y.clone(),
         saver,

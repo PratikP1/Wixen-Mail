@@ -43,6 +43,7 @@ struct SettingsWidgets {
     preview_before_send: CheckBox,
     keep_sent_mail_on_this_computer: CheckBox,
     draft_autosave: SpinCtrl,
+    add_signature_automatically: CheckBox,
     // Reading
     sort_order: Choice,
     read_receipts: Choice,
@@ -111,8 +112,12 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 
     // ── Tab 2: Compose
     let compose_panel = Panel::builder(&notebook).build();
-    let (preview_before_send, keep_sent_mail_on_this_computer, draft_autosave) =
-        build_compose_tab(&compose_panel, config);
+    let (
+        preview_before_send,
+        keep_sent_mail_on_this_computer,
+        draft_autosave,
+        add_signature_automatically,
+    ) = build_compose_tab(&compose_panel, config);
     notebook.add_page(&compose_panel, "Compose", false, None);
 
     // ── Tab 3: Reading
@@ -206,6 +211,7 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         preview_before_send,
         keep_sent_mail_on_this_computer,
         draft_autosave,
+        add_signature_automatically,
         sort_order,
         read_receipts,
         read_messages_as,
@@ -327,8 +333,11 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, Ch
     (theme_choice, font_field, notif_cb, update_cb)
 }
 
-/// Compose settings: preview-before-send, default format, signatures.
-fn build_compose_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, CheckBox, SpinCtrl) {
+/// Compose settings: preview before sending, what Sent keeps, drafts, signature.
+fn build_compose_tab(
+    panel: &Panel,
+    config: &AppConfig,
+) -> (CheckBox, CheckBox, SpinCtrl, CheckBox) {
     use crate::application::sent_copy::{KEEP_A_COPY_CONSEQUENCE, KEEP_A_COPY_LABEL};
 
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
@@ -357,27 +366,12 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, CheckBox, 
     keep_a_copy_cb.set_value(config.keep_sent_mail_on_this_computer);
     send_sec.add(&keep_a_copy_cb, 0, SizerFlag::All, 4);
 
-    let format_row = BoxSizer::builder(Orientation::Horizontal).build();
-    let format_label = StaticText::builder(panel)
-        .with_label("Default format:")
-        .build();
-    let format_choices: Vec<String> = ["HTML", "Plain Text"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    let format_choice = Choice::builder(panel)
-        .with_choices(format_choices)
-        .with_selection(Some(0))
-        .build();
-    set_accessible_name(&format_choice, "Default format");
-    format_row.add(
-        &format_label,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    format_row.add(&format_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
-    send_sec.add_sizer(&format_row, 0, SizerFlag::Expand, 0);
+    // A choice of "HTML" or "Plain Text" used to sit here, fixed on HTML and
+    // read back by nothing. There is no such setting: the composer is one
+    // editor, every message goes out with both a plain part and a formatted
+    // one, and nothing anywhere asks which was wanted. Choosing the format a
+    // message is written in is a feature, not a switch, so the control is gone
+    // rather than left saying a decision was taken.
 
     sizer.add_sizer(&send_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
@@ -412,18 +406,47 @@ fn build_compose_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, CheckBox, 
     sizer.add_sizer(&draft_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     // -- Signatures
-    let sig_sec = section(panel, "Signatures");
-    let sig_cb = CheckBox::builder(panel)
-        .with_label("Automatically insert &signature on new messages")
-        .build();
-    set_accessible_name(&sig_cb, "Automatically insert signature on new messages");
-    sig_cb.set_value(true);
+    //
+    // The label says every message rather than a new one, because that is what
+    // the composer does: a reply, a forward and a message written from a
+    // contact all open with it too. It said "on new messages" while being
+    // hard-set to yes and read back by nothing, so it was narrower than the
+    // truth and made no difference either way.
+    let sig_sec = section(panel, SIGNATURE_SECTION);
+    let sig_cb = CheckBox::builder(panel).with_label(SIGNATURE_LABEL).build();
+    set_accessible_name_and_description(
+        &sig_cb,
+        &name_from_label(SIGNATURE_LABEL),
+        SIGNATURE_WHEN_THIS_IS_OFF,
+    );
+    sig_cb.set_value(config.add_signature_automatically);
     sig_sec.add(&sig_cb, 0, SizerFlag::All, 4);
+
+    // The same sentence on screen. A description reaches a screen reader that
+    // reads through Microsoft Active Accessibility and nothing else, so what
+    // the unticked state means would otherwise be there for one reader and
+    // nobody else.
+    let sig_note = StaticText::builder(panel)
+        .with_label(SIGNATURE_WHEN_THIS_IS_OFF)
+        .build();
+    set_accessible_name(&sig_note, SIGNATURE_WHEN_THIS_IS_OFF);
+    sig_sec.add(&sig_note, 0, SizerFlag::Expand | SizerFlag::All, 4);
+
     sizer.add_sizer(&sig_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    (preview_cb, keep_a_copy_cb, autosave_spin)
+    (preview_cb, keep_a_copy_cb, autosave_spin, sig_cb)
 }
+
+/// The heading over the signature setting.
+const SIGNATURE_SECTION: &str = "Signatures";
+
+/// One sentence, said once, in the label and in the accessible name.
+const SIGNATURE_LABEL: &str = "Start every message with my &signature";
+
+/// What the unticked state means, which a checkbox alone cannot say.
+const SIGNATURE_WHEN_THIS_IS_OFF: &str = "Off: a message starts empty. Your signature stays on the account and can \
+     still be added by hand.";
 
 /// Reading settings: sort order, mark-as-read, threading.
 #[allow(clippy::type_complexity)]
@@ -486,12 +509,11 @@ fn build_reading_tab(
     sort_row.add(&sort_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     list_sec.add_sizer(&sort_row, 0, SizerFlag::Expand, 0);
 
-    let thread_cb = CheckBox::builder(panel)
-        .with_label("Enable &threaded view by default")
-        .build();
-    set_accessible_name(&thread_cb, "Enable threaded view by default");
-    thread_cb.set_value(false);
-    list_sec.add(&thread_cb, 0, SizerFlag::All, 4);
+    // A checkbox reading "Enable threaded view by default" used to sit here.
+    // Threaded view is not implemented: its View menu item is built disabled
+    // for that reason and says so, and this box was unticked, saved by nothing
+    // and read by nothing. A default for something that cannot be switched on
+    // is a setting for a feature that is not there.
     sizer.add_sizer(&list_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     // -- Reading Behaviour
@@ -591,12 +613,18 @@ fn build_reading_tab(
     receipt_row.add(&receipt_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     read_sec.add_sizer(&receipt_row, 0, SizerFlag::Expand, 0);
 
-    let external_cb = CheckBox::builder(panel)
-        .with_label("Load remote &images in messages")
+    // A checkbox reading "Load remote images in messages" used to sit here,
+    // unticked, saved by nothing and read by nothing. Unticked is what a
+    // screen reader announced, and it was the opposite of what happens: a
+    // picture a message points at is fetched when the message is shown, which
+    // tells whoever sent it that the message was opened and roughly when. The
+    // sentence below says so, because being told the truth is worth more than
+    // a switch that was never wired to anything.
+    let images_note = StaticText::builder(panel)
+        .with_label(REMOTE_IMAGES_ARE_FETCHED)
         .build();
-    set_accessible_name(&external_cb, "Load remote images in messages");
-    external_cb.set_value(false);
-    read_sec.add(&external_cb, 0, SizerFlag::All, 4);
+    set_accessible_name(&images_note, REMOTE_IMAGES_ARE_FETCHED);
+    read_sec.add(&images_note, 0, SizerFlag::Expand | SizerFlag::All, 4);
 
     sizer.add_sizer(&read_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
@@ -716,6 +744,14 @@ fn build_reading_tab(
         copy_lines,
     )
 }
+
+/// What happens to a picture a message points at, said rather than switched.
+///
+/// There is no setting for this yet. Saying so is the honest half of what the
+/// checkbox that used to stand here was claiming.
+const REMOTE_IMAGES_ARE_FETCHED: &str = "Pictures a message points at are fetched from wherever the sender put \
+     them when the message is shown, which tells the sender you opened it. \
+     There is no setting for this yet.";
 
 /// What the second level of the sort can be, in the order it is offered.
 ///
@@ -1382,6 +1418,7 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     cfg.keep_sent_mail_on_this_computer = w.keep_sent_mail_on_this_computer.get_value();
     cfg.draft_autosave_minutes =
         AutosaveInterval::from_setting(w.draft_autosave.value().max(0) as u32).minutes();
+    cfg.add_signature_automatically = w.add_signature_automatically.get_value();
 
     // Reading
     cfg.default_sort_order = match sel(&w.sort_order) {

@@ -26,6 +26,22 @@
 /// other client will recognise it.
 pub const DELIMITER: &str = "-- ";
 
+/// The signature a composer opens with.
+///
+/// Nothing at all when somebody has said they do not want one put on for them.
+/// The signature itself is untouched: it stays on the account, the signature
+/// manager still edits it, and it can be pasted into a message by hand. What
+/// this decides is whether a window opens with it already there.
+///
+/// Said as a rule rather than as an `if` in the window, because the window
+/// cannot be reached by a test and this can. The settings screen offered this
+/// answer for as long as the screen has existed, hard-set to yes, read back by
+/// nothing, so what somebody was told about it and what happened were two
+/// different things.
+pub fn opens_with(automatically: bool, stored: &str) -> &str {
+    if automatically { stored } else { "" }
+}
+
 /// Put a signature on a message.
 ///
 /// A message that already carries the separator is returned as it is, so
@@ -151,6 +167,30 @@ mod tests {
         let signed = attach("Thanks.", "Ada\nAnalytical Engines");
 
         assert_eq!(signed, "Thanks.\n\n-- \nAda\nAnalytical Engines");
+    }
+
+    #[test]
+    fn test_a_composer_opens_with_the_signature_when_that_is_what_was_asked_for() {
+        assert_eq!(
+            opens_with(true, "Ada\nAnalytical Engines"),
+            "Ada\nAnalytical Engines"
+        );
+    }
+
+    #[test]
+    fn test_a_composer_opens_with_nothing_when_somebody_asked_for_no_signature() {
+        // The account keeps its signature. What is turned off is putting it
+        // there without being asked, which is the setting the compose tab
+        // offered while nothing read it back.
+        assert_eq!(opens_with(false, "Ada\nAnalytical Engines"), "");
+    }
+
+    #[test]
+    fn test_a_message_opened_with_no_signature_is_not_signed_at_all() {
+        // The whole way through, because `attach` is what the window calls
+        // with whatever this hands it and an empty signature has to add
+        // nothing rather than a separator with nothing under it.
+        assert_eq!(attach("Thanks.", opens_with(false, "Ada")), "Thanks.");
     }
 
     #[test]

@@ -2317,3 +2317,286 @@ fn test_the_first_run_check_can_tell_the_two_apart() {
         );
     }
 }
+
+// ── A control that announces a setting nothing keeps ────────────────────────
+//
+// Four of these were standing in the settings dialog at once: a checkbox
+// saying a signature goes on every new message, a choice of message format, a
+// checkbox for threaded view, and one saying remote images are not loaded.
+// Each was built, given an accessible name, given a value and added to its
+// panel, and then never mentioned again. Nothing read any of them back, so
+// nothing could save one. A screen reader announces the value the control was
+// handed, and that value is a statement about a setting that is not there,
+// made in the only channel somebody who cannot see the screen has.
+//
+// Three of the same shape had already been found by hand in this one file and
+// are named in its comments: an autosave checkbox that claimed sixty seconds,
+// two spell-check boxes that were ticked while nothing checked anything, and a
+// mark-as-read choice with four fixed answers and nothing that saved them. So
+// it is a failing build rather than something somebody has to keep noticing.
+//
+// The shape it reads: a widget that holds an answer, built inside one of the
+// tab builders, whose binding never reaches the tuple that builder hands back.
+// That tuple is the only way a value leaves the function and reaches
+// `read_settings`, so a control missing from it cannot be saved by any route.
+//
+// What it cannot see. A control that reaches the tuple and is then read into
+// the wrong field, or into no field at all, because `read_settings` is a list
+// of assignments and this does not read it. A control on a window other than
+// this one. And a value read back into a configuration field nothing else
+// reads, which is a whole setting doing nothing rather than one control.
+
+/// The file that builds the settings dialog.
+const WHERE_THE_SETTINGS_ARE_BUILT: &str = "src/presentation/wx_settings.rs";
+
+/// The widget types that hold an answer somebody can change.
+///
+/// A `StaticText` is not one: it says something and holds nothing, so there is
+/// nothing to read back from it. A `Button` does something when it is pressed
+/// rather than carrying an answer that has to be saved.
+const HOLDS_AN_ANSWER: [&str; 4] = ["CheckBox", "Choice", "SpinCtrl", "TextCtrl"];
+
+/// One tab builder of the settings dialog, as text.
+struct TabBuilder {
+    /// What it is called, for the failure message.
+    name: String,
+    /// The line its `fn` sits on, so an offset into the body names a real line.
+    first_line: usize,
+    /// Everything from the `fn` line to the closing brace.
+    body: String,
+}
+
+/// Every `fn build_..._tab` in the settings dialog.
+///
+/// A body ends at the first line that is a closing brace on its own at the
+/// start of a line, which is what `rustfmt` writes for the end of a function
+/// and never for anything inside one.
+fn tab_builders(text: &str) -> Vec<TabBuilder> {
+    let lines: Vec<&str> = text.lines().map(|line| line.trim_end()).collect();
+    let mut found = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let Some(rest) = line.strip_prefix("fn build_") else {
+            continue;
+        };
+        let named: String = rest
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        let end = lines[index..]
+            .iter()
+            .position(|line| *line == "}")
+            .map_or(lines.len() - 1, |offset| index + offset);
+        found.push(TabBuilder {
+            name: format!("build_{named}"),
+            first_line: index + 1,
+            body: lines[index..=end].join("\n"),
+        });
+    }
+    found
+}
+
+/// The same text with everything inside a string literal blanked out.
+///
+/// So that a semicolon inside a sentence on a label cannot be read as the end
+/// of a statement. Blanked rather than cut, and blanked one byte at a time, so
+/// an offset into the result is still an offset into the original.
+fn without_string_literals(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut inside = false;
+    let mut escaped = false;
+    for character in text.chars() {
+        let blank = " ".repeat(character.len_utf8());
+        match (inside, character) {
+            (false, '"') => {
+                inside = true;
+                out.push(character);
+            }
+            (false, _) => out.push(character),
+            (true, _) if escaped => {
+                escaped = false;
+                out.push_str(&blank);
+            }
+            (true, '\\') => {
+                escaped = true;
+                out.push_str(&blank);
+            }
+            (true, '"') => {
+                inside = false;
+                out.push(character);
+            }
+            (true, '\n') => out.push('\n'),
+            (true, _) => out.push_str(&blank),
+        }
+    }
+    out
+}
+
+/// Every control built in one function, as the name it is bound to.
+fn controls_built_in(body: &str) -> Vec<(usize, String)> {
+    let mut found = Vec::new();
+    for (offset, line) in body.lines().enumerate() {
+        let Some(rest) = line.trim_start().strip_prefix("let ") else {
+            continue;
+        };
+        let Some((bound, made)) = rest.split_once(" = ") else {
+            continue;
+        };
+        let built = HOLDS_AN_ANSWER
+            .iter()
+            .any(|widget| made.starts_with(&format!("{widget}::builder(")))
+            || made.starts_with("labelled_choice(");
+        if built {
+            found.push((offset, bound.trim_start_matches("mut ").trim().to_string()));
+        }
+    }
+    found
+}
+
+/// What a function hands back, which is the only way a value leaves it.
+///
+/// Everything after its last statement. These builders all end the same way:
+/// the panel is given its sizer, and then the tuple of controls is the trailing
+/// expression.
+fn what_it_hands_back(body: &str) -> String {
+    match without_string_literals(body).rfind(';') {
+        Some(at) => body[at + 1..].to_string(),
+        None => body.to_string(),
+    }
+}
+
+/// Whether a control built here leaves the function it was built in.
+///
+/// In the tuple, or put into a collection that is handed back. The feedback tab
+/// builds one checkbox per channel in a loop and pushes each into a list, which
+/// is the same thing said differently.
+fn leaves_the_function(body: &str, handed_back: &str, name: &str) -> bool {
+    let named_in =
+        |text: &str| !whole_words_at(&text.to_lowercase(), &name.to_lowercase()).is_empty();
+    named_in(handed_back)
+        || body
+            .lines()
+            .filter(|line| line.contains(".push("))
+            .any(named_in)
+}
+
+/// Every control of the settings dialog that is built and then forgotten.
+fn controls_nothing_reads(text: &str) -> Vec<String> {
+    let mut forgotten = Vec::new();
+    for builder in tab_builders(text) {
+        let handed_back = what_it_hands_back(&builder.body);
+        for (offset, name) in controls_built_in(&builder.body) {
+            if !leaves_the_function(&builder.body, &handed_back, &name) {
+                forgotten.push(format!(
+                    "{WHERE_THE_SETTINGS_ARE_BUILT}:{}: {name}, built in {}",
+                    builder.first_line + offset,
+                    builder.name
+                ));
+            }
+        }
+    }
+    forgotten
+}
+
+#[test]
+fn test_no_settings_control_is_built_and_then_forgotten() {
+    let text =
+        fs::read_to_string(WHERE_THE_SETTINGS_ARE_BUILT).expect("the settings dialog to be read");
+
+    let forgotten = controls_nothing_reads(&text);
+
+    assert!(
+        forgotten.is_empty(),
+        "{} controls are built, named and given a value, and never handed back, \
+         so nothing reads them and nothing saves them. A screen reader still \
+         announces the value each one was handed, which is a setting somebody \
+         is told about and cannot have. Wire it to a real setting or take it \
+         out:\n  {}",
+        forgotten.len(),
+        forgotten.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_forgotten_control_check_can_tell_the_two_apart() {
+    // Proving the measurement. A check that reads nothing passes, and from
+    // outside that is indistinguishable from a check that reads everything.
+    let text =
+        fs::read_to_string(WHERE_THE_SETTINGS_ARE_BUILT).expect("the settings dialog to be read");
+    let builders = tab_builders(&text);
+    assert!(
+        builders.len() >= 7,
+        "only {} tab builders found, so the reading is broken",
+        builders.len()
+    );
+    let built: usize = builders
+        .iter()
+        .map(|builder| controls_built_in(&builder.body).len())
+        .sum();
+    assert!(
+        built > 25,
+        "only {built} controls found across the tabs, so the reading is broken"
+    );
+    for wanted in ["build_compose_tab", "build_feedback_tab"] {
+        assert!(
+            builders.iter().any(|builder| builder.name == wanted),
+            "{wanted} was not found, so the reading is broken"
+        );
+    }
+
+    // A control that is handed back, and one held on to. Both are the real
+    // shape, written out here because this file is left out of the walk.
+    let kept = "fn build_example_tab(panel: &Panel, config: &AppConfig) -> CheckBox {\n\
+        \x20   let preview_cb = CheckBox::builder(panel).with_label(\"Show me\").build();\n\
+        \x20   preview_cb.set_value(config.preview_before_send);\n\
+        \x20   panel.set_sizer(sizer, true);\n\
+        \x20   preview_cb\n\
+        }\n";
+    assert!(
+        controls_nothing_reads(kept).is_empty(),
+        "a control that is handed back was named"
+    );
+
+    let forgotten = "fn build_example_tab(panel: &Panel, config: &AppConfig) -> CheckBox {\n\
+        \x20   let preview_cb = CheckBox::builder(panel).with_label(\"Show me\").build();\n\
+        \x20   let sig_cb = CheckBox::builder(panel).with_label(\"Sign it\").build();\n\
+        \x20   sig_cb.set_value(true);\n\
+        \x20   sig_sec.add(&sig_cb, 0, SizerFlag::All, 4);\n\
+        \x20   panel.set_sizer(sizer, true);\n\
+        \x20   preview_cb\n\
+        }\n";
+    let named = controls_nothing_reads(forgotten);
+    assert_eq!(named.len(), 1, "{named:?}");
+    assert!(named[0].contains("sig_cb"), "{named:?}");
+
+    // One built in a loop and pushed into the list that is handed back, which
+    // is how the feedback tab builds its channels.
+    let pushed = "fn build_example_tab(panel: &Panel, config: &AppConfig) -> Vec<CheckBox> {\n\
+        \x20   for channel in Channel::ALL {\n\
+        \x20       let cb = CheckBox::builder(panel).with_label(label).build();\n\
+        \x20       boxes.push((channel, cb));\n\
+        \x20   }\n\
+        \x20   panel.set_sizer(sizer, true);\n\
+        \x20   boxes\n\
+        }\n";
+    assert!(
+        controls_nothing_reads(pushed).is_empty(),
+        "a control pushed into the list was named"
+    );
+
+    // A semicolon inside a label is not the end of the last statement. Read as
+    // one, everything after it becomes the trailing expression and every
+    // control in the function reads as handed back.
+    let semicolon = "fn build_example_tab(panel: &Panel, config: &AppConfig) -> CheckBox {\n\
+        \x20   let note = StaticText::builder(panel).with_label(\"Off; nothing is sent\").build();\n\
+        \x20   let sig_cb = CheckBox::builder(panel).with_label(\"Sign it\").build();\n\
+        \x20   panel.set_sizer(sizer, true);\n\
+        \x20   note\n\
+        }\n";
+    assert_eq!(controls_nothing_reads(semicolon).len(), 1);
+
+    // And a name that is the start of another name is not read as that one.
+    assert!(
+        whole_words_at("(sort_choices, other)", "sort_choice").is_empty(),
+        "a name is being matched inside a longer one"
+    );
+}

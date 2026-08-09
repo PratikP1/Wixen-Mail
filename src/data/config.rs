@@ -65,6 +65,19 @@ pub struct AppConfig {
     /// and none on a copy the server refuses, which is kept here regardless.
     #[serde(default)]
     pub keep_sent_mail_on_this_computer: bool,
+    /// Whether a message being written opens with the account's signature.
+    ///
+    /// On unless somebody turns it off, which is what every message has done
+    /// since signatures reached the composer, so a settings file written before
+    /// this existed keeps the behaviour it had. Off, the composer opens with an
+    /// empty body; the signature stays on the account and can still be put in
+    /// by hand.
+    ///
+    /// The compose tab offered this answer for as long as it has existed, hard
+    /// set to yes, saved by nothing. A screen reader read out a setting that
+    /// was not there.
+    #[serde(default = "default_true")]
+    pub add_signature_automatically: bool,
     /// The language messages are spell-checked in.
     ///
     /// A BCP 47 tag such as `en-GB` where Windows is doing the checking, and a
@@ -363,6 +376,7 @@ impl Default for AppConfig {
             // The safe answer is the one that changes nothing: the server's own
             // copy is what Sent has always listed.
             keep_sent_mail_on_this_computer: false,
+            add_signature_automatically: default_true(),
             language: default_language(),
             check_spelling_before_send: true,
             allowed_changes: default_allowed(),

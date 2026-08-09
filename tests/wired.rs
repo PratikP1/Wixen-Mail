@@ -529,6 +529,37 @@ fn test_importing_and_exporting_cards_use_the_account_being_looked_at() {
     );
 }
 
+/// The composer asks whether a signature was wanted before it puts one on.
+///
+/// The compose tab has offered this answer for as long as the settings screen
+/// has existed. It was hard-set to ticked, handed back by nothing and saved by
+/// nothing, so a screen reader announced a setting that was not there and
+/// every message got a signature either way.
+///
+/// The rule itself is `application::sign_off::opens_with` and is tested there.
+/// What no test there can say is whether the window asks it, and asking is the
+/// half that was missing: reaching the composer needs a window, an account and
+/// a runtime.
+#[test]
+fn test_the_composer_asks_whether_a_signature_was_wanted() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    assert!(
+        app.contains("cfg.add_signature_automatically"),
+        "nothing on the compose path reads the setting, so a signature goes on \
+         whatever the settings screen was told"
+    );
+    assert!(
+        app.contains("sign_off::opens_with(sign_it, &stored_signature)"),
+        "the setting is read and nothing decides the signature with it"
+    );
+    assert!(
+        app.contains("preview_first,\n        signature,\n        autosave,"),
+        "the composer is handed something other than the signature that answer \
+         decided, so deciding it changes nothing"
+    );
+}
+
 /// The account dialog asks for the name recipients see.
 ///
 /// This pins that the code asks for the right thing. It can never mean a
