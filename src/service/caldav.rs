@@ -1621,6 +1621,12 @@ pub(crate) struct ACancelledDay<'a> {
 ///
 /// Split at the last colon. A clock face never holds one and a quoted zone
 /// name is allowed to, so the last colon is the one that divides them.
+///
+/// That rests on every value in this column being written the way a calendar
+/// document writes one, which is true because everything that fills the column
+/// fills it through [`cancelled_days_in_the_events_zone`]. A value written some
+/// other way, a moment carrying punctuation in its clock face, would be cut at
+/// the wrong colon. Named here so it is not mistaken for handled.
 pub(crate) fn a_cancelled_day_taken_apart(one: &str) -> ACancelledDay<'_> {
     let (in_front, clock_face) = match one.rsplit_once(':') {
         Some((in_front, face)) => (Some(in_front), face.trim()),
@@ -3347,6 +3353,67 @@ mod tests {
             assert_eq!(apart.its_own_zone, zone, "the zone {stored} came back as");
             assert_eq!(apart.clock_face, face, "the face {stored} came back as");
             assert_eq!(apart.form, day.form, "the form {stored} came back as");
+        }
+    }
+
+    #[test]
+    fn test_one_parameter_is_read_off_a_line_whatever_shape_it_arrives_in() {
+        // One scan reads a parameter off a document line and off a stored
+        // cancelled day that carries its own zone. Two scans would be two
+        // answers about quote marks and about letter case, and four callers
+        // depend on this one, so the shapes are pinned here rather than only
+        // where each caller happens to meet them.
+        for (line, property, expected) in [
+            (
+                "DTSTART;TZID=Europe/London:20260305T090000",
+                "DTSTART",
+                Some("Europe/London"),
+            ),
+            // Written in small letters, which the standard allows and servers
+            // do.
+            (
+                "dtstart;tzid=Europe/London:20260305T090000",
+                "DTSTART",
+                Some("Europe/London"),
+            ),
+            // Quoted, which the standard allows and some servers do to every
+            // parameter. The quote marks are not part of the name.
+            (
+                "DTSTART;TZID=\"Europe/London\":20260305T090000",
+                "DTSTART",
+                Some("Europe/London"),
+            ),
+            // Behind another parameter, and in front of one.
+            (
+                "DTSTART;VALUE=DATE-TIME;TZID=Europe/London:20260305T090000",
+                "DTSTART",
+                Some("Europe/London"),
+            ),
+            (
+                "DTSTART;TZID=Europe/London;VALUE=DATE-TIME:20260305T090000",
+                "DTSTART",
+                Some("Europe/London"),
+            ),
+            // A zone name with spaces in it, which is what Outlook writes.
+            (
+                "DTSTART;TZID=Eastern Standard Time:20260305T090000",
+                "DTSTART",
+                Some("Eastern Standard Time"),
+            ),
+            // No parameters at all.
+            ("DTSTART:20260305T090000Z", "DTSTART", None),
+            // A semicolon inside the value is not a parameter. Read as one,
+            // a note somebody typed becomes a parameter on their event.
+            ("SUMMARY:Bring a laptop; and a charger", "SUMMARY", None),
+            // Another property's line, which the caller asking per line has
+            // to be told apart.
+            ("DTEND;TZID=Europe/London:20260305T100000", "DTSTART", None),
+        ] {
+            assert_eq!(
+                parameter_named_on(line, property, TIME_ZONE_PARAMETER).as_deref(),
+                expected,
+                "reading the zone off {line}"
+            );
         }
     }
 
