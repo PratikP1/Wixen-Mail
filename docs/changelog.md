@@ -287,6 +287,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A task you delete stays deleted when the list it was in disappears.** When a
+  task list went away at your provider, every deletion still waiting for that
+  list was thrown away with it. If the provider had moved one of those tasks
+  into another list rather than deleting it, the next sync read the task back
+  and put it on the screen again, with nothing left to say you had ever deleted
+  it. Deleting a task and finding it back reads as the delete having quietly
+  failed, and a row that returns says nothing when it does, so it is easy to
+  miss altogether.
+
+  Whether a deletion can be forgotten is now decided in one place, beside the
+  record it clears, instead of separately by each part of the sync. A deletion
+  of a task your provider named is kept until that provider has taken it. A
+  deletion of a task made here that was never sent anywhere is still cleared, so
+  nothing is remembered for ever with no reason to be.
+
+  Known limitation: a deletion whose list has gone can never be sent, because
+  there is no longer anywhere to send it. This computer stops asking, so it no
+  longer reports a problem after every sync about something you cannot act on.
+  If your provider still holds that task in some other list, it keeps its copy
+  while this computer shows nothing.
+
 - **Two pages stopped saying that everything is held back until you say so.**
   The comparison page promised that nothing writes to a server before you
   permit it, and the front of the testing page said sending was switched off

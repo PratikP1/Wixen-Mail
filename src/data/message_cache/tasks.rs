@@ -333,20 +333,40 @@ impl MessageCache {
         Ok(())
     }
 
-    /// Drop the note outright, because nothing at any provider can hand this
-    /// task back.
+    /// Drop the note outright, when nothing at any provider can hand this task
+    /// back.
     ///
-    /// Only for a task no provider ever held, or one whose list has gone.
-    /// Anywhere a provider could still name it, use
-    /// [`Self::the_provider_took_the_deletion_of_a_task`] instead.
-    pub fn forget_deleted_task(&self, task_id: &str) -> Result<()> {
-        self.conn
+    /// A note whose id a provider issued is refused, and the answer says
+    /// whether the row went. The id is the whole of what masks the reads: as
+    /// long as a provider could hand the task back under it, the note is the
+    /// only thing standing between the deletion and a sync that writes the task
+    /// back down. Three callers each decided for themselves whether a note was
+    /// safe to drop, and one of them dropped every note belonging to a list
+    /// that had gone away, including notes about tasks the provider had merely
+    /// moved elsewhere, so those tasks came back. The one right answer lives
+    /// here, beside the delete it guards.
+    ///
+    /// A note about a task no provider ever held still drains, because it masks
+    /// nothing and can never be sent.
+    ///
+    /// For a note the provider has taken, use
+    /// [`Self::the_provider_took_the_deletion_of_a_task`] instead: the note
+    /// stays, masking the reads, until the sweep releases it by the clock.
+    pub fn forget_deleted_task(&self, task_id: &str) -> Result<bool> {
+        // The identifier is the answer, and this is the one place that answers
+        // it. Written again as SQL it would be a second answer in a second
+        // language, kept in step with the prefixes by nothing at all.
+        if crate::application::tasks_sync::a_provider_holds(task_id) {
+            return Ok(false);
+        }
+        let removed = self
+            .conn
             .execute(
                 "DELETE FROM deleted_tasks WHERE id = ?1",
                 rusqlite::params![task_id],
             )
             .map_err(|e| Error::Other(format!("Failed to clear a deletion: {}", e)))?;
-        Ok(())
+        Ok(removed > 0)
     }
 
     /// This copy now agrees with the provider.
@@ -775,15 +795,53 @@ mod tests {
     }
 
     #[test]
-    fn test_a_deletion_that_has_been_sent_is_not_sent_again() {
+    fn test_forgetting_a_deletion_a_provider_could_still_hand_back_is_refused() {
+        // The id is the whole of what masks the reads: as long as a provider
+        // could name the task again, the note is the only thing standing
+        // between the deletion and a sync that writes the task back down.
+        // Three callers each decided for themselves whether a note was safe to
+        // drop and one of them dropped every note for a list that had gone,
+        // provider-held ones included, so the one right answer lives here.
         let cache = test_cache();
         let list = cache.ensure_default_task_list("acct-1").unwrap();
         synced_task(&cache, "google:t1", &list.id);
         cache.delete_task("google:t1").unwrap();
 
-        cache.forget_deleted_task("google:t1").unwrap();
+        let removed = cache
+            .forget_deleted_task("google:t1")
+            .expect("the deletions to be reachable");
 
-        assert!(cache.deleted_tasks("acct-1").unwrap().is_empty());
+        assert!(
+            !removed,
+            "a note a provider could still hand the task back for was let go"
+        );
+        assert_eq!(
+            cache.deleted_tasks("acct-1").unwrap().len(),
+            1,
+            "the note is gone, so the next read that names this task writes it \
+             back down"
+        );
+    }
+
+    #[test]
+    fn test_forgetting_a_deletion_no_provider_ever_held_lets_the_row_go() {
+        // The other direction, so the refusal cannot grow into a table that
+        // never drains. A task made here and deleted before it ever synced
+        // carries no provider's name, masks nothing, and can never be sent.
+        let cache = test_cache();
+        let list = cache.ensure_default_task_list("acct-1").unwrap();
+        synced_task(&cache, "task-local-1", &list.id);
+        cache.delete_task("task-local-1").unwrap();
+
+        let removed = cache
+            .forget_deleted_task("task-local-1")
+            .expect("the deletions to be reachable");
+
+        assert!(removed, "a note nothing could ever act on was kept");
+        assert!(
+            cache.deleted_tasks("acct-1").unwrap().is_empty(),
+            "a note nothing could ever act on was kept for ever"
+        );
     }
 
     #[test]

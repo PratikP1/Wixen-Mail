@@ -859,6 +859,54 @@ red = [
     "data::message_cache::calendar::tests::test_forgetting_a_deletion_no_provider_ever_held_lets_the_row_go",
 ]
 
+# The same pair for tasks, which went without one for a round. A task's note
+# has no column naming the provider, because for a task the provider's name for
+# it is the row id itself, so the refusal asks the id rather than the table.
+# The caller that got it wrong dropped every note belonging to a list that had
+# gone away, including notes about tasks the provider had merely moved into a
+# list that stayed, so those tasks came back on the next sync.
+
+[[guard]]
+name = "forgetting a task deletion a provider could still hand back is refused"
+file = "src/data/message_cache/tasks.rs"
+before = """        if crate::application::tasks_sync::a_provider_holds(task_id) {
+            return Ok(false);
+        }
+        let removed = self"""
+after = """        let removed = self"""
+red = [
+    "application::tasks_sync::tests::test_a_deletion_of_a_provider_held_task_with_no_list_is_kept_rather_than_forgotten",
+    "application::tasks_sync::tests::test_a_deletion_survives_the_list_it_was_in_going_away",
+    "application::tasks_sync::tests::test_a_deletion_survives_the_list_it_was_in_going_away_at_outlook",
+    "application::tasks_sync::tests::test_a_deletion_waiting_for_a_list_that_has_gone_is_kept_because_the_provider_may_still_hand_the_task_back",
+    "data::message_cache::tasks::tests::test_forgetting_a_deletion_a_provider_could_still_hand_back_is_refused",
+]
+
+[[guard]]
+name = "a task deletion no provider ever held still drains"
+file = "src/data/message_cache/tasks.rs"
+before = """        if crate::application::tasks_sync::a_provider_holds(task_id) {"""
+after = """        if true {"""
+red = [
+    "application::tasks_sync::tests::test_a_deletion_of_a_task_made_here_still_drains_when_its_list_goes",
+    "application::tasks_sync::tests::test_a_task_deleted_before_it_ever_reached_the_provider_leaves_nothing_to_tell_it",
+    "data::message_cache::tasks::tests::test_forgetting_a_deletion_no_provider_ever_held_lets_the_row_go",
+]
+
+# The other half of keeping that note: it now outlives the list it names, and a
+# note kept is a note the push keeps finding. Asking a provider to delete
+# something in a list it no longer has is refused every time, which is a
+# problem on the status line for ever about something nobody can act on.
+
+[[guard]]
+name = "a deletion whose list has gone stops being sent to the provider"
+file = "src/application/tasks_sync.rs"
+before = """        if !lists_here.iter().any(|list| list.id == list_id) {"""
+after = """        if false {"""
+red = [
+    "application::tasks_sync::tests::test_a_deletion_for_a_list_that_has_gone_is_not_sent_again_and_is_not_a_problem",
+]
+
 # ── What lets a deletion go ────────────────────────────────────────────────
 #
 # The other end of the rule. A note the provider has taken is let go of by the
@@ -874,9 +922,13 @@ file = "src/data/message_cache/mod.rs"
 before = """                    &format!("DELETE FROM {table} WHERE taken_at IS NOT NULL AND taken_at < ?1"),"""
 after = """                    &format!("DELETE FROM {table} WHERE taken_at IS NULL OR taken_at < ?1"),"""
 red = [
+    "application::caldav_sync::tests::test_a_deletion_with_no_address_at_the_server_is_kept_and_masks_the_read",
     "application::caldav_sync::tests::test_an_event_deleted_here_is_deleted_at_the_calendar_server_and_stops_being_owed",
     "application::caldav_sync::tests::test_an_event_this_computer_deleted_is_not_written_back_by_a_later_caldav_sync",
     "application::caldav_sync::tests::test_an_event_this_computer_deleted_is_not_written_back_by_the_read_that_follows",
+    "application::calendar::tests::test_a_deletion_in_a_calendar_made_here_holds_across_three_syncs",
+    "application::calendar::tests::test_a_deletion_in_a_read_only_calendar_of_this_account_holds_across_three_syncs",
+    "application::calendar::tests::test_a_deletion_in_a_subscribed_calendar_is_kept_so_the_feed_cannot_hand_it_back",
     "application::calendar::tests::test_a_deletion_in_the_other_providers_calendar_is_left_for_that_provider_to_carry_out",
     "application::calendar::tests::test_a_deletion_nobody_has_taken_is_never_let_go_of_by_the_clock",
     "application::calendar::tests::test_an_event_deleted_here_is_deleted_at_outlook_and_stops_being_owed",
@@ -899,7 +951,9 @@ red = [
     "application::contacts_sync::tests::test_a_deletion_the_address_book_refused_is_kept_and_said",
     "application::contacts_sync::tests::test_an_address_book_that_has_never_heard_of_her_is_not_asked_again",
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_deletion_the_summary_said_was_waiting",
-    "application::tasks_sync::tests::test_a_deletion_waiting_for_a_list_that_has_gone_stops_being_carried",
+    "application::tasks_sync::tests::test_a_deletion_survives_the_list_it_was_in_going_away",
+    "application::tasks_sync::tests::test_a_deletion_survives_the_list_it_was_in_going_away_at_outlook",
+    "application::tasks_sync::tests::test_a_deletion_waiting_for_a_list_that_has_gone_is_kept_because_the_provider_may_still_hand_the_task_back",
     "application::tasks_sync::tests::test_a_task_this_computer_deleted_is_not_written_back_by_a_later_sync",
     "application::tasks_sync::tests::test_a_task_this_computer_deleted_is_not_written_back_by_outlook",
     "application::tasks_sync::tests::test_a_task_this_computer_deleted_is_not_written_back_by_the_read_that_follows",

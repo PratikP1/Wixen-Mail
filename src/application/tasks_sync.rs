@@ -608,6 +608,16 @@ async fn push_tasks<S: TaskService>(
     provider: Provider,
     result: &mut TaskSyncResult,
 ) {
+    // Read once, because every deletion is asked the same question of it: is
+    // the list this deletion names still here. A read that fails answers as an
+    // empty account with a line saying why, so every deletion is skipped this
+    // time and none is lost; they are all still owed next sync.
+    let lists_here = or_say_why(
+        cache.get_task_lists_for_account(account_id),
+        "The task lists could not be read, so no deletion is being sent this time",
+        result,
+    );
+
     // Deletions first. A task deleted here that is also edited here would
     // otherwise be pushed and then deleted, which is two calls to reach the
     // same place, and the second one would fail if the first had not landed.
@@ -638,10 +648,26 @@ async fn push_tasks<S: TaskService>(
         }
         let Some(list_id) = gone.task_list_id.as_deref() else {
             // A task with no list cannot be found again at the other end.
-            // Nothing to do but stop trying.
+            // Nothing to do but stop trying. The note itself only goes if no
+            // provider ever held the task; the cache is the one that decides
+            // that, and it refuses the rest.
             let _ = cache.forget_deleted_task(&gone.id);
             continue;
         };
+        if !lists_here.iter().any(|list| list.id == list_id) {
+            // The list has gone from this account, so there is no longer an
+            // address to send this deletion to. Asking anyway is a refusal on
+            // every sync from now on, which reads as "1 problem" for ever about
+            // something nobody can act on.
+            //
+            // The note stays, and that is the point. By here the id is known to
+            // be this provider's, so the note is the only thing keeping the
+            // task off the screen if the provider moved it into a list that
+            // survived. What it costs is worth saying plainly: this deletion
+            // can never be sent now, so if the provider does still hold the
+            // task, it keeps its copy while this computer shows nothing.
+            continue;
+        }
         let sent = match provider {
             Provider::Google => service.google_delete_task(token, list_id, &gone.id).await,
             Provider::Microsoft => service.ms_delete_task(token, list_id, &gone.id).await,
@@ -1052,19 +1078,27 @@ fn remove_list(
             return;
         }
     }
-    forget_deletions_for(cache, account_id, list_id, result);
+    forget_the_deletions_for(cache, account_id, list_id, result);
     match cache.delete_task_list(list_id) {
         Ok(()) => result.lists_removed += 1,
         Err(e) => result.errors.push(format!("List {list_id}: {e}")),
     }
 }
 
-/// Stop carrying the deletions waiting for a list that has gone.
+/// Offer up the deletions waiting for a list that has gone.
 ///
-/// There is nothing at the other end to delete any more, so keeping them means
-/// asking the provider to delete something in a list it does not have, being
-/// refused, and doing it again on every sync from now on.
-fn forget_deletions_for(
+/// Offer, not drop, and the difference is the whole of this. A note about a
+/// task made here has nothing at the other end and would otherwise be carried
+/// for ever, so it is worth asking. A note about a task a provider issued the
+/// id for is a different thing entirely: the list going away says nothing about
+/// the task, which the provider may have moved into a list that stayed, and the
+/// note is the only thing that stops the read straight after this writing the
+/// task back down.
+///
+/// This asked for both and got both, and that put deleted tasks back on the
+/// screen. It still asks for both, because deciding here is what went wrong;
+/// the cache answers, and refuses the ones a provider could still hand back.
+fn forget_the_deletions_for(
     cache: &MessageCache,
     account_id: &str,
     list_id: &str,
@@ -2326,9 +2360,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_a_deletion_waiting_for_a_list_that_has_gone_stops_being_carried() {
-        // There is nothing at the other end to delete any more, so carrying it
-        // means failing against that list on every sync from now on.
+    async fn test_a_deletion_waiting_for_a_list_that_has_gone_is_kept_because_the_provider_may_still_hand_the_task_back()
+     {
+        // The list going away says nothing about the task. The provider may
+        // have moved it into another list moments before, and the note is the
+        // only thing that stops the next read writing it back down. Dropping
+        // the note here put a task somebody had deleted back on the screen.
         let cache = a_cache("tombstone_for_a_gone_list");
         a_list_kept_and_a_list_that_goes(&cache);
         cache
@@ -2344,18 +2381,267 @@ mod tests {
             .await
             .expect("the sync runs");
 
-        assert!(
-            cache
-                .deleted_tasks("acc-1")
-                .expect("the deletions")
-                .is_empty(),
-            "a deletion is still waiting for a list that has gone"
+        assert_eq!(
+            cache.deleted_tasks("acc-1").expect("the deletions").len(),
+            1,
+            "the note went, so the next read that names the task puts it back"
         );
+        // The list was still here when the push ran, so the send was tried and
+        // turned down in the ordinary way. An ordinary refusal is still said.
         assert_eq!(
             result.errors.len(),
             1,
             "expected only the refused push: {:?}",
             result.errors
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_for_a_list_that_has_gone_is_not_sent_again_and_is_not_a_problem() {
+        // The list-gone path on its own, at push time. Asking the provider to
+        // delete something in a list it does not have is refused every sync
+        // from now on, which is "1 problem" on the status line for ever. The
+        // note stays anyway, because it is what masks the reads.
+        let cache = a_cache("push_for_a_gone_list");
+        a_list_kept_and_a_list_that_goes(&cache);
+        cache
+            .save_task(&TaskEntry {
+                id: "google:t1".to_string(),
+                task_list_id: Some("google:gone".to_string()),
+                ..task("x")
+            })
+            .expect("a task");
+        cache.delete_task("google:t1").expect("the deletion");
+        // The state a sync leaves behind once the provider stops listing the
+        // list: the note still names it and nothing here does.
+        cache
+            .delete_task_list("google:gone")
+            .expect("the list to go the way a sync takes it");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &Scripted::default(),
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+
+        assert!(
+            result.errors.is_empty(),
+            "a deletion that cannot be sent was reported as a problem: {:?}",
+            result.errors
+        );
+        assert_eq!(
+            result.sent, 0,
+            "a deletion into a list that has gone was sent"
+        );
+        assert_eq!(
+            cache.deleted_tasks("acc-1").expect("the deletions").len(),
+            1,
+            "the note went, so the next read that names the task puts it back"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_of_a_provider_held_task_with_no_list_is_kept_rather_than_forgotten() {
+        // A note with no list has no address to send to, so the push stops
+        // trying and offers it up. The provider still knows the task by this
+        // id, though, so the note is still the only thing keeping it off the
+        // screen, and the cache refuses to let it go.
+        let cache = a_cache("no_list_deletion_kept");
+        a_list(&cache, "google:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "google:t1".to_string(),
+                task_list_id: None,
+                ..task("x")
+            })
+            .expect("a task in no list");
+        cache.delete_task("google:t1").expect("the deletion");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &Scripted::default(),
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+
+        assert!(
+            result.errors.is_empty(),
+            "a deletion with no address was reported as a problem: {:?}",
+            result.errors
+        );
+        assert_eq!(result.sent, 0, "a deletion with no list was sent somewhere");
+        assert_eq!(
+            cache.deleted_tasks("acc-1").expect("the deletions").len(),
+            1,
+            "the note went, so the next read that names the task puts it back"
+        );
+    }
+
+    /// A provider that has dropped one list and still lists the task that was
+    /// in it, which is what a task moved on the phone looks like from here.
+    ///
+    /// `RefusedByTheGate` rather than an ordinary refusal, so the push is a
+    /// wait rather than a problem and the error counts say something.
+    fn a_provider_that_moved_the_task_out_of_the_list_it_dropped() -> Scripted {
+        Scripted {
+            google_lists: vec![GoogleTaskList {
+                id: "kept".to_string(),
+                title: "My Tasks".to_string(),
+            }],
+            google_tasks: std::collections::HashMap::from([(
+                "kept".to_string(),
+                vec![GoogleTask {
+                    id: "t1".to_string(),
+                    title: "A".to_string(),
+                    status: "needsAction".to_string(),
+                    ..Default::default()
+                }],
+            )]),
+            writes: Writes::RefusedByTheGate,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_survives_the_list_it_was_in_going_away() {
+        // The headline. A task deleted here, in a list the provider then drops
+        // while still naming the task somewhere else, came back on the second
+        // sync: the first sync dropped the note along with the list and the
+        // second wrote the task straight back down.
+        //
+        // Three passes rather than two. Two prove the note was dropped; the
+        // third proves nothing else is left leaking.
+        let cache = a_cache("deletion_survives_a_gone_list");
+        a_list_kept_and_a_list_that_goes(&cache);
+        cache
+            .save_task(&TaskEntry {
+                id: "google:t1".to_string(),
+                task_list_id: Some("google:gone".to_string()),
+                ..task("x")
+            })
+            .expect("a task");
+        cache.delete_task("google:t1").expect("the deletion");
+        let service = a_provider_that_moved_the_task_out_of_the_list_it_dropped();
+
+        for pass in 1..=3 {
+            let result = sync_google_tasks(&cache, &service, "token", "acc-1")
+                .await
+                .expect("the sync runs");
+            assert!(
+                cache.find_task("google:t1").expect("a lookup").is_none(),
+                "a task somebody deleted came back on pass {pass}"
+            );
+            if pass > 1 {
+                // The first pass still had the list, so its refused send is
+                // said. After that there is nothing left to try.
+                assert!(
+                    result.errors.is_empty(),
+                    "pass {pass} reported a problem about a list that has gone: {:?}",
+                    result.errors
+                );
+            }
+        }
+
+        assert_eq!(
+            cache.deleted_tasks("acc-1").expect("the deletions").len(),
+            1,
+            "nothing is left to stop the next read putting the task back"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_survives_the_list_it_was_in_going_away_at_outlook() {
+        // The same rule through the other sync. The two reconciliations are
+        // separate copies of the same shape and reach the same list removal,
+        // so a fix measured on one side says nothing about the other.
+        let cache = a_cache("ms_deletion_survives_a_gone_list");
+        a_list_named(&cache, "ms:kept", "My Tasks");
+        a_list_named(&cache, "ms:gone", "Household");
+        cache
+            .save_task(&TaskEntry {
+                id: "ms:t1".to_string(),
+                task_list_id: Some("ms:gone".to_string()),
+                ..task("x")
+            })
+            .expect("a task");
+        cache.delete_task("ms:t1").expect("the deletion");
+        let service = Scripted {
+            ms_lists: vec![MsTodoList {
+                id: "kept".to_string(),
+                display_name: "My Tasks".to_string(),
+            }],
+            ms_tasks: std::collections::HashMap::from([(
+                "kept".to_string(),
+                vec![MsTodoTask {
+                    id: "t1".to_string(),
+                    title: "A".to_string(),
+                    status: "notStarted".to_string(),
+                    ..Default::default()
+                }],
+            )]),
+            writes: Writes::RefusedByTheGate,
+            ..Default::default()
+        };
+
+        for pass in 1..=3 {
+            let result = sync_microsoft_tasks(&cache, &service, "token", "acc-1")
+                .await
+                .expect("the sync runs");
+            assert!(
+                cache.find_task("ms:t1").expect("a lookup").is_none(),
+                "a task somebody deleted came back from Outlook on pass {pass}"
+            );
+            if pass > 1 {
+                assert!(
+                    result.errors.is_empty(),
+                    "pass {pass} reported a problem about a list that has gone: {:?}",
+                    result.errors
+                );
+            }
+        }
+
+        assert_eq!(
+            cache.deleted_tasks("acc-1").expect("the deletions").len(),
+            1,
+            "nothing is left to stop the next read putting the task back"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_of_a_task_made_here_still_drains_when_its_list_goes() {
+        // The other direction, so the refusal cannot be widened into a table
+        // that never drains. Nothing at any provider can hand this task back,
+        // so its note is a memory of nothing and has to go.
+        let cache = a_cache("made_here_deletion_drains");
+        a_list_kept_and_a_list_that_goes(&cache);
+        cache
+            .save_task(&TaskEntry {
+                id: "task-local-1".to_string(),
+                task_list_id: Some("google:gone".to_string()),
+                ..task("x")
+            })
+            .expect("a task made here");
+        cache.delete_task("task-local-1").expect("the deletion");
+
+        sync_google_tasks(&cache, &only_the_kept_list(), "token", "acc-1")
+            .await
+            .expect("the sync runs");
+
+        assert!(
+            cache
+                .deleted_tasks("acc-1")
+                .expect("the deletions")
+                .is_empty(),
+            "a note about a task no provider ever held is being kept for ever"
         );
     }
 

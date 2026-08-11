@@ -40,6 +40,15 @@
 //! is owed, and the only reason to keep it is that a read may still be naming
 //! the thing.
 //!
+//! A note is also refused outright to anybody asking to drop it while a
+//! provider could still name the thing, and the refusal sits beside the delete
+//! rather than in the callers. Each table asks that question of whatever it
+//! holds: an event's note carries the provider's own name for the event, and a
+//! task's note is keyed by the task's identifier, which for a synced task is
+//! the provider's name for it. Contacts have no way to drop a note at all.
+//! Every one of these refusals exists because a caller decided for itself that
+//! a note was safe to drop and put a deleted thing back on the screen.
+//!
 //! # What lets it go
 //!
 //! The clock, and nothing else. A memory is released once it is older than
