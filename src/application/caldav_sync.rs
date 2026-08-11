@@ -237,19 +237,22 @@ async fn send_one_change(
             Ok(going.uid)
         }
         WhereItLives::NotThereYet => {
-            // Refused before anything leaves. The zone column can hold a name
-            // the time zone database does not know, a provider's own spelling
-            // or a private one, and the document built for it would then name
-            // a zone and define it nowhere: a strict server refuses that
-            // whole, a lenient one quietly guesses at the hour. The question
-            // is asked of the built document, not of the column, so an
-            // all-day or UTC event whose lines name no zone is never held up.
+            // Refused before anything leaves. A zone name the time zone
+            // database does not know, a provider's own spelling or a private
+            // one, leaves the document naming a zone and defining it nowhere:
+            // a strict server refuses that whole, a lenient one quietly
+            // guesses at the hour. The question is asked of the built
+            // document, not of the event's zone column, so an all-day or UTC
+            // event whose lines name no zone is never held up, and a name that
+            // came from a day the series calls off is caught as well.
             if let Some(zone) = crate::service::caldav::zone_left_undefined(&going.ical_data) {
                 return Err(crate::common::Error::Other(format!(
-                    "This change was not sent: the event names the time zone \
+                    "This change was not sent: it names the time zone \
                      \"{zone}\", which is not in the list of time zones this \
                      program knows, so the calendar server could put its \
-                     times at the wrong hour. The change is still waiting; \
+                     times at the wrong hour. The name may be the event's own \
+                     or one that a day the series calls off arrived in. The \
+                     change is still waiting; if it is the event's own, \
                      changing the event's time zone will let it go out."
                 )));
             }
@@ -1999,6 +2002,66 @@ mod tests {
             still_waiting.len(),
             1,
             "the change stopped waiting without being sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_new_event_whose_cancelled_day_names_a_zone_we_cannot_describe_stays_waiting() {
+        // The zone need not be the event's own. A day the series calls off can
+        // arrive in a zone of its own that the timezone database does not
+        // know, which is what Outlook and Exchange write, and once the
+        // document says so the rules for that zone cannot be written either.
+        // The same refusal applies, and the sentence must not tell somebody to
+        // change the event's time zone when the event's time zone is fine.
+        let cache = temp_cache("push_create_unknown_cancelled_zone");
+        let mut calendar = container("cal-unknown-cancelled-zone", "acct");
+        let (address, listening) = answering("200 OK", "text/calendar", multi_status(&[])).await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let mut event = held_event("local-1", "unused", &calendar.id, "acct");
+        event.provider_event_id = None;
+        event.web_link = None;
+        event.etag = None;
+        event.pending = true;
+        event.time_zone = Some("Europe/London".to_string());
+        event.start_datetime = "2026-03-05T09:00:00".to_string();
+        event.end_datetime = "2026-03-05T10:00:00".to_string();
+        event.recurrence_rule = Some("FREQ=WEEKLY".to_string());
+        event.exception_dates = Some("TZID=Eastern Standard Time:20260312T090000".to_string());
+        cache
+            .save_calendar_event(&event)
+            .expect("the waiting change");
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let request = heard(listening, "only the calendar read")
+            .await
+            .expect("one request");
+        assert!(
+            asked_for(&request).starts_with("REPORT"),
+            "a cancelled day in a zone the document cannot define was sent \
+             anyway: {}",
+            asked_for(&request)
+        );
+        assert_eq!(result.sent, 0);
+        assert_eq!(result.errors.len(), 1, "{:?}", result.errors);
+        assert!(
+            result.errors[0].contains("Eastern Standard Time"),
+            "the sentence has to name the zone: {:?}",
+            result.errors
+        );
+        assert!(
+            result.errors[0].contains("still waiting"),
+            "the sentence has to say the change is waiting: {:?}",
+            result.errors
         );
     }
 

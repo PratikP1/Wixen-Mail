@@ -1148,10 +1148,18 @@ pub(crate) fn cancelled_days_in_the_events_zone<'a>(
 /// o'clock across a clock change, which is what the calendar standard means by
 /// a clock face with a zone name beside it.
 ///
-/// A value this cannot move is kept as it was written rather than guessed at:
-/// a zone the timezone database does not know, a time the clocks skipped, or
-/// an event with no zone of its own to move the value into. The digits then
-/// mean what they meant before this function existed.
+/// A value this cannot move keeps both its digits and the zone they belong to,
+/// rather than being guessed at: a zone the timezone database does not know,
+/// which is what Outlook and Exchange write, a time the clocks skipped, or an
+/// event with no zone of its own to move the value into.
+///
+/// Keeping the zone is the whole of it. The digits alone are not an instant,
+/// and stored alone they were dressed in the event's zone on the way back out,
+/// which renamed the instant the server stated by four or five hours. The
+/// column can say "this clock face belongs to a zone I could not read", so this
+/// reader's leniency is no longer the writer's lie. What goes back on the wire
+/// is what arrived, and a server that named a zone of its own defined it in the
+/// same document, which is copied through.
 fn a_cancelled_day_in_the_events_zone(
     one: &str,
     its_own_zone: Option<&str>,
@@ -1167,13 +1175,16 @@ fn a_cancelled_day_in_the_events_zone(
     }
     match form_of_a_cancelled_day(one) {
         // Says its instant by itself, or names a whole day with no hour to
-        // move: kept as written.
+        // move: kept as written and with no zone kept beside it. A value that
+        // already says it is UTC and names a zone as well says two things
+        // about one instant, and a bare day has no hour for a zone to move.
         CancelledDayForm::SaysUtc | CancelledDayForm::WholeDay => return one.to_string(),
         CancelledDayForm::ClockFace => {}
     }
+    let in_the_zone_it_arrived_in = || a_cancelled_day_stored(Some(named), one);
     let (Some(clock), Ok(its_zone)) = (the_wire_clock_face(one), named.parse::<chrono_tz::Tz>())
     else {
-        return one.to_string();
+        return in_the_zone_it_arrived_in();
     };
     let instant = match its_zone.from_local_datetime(&clock) {
         chrono::LocalResult::Single(instant) => instant,
@@ -1181,7 +1192,16 @@ fn a_cancelled_day_in_the_events_zone(
         chrono::LocalResult::Ambiguous(first, _) => first,
         // The hour the clocks skip: the named time never happened, and
         // inventing a neighbouring one would call off a day nobody named.
-        chrono::LocalResult::None => return one.to_string(),
+        // Said out loud, because it is the one case here where a value is
+        // kept whole for a reason nobody could guess from the value.
+        chrono::LocalResult::None => {
+            tracing::warn!(
+                "A cancelled day is written as {one} in the time zone {named}, an hour \
+                 the clocks there skipped, so there is no instant to work out. The day \
+                 is kept as it was written and goes back out in that zone."
+            );
+            return in_the_zone_it_arrived_in();
+        }
     };
     if let Some(into) = events_zone.and_then(|zone| zone.parse::<chrono_tz::Tz>().ok()) {
         return instant
@@ -1196,7 +1216,7 @@ fn a_cancelled_day_in_the_events_zone(
             .format("%Y%m%dT%H%M%SZ")
             .to_string();
     }
-    one.to_string()
+    in_the_zone_it_arrived_in()
 }
 
 /// How a calendar document writes a clock face: `20260305T090000`.
@@ -1296,7 +1316,18 @@ fn parameter_named_on(line: &str, property: &str, parameter: &str) -> Option<Str
     if semicolon > colon {
         return None;
     }
-    for part in line[semicolon + 1..colon].split(';') {
+    parameter_among(&line[semicolon + 1..colon], parameter).map(str::to_string)
+}
+
+/// One parameter out of the stretch of them, as in `TZID=Europe/London`.
+///
+/// The stretch rather than the line, because the same parameters are read off
+/// two different things: a property line in a document, and a stored cancelled
+/// day that carries its own zone with it. Two scans would be two answers about
+/// quote marks and about letter case, and the column those cancelled days live
+/// in is read by three callers who all have to agree.
+fn parameter_among<'a>(parameters: &'a str, parameter: &str) -> Option<&'a str> {
+    for part in parameters.split(';') {
         let Some((named, value)) = part.split_once('=') else {
             continue;
         };
@@ -1305,7 +1336,7 @@ fn parameter_named_on(line: &str, property: &str, parameter: &str) -> Option<Str
         }
         let value = unquoted(value.trim());
         if !value.is_empty() {
-            return Some(value.to_string());
+            return Some(value);
         }
     }
     None
@@ -1542,7 +1573,11 @@ enum CancelledDayForm {
     WholeDay,
 }
 
-/// Which form one stored cancelled value takes.
+/// Which form one cancelled clock face takes.
+///
+/// Asked of the clock face and never of the whole stored value. A stored value
+/// may carry the zone it belongs to in front of the digits, and asked of the
+/// whole, this classifies a value by the last letter of a zone name.
 fn form_of_a_cancelled_day(one: &str) -> CancelledDayForm {
     if says_utc(one) {
         return CancelledDayForm::SaysUtc;
@@ -1554,37 +1589,123 @@ fn form_of_a_cancelled_day(one: &str) -> CancelledDayForm {
     CancelledDayForm::ClockFace
 }
 
+/// What one stored cancelled day says for itself.
+///
+/// The column has to be able to say two things about a cancelled day: which
+/// clock face was called off, and which zone that clock face belongs to when
+/// it is not the event's own. Without the second there is nowhere for a reader
+/// that cannot convert a value to put the zone, so it drops it, and the writer
+/// then labels the bare digits with the event's zone and renames the instant
+/// the server stated. Four to five hours, on a cancellation Outlook and
+/// Exchange write every day.
+///
+/// So this is one shape both sides ask about rather than a bare clock face
+/// each side guesses at, and the reader's leniency stops being the writer's
+/// lie.
+pub(crate) struct ACancelledDay<'a> {
+    /// The zone the value carries, when it carries one of its own.
+    pub(crate) its_own_zone: Option<&'a str>,
+    /// The clock face, with no property name and no parameters on it.
+    pub(crate) clock_face: &'a str,
+    /// Which of the three forms that clock face takes.
+    form: CancelledDayForm,
+}
+
+/// One stored cancelled day taken apart.
+///
+/// Three shapes arrive and all three are read: a bare clock face, which is
+/// what a value converted into the event's own zone is stored as; a clock face
+/// behind the zone it belongs to, which is what a value nothing here can
+/// convert is stored as; and a whole property line, which is the shape rows
+/// written from Google have always held.
+///
+/// Split at the last colon. A clock face never holds one and a quoted zone
+/// name is allowed to, so the last colon is the one that divides them.
+pub(crate) fn a_cancelled_day_taken_apart(one: &str) -> ACancelledDay<'_> {
+    let (in_front, clock_face) = match one.rsplit_once(':') {
+        Some((in_front, face)) => (Some(in_front), face.trim()),
+        None => (None, one.trim()),
+    };
+    ACancelledDay {
+        its_own_zone: in_front.and_then(|in_front| parameter_among(in_front, TIME_ZONE_PARAMETER)),
+        clock_face,
+        form: form_of_a_cancelled_day(clock_face),
+    }
+}
+
+/// A cancelled day stored so it still says which zone it belongs to.
+///
+/// A day with no zone of its own is stored as the bare clock face, which is
+/// what every value converted into the event's zone is and what this column has
+/// always held. A day keeping a zone is stored behind it, written the way a
+/// calendar document writes a parameter, so one routine reads both.
+///
+/// A zone name holding a comma is left off and said in the log. The column
+/// joins its days with commas, so such a name would split one cancelled day
+/// into two and call off a day nobody named. No real zone name holds one, and
+/// it is handled here rather than left to chance.
+fn a_cancelled_day_stored(its_own_zone: Option<&str>, clock_face: &str) -> String {
+    match its_own_zone {
+        Some(named) if named.contains(',') => {
+            tracing::warn!(
+                "A cancelled day names the time zone {named}, whose name holds a comma. \
+                 The cancelled days of one event are kept as a single comma-separated \
+                 list, so the name is left off and the day is kept as it was written."
+            );
+            clock_face.to_string()
+        }
+        Some(named) => format!("{TIME_ZONE_PARAMETER}={named}:{clock_face}"),
+        None => clock_face.to_string(),
+    }
+}
+
 /// The cancelled days of a series written as document lines, one line per
 /// form, each labelled as the values on it say.
 ///
-/// Values that say they are UTC go out bare, clock faces go out under the
-/// event's own zone when it names one, and bare days go out marked as dates.
-/// A whole-day series' cancelled days land on the date line by their form, so
-/// nothing here asks whether the event is all-day and nothing can disagree
-/// with the values themselves.
+/// Values that say they are UTC go out bare, clock faces go out under the zone
+/// they belong to, and bare days go out marked as dates. A whole-day series'
+/// cancelled days land on the date line by their form, so nothing here asks
+/// whether the event is all-day and nothing can disagree with the values
+/// themselves.
+///
+/// A clock face carrying a zone of its own goes out under that zone, which is
+/// the whole point of the column carrying one. Only a face with no zone of its
+/// own wears the event's, and a face whose carried zone is the event's own
+/// lands on the same line as the rest rather than on a second line saying the
+/// same thing.
 fn cancelled_day_lines(called_off: &str, zone: Option<&str>) -> Vec<String> {
     let mut says_for_itself: Vec<&str> = Vec::new();
-    let mut clock_faces: Vec<&str> = Vec::new();
+    // First zone seen first, so the lines come out in the order the column
+    // holds them and a document read back names its instants in that order.
+    let mut clock_faces: Vec<(Option<&str>, Vec<&str>)> = Vec::new();
     let mut whole_days: Vec<&str> = Vec::new();
     for one in called_off
         .split(',')
         .map(str::trim)
         .filter(|one| !one.is_empty())
     {
-        match form_of_a_cancelled_day(one) {
-            CancelledDayForm::SaysUtc => says_for_itself.push(one),
-            CancelledDayForm::ClockFace => clock_faces.push(one),
-            CancelledDayForm::WholeDay => whole_days.push(one),
+        let day = a_cancelled_day_taken_apart(one);
+        match day.form {
+            CancelledDayForm::SaysUtc => says_for_itself.push(day.clock_face),
+            CancelledDayForm::WholeDay => whole_days.push(day.clock_face),
+            CancelledDayForm::ClockFace => {
+                let under = day.its_own_zone.or(zone);
+                match clock_faces.iter_mut().find(|(named, _)| *named == under) {
+                    Some((_, faces)) => faces.push(day.clock_face),
+                    None => clock_faces.push((under, vec![day.clock_face])),
+                }
+            }
         }
     }
     let mut lines = Vec::new();
     if !says_for_itself.is_empty() {
         lines.push(format!("EXDATE:{}", says_for_itself.join(",")));
     }
-    match (clock_faces.as_slice(), zone) {
-        ([], _) => {}
-        (faces, Some(named)) => lines.push(format!("EXDATE;TZID={named}:{}", faces.join(","))),
-        (faces, None) => lines.push(format!("EXDATE:{}", faces.join(","))),
+    for (under, faces) in clock_faces {
+        lines.push(match under {
+            Some(named) => format!("EXDATE;{TIME_ZONE_PARAMETER}={named}:{}", faces.join(",")),
+            None => format!("EXDATE:{}", faces.join(",")),
+        });
     }
     if !whole_days.is_empty() {
         lines.push(format!("EXDATE;VALUE=DATE:{}", whole_days.join(",")));
@@ -3049,11 +3170,16 @@ mod tests {
     }
 
     #[test]
-    fn test_a_cancelled_time_the_clocks_skipped_is_kept_as_it_was_written() {
+    fn test_a_cancelled_day_the_clocks_skipped_keeps_the_zone_it_was_written_in() {
         // Half past two on the night the clocks in New York spring forward
         // never happens. There is no instant to convert, and inventing a
-        // neighbouring one would cancel a meeting nobody named, so the value
-        // is kept as it was written.
+        // neighbouring one would cancel a meeting nobody named, so the clock
+        // face is kept exactly as it was written.
+        //
+        // The zone it was written in is kept with it. Kept bare, the writer
+        // dressed those digits in the meeting's own zone and sent half past
+        // two in London for half past two in New York, five hours from where
+        // the server put it.
         let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:zone-5\r\nSUMMARY:Standup\r\n\
                     DTSTART;TZID=Europe/London:20260305T090000\r\nRRULE:FREQ=WEEKLY\r\n\
                     EXDATE;TZID=America/New_York:20260308T023000\r\n\
@@ -3061,7 +3187,255 @@ mod tests {
 
         let event = parse_ical_vevent(ical, "https://example.test/e.ics", None).expect("an event");
 
-        assert_eq!(event.exception_dates.as_deref(), Some("20260308T023000"));
+        assert_eq!(
+            event.exception_dates.as_deref(),
+            Some("TZID=America/New_York:20260308T023000"),
+            "the clock face was kept and the zone that says what it means was \
+             thrown away"
+        );
+
+        let written = build_ical_vevent(&event);
+        assert!(
+            written.contains("EXDATE;TZID=America/New_York:20260308T023000\r\n"),
+            "{written}"
+        );
+        assert!(
+            !written
+                .lines()
+                .any(|line| line.contains("EXDATE") && line.contains("Europe/London")),
+            "the cancellation went back out in the meeting's own zone, five \
+             hours from where the server put it:\n{written}"
+        );
+    }
+
+    /// A repeating meeting with one day called off, as Outlook writes one.
+    ///
+    /// The zone the cancellation names is Outlook's own rather than the
+    /// timezone database's, and the document defines it in the same breath.
+    /// That definition travelling with the name is what lets the cancellation
+    /// be restated without anything here knowing what the name means, and it
+    /// is why keeping the name is keeping the instant.
+    fn a_document_outlook_writes() -> String {
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n\
+         PRODID:-//Somebody Else//Their Calendar//EN\r\n\
+         BEGIN:VTIMEZONE\r\nTZID:Eastern Standard Time\r\n\
+         BEGIN:STANDARD\r\nDTSTART:16011104T020000\r\n\
+         TZOFFSETFROM:-0400\r\nTZOFFSETTO:-0500\r\n\
+         RRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=11\r\nEND:STANDARD\r\n\
+         END:VTIMEZONE\r\n\
+         BEGIN:VEVENT\r\nUID:win-1\r\nSUMMARY:Standup\r\n\
+         DTSTART;TZID=Europe/London:20260305T090000\r\nRRULE:FREQ=WEEKLY\r\n\
+         EXDATE;TZID=Eastern Standard Time:20260312T090000\r\n\
+         END:VEVENT\r\nEND:VCALENDAR\r\n"
+            .to_string()
+    }
+
+    #[test]
+    fn test_a_cancelled_day_in_a_windows_zone_is_stored_still_naming_that_zone() {
+        // Outlook and Exchange write zone names of their own. "Eastern
+        // Standard Time" is not a name the timezone database knows, so no
+        // instant can be worked out from it and there is nothing to convert.
+        // The zone was dropped and the bare clock face stored, which leaves
+        // the column saying a meeting was called off at nine in London when
+        // the server said nine in New York.
+        let event = parse_ical_vevent(
+            &a_document_outlook_writes(),
+            "https://example.test/e.ics",
+            None,
+        )
+        .expect("an event");
+
+        assert_eq!(
+            event.exception_dates.as_deref(),
+            Some("TZID=Eastern Standard Time:20260312T090000"),
+            "the zone the server stated was thrown away, so the stored clock \
+             face is four hours from the instant it named"
+        );
+    }
+
+    #[test]
+    fn test_a_cancelled_day_in_a_windows_zone_goes_back_out_in_that_zone() {
+        // The whole round trip on the change path, which is where this is met
+        // in practice: the server's own definition of its own zone name is
+        // copied through, so the restated line means what the server meant.
+        let held = a_document_outlook_writes();
+        let event = parse_ical_vevent(&held, "https://example.test/e.ics", None).expect("an event");
+
+        let sent = ical_with_the_event_changed(&held, &event).expect("the change to be written");
+
+        assert!(
+            sent.contains("EXDATE;TZID=Eastern Standard Time:20260312T090000\r\n"),
+            "the cancellation did not go back out saying what it arrived \
+             saying:\n{sent}"
+        );
+        assert!(
+            !sent
+                .lines()
+                .any(|line| line.contains("EXDATE") && line.contains("Europe/London")),
+            "the cancellation went back out in the meeting's own zone, four \
+             hours from where the server put it:\n{sent}"
+        );
+    }
+
+    #[test]
+    fn test_a_cancelled_day_stored_with_its_property_name_goes_out_as_one_cancelled_day() {
+        // What old rows written from Google hold, and what the occurrence
+        // reader has always coped with: the whole property line sitting in the
+        // column. The writer read the name and the digits as one clock face
+        // and put its own name in front of them again, so the document carried
+        // a line naming the property twice and no server could read it.
+        let event = CalDavEvent {
+            dtstart: "2026-03-05T09:00:00".to_string(),
+            dtend: None,
+            time_zone: Some("Europe/London".to_string()),
+            recurrence_rule: Some("FREQ=WEEKLY".to_string()),
+            exception_dates: Some("EXDATE;TZID=Europe/London:20260312T090000".to_string()),
+            ..an_event_to_send()
+        };
+
+        let ical = build_ical_vevent(&event);
+
+        assert!(
+            ical.contains("EXDATE;TZID=Europe/London:20260312T090000\r\n"),
+            "{ical}"
+        );
+        assert!(
+            !ical.lines().any(|line| line.matches("EXDATE").count() > 1),
+            "a line names the cancelled days twice, which no server can \
+             read:\n{ical}"
+        );
+    }
+
+    #[test]
+    fn test_a_stored_cancelled_day_comes_apart_and_goes_back_together_as_it_was() {
+        // One routine takes a stored cancelled day apart and one puts it back,
+        // and the calendar reader, the calendar writer and the occurrence
+        // reader all ask them. Two parsers is how the reader and the writer
+        // came to disagree about what this column holds, and the disagreement
+        // moved a cancelled meeting by four hours.
+        for (stored, zone, face) in [
+            ("20260312T090000", None, "20260312T090000"),
+            ("20260312T090000Z", None, "20260312T090000Z"),
+            ("20260312", None, "20260312"),
+            (
+                "TZID=America/New_York:20260312T090000",
+                Some("America/New_York"),
+                "20260312T090000",
+            ),
+            // A zone name with spaces in it, which is what Outlook and
+            // Exchange write and what a folded line puts back together.
+            (
+                "TZID=Eastern Standard Time:20260312T090000",
+                Some("Eastern Standard Time"),
+                "20260312T090000",
+            ),
+            // What rows written from Google have always held.
+            (
+                "EXDATE;TZID=Europe/London:20260312T090000",
+                Some("Europe/London"),
+                "20260312T090000",
+            ),
+            ("EXDATE;VALUE=DATE:20260312", None, "20260312"),
+            ("EXDATE:20260312T090000Z", None, "20260312T090000Z"),
+        ] {
+            let day = a_cancelled_day_taken_apart(stored);
+            assert_eq!(day.its_own_zone, zone, "the zone {stored} carries");
+            assert_eq!(day.clock_face, face, "the clock face under {stored}");
+
+            let again = a_cancelled_day_stored(day.its_own_zone, day.clock_face);
+            let apart = a_cancelled_day_taken_apart(&again);
+            assert_eq!(apart.its_own_zone, zone, "the zone {stored} came back as");
+            assert_eq!(apart.clock_face, face, "the face {stored} came back as");
+            assert_eq!(apart.form, day.form, "the form {stored} came back as");
+        }
+    }
+
+    #[test]
+    fn test_a_zone_name_holding_a_comma_is_left_off_rather_than_splitting_one_day_in_two() {
+        // The cancelled days of one event are kept as a single comma-separated
+        // list, so a zone name holding a comma would split one cancelled day
+        // into two and call off a day nobody named. No real zone name holds
+        // one, and it is handled rather than left to chance.
+        let stored = a_cancelled_day_stored(Some("Somewhere, Else"), "20260312T090000");
+
+        assert_eq!(stored, "20260312T090000");
+        assert_eq!(stored.split(',').count(), 1);
+    }
+
+    #[test]
+    fn test_cancelled_days_in_two_zones_go_out_on_a_line_each() {
+        // A day carrying a zone this program could not read goes out under
+        // that zone; a day with none wears the meeting's; and a day carrying
+        // the meeting's own zone joins the rest rather than starting a second
+        // line saying the same thing.
+        let event = CalDavEvent {
+            dtstart: "2026-03-05T09:00:00".to_string(),
+            dtend: None,
+            time_zone: Some("Europe/London".to_string()),
+            recurrence_rule: Some("FREQ=WEEKLY".to_string()),
+            exception_dates: Some(
+                "20260312T090000,TZID=Eastern Standard Time:20260319T090000,\
+                 TZID=Europe/London:20260326T090000"
+                    .to_string(),
+            ),
+            ..an_event_to_send()
+        };
+
+        let ical = build_ical_vevent(&event);
+
+        assert!(
+            ical.contains("EXDATE;TZID=Europe/London:20260312T090000,20260326T090000\r\n"),
+            "a day carrying the meeting's own zone started a second line \
+             saying the same thing:\n{ical}"
+        );
+        assert!(
+            ical.contains("EXDATE;TZID=Eastern Standard Time:20260319T090000\r\n"),
+            "{ical}"
+        );
+    }
+
+    #[test]
+    fn test_a_cancelled_day_in_a_zone_we_can_read_names_the_same_instant_after_a_round_trip() {
+        // Where an instant can be worked out, the round trip has to name that
+        // instant rather than those digits. Asked of the clock rather than of
+        // the string, so a change to the stored shape cannot make this pass
+        // while moving the meeting.
+        let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:zone-7\r\nSUMMARY:Standup\r\n\
+                    DTSTART;TZID=Europe/London:20260305T090000\r\nRRULE:FREQ=WEEKLY\r\n\
+                    EXDATE;TZID=America/New_York:20260312T090000\r\n\
+                    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let event = parse_ical_vevent(ical, "", None).expect("an event");
+        let written = build_ical_vevent(&event);
+        let read_back = parse_ical_vevent(&written, "", None).expect("the document to read");
+
+        assert_eq!(
+            read_back.exception_dates, event.exception_dates,
+            "a cancelled day changed its meaning between going out and coming \
+             back:\n{written}"
+        );
+
+        use chrono::TimeZone;
+        let stored = read_back
+            .exception_dates
+            .as_deref()
+            .expect("the cancelled day");
+        let face = chrono::NaiveDateTime::parse_from_str(stored, WIRE_CLOCK_FACE)
+            .expect("the stored clock face");
+        let restated = chrono_tz::Europe::London
+            .from_local_datetime(&face)
+            .single()
+            .expect("one instant in London");
+        let stated = chrono_tz::America::New_York
+            .with_ymd_and_hms(2026, 3, 12, 9, 0, 0)
+            .single()
+            .expect("one instant in New York");
+        assert_eq!(
+            restated.with_timezone(&chrono::Utc),
+            stated.with_timezone(&chrono::Utc),
+            "the instant the server stated and the instant we restate are not \
+             the same instant:\n{written}"
+        );
     }
 
     #[test]

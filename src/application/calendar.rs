@@ -2148,10 +2148,10 @@ mod tests {
         // the occurrence came back, and a meeting somebody had cancelled was
         // announced again on the day it was cancelled for.
         //
-        // The zone comes off with the rest of the parameters, as it does for a
-        // calendar server's days: only the day is kept, and matching to the
-        // second would leave a cancelled meeting on the calendar of anyone
-        // whose server wrote the seconds differently.
+        // This series names no zone of its own, so there is nothing to move
+        // the cancellation into and its zone is kept beside it, the same way a
+        // calendar server's days are. Kept bare it was a clock face in no zone
+        // at all, read by whatever clock the next reader stood next to.
         let event = GoogleEvent {
             id: "series-2".to_string(),
             summary: Some("Tuesday stand-up".to_string()),
@@ -2164,7 +2164,10 @@ mod tests {
 
         let local = google_event_to_local(&event, "test@gmail.com", "cal-google");
 
-        assert_eq!(local.exception_dates.as_deref(), Some("20260312T100000"));
+        assert_eq!(
+            local.exception_dates.as_deref(),
+            Some("TZID=Europe/London:20260312T100000")
+        );
         assert_eq!(
             local.recurrence_rule.as_deref(),
             Some("RRULE:FREQ=WEEKLY;BYDAY=TU"),
@@ -2194,7 +2197,9 @@ mod tests {
 
         assert_eq!(
             local.exception_dates.as_deref(),
-            Some("20260312T100000,20260319T100000")
+            Some("TZID=Europe/London:20260312T100000,TZID=Europe/London:20260319T100000"),
+            "each day keeps the zone it arrived in, and the writer puts the \
+             two of them back on one line under that zone"
         );
     }
 
@@ -2215,7 +2220,12 @@ mod tests {
 
         let local = google_event_to_local(&event, "test@gmail.com", "cal-google");
 
-        assert_eq!(local.exception_dates.as_deref(), Some("20260312T100000"));
+        assert_eq!(
+            local.exception_dates.as_deref(),
+            Some("TZID=Europe/London:20260312T100000"),
+            "the name and the parameter are read in either case, and the zone \
+             is kept whichever case it arrived in"
+        );
     }
 
     #[test]

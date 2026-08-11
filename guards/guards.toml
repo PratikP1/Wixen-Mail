@@ -1976,22 +1976,40 @@ red = [
 # ── The days a series calls off, crossing time zones whole ──────────────────
 #
 # A cancelled day is one value in a comma-joined column, and each value says
-# for itself what it is: an instant in UTC, a clock face in the meeting's own
-# zone, or a bare day. The writer once labelled the whole list by its last
-# value, so one order claimed UTC and a zone at once and the other lost the
-# zone entirely; the reader once stripped each line's own zone, so a nine in
-# New York was stored as a nine in London. Both sides answer through one form
-# now, and each direction is measured here.
+# for itself what it is: an instant in UTC, a clock face in some zone, or a
+# bare day. The writer once labelled the whole list by its last value, so one
+# order claimed UTC and a zone at once and the other lost the zone entirely;
+# the reader once stripped each line's own zone, so a nine in New York was
+# stored as a nine in London.
+#
+# The zone survives even when nothing here can convert it. Outlook and Exchange
+# name zones the timezone database does not know, and a value in one of those
+# used to be stored as bare digits and sent back dressed in the meeting's zone,
+# four to five hours from where the server put it. The value carries its zone
+# now, one routine takes it apart and one puts it back, and all four directions
+# are measured here.
 
 [[guard]]
 name = "cancelled days go out grouped by what each value says"
 file = "src/service/caldav.rs"
-before = """        match form_of_a_cancelled_day(one) {
-            CancelledDayForm::SaysUtc => says_for_itself.push(one),
-            CancelledDayForm::ClockFace => clock_faces.push(one),
-            CancelledDayForm::WholeDay => whole_days.push(one),
+before = """        let day = a_cancelled_day_taken_apart(one);
+        match day.form {
+            CancelledDayForm::SaysUtc => says_for_itself.push(day.clock_face),
+            CancelledDayForm::WholeDay => whole_days.push(day.clock_face),
+            CancelledDayForm::ClockFace => {
+                let under = day.its_own_zone.or(zone);
+                match clock_faces.iter_mut().find(|(named, _)| *named == under) {
+                    Some((_, faces)) => faces.push(day.clock_face),
+                    None => clock_faces.push((under, vec![day.clock_face])),
+                }
+            }
         }"""
-after = """        clock_faces.push(one);"""
+after = """        let day = a_cancelled_day_taken_apart(one);
+        let under = day.its_own_zone.or(zone);
+        match clock_faces.iter_mut().find(|(named, _)| *named == under) {
+            Some((_, faces)) => faces.push(day.clock_face),
+            None => clock_faces.push((under, vec![day.clock_face])),
+        }"""
 red = [
     "service::caldav::tests::test_a_birthday_sent_to_a_calendar_server_still_happens_every_year",
     "service::caldav::tests::test_a_cancelled_day_in_utc_gets_no_zone_even_when_the_meeting_it_belongs_to_has_one",
@@ -2009,11 +2027,44 @@ after = """    if Some(named) != events_zone {
         return one.to_string();
     }"""
 red = [
+    "application::calendar::tests::test_a_called_off_day_with_a_zone_on_it_is_still_a_called_off_day",
+    "application::calendar::tests::test_a_called_off_line_named_in_lower_case_is_still_read",
     "application::calendar::tests::test_a_google_cancellation_in_another_zone_is_stored_in_the_events_own_zone",
+    "application::calendar::tests::test_every_called_off_day_google_sends_is_kept_not_only_the_first",
+    "service::caldav::tests::test_a_cancelled_day_in_a_windows_zone_goes_back_out_in_that_zone",
+    "service::caldav::tests::test_a_cancelled_day_in_a_windows_zone_is_stored_still_naming_that_zone",
     "service::caldav::tests::test_a_cancelled_day_in_a_zone_on_a_utc_meeting_is_stored_as_the_instant_it_names",
+    "service::caldav::tests::test_a_cancelled_day_in_a_zone_we_can_read_names_the_same_instant_after_a_round_trip",
     "service::caldav::tests::test_a_cancelled_day_keeps_its_own_instant_when_its_zone_differs_from_the_meetings",
+    "service::caldav::tests::test_a_cancelled_day_the_clocks_skipped_keeps_the_zone_it_was_written_in",
     "service::caldav::tests::test_a_cancelled_time_the_clocks_repeat_is_taken_at_its_first_passing",
     "service::caldav::tests::test_a_changed_day_of_a_series_is_kept_when_the_server_sends_it_with_the_series",
+]
+
+[[guard]]
+name = "a cancelled day this program cannot move keeps the zone it arrived in"
+file = "src/service/caldav.rs"
+before = """    let in_the_zone_it_arrived_in = || a_cancelled_day_stored(Some(named), one);"""
+after = """    let in_the_zone_it_arrived_in = || one.to_string();"""
+red = [
+    "application::calendar::tests::test_a_called_off_day_with_a_zone_on_it_is_still_a_called_off_day",
+    "application::calendar::tests::test_a_called_off_line_named_in_lower_case_is_still_read",
+    "application::calendar::tests::test_every_called_off_day_google_sends_is_kept_not_only_the_first",
+    "service::caldav::tests::test_a_cancelled_day_in_a_windows_zone_goes_back_out_in_that_zone",
+    "service::caldav::tests::test_a_cancelled_day_in_a_windows_zone_is_stored_still_naming_that_zone",
+    "service::caldav::tests::test_a_cancelled_day_the_clocks_skipped_keeps_the_zone_it_was_written_in",
+]
+
+[[guard]]
+name = "a cancelled day carrying its own zone goes out under that zone"
+file = "src/service/caldav.rs"
+before = """                let under = day.its_own_zone.or(zone);"""
+after = """                let under = zone;"""
+red = [
+    "application::caldav_sync::tests::test_a_new_event_whose_cancelled_day_names_a_zone_we_cannot_describe_stays_waiting",
+    "service::caldav::tests::test_a_cancelled_day_in_a_windows_zone_goes_back_out_in_that_zone",
+    "service::caldav::tests::test_a_cancelled_day_the_clocks_skipped_keeps_the_zone_it_was_written_in",
+    "service::caldav::tests::test_cancelled_days_in_two_zones_go_out_on_a_line_each",
 ]
 
 # ── The timezone rules a document must carry ────────────────────────────────

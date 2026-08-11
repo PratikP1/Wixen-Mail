@@ -168,8 +168,19 @@ fn days_called_off(
     written
         .split(',')
         .filter_map(|one| {
+            // Taken apart by the one routine the calendar reader and the
+            // calendar writer use, so there are not two answers about what a
+            // stored cancelled day is. There were: this reader stripped
+            // anything in front of a colon and the writer assumed bare digits,
+            // and that gap is how a cancellation went back to a server with
+            // its own property name written in front of it twice.
+            //
+            // The day is still read from the digits. Every value that carries
+            // a zone carries one this program could not convert, so the digits
+            // are the only day it can be said to fall on, which is the answer
+            // this reader has always given.
             the_day_called_off(
-                without_the_name_and_parameters(one.trim()),
+                crate::service::caldav::a_cancelled_day_taken_apart(one).clock_face,
                 the_events_offset,
             )
         })
@@ -242,21 +253,6 @@ fn the_offset_on(stored: &str) -> Option<chrono::FixedOffset> {
         Moment::Fixed(moment) => Some(*moment.offset()),
         Moment::ClockFace(_) | Moment::WholeDay(_) => None,
     }
-}
-
-/// One called-off day without the property name and parameters, if it has them.
-///
-/// Both readers that fill this column take them off, so most stored values
-/// arrive bare. This does not rely on that. The digits are read out of whatever
-/// is left, and a parameter is allowed to contain a digit: `Etc/GMT+5` is an
-/// ordinary zone name, and its 5 was read as the first figure of the date. That
-/// gave "52026031", which is not a date, so the day was quietly not called off
-/// and the cancelled meeting was announced on the day it was cancelled for.
-///
-/// The name and its parameters end at the first colon, which a date never
-/// contains, so a value that arrived bare is handed back untouched.
-fn without_the_name_and_parameters(one: &str) -> &str {
-    one.split_once(':').map_or(one, |(_, value)| value)
 }
 
 /// How often a rule comes round, at the coarseness a day can show.

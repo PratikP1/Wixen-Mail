@@ -347,6 +347,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   The meeting's own times are never converted: a nine o'clock meeting stays
   at nine o'clock when the clocks change.
 
+- **A meeting cancelled in a time zone this program cannot read now keeps that
+  zone.** Outlook and Exchange write time zone names of their own, such as
+  "Eastern Standard Time", which are not the names this program looks times up
+  by. A day cancelled in one of those had the zone thrown away, and the next
+  time the meeting was sent back to the server the bare clock face was dressed
+  in the meeting's own zone: four to five hours from the moment the server had
+  stated, so the wrong day went quiet and the cancelled one came back. The
+  cancelled day now keeps the zone it arrived in and goes back out saying the
+  same thing, and the server's own description of that zone travels with it.
+  The same is true of a cancelled time that falls in the hour the clocks skip,
+  which names no moment at all: it is kept exactly as written, in the zone it
+  was written in, and noted in the log rather than passed over in silence.
+
+  Two honest limits. A meeting synced before this fix already lost the zone,
+  and nothing can work out what it was; reading the calendar from the server
+  again repairs it. And a new event whose cancelled day names a zone this
+  program has no rules for is now held back with a message naming that zone,
+  the same as an event whose own time zone is unknown, instead of being sent
+  at the wrong hour.
+
 - **A calendar event you deleted could come back; now it stays deleted whatever
   kind of calendar held it.** The record saying "this was deleted here" was
   thrown away whenever the deletion had nowhere to be sent: an event in no
