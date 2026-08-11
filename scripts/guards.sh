@@ -18,8 +18,11 @@
 #
 # `guards/guards.toml` is that measurement written down: for each guard, the
 # exact edit that should break it and the tests that should go red when it
-# does. This applies each one, runs the whole library, and requires the tests
-# that failed to be exactly the ones the record names.
+# does. This applies each one, runs the whole of the suite that guard names,
+# and requires the tests that failed to be exactly the ones the record names.
+# The suite is the library unless the record says otherwise, which a handful of
+# them do because a rule about what the tree says is checked from `tests/` and
+# `cargo test --lib` never builds that.
 #
 # Exactly, in both directions, and the second direction is newer than the
 # first. Running only the named tests answers "would these go red" and cannot
@@ -30,9 +33,9 @@
 # record shorter than the truth is the thing that file exists to stop.
 #
 # Not part of scripts/check.sh, and not in the commit hook. It is one build and
-# one full run of the library per guard, an hour or two for all of them rather
-# than seconds, so it belongs with mutation testing: run it after a change that
-# touches code a guard is about, and read the answer.
+# one full run per guard, an hour or two for all of them rather than seconds,
+# so it belongs with mutation testing: run it after a change that touches code
+# a guard is about, and read the answer.
 #
 # Nothing else may be building while it runs. A commit hook running the suite
 # in the middle of one already reported three guards green that go red on their

@@ -33,6 +33,23 @@ class Guard:
     before: str
     after: str
     red: tuple[str, ...]
+    # What to run to find out. The library, unless the record names an
+    # integration test target instead.
+    #
+    # Not every rule this project guards can be checked from inside the
+    # library. The house style rules read the tree as text: whether a page
+    # claims a privacy property the code contradicts is a question about files,
+    # and it is answered by a test in `tests/`, which `cargo test --lib` never
+    # builds. Named here, a break to such a guard used to fail with "the test
+    # harness never ran", which reads as a wrong name rather than as a runner
+    # looking in the wrong place.
+    #
+    # Per guard rather than widening every guard to the whole suite. Widening
+    # changes what "nothing else went red" means for all the records already
+    # written, so every one of them would have to be measured again before the
+    # run could be believed. A record that names its own target leaves every
+    # other record measuring exactly what it measured when it was written.
+    suite: tuple[str, ...] = ("--lib",)
 
 
 @dataclass(frozen=True)
@@ -61,6 +78,7 @@ def read_record() -> list[Guard]:
             before=entry["before"],
             after=entry["after"],
             red=tuple(entry["red"]),
+            suite=("--test", entry["suite"]) if "suite" in entry else ("--lib",),
         )
         for entry in written.get("guard", [])
     ]
@@ -109,8 +127,8 @@ def why_no_test_was_named(status: int, said: str) -> str:
     return f"{which}. cargo exited {status} and said:\n{said[-4000:]}"
 
 
-def run_the_whole_library() -> dict[str, str]:
-    """Every test in the library, and whether it passed. One build, one run.
+def run_the_whole_suite(suite: tuple[str, ...]) -> dict[str, str]:
+    """Every test in one suite, and whether it passed. One build, one run.
 
     The whole suite and not only the tests a record names. Running the named
     ones answers "would these go red", and leaves the question that matters
@@ -123,9 +141,12 @@ def run_the_whole_library() -> dict[str, str]:
     It costs the whole suite per guard rather than a handful of tests. That is
     the price of the answer; there is no way to learn what a break reddens
     without running everything it could redden.
+
+    Which suite is the guard's own, for the reason written on `Guard.suite`.
+    Almost always the library.
     """
     finished = subprocess.run(
-        ["cargo", "test", "--lib"],
+        ["cargo", "test", *suite],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -138,7 +159,7 @@ def run_the_whole_library() -> dict[str, str]:
 
 
 def measure(guard: Guard, scratch: Path) -> Measured:
-    """Apply the break, run the library, put the file back."""
+    """Apply the break, run the guard's own suite, put the file back."""
     found = guard.file.read_text(encoding="utf-8").count(guard.before)
     if found != 1:
         raise Wrong(
@@ -160,7 +181,7 @@ def measure(guard: Guard, scratch: Path) -> Measured:
             guard.before, guard.after
         )
         guard.file.write_bytes(broken.encode("utf-8"))
-        verdicts = run_the_whole_library()
+        verdicts = run_the_whole_suite(guard.suite)
     finally:
         # The bytes, not the timestamps: a restored file with its old
         # modification time reads to cargo as one that never changed, and the
@@ -283,9 +304,9 @@ def main() -> int:
             return 1
 
     header = (
-        "== 1 guard, one build and one run of the library =="
+        "== 1 guard, one build and one run =="
         if len(guards) == 1
-        else f"== {len(guards)} guards, one build and one run of the library each =="
+        else f"== {len(guards)} guards, one build and one run each =="
     )
     print(f"{header}\n")
     slipped: list[str] = []
