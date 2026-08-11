@@ -760,129 +760,58 @@ mod tests {
 #[cfg(test)]
 mod against_a_server_that_answers {
     use super::*;
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+    use crate::common::answering::{Conversation, Turn, conversing};
+    use crate::service::protocols::imap::against_a_server_that_answers::{
+        a_server_that_can, a_server_that_refuses, reading_only_on,
+        signed_in_to as a_session_allowed_on,
+    };
 
-    /// A mail server on a loopback port, and every command it was sent.
-    struct FakeServer {
-        port: u16,
-        heard: Arc<Mutex<Vec<String>>>,
-    }
-
-    impl FakeServer {
-        /// Every command the server was sent, in the order it arrived.
-        async fn transcript(&self) -> Vec<String> {
-            self.heard.lock().await.clone()
-        }
-
-        /// Where in the transcript a command naming this folder is, if at all.
-        ///
-        /// Position rather than presence, because the question these tests ask
-        /// is what the server was told *before* it was asked for a message.
-        async fn when_asked_to(&self, verb: &str, folder: &str) -> Option<usize> {
-            let wanted = verb.to_uppercase();
-            self.transcript().await.iter().position(|line| {
-                let said = line.to_uppercase();
-                said.contains(&wanted) && said.contains(&folder.to_uppercase())
-            })
-        }
-    }
-
-    /// What an IMAP server answers one command with.
+    /// Where in the transcript a command naming this folder is, if at all.
     ///
-    /// Only the floor of IMAP4rev1 is advertised, deliberately: a server that
-    /// offers neither ID nor CONDSTORE keeps the introduction and the
-    /// modification-sequence select out of the way, so what reaches the
-    /// transcript is what the controller decided to send and nothing else.
-    fn imap_answer(tag: &str, line: &str) -> String {
-        let asked = line.to_uppercase();
-        match asked.split_whitespace().nth(1).unwrap_or_default() {
-            "CAPABILITY" => format!("* CAPABILITY IMAP4rev1\r\n{tag} OK ready\r\n"),
-            "SELECT" | "EXAMINE" => format!(
-                "* 0 EXISTS\r\n* 0 RECENT\r\n* OK [UIDVALIDITY 1] valid\r\n\
-                 {tag} OK [READ-WRITE] open\r\n"
-            ),
-            "LOGOUT" => format!("* BYE signing off\r\n{tag} OK done\r\n"),
-            // A search with nothing to report still has to report it.
-            _ if asked.contains("SEARCH") => format!("* SEARCH\r\n{tag} OK done\r\n"),
-            _ => format!("{tag} OK done\r\n"),
-        }
-    }
-
-    /// One command with anything credential-shaped taken off the end.
-    ///
-    /// The transcript is read by the assertions and printed when one fails, so
-    /// it is held to the same rule as a log file: a password does not go in it.
-    fn without_the_credential(line: &str) -> String {
-        let mut words = line.split_whitespace();
-        let first = words.next().unwrap_or_default();
-        let second = words.next().unwrap_or_default();
-        match second.to_uppercase().as_str() {
-            "LOGIN" | "AUTHENTICATE" => format!("{first} {second}"),
-            _ if first.eq_ignore_ascii_case("PASS") => first.to_string(),
-            _ => line.to_string(),
-        }
-    }
-
-    /// An IMAP server on a port of its own, ready for one connection.
-    async fn an_imap_server() -> FakeServer {
-        serving("* OK ready\r\n", |line| {
-            let tag = line.split_whitespace().next().unwrap_or("*").to_string();
-            imap_answer(&tag, line)
+    /// Position rather than presence, because the question these tests ask is
+    /// what the server was told *before* it was asked for a message.
+    async fn when_asked_to(server: &Conversation, verb: &str, folder: &str) -> Option<usize> {
+        let wanted = verb.to_uppercase();
+        server.transcript().await.iter().position(|line| {
+            let said = line.to_uppercase();
+            said.contains(&wanted) && said.contains(&folder.to_uppercase())
         })
-        .await
+    }
+
+    /// An IMAP server that advertises nothing beyond the floor.
+    ///
+    /// Deliberately bare: a server offering neither ID nor CONDSTORE keeps the
+    /// introduction and the modification-sequence select out of the way, so
+    /// what reaches the transcript is what the controller decided to send and
+    /// nothing else.
+    async fn an_imap_server() -> Conversation {
+        a_server_that_can("").await
     }
 
     /// A POP3 server on a port of its own. The protocol is one line each way,
     /// so agreeing with everything is a whole server.
-    async fn a_pop3_server() -> FakeServer {
-        serving("+OK ready\r\n", |_| "+OK done\r\n".to_string()).await
-    }
-
-    /// Take a loopback port, and answer one connection from the script given.
-    async fn serving(
-        greeting: &'static str,
-        answer: impl Fn(&str) -> String + Send + 'static,
-    ) -> FakeServer {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("a loopback port");
-        let port = listener
-            .local_addr()
-            .expect("the port that was taken")
-            .port();
-        let heard = Arc::new(Mutex::new(Vec::new()));
-        let recording = heard.clone();
-
-        tokio::spawn(async move {
-            let Ok((stream, _)) = listener.accept().await else {
-                return;
-            };
-            let (reading, mut writing) = stream.into_split();
-            if writing.write_all(greeting.as_bytes()).await.is_err() {
-                return;
-            }
-            let mut lines = tokio::io::BufReader::new(reading).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                // Recorded before the answer goes out, so a client that has
-                // heard its answer can rely on the line being in the
-                // transcript already.
-                recording.lock().await.push(without_the_credential(&line));
-                if writing.write_all(answer(&line).as_bytes()).await.is_err() {
-                    return;
-                }
-            }
-        });
-
-        FakeServer { port, heard }
+    async fn a_pop3_server() -> Conversation {
+        conversing(
+            "+OK ready
+",
+            |_| {
+                Turn::Say(
+                    "+OK done
+"
+                    .to_string(),
+                )
+            },
+        )
+        .await
     }
 
     /// A controller signed in to the server given.
-    async fn signed_in_to(server: &FakeServer) -> MailController {
+    async fn signed_in_to(server: &Conversation) -> MailController {
         let controller = MailController::new();
         controller
             .connect_imap(
                 "127.0.0.1".to_string(),
-                server.port,
+                server.port(),
                 "someone".to_string(),
                 MailAuth::Password("hunter2".to_string()),
                 false,
@@ -910,7 +839,7 @@ mod against_a_server_that_answers {
             headers.err()
         );
         assert!(
-            server.when_asked_to("SELECT", "INBOX").await.is_some(),
+            when_asked_to(&server, "SELECT", "INBOX").await.is_some(),
             "the folder was never opened: {:?}",
             server.transcript().await
         );
@@ -931,8 +860,8 @@ mod against_a_server_that_answers {
         let _ = controller.fetch_message_body("Archive", 1).await;
 
         let transcript = server.transcript().await;
-        let opened = server.when_asked_to("SELECT", "Archive").await;
-        let fetched = server.when_asked_to("FETCH", "1").await;
+        let opened = when_asked_to(&server, "SELECT", "Archive").await;
+        let fetched = when_asked_to(&server, "FETCH", "1").await;
         let opened = opened.unwrap_or_else(|| {
             panic!("the message was read without opening its folder: {transcript:?}")
         });
@@ -960,7 +889,7 @@ mod against_a_server_that_answers {
             flags.err()
         );
         assert!(
-            server.when_asked_to("SELECT", "INBOX").await.is_some(),
+            when_asked_to(&server, "SELECT", "INBOX").await.is_some(),
             "the folder was never opened: {:?}",
             server.transcript().await
         );
@@ -1065,7 +994,7 @@ mod against_a_server_that_answers {
         controller
             .connect_pop3(
                 "127.0.0.1".to_string(),
-                server.port,
+                server.port(),
                 "someone".to_string(),
                 "hunter2".to_string(),
                 false,
@@ -1092,11 +1021,6 @@ mod against_a_server_that_answers {
     // signing in reads the account's setting out of the profile of whoever is
     // running the suite. That is why every write above is called with its
     // answer thrown away.
-
-    use crate::service::protocols::imap::against_a_server_that_answers::{
-        a_server_that_can, a_server_that_refuses, reading_only_on,
-        signed_in_to as a_session_allowed_on,
-    };
 
     /// A controller already holding a session somebody else opened.
     ///
@@ -1316,7 +1240,7 @@ mod against_a_server_that_answers {
         controller
             .connect_pop3(
                 "127.0.0.1".to_string(),
-                server.port,
+                server.port(),
                 "someone".to_string(),
                 "hunter2".to_string(),
                 false,
