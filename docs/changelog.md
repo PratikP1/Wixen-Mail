@@ -81,6 +81,44 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **Sending a message and changing a mailbox are now tried out against a mail
+  server before you get them.** Until now nothing checked what these actually
+  put on the wire. The only thing measured was the refusal: with Allow Changes
+  off, nothing left the machine. What happened with it on had never run
+  anywhere.
+
+  A mail server that answers now runs inside the tests, and every one of these
+  is sent to it and read back: sending a message, sending a read receipt,
+  starring, marking read, copying, moving, deleting, saving a copy of a sent
+  message, and replacing a filed draft. Three things that were only written
+  down in a comment are now checked. Everybody a message is addressed to gets
+  a line of their own at the server. A blind copy reaches the server and
+  appears in neither the message every recipient reads nor the copy filed in
+  Sent. A read receipt leaves exactly as it was written.
+
+  This does not mean sending has been tried against a real account. It has
+  not. What is proved is what goes out and what a server we wrote answers, and
+  Gmail, Fastmail and Exchange each have their own opinions about all of it.
+  The Allow Changes warning stays exactly as it is.
+
+  Known limitations. A message sent from here goes out with no identifier of
+  its own, and most mail carries one. The date is filled in and the identifier
+  is not. Two things follow: the copy kept in Sent is filed without one, so
+  replying to your own sent message starts a new conversation instead of
+  continuing the old one; and where your provider adds an identifier as the
+  message leaves, which the large ones do, the copy in your Sent folder and
+  the copy your recipient received no longer agree about which message they
+  are. Choosing what that identifier should say is a decision about what every
+  recipient sees, so it is written down here rather than guessed at.
+
+  Second known limitation, in the same area. On a mail server that cannot move
+  a message in one command, moving or deleting one is three steps: copy it,
+  mark the original, remove the original. The order is right, and no single
+  step failing loses the message. But when the last step fails you are told
+  only that the delete failed, and the message list keeps its row. The copy is
+  in the Trash, the original is in the folder marked to go, and nothing says
+  so. Getting that sentence right is its own piece of work.
+
 - **What an imported card says now reaches your address books.** Import
   Contacts used to write what a card said into the record here and stop there.
   The next read from Google or Outlook wrote that address book's own copy back
@@ -286,6 +324,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   nothing. `docs/privacy.md` says what each of them does.
 
 ### Fixed
+
+- **A change your mail server turned down was reported to you as done.** Two of
+  the commands this program sends to a mail server, setting a flag on a message
+  and removing one message, were sent in a way that never read the server's
+  answer. A server saying no came back looking exactly like a change that
+  worked.
+
+  Every flag this program sets went through one of them, so starring a message
+  or marking it read could be refused and reported as done, and you would find
+  out days later from another device. The other is the command that removes a
+  message, so on an account whose mail goes straight out rather than to a
+  Trash folder you could be told "Deleted" over a message still sitting in the
+  folder. Both now report a refusal as a refusal.
+
+- **Saving a draft again could leave two copies on the server.** Replacing the
+  copy already filed counted the drafts it found rather than the ones it
+  removed. On a mail server that can only mark the old copy and leave it, the
+  new copy was written anyway, and the day ended with two drafts and neither of
+  them obviously the newer.
 
 - **The privacy page said nothing here sends your contacts, your calendar or
   your tasks to anybody. They are sent.** It opened by saying that nothing in
