@@ -820,3 +820,349 @@ mod gate_tests {
         );
     }
 }
+
+/// Sending, past the gate, against a server that answers.
+///
+/// The gate's refusing half was measured long before this; its permitting half
+/// never was, anywhere. Nothing here proves Gmail or Fastmail accept what goes
+/// out. It proves what goes out: the envelope, the headers, and the bytes that
+/// become the copy filed in Sent.
+///
+/// Every message is ASCII on purpose. The script advertises 8BITMIME, so a
+/// non-ASCII body would pass today, and a later change to the script would
+/// quietly change what is being tested.
+#[cfg(test)]
+mod against_a_server_that_answers {
+    use super::*;
+    use crate::common::answering::{Conversation, LONG_ENOUGH, Turn, conversing};
+
+    /// A sending server that answers the whole exchange.
+    ///
+    /// The advertised AUTH line is not decoration. [`SmtpClient::transport`]
+    /// always sets credentials, and the mail library refuses to open a session
+    /// at all, before a single byte of the message, when the greeting offers no
+    /// mechanism it knows.
+    ///
+    /// Anything unscripted is refused rather than ignored, so a script that has
+    /// fallen behind the client fails the test in the moment instead of leaving
+    /// it to wait out a timeout, which reads as a slow machine.
+    async fn an_smtp_server() -> Conversation {
+        conversing("220 loopback ready\r\n", |line| {
+            let said = line.to_uppercase();
+            let verb = said.split_whitespace().next().unwrap_or_default();
+            match verb {
+                "EHLO" | "HELO" => Turn::Say(
+                    "250-loopback\r\n250-AUTH PLAIN LOGIN\r\n250-8BITMIME\r\n250 SMTPUTF8\r\n"
+                        .to_string(),
+                ),
+                "AUTH" => Turn::Say("235 authenticated\r\n".to_string()),
+                "MAIL" => Turn::Say("250 sender ok\r\n".to_string()),
+                "RCPT" => Turn::Say("250 recipient ok\r\n".to_string()),
+                "DATA" => Turn::TakingAMessage {
+                    done: "250 queued as 1\r\n".to_string(),
+                },
+                "QUIT" => Turn::Say("221 bye\r\n".to_string()),
+                "RSET" | "NOOP" => Turn::Say("250 ok\r\n".to_string()),
+                _ => Turn::Say("500 unscripted\r\n".to_string()),
+            }
+        })
+        .await
+    }
+
+    /// An account pointed at that server, unencrypted.
+    ///
+    /// Plaintext, so the conversation itself is the whole observation and no
+    /// handshake stands between the test and what was said.
+    fn pointed_at(server: &Conversation) -> SmtpConfig {
+        SmtpConfig {
+            server: server.server(),
+            port: server.port(),
+            use_tls: false,
+            username: "me@example.com".to_string(),
+        }
+    }
+
+    fn a_message() -> Email {
+        Email {
+            from_name: Some("Ada Lovelace".to_string()),
+            in_reply_to: Some("<c@x>".to_string()),
+            references: Some("<a@x> <c@x>".to_string()),
+            ..Email::simple(
+                "me@example.com".to_string(),
+                "them@example.com".to_string(),
+                "Re: Hello".to_string(),
+                "Body".to_string(),
+            )
+        }
+    }
+
+    /// The message body the server was given, as one block.
+    ///
+    /// The transcript holds it as an entry of its own, which is the only entry
+    /// that is not a command line.
+    async fn the_body(server: &Conversation) -> String {
+        server
+            .transcript()
+            .await
+            .into_iter()
+            .find(|entry| entry.contains("Subject:"))
+            .unwrap_or_default()
+    }
+
+    /// Send, and fail with a sentence rather than waiting out a timeout.
+    async fn sending(client: &SmtpClient, email: Email) -> Result<Vec<u8>> {
+        tokio::time::timeout(
+            LONG_ENOUGH,
+            client.send_email(email, &MailAuth::Password("hunter2".to_string())),
+        )
+        .await
+        .expect("the server never finished the exchange")
+    }
+
+    #[tokio::test]
+    async fn test_a_message_sent_past_an_open_gate_reaches_the_server_envelope_and_all() {
+        // The whole path, for the first time. Everything before this stopped
+        // at the refusal or at the connection, so the envelope, the threading
+        // headers and the sender's name had never been seen by anything.
+        let server = an_smtp_server().await;
+        let client = SmtpClient::allowed_to_send(pointed_at(&server)).expect("a client");
+
+        let sent = sending(&client, a_message()).await.expect("it to send");
+
+        let transcript = server.transcript().await;
+        let from = server
+            .when_told("MAIL FROM:<me@example.com>")
+            .await
+            .unwrap_or_else(|| panic!("the sender never reached the server: {transcript:?}"));
+        let to = server
+            .when_told("RCPT TO:<them@example.com>")
+            .await
+            .unwrap_or_else(|| panic!("the recipient never reached the server: {transcript:?}"));
+        let data = server
+            .when_told("DATA")
+            .await
+            .unwrap_or_else(|| panic!("the message was never offered: {transcript:?}"));
+        assert!(
+            from < to && to < data,
+            "the envelope was not built before the message: {transcript:?}"
+        );
+
+        let body = the_body(&server).await;
+        assert!(body.contains("Subject: Re: Hello"), "{body}");
+        assert!(
+            body.contains("From: \"Ada Lovelace\" <me@example.com>"),
+            "{body}"
+        );
+        assert!(body.contains("In-Reply-To: <c@x>"), "{body}");
+        assert!(body.contains("References: <a@x> <c@x>"), "{body}");
+
+        // The bytes handed back are what the copy filed in Sent is made from,
+        // and they are the same bytes the server was given rather than a
+        // second build of the same message.
+        let sent = String::from_utf8_lossy(&sent).into_owned();
+        assert_eq!(
+            sent.trim_end_matches(['\r', '\n']),
+            body.trim_end_matches(['\r', '\n']),
+            "the copy filed in Sent is not the message that went out"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_sent_message_carries_no_identifier_of_its_own_which_is_a_gap() {
+        // Measured, not assumed, and it is not what anybody would expect.
+        //
+        // The mail library fills in a Date when one is missing and does not
+        // fill in a Message-ID, and nothing here asks it to. So every message
+        // this program sends leaves without one. Two things follow. The copy
+        // filed in Sent is stored with an empty identifier, and a reply to it
+        // finds no parent to answer, so replying to your own sent mail starts
+        // a new conversation. And where the submission server adds one at
+        // relay, which the large providers do, the copy in Sent and the copy
+        // the recipient received carry different identities for one message.
+        //
+        // This test says what happens today rather than what should. Changing
+        // it means deciding which domain the identifier names, which is a
+        // decision about what every recipient sees and not a detail of
+        // exercising the send path.
+        let server = an_smtp_server().await;
+        let client = SmtpClient::allowed_to_send(pointed_at(&server)).expect("a client");
+
+        let sent = sending(&client, a_message()).await.expect("it to send");
+
+        let sent = String::from_utf8_lossy(&sent).into_owned();
+        assert!(
+            sent.contains("Date: "),
+            "the message went out with no date either: {sent}"
+        );
+        assert!(
+            !sent.to_lowercase().contains("message-id:"),
+            "a message identifier is now written, so the gap this records is closed \
+             and the note about it should go: {sent}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_blind_copy_reaches_the_server_and_never_the_message() {
+        // Blind means blind, and it rests on a default in the mail library
+        // rather than on anything written here: the address is taken out of
+        // the header into the envelope and the header removed. Until now that
+        // was held together by a comment. If it ever stops being true, every
+        // blind address goes into the Sent copy and into every recipient's
+        // headers, and nothing says so.
+        let server = an_smtp_server().await;
+        let client = SmtpClient::allowed_to_send(pointed_at(&server)).expect("a client");
+
+        let sent = sending(
+            &client,
+            Email {
+                bcc: vec!["quiet@example.com".to_string()],
+                ..a_message()
+            },
+        )
+        .await
+        .expect("it to send");
+
+        assert!(
+            server.was_told("RCPT TO:<quiet@example.com>").await,
+            "the blind copy never reached the server: {:?}",
+            server.transcript().await
+        );
+        let body = the_body(&server).await;
+        assert!(
+            !body.contains("quiet@example.com"),
+            "the blind address is in the message every recipient reads: {body}"
+        );
+        assert!(
+            !String::from_utf8_lossy(&sent).contains("quiet@example.com"),
+            "the blind address is in the copy filed in Sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_every_recipient_gets_an_envelope_line_of_their_own() {
+        // A recipient missing from the envelope is a recipient who never
+        // receives the message, whatever the headers say.
+        let server = an_smtp_server().await;
+        let client = SmtpClient::allowed_to_send(pointed_at(&server)).expect("a client");
+
+        sending(
+            &client,
+            Email {
+                cc: vec!["copied@example.com".to_string()],
+                bcc: vec!["quiet@example.com".to_string()],
+                ..a_message()
+            },
+        )
+        .await
+        .expect("it to send");
+
+        let addressed: Vec<String> = server
+            .transcript()
+            .await
+            .into_iter()
+            .filter(|line| line.to_uppercase().starts_with("RCPT TO:"))
+            .collect();
+        assert_eq!(addressed.len(), 3, "{addressed:?}");
+        for who in [
+            "them@example.com",
+            "copied@example.com",
+            "quiet@example.com",
+        ] {
+            assert!(
+                addressed.iter().any(|line| line.contains(who)),
+                "{who} was left out: {addressed:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_read_receipt_goes_out_as_it_was_written() {
+        // A receipt's shape is fixed by RFC 8098 and built where it can be
+        // read in a test. The whole reason this path exists is that the
+        // builder must not touch it, and nothing had ever checked that the
+        // bytes handed in are the bytes that leave.
+        let server = an_smtp_server().await;
+        let client = SmtpClient::allowed_to_send(pointed_at(&server)).expect("a client");
+        let raw = "From: me@example.com\r\nTo: them@example.com\r\n\
+             Subject: Read receipt\r\nContent-Type: multipart/report\r\n\r\n\
+             The message was displayed.\r\n";
+
+        tokio::time::timeout(
+            LONG_ENOUGH,
+            client.send_raw(
+                "me@example.com",
+                "them@example.com",
+                raw.as_bytes(),
+                &MailAuth::Password("hunter2".to_string()),
+            ),
+        )
+        .await
+        .expect("the server never finished the exchange")
+        .expect("the receipt to send");
+
+        assert!(server.was_told("MAIL FROM:<me@example.com>").await);
+        assert!(server.was_told("RCPT TO:<them@example.com>").await);
+        let body = the_body(&server).await;
+        // The sending library ends a body with a line of its own, so what the
+        // server holds is the receipt followed by a blank line.
+        assert_eq!(
+            body.trim_end_matches(['\r', '\n']),
+            raw.trim_end_matches(['\r', '\n'])
+        );
+    }
+
+    #[tokio::test]
+    async fn test_nothing_is_said_to_the_server_with_the_gate_closed() {
+        // Stronger than "nothing connected", which is what the older check
+        // measured, and it only means anything because the tests above show
+        // this same server records everything it hears.
+        let server = an_smtp_server().await;
+        let client = SmtpClient::new(pointed_at(&server)).expect("a client");
+
+        let refused = sending(&client, a_message()).await;
+
+        let Err(said) = refused else {
+            panic!("it sent");
+        };
+        let said = said.to_string();
+        assert!(said.contains("send a message"), "{said}");
+        assert!(said.contains("Allow Changes"), "{said}");
+        assert!(
+            server.transcript().await.is_empty(),
+            "something was said to the server with the gate closed: {:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_nothing_is_said_to_the_server_when_a_receipt_is_refused() {
+        // A receipt is mail leaving this machine with somebody's address on
+        // it, so it is behind the same gate and gets the same claim.
+        let server = an_smtp_server().await;
+        let client = SmtpClient::new(pointed_at(&server)).expect("a client");
+
+        let refused = tokio::time::timeout(
+            LONG_ENOUGH,
+            client.send_raw(
+                "me@example.com",
+                "them@example.com",
+                b"From: me@example.com\r\n\r\nread\r\n",
+                &MailAuth::Password("hunter2".to_string()),
+            ),
+        )
+        .await
+        .expect("the refusal to be immediate");
+
+        let Err(said) = refused else {
+            panic!("it sent");
+        };
+        let said = said.to_string();
+        assert!(said.contains("send a read receipt"), "{said}");
+        assert!(said.contains("Allow Changes"), "{said}");
+        assert!(
+            server.transcript().await.is_empty(),
+            "something was said to the server with the gate closed: {:?}",
+            server.transcript().await
+        );
+    }
+}
