@@ -8330,6 +8330,55 @@ fn spawn_server_change(
             }
         };
 
+        // Where deleted mail goes for this account, worked out before anything
+        // is connected to. Two of the four answers are refusals, and a refusal
+        // that has already opened a session is a session opened for nothing.
+        //
+        // Only asked for a delete. Flagging and marking read move nothing, so
+        // an account whose trash is not recognised can still be flagged.
+        let trash = match &change {
+            ServerChange::Deleted(asked) => {
+                use crate::application::destinations::{
+                    DeletedGoesTo, where_a_deleted_message_goes,
+                };
+
+                let folders = cache
+                    .get_folders_for_account(&account.id)
+                    .unwrap_or_default();
+                let goes_to = where_a_deleted_message_goes(
+                    folders.iter().map(|folder| {
+                        (
+                            folder.path.as_str(),
+                            crate::common::types::FolderType::from_stored(&folder.folder_type),
+                        )
+                    }),
+                    &folder_path,
+                    *asked,
+                );
+                match goes_to {
+                    DeletedGoesTo::TheTrash(path) => Some(path.to_string()),
+                    DeletedGoesTo::OffTheServer => None,
+                    // Nothing is sent. Flagging and removing a message whose
+                    // trash this program does not recognise destroys the only
+                    // copy of it, and it used to be announced as a deletion,
+                    // which it was.
+                    DeletedGoesTo::NoTrashFolderFound => {
+                        say(UIUpdate::CommandRefused(
+                            crate::application::destinations::NO_TRASH_FOLDER_FOUND.to_string(),
+                        ));
+                        return;
+                    }
+                    DeletedGoesTo::NoFoldersKnownYet => {
+                        say(UIUpdate::CommandRefused(
+                            crate::application::destinations::NO_FOLDERS_KNOWN_YET.to_string(),
+                        ));
+                        return;
+                    }
+                }
+            }
+            _ => None,
+        };
+
         let auth = match handle.block_on(crate::application::mail_auth::for_account(&account)) {
             Ok(auth) => auth,
             Err(e) => {
@@ -8350,31 +8399,6 @@ fn spawn_server_change(
             refuse(e.to_string());
             return;
         }
-
-        // Where deleted mail goes for this account. Read from the folders we
-        // already hold rather than asked for, and `None` when there is nowhere
-        // to move it to: somebody asked for it outright, the message is already
-        // in the trash, or the account has no trash folder.
-        let folders = cache
-            .get_folders_for_account(&account.id)
-            .unwrap_or_default();
-        let asked = match change {
-            ServerChange::Deleted(asked) => asked,
-            // Flagging and marking read do not move anything, so where the
-            // trash is does not arise.
-            _ => Deleting::ToTrash,
-        };
-        let trash = crate::application::destinations::trash_for(
-            folders.iter().map(|folder| {
-                (
-                    folder.path.as_str(),
-                    crate::common::types::FolderType::from_stored(&folder.folder_type),
-                )
-            }),
-            &folder_path,
-            asked,
-        )
-        .map(str::to_string);
 
         let outcome = match &change {
             ServerChange::Read(read) => handle

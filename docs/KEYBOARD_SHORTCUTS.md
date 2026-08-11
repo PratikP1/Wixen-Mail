@@ -436,7 +436,7 @@ moves the menu, and sorting from the menu moves the headers.
 | Reply All | `Ctrl+Shift+R` | Reply to everyone the message reached and to the person who wrote it, leaving out your own address |
 | Reply to Sender Only | `Alt+Shift+R` | Reply only to the person who wrote it, never to the list. On the Message menu as Reply to Sender Only. |
 | Forward | `Ctrl+L` | Forward selected message |
-| Delete | `Delete` | Move the selected message to the Trash. On a POP account this is the Trash folder on this computer, and it can be switched off per account in the account's settings |
+| Delete | `Delete` | Move the selected message to the Trash. On a POP account this is the Trash folder on this computer, and it can be switched off per account in the account's settings. If the account does not say which of its folders holds deleted mail, nothing is deleted and a message says so |
 | Flag Message | `Ctrl+Shift+S` | Flag or unflag the selected message |
 | Mark as Read | (Message menu) | Mark the selected message as read. This is not on `Space`: `Space` reads the item aloud, in every module. |
 

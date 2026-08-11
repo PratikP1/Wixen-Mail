@@ -2557,3 +2557,42 @@ after = """    cargo mutants -j "$JOBS" --output "$OUT" || true"""
 red = [
     "test_no_mutation_run_has_its_failure_swallowed",
 ]
+
+# ── An unrecognised trash used to mean a permanent deletion ─────────────────
+#
+# Three readers answer "is this folder the trash", and the last of them treated
+# "I do not recognise any of these" as "there is nowhere to move it to". The
+# ordinary Delete then flagged the message and removed it from the server with
+# no copy kept anywhere, and said "Deleted", which was true. A server naming
+# its trash in another language was enough.
+#
+# The two breaks below are the two halves of the fix: the decision that names
+# the refusal, and the handler that says it instead of sending the delete.
+
+[[guard]]
+name = "not knowing where the trash is does not read as having nowhere to put it"
+file = "src/application/destinations.rs"
+before = """    else {
+        return DeletedGoesTo::NoTrashFolderFound;
+    };"""
+after = """    else {
+        return DeletedGoesTo::OffTheServer;
+    };"""
+red = [
+    "application::destinations::tests::test_an_account_with_no_folder_that_is_the_trash_does_not_delete_the_message",
+]
+
+[[guard]]
+name = "the delete handler says why it did nothing rather than deleting anyway"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """                    DeletedGoesTo::NoTrashFolderFound => {
+                        say(UIUpdate::CommandRefused(
+                            crate::application::destinations::NO_TRASH_FOLDER_FOUND.to_string(),
+                        ));
+                        return;
+                    }"""
+after = """                    DeletedGoesTo::NoTrashFolderFound => None,"""
+red = [
+    "test_a_delete_with_no_recognised_trash_is_refused_rather_than_sent",
+]

@@ -470,6 +470,75 @@ fn test_a_read_receipt_names_the_message_it_is_about() {
     );
 }
 
+/// One function's text, from its signature to the closing brace at column nought.
+///
+/// Panics when the signature is gone, rather than reading the whole file and
+/// quietly passing: a guard that no longer knows where to look is measuring
+/// nothing, and that has to fail loudly the moment somebody renames the thing.
+fn body_of(source: &str, signature: &str) -> String {
+    let at = source.find(signature).unwrap_or_else(|| {
+        panic!("{signature} is no longer in this file, so this guard is measuring nothing")
+    });
+    let rest = &source[at..];
+    let ends = rest.find("\n}\n").map_or(rest.len(), |end| end + 2);
+    rest[..ends].to_string()
+}
+
+/// Nothing asks a server to delete a message before asking where it should go.
+///
+/// The order is the whole of the fix. On an account whose trash this program
+/// does not recognise, the ordinary Delete used to flag the message and remove
+/// it from the server with no copy kept anywhere, and announce that as a
+/// deletion. Two of the four answers to "where does this go" are refusals, and
+/// a refusal that has already opened a session is a refusal decided too late.
+///
+/// Read from the source because reaching this handler needs a window, an
+/// account with stored credentials and a mail server.
+#[test]
+fn test_nothing_asks_a_server_to_delete_before_asking_where_it_goes() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let handler = body_of(&app, "fn spawn_server_change(");
+
+    let decided = handler
+        .find("where_a_deleted_message_goes")
+        .expect("the delete handler never asks where a deleted message goes");
+    let connected = handler
+        .find("connect_imap")
+        .expect("the delete handler never connects, so this guard measures nothing");
+
+    assert!(
+        decided < connected,
+        "the server is connected to before anything has asked where the message \
+         should go, so an account with no recognised trash gets as far as the wire"
+    );
+}
+
+/// A delete with no recognised trash is refused out loud, not sent anyway.
+///
+/// The two refusals are sentences kept beside the decision so they can be
+/// tested. What no test there can say is whether the handler says them: an arm
+/// that falls through to "there is nowhere to move it to" reads as a tidy
+/// simplification and puts the destructive delete straight back.
+#[test]
+fn test_a_delete_with_no_recognised_trash_is_refused_rather_than_sent() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let handler = body_of(&app, "fn spawn_server_change(");
+
+    for refusal in ["NO_TRASH_FOLDER_FOUND", "NO_FOLDERS_KNOWN_YET"] {
+        assert!(
+            handler.contains(refusal),
+            "the delete handler no longer says why it did nothing, so a message \
+             whose account has no recognised trash is removed from the server \
+             again and announced as deleted"
+        );
+    }
+    assert!(
+        handler.contains("UIUpdate::CommandRefused"),
+        "the refusal goes to the status bar and nowhere else, which from the \
+         keyboard is indistinguishable from a key that was never wired up"
+    );
+}
+
 /// The calendar sync asks whether anything can send what is still waiting.
 ///
 /// The sweep is a plain function over the account's rows, so it is tested

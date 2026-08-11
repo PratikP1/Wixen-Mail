@@ -369,6 +369,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Delete destroyed the message on any account whose Trash folder this program
+  did not recognise.** Delete is meant to move a message to the Trash, where it
+  can be got back. Working out where the Trash is gave one answer for "somebody
+  asked for this to be gone for good" and for "none of this account's folders
+  looks like a Trash to me", and that answer was to mark the message and remove
+  it from the server with no copy kept anywhere. The status line then said
+  "Deleted", which was true. A server that names its trash in another language,
+  a provider that calls it something of its own, or an account whose folders had
+  never been read was enough to get there.
+
+  Now nothing is deleted in either of those cases. The message stays exactly
+  where it was, and a message says so and says what to do next: move it to the
+  folder this account keeps deleted mail in, or use Delete Permanently to take
+  it off the server for good. An account that has never checked for mail is told
+  to check once first. Delete Permanently is unchanged and still works on an
+  account nothing is known about, because that command means it.
+
+  Naming your own Trash folder per account is not possible yet, so an account
+  whose Trash this program does not recognise has no ordinary Delete until that
+  exists. None of this has run against a real mail server. What is tested is the
+  decision, the sentences, and the order the handler does things in.
+
 - **A change your mail server turned down was reported to you as done.** Two of
   the commands this program sends to a mail server, setting a flag on a message
   and removing one message, were sent in a way that never read the server's

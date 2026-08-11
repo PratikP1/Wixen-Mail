@@ -216,6 +216,37 @@ mod tests {
     }
 
     #[test]
+    fn test_the_only_folder_here_with_no_trash_under_it_is_the_outbox() {
+        // Written down because the server path answers the same question and
+        // now answers it differently: an account whose trash is not recognised
+        // there refuses the delete rather than removing the message.
+        //
+        // Here there is nothing to refuse. The one local folder an IMAP
+        // account has is the Outbox, deleting from it means taking a message
+        // out of the send queue, and there is no trash for a queued message to
+        // wait in. A POP account keeps its own trash, so its delete moves.
+        // Neither is a message whose only copy is quietly destroyed.
+        let outbox = for_account(Protocol::Imap)
+            .iter()
+            .find(|folder| folder.kind == FolderType::Outbox)
+            .map(LocalFolder::path)
+            .expect("an IMAP account keeps an outbox here");
+
+        let queued = deleting(
+            &outbox,
+            Protocol::Imap,
+            crate::application::destinations::Deleting::ToTrash,
+            true,
+        );
+
+        assert_eq!(queued, Some(LocalDelete::RemoveFromThisComputer));
+        assert!(
+            local_trash(Protocol::Pop3).is_some(),
+            "a POP account's delete has somewhere to move mail to"
+        );
+    }
+
+    #[test]
     fn test_an_imap_account_keeps_only_the_outbox_here() {
         // The rest are on the server. A second local copy would be a second
         // place for the same mail to be with nothing to say which is right.

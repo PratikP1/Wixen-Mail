@@ -34,6 +34,44 @@ pub enum Deleting {
     Outright,
 }
 
+/// What the ordinary delete means for this message on this account.
+///
+/// Four answers rather than a folder or nothing, because "there is nowhere to
+/// move it to" and "I do not know where this account's trash is" used to be the
+/// same answer, and that answer removed the message from the server for good.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeletedGoesTo<'a> {
+    /// Move it here. Recoverable from there, on every device.
+    TheTrash(&'a str),
+    /// Take it off the server. Asked for outright, or it is already in the
+    /// trash and deleting it a second time means it.
+    OffTheServer,
+    /// This account has folders and none of them is its trash, so nothing is
+    /// deleted and [`NO_TRASH_FOLDER_FOUND`] says what to do instead.
+    NoTrashFolderFound,
+    /// This account has no folders yet, so nothing is known about its trash.
+    NoFoldersKnownYet,
+}
+
+/// What to say when no folder on the account reads as its trash.
+///
+/// Nothing was deleted, and both ways forward are named. A server that calls
+/// its trash Papierkorb, Corbeille or something a provider invented is enough
+/// to get here, and none of that is the person's fault or their problem to
+/// diagnose.
+pub const NO_TRASH_FOLDER_FOUND: &str = "Nothing was deleted. This account does not say which of its folders it keeps deleted mail \
+     in, so there is nowhere to move this to. It is still where it was. Move it to the folder \
+     this account keeps deleted mail in, or use Delete Permanently to take it off the server \
+     for good.";
+
+/// What to say when the account has never been asked what folders it has.
+///
+/// A new account that has never checked for mail knows nothing about its
+/// folders, and reading that as "it has no trash" is the worst possible reading
+/// of not knowing yet.
+pub const NO_FOLDERS_KNOWN_YET: &str = "Nothing was deleted. This account has not learned what folders it has yet. Check for mail \
+     once, and Delete will move messages to the Trash from then on.";
+
 /// Where a deleted message should go, if anywhere.
 ///
 /// The ordinary delete moves to the trash. It is what every other client does,
@@ -42,27 +80,33 @@ pub enum Deleting {
 /// on Gmail, and which of three things that turns into depends on a setting
 /// only reachable in Gmail's own web interface.
 ///
-/// `None` means there is nowhere to move it to and the delete is a real one.
-/// Three ways to get there: somebody asked for it outright, the message is
-/// already in the trash so deleting it again means it, or the account has no
-/// trash folder.
-pub fn trash_for<'a>(
+/// The order of the decisions matters. Asking for it outright is answered
+/// before the folder list is looked at, so Delete Permanently keeps working on
+/// an account that has never synced. Then not knowing the folders, then knowing
+/// them and finding no trash among them, are two different refusals, because
+/// what to do next is different for each.
+pub fn where_a_deleted_message_goes<'a>(
     folders: impl IntoIterator<Item = (&'a str, FolderType)>,
     deleting_from: &str,
     asked: Deleting,
-) -> Option<&'a str> {
+) -> DeletedGoesTo<'a> {
     if asked == Deleting::Outright {
-        return None;
+        return DeletedGoesTo::OffTheServer;
     }
-    let trash = folders
-        .into_iter()
+    let mut folders = folders.into_iter().peekable();
+    if folders.peek().is_none() {
+        return DeletedGoesTo::NoFoldersKnownYet;
+    }
+    let Some(trash) = folders
         .find(|(_, kind)| *kind == FolderType::Trash)
-        .map(|(path, _)| path)?;
-
+        .map(|(path, _)| path)
+    else {
+        return DeletedGoesTo::NoTrashFolderFound;
+    };
     if trash == deleting_from {
-        return None;
+        return DeletedGoesTo::OffTheServer;
     }
-    Some(trash)
+    DeletedGoesTo::TheTrash(trash)
 }
 
 /// What is being moved or copied, which decides what it can go into.
@@ -298,8 +342,8 @@ mod tests {
     #[test]
     fn test_a_deleted_message_goes_to_the_trash() {
         assert_eq!(
-            trash_for(mailboxes(), "INBOX", Deleting::ToTrash),
-            Some("[Gmail]/Trash")
+            where_a_deleted_message_goes(mailboxes(), "INBOX", Deleting::ToTrash),
+            DeletedGoesTo::TheTrash("[Gmail]/Trash")
         );
     }
 
@@ -308,27 +352,82 @@ mod tests {
         // Shift+Delete. Somebody who means it should not have to go to the
         // trash and delete it a second time, which is what the ordinary
         // delete alone leaves them doing.
-        assert_eq!(trash_for(mailboxes(), "INBOX", Deleting::Outright), None);
-    }
-
-    #[test]
-    fn test_deleting_from_the_trash_really_deletes() {
-        // Somebody emptying the trash means it. Moving a message from the
-        // trash to the trash is a command that does nothing, and they cannot
-        // tell that from one that failed.
         assert_eq!(
-            trash_for(mailboxes(), "[Gmail]/Trash", Deleting::ToTrash),
-            None
+            where_a_deleted_message_goes(mailboxes(), "INBOX", Deleting::Outright),
+            DeletedGoesTo::OffTheServer
         );
     }
 
     #[test]
-    fn test_an_account_with_no_trash_folder_deletes_in_place() {
-        // Some servers have none. There is nowhere to move it to, so the only
-        // delete available is the one that removes it.
+    fn test_deleting_from_the_trash_still_takes_it_off_the_server() {
+        // Somebody emptying the trash means it. Moving a message from the
+        // trash to the trash is a command that does nothing, and they cannot
+        // tell that from one that failed.
+        assert_eq!(
+            where_a_deleted_message_goes(mailboxes(), "[Gmail]/Trash", Deleting::ToTrash),
+            DeletedGoesTo::OffTheServer
+        );
+    }
+
+    #[test]
+    fn test_an_account_with_no_folder_that_is_the_trash_does_not_delete_the_message() {
+        // This replaces a test that asserted the opposite. Deleting in place
+        // on an account whose trash is not recognised destroys the only copy
+        // of the message, and the program announced it as deleted, which it
+        // was. A server naming its trash in another language, or a provider
+        // naming it something of its own, was enough.
         let no_trash = [("INBOX", FolderType::Inbox), ("Work", FolderType::Custom)];
 
-        assert_eq!(trash_for(no_trash, "INBOX", Deleting::ToTrash), None);
+        assert_eq!(
+            where_a_deleted_message_goes(no_trash, "INBOX", Deleting::ToTrash),
+            DeletedGoesTo::NoTrashFolderFound
+        );
+    }
+
+    #[test]
+    fn test_an_account_that_has_not_learned_its_folders_yet_says_so_rather_than_deleting() {
+        // A brand new account that has never checked for mail knows nothing
+        // about its folders. Reading that as "there is no trash" and removing
+        // the message is the worst possible reading of not knowing.
+        assert_eq!(
+            where_a_deleted_message_goes([], "INBOX", Deleting::ToTrash),
+            DeletedGoesTo::NoFoldersKnownYet
+        );
+    }
+
+    #[test]
+    fn test_delete_permanently_still_works_on_an_account_whose_folders_are_unknown() {
+        // Asking for it outright is answered before the folder list is
+        // consulted at all, so the one command that says "I mean it" keeps
+        // working when nothing is known about where anything is.
+        assert_eq!(
+            where_a_deleted_message_goes([], "INBOX", Deleting::Outright),
+            DeletedGoesTo::OffTheServer
+        );
+    }
+
+    #[test]
+    fn test_each_refusal_says_what_to_do_next_and_names_no_machinery() {
+        // Read aloud. A refusal that only says no leaves somebody with a key
+        // that did nothing and no idea what to press instead.
+        for said in [NO_TRASH_FOLDER_FOUND, NO_FOLDERS_KNOWN_YET] {
+            assert!(!said.is_empty());
+            for jargon in ["IMAP", "UID", "expunge", "folder type", "cache"] {
+                assert!(
+                    !said.to_lowercase().contains(&jargon.to_lowercase()),
+                    "{jargon} is machinery, not something anybody hears: {said}"
+                );
+            }
+        }
+        assert_ne!(NO_TRASH_FOLDER_FOUND, NO_FOLDERS_KNOWN_YET);
+        assert!(
+            NO_TRASH_FOLDER_FOUND.contains("Delete Permanently"),
+            "the other way forward is a menu item, and it has to be named: {NO_TRASH_FOLDER_FOUND}"
+        );
+        assert!(
+            NO_FOLDERS_KNOWN_YET.contains("Check for mail"),
+            "{NO_FOLDERS_KNOWN_YET}"
+        );
     }
 
     #[test]
