@@ -1238,6 +1238,7 @@ after = """    if false {
         return stored;
     }"""
 red = [
+    "presentation::managers::tests::test_a_day_of_a_series_opened_and_not_typed_in_is_not_counted_as_a_change",
     "presentation::managers::tests::test_saving_an_event_nobody_changed_leaves_it_settled",
 ]
 
@@ -1348,12 +1349,14 @@ red = [
     "presentation::managers::tests::test_correcting_a_spelling_on_a_calendar_server_event_keeps_it_in_universal_time",
     "presentation::managers::tests::test_correcting_a_spelling_on_a_repeating_event_keeps_the_offset",
     "presentation::managers::tests::test_correcting_a_spelling_on_a_whole_day_event_keeps_the_dates_it_arrived_with",
+    "presentation::managers::tests::test_moving_a_whole_series_to_another_day_moves_every_day_by_the_same_much",
     "presentation::managers::tests::test_moving_an_event_named_in_a_zone_keeps_the_name_and_moves_the_clock",
     "presentation::managers::tests::test_moving_an_event_that_names_a_zone_across_summer_time_keeps_the_clock_face",
     "presentation::managers::tests::test_moving_an_event_to_a_different_time_moves_it_in_the_zone_it_is_in",
     "presentation::managers::tests::test_moving_an_event_with_an_offset_and_no_zone_name_keeps_the_offset",
     "presentation::managers::tests::test_moving_an_event_written_in_universal_time_keeps_it_there",
     "presentation::managers::tests::test_moving_an_events_time_leaves_a_moment_that_is_read_out_as_a_date",
+    "presentation::managers::tests::test_moving_the_time_of_a_whole_series_leaves_the_day_it_starts_on_alone",
     "presentation::managers::tests::test_putting_a_time_on_a_whole_day_event_does_not_borrow_midnights_zone",
 ]
 
@@ -1380,12 +1383,18 @@ before = """    let marker = match crate::common::moment::the_zone_named(named_z
         None => zone_marker(shown),
     };"""
 after = """    let marker = "";"""
+# The repeating-event spelling test used to be on this list and is not any
+# more. It opens on one day of a series and types nothing but the summary, so
+# now that the day it was opened on reaches the save, both date boxes read back
+# as they were filled and the stored moment is handed back whole. It never
+# reaches the zone marker at all.
 red = [
     "presentation::managers::tests::test_a_zone_name_that_names_nothing_does_not_get_to_decide",
-    "presentation::managers::tests::test_correcting_a_spelling_on_a_repeating_event_keeps_the_offset",
+    "presentation::managers::tests::test_moving_a_whole_series_to_another_day_moves_every_day_by_the_same_much",
     "presentation::managers::tests::test_moving_an_event_to_a_different_time_moves_it_in_the_zone_it_is_in",
     "presentation::managers::tests::test_moving_an_event_with_an_offset_and_no_zone_name_keeps_the_offset",
     "presentation::managers::tests::test_moving_an_event_written_in_universal_time_keeps_it_there",
+    "presentation::managers::tests::test_moving_the_time_of_a_whole_series_leaves_the_day_it_starts_on_alone",
 ]
 
 [[guard]]
@@ -2138,6 +2147,7 @@ after = """        let day = a_cancelled_day_taken_apart(one);
 red = [
     "service::caldav::tests::test_a_birthday_sent_to_a_calendar_server_still_happens_every_year",
     "service::caldav::tests::test_a_cancelled_day_in_utc_gets_no_zone_even_when_the_meeting_it_belongs_to_has_one",
+    "service::caldav::tests::test_a_day_called_off_lands_on_the_line_its_own_form_belongs_on",
     "service::caldav::tests::test_a_mixed_list_of_cancelled_days_splits_by_what_each_value_says",
     "service::caldav::tests::test_a_time_stored_with_a_small_z_still_goes_back_out_saying_it_is_utc",
 ]
