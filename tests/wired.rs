@@ -539,6 +539,38 @@ fn test_a_delete_with_no_recognised_trash_is_refused_rather_than_sent() {
     );
 }
 
+/// The row and the sentence are decided in one place for both handlers.
+///
+/// They have to agree. A delete or a move whose copy landed and whose original
+/// the server then left alone must keep its row, and must say so; the version
+/// before this took the row out for every answer that was not a failure and
+/// wrote its own sentence a few lines below one that said the same event
+/// differently. Two pieces of code answering one question is how the list and
+/// the server came to disagree in the first place.
+#[test]
+fn test_the_delete_and_move_handlers_ask_one_place_what_to_say_and_what_to_do() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    for (signature, asks) in [
+        ("fn spawn_server_change(", "server_delete::after_a_delete"),
+        ("fn spawn_folder_move(", "server_delete::after_a_move"),
+    ] {
+        let handler = body_of(&app, signature);
+        assert!(
+            handler.contains(asks),
+            "{signature} decides for itself what happened, so the sentence and \
+             the row can drift apart again"
+        );
+        for word in ["Deleted", "Moved to", "was not deleted", "was not moved"] {
+            assert!(
+                !handler.contains(&format!("{word}: {{"))
+                    && !handler.contains(&format!("{word} {{")),
+                "{signature} still words an outcome itself: {word}"
+            );
+        }
+    }
+}
+
 /// The calendar sync asks whether anything can send what is still waiting.
 ///
 /// The sweep is a plain function over the account's rows, so it is tested

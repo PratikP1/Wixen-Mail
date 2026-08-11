@@ -2596,3 +2596,56 @@ after = """                    DeletedGoesTo::NoTrashFolderFound => None,"""
 red = [
     "test_a_delete_with_no_recognised_trash_is_refused_rather_than_sent",
 ]
+
+# ── A half-finished move announced as one that never happened ───────────────
+#
+# The fallback move is copy, then flag, then remove. Once the copy has landed,
+# nothing that goes wrong afterwards has lost anything, but it used to come
+# back as a plain failure. The list kept its row and said the message was where
+# it had always been; the server had it in two folders, one of them flagged.
+#
+# So a failure now means nothing on the server changed, and that only holds
+# while the copy is confirmed before anything touches the original. The third
+# record is the one that keeps that order honest.
+
+[[guard]]
+name = "a removal the server refused does not read as a move that never happened"
+file = "src/service/protocols/imap.rs"
+before = """        if let Err(refused) = self.expunge_one(uid).await {
+            return Ok(Moved::CopiedAndFlagged(StillHere::TheServerRefusedIt(
+                refused.to_string(),
+            )));
+        }
+        Ok(Moved::Moved)"""
+after = """        self.expunge_one(uid).await?;
+        Ok(Moved::Moved)"""
+red = [
+    "application::mail_controller::against_a_server_that_answers::test_a_delete_the_server_would_not_finish_comes_back_saying_where_both_copies_are",
+    "service::protocols::imap::against_a_server_that_answers::test_a_move_that_fails_at_the_expunge_leaves_the_message_in_both_places",
+    "service::protocols::imap::against_a_server_that_answers::test_deleting_into_a_trash_the_server_will_not_remove_the_original_from_says_both_places",
+]
+
+[[guard]]
+name = "a message the server still holds unflagged keeps its row in the list"
+file = "src/application/server_delete.rs"
+before = """        Deletion::CopiedToTrashAndNotFlagged(_) => ThenWhat::LeaveTheRow,"""
+after = """        Deletion::CopiedToTrashAndNotFlagged(_) => ThenWhat::MarkItDeletedHere,"""
+red = [
+    "application::server_delete::tests::test_a_message_the_server_still_holds_unflagged_keeps_its_row",
+]
+
+[[guard]]
+name = "the copy is confirmed before the original is touched"
+file = "src/service/protocols/imap.rs"
+before = """        self.copy_message(uid, into).await?;
+        if let Err(refused) = self.set_flag(uid, flag::DELETED, true).await {"""
+after = """        self.set_flag(uid, flag::DELETED, true).await?;
+        if let Err(refused) = self.copy_message(uid, into).await {"""
+red = [
+    "application::mail_controller::against_a_server_that_answers::test_a_delete_the_server_would_not_finish_comes_back_saying_where_both_copies_are",
+    "service::protocols::imap::against_a_server_that_answers::test_a_copy_that_fails_leaves_the_original_untouched",
+    "service::protocols::imap::against_a_server_that_answers::test_a_move_that_fails_at_the_expunge_leaves_the_message_in_both_places",
+    "service::protocols::imap::against_a_server_that_answers::test_a_move_that_fails_at_the_flag_has_already_made_the_copy",
+    "service::protocols::imap::against_a_server_that_answers::test_a_server_without_move_copies_then_flags_then_expunges_in_that_order",
+    "service::protocols::imap::against_a_server_that_answers::test_deleting_into_a_trash_the_server_will_not_remove_the_original_from_says_both_places",
+]

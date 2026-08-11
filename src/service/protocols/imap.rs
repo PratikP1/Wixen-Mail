@@ -185,47 +185,106 @@ pub struct FolderCounts {
     pub unread: u32,
 }
 
+/// Why the original is still sitting in the folder it was moved out of.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StillHere {
+    /// The server can neither move a message nor remove one on its own, so the
+    /// only removal available would take every message anybody flagged in this
+    /// mailbox, including ones flagged from another client. That is other
+    /// people's mail.
+    TheServerCannotRemoveOneMessage,
+    /// The server turned the removal down, in its own words.
+    TheServerRefusedIt(String),
+}
+
+impl StillHere {
+    /// The half of the sentence that says why, without naming any machinery.
+    pub fn spoken(&self) -> String {
+        match self {
+            Self::TheServerCannotRemoveOneMessage => {
+                "this server cannot remove one message at a time".to_string()
+            }
+            Self::TheServerRefusedIt(said) => format!("the server would not remove it: {said}"),
+        }
+    }
+}
+
 /// What actually happened when a message was moved.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// A failure means nothing on the server changed. Anything the server did
+/// change comes back here instead, naming what is where, because the caller
+/// takes the row out of the list on the strength of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Moved {
     /// It is in the new folder and out of the old one.
     Moved,
     /// It is in the new folder and still in the old one, flagged for removal.
+    CopiedAndFlagged(StillHere),
+    /// It is in the new folder and still in the old one, not even flagged.
     ///
-    /// The server has neither MOVE nor UIDPLUS, so there is no way to remove
-    /// the original without removing whatever else in the mailbox somebody
-    /// flagged. Saying so beats leaving somebody to find the second copy.
-    CopiedAndFlagged,
+    /// Nothing is lost and nothing is marked, so the row stays in the list. The
+    /// sentence has to name the copy: a second try makes a second copy, and
+    /// nothing anywhere removes duplicates.
+    CopiedAndNotFlagged(String),
+}
+
+impl Moved {
+    /// What to tell somebody, in the words that describe what happened.
+    pub fn spoken(&self, into: &str) -> String {
+        match self {
+            Self::Moved => format!("Moved to {into}"),
+            Self::CopiedAndFlagged(why) => format!(
+                "Copied to {into}, and still in this folder marked for removal, because {}",
+                why.spoken()
+            ),
+            Self::CopiedAndNotFlagged(said) => format!(
+                "Copied to {into}, and still in this folder as well, because the server \
+                 would not mark it: {said}. Trying again would make a second copy."
+            ),
+        }
+    }
 }
 
 /// What actually happened when a message was deleted.
 ///
-/// Three outcomes rather than a yes or no, because they are three different
-/// facts about where somebody's mail now is, and announcing "deleted" over the
-/// two that are not deletions is the kind of wrong that is only discovered
-/// when the message is needed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Five outcomes rather than a yes or no, because they are five different facts
+/// about where somebody's mail now is, and announcing "deleted" over the four
+/// that are not deletions is the kind of wrong that is only discovered when the
+/// message is needed.
+///
+/// As with a move, a failure means nothing on the server changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Deletion {
     /// In the trash, and recoverable from there.
     MovedToTrash,
     /// Copied to the trash, still in the original folder, flagged for removal.
-    CopiedToTrashAndFlagged,
+    CopiedToTrashAndFlagged(StillHere),
+    /// Copied to the trash and still in the original folder, not even flagged.
+    CopiedToTrashAndNotFlagged(String),
     /// Gone from the server.
     Removed,
     /// Flagged for removal and still in the folder.
-    MarkedOnly,
+    MarkedOnly(StillHere),
 }
 
 impl Deletion {
     /// What to tell somebody, in the words that describe what happened.
-    pub const fn spoken(self) -> &'static str {
+    pub fn spoken(&self) -> String {
         match self {
-            Deletion::MovedToTrash => "Moved to Trash",
-            Deletion::CopiedToTrashAndFlagged => {
-                "Copied to Trash, and still in this folder marked for removal"
-            }
-            Deletion::Removed => "Deleted",
-            Deletion::MarkedOnly => "Marked for removal, and still in this folder",
+            Self::MovedToTrash => "Moved to Trash".to_string(),
+            Self::CopiedToTrashAndFlagged(why) => format!(
+                "Copied to Trash, and still in this folder marked for removal, because {}",
+                why.spoken()
+            ),
+            Self::CopiedToTrashAndNotFlagged(said) => format!(
+                "Copied to Trash, and still in this folder as well, because the server \
+                 would not mark it: {said}. Trying again would make a second copy."
+            ),
+            Self::Removed => "Deleted".to_string(),
+            Self::MarkedOnly(why) => format!(
+                "Marked for removal, and still in this folder, because {}",
+                why.spoken()
+            ),
         }
     }
 }
@@ -975,6 +1034,12 @@ impl ImapSession {
     /// safely. The copy goes first, so a failure leaves the original alone; the
     /// expunge goes last, and if it cannot run the message is in both places
     /// rather than gone. Both are recoverable. Losing it is not.
+    ///
+    /// A failure here means nothing on the server changed. Once the copy has
+    /// landed nothing that goes wrong afterwards is reported as a failure: it
+    /// comes back as an outcome naming where both copies are, because the
+    /// caller takes the row out of the list on the strength of the answer and a
+    /// bare failure left the list and the server disagreeing.
     pub async fn move_message(&mut self, uid: u32, into: &str) -> Result<Moved> {
         self.may_i("move a message")?;
         self.require_selected()?;
@@ -991,14 +1056,19 @@ impl ImapSession {
         }
 
         self.copy_message(uid, into).await?;
-        self.set_flag(uid, flag::DELETED, true).await?;
-        if !self.abilities.uid_expunge {
-            tracing::warn!(
-                "The mail server has neither MOVE nor UIDPLUS, so the copy was made and the original was flagged rather than removed"
-            );
-            return Ok(Moved::CopiedAndFlagged);
+        if let Err(refused) = self.set_flag(uid, flag::DELETED, true).await {
+            return Ok(Moved::CopiedAndNotFlagged(refused.to_string()));
         }
-        self.expunge_one(uid).await?;
+        if !self.abilities.uid_expunge {
+            return Ok(Moved::CopiedAndFlagged(
+                StillHere::TheServerCannotRemoveOneMessage,
+            ));
+        }
+        if let Err(refused) = self.expunge_one(uid).await {
+            return Ok(Moved::CopiedAndFlagged(StillHere::TheServerRefusedIt(
+                refused.to_string(),
+            )));
+        }
         Ok(Moved::Moved)
     }
 
@@ -1077,15 +1147,22 @@ impl ImapSession {
     /// happened rather than reporting "deleted" over any of them.
     ///
     /// `trash` is `None` when the mailbox being deleted from is the trash
-    /// itself, or when the account has no trash folder. Then the message really
-    /// is being removed, and there is nowhere left to move it to.
+    /// itself, or when somebody asked for the message to go outright. Then the
+    /// message really is being removed, and there is nowhere left to move it
+    /// to. An account whose trash this program does not recognise never gets
+    /// here: that is refused before anything connects.
+    ///
+    /// A failure here means nothing on the server changed, exactly as for a
+    /// move. Anything that half happened comes back naming where both copies
+    /// are.
     pub async fn delete_message(&mut self, uid: u32, trash: Option<&str>) -> Result<Deletion> {
         self.may_i("delete a message")?;
 
         if let Some(trash) = trash {
             return Ok(match self.move_message(uid, trash).await? {
                 Moved::Moved => Deletion::MovedToTrash,
-                Moved::CopiedAndFlagged => Deletion::CopiedToTrashAndFlagged,
+                Moved::CopiedAndFlagged(why) => Deletion::CopiedToTrashAndFlagged(why),
+                Moved::CopiedAndNotFlagged(said) => Deletion::CopiedToTrashAndNotFlagged(said),
             });
         }
 
@@ -1095,12 +1172,15 @@ impl ImapSession {
             // EXPUNGE, which removes every message in the mailbox flagged
             // `\Deleted`, including ones flagged by another client or in an
             // earlier session. That is somebody else's mail.
-            tracing::warn!(
-                "The mail server has no UIDPLUS, so the message was marked for deletion and left in place"
-            );
-            return Ok(Deletion::MarkedOnly);
+            return Ok(Deletion::MarkedOnly(
+                StillHere::TheServerCannotRemoveOneMessage,
+            ));
         }
-        self.expunge_one(uid).await?;
+        if let Err(refused) = self.expunge_one(uid).await {
+            return Ok(Deletion::MarkedOnly(StillHere::TheServerRefusedIt(
+                refused.to_string(),
+            )));
+        }
         Ok(Deletion::Removed)
     }
 
@@ -1598,27 +1678,59 @@ mod tests {
     }
 
     #[test]
-    fn test_each_way_of_deleting_is_described_differently() {
-        // Deleting behaves differently depending on what the server allowed,
-        // and somebody who cannot see the folder list has only this sentence
-        // to tell them which of the four happened.
-        let all = [
+    fn test_no_outcome_that_left_a_copy_behind_is_read_out_as_deleted() {
+        // Deleting and moving each end several different ways depending on
+        // what the server allowed, and somebody who cannot see the folder list
+        // has only this sentence to tell them which. Two of these mean the
+        // message is gone; the rest mean it is somewhere, and saying "Deleted"
+        // over any of those is the kind of wrong only discovered when the
+        // message is needed.
+        let refused = || StillHere::TheServerRefusedIt("over quota".to_string());
+        let deletions = [
             Deletion::MovedToTrash,
-            Deletion::CopiedToTrashAndFlagged,
             Deletion::Removed,
-            Deletion::MarkedOnly,
+            Deletion::CopiedToTrashAndFlagged(StillHere::TheServerCannotRemoveOneMessage),
+            Deletion::CopiedToTrashAndFlagged(refused()),
+            Deletion::CopiedToTrashAndNotFlagged("over quota".to_string()),
+            Deletion::MarkedOnly(StillHere::TheServerCannotRemoveOneMessage),
+            Deletion::MarkedOnly(refused()),
         ];
-        let mut said: Vec<&str> = all.iter().map(|d| d.spoken()).collect();
+        let moves = [
+            Moved::Moved,
+            Moved::CopiedAndFlagged(StillHere::TheServerCannotRemoveOneMessage),
+            Moved::CopiedAndFlagged(refused()),
+            Moved::CopiedAndNotFlagged("over quota".to_string()),
+        ];
 
+        let mut said: Vec<String> = deletions.iter().map(Deletion::spoken).collect();
+        said.extend(moves.iter().map(|moved| moved.spoken("Archive")));
         for sentence in &said {
-            assert!(!sentence.trim().is_empty(), "a deletion said nothing");
+            assert!(!sentence.trim().is_empty(), "an outcome said nothing");
         }
-        let before = said.len();
-        said.sort_unstable();
-        said.dedup();
-        assert_eq!(before, said.len(), "two kinds of deletion read the same");
+        let mut distinct = said.clone();
+        distinct.sort();
+        distinct.dedup();
+        assert_eq!(
+            distinct.len(),
+            said.len(),
+            "two outcomes read out the same, so nobody can tell them apart: {said:?}"
+        );
+
         assert!(Deletion::MovedToTrash.spoken().contains("Trash"));
         assert!(Deletion::Removed.spoken().contains("Deleted"));
+        assert_eq!(
+            said.iter().filter(|s| s.contains("Deleted")).count(),
+            1,
+            "something other than the one real deletion says Deleted: {said:?}"
+        );
+        // Everything but the two that really moved the message out.
+        for still_here in [&said[2], &said[3], &said[4], &said[5], &said[6], &said[9]] {
+            assert!(
+                still_here.to_lowercase().contains("still"),
+                "the message is still in the folder and the sentence does not say \
+                 so: {still_here}"
+            );
+        }
     }
 
     #[test]
@@ -2122,7 +2234,10 @@ pub(crate) mod against_a_server_that_answers {
             .expect("the copy to be made");
 
         let transcript = server.transcript().await;
-        assert_eq!(outcome, Moved::CopiedAndFlagged);
+        assert_eq!(
+            outcome,
+            Moved::CopiedAndFlagged(StillHere::TheServerCannotRemoveOneMessage)
+        );
         assert!(
             server.was_told("UID COPY 7 \"Archive\"").await,
             "{transcript:?}"
@@ -2139,14 +2254,17 @@ pub(crate) mod against_a_server_that_answers {
 
     #[tokio::test]
     async fn test_a_copy_that_fails_leaves_the_original_untouched() {
-        // The first of the three failure points. Nothing was flagged, so the
-        // message is exactly where it was and a retry is safe.
+        // The first of the three failure points, and the one that pins the
+        // whole contract: a failure means nothing on the server changed.
+        // Nothing was flagged, so the message is exactly where it was, a retry
+        // is safe, and the list keeping its row agrees with the server.
         let server = a_server_that_refuses("UIDPLUS", "UID COPY").await;
         let mut session = with_the_inbox_open(&server).await;
 
-        let said = the_failure(waiting_for(session.move_message(7, "Archive"), "the move").await);
+        let outcome = waiting_for(session.move_message(7, "Archive"), "the move").await;
 
         let transcript = server.transcript().await;
+        let said = the_failure(outcome);
         assert!(said.contains("copy the message"), "{said}");
         assert!(!server.was_told("UID STORE").await, "{transcript:?}");
         assert!(!server.was_told("EXPUNGE").await, "{transcript:?}");
@@ -2158,16 +2276,22 @@ pub(crate) mod against_a_server_that_answers {
         //
         // The copy is in the target folder. The original is still in the
         // source folder, unflagged. Nobody has lost a message, and that is
-        // what the order buys. What the caller is told is asserted below in
-        // the server's own words, because something follows from it: the
-        // sentence does not mention the copy, so somebody retrying makes a
-        // third one and nothing anywhere removes duplicates.
+        // what the order buys. So this is not a failure: it comes back saying
+        // where both copies are, and the sentence names the copy, because
+        // somebody who retries without knowing makes a third one and nothing
+        // anywhere removes duplicates.
         let server = a_server_that_refuses("UIDPLUS", "UID STORE").await;
         let mut session = with_the_inbox_open(&server).await;
 
-        let said = the_failure(waiting_for(session.move_message(7, "Archive"), "the move").await);
+        let outcome = waiting_for(session.move_message(7, "Archive"), "the move")
+            .await
+            .expect("a copy that landed is not a failure");
 
         let transcript = server.transcript().await;
+        assert!(
+            matches!(outcome, Moved::CopiedAndNotFlagged(_)),
+            "{outcome:?}"
+        );
         assert!(
             server.was_told("UID COPY 7 \"Archive\"").await,
             "{transcript:?}"
@@ -2176,15 +2300,13 @@ pub(crate) mod against_a_server_that_answers {
             !server.was_told("EXPUNGE").await,
             "the original was removed after the flag failed: {transcript:?}"
         );
+        let said = outcome.spoken("Archive");
         assert!(
-            said.contains("change the message"),
-            "the sentence somebody is given: {said}"
+            said.to_lowercase().contains("copy") || said.to_lowercase().contains("copied"),
+            "the sentence hides the copy already made, so a second try makes a \
+             third one: {said}"
         );
-        assert!(
-            !said.to_lowercase().contains("copy"),
-            "the sentence now mentions the copy already made, so the note saying \
-             it does not should go with it: {said}"
-        );
+        assert!(said.contains("Archive"), "{said}");
     }
 
     #[tokio::test]
@@ -2193,16 +2315,25 @@ pub(crate) mod against_a_server_that_answers {
         // original is in the source folder flagged for removal, so nobody has
         // lost anything here either.
         //
-        // What is wrong is what happens next. The caller is told the move
-        // failed, the message list keeps its row, and the original is flagged
-        // on the server and will go with any later bare expunge from any
-        // client. The list and the server give two answers to one question.
+        // It used to come back as a plain failure. The caller was told the move
+        // did not happen, the list kept its row, and the original was flagged
+        // on the server and would go with any later bare expunge from any
+        // client. The list and the server gave two answers to one question.
         let server = a_server_that_refuses("UIDPLUS", "UID EXPUNGE").await;
         let mut session = with_the_inbox_open(&server).await;
 
-        let said = the_failure(waiting_for(session.move_message(7, "Archive"), "the move").await);
+        let outcome = waiting_for(session.move_message(7, "Archive"), "the move")
+            .await
+            .expect("a copy that landed is not a failure");
 
         let transcript = server.transcript().await;
+        assert!(
+            matches!(
+                outcome,
+                Moved::CopiedAndFlagged(StillHere::TheServerRefusedIt(_))
+            ),
+            "{outcome:?}"
+        );
         let copied = server
             .when_told("UID COPY 7 \"Archive\"")
             .await
@@ -2213,8 +2344,14 @@ pub(crate) mod against_a_server_that_answers {
             .unwrap_or_else(|| panic!("the original was never flagged: {transcript:?}"));
         assert!(copied < flagged, "{transcript:?}");
         assert!(
-            said.contains("delete the message"),
-            "the sentence somebody is given: {said}"
+            server.was_told("UID EXPUNGE 7").await,
+            "the removal was never attempted: {transcript:?}"
+        );
+        let said = outcome.spoken("Archive");
+        assert!(said.contains("Archive"), "{said}");
+        assert!(
+            said.to_lowercase().contains("still"),
+            "the sentence does not say the message is still in this folder: {said}"
         );
     }
 
@@ -2375,7 +2512,10 @@ pub(crate) mod against_a_server_that_answers {
             .expect("the marking to happen");
 
         let transcript = server.transcript().await;
-        assert_eq!(outcome, Deletion::MarkedOnly);
+        assert_eq!(
+            outcome,
+            Deletion::MarkedOnly(StillHere::TheServerCannotRemoveOneMessage)
+        );
         assert!(
             server.was_told("UID STORE 7 +FLAGS (\\Deleted)").await,
             "{transcript:?}"
@@ -2383,6 +2523,96 @@ pub(crate) mod against_a_server_that_answers {
         assert!(
             !server.was_told("EXPUNGE").await,
             "a bare expunge would take everything anybody flagged: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_deleting_into_a_trash_the_server_will_not_remove_the_original_from_says_both_places()
+     {
+        // The copy is in the trash and the original is still in the folder,
+        // flagged. Coming back as a plain failure left the list saying the
+        // message was in the inbox and the server saying it was in both.
+        let server = a_server_that_refuses("UIDPLUS", "UID EXPUNGE").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let outcome = waiting_for(session.delete_message(7, Some("Trash")), "the delete")
+            .await
+            .expect("a copy that landed in the trash is not a failure");
+
+        let transcript = server.transcript().await;
+        assert!(
+            matches!(
+                outcome,
+                Deletion::CopiedToTrashAndFlagged(StillHere::TheServerRefusedIt(_))
+            ),
+            "{outcome:?}"
+        );
+        let copied = server
+            .when_told("UID COPY 7 \"Trash\"")
+            .await
+            .unwrap_or_else(|| panic!("no copy was made: {transcript:?}"));
+        let flagged = server
+            .when_told("UID STORE 7 +FLAGS (\\Deleted)")
+            .await
+            .unwrap_or_else(|| panic!("the original was never flagged: {transcript:?}"));
+        assert!(copied < flagged, "{transcript:?}");
+        assert!(
+            server.was_told("UID EXPUNGE 7").await,
+            "the removal was never attempted: {transcript:?}"
+        );
+        let said = outcome.spoken();
+        assert!(said.contains("Trash"), "{said}");
+        assert!(said.to_lowercase().contains("still"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_deleting_in_place_that_the_server_will_not_remove_says_it_is_only_marked() {
+        // Nothing was lost: the message is where it was, carrying a flag. What
+        // it must not say is "Deleted", because it is not deleted and the only
+        // way anybody finds out otherwise is from another device.
+        let server = a_server_that_refuses("UIDPLUS", "UID EXPUNGE").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let outcome = waiting_for(session.delete_message(7, None), "the delete")
+            .await
+            .expect("a message left flagged is not a failure");
+
+        let transcript = server.transcript().await;
+        assert!(
+            matches!(
+                outcome,
+                Deletion::MarkedOnly(StillHere::TheServerRefusedIt(_))
+            ),
+            "{outcome:?}"
+        );
+        let flagged = server
+            .when_told("UID STORE 7 +FLAGS (\\Deleted)")
+            .await
+            .unwrap_or_else(|| panic!("nothing was flagged: {transcript:?}"));
+        let attempted = server
+            .when_told("UID EXPUNGE 7")
+            .await
+            .unwrap_or_else(|| panic!("the removal was never attempted: {transcript:?}"));
+        assert!(flagged < attempted, "{transcript:?}");
+        let said = outcome.spoken();
+        assert!(!said.contains("Deleted"), "{said}");
+        assert!(said.to_lowercase().contains("still"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_delete_whose_flag_the_server_refuses_changes_nothing() {
+        // The other side of the contract. Nothing reached the server, so this
+        // is a failure and stays one, and the list keeps its row.
+        let server = a_server_that_refuses("UIDPLUS", "UID STORE").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let outcome = waiting_for(session.delete_message(7, None), "the delete").await;
+
+        let transcript = server.transcript().await;
+        assert!(outcome.is_err(), "{outcome:?}");
+        assert!(
+            !server.was_told("EXPUNGE").await,
+            "the message was removed after the flag failed: {transcript:?}"
         );
     }
 

@@ -1098,34 +1098,36 @@ mod against_a_server_that_answers {
     }
 
     #[tokio::test]
-    async fn test_a_delete_that_half_happened_still_comes_back_as_a_plain_failure() {
+    async fn test_a_delete_the_server_would_not_finish_comes_back_saying_where_both_copies_are() {
         // The shape worth writing down. On a server without a move command the
         // delete is a copy, a flag and a removal, and the copy goes first so
         // that no single failure loses the message. When the removal is the
         // step that fails, the copy is in the trash and the original is still
         // in the inbox flagged for removal.
         //
-        // The caller is told the delete failed and nothing more. The message
-        // list keeps its row, so the list says the message is in the inbox and
-        // the server says it is in the inbox marked to go and also in the
-        // trash. Two answers to one question, and the sentence somebody is
-        // given mentions neither.
+        // That used to come back as a plain failure. The list kept its row, so
+        // the list said the message was in the inbox and the server said it was
+        // in the inbox marked to go and also in the trash, and the sentence
+        // somebody was given mentioned neither.
         let server = a_server_that_refuses("UIDPLUS", "UID EXPUNGE").await;
         let controller = allowed_on(&server).await;
 
-        let refused = controller.delete_message("INBOX", 7, Some("Trash")).await;
+        let outcome = controller
+            .delete_message("INBOX", 7, Some("Trash"))
+            .await
+            .expect("a copy that landed in the trash is not a failure");
 
         let transcript = server.transcript().await;
-        let Err(said) = refused else {
-            panic!("the removal was refused and the caller was told it worked");
-        };
-        let said = said.to_string();
-        assert!(said.contains("delete the message"), "{said}");
         assert!(
-            !said.to_lowercase().contains("trash"),
-            "the sentence now says where the copy went, so this note should go \
-             with it: {said}"
+            matches!(outcome, Deletion::CopiedToTrashAndFlagged(_)),
+            "{outcome:?}"
         );
+        let said = outcome.spoken();
+        assert!(
+            said.to_lowercase().contains("trash"),
+            "the sentence does not say where the copy went: {said}"
+        );
+        assert!(said.to_lowercase().contains("still"), "{said}");
         let copied = server
             .when_told("UID COPY 7 \"Trash\"")
             .await

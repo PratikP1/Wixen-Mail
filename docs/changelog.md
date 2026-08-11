@@ -369,6 +369,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A delete or a move the server only half carried out was announced as one
+  that never happened.** On a mail server that cannot move a message in one
+  command, moving one is three steps: copy it, mark the original, remove the
+  original. The copy goes first so that nothing is ever lost. If the server then
+  refused to mark or to remove the original, you were told the message was not
+  moved and not deleted, and the list kept showing it where it had always been.
+  The server had it in two folders at that point, and on another device you
+  would have found both.
+
+  Now each of those endings has words of its own. You are told the copy is in the
+  Trash, or in the folder you chose, and that the message is still in this folder
+  as well, and why. Where the original was left untouched the sentence says that
+  trying again would make a second copy, because nothing anywhere removes
+  duplicates. Where the server marked the original, the row is marked here too,
+  so the list and the server say the same thing.
+
+  A failure now means one thing only: nothing on the server changed. The message
+  is exactly where it was and trying again is safe.
+
 - **Delete destroyed the message on any account whose Trash folder this program
   did not recognise.** Delete is meant to move a message to the Trash, where it
   can be got back. Working out where the Trash is gave one answer for "somebody

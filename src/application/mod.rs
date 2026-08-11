@@ -45,6 +45,7 @@ pub mod reply;
 pub mod running;
 pub mod search;
 pub mod sent_copy;
+pub mod server_delete;
 pub mod sign_off;
 pub mod spell_session;
 pub mod summing_up;

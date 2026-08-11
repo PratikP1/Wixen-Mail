@@ -7339,23 +7339,20 @@ fn spawn_folder_move(
         let _ = handle.block_on(controller.disconnect_imap());
 
         match outcome {
-            Ok(None) => say(UIUpdate::StatusUpdated(format!("Copied to {into}: {subject}"))),
+            Ok(None) => say(UIUpdate::StatusUpdated(format!(
+                "Copied to {into}: {subject}"
+            ))),
             Ok(Some(moved)) => {
-                // Only now does the row leave the list, because only now is the
-                // message somewhere else.
-                say(UIUpdate::MessageDeletedFromCache(message_row_id));
-                say(UIUpdate::StatusUpdated(match moved {
-                    crate::service::protocols::imap::Moved::Moved => {
-                        format!("Moved to {into}: {subject}")
-                    }
-                    // The server has neither MOVE nor UIDPLUS, so the copy was
-                    // made and the original was flagged rather than removed.
-                    // Saying "moved" over a message that is still in both
-                    // folders is the kind of wrong found from another device.
-                    crate::service::protocols::imap::Moved::CopiedAndFlagged => format!(
-                        "Copied to {into} and marked for removal here, because this server cannot move one message at a time: {subject}"
-                    ),
-                }));
+                // What happens to the row and what is said are one decision,
+                // made in one place, because they have to agree. A move whose
+                // copy landed and whose original was left untouched keeps its
+                // row: taking it out would be the list saying the message left
+                // a folder it is still sitting in.
+                let next = crate::application::server_delete::after_a_move(&moved, &into, &subject);
+                if next.then == crate::application::server_delete::ThenWhat::MarkItDeletedHere {
+                    say(UIUpdate::MessageDeletedFromCache(message_row_id));
+                }
+                say(UIUpdate::StatusUpdated(next.said));
             }
             Err(e) => fail(e.to_string()),
         }
@@ -8199,7 +8196,7 @@ enum ServerChange {
 /// somebody a message came back that never went anywhere.
 fn change_was_refused(change: &ServerChange, reason: &str) -> String {
     match change {
-        ServerChange::Deleted(_) => format!("Nothing was deleted: {reason}"),
+        ServerChange::Deleted(_) => crate::application::server_delete::nothing_changed(reason),
         _ => format!("The change did not reach the server, so it has been undone here: {reason}"),
     }
 }
@@ -8424,30 +8421,26 @@ fn spawn_server_change(
         match outcome {
             Ok(deletion) => {
                 if let Some(deletion) = deletion {
-                    // Only now does the row leave the list, because only now
-                    // has the server acted on it.
-                    say(UIUpdate::MessageDeletedFromCache(message_row_id));
-                    // What actually happened, in the words for it. Announcing
+                    // What happens to the row and what is said are one
+                    // decision, because they have to agree. Announcing
                     // "deleted" over a message that moved to the trash, or one
-                    // still sitting in the folder flagged, is the kind of wrong
-                    // that is only discovered from another device.
-                    say(UIUpdate::StatusUpdated(format!(
-                        "{}: {subject}",
-                        deletion.spoken()
-                    )));
+                    // still sitting in the folder flagged, and taking the row
+                    // out for a message the server never touched, are the same
+                    // mistake seen from two sides.
+                    let next =
+                        crate::application::server_delete::after_a_delete(&deletion, &subject);
+                    if next.then == crate::application::server_delete::ThenWhat::MarkItDeletedHere {
+                        say(UIUpdate::MessageDeletedFromCache(message_row_id));
+                    }
+                    say(UIUpdate::StatusUpdated(next.said));
                     return;
                 }
                 say(UIUpdate::StatusUpdated(change.done(&subject)));
             }
-            Err(e) => {
-                if matches!(change, ServerChange::Deleted(_)) {
-                    say(UIUpdate::ErrorOccurred(format!(
-                        "{subject} was not deleted: {e}"
-                    )));
-                } else {
-                    refuse(e.to_string());
-                }
-            }
+            // A failure now means nothing on the server changed, so the one
+            // sentence for that covers a delete as well. There used to be a
+            // second one here saying it differently.
+            Err(e) => refuse(e.to_string()),
         }
     });
 }
