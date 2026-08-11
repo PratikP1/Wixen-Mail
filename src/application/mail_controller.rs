@@ -1079,6 +1079,233 @@ mod against_a_server_that_answers {
         );
     }
 
+    // ── Past an open gate ───────────────────────────────────────────────────
+    //
+    // Everything above measures which folder was opened, which is the same
+    // whether the write then happened or was refused. These measure the write
+    // itself, which had never run anywhere at this layer: there is no
+    // tombstone here, no resurrection and no waiting state, so what a partly
+    // finished change does to somebody's only copy of a message was written
+    // down nowhere.
+    //
+    // The session is opened by the test and allowed by the test, because
+    // signing in reads the account's setting out of the profile of whoever is
+    // running the suite. That is why every write above is called with its
+    // answer thrown away.
+
+    use crate::service::protocols::imap::against_a_server_that_answers::{
+        a_server_that_can, a_server_that_refuses, reading_only_on,
+        signed_in_to as a_session_allowed_on,
+    };
+
+    /// A controller already holding a session somebody else opened.
+    ///
+    /// The only way to measure a write past the gate. Signing in decides
+    /// whether a session may change anything by reading the account's setting,
+    /// and that reading goes to the settings file in the profile of whoever is
+    /// running the tests and to a value fixed once for the whole test process
+    /// by another test in this crate. Neither is something a test can decide,
+    /// so the test opens the session itself, allows it in its own words, and
+    /// hands it over.
+    ///
+    /// Built here rather than as a method beside the real one on purpose. The
+    /// check that nothing but the sign-in opens the mail gate reads this file
+    /// down to where its tests begin, and a test-only method above them would
+    /// end that reading early and leave the check counting nothing.
+    fn holding(session: ImapSession) -> MailController {
+        MailController {
+            imap_session: Arc::new(Mutex::new(Some(session))),
+            pop3_session: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// A controller holding a session that may change things.
+    async fn allowed_on(server: &crate::common::answering::Conversation) -> MailController {
+        holding(a_session_allowed_on(server).await)
+    }
+
+    #[tokio::test]
+    async fn test_deleting_a_message_past_an_open_gate_opens_its_folder_then_moves_it() {
+        // A UID means a different message in every mailbox, so a delete sent
+        // without opening the folder it names removes somebody else's mail
+        // under the right subject line.
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let controller = allowed_on(&server).await;
+
+        let outcome = controller
+            .delete_message("INBOX", 7, Some("Trash"))
+            .await
+            .expect("the delete to happen");
+
+        let transcript = server.transcript().await;
+        assert_eq!(outcome, Deletion::MovedToTrash);
+        let opened = server
+            .when_told("SELECT \"INBOX\"")
+            .await
+            .unwrap_or_else(|| panic!("the folder was never opened: {transcript:?}"));
+        let moved = server
+            .when_told("UID MOVE 7 \"Trash\"")
+            .await
+            .unwrap_or_else(|| panic!("the message was never moved: {transcript:?}"));
+        assert!(
+            opened < moved,
+            "the message was moved out of whatever folder was already open: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_delete_the_server_refuses_comes_back_as_a_failure_and_changes_nothing() {
+        // Nothing was copied and nothing was flagged, so the message is
+        // exactly where it was and the list keeping its row agrees with the
+        // server.
+        let server = a_server_that_refuses("MOVE UIDPLUS", "UID MOVE").await;
+        let controller = allowed_on(&server).await;
+
+        let refused = controller.delete_message("INBOX", 7, Some("Trash")).await;
+
+        let transcript = server.transcript().await;
+        assert!(refused.is_err(), "the server refused it and nobody noticed");
+        for command in ["UID COPY", "UID STORE", "EXPUNGE"] {
+            assert!(
+                !server.was_told(command).await,
+                "a refused delete still changed something: {transcript:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_delete_that_half_happened_still_comes_back_as_a_plain_failure() {
+        // The shape worth writing down. On a server without a move command the
+        // delete is a copy, a flag and a removal, and the copy goes first so
+        // that no single failure loses the message. When the removal is the
+        // step that fails, the copy is in the trash and the original is still
+        // in the inbox flagged for removal.
+        //
+        // The caller is told the delete failed and nothing more. The message
+        // list keeps its row, so the list says the message is in the inbox and
+        // the server says it is in the inbox marked to go and also in the
+        // trash. Two answers to one question, and the sentence somebody is
+        // given mentions neither.
+        let server = a_server_that_refuses("UIDPLUS", "UID EXPUNGE").await;
+        let controller = allowed_on(&server).await;
+
+        let refused = controller.delete_message("INBOX", 7, Some("Trash")).await;
+
+        let transcript = server.transcript().await;
+        let Err(said) = refused else {
+            panic!("the removal was refused and the caller was told it worked");
+        };
+        let said = said.to_string();
+        assert!(said.contains("delete the message"), "{said}");
+        assert!(
+            !said.to_lowercase().contains("trash"),
+            "the sentence now says where the copy went, so this note should go \
+             with it: {said}"
+        );
+        let copied = server
+            .when_told("UID COPY 7 \"Trash\"")
+            .await
+            .unwrap_or_else(|| panic!("no copy was made: {transcript:?}"));
+        let flagged = server
+            .when_told("UID STORE 7 +FLAGS (\\Deleted)")
+            .await
+            .unwrap_or_else(|| panic!("the original was never flagged: {transcript:?}"));
+        assert!(copied < flagged, "{transcript:?}");
+    }
+
+    #[tokio::test]
+    async fn test_saving_a_copy_of_a_sent_message_appends_it_where_it_was_told() {
+        // No folder is opened on purpose. The caller of this is usually in the
+        // middle of something else, and opening a mailbox here would change
+        // which one is open underneath them.
+        let server = a_server_that_can("UIDPLUS").await;
+        let controller = allowed_on(&server).await;
+        let raw = b"From: me@example.com\r\nSubject: Sent\r\n\r\nbody\r\n";
+
+        controller
+            .append_message("Sent", Some("(\\Seen)"), raw)
+            .await
+            .expect("the copy to be saved");
+
+        let transcript = server.transcript().await;
+        assert!(
+            server
+                .was_told(&format!("APPEND \"Sent\" (\\Seen) {{{}}}", raw.len()))
+                .await,
+            "{transcript:?}"
+        );
+        assert!(
+            transcript
+                .iter()
+                .any(|entry| entry.as_bytes() == raw.as_slice()),
+            "the copy is not the message that was sent: {transcript:?}"
+        );
+        assert!(
+            !server.was_told("SELECT").await,
+            "saving a copy changed which folder was open: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_saving_a_copy_says_nothing_to_the_server_with_the_gate_closed() {
+        let server = a_server_that_can("UIDPLUS").await;
+        let controller = holding(reading_only_on(&server).await);
+
+        let refused = controller
+            .append_message(
+                "Sent",
+                Some("(\\Seen)"),
+                b"From: me@example.com\r\n\r\nbody\r\n",
+            )
+            .await;
+
+        let Err(said) = refused else {
+            panic!("a copy was saved with the gate closed");
+        };
+        assert!(
+            matches!(said, Error::Security(_)),
+            "a refusal came back as something other than a refusal: {said}"
+        );
+        let said = said.to_string();
+        assert!(said.contains("save a copy of the message"), "{said}");
+        assert!(said.contains("Allow Changes"), "{said}");
+        assert!(
+            !server.was_told("APPEND").await,
+            "a copy reached the server with the gate closed: {:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_replacing_a_saved_draft_opens_its_folder_first() {
+        // Sweeping a draft's identifier through whatever mailbox happened to
+        // be open deletes its twin somewhere else. Asserted on the answer as
+        // well as the order, which the older check could not do: it threw the
+        // answer away and so could not tell a refusal from a success.
+        let server = a_server_that_can("UIDPLUS").await;
+        let controller = allowed_on(&server).await;
+
+        let removed = controller
+            .remove_by_message_id("Drafts", "<d@x>")
+            .await
+            .expect("the previous copy to be removed");
+
+        let transcript = server.transcript().await;
+        assert_eq!(removed, 1);
+        let opened = server
+            .when_told("SELECT \"Drafts\"")
+            .await
+            .unwrap_or_else(|| panic!("the folder was never opened: {transcript:?}"));
+        let searched = server
+            .when_told("UID SEARCH HEADER MESSAGE-ID \"<d@x>\"")
+            .await
+            .unwrap_or_else(|| panic!("nothing was searched for: {transcript:?}"));
+        assert!(
+            opened < searched,
+            "the identifier was swept through whatever folder was open: {transcript:?}"
+        );
+    }
+
     #[tokio::test]
     async fn test_ending_a_pop3_session_sends_quit_and_leaves_nothing_connected() {
         // POP3 has no other kind of delete: DELE only marks and QUIT commits.

@@ -2386,3 +2386,45 @@ after = """    for bcc in &email.bcc {
 red = [
     "service::protocols::smtp::against_a_server_that_answers::test_a_blind_copy_reaches_the_server_and_never_the_message",
 ]
+
+# ── Which mailbox a change is applied to ────────────────────────────────────
+#
+# A UID means a different message in every mailbox, so a change sent without
+# opening the folder it names lands on whatever was open, under the right
+# subject line. The older check for this threw the answer away and so could not
+# tell a refusal from a success; these read the transcript of a server that
+# answers.
+
+[[guard]]
+name = "a delete opens the folder it names before it removes anything"
+file = "src/application/mail_controller.rs"
+before = """        let session = &mut *guard;
+        if session.selected_folder() != Some(folder) {
+            session.select_folder(folder).await?;
+        }
+        session.delete_message(uid, trash).await"""
+after = """        let session = &mut *guard;
+        session.delete_message(uid, trash).await"""
+red = [
+    "application::mail_controller::against_a_server_that_answers::test_a_delete_that_half_happened_still_comes_back_as_a_plain_failure",
+    "application::mail_controller::against_a_server_that_answers::test_changing_a_message_opens_the_folder_it_names_before_asking",
+    "application::mail_controller::against_a_server_that_answers::test_deleting_a_message_past_an_open_gate_opens_its_folder_then_moves_it",
+]
+
+# ── And which mailbox a saved copy leaves alone ─────────────────────────────
+#
+# Saving a copy of a sent message deliberately opens nothing. Its caller is
+# usually in the middle of reading a folder, and opening one here changes which
+# mailbox is open underneath them.
+
+[[guard]]
+name = "saving a copy does not change which folder is open"
+file = "src/application/mail_controller.rs"
+before = """        let session = &mut *guard;
+        session.append_message(into, flags, raw).await"""
+after = """        let session = &mut *guard;
+        session.select_folder(into).await?;
+        session.append_message(into, flags, raw).await"""
+red = [
+    "application::mail_controller::against_a_server_that_answers::test_saving_a_copy_of_a_sent_message_appends_it_where_it_was_told",
+]
