@@ -198,6 +198,13 @@ never reached a compiler, so a third of that run was untested and its summary
 said so nowhere. A run whose build failed before anything was changed used to
 print that every mutant was caught and exit clean.
 
+A compiler that never starts is this machine failing to start a process, and it
+says nothing about the mutant. It comes and goes: six mutants that never built
+on 2026-08-11 all built when the same twelve were asked again twenty minutes
+later, and five of the six were caught. So the answer to that refusal is to run
+those files again, not to change the code and not to lower the check. What
+causes it is not diagnosed.
+
 ```bash
 cargo llvm-cov --lib --summary-only
 ```
