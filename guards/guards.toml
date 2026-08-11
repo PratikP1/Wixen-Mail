@@ -2237,3 +2237,36 @@ after = """    let nth_of = |onset: &NaiveDateTime| (onset.day() - 1) / 7;"""
 red = [
     "service::vtimezone::tests::test_the_rules_for_a_zone_that_counts_weeks_forward",
 ]
+
+# ── A privacy claim no marker word puts at installation time ─────────────────
+#
+# The privacy page opened by saying nothing in this program sends your
+# messages, contacts, calendar or links to anybody. With the shipped answer the
+# contacts, the calendar and the tasks all go to the provider somebody signed
+# in to, so the sentence was false, and it carried no word putting it at
+# installation time, so the check that reads every other such claim walked past
+# it for the whole of this project's life.
+#
+# Both of these run against the house style suite rather than the library,
+# because that is where a rule about what the tree says lives. See `Guard.suite`
+# in scripts/guards.py.
+
+[[guard]]
+name = "a sweeping refusal is read without any word dating it"
+file = "tests/house_style.rs"
+suite = "house_style"
+before = """const A_SWEEP_OPENS_WITH: &[&str] = &["nothing", "nobody", "none", "never", "no", "nowhere"];"""
+after = """const A_SWEEP_OPENS_WITH: &[&str] = &[];"""
+red = [
+    "test_the_new_installation_check_can_tell_the_two_apart",
+]
+
+[[guard]]
+name = "a word that opens a sweep is a word the reading finds a refusal in"
+file = "tests/house_style.rs"
+before = """const A_SWEEP_OPENS_WITH: &[&str] = &["nothing", "nobody", "none", "never", "no", "nowhere"];"""
+after = """const A_SWEEP_OPENS_WITH: &[&str] = &["nothing", "nobody", "none", "never", "no", "nought"];"""
+suite = "house_style"
+red = [
+    "test_a_sweeping_negative_is_a_word_the_reading_already_knows",
+]

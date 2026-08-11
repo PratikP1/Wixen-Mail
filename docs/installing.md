@@ -107,8 +107,10 @@ Uninstall from Settings, then Apps, then Installed apps. Find Wixen Mail and cho
 Uninstall.
 
 **Uninstalling removes everything.** The program, your accounts, your settings, the
-downloaded mail, and your saved passwords and sign-in tokens. Nothing is left to clean up
-later, and nothing is left to find you later either.
+downloaded mail, and your saved passwords and sign-in tokens. It writes a note in your
+temporary folder every time, `wixen-mail-uninstall.log`, saying what went and naming
+anything it could not remove, so a leftover is something you are told about rather than
+something you find.
 
 Your mail itself is not affected. It is on your provider's server, and Wixen Mail only ever
 held a copy. Signing in from a new installation, or from any other mail application, brings

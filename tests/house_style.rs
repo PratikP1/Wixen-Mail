@@ -900,19 +900,111 @@ fn a_preposition_here(words: &[(usize, String)], at: usize) -> bool {
 /// [`without_the_names_that_are_labels`]: the "mail" in the product's name
 /// says nothing about which answer a sentence means.
 fn which_answer_it_is_about(sentence: &str) -> Answer {
-    let lowered = without_the_names_that_are_labels(sentence).to_lowercase();
-    let words = words_of(&lowered);
-    let named = |names: &[&str]| words.iter().any(|(_, word)| names.contains(&word.as_str()));
-    let mail = named(NAMES_THE_MAIL_ANSWER);
-    let other = named(NAMES_THE_OTHER_ANSWER)
-        || lowered.contains("personal information")
-        || lowered.contains("address book");
-
-    match (mail, other) {
+    match answers_named(sentence) {
         (true, false) => Answer::Mail,
         (false, true) => Answer::PersonalInformation,
         _ => Answer::Either,
     }
+}
+
+/// Which answers a sentence names: the mail one, and the other one.
+///
+/// Split out from [`which_answer_it_is_about`] because the sweep below has to
+/// tell "names both" from "names neither", and that function collapses them
+/// into the same [`Answer::Either`]. Naming both is the sweep it is looking
+/// for; naming neither is the contact-group and Safe Browsing prose it must
+/// leave alone. Two readings of that one question is how a sentence gets
+/// counted as sweeping about both while being judged against the mail half,
+/// which is false and quiet at the same time, so there is one reading and both
+/// callers use it.
+fn answers_named(sentence: &str) -> (bool, bool) {
+    let lowered = without_the_names_that_are_labels(sentence).to_lowercase();
+    let words = words_of(&lowered);
+    let named = |names: &[&str]| words.iter().any(|(_, word)| names.contains(&word.as_str()));
+    (
+        named(NAMES_THE_MAIL_ANSWER),
+        named(NAMES_THE_OTHER_ANSWER)
+            || lowered.contains("personal information")
+            || lowered.contains("address book"),
+    )
+}
+
+/// Words a sentence can open with that claim every configuration there is.
+///
+/// A sentence whose subject is one of these is not describing a setting, it is
+/// refusing on behalf of the whole program, so it claims the shipped state
+/// without carrying any of the words in
+/// [`PUTS_A_SENTENCE_AT_INSTALLATION_TIME`]. That is what made the twelfth
+/// copy invisible.
+///
+/// The opening word and nothing else, because a negative anywhere in a
+/// sentence is ordinary and true prose is full of them: read as a door on its
+/// own this found twenty-four sentences in the tree and nearly all of them
+/// were right.
+///
+/// "not" and "cannot" are deliberately out. English does not put them at the
+/// front of a sentence as its subject, and the words that do go there that way
+/// were measured. Every word here is also in [`NOTHING_GOES_OUT`], which
+/// [`test_a_sweeping_negative_is_a_word_the_reading_already_knows`] holds
+/// them to: a word that opens this door on a sentence the reading then finds
+/// no negative in gets that sentence judged backwards.
+const A_SWEEP_OPENS_WITH: &[&str] = &["nothing", "nobody", "none", "never", "no", "nowhere"];
+
+/// Words for a far end with nobody left outside it.
+///
+/// "sends your contacts to anybody" names one answer and still sweeps, because
+/// the far end is everybody there is. These are checked instead of adding them
+/// to [`THE_FAR_END`], which was the obvious-looking fix and the wrong one:
+/// "It is on by default because it sends nothing to anybody", on this
+/// project's own privacy page, is true and about a reader that never touches
+/// the network, and widening the far end names it.
+///
+/// "somebody" is out for the same reason from the other side. It is one
+/// person rather than all of them, and "Nothing sends a contact group to
+/// Google or Microsoft, so the sentence promising it would come back was
+/// telling somebody to wait" is true.
+const A_UNIVERSAL_FAR_END: &[&str] = &["anybody", "anyone", "everybody", "everyone", "anywhere"];
+
+/// Where a sentence's sweeping refusal opens, when it makes one.
+///
+/// Three things at once, and each was measured on its own against the whole
+/// tree before the other two were added to it.
+///
+/// It opens with a word from [`A_SWEEP_OPENS_WITH`], read after the label
+/// names are blanked, so the claim is the sentence's subject rather than a
+/// negative buried in a clause. Alone: twenty-four sentences, nearly all true.
+///
+/// And it sweeps rather than speaking about one thing, by naming both answers
+/// or by naming one and reaching a far end with nobody outside it. Naming both
+/// alone, with nothing about how the sentence opens, was seven false alarms,
+/// two of them inside snippets this file already pins as true. Both of the
+/// above but letting a sentence through that names one answer and no universal
+/// far end was four, "Nothing sends a contact group to Google or Microsoft"
+/// among them, which is true and has no sync path to be false about.
+///
+/// What that leaves quiet, so a quiet run is not read for more than it is: a
+/// sweeping refusal naming only tasks, only contacts or only the calendar,
+/// with an ordinary far end. "Nothing here sends a contact to a provider" is
+/// false against the shipped answer and walks past, because the same shape
+/// with "contact group" in it is true, and no reading here can tell those two
+/// apart.
+///
+/// The offset handed back is into the sentence with the label names blanked,
+/// which is where [`what_it_says_reaches_a_provider`] re-blanks and reads. The
+/// two agree because [`without_the_names_that_are_labels`] blanks rather than
+/// cuts, and every offset stays where it was. Change that to cutting and this
+/// door and both of the older ones land on the wrong word.
+fn where_the_sweep_opens(sentence: &str) -> Option<usize> {
+    let readable = without_the_names_that_are_labels(sentence);
+    let (at, opener) = words_of(&readable).into_iter().next()?;
+    if !A_SWEEP_OPENS_WITH.contains(&opener.as_str()) {
+        return None;
+    }
+    let (mail, other) = answers_named(sentence);
+    let reaches_everybody = words_of(&readable)
+        .iter()
+        .any(|(_, word)| A_UNIVERSAL_FAR_END.contains(&word.as_str()));
+    ((mail && other) || ((mail || other) && reaches_everybody)).then_some(at)
 }
 
 /// One sentence claiming what a new installation lets out.
@@ -976,23 +1068,59 @@ fn claims_about_a_new_installation(path: &Path, text: &str) -> Vec<Claim> {
         // shipped answer says "default" or "ships" and the words above read
         // it.
         let a_document = path.extension().is_some_and(|kind| kind == "md");
-        if !a_document {
-            continue;
+        if a_document {
+            for at in until_a_permission_at(&lowered) {
+                let (start, end) = the_sentence_around(&prose.text, at);
+                if said_already.contains(&(start, end))
+                    || !the_sentence_is_read(&prose, path, &prose.text[start..end])
+                {
+                    continue;
+                }
+                said_already.push((start, end));
+                let claimed =
+                    the_shipped_state_before_the_until(&prose.text[start..end], at - start);
+                claims.push(Claim {
+                    line: prose.line_at(at),
+                    answer: which_answer_it_is_about(&claimed),
+                    reaches: what_it_says_reaches_a_provider(&claimed, at - start),
+                    sentence: prose.text[start..end].trim().to_string(),
+                });
+            }
         }
-        for at in until_a_permission_at(&lowered) {
-            let (start, end) = the_sentence_around(&prose.text, at);
+        // And a sentence can put itself at installation time by covering every
+        // moment there is. "Nothing in Wixen Mail sends your messages, your
+        // contacts, your calendar or your links to anybody" needs no date on
+        // it, because a refusal made on behalf of the whole program has
+        // already claimed the shipped answer along with every other. That is
+        // [`where_the_sweep_opens`], and it is why the twelfth copy sat at the
+        // top of the privacy page unread while two loops above it read the
+        // rest of the tree.
+        //
+        // Source as well as documents, unlike the "until" above. That one is
+        // documents-only because a source comment's "until" describes the
+        // state the test beside it just built; a sweep describes the program,
+        // and a comment claiming the program refuses everybody is as wrong in
+        // source as on a page.
+        //
+        // Last, and sharing `said_already` with both loops above, so a
+        // sentence carrying a marker and opening with a negative is one claim
+        // and not two.
+        for (start, end) in sentence_spans_of(&prose.text) {
             if said_already.contains(&(start, end))
                 || !the_sentence_is_read(&prose, path, &prose.text[start..end])
             {
                 continue;
             }
+            let sentence = prose.text[start..end].trim().to_string();
+            let Some(opens_at) = where_the_sweep_opens(&sentence) else {
+                continue;
+            };
             said_already.push((start, end));
-            let claimed = the_shipped_state_before_the_until(&prose.text[start..end], at - start);
             claims.push(Claim {
-                line: prose.line_at(at),
-                answer: which_answer_it_is_about(&claimed),
-                reaches: what_it_says_reaches_a_provider(&claimed, at - start),
-                sentence: prose.text[start..end].trim().to_string(),
+                line: prose.line_at(start),
+                answer: which_answer_it_is_about(&sentence),
+                reaches: what_it_says_reaches_a_provider(&sentence, opens_at),
+                sentence,
             });
         }
     }
@@ -1351,6 +1479,43 @@ fn test_the_new_installation_check_can_tell_the_two_apart() {
             "Wixen Mail starts with sending switched off for exactly that reason. You can\n\
              turn it on, and the next section says how, but read this first.\n",
         ),
+        // The twelfth copy, and the first that put itself at no time at all.
+        // It opened the privacy page for the whole of this project's life,
+        // five lines above a table on the same page saying the opposite, and
+        // every check in this file walked past it: it carries no word putting
+        // it at installation time, and it did not need one, because a sentence
+        // saying nothing is sent to anybody has already claimed every
+        // configuration there is, the shipped one among them.
+        (
+            "docs/privacy.md",
+            "Short version: your mail goes to your mail provider and nowhere else. Nothing in Wixen Mail\n\
+             sends your messages, your contacts, your calendar or your links to anybody, and there is no\n\
+             analytics, no telemetry, no crash reporting service and no update check that says who you are.\n",
+        ),
+        // Wordings nobody has written yet, one per shape the sweep can take,
+        // so this is a reading rather than the one sentence above written out
+        // twice. Each was measured walking past before the door was built.
+        //
+        // One answer named, with a far end that takes in everybody there is.
+        (
+            "docs/privacy.md",
+            "Nothing in Wixen Mail sends your contacts to anybody.\n",
+        ),
+        // Both answers named, and no word for a universal far end anywhere in
+        // it. Naming both is the sweep on its own: a sentence refusing for
+        // mail and for everything else at once has left itself nowhere to be
+        // true.
+        (
+            "docs/privacy.md",
+            "Nothing in Wixen Mail sends your mail or your calendar to a provider.\n",
+        ),
+        // A different opening word, and the permission held nine words from
+        // the negative that turns it, so the nearest-word reading is what
+        // decides it rather than the two-word negation window.
+        (
+            "docs/privacy.md",
+            "No change to your contacts or your messages is sent to a provider.\n",
+        ),
     ];
     for (path, writing) in false_when_it_was_written {
         let claim = the_claim_in(path, writing)
@@ -1440,6 +1605,18 @@ of them.
         (
             "docs/ALPHA_TESTING.md",
             "Wixen Mail sends no mail to a server until you allow it.\n",
+        ),
+        // The correction that replaced the twelfth copy. "Those three" is
+        // load-bearing: it keeps the reason attached to the contacts, the
+        // calendar and the tasks, which really are allowed, and off the mail,
+        // which is not. Held to the code here the way every other correction
+        // in this file is, so if the shipped answer ever changes the page
+        // fails the build instead of going quietly wrong again.
+        (
+            "docs/privacy.md",
+            "Short version: your mail goes to your mail provider, and your contacts, your calendar and\n\
+             your tasks go to the provider you signed in to, because a new installation allows changes\n\
+             to those three to be sent.\n",
         ),
     ];
     for (path, writing) in true_and_left_alone {
@@ -1581,6 +1758,44 @@ of them.
              \x20       // Allow Changes is on; Outlook is owed it and will not get it while\n\
              \x20       // this setting is off.\n",
         ),
+        // True absolutes, pinned because the sweep is a door onto exactly the
+        // shape they share and each one is right. Every one is real prose from
+        // this tree, and every one was a false alarm under a weaker version of
+        // that door.
+        //
+        // One answer named, no far end that takes in everybody, and true:
+        // there is no path anywhere that sends a contact group. This is what
+        // "somebody" being left out of the universal far end buys.
+        (
+            "src/application/new_item.rs",
+            "        // Nothing sends a contact group to Google or Microsoft, so the\n\
+             \x20       // sentence promising it would come back at the next sync was telling\n\
+             \x20       // somebody to wait for something that is never going to happen.\n",
+        ),
+        // The tripwire for anybody tempted to close the twelfth copy by adding
+        // "anybody" to the far end instead. This sentence is on the same page,
+        // it is about a reader that works over text already in the message,
+        // and it is true. Widen the far end and this is named.
+        (
+            "docs/privacy.md",
+            "It is on by default because it sends nothing to anybody.\n",
+        ),
+        // Also true, also on that page, and quiet because the act of writing
+        // is not in it: what Safe Browsing does with an ordinary message is
+        // nothing.
+        (
+            "docs/privacy.md",
+            "For ordinary mail, no link ever matches, and so nothing is sent to Google at all.\n",
+        ),
+        // Opens with a sweeping negative, names the act and the far end, and
+        // names neither answer, so it is a sentence about permission rather
+        // than about what a new installation allows. Reading the opening word
+        // without asking what the sentence sweeps over names this, and it is
+        // true, and it is a correction this file already pins.
+        (
+            "docs/comparison.md",
+            "**Nothing changes at a server without permission, and permission is split by\ncost.**\n",
+        ),
     ] {
         assert!(
             the_claim_in(path, writing).is_none(),
@@ -1609,8 +1824,35 @@ of them.
         "the comparison page is not being read, and the tenth copy was in it"
     );
     assert!(
+        walked.iter().any(|f| f.ends_with("privacy.md")),
+        "the privacy page is not being read, and the twelfth copy was in it"
+    );
+    assert!(
         !walked.iter().any(|f| f.ends_with("house_style.rs")),
         "this file is in the walk, so the sentences above would fail it"
+    );
+}
+
+#[test]
+fn test_a_sweeping_negative_is_a_word_the_reading_already_knows() {
+    // Two lists about one question, which is the shape every data-losing bug
+    // in this repository has had. `A_SWEEP_OPENS_WITH` is a writer saying this
+    // word is an absolute refusal; `NOTHING_GOES_OUT` is the reader that then
+    // has to find a refusal in the sentence it opened. Let them drift and the
+    // door opens on a sentence whose reading finds no negative, and the claim
+    // comes back as permission or as nothing at all, which is a false sentence
+    // called true or dropped in silence.
+    let unknown: Vec<&str> = A_SWEEP_OPENS_WITH
+        .iter()
+        .filter(|word| !NOTHING_GOES_OUT.contains(word))
+        .copied()
+        .collect();
+
+    assert!(
+        unknown.is_empty(),
+        "these open the sweep and say nothing to the reading that follows it, \
+         so a sentence they let in is judged backwards: {}",
+        unknown.join(", ")
     );
 }
 
@@ -2656,18 +2898,31 @@ fn which_choice_it_names(sentence: &str) -> Option<usize> {
         })
 }
 
-/// Every sentence of a run of prose, with where it starts.
-fn sentences_of(prose: &str) -> Vec<(usize, &str)> {
+/// Every sentence of a run of prose, as where it starts and where it ends.
+///
+/// The ends are kept because the claim reading names a sentence by the pair,
+/// which is how it knows a sentence it has already spoken for. Trimmed, that
+/// pair is gone and the two readings could disagree about which sentence is
+/// which.
+fn sentence_spans_of(prose: &str) -> Vec<(usize, usize)> {
     let mut found = Vec::new();
     let mut at = 0;
     while at < prose.len() {
         let (start, end) = the_sentence_around(prose, at);
         if !prose[start..end].trim().is_empty() {
-            found.push((start, prose[start..end].trim()));
+            found.push((start, end));
         }
         at = end + 1;
     }
     found
+}
+
+/// Every sentence of a run of prose, with where it starts.
+fn sentences_of(prose: &str) -> Vec<(usize, &str)> {
+    sentence_spans_of(prose)
+        .into_iter()
+        .map(|(start, end)| (start, prose[start..end].trim()))
+        .collect()
 }
 
 /// Which button the window layer puts focus on.

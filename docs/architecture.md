@@ -367,9 +367,10 @@ struct Folder {
 ### Credential storage
 
 Everything goes to the Windows credential store, which is DPAPI-backed and
-per-user. Nothing sensitive is written to the database or to any file this
+per-user. No credential is written to the database or to any file this
 application owns, so a database copied for a backup or handed over for support
-carries no credentials with it.
+carries no credentials with it. The mail cached in that database is a separate
+question, and data protection below gives the answer.
 
 There is no master key any more. It encrypted exactly one thing, a password
 that can be typed again, and the key itself was one more thing to lose.

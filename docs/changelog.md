@@ -287,6 +287,35 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The privacy page said nothing here sends your contacts, your calendar or
+  your tasks to anybody. They are sent.** It opened by saying that nothing in
+  this program sends your messages, your contacts, your calendar or your links
+  to anybody. That was wrong about three of the four: with the answer a new
+  installation starts on, changes to your contacts, your calendar and your
+  tasks are sent to the provider you signed in to. Sending mail to a provider
+  is the one thing a new installation refuses. A table five lines further down
+  the same page said so, and the sentence above it said the opposite.
+
+  The page now says what goes where, in about the same few lines it took
+  before. It also names the other thing that leaves your computer without you
+  asking for it: showing a message that points at a picture asks that address
+  for the picture. The page explained that further down and the opening summary
+  did not mention it.
+
+  The check that holds every other claim of this kind to what the code does now
+  reads this one too. It could not before. It looked for a sentence carrying a
+  word that puts it at installation time, such as "by default", and a sentence
+  saying that nothing is sent to anybody carries no such word, because it has
+  already claimed every setting there is.
+
+  Other absolutes went the same way. The privacy page and the installing guide
+  both said nothing is left behind after an uninstall. The uninstall can fail
+  to remove something, and writes a note in your temporary folder saying what
+  it could not remove, so both pages now say that instead. The architecture
+  notes said nothing sensitive is written to the database, on a page that also
+  says the cached mail is not encrypted; that sentence now says credentials,
+  which is what it meant.
+
 - **A task you delete stays deleted when the list it was in disappears.** When a
   task list went away at your provider, every deletion still waiting for that
   list was thrown away with it. If the provider had moved one of those tasks

@@ -1,8 +1,10 @@
 # What Wixen Mail sends, and where
 
-Short version: your mail goes to your mail provider and nowhere else. Nothing in Wixen Mail
-sends your messages, your contacts, your calendar or your links to anybody, and there is no
-analytics, no telemetry, no crash reporting service and no update check that says who you are.
+Short version: your mail goes to your mail provider, and your contacts, your calendar and
+your tasks go to the provider you signed in to, because a new installation allows changes
+to those three to be sent. Showing a message that points at a picture asks that address for
+the picture, and the section below says what that means. There is no analytics, no telemetry,
+no crash reporting service and no update check that says who you are.
 
 This page is the long version, because "we respect your privacy" is a sentence anybody can
 write.
@@ -47,7 +49,8 @@ group changes nothing about their contact.
 | Who | When | What goes |
 |---|---|---|
 | Your mail provider | Checking, reading, sending | The mail itself, over TLS |
-| Your calendar or contacts server | Syncing, if you set one up | The events and contacts |
+| The same provider, for your contacts, calendar and tasks | Syncing, which a new installation allows | The contacts, events and tasks |
+| A separate calendar or contacts server | Syncing, if you set one up | The events and contacts |
 | Google or Microsoft sign-in | When you sign in with a browser | The sign-in, in your browser |
 | Google Safe Browsing | Only if you switch it on, see below | Four bytes, and only sometimes |
 | Whoever a sender points a picture at | Showing a message in the preview pane or a conversation window | The request for the picture, which says the message was opened |
@@ -172,6 +175,8 @@ sensitive, and if you find something that is, that is a bug worth reporting on i
 ## Uninstalling
 
 Uninstalling removes everything: the program, your accounts, your settings, the downloaded
-mail, and your saved passwords and sign-in tokens. Nothing is left to clean up later, and
-nothing is left to find you later either. Your mail itself is untouched, because it is on your
-provider's server and Wixen Mail only ever held a copy.
+mail, and your saved passwords and sign-in tokens. It writes a note in your temporary folder
+every time, `wixen-mail-uninstall.log`, saying what went and naming anything it could not
+remove, so a leftover is something you are told about rather than something you find. Your
+mail itself is untouched, because it is on your provider's server and Wixen Mail only ever
+held a copy.
