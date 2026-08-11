@@ -3601,3 +3601,97 @@ fn test_the_fixed_answer_check_can_tell_the_two_apart() {
         "a choice built on a position read from the settings file was named"
     );
 }
+
+/// The mutation script, and the check that runs it on a pull request.
+const THE_MUTATION_RUN: &[&str] = &["scripts/mutants.sh", ".github/workflows/mutants.yml"];
+
+/// Everything in a file except the lines explaining it.
+///
+/// Both files here are allowed to name the mistakes they no longer make, and
+/// two of these rules look for exactly those words. Read whole, each check
+/// would fail on its own explanation.
+fn what_it_does_not_what_it_says(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The lists a mutation run writes alongside its record, for people to read.
+///
+/// They are created empty before the first mutant is built, so a run that
+/// tested nothing has all four and all four say nothing is wrong. Deciding
+/// anything from them is how a run whose build failed printed that every
+/// mutant was caught and exited clean, and the record next to them said the
+/// build had failed the whole time.
+const LISTS_WRITTEN_FOR_PEOPLE: &[&str] =
+    &["caught.txt", "missed.txt", "unviable.txt", "timeout.txt"];
+
+#[test]
+fn test_no_mutation_result_is_read_from_the_lists_written_for_people() {
+    let script = fs::read_to_string("scripts/mutants.sh").expect("the mutation script");
+    let named: Vec<&str> = LISTS_WRITTEN_FOR_PEOPLE
+        .iter()
+        .copied()
+        .filter(|list| what_it_does_not_what_it_says(&script).contains(list))
+        .collect();
+
+    assert!(
+        named.is_empty(),
+        "the mutation script decides something from {}, which exists and says \
+         nothing is wrong before the first mutant is built.\nRead what happened \
+         to each mutant instead.",
+        named.join(" and ")
+    );
+
+    // Reading none of them is not the same as reading the record. A script
+    // that decided nothing at all would pass the check above and still let a
+    // run that tested nothing go by.
+    assert!(
+        script.contains("mutants_report.py"),
+        "the mutation script hands the run to nothing that reads what happened \
+         to each mutant, so nothing can tell a finished run from a run that \
+         stopped before it built anything."
+    );
+}
+
+#[test]
+fn test_what_a_change_touched_is_asked_the_same_way_in_both_places() {
+    // Drops every file sitting directly in `src/`, which is how a change to
+    // one of them went unchecked. Built from two pieces so this line is not
+    // itself a match.
+    let drops_the_top_level = concat!("src/", "**/*.rs");
+
+    for path in THE_MUTATION_RUN {
+        let text = fs::read_to_string(path).expect("the mutation run");
+        assert!(
+            !what_it_does_not_what_it_says(&text).contains(drops_the_top_level),
+            "{path} asks what changed with a pattern that skips every file \
+             sitting directly in src/. Ask for the whole folder."
+        );
+    }
+
+    let gate = fs::read_to_string(".github/workflows/mutants.yml").expect("the gate");
+    assert!(
+        gate.contains("scripts/mutants.sh"),
+        "the pull request check runs the mutation tool itself rather than the \
+         script.\nThen there are two answers to what a change touched and to \
+         whether a run tested anything, and the check reads neither."
+    );
+    assert!(
+        !what_it_does_not_what_it_says(&gate).contains("cargo mutants"),
+        "the pull request check calls the mutation tool directly, so whatever \
+         the script learns about a run that tested nothing, this will not."
+    );
+}
+
+#[test]
+fn test_no_mutation_run_has_its_failure_swallowed() {
+    let script = fs::read_to_string("scripts/mutants.sh").expect("the mutation script");
+
+    assert!(
+        !what_it_does_not_what_it_says(&script).contains("|| true"),
+        "the mutation script throws away whether the run failed. A run that \
+         stopped early looks exactly like one that finished."
+    );
+}

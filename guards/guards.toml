@@ -2428,3 +2428,51 @@ after = """        let session = &mut *guard;
 red = [
     "application::mail_controller::against_a_server_that_answers::test_saving_a_copy_of_a_sent_message_appends_it_where_it_was_told",
 ]
+
+# ── A mutation run that tested nothing, reported as one that found nothing ───
+#
+# Whether a run had produced anything was decided by asking whether its results
+# file existed. That file is created empty before the first mutant is built, so
+# a run whose build failed had one, it was empty, and the script printed that
+# every mutant was caught and exited clean. The record written beside it said
+# the build had failed the whole time.
+#
+# Underneath that, a failed build is recorded under one heading whichever way
+# it failed: the compiler rejected the mutant, or the compiler never started.
+# Only the first was tested. The whole-tree run of 2026-08-05 recorded 595 that
+# way and 473 of them had never reached a compiler.
+#
+# All three run against the house style suite rather than the library, because
+# these are rules about what the tree says. See `Guard.suite` in
+# scripts/guards.py. The wording rules the reading itself follows are checked
+# by its own doctests, which nothing here can run.
+
+[[guard]]
+name = "a mutation result is read from the record, not from the lists written for people"
+file = "scripts/mutants.sh"
+suite = "house_style"
+before = """exec python scripts/mutants_report.py --exit-status "$STATUS" "$OUT/mutants.out\""""
+after = """[ -s "$OUT/mutants.out/caught.txt" ]"""
+red = [
+    "test_no_mutation_result_is_read_from_the_lists_written_for_people",
+]
+
+[[guard]]
+name = "the mutation script and the pull request check ask what a change touched the same way"
+file = ".github/workflows/mutants.yml"
+suite = "house_style"
+before = """      run: scripts/mutants.sh --since origin/${{ github.base_ref }}"""
+after = """      run: cargo mutants --in-diff changed.diff -j 2"""
+red = [
+    "test_what_a_change_touched_is_asked_the_same_way_in_both_places",
+]
+
+[[guard]]
+name = "a mutation run that failed is not passed off as one that finished"
+file = "scripts/mutants.sh"
+suite = "house_style"
+before = """    cargo mutants -j "$JOBS" --output "$OUT" || STATUS=$?"""
+after = """    cargo mutants -j "$JOBS" --output "$OUT" || true"""
+red = [
+    "test_no_mutation_run_has_its_failure_swallowed",
+]
