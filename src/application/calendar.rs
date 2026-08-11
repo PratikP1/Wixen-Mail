@@ -1228,6 +1228,93 @@ pub const JUST_THIS_ONE_DAY: &str = "&Just this one day";
 /// What the second answer is called, wherever it is offered.
 pub const EVERY_DAY_IN_THE_SERIES: &str = "&Every day in the series";
 
+impl EditMeans {
+    /// The two answers in the order they are offered and read out.
+    ///
+    /// The one that is ticked comes first, so the first thing heard is the
+    /// answer that will be taken if nothing is changed. A ticked answer further
+    /// down the list is heard after two others have already been read out, and
+    /// by then somebody has been told about a choice they did not make.
+    pub const AS_OFFERED: [Self; 2] = [Self::WholeSeries, Self::OneDay];
+
+    /// The answer that is already ticked when the question opens.
+    ///
+    /// Every calendar program people already use offers the whole series first,
+    /// and it is the answer that keeps a series a series.
+    pub const PRESELECTED: Self = Self::WholeSeries;
+
+    /// What this answer is called, with its keyboard letter in it.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::OneDay => JUST_THIS_ONE_DAY,
+            Self::WholeSeries => EVERY_DAY_IN_THE_SERIES,
+        }
+    }
+
+    /// What this answer is called, as it is read out.
+    ///
+    /// The keyboard letter is a mark on the label and not a word, so it is
+    /// taken off rather than heard as one.
+    pub fn spoken(self) -> String {
+        self.label().replace('&', "")
+    }
+}
+
+/// Where a change to an event in a given calendar can actually go.
+///
+/// One question with one answer. Asked of the calendar the event is filed in
+/// and never of the event's own row: an event made on this computer and filed
+/// in a Google calendar says "local" about itself and goes to Google, and that
+/// difference used to choose between two sentences and now chooses whether a
+/// change is carried out or refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhereAChangeGoes {
+    /// A calendar held on a calendar server.
+    ACalendarServer,
+    /// A Google calendar.
+    Google,
+    /// An Outlook calendar.
+    Outlook,
+    /// A calendar this program can only read: a published feed, or one a
+    /// server marks read-only.
+    OnlyReadable,
+    /// A calendar made on this computer, or no calendar at all.
+    KeptHere,
+}
+
+impl WhereAChangeGoes {
+    /// The calendar, named in the middle of a sentence.
+    const fn named(self) -> &'static str {
+        match self {
+            Self::ACalendarServer => "your calendar server",
+            Self::Google => "your Google calendar",
+            Self::Outlook => "your Outlook calendar",
+            Self::OnlyReadable => "a calendar this program can only read",
+            Self::KeptHere => "this computer",
+        }
+    }
+}
+
+/// Which of those a calendar is.
+///
+/// Read-only is asked first, because a feed and a server calendar somebody may
+/// only read are both calendars a change can never reach, whoever holds them.
+pub fn where_a_change_goes(container: Option<&CalendarContainer>) -> WhereAChangeGoes {
+    let Some(container) = container else {
+        return WhereAChangeGoes::KeptHere;
+    };
+    if container.is_read_only {
+        return WhereAChangeGoes::OnlyReadable;
+    }
+    match container.source_provider.as_deref().unwrap_or_default() {
+        CALDAV => WhereAChangeGoes::ACalendarServer,
+        GOOGLE => WhereAChangeGoes::Google,
+        MICROSOFT => WhereAChangeGoes::Outlook,
+        crate::application::calendar_source::FROM_A_FEED => WhereAChangeGoes::OnlyReadable,
+        _ => WhereAChangeGoes::KeptHere,
+    }
+}
+
 /// Whether somebody has to be asked which of the two they meant.
 ///
 /// Asked whenever the row is one day of a series, which is what the sentence
@@ -1239,22 +1326,37 @@ pub fn asking_is_needed(how_often_the_row_repeats: &str) -> bool {
 
 /// Whether an answer can be carried out, or the sentence saying why not.
 ///
-/// Changing every day is what the save already does, so it is honoured.
-/// Changing one day on its own is refused, because carrying it out means
-/// calling that day off in the series and storing a separate event for it, and
-/// the separate event would then be sent to the provider as an extra
-/// appointment while the calling-off would not be sent at all: `recurrence` is
-/// deliberately never built into a change, for the reason at the top of this
-/// file. Half of that reaching somebody's real calendar is worse than a
-/// refusal.
-pub fn can_be_honoured(means: EditMeans, provider: &str) -> std::result::Result<(), String> {
-    match means {
-        EditMeans::WholeSeries => Ok(()),
-        EditMeans::OneDay => Err(format!(
+/// Changing every day is what the save already does, so it is honoured
+/// everywhere.
+///
+/// Changing one day is carried out where both halves of it can arrive: the day
+/// is called off in the series and a separate appointment is stored for it, and
+/// on a calendar server both halves really go up, because the days a series has
+/// called off is one of the properties a change replaces and the separate
+/// appointment goes up as a new resource. A calendar kept on this computer has
+/// nothing to send, so both halves are simply stored.
+///
+/// It is refused where only half of it would arrive. Google and Outlook are
+/// never told how an event repeats, for the reason at the top of this file, so
+/// the separate appointment would reach somebody's real calendar as an extra
+/// meeting while the calling-off would not be sent at all: the same day twice,
+/// for ever. A calendar this program can only read takes neither half, and the
+/// next refresh writes both away.
+pub fn can_be_honoured(
+    means: EditMeans,
+    goes: WhereAChangeGoes,
+) -> std::result::Result<(), String> {
+    match (means, goes) {
+        (EditMeans::WholeSeries, _)
+        | (EditMeans::OneDay, WhereAChangeGoes::ACalendarServer | WhereAChangeGoes::KeptHere) => {
+            Ok(())
+        }
+        (EditMeans::OneDay, refused) => Err(format!(
             "Changing one day of a repeating event on its own is not something \
-             this can do yet. Nothing has been changed. Choose \"every day in \
-             the series\" to change all of them.{}",
-            further_off_for(provider)
+             this can do for {}. Nothing has been changed. Choose \"every day \
+             in the series\" to change all of them.{}",
+            refused.named(),
+            further_off_for(refused),
         )),
     }
 }
@@ -1262,18 +1364,133 @@ pub fn can_be_honoured(means: EditMeans, provider: &str) -> std::result::Result<
 /// The extra sentence for a calendar whose changes do not leave this computer.
 ///
 /// Without it somebody told that one day is not built would reasonably expect
-/// the other answer to reach their calendar, and for a feed it does not.
+/// the other answer to reach their calendar, and for a calendar this program
+/// can only read it does not.
 ///
 /// A calendar held on a server used to be in the same position and no longer
-/// is: changes to one of those are sent now. It gets no extra sentence, because
-/// a warning that is not true teaches somebody to ignore the ones that are.
-fn further_off_for(provider: &str) -> &'static str {
-    match provider {
-        crate::application::calendar_source::FROM_A_FEED => {
-            " A published calendar feed can only ever be read, so a change to \
-             one is kept on this computer and the next refresh writes over it."
+/// is: changes to one of those are sent now, and one day of a series is carried
+/// out there rather than refused. It gets no extra sentence, because a warning
+/// that is not true teaches somebody to ignore the ones that are.
+const fn further_off_for(goes: WhereAChangeGoes) -> &'static str {
+    match goes {
+        WhereAChangeGoes::OnlyReadable => {
+            " A calendar this program can only read takes no change at all, so \
+             what you type is kept on this computer and the next refresh writes \
+             over it."
         }
         _ => "",
+    }
+}
+
+/// What one answer will do to the calendar this event is in, in a sentence.
+///
+/// Read under the answer it belongs to, so somebody deciding hears what each
+/// one costs before choosing rather than a refusal afterwards. Two answers that
+/// read alike are two answers nobody can choose between, so no two of these are
+/// the same sentence for any calendar.
+pub fn what_it_will_do(means: EditMeans, goes: WhereAChangeGoes) -> String {
+    let every_day = "Changes every day this event falls on, and leaves the day it starts on \
+                     where it is.";
+    let one_day = "Changes only the day you opened, and leaves the rest of them alone. That \
+                   day is taken off the series and kept as a separate appointment, so it is \
+                   two entries from then on rather than one moved day.";
+    match (means, goes) {
+        (EditMeans::WholeSeries, WhereAChangeGoes::OnlyReadable) => format!(
+            "{every_day} This is a calendar this program can only read, so the change is kept \
+             on this computer and the next refresh writes over it."
+        ),
+        (EditMeans::WholeSeries, WhereAChangeGoes::KeptHere) => {
+            format!("{every_day} It is kept on this computer, because no account holds it.")
+        }
+        (EditMeans::WholeSeries, sent) => format!(
+            "{every_day} The change goes to {} on the next sync.",
+            sent.named()
+        ),
+        (EditMeans::OneDay, WhereAChangeGoes::KeptHere) => {
+            format!("{one_day} Both are kept on this computer, because no account holds them.")
+        }
+        (EditMeans::OneDay, WhereAChangeGoes::ACalendarServer) => format!(
+            "{one_day} Both go to your calendar server on the next sync, and other calendar \
+             programs will show them as two entries."
+        ),
+        (EditMeans::OneDay, refused) => format!(
+            "Cannot be done for {} yet. Choosing it changes nothing at all.",
+            refused.named()
+        ),
+    }
+}
+
+/// What has to be said about a repeating event filed in a Google or Outlook
+/// calendar, because neither of them has ever been told it repeats.
+///
+/// How often an event repeats is deliberately never built into a change sent to
+/// either of those, for the reason at the top of this file. So an event that
+/// repeats every week here is one appointment at the calendar it is filed in,
+/// and a question about which days somebody means, asked over that, would be
+/// two answers to a series only this computer can see.
+///
+/// Nothing for the other three, where it would not be true: a calendar server
+/// is told how an event repeats, and a calendar kept here and a calendar only
+/// read are not sent anything at all.
+pub const fn a_repeat_kept_here_only(goes: WhereAChangeGoes) -> Option<&'static str> {
+    match goes {
+        WhereAChangeGoes::Google => Some(
+            "How often this event repeats is known to this computer only. Your Google calendar \
+             holds it as a single appointment, so whichever answer you choose, that is what \
+             changes there.",
+        ),
+        WhereAChangeGoes::Outlook => Some(
+            "How often this event repeats is known to this computer only. Your Outlook calendar \
+             holds it as a single appointment, so whichever answer you choose, that is what \
+             changes there.",
+        ),
+        WhereAChangeGoes::ACalendarServer
+        | WhereAChangeGoes::OnlyReadable
+        | WhereAChangeGoes::KeptHere => None,
+    }
+}
+
+/// The series with one more day called off, and nothing else about it touched.
+///
+/// The start stays put, the repeat rule stays put, and the days it had already
+/// called off stay on it. Only the list of called-off days grows, and it grows
+/// by a value built in the one place anything builds one, so the reader that
+/// takes the column apart and the writer that puts it on the wire are still
+/// answering one question.
+///
+/// A day already called off is left alone rather than named twice. The reader
+/// counts days into a set, so a second copy changes nothing there, but the
+/// writer puts every value on the wire and a server is entitled to refuse a
+/// document that calls the same day off twice.
+///
+/// The repeat rule is never read here, only carried. Two different languages
+/// end up in that column, so anything that parses it has to answer for both,
+/// and this does not need to.
+pub fn one_day_called_off(series: &CalendarEventEntry, the_day_opened: &str) -> CalendarEventEntry {
+    let called_off =
+        crate::service::caldav::the_called_off_value_for(the_day_opened, series.is_all_day);
+    let already = series
+        .exception_dates
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let named_already = already
+        .split(',')
+        .map(str::trim)
+        .any(|one| one == called_off);
+    let all = if named_already {
+        already
+    } else if already.is_empty() {
+        called_off
+    } else {
+        format!("{already},{called_off}")
+    };
+    CalendarEventEntry {
+        exception_dates: Some(all),
+        // The series is a change nobody has told the calendar about yet.
+        pending: true,
+        ..series.clone()
     }
 }
 
@@ -1989,25 +2206,407 @@ mod tests {
         assert!(!asking_is_needed("   "));
     }
 
+    /// Every kind of calendar an event can be filed in.
+    const EVERY_CALENDAR: [WhereAChangeGoes; 5] = [
+        WhereAChangeGoes::ACalendarServer,
+        WhereAChangeGoes::Google,
+        WhereAChangeGoes::Outlook,
+        WhereAChangeGoes::OnlyReadable,
+        WhereAChangeGoes::KeptHere,
+    ];
+
+    /// A calendar as it is stored, so the decision is asked of a real row.
+    fn a_calendar(source: Option<&str>, read_only: bool) -> CalendarContainer {
+        CalendarContainer {
+            id: "cal-1".to_string(),
+            account_id: "acct".to_string(),
+            name: "Work".to_string(),
+            color: "#4285F4".to_string(),
+            source_provider: source.map(str::to_string),
+            caldav_url: None,
+            subscription_url: None,
+            is_default: false,
+            is_visible: true,
+            is_read_only: read_only,
+            display_order: 0,
+            etag: None,
+            ctag: None,
+            sync_token: None,
+            refresh_interval_minutes: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_the_answer_offered_first_is_every_day_in_the_series() {
+        // The one that is ticked has to be the one read out first. A ticked
+        // answer further down the list is heard after somebody has already been
+        // told about a choice they did not make.
+        assert_eq!(EditMeans::PRESELECTED, EditMeans::WholeSeries);
+        assert_eq!(
+            EditMeans::AS_OFFERED,
+            [EditMeans::WholeSeries, EditMeans::OneDay]
+        );
+        assert_eq!(EditMeans::AS_OFFERED[0], EditMeans::PRESELECTED);
+        for means in EditMeans::AS_OFFERED {
+            assert!(
+                means.label().contains('&'),
+                "no keyboard letter in {means:?}"
+            );
+            assert!(
+                !means.spoken().contains('&'),
+                "the keyboard mark is read out as a word: {}",
+                means.spoken()
+            );
+        }
+    }
+
+    #[test]
+    fn test_where_a_change_goes_agrees_with_what_nothing_can_send() {
+        // Two answers to one question is how this repository loses data. If
+        // nothing anywhere will send a change to a calendar, this must not say
+        // the change goes to a server, to Google or to Outlook.
+        let calendars = [
+            None,
+            Some(a_calendar(Some(CALDAV), false)),
+            Some(a_calendar(Some(CALDAV), true)),
+            Some(a_calendar(Some(GOOGLE), false)),
+            Some(a_calendar(Some(GOOGLE), true)),
+            Some(a_calendar(Some(MICROSOFT), false)),
+            Some(a_calendar(
+                Some(crate::application::calendar_source::FROM_A_FEED),
+                false,
+            )),
+            Some(a_calendar(Some("local"), false)),
+            Some(a_calendar(None, false)),
+        ];
+        for calendar in &calendars {
+            let goes = where_a_change_goes(calendar.as_ref());
+            if nothing_can_send(calendar.as_ref()).is_none() {
+                continue;
+            }
+            assert!(
+                matches!(
+                    goes,
+                    WhereAChangeGoes::KeptHere | WhereAChangeGoes::OnlyReadable
+                ),
+                "nothing will ever send a change to this calendar, and this says \
+                 it goes to {goes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_calendar_says_which_kind_it_is_from_its_own_row() {
+        assert_eq!(
+            where_a_change_goes(Some(&a_calendar(Some(CALDAV), false))),
+            WhereAChangeGoes::ACalendarServer
+        );
+        assert_eq!(
+            where_a_change_goes(Some(&a_calendar(Some(GOOGLE), false))),
+            WhereAChangeGoes::Google
+        );
+        assert_eq!(
+            where_a_change_goes(Some(&a_calendar(Some(MICROSOFT), false))),
+            WhereAChangeGoes::Outlook
+        );
+        assert_eq!(
+            where_a_change_goes(Some(&a_calendar(
+                Some(crate::application::calendar_source::FROM_A_FEED),
+                false
+            ))),
+            WhereAChangeGoes::OnlyReadable
+        );
+        assert_eq!(
+            where_a_change_goes(Some(&a_calendar(Some(GOOGLE), true))),
+            WhereAChangeGoes::OnlyReadable,
+            "a calendar somebody may only read takes no change, whoever holds it"
+        );
+        assert_eq!(
+            where_a_change_goes(Some(&a_calendar(Some("local"), false))),
+            WhereAChangeGoes::KeptHere
+        );
+        assert_eq!(where_a_change_goes(None), WhereAChangeGoes::KeptHere);
+    }
+
     #[test]
     fn test_changing_every_day_of_a_series_is_what_this_can_do() {
-        for provider in ["local", "gmail", "outlook", "caldav", "subscription"] {
+        for goes in EVERY_CALENDAR {
             assert_eq!(
-                can_be_honoured(EditMeans::WholeSeries, provider),
+                can_be_honoured(EditMeans::WholeSeries, goes),
                 Ok(()),
-                "for {provider}"
+                "for {goes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_changing_one_day_is_carried_out_where_both_halves_can_reach_the_calendar() {
+        // One day means two writes: the day taken off the series, and that day
+        // kept on its own. Where both of those arrive, it is carried out.
+        for goes in [
+            WhereAChangeGoes::ACalendarServer,
+            WhereAChangeGoes::KeptHere,
+        ] {
+            assert_eq!(
+                can_be_honoured(EditMeans::OneDay, goes),
+                Ok(()),
+                "for {goes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_both_answers_say_what_they_will_do_for_the_calendar_the_event_is_in() {
+        for goes in EVERY_CALENDAR {
+            let every_day = what_it_will_do(EditMeans::WholeSeries, goes);
+            let one_day = what_it_will_do(EditMeans::OneDay, goes);
+            assert_ne!(
+                every_day, one_day,
+                "the two answers read alike for {goes:?}, so nobody can choose between them"
+            );
+            for sentence in [&every_day, &one_day] {
+                assert!(!sentence.trim().is_empty(), "nothing said for {goes:?}");
+                assert!(
+                    !sentence.contains("  "),
+                    "a wrapped literal lost a space: {sentence}"
+                );
+                for machine in ["RRULE", "EXDATE", "RECURRENCE-ID", "provider", "API"] {
+                    assert!(!sentence.contains(machine), "{machine} in {sentence}");
+                }
+            }
+        }
+    }
+
+    /// A weekly series, stored the way a calendar server sends one.
+    fn a_weekly_series(start: &str, end: &str, all_day: bool) -> CalendarEventEntry {
+        CalendarEventEntry {
+            id: "series-1".to_string(),
+            account_id: "acct".to_string(),
+            provider_event_id: Some("uid-1".to_string()),
+            calendar_id: Some("cal-1".to_string()),
+            summary: "Stand-up".to_string(),
+            description: None,
+            location: None,
+            start_datetime: start.to_string(),
+            end_datetime: end.to_string(),
+            start_date: all_day.then(|| start[..10].to_string()),
+            end_date: all_day.then(|| end[..10].to_string()),
+            is_all_day: all_day,
+            time_zone: Some("Asia/Kolkata".to_string()),
+            status: "confirmed".to_string(),
+            recurrence_rule: Some("FREQ=WEEKLY".to_string()),
+            categories: String::new(),
+            source_provider: Some(CALDAV.to_string()),
+            etag: None,
+            web_link: None,
+            show_as: "busy".to_string(),
+            last_modified_remote: None,
+            last_synced_at: None,
+            attendees_json: None,
+            reminders_json: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            pending: false,
+            exception_dates: None,
+        }
+    }
+
+    /// The days a series is shown on across one August.
+    fn the_days_it_falls_on(series: &CalendarEventEntry) -> Vec<String> {
+        crate::application::occurrences::falls_on(
+            series,
+            chrono::NaiveDate::from_ymd_opt(2026, 8, 1).expect("a date"),
+            chrono::NaiveDate::from_ymd_opt(2026, 8, 31).expect("a date"),
+        )
+        .days
+        .into_iter()
+        .map(|day| day.start)
+        .collect()
+    }
+
+    #[test]
+    fn test_calling_off_one_day_takes_that_day_off_the_series_and_leaves_the_others() {
+        let series = a_weekly_series(
+            "2026-07-27T09:00:00+05:30",
+            "2026-07-27T09:15:00+05:30",
+            false,
+        );
+        let before = the_days_it_falls_on(&series);
+        let third = before.get(2).expect("three days in August").clone();
+
+        let after = one_day_called_off(&series, &third);
+
+        assert_eq!(
+            after.start_datetime, series.start_datetime,
+            "calling one day off moved the day the series starts from"
+        );
+        assert_eq!(after.recurrence_rule, series.recurrence_rule);
+        assert!(
+            after.pending,
+            "the series was not marked as waiting to go up"
+        );
+        let left = the_days_it_falls_on(&after);
+        assert!(!left.contains(&third), "the day is still on the calendar");
+        assert_eq!(
+            left,
+            before
+                .iter()
+                .filter(|day| **day != third)
+                .cloned()
+                .collect::<Vec<_>>(),
+            "calling one day off took another day with it"
+        );
+    }
+
+    #[test]
+    fn test_calling_off_one_day_keeps_the_days_the_series_had_already_called_off() {
+        let mut series = a_weekly_series(
+            "2026-07-27T09:00:00+05:30",
+            "2026-07-27T09:15:00+05:30",
+            false,
+        );
+        let days = the_days_it_falls_on(&series);
+        let (first, second) = (days[0].clone(), days[1].clone());
+        series = one_day_called_off(&series, &first);
+
+        let after = one_day_called_off(&series, &second);
+
+        let left = the_days_it_falls_on(&after);
+        assert!(!left.contains(&first), "the first day came back: {left:?}");
+        assert!(!left.contains(&second), "the second day is still there");
+        assert_eq!(
+            after
+                .exception_dates
+                .as_deref()
+                .expect("two days called off")
+                .split(',')
+                .count(),
+            2,
+            "the column no longer holds both days"
+        );
+    }
+
+    #[test]
+    fn test_calling_off_a_day_already_called_off_does_not_name_it_twice() {
+        // A server is entitled to refuse a document that calls the same day off
+        // twice, and it would refuse the whole change with it.
+        let series = a_weekly_series(
+            "2026-07-27T09:00:00+05:30",
+            "2026-07-27T09:15:00+05:30",
+            false,
+        );
+        let day = the_days_it_falls_on(&series)[0].clone();
+
+        let twice = one_day_called_off(&one_day_called_off(&series, &day), &day);
+
+        assert_eq!(
+            twice
+                .exception_dates
+                .as_deref()
+                .expect("one day called off"),
+            one_day_called_off(&series, &day)
+                .exception_dates
+                .as_deref()
+                .expect("one day called off")
+        );
+    }
+
+    #[test]
+    fn test_a_day_called_off_is_written_the_way_the_start_it_came_from_is_written() {
+        // The one test that holds the reader and the writer to a single answer.
+        // Three shapes of start arrive, each produces its own shape of value,
+        // and both sides have to agree about every one of them: the reader has
+        // to stop showing the day, and the writer has to put it on the line its
+        // form belongs on.
+        for (start, end, all_day, written) in [
+            ("2026-08-03", "2026-08-03", true, "20260803"),
+            (
+                "2026-08-03T09:00:00Z",
+                "2026-08-03T09:15:00Z",
+                false,
+                "20260803T090000Z",
+            ),
+            (
+                "2026-08-03T09:00:00+05:30",
+                "2026-08-03T09:15:00+05:30",
+                false,
+                "20260803T090000",
+            ),
+        ] {
+            let series = a_weekly_series(start, end, all_day);
+            let day = the_days_it_falls_on(&series)[0].clone();
+
+            let after = one_day_called_off(&series, &day);
+
+            assert_eq!(
+                after.exception_dates.as_deref(),
+                Some(written),
+                "for a series starting {start}"
+            );
+            assert!(
+                !the_days_it_falls_on(&after).contains(&day),
+                "the reader still shows the day called off for {start}"
+            );
+            assert!(
+                crate::service::caldav::cancelled_day_lines(written, Some("Asia/Kolkata"))
+                    .iter()
+                    .any(|line| line.ends_with(written)),
+                "the writer put the value nowhere for {start}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_repeating_event_in_a_providers_calendar_says_the_repeat_is_kept_here_only() {
+        // How often an event repeats is never sent to either of those, so a
+        // weekly series here is one appointment there. Asking which days
+        // somebody means, over that, without saying so, makes an untruth louder
+        // rather than quieter.
+        for (goes, named) in [
+            (WhereAChangeGoes::Google, "Google"),
+            (WhereAChangeGoes::Outlook, "Outlook"),
+        ] {
+            let said = a_repeat_kept_here_only(goes).expect("something has to be said");
+            assert!(said.contains(named), "{said}");
+            assert!(
+                said.contains("single appointment"),
+                "it has to say what the calendar really holds: {said}"
+            );
+            assert!(
+                !said.contains("  "),
+                "a wrapped literal lost a space: {said}"
+            );
+        }
+        for goes in [
+            WhereAChangeGoes::ACalendarServer,
+            WhereAChangeGoes::OnlyReadable,
+            WhereAChangeGoes::KeptHere,
+        ] {
+            assert_eq!(
+                a_repeat_kept_here_only(goes),
+                None,
+                "said for {goes:?}, where it would not be true"
             );
         }
     }
 
     #[test]
     fn test_changing_one_day_on_its_own_is_refused_rather_than_changing_all_of_them() {
-        // The refusal is the feature. Quietly widening one day to the whole
-        // series is the data loss this exists to prevent, and it cannot be
-        // taken back: the other days' own values are gone.
-        for provider in ["local", "gmail", "outlook", "caldav", "subscription"] {
-            let refusal = can_be_honoured(EditMeans::OneDay, provider)
-                .expect_err("changing one day on its own is not built");
+        // The refusal is the feature where only half of one day would arrive.
+        // Google and Outlook are never told how an event repeats, so the day
+        // kept on its own would land on somebody's real calendar as an extra
+        // meeting while the day taken off the series would not be sent at all.
+        // Quietly widening one day to the whole series is worse still: the
+        // other days' own values are gone and cannot be got back.
+        for goes in [
+            WhereAChangeGoes::Google,
+            WhereAChangeGoes::Outlook,
+            WhereAChangeGoes::OnlyReadable,
+        ] {
+            let refusal = can_be_honoured(EditMeans::OneDay, goes)
+                .expect_err("changing one day on its own cannot be done there");
 
             assert!(
                 refusal.contains("one day"),
@@ -2017,6 +2616,10 @@ mod tests {
                 refusal.contains("Nothing has been changed"),
                 "somebody has to know the series is untouched: {refusal}"
             );
+            assert!(
+                !refusal.contains("  "),
+                "a wrapped literal lost a space: {refusal}"
+            );
             for machine in ["RRULE", "EXDATE", "RECURRENCE-ID", "provider", "API"] {
                 assert!(!refusal.contains(machine), "{machine} in {refusal}");
             }
@@ -2024,39 +2627,25 @@ mod tests {
     }
 
     #[test]
-    fn test_a_calendar_read_from_a_feed_says_the_other_reason_as_well() {
-        // A feed really is only ever read, so changing the whole series of one
-        // of those is saved here and never sent. A refusal that only talks
-        // about single days would leave somebody expecting the other answer to
-        // reach the feed.
-        let feed = can_be_honoured(
-            EditMeans::OneDay,
-            crate::application::calendar_source::FROM_A_FEED,
-        )
-        .expect_err("one day is not built");
+    fn test_a_calendar_this_program_can_only_read_says_the_other_reason_as_well() {
+        // One of those really is only ever read, so even the whole series is
+        // saved here and never sent. A refusal that only talks about single
+        // days would leave somebody expecting the other answer to reach their
+        // calendar.
+        let only_read = can_be_honoured(EditMeans::OneDay, WhereAChangeGoes::OnlyReadable)
+            .expect_err("one day cannot be done there");
 
-        assert!(feed.contains("read"), "{feed}");
+        assert!(only_read.contains("read"), "{only_read}");
         assert!(
-            !feed.contains("  "),
-            "a wrapped literal lost a space: {feed}"
+            !only_read.contains("  "),
+            "a wrapped literal lost a space: {only_read}"
         );
 
-        // A calendar held on a server is different now: changes to one of
-        // those are sent. Telling somebody otherwise sends them looking for a
-        // fault that is not there.
-        let server = can_be_honoured(
-            EditMeans::OneDay,
-            crate::application::calendar_source::ON_A_SERVER,
-        )
-        .expect_err("one day is not built");
-
-        assert!(
-            !server.contains("not sent"),
-            "the refusal still claims a change to a calendar server stays here: {server}"
-        );
-        assert!(
-            !server.contains("  "),
-            "a wrapped literal lost a space: {server}"
+        // A calendar held on a server is different now: one day of a series is
+        // carried out there, so there is no refusal to word at all.
+        assert_eq!(
+            can_be_honoured(EditMeans::OneDay, WhereAChangeGoes::ACalendarServer),
+            Ok(())
         );
     }
 

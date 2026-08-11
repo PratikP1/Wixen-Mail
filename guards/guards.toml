@@ -1231,7 +1231,7 @@ red = [
 [[guard]]
 name = "a save that changed nothing leaves the row alone"
 file = "src/presentation/managers.rs"
-before = """    if !holds_a_change(data, &stored) {
+before = """    if !holds_a_change(data, opened) {
         return stored;
     }"""
 after = """    if false {
@@ -1239,6 +1239,77 @@ after = """    if false {
     }"""
 red = [
     "presentation::managers::tests::test_saving_an_event_nobody_changed_leaves_it_settled",
+]
+
+# ── Which day of a series was open ──────────────────────────────────────────
+#
+# Every day of a repeating event is one stored row, and the editor is filled
+# from the day on the screen. Saved against the stored row instead, the
+# difference between the two was read as a date somebody had typed: opening the
+# fortieth Tuesday and correcting a spelling moved the series onto that Tuesday
+# and the first thirty-nine were gone, with nothing said.
+
+[[guard]]
+name = "a repeating event is saved against the day that was opened"
+file = "src/presentation/managers.rs"
+before = """    let in_the_series_frame = as_if_the_series_start_had_been_shown(opened, &stored, data);
+    let edited = event_entry(stored.id.clone(), &stored.account_id, &in_the_series_frame);"""
+after = """    let edited = event_entry(stored.id.clone(), &stored.account_id, data);"""
+red = [
+    "presentation::managers::tests::test_correcting_a_spelling_on_a_repeating_event_keeps_the_offset",
+    "presentation::managers::tests::test_moving_a_whole_series_to_another_day_moves_every_day_by_the_same_much",
+    "presentation::managers::tests::test_moving_the_time_of_a_whole_series_leaves_the_day_it_starts_on_alone",
+]
+
+[[guard]]
+name = "one day taken off a series joins the days it had already taken off"
+file = "src/application/calendar.rs"
+before = """        exception_dates: Some(all),"""
+after = """        exception_dates: series.exception_dates.clone(),"""
+red = [
+    "application::calendar::tests::test_a_day_called_off_is_written_the_way_the_start_it_came_from_is_written",
+    "application::calendar::tests::test_calling_off_a_day_already_called_off_does_not_name_it_twice",
+    "application::calendar::tests::test_calling_off_one_day_keeps_the_days_the_series_had_already_called_off",
+    "application::calendar::tests::test_calling_off_one_day_takes_that_day_off_the_series_and_leaves_the_others",
+    "presentation::managers::changing_one_day_of_a_series::test_a_day_taken_off_a_series_is_no_longer_shown_and_the_others_still_are",
+    "presentation::managers::changing_one_day_of_a_series::test_changing_one_day_stores_the_changed_day_and_the_series_with_that_day_called_off",
+]
+
+[[guard]]
+name = "a day called off is written the way the start it came from is written"
+file = "src/service/caldav.rs"
+before = """    if is_all_day {
+        denormalize_ical_date(the_day_opened)
+    } else {
+        denormalize_ical_datetime(the_day_opened)
+    }"""
+after = """    denormalize_ical_datetime(the_day_opened)"""
+red = [
+    "application::calendar::tests::test_a_day_called_off_is_written_the_way_the_start_it_came_from_is_written",
+    "service::caldav::tests::test_a_called_off_day_is_written_by_the_same_routine_as_the_start",
+    "service::caldav::tests::test_a_day_called_off_lands_on_the_line_its_own_form_belongs_on",
+]
+
+[[guard]]
+name = "the question about which days focuses the answer it ticks"
+file = "src/presentation/wx_which_days.rs"
+before = """    if let Some((_, ticked)) = buttons.iter().find(|(_, button)| button.get_value()) {
+        ticked.set_focus();
+    }"""
+after = """    if let Some((_, first)) = buttons.first() {
+        first.set_focus();
+    }"""
+red = [
+    "presentation::wx_calendar::tests::test_the_window_puts_focus_on_the_answer_it_ticks",
+]
+
+[[guard]]
+name = "Enter does not answer the question about which days"
+file = "src/presentation/wx_which_days.rs"
+before = """    cancel.set_default();"""
+after = """    carry_on.set_default();"""
+red = [
+    "presentation::wx_calendar::tests::test_the_window_does_not_let_enter_carry_the_question_out",
 ]
 
 # ── The zone a moment was in, across an edit ────────────────────────────────

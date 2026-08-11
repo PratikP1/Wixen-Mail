@@ -3695,3 +3695,26 @@ fn test_no_mutation_run_has_its_failure_swallowed() {
          stopped early looks exactly like one that finished."
     );
 }
+
+#[test]
+fn test_only_the_calendar_document_writer_builds_a_day_in_the_calendar_format() {
+    // A day and a time written the way a calendar server reads one is built in
+    // exactly one file, because the reader that takes such a value apart lives
+    // beside it and the two have to answer as one. A second place that builds
+    // one is how a cancelled meeting came back onto somebody's calendar: a
+    // lenient reader and a strict writer, disagreeing about one day.
+    let allowed = Path::new("src").join("service").join("caldav.rs");
+    for path in ours() {
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") || path == allowed {
+            continue;
+        }
+        let text = fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            !text.contains(".format(\"%Y%m%d"),
+            "{} writes a day in the calendar format itself. Ask the calendar \
+             document writer for the value instead, so the reader and the \
+             writer keep answering as one.",
+            path.display()
+        );
+    }
+}

@@ -8,6 +8,50 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Changing a day of a repeating event asks which days you mean, and can now
+  change just the one.** Opening a day of a repeating event, or deleting one,
+  puts the question first: every day in the series, or just this one day. Every
+  day in the series is already chosen when the question opens, and that is where
+  the keyboard lands, so the first thing a screen reader reads out is the answer
+  Continue will take. The two answers are a set of radio buttons under a heading
+  that asks the question, and the arrow keys move between them. Under each
+  answer is a sentence saying what that answer will do to the calendar this
+  event is filed in. Enter does nothing but close the question, because both
+  answers act on somebody's calendar and one of them acts on every day of it.
+
+  Just this one day is carried out for a calendar held on a calendar server and
+  for a calendar kept on this computer. That day is taken off the series and
+  kept as a separate entry. It is refused, with the series left exactly as it
+  was, for a Google calendar, an Outlook calendar and a calendar this program
+  can only read, and the refusal says which calendar and why.
+
+  A repeating event filed in a Google or Outlook calendar now says, in the
+  question itself, that how often it repeats is known to this computer only and
+  that the calendar holds it as a single appointment.
+
+- **Fixed: correcting a repeating event moved the day it starts on, and the
+  earlier days disappeared.** Every day of a repeating event is one stored
+  entry, and the editor was filled from the day on the screen but saved against
+  the day the series starts from. The difference was read as a date somebody had
+  typed. So opening the fortieth Tuesday of a weekly meeting, correcting the
+  spelling of its name and saving moved the series onto that Tuesday, and the
+  first thirty-nine Tuesdays were gone. Opening a day and saving without typing
+  anything did the same thing, and marked the whole record to be sent back to
+  the provider. The day that was opened now reaches the save, so the series
+  keeps its own start. Typing a new date on a day of a series moves every day of
+  it by that much, rather than moving the series onto the day you happened to be
+  standing on.
+
+  Known limitations: just this one day is written as a day taken off the series
+  plus a separate entry, not as one occurrence moved. So other calendar programs
+  reading the same calendar show two things rather than one moved day, and
+  putting the day back into the series is not something this can do. Deleting
+  just one day works the same way, and the day cannot be brought back. None of
+  this has run against a real calendar server, a real Google account or a real
+  Outlook account: what is tested is the parsing, the sentences, what is stored
+  on this computer, and one test server running on this machine. Nothing has
+  been checked with a screen reader.
+
 - **A contact group does something now.** Until now a group could be made, named
   and listed, and that was all it could do. You can now rename one, put a
   contact in one, take a contact out of one, and, the point of the whole thing,

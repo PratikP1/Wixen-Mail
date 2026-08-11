@@ -1679,7 +1679,7 @@ fn a_cancelled_day_stored(its_own_zone: Option<&str>, clock_face: &str) -> Strin
 /// own wears the event's, and a face whose carried zone is the event's own
 /// lands on the same line as the rest rather than on a second line saying the
 /// same thing.
-fn cancelled_day_lines(called_off: &str, zone: Option<&str>) -> Vec<String> {
+pub(crate) fn cancelled_day_lines(called_off: &str, zone: Option<&str>) -> Vec<String> {
     let mut says_for_itself: Vec<&str> = Vec::new();
     // First zone seen first, so the lines come out in the order the column
     // holds them and a document read back names its instants in that order.
@@ -1739,6 +1739,27 @@ const WHOLE_DAY_ON_THE_WIRE: &str = "%Y%m%d";
 /// A value that is none of the shapes is handed on as it stands, the same
 /// answer [`denormalize_ical_datetime`] gives: this writer has no way to report
 /// anything, and a start left out is an event on no day at all.
+/// One day of a series called off, written the way that series' start is
+/// written.
+///
+/// The only routine anywhere that builds a value for the called-off column, so
+/// the reader that takes the column apart and the writer that puts it on the
+/// wire cannot be given a fourth shape to guess at. Both of the two shapes it
+/// can produce are ones both sides already read: a bare day for a whole-day
+/// series, and a clock face, keeping the letter for universal time when the
+/// start carried one, for a series with a time on it.
+///
+/// The day handed in is the day that was opened, taken from the row on the
+/// screen, so it carries the same zone marker the start it was worked out from
+/// carries.
+pub(crate) fn the_called_off_value_for(the_day_opened: &str, is_all_day: bool) -> String {
+    if is_all_day {
+        denormalize_ical_date(the_day_opened)
+    } else {
+        denormalize_ical_datetime(the_day_opened)
+    }
+}
+
 fn denormalize_ical_date(stored: &str) -> String {
     match crate::common::moment::read(stored) {
         Some(moment) => moment.the_day().format(WHOLE_DAY_ON_THE_WIRE).to_string(),
@@ -3061,6 +3082,58 @@ mod tests {
             ical.contains("EXDATE:20260312t080000z"),
             "a cancelled day that says it is UTC was given a zone as well:\n{ical}"
         );
+    }
+
+    #[test]
+    fn test_a_called_off_day_is_written_by_the_same_routine_as_the_start() {
+        // A day called off has to be written the way the start it was worked
+        // out from is written, or the reader that takes the column apart and
+        // the writer that puts it back on the wire are answering two different
+        // questions about one day. That is the family of defect this file has
+        // paid for more than once, so there is one routine and it delegates to
+        // the two that already write a start.
+        for value in [
+            "2026-08-03",
+            "2026-08-03T09:00:00Z",
+            "2026-08-03T09:00:00+05:30",
+            "2026-08-03 09:00",
+            "not a day at all",
+        ] {
+            assert_eq!(
+                the_called_off_value_for(value, true),
+                denormalize_ical_date(value),
+                "a whole day called off was written some other way: {value}"
+            );
+            assert_eq!(
+                the_called_off_value_for(value, false),
+                denormalize_ical_datetime(value),
+                "a timed day called off was written some other way: {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_day_called_off_lands_on_the_line_its_own_form_belongs_on() {
+        // Straight through from the value builder to the document lines, so
+        // nothing can produce a value the line builder then has to guess at.
+        for (opened, all_day, line) in [
+            ("2026-08-03", true, "EXDATE;VALUE=DATE:20260803"),
+            ("2026-08-03T09:00:00Z", false, "EXDATE:20260803T090000"),
+            (
+                "2026-08-03T09:00:00+05:30",
+                false,
+                "EXDATE;TZID=Asia/Kolkata:20260803T090000",
+            ),
+        ] {
+            let written = the_called_off_value_for(opened, all_day);
+
+            let lines = cancelled_day_lines(&written, Some("Asia/Kolkata"));
+
+            assert!(
+                lines.iter().any(|one| one.starts_with(line)),
+                "for {opened}, the lines were {lines:?}"
+            );
+        }
     }
 
     #[test]

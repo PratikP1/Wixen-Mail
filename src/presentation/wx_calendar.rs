@@ -5,11 +5,10 @@
 
 use wxdragon::prelude::*;
 
-use crate::application::calendar::{
-    EVERY_DAY_IN_THE_SERIES, EditMeans, JUST_THIS_ONE_DAY, asking_is_needed,
-};
+use crate::application::calendar::{EditMeans, WhereAChangeGoes};
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::ui_types::CalendarEventItem;
+use crate::presentation::wx_which_days::which_days_are_meant;
 
 // ── Button IDs ──────────────────────────────────────────────────────────────
 
@@ -17,8 +16,6 @@ const ID_CAL_NEW: Id = ID_HIGHEST + 500;
 const ID_CAL_EDIT: Id = ID_HIGHEST + 501;
 const ID_CAL_DELETE: Id = ID_HIGHEST + 502;
 const ID_CAL_SYNC: Id = ID_HIGHEST + 503;
-const ID_ONE_DAY: Id = ID_HIGHEST + 504;
-const ID_WHOLE_SERIES: Id = ID_HIGHEST + 505;
 
 // ── Calendar Action Result ──────────────────────────────────────────────────
 
@@ -31,14 +28,18 @@ pub enum CalendarAction {
     SyncRequested,
     /// User created a new event.
     CreateEvent(CalendarEventData),
-    /// User edited an existing event: which event, and which days they meant.
+    /// User edited an existing event: which day was open, which days they
+    /// meant, and what the boxes held.
     ///
     /// A repeating event has one stored row behind every day it falls on, so
-    /// the second half is not decoration: without it, changing the fortieth
-    /// Tuesday rewrites all fifty-two.
-    UpdateEvent(String, EditMeans, CalendarEventData),
-    /// User deleted an event: which event, and which days they meant.
-    DeleteEvent(String, EditMeans),
+    /// neither of the first two is decoration. Without the answer, changing the
+    /// fortieth Tuesday rewrites all fifty-two. Without the row, nothing on the
+    /// far side knows which Tuesday was open, and the save reads the difference
+    /// between the day shown and the day the series starts from as a date
+    /// somebody typed.
+    UpdateEvent(CalendarEventItem, EditMeans, CalendarEventData),
+    /// User deleted an event: which day was open, and which days they meant.
+    DeleteEvent(CalendarEventItem, EditMeans),
 }
 
 /// Data captured from the event editor dialog.
@@ -139,7 +140,16 @@ impl CalendarEventData {
 /// Show the calendar agenda dialog.
 ///
 /// Returns a list of `CalendarAction`s the user performed.
-pub fn show_calendar_dialog(parent: &Frame, events: &[CalendarEventItem]) -> Vec<CalendarAction> {
+///
+/// `where_changes_go` answers, for one row, which kind of calendar the event is
+/// filed in. Handed in rather than worked out here, because answering it needs
+/// the stored calendar and this window has none, and because there is one place
+/// that question is answered for the whole program.
+pub fn show_calendar_dialog(
+    parent: &Frame,
+    events: &[CalendarEventItem],
+    where_changes_go: &dyn Fn(&CalendarEventItem) -> WhereAChangeGoes,
+) -> Vec<CalendarAction> {
     let dialog = Dialog::builder(parent, "Calendar")
         .with_size(800, 600)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
@@ -261,11 +271,14 @@ pub fn show_calendar_dialog(parent: &Frame, events: &[CalendarEventItem]) -> Vec
                         // Asked before the editor opens, so somebody who meant
                         // one day is not made to fill a form first and then
                         // told it cannot be done.
-                        if let Some(means) =
-                            which_days_are_meant(&dialog, &item.summary, &item.repeats)
-                            && let Some(data) = show_event_editor(&dialog, Some(&prefill))
+                        if let Some(means) = which_days_are_meant(
+                            &dialog,
+                            &item.summary,
+                            &item.repeats,
+                            where_changes_go(item),
+                        ) && let Some(data) = show_event_editor(&dialog, Some(&prefill))
                         {
-                            actions.push(CalendarAction::UpdateEvent(item.id.clone(), means, data));
+                            actions.push(CalendarAction::UpdateEvent(item.clone(), means, data));
                             status.set_label("Event updated.");
                         }
                     }
@@ -315,11 +328,21 @@ pub fn show_calendar_dialog(parent: &Frame, events: &[CalendarEventItem]) -> Vec
                         });
 
                         if confirm.show_modal() == ID_OK
-                            && let Some(means) =
-                                which_days_are_meant(&dialog, &item.summary, &item.repeats)
+                            && let Some(means) = which_days_are_meant(
+                                &dialog,
+                                &item.summary,
+                                &item.repeats,
+                                where_changes_go(item),
+                            )
                         {
-                            actions.push(CalendarAction::DeleteEvent(item.id.clone(), means));
-                            status.set_label("Event deleted.");
+                            actions.push(CalendarAction::DeleteEvent(item.clone(), means));
+                            // Said as what really happens. Taking one day off a
+                            // series is not a deletion: the event stays and the
+                            // other days keep their own values.
+                            status.set_label(match means {
+                                EditMeans::OneDay => "That one day is taken off.",
+                                EditMeans::WholeSeries => "Event deleted.",
+                            });
                         }
                         confirm.destroy();
                     }
@@ -352,87 +375,6 @@ fn populate_event_list(list: &ListCtrl, events: &[CalendarEventItem]) {
         list.set_item_text_by_column(idx, 1, &event.summary);
         list.set_item_text_by_column(idx, 2, &event.location);
         list.set_item_text_by_column(idx, 3, &event.status);
-    }
-}
-
-// ── One day, or the whole series ────────────────────────────────────────────
-
-/// Ask whether a change is meant for one day or for the whole series.
-///
-/// `Some` with the answer, or `None` if it was called off. An event that does
-/// not repeat is not asked about at all: there is only one day, so there is
-/// nothing to choose between, and a question with one true answer is a question
-/// nobody should be made to read.
-///
-/// The wording of the two answers lives in `application::calendar`, so the
-/// words offered here and the words the refusal quotes back cannot drift.
-pub fn which_days_are_meant(
-    parent: &dyn WxWidget,
-    summary: &str,
-    repeats: &str,
-) -> Option<EditMeans> {
-    if !asking_is_needed(repeats) {
-        return Some(EditMeans::WholeSeries);
-    }
-
-    let dialog = Dialog::builder(parent, "This event repeats")
-        .with_size(430, 200)
-        .build();
-    let sizer = BoxSizer::builder(Orientation::Vertical).build();
-
-    let question = StaticText::builder(&dialog)
-        .with_label(&format!(
-            "\"{summary}\" repeats: {repeats}.\nWhich days do you mean?"
-        ))
-        .build();
-    sizer.add(&question, 0, SizerFlag::Expand | SizerFlag::All, 12);
-
-    let buttons = BoxSizer::builder(Orientation::Horizontal).build();
-    let one_day = Button::builder(&dialog)
-        .with_label(JUST_THIS_ONE_DAY)
-        .with_id(ID_ONE_DAY)
-        .build();
-    let whole_series = Button::builder(&dialog)
-        .with_label(EVERY_DAY_IN_THE_SERIES)
-        .with_id(ID_WHOLE_SERIES)
-        .build();
-    let cancel = Button::builder(&dialog)
-        .with_label("&Cancel")
-        .with_id(ID_CANCEL)
-        .build();
-    // Named the only way that reaches a screen reader on Windows. The visible
-    // label carries the keyboard letter, which is not a word anybody should
-    // hear, so the spoken name is the same sentence without it.
-    set_accessible_name(&one_day, &JUST_THIS_ONE_DAY.replace('&', ""));
-    set_accessible_name(&whole_series, &EVERY_DAY_IN_THE_SERIES.replace('&', ""));
-    set_accessible_name(&cancel, "Cancel, and change nothing");
-    for button in [&one_day, &whole_series, &cancel] {
-        buttons.add(button, 0, SizerFlag::All, 4);
-    }
-    sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
-    dialog.set_sizer(*sizer, true);
-    dialog.centre();
-
-    // Opens on the answer that changes nothing, because the other two both act
-    // on somebody's calendar and one of them acts on every day of it.
-    cancel.set_focus();
-    for (button, answer) in [(&one_day, ID_ONE_DAY), (&whole_series, ID_WHOLE_SERIES)] {
-        button.on_click({
-            let closing = dialog;
-            move |_| closing.end_modal(answer)
-        });
-    }
-    cancel.on_click({
-        let closing = dialog;
-        move |_| closing.end_modal(ID_CANCEL)
-    });
-
-    let answered = dialog.show_modal();
-    dialog.destroy();
-    match answered {
-        id if id == ID_ONE_DAY => Some(EditMeans::OneDay),
-        id if id == ID_WHOLE_SERIES => Some(EditMeans::WholeSeries),
-        _ => None,
     }
 }
 
@@ -658,6 +600,137 @@ fn show_event_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── The window that asks which days somebody means ──────────────────
+    //
+    // Read as text, the same way the first-run screen is read and for the same
+    // reason: the fact is real and it matters, and a test cannot reach it by
+    // running because reaching it needs a window on a screen. It is read from
+    // here rather than from inside itself, because a test that names
+    // `set_value` in an assertion would be counted as a second place the tick
+    // is put on.
+
+    /// The window that asks the question, read as text.
+    fn the_window_that_asks() -> String {
+        std::fs::read_to_string("src/presentation/wx_which_days.rs")
+            .expect("the window that asks which days to be readable")
+            .replace("\r\n", "\n")
+    }
+
+    #[test]
+    fn test_the_window_ticks_the_answer_that_is_preselected() {
+        let window = the_window_that_asks();
+
+        assert!(
+            window.contains("button.set_value(*means == EditMeans::PRESELECTED)"),
+            "the window no longer ticks the answer that is offered first, so \
+             nothing here knows which one it opens on"
+        );
+        assert_eq!(
+            window.matches("set_value").count(),
+            1,
+            "the tick is put on in more than one place, so the answer focus \
+             found is not the one left ticked"
+        );
+    }
+
+    #[test]
+    fn test_the_window_puts_focus_on_the_answer_it_ticks() {
+        // The rule this window has to keep. It was three push buttons, which
+        // cannot be ticked at all, so the question opened with focus on Cancel
+        // and the answer that would be taken was nowhere in what a screen
+        // reader read out.
+        let window = the_window_that_asks();
+
+        assert!(
+            window.contains(
+                "if let Some((_, ticked)) = buttons.iter().find(|(_, button)| \
+                 button.get_value()) {\n        ticked.set_focus();\n    }"
+            ),
+            "the window no longer puts focus on the answer it ticks"
+        );
+        assert_eq!(
+            window.matches("set_focus").count(),
+            1,
+            "something else in the window takes focus as well, so what is heard \
+             is no longer the answer that is ticked"
+        );
+        let ticked = window
+            .find("button.set_value")
+            .expect("the window to tick an answer");
+        let focused = window
+            .find("ticked.set_focus")
+            .expect("the window to focus");
+        assert!(
+            ticked < focused,
+            "focus goes looking for a ticked answer before anything is ticked"
+        );
+    }
+
+    #[test]
+    fn test_the_window_gives_each_answer_a_description_and_puts_it_on_the_screen_too() {
+        // A description is what a screen reader working through Microsoft
+        // Active Accessibility reads when the button takes focus. The words on
+        // screen are the only copy a sighted reader gets, and the only copy a
+        // reader working through UI Automation gets. Dropping either takes the
+        // sentence away from somebody.
+        let window = the_window_that_asks();
+
+        assert!(
+            window.contains(
+                "set_accessible_name_and_description(&button, &means.spoken(), &will_do)"
+            ),
+            "what an answer will do is no longer read out when that answer takes focus"
+        );
+        assert!(
+            window.contains("StaticText::builder(&dialog).with_label(&will_do)"),
+            "what an answer will do is no longer on the screen"
+        );
+        assert!(
+            window.contains("StaticBoxSizerBuilder::new_with_label"),
+            "the answers are no longer a group with a label, so the question \
+             itself is loose text somebody has to go looking for"
+        );
+        assert!(
+            window.contains("RadioButtonStyle::GroupStart"),
+            "the answers are no longer one set, so the arrow keys leave them"
+        );
+    }
+
+    #[test]
+    fn test_the_window_does_not_let_enter_carry_the_question_out() {
+        // Both answers act on somebody's calendar and one of them acts on every
+        // day of it. Enter pressed partway through hearing the question must
+        // change nothing.
+        let window = the_window_that_asks();
+
+        assert!(
+            window.contains("cancel.set_default();"),
+            "Enter no longer answers the question with the one answer that \
+             touches nobody's calendar"
+        );
+        assert_eq!(
+            window.matches("set_default").count(),
+            1,
+            "something else in the window is the default button as well"
+        );
+    }
+
+    #[test]
+    fn test_the_window_reads_its_answer_back_from_the_buttons() {
+        // What is ticked and what happens have to be one answer rather than
+        // two, and only Continue is an answer at all.
+        let window = the_window_that_asks();
+
+        assert!(
+            window.contains("let chosen = (answered == ID_OK).then(|| {"),
+            "the window answers with something other than what Continue took"
+        );
+        assert!(
+            window.contains(".find(|(_, button)| button.get_value())"),
+            "the answer no longer comes off the buttons"
+        );
+    }
 
     fn make_event_data(
         summary: &str,

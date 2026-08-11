@@ -9,6 +9,7 @@
 //! `application::collection_sync`, so the rule that a removed row is actually
 //! deleted is tested once rather than written out four times.
 
+use crate::application::calendar::EditMeans;
 use crate::application::collection_sync;
 use crate::application::new_item::LOCAL_ACCOUNT_ID;
 use crate::data::message_cache::MessageCache;
@@ -502,23 +503,55 @@ fn ask_a_server_and_add_what_was_chosen(
         .map(Some)
 }
 
-/// What a refusal names when the calendar the event came from is not to hand.
+/// Where a change to the event on this row can actually go.
 ///
-/// The list row carries no provider, and reading the stored event only to
-/// choose between two sentences is a database read on a keystroke. The shorter
-/// refusal is the one that claims least, which is the safe direction.
-const PROVIDER_IS_UNKNOWN_HERE: &str = "local";
+/// Asked of the calendar the row is filed in, never of the row's own provider
+/// word. An event made on this computer and filed in a Google calendar says
+/// "local" about itself and goes to Google, and that difference now decides
+/// whether changing one day of a series is carried out or refused. A calendar
+/// that cannot be read is treated as one held on no account, which is the
+/// answer that claims least.
+fn the_calendar_it_is_in(
+    cache: &MessageCache,
+    row: &CalendarEventItem,
+) -> crate::application::calendar::WhereAChangeGoes {
+    let container = row
+        .calendar_id
+        .as_deref()
+        .and_then(|id| cache.get_calendar(id).ok().flatten());
+    crate::application::calendar::where_a_change_goes(container.as_ref())
+}
 
-/// Which kind of calendar an event came from, for a refusal that has to say so.
+/// Store the one day somebody changed, and take that day off the series.
 ///
-/// An event nothing could be read for is treated as made here, which is the
-/// answer that says least: it produces the shorter refusal rather than a
-/// sentence about a server that may not be involved.
-fn provider_of(stored: &Option<crate::data::message_cache::CalendarEventEntry>) -> &str {
-    stored
-        .as_ref()
-        .and_then(|event| event.source_provider.as_deref())
-        .unwrap_or(PROVIDER_IS_UNKNOWN_HERE)
+/// The changed day is written first, on purpose. If the second write fails, the
+/// day is on the calendar twice, which somebody can see and put right. The
+/// other order leaves the day missing, which nothing says and nobody can get
+/// back.
+///
+/// The separate day carries the series' calendar, zone, account and status and
+/// none of its identity: no repeat rule, no called-off days, and nothing the
+/// server that holds the series knows it by. It is a new appointment, so it
+/// goes up as one.
+fn one_day_of_a_series_changed(
+    cache: &MessageCache,
+    series: &crate::data::message_cache::CalendarEventEntry,
+    opened: &CalendarEventItem,
+    data: &wx_calendar::CalendarEventData,
+) -> crate::common::Result<()> {
+    let entry = event_entry(new_id("event"), &series.account_id, data);
+    let that_day = crate::data::message_cache::CalendarEventEntry {
+        calendar_id: series.calendar_id.clone(),
+        time_zone: series.time_zone.clone(),
+        status: series.status.clone(),
+        categories: series.categories.clone(),
+        ..entry
+    };
+    cache.save_calendar_event(&that_day)?;
+    cache.save_calendar_event(&crate::application::calendar::one_day_called_off(
+        series,
+        &opened.start,
+    ))
 }
 
 /// The calendar dialog, which returns a list of actions rather than a set.
@@ -536,7 +569,9 @@ pub fn manage_calendar(
     // The events already on screen, rather than an empty list. The dialog used
     // to be handed nothing whatever the calendar held.
     let events = lock_state(state).events.clone();
-    let actions = wx_calendar::show_calendar_dialog(frame, &events);
+    let actions = wx_calendar::show_calendar_dialog(frame, &events, &|row| {
+        the_calendar_it_is_in(&cache, row)
+    });
 
     let mut failures = Vec::new();
     let mut changed = false;
@@ -556,46 +591,64 @@ pub fn manage_calendar(
                     Err(e) => failures.push(format!("{}: {}", data.summary, e)),
                 }
             }
-            wx_calendar::CalendarAction::UpdateEvent(id, means, data) => {
+            wx_calendar::CalendarAction::UpdateEvent(opened, means, data) => {
                 // Onto the event as it stands, rather than a fresh one built
                 // from the editor: the editor asks about nine things and an
                 // event carries more than nine.
-                let stored = cache.get_event_by_id(&id).ok().flatten();
+                let stored = cache.get_event_by_id(&opened.id).ok().flatten();
                 // Before anything is written. A change meant for one day of a
                 // series would otherwise rewrite every day of it, and the other
                 // days' own values cannot be got back.
-                if let Err(refused) =
-                    crate::application::calendar::can_be_honoured(means, provider_of(&stored))
-                {
+                if let Err(refused) = crate::application::calendar::can_be_honoured(
+                    means,
+                    the_calendar_it_is_in(&cache, &opened),
+                ) {
                     send_refusal(tx, rt, &refused);
                     continue;
                 }
-                let entry = match stored {
-                    Some(stored) => event_with_edits(stored, &data),
-                    None => event_entry(id.clone(), &account, &data),
+                let written = match (stored, means) {
+                    (Some(series), EditMeans::OneDay) => {
+                        one_day_of_a_series_changed(&cache, &series, &opened, &data)
+                    }
+                    (Some(stored), EditMeans::WholeSeries) => {
+                        cache.save_calendar_event(&event_with_edits(stored, &opened, &data))
+                    }
+                    (None, _) => {
+                        cache.save_calendar_event(&event_entry(opened.id.clone(), &account, &data))
+                    }
                 };
-                match cache.save_calendar_event(&entry) {
+                match written {
                     Ok(()) => {
                         changed = true;
-                        let _ = tx.try_send(UIUpdate::CalendarEventSaved(id));
+                        let _ = tx.try_send(UIUpdate::CalendarEventSaved(opened.id));
                     }
                     Err(e) => failures.push(format!("{}: {}", data.summary, e)),
                 }
             }
-            wx_calendar::CalendarAction::DeleteEvent(id, means) => {
-                let stored = cache.get_event_by_id(&id).ok().flatten();
-                if let Err(refused) =
-                    crate::application::calendar::can_be_honoured(means, provider_of(&stored))
-                {
+            wx_calendar::CalendarAction::DeleteEvent(opened, means) => {
+                let stored = cache.get_event_by_id(&opened.id).ok().flatten();
+                if let Err(refused) = crate::application::calendar::can_be_honoured(
+                    means,
+                    the_calendar_it_is_in(&cache, &opened),
+                ) {
                     send_refusal(tx, rt, &refused);
                     continue;
                 }
-                match cache.delete_calendar_event(&id) {
+                // Calling one day off is not a deletion. The series stays, with
+                // that day taken out of it, so the other days keep their own
+                // values and the event still exists to be changed again.
+                let written = match (stored, means) {
+                    (Some(series), EditMeans::OneDay) => cache.save_calendar_event(
+                        &crate::application::calendar::one_day_called_off(&series, &opened.start),
+                    ),
+                    _ => cache.delete_calendar_event(&opened.id),
+                };
+                match written {
                     Ok(()) => {
                         changed = true;
-                        let _ = tx.try_send(UIUpdate::CalendarEventDeleted(id));
+                        let _ = tx.try_send(UIUpdate::CalendarEventDeleted(opened.id));
                     }
-                    Err(e) => failures.push(format!("delete {}: {}", id, e)),
+                    Err(e) => failures.push(format!("delete {}: {}", opened.id, e)),
                 }
             }
         }
@@ -626,8 +679,17 @@ pub fn manage_calendar(
 /// and the identity the server that sent it knows it by. Rebuilding the event
 /// from the editor alone threw all of that away every time somebody corrected
 /// a spelling.
+///
+/// `opened` is the row the editor was really filled from, which for a
+/// repeating event is the day somebody was standing on and not the day the
+/// series starts from. It has to be handed in rather than worked out again
+/// here: worked out again, this compared the boxes with the series' own start,
+/// read the difference as a date somebody had typed, and wrote the day that was
+/// opened over the series' start. Every occurrence before that day then
+/// disappeared, and nothing said so.
 fn event_with_edits(
     stored: crate::data::message_cache::CalendarEventEntry,
+    opened: &CalendarEventItem,
     data: &wx_calendar::CalendarEventData,
 ) -> crate::data::message_cache::CalendarEventEntry {
     // A row nobody changed is handed straight back, untouched, which is the
@@ -636,10 +698,11 @@ fn event_with_edits(
     // is marked as waiting to be sent, so the next sync writes the whole
     // record back to the provider, over every field this program does not
     // model. Opening an event and pressing Save without typing did that.
-    if !holds_a_change(data, &stored) {
+    if !holds_a_change(data, opened) {
         return stored;
     }
-    let edited = event_entry(stored.id.clone(), &stored.account_id, data);
+    let in_the_series_frame = as_if_the_series_start_had_been_shown(opened, &stored, data);
+    let edited = event_entry(stored.id.clone(), &stored.account_id, &in_the_series_frame);
     let alerts = alerts_with_the_first_at(stored.reminders_json.as_deref(), data.reminder_minutes);
     // What the two date boxes were filled from, which is not always the column
     // they are written back to: a whole-day event fills them from its date
@@ -686,6 +749,52 @@ fn event_with_edits(
         created_at: stored.created_at,
         ..edited
     }
+}
+
+/// What the editor handed back, read as though it had been opened on the day
+/// the series starts from.
+///
+/// The two date boxes are moved back by the distance between the day that was
+/// opened and the day the series starts from, so a box nobody typed in reads
+/// back as the series' own date and the whole-series save leaves the start
+/// exactly where it was. A box somebody really did type in keeps the distance
+/// they moved it, so changing the day of a series from the fortieth Tuesday
+/// moves every Tuesday by the same number of days rather than throwing the
+/// first thirty-nine away.
+///
+/// An event that happens once is opened on its own day, so the distance is
+/// nothing and what came back is handed on untouched.
+fn as_if_the_series_start_had_been_shown(
+    opened: &CalendarEventItem,
+    stored: &crate::data::message_cache::CalendarEventEntry,
+    returned: &wx_calendar::CalendarEventData,
+) -> wx_calendar::CalendarEventData {
+    let series = CalendarEventItem::from_entry(stored);
+    let (Some(day_opened), Some(day_the_series_starts)) =
+        (the_day_shown(&opened.start), the_day_shown(&series.start))
+    else {
+        return returned.clone();
+    };
+    let back = day_the_series_starts - day_opened;
+    if back.is_zero() {
+        return returned.clone();
+    }
+    let moved = |box_holds: &str| {
+        the_day_shown(box_holds).map_or_else(
+            || box_holds.to_string(),
+            |typed| (typed + back).format("%Y-%m-%d").to_string(),
+        )
+    };
+    wx_calendar::CalendarEventData {
+        start_date: moved(&returned.start_date),
+        end_date: moved(&returned.end_date),
+        ..returned.clone()
+    }
+}
+
+/// The day a shown moment or a date box names, when it names one.
+fn the_day_shown(value: &str) -> Option<chrono::NaiveDate> {
+    chrono::NaiveDate::parse_from_str(value.get(..10)?, "%Y-%m-%d").ok()
 }
 
 /// The part of a stored moment that says which zone its clock face was in.
@@ -790,17 +899,13 @@ fn moment_after_the_edit(
 /// cannot have changed any of them, which is exactly why a row this answers
 /// false for is handed back untouched rather than rebuilt.
 ///
-/// A repeating event is the one case where this says "changed" for an event
-/// nobody typed in: the list row is the day somebody was standing on, and the
-/// stored row is the day the series starts from. That is the answer the code
-/// gave before this existed, for every event, so it loses nothing.
-fn holds_a_change(
-    returned: &wx_calendar::CalendarEventData,
-    stored: &crate::data::message_cache::CalendarEventEntry,
-) -> bool {
-    wx_calendar::CalendarEventData::as_shown(
-        &crate::presentation::ui_types::CalendarEventItem::from_entry(stored),
-    ) != *returned
+/// Asked of the row the editor was filled from and never of the stored event.
+/// A repeating event's row is the day somebody was standing on and the stored
+/// event is the day the series starts from, so asked of the stored event this
+/// said "changed" for a series nobody had typed in, and the save that followed
+/// wrote the opened day over the series' start.
+fn holds_a_change(returned: &wx_calendar::CalendarEventData, opened: &CalendarEventItem) -> bool {
+    wx_calendar::CalendarEventData::as_shown(opened) != *returned
 }
 
 /// One alert, written the way both providers read one.
@@ -1275,18 +1380,42 @@ pub fn pim_command(
         // Delete on the fortieth Tuesday takes all fifty-two, and the sentence
         // above only ever named the one.
         if kind == ItemKind::Event {
-            let repeats = lock_state(state)
-                .events
-                .get(row)
-                .map(|shown| shown.repeats.clone())
-                .unwrap_or_default();
-            let Some(means) = wx_calendar::which_days_are_meant(frame, &name, &repeats) else {
+            let opened = lock_state(state).events.get(row).cloned();
+            let Some(opened) = opened else { return };
+            let goes = the_calendar_it_is_in(&cache, &opened);
+            let Some(means) = crate::presentation::wx_which_days::which_days_are_meant(
+                frame,
+                &name,
+                &opened.repeats,
+                goes,
+            ) else {
                 return;
             };
-            if let Err(refused) =
-                crate::application::calendar::can_be_honoured(means, PROVIDER_IS_UNKNOWN_HERE)
-            {
+            if let Err(refused) = crate::application::calendar::can_be_honoured(means, goes) {
                 return send_refusal(tx, rt, &refused);
+            }
+            // Calling one day off leaves the series and takes that day out of
+            // it, so it is a save rather than a deletion and does not go on
+            // through the deletion below.
+            if means == EditMeans::OneDay {
+                let Some(series) = cache.get_event_by_id(&opened.id).ok().flatten() else {
+                    return;
+                };
+                let called_off =
+                    crate::application::calendar::one_day_called_off(&series, &opened.start);
+                return match cache.save_calendar_event(&called_off) {
+                    Ok(()) => {
+                        let _ = tx.try_send(UIUpdate::CalendarEventSaved(opened.id));
+                        send_status(
+                            tx,
+                            rt,
+                            &format!(
+                                "{name}: that one day is taken off. The other days are unchanged."
+                            ),
+                        );
+                    }
+                    Err(e) => send_refusal(tx, rt, &format!("{name}: {e}")),
+                };
             }
         }
     }
@@ -2738,7 +2867,7 @@ mod tests {
 
         let mut renamed = data(false);
         renamed.summary = "Renamed".to_string();
-        let edited = event_with_edits(stored, &renamed);
+        let edited = edited_from_its_own_row(stored, &renamed);
 
         assert_eq!(edited.summary, "Renamed", "the change asked for happens");
         assert_eq!(edited.provider_event_id.as_deref(), Some("uid-1"));
@@ -2772,7 +2901,7 @@ mod tests {
         later.reminder_minutes = 30;
 
         assert_eq!(
-            alerts_on(&event_with_edits(stored, &later)),
+            alerts_on(&edited_from_its_own_row(stored, &later)),
             vec![(30, "email".to_string()), (1440, "popup".to_string())]
         );
     }
@@ -2788,7 +2917,7 @@ mod tests {
         none.reminder_minutes = 0;
 
         assert_eq!(
-            alerts_on(&event_with_edits(stored, &none)),
+            alerts_on(&edited_from_its_own_row(stored, &none)),
             vec![(1440, "email".to_string())]
         );
     }
@@ -2799,7 +2928,7 @@ mod tests {
         let mut none = data(false);
         none.reminder_minutes = 0;
 
-        assert_eq!(event_with_edits(stored, &none).reminders_json, None);
+        assert_eq!(edited_from_its_own_row(stored, &none).reminders_json, None);
     }
 
     #[test]
@@ -2808,7 +2937,7 @@ mod tests {
         stored.reminders_json = None;
 
         assert_eq!(
-            alerts_on(&event_with_edits(stored, &data(false))),
+            alerts_on(&edited_from_its_own_row(stored, &data(false))),
             vec![(15, "popup".to_string())],
             "an alert with no method is one Google drops"
         );
@@ -2830,7 +2959,7 @@ mod tests {
 
         let mut renamed = data(false);
         renamed.summary = "Renamed".to_string();
-        let edited = event_with_edits(
+        let edited = edited_from_its_own_row(
             cache
                 .get_event_by_id("e1")
                 .expect("a read")
@@ -2874,7 +3003,7 @@ mod tests {
         let untouched = wx_calendar::CalendarEventData::as_shown(
             &crate::presentation::ui_types::CalendarEventItem::from_entry(&stored),
         );
-        let saved = event_with_edits(stored.clone(), &untouched);
+        let saved = edited_from_its_own_row(stored.clone(), &untouched);
 
         assert!(
             !saved.pending,
@@ -2897,7 +3026,7 @@ mod tests {
             &crate::presentation::ui_types::CalendarEventItem::from_entry(&stored),
         );
 
-        assert!(event_with_edits(stored, &untouched).pending);
+        assert!(edited_from_its_own_row(stored, &untouched).pending);
     }
 
     // ── The zone a moment was in has to survive an edit ──────────────────
@@ -2914,6 +3043,36 @@ mod tests {
         stored.start_datetime = start.to_string();
         stored.end_datetime = end.to_string();
         stored
+    }
+
+    /// An event opened on its own day, which is every event that happens once.
+    ///
+    /// The day the editor was filled from is what the save is told, so a test
+    /// about an ordinary event says here, in one place, that the day opened and
+    /// the day stored are the same day.
+    fn edited_from_its_own_row(
+        stored: crate::data::message_cache::CalendarEventEntry,
+        data: &wx_calendar::CalendarEventData,
+    ) -> crate::data::message_cache::CalendarEventEntry {
+        let opened = CalendarEventItem::from_entry(&stored);
+        event_with_edits(stored, &opened, data)
+    }
+
+    /// One day of a series as the calendar list really shows it.
+    ///
+    /// Taken from the list rather than built by hand, so a test says what
+    /// somebody standing on that row would have handed back.
+    fn one_day_of(
+        stored: &crate::data::message_cache::CalendarEventEntry,
+        year: i32,
+        month: u32,
+    ) -> CalendarEventItem {
+        let first = chrono::NaiveDate::from_ymd_opt(year, month, 1).expect("a date");
+        let last = chrono::NaiveDate::from_ymd_opt(year, month, 28).expect("a date");
+        CalendarEventItem::shown_days(stored, first, last)
+            .into_iter()
+            .next()
+            .expect("a day the series falls on")
     }
 
     /// What the editor hands back when the only box typed in was the summary.
@@ -2959,7 +3118,7 @@ mod tests {
             as_a_provider_sent_it("2026-07-27T09:00:00+05:30", "2026-07-27T09:15:00+05:30");
         let renamed = only_the_summary_retyped(&stored, "Stand-up");
 
-        let edited = event_with_edits(stored.clone(), &renamed);
+        let edited = edited_from_its_own_row(stored.clone(), &renamed);
 
         assert_eq!(edited.summary, "Stand-up", "the change asked for happens");
         assert_eq!(
@@ -2979,7 +3138,7 @@ mod tests {
         let stored = as_a_provider_sent_it("2026-07-27T09:00:00Z", "2026-07-27T09:15:00Z");
         let renamed = only_the_summary_retyped(&stored, "Stand-up");
 
-        let edited = event_with_edits(stored.clone(), &renamed);
+        let edited = edited_from_its_own_row(stored.clone(), &renamed);
 
         assert_eq!(edited.start_datetime, stored.start_datetime);
         assert_eq!(edited.end_datetime, stored.end_datetime);
@@ -3003,7 +3162,7 @@ mod tests {
             let stored = as_a_provider_sent_it(start, end);
             let renamed = only_the_summary_retyped(&stored, "Stand-up");
 
-            let edited = event_with_edits(stored.clone(), &renamed);
+            let edited = edited_from_its_own_row(stored.clone(), &renamed);
 
             assert_eq!(
                 edited.start_datetime, stored.start_datetime,
@@ -3023,7 +3182,7 @@ mod tests {
         stored.time_zone = Some("Asia/Kolkata".to_string());
         let renamed = only_the_summary_retyped(&stored, "Stand-up");
 
-        let edited = event_with_edits(stored.clone(), &renamed);
+        let edited = edited_from_its_own_row(stored.clone(), &renamed);
 
         assert_eq!(edited.start_datetime, stored.start_datetime);
         assert_eq!(edited.time_zone.as_deref(), Some("Asia/Kolkata"));
@@ -3044,7 +3203,7 @@ mod tests {
         stored.source_provider = Some("caldav".to_string());
         let renamed = only_the_summary_retyped(&stored, "Stand-up");
 
-        let edited = event_with_edits(stored, &renamed);
+        let edited = edited_from_its_own_row(stored, &renamed);
         let sent = crate::application::caldav_sync::local_to_caldav_event(&edited);
 
         assert!(
@@ -3065,7 +3224,7 @@ mod tests {
         stored.end_date = Some("2026-07-28".to_string());
         let renamed = only_the_summary_retyped(&stored, "Bank holiday");
 
-        let edited = event_with_edits(stored.clone(), &renamed);
+        let edited = edited_from_its_own_row(stored.clone(), &renamed);
 
         assert_eq!(edited.summary, "Bank holiday");
         assert!(edited.is_all_day);
@@ -3078,24 +3237,55 @@ mod tests {
         assert_eq!(edited.end_datetime, stored.end_datetime);
     }
 
-    #[test]
-    fn test_correcting_a_spelling_on_a_repeating_event_keeps_the_offset() {
-        // The row on the screen is one day of the series, so the boxes hold
-        // that day rather than the day the series starts from and this reads as
-        // a move. The zone still has to survive it.
+    /// A weekly series starting on 27 July, and the day of it August opens on.
+    fn a_weekly_series() -> (
+        crate::data::message_cache::CalendarEventEntry,
+        CalendarEventItem,
+    ) {
         let mut stored =
             as_a_provider_sent_it("2026-07-27T09:00:00+05:30", "2026-07-27T09:15:00+05:30");
         stored.recurrence_rule = Some("FREQ=WEEKLY".to_string());
-        let row = crate::presentation::ui_types::CalendarEventItem::shown_days(
-            &stored,
-            chrono::NaiveDate::from_ymd_opt(2026, 8, 1).expect("a date"),
-            chrono::NaiveDate::from_ymd_opt(2026, 8, 31).expect("a date"),
+        let day = one_day_of(&stored, 2026, 8);
+        assert_eq!(
+            day.start, "2026-08-03T09:00:00+05:30",
+            "the fixture no longer opens on a day that is not the series' own"
         );
-        let day = row.first().expect("a day the series falls on");
-        let mut renamed = wx_calendar::CalendarEventData::as_shown(day);
+        (stored, day)
+    }
+
+    #[test]
+    fn test_a_day_of_a_series_opened_and_not_typed_in_is_not_counted_as_a_change() {
+        // Opening the fortieth Tuesday and pressing Save without typing. The
+        // boxes hold that Tuesday because that is what they were filled from,
+        // and asked of the series instead this read the difference as a date
+        // somebody had typed.
+        let (stored, day) = a_weekly_series();
+        let untouched = wx_calendar::CalendarEventData::as_shown(&day);
+
+        let saved = event_with_edits(stored.clone(), &day, &untouched);
+
+        assert_eq!(
+            saved.start_datetime, stored.start_datetime,
+            "the day that was opened was written over the day the series starts from"
+        );
+        assert!(
+            !saved.pending,
+            "a series nobody typed in was marked as waiting to go to the provider"
+        );
+    }
+
+    #[test]
+    fn test_correcting_a_spelling_on_a_repeating_event_keeps_the_offset() {
+        // The row on the screen is one day of the series, so the boxes hold
+        // that day rather than the day the series starts from. What is written
+        // back is still the series' own start: every occurrence before the day
+        // that was opened would otherwise disappear. The zone has to survive it
+        // too.
+        let (stored, day) = a_weekly_series();
+        let mut renamed = wx_calendar::CalendarEventData::as_shown(&day);
         renamed.summary = "Stand-up".to_string();
 
-        let edited = event_with_edits(stored, &renamed);
+        let edited = event_with_edits(stored.clone(), &day, &renamed);
 
         assert_eq!(edited.summary, "Stand-up");
         assert!(
@@ -3104,10 +3294,44 @@ mod tests {
             edited.start_datetime
         );
         assert_eq!(
-            edited.start_datetime, "2026-08-03T09:00:00+05:30",
-            "the clock face still reads nine in the morning where the event is"
+            edited.start_datetime, "2026-07-27T09:00:00+05:30",
+            "correcting a spelling moved the day the series starts from"
         );
+        assert_eq!(edited.end_datetime, stored.end_datetime);
         assert_eq!(edited.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+    }
+
+    #[test]
+    fn test_moving_the_time_of_a_whole_series_leaves_the_day_it_starts_on_alone() {
+        // The clock face is somebody's to change and the day the series starts
+        // from is not. Taking the day out of the box they typed in would have
+        // moved the series onto the day they happened to be standing on.
+        let (stored, day) = a_weekly_series();
+        let mut moved = wx_calendar::CalendarEventData::as_shown(&day);
+        moved.start_time = "10:00".to_string();
+        moved.end_time = "10:15".to_string();
+
+        let edited = event_with_edits(stored, &day, &moved);
+
+        assert_eq!(edited.start_datetime, "2026-07-27T10:00:00+05:30");
+        assert_eq!(edited.end_datetime, "2026-07-27T10:15:00+05:30");
+    }
+
+    #[test]
+    fn test_moving_a_whole_series_to_another_day_moves_every_day_by_the_same_much() {
+        // Somebody really did type in the date box, on the row for 3 August,
+        // and put 5 August in it. That is two days later, so the series moves
+        // two days: 29 July, not 5 August, which would have thrown the first
+        // week away.
+        let (stored, day) = a_weekly_series();
+        let mut moved = wx_calendar::CalendarEventData::as_shown(&day);
+        moved.start_date = "2026-08-05".to_string();
+        moved.end_date = "2026-08-05".to_string();
+
+        let edited = event_with_edits(stored, &day, &moved);
+
+        assert_eq!(edited.start_datetime, "2026-07-29T09:00:00+05:30");
+        assert_eq!(edited.end_datetime, "2026-07-29T09:15:00+05:30");
     }
 
     #[test]
@@ -3117,7 +3341,7 @@ mod tests {
         let stored = event_entry("e1".to_string(), "acct", &data(false));
         let renamed = only_the_summary_retyped(&stored, "Stand-up");
 
-        let edited = event_with_edits(stored.clone(), &renamed);
+        let edited = edited_from_its_own_row(stored.clone(), &renamed);
 
         assert_eq!(edited.summary, "Stand-up");
         assert_eq!(edited.start_datetime, stored.start_datetime);
@@ -3136,7 +3360,7 @@ mod tests {
         moved.start_time = "10:30".to_string();
         moved.end_time = "11:00".to_string();
 
-        let edited = event_with_edits(stored, &moved);
+        let edited = edited_from_its_own_row(stored, &moved);
 
         assert_eq!(edited.start_datetime, "2026-07-27T10:30:00+05:30");
         assert_eq!(edited.end_datetime, "2026-07-27T11:00:00+05:30");
@@ -3155,7 +3379,7 @@ mod tests {
         moved.start_time = "10:30".to_string();
         moved.end_time = "11:00".to_string();
 
-        let edited = event_with_edits(stored, &moved);
+        let edited = edited_from_its_own_row(stored, &moved);
 
         assert_eq!(edited.start_datetime, "2026-07-27T10:30:00Z");
         assert_eq!(edited.end_datetime, "2026-07-27T11:00:00Z");
@@ -3169,7 +3393,7 @@ mod tests {
         moved.start_time = "10:30".to_string();
         moved.end_time = "11:00".to_string();
 
-        let edited = event_with_edits(stored, &moved);
+        let edited = edited_from_its_own_row(stored, &moved);
 
         assert_eq!(edited.start_datetime, "2026-07-27T10:30:00");
         assert_eq!(edited.end_datetime, "2026-07-27T11:00:00");
@@ -3189,7 +3413,7 @@ mod tests {
         moved.start_date = "2026-12-15".to_string();
         moved.end_date = "2026-12-15".to_string();
 
-        let edited = event_with_edits(stored, &moved);
+        let edited = edited_from_its_own_row(stored, &moved);
 
         assert_eq!(edited.start_datetime, "2026-12-15T09:00:00");
         assert_eq!(edited.time_zone.as_deref(), Some("America/New_York"));
@@ -3237,7 +3461,7 @@ mod tests {
         moved.start_time = "10:30".to_string();
         moved.end_time = "11:00".to_string();
 
-        let edited = event_with_edits(stored, &moved);
+        let edited = edited_from_its_own_row(stored, &moved);
 
         assert_eq!(edited.start_datetime, "2026-07-27T10:30:00");
         let said = crate::presentation::ui_types::CalendarEventItem::from_entry(&edited)
@@ -3265,7 +3489,7 @@ mod tests {
             moved.start_time = "10:30".to_string();
             moved.end_time = "11:00".to_string();
 
-            let written = event_with_edits(stored, &moved).start_datetime;
+            let written = edited_from_its_own_row(stored, &moved).start_datetime;
 
             assert!(
                 crate::common::moment::read(&written).is_some(),
@@ -3287,7 +3511,7 @@ mod tests {
         moved.start_date = "2026-12-15".to_string();
         moved.end_date = "2026-12-15".to_string();
 
-        let edited = event_with_edits(stored, &moved);
+        let edited = edited_from_its_own_row(stored, &moved);
 
         assert_eq!(edited.start_datetime, "2026-12-15T09:00:00-04:00");
     }
@@ -3307,7 +3531,7 @@ mod tests {
             moved.start_time = "10:30".to_string();
             moved.end_time = "11:00".to_string();
 
-            let edited = event_with_edits(stored, &moved);
+            let edited = edited_from_its_own_row(stored, &moved);
 
             assert_eq!(
                 edited.start_datetime, "2026-07-27T10:30:00+05:30",
@@ -3341,7 +3565,7 @@ mod tests {
         timed.end_date = "2026-07-27".to_string();
         timed.end_time = "17:00".to_string();
 
-        let edited = event_with_edits(stored, &timed);
+        let edited = edited_from_its_own_row(stored, &timed);
 
         assert!(!edited.is_all_day);
         assert_eq!(edited.start_datetime, "2026-07-27T09:00:00");
@@ -3359,7 +3583,7 @@ mod tests {
         let mut whole_day = only_the_summary_retyped(&stored, "Standup");
         whole_day.is_all_day = true;
 
-        let edited = event_with_edits(stored, &whole_day);
+        let edited = edited_from_its_own_row(stored, &whole_day);
 
         assert!(edited.is_all_day);
         assert_eq!(edited.start_datetime, "2026-07-27");
@@ -3377,7 +3601,7 @@ mod tests {
         moved.start_date = "2026-08-31".to_string();
         moved.end_date = "2026-09-01".to_string();
 
-        let edited = event_with_edits(stored, &moved);
+        let edited = edited_from_its_own_row(stored, &moved);
 
         assert_eq!(edited.start_date.as_deref(), Some("2026-08-31"));
         assert_eq!(edited.end_date.as_deref(), Some("2026-09-01"));
@@ -5545,6 +5769,219 @@ mod saving_the_other_managers {
         assert!(
             after.iter().any(|r| r.name == "invoices"),
             "a rule somebody added was dropped, so the manager saves nothing new"
+        );
+    }
+}
+
+#[cfg(test)]
+mod changing_one_day_of_a_series {
+    use super::*;
+    use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::{CalendarContainer, CalendarEventEntry};
+
+    fn a_cache(what_for: &str) -> TempHome<MessageCache> {
+        TempHome::named(what_for, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache to open")
+        })
+    }
+
+    /// A calendar somebody's changes can really reach.
+    fn a_calendar_on_a_server(cache: &MessageCache) {
+        let stamp = chrono::Utc::now().to_rfc3339();
+        cache
+            .save_calendar(&CalendarContainer {
+                id: "cal-1".to_string(),
+                account_id: "acct-1".to_string(),
+                name: "Work".to_string(),
+                color: "#4285F4".to_string(),
+                source_provider: Some("caldav".to_string()),
+                caldav_url: Some("https://example.test/cal/".to_string()),
+                subscription_url: None,
+                is_default: true,
+                is_visible: true,
+                is_read_only: false,
+                display_order: 0,
+                etag: None,
+                ctag: None,
+                sync_token: None,
+                refresh_interval_minutes: None,
+                created_at: stamp.clone(),
+                updated_at: stamp,
+            })
+            .expect("the calendar to save");
+    }
+
+    /// A weekly series in that calendar, already known to the server.
+    fn a_weekly_series(cache: &MessageCache) -> CalendarEventEntry {
+        let series = CalendarEventEntry {
+            id: "series-1".to_string(),
+            account_id: "acct-1".to_string(),
+            provider_event_id: Some("uid-1".to_string()),
+            calendar_id: Some("cal-1".to_string()),
+            summary: "Stand-up".to_string(),
+            description: None,
+            location: None,
+            start_datetime: "2026-07-27T09:00:00+05:30".to_string(),
+            end_datetime: "2026-07-27T09:15:00+05:30".to_string(),
+            start_date: None,
+            end_date: None,
+            is_all_day: false,
+            time_zone: Some("Asia/Kolkata".to_string()),
+            status: "confirmed".to_string(),
+            recurrence_rule: Some("FREQ=WEEKLY".to_string()),
+            categories: "work".to_string(),
+            source_provider: Some("caldav".to_string()),
+            etag: Some("\"one\"".to_string()),
+            web_link: Some("https://example.test/cal/uid-1.ics".to_string()),
+            show_as: "busy".to_string(),
+            last_modified_remote: None,
+            last_synced_at: None,
+            attendees_json: None,
+            reminders_json: None,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            pending: false,
+            exception_dates: None,
+        };
+        cache.save_calendar_event(&series).expect("the series");
+        series
+    }
+
+    /// The day of the series August opens on, as the calendar list shows it.
+    fn the_day_opened(series: &CalendarEventEntry) -> CalendarEventItem {
+        CalendarEventItem::shown_days(
+            series,
+            chrono::NaiveDate::from_ymd_opt(2026, 8, 1).expect("a date"),
+            chrono::NaiveDate::from_ymd_opt(2026, 8, 28).expect("a date"),
+        )
+        .into_iter()
+        .next()
+        .expect("a day the series falls on")
+    }
+
+    /// What the editor hands back with only the summary retyped.
+    fn only_the_summary_retyped(day: &CalendarEventItem) -> wx_calendar::CalendarEventData {
+        let mut back = wx_calendar::CalendarEventData::as_shown(day);
+        back.summary = "Stand-up, in the small room".to_string();
+        back
+    }
+
+    #[test]
+    fn test_changing_one_day_stores_the_changed_day_and_the_series_with_that_day_called_off() {
+        let cache = a_cache("one_day_of_a_series");
+        a_calendar_on_a_server(&cache);
+        let series = a_weekly_series(&cache);
+        let day = the_day_opened(&series);
+        assert_eq!(day.start, "2026-08-03T09:00:00+05:30");
+
+        one_day_of_a_series_changed(&cache, &series, &day, &only_the_summary_retyped(&day))
+            .expect("the day and the series to be stored");
+
+        let stored = cache
+            .get_all_events_for_account("acct-1")
+            .expect("the calendar to be readable");
+        assert_eq!(stored.len(), 2, "the day was not kept on its own");
+
+        let kept = stored
+            .iter()
+            .find(|event| event.id == "series-1")
+            .expect("the series");
+        assert_eq!(
+            kept.start_datetime, series.start_datetime,
+            "the series moved onto the day that was opened"
+        );
+        assert_eq!(kept.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+        assert_eq!(
+            kept.exception_dates.as_deref(),
+            Some("20260803T090000"),
+            "the day was not taken off the series"
+        );
+        assert!(kept.pending, "the series is not waiting to be sent");
+
+        let on_its_own = stored
+            .iter()
+            .find(|event| event.id != "series-1")
+            .expect("the day kept on its own");
+        assert_eq!(on_its_own.summary, "Stand-up, in the small room");
+        assert_eq!(on_its_own.start_datetime, "2026-08-03 09:00");
+        assert_eq!(
+            on_its_own.calendar_id.as_deref(),
+            Some("cal-1"),
+            "the day on its own is in no calendar, so nothing will ever send it"
+        );
+        assert_eq!(on_its_own.time_zone.as_deref(), Some("Asia/Kolkata"));
+        assert_eq!(on_its_own.recurrence_rule, None, "the day repeats as well");
+        assert_eq!(on_its_own.exception_dates, None);
+        assert_eq!(
+            on_its_own.provider_event_id, None,
+            "the day claims the identity the server knows the series by"
+        );
+        assert_eq!(on_its_own.etag, None);
+        assert_eq!(on_its_own.web_link, None);
+        assert!(on_its_own.pending, "the day is not waiting to be sent");
+    }
+
+    #[test]
+    fn test_the_changed_day_is_written_before_the_day_is_taken_off_the_series() {
+        // Ordering is the whole of the failure plan. If the second write fails,
+        // the day is on the calendar twice, which somebody can see and put
+        // right. The other order leaves the day missing, which nothing says and
+        // nobody can get back.
+        let source = std::fs::read_to_string("src/presentation/managers.rs")
+            .expect("this file to be readable");
+        let body = source
+            .split_once("fn one_day_of_a_series_changed(")
+            .expect("the routine that carries one day out")
+            .1;
+        let day_first = body
+            .find("cache.save_calendar_event(&that_day)")
+            .expect("the changed day to be written");
+        let series_after = body
+            .find("one_day_called_off(")
+            .expect("the day to be taken off the series");
+        assert!(
+            day_first < series_after,
+            "the day is taken off the series before it is kept anywhere, so a \
+             failure in the second write loses it with nothing said"
+        );
+    }
+
+    #[test]
+    fn test_a_day_taken_off_a_series_is_no_longer_shown_and_the_others_still_are() {
+        // End to end through what the calendar list really reads, because a
+        // called-off day that is still shown is the same defect as one that was
+        // never taken off.
+        let cache = a_cache("one_day_no_longer_shown");
+        a_calendar_on_a_server(&cache);
+        let series = a_weekly_series(&cache);
+        let day = the_day_opened(&series);
+
+        one_day_of_a_series_changed(&cache, &series, &day, &only_the_summary_retyped(&day))
+            .expect("the day and the series to be stored");
+
+        let stored = cache
+            .get_all_events_for_account("acct-1")
+            .expect("the calendar to be readable");
+        let shown = CalendarEventItem::every_day_shown(
+            &stored,
+            chrono::NaiveDate::from_ymd_opt(2026, 8, 1).expect("a date"),
+            chrono::NaiveDate::from_ymd_opt(2026, 8, 28).expect("a date"),
+        );
+        let on_that_day: Vec<&CalendarEventItem> = shown
+            .iter()
+            .filter(|row| row.start.starts_with("2026-08-03"))
+            .collect();
+        assert_eq!(
+            on_that_day.len(),
+            1,
+            "3 August shows the wrong number of entries: {shown:?}"
+        );
+        assert_eq!(on_that_day[0].summary, "Stand-up, in the small room");
+        assert!(
+            shown
+                .iter()
+                .any(|row| row.start.starts_with("2026-08-10") && row.summary == "Stand-up"),
+            "the rest of the series went with it: {shown:?}"
         );
     }
 }
