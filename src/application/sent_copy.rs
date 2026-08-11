@@ -906,12 +906,13 @@ mod tests {
         // gate gets left behind, so the two links in that chain are pinned
         // here rather than reasoned about.
         //
-        // Read from the source because there is no way to reach either without
-        // a live IMAP server: a session cannot be built without a socket, and
-        // no client in this tree can be pointed at a listener of our own the
-        // way the web clients can. So what is proved is that the code asks, not
-        // that a socket stayed quiet. That difference is real and is said out
-        // loud rather than dressed up.
+        // Read from the source, and that is now the weaker of two checks
+        // rather than the only one. The command that keeps a copy is exercised
+        // against a loopback server that records what it hears, so a session
+        // which may not change anything is shown to say nothing rather than
+        // merely to hold a line of code that asks. What this reads from the
+        // source is the other half: that the asking is still in the function
+        // at all, which no transcript can show.
         let imap = include_str!("../service/protocols/imap.rs");
         let append = imap
             .split_once("pub async fn append_message(")
@@ -928,7 +929,17 @@ mod tests {
 
         // The other link: nothing turns a session's permission on except the
         // one place that reads the account's own setting first.
-        let controller = include_str!("mail_controller.rs");
+        //
+        // The production half of that file only, the way this test already
+        // treats its own file below. The claim worth protecting is that no
+        // second place in the running program opens the gate. Counting the
+        // test module as well would forbid ever measuring what happens past an
+        // open gate, which is the only way any of these commands can be
+        // exercised at all.
+        let controller = include_str!("mail_controller.rs")
+            .split_once("#[cfg(test)]")
+            .expect("the controller has tests")
+            .0;
         let turns_it_on: Vec<&str> = controller
             .lines()
             .filter(|line| line.contains("allow_changes()"))
