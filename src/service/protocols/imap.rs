@@ -920,26 +920,27 @@ impl ImapSession {
     }
 
     /// Add or remove a flag on a message.
+    ///
+    /// Written as a command line rather than through the library's helper, and
+    /// that is the whole point of it. The helper hands the updated flags back
+    /// as a stream, and the stream ends at the server's answer without ever
+    /// looking at what the answer was: a refusal reads exactly like a change
+    /// that worked. Every flag this program sets goes through here, so a
+    /// server saying no was being reported to somebody as yes, and they would
+    /// find out days later from another device. The flags coming back were
+    /// discarded anyway, so nothing is given up by asking the plain question.
     pub async fn set_flag(&mut self, uid: u32, flag: &str, on: bool) -> Result<()> {
         self.may_i("change a message")?;
         self.require_selected()?;
         let operation = if on { "+FLAGS" } else { "-FLAGS" };
-        let stream = with_timeout(
+        with_timeout(
             COMMAND_TIMEOUT,
             self.session
-                .uid_store(uid.to_string(), format!("{operation} ({flag})")),
+                .run_command_and_check_ok(format!("UID STORE {uid} {operation} ({flag})")),
             "changing a message flag",
         )
         .await?
-        .map_err(protocol_error("Could not change the message"))?;
-
-        // The updated flags come back as a stream, and the command is not
-        // finished until it has been read to the end.
-        let _: Vec<Fetch> = stream
-            .try_collect()
-            .await
-            .map_err(protocol_error("Could not change the message"))?;
-        Ok(())
+        .map_err(protocol_error("Could not change the message"))
     }
 
     /// Mark a message read.
@@ -1011,6 +1012,12 @@ impl ImapSession {
     /// cannot end the search key early and turn the criteria into something
     /// else. Nothing found is not an error: a draft saved for the first time
     /// has no previous copy.
+    ///
+    /// The number is what was removed from the server, not what was found.
+    /// Those are different on a server without UIDPLUS, where the old copy can
+    /// only be flagged and left, and the caller writes the new copy as soon as
+    /// this comes back: a count of what was found ends the day with two
+    /// drafts, one flagged for removal and neither obviously the newer.
     pub async fn remove_by_message_id(&mut self, message_id: &str) -> Result<usize> {
         self.may_i("replace a saved draft")?;
         let quoted = quote_for_search(message_id);
@@ -1018,11 +1025,14 @@ impl ImapSession {
             .search_uids(&format!("HEADER MESSAGE-ID {quoted}"))
             .await?;
 
+        let mut removed = 0;
         for uid in &found {
             self.set_flag(*uid, flag::DELETED, true).await?;
-            if self.abilities.uid_expunge {
-                self.expunge_one(*uid).await?;
+            if !self.abilities.uid_expunge {
+                continue;
             }
+            self.expunge_one(*uid).await?;
+            removed += 1;
         }
         if !found.is_empty() && !self.abilities.uid_expunge {
             // Flagged and left. Without UIDPLUS the only expunge available
@@ -1032,7 +1042,7 @@ impl ImapSession {
                 "The mail server has no UIDPLUS, so the previous draft was marked for removal and left in place"
             );
         }
-        Ok(found.len())
+        Ok(removed)
     }
 
     /// Add a message to a mailbox, as it would have arrived.
@@ -1095,19 +1105,21 @@ impl ImapSession {
     }
 
     /// Remove one message by UID, on a server that can do it by UID.
+    ///
+    /// A command line rather than the library's helper, for the same reason
+    /// [`ImapSession::set_flag`] is. The list of what was removed came back as
+    /// a stream that ends at the server's answer without reading it, so a
+    /// server refusing to remove the message answered the caller "removed".
+    /// The list this reports is the one somebody is told about their own mail.
     async fn expunge_one(&mut self, uid: u32) -> Result<()> {
-        let stream = with_timeout(
+        with_timeout(
             COMMAND_TIMEOUT,
-            self.session.uid_expunge(uid.to_string()),
+            self.session
+                .run_command_and_check_ok(format!("UID EXPUNGE {uid}")),
             "deleting the message",
         )
         .await?
-        .map_err(protocol_error("Could not delete the message"))?;
-        let _: Vec<u32> = stream
-            .try_collect()
-            .await
-            .map_err(protocol_error("Could not delete the message"))?;
-        Ok(())
+        .map_err(protocol_error("Could not delete the message"))
     }
 
     /// What this server can do.
@@ -1868,5 +1880,556 @@ mod tests {
     async fn test_an_operation_that_finishes_in_time_is_passed_through() {
         let result = with_timeout(Duration::from_secs(5), async { 42 }, "counting").await;
         assert_eq!(result.expect("should not time out"), 42);
+    }
+}
+
+/// Every mailbox change, past an open gate, against a server that answers.
+///
+/// The gate's refusing half has units above. Its permitting half had none
+/// anywhere: not one of these commands had ever been sent to anything. What is
+/// proved here is what goes out on the wire and what comes back from a server
+/// written for the purpose. It is not proof that Gmail, Fastmail or Exchange
+/// accept any of it.
+///
+/// Reachable inside the crate because the controller's tests drive the same
+/// server. One script, so the two layers cannot disagree about what a mail
+/// server does.
+#[cfg(test)]
+pub(crate) mod against_a_server_that_answers {
+    use super::*;
+    use crate::common::answering::{Conversation, LONG_ENOUGH, Turn, conversing};
+
+    /// A mail server that says it can do exactly these things.
+    ///
+    /// Which extensions a server advertises decides which path every write
+    /// below takes, so the capability line is the one thing every test sets.
+    pub(crate) async fn a_server_that_can(capabilities: &'static str) -> Conversation {
+        answering_imap(capabilities, None).await
+    }
+
+    /// The same server, refusing one command while answering the rest.
+    ///
+    /// `refusing` is matched against the whole line without case, so
+    /// `"UID STORE"` turns down the flag and leaves the copy alone.
+    pub(crate) async fn a_server_that_refuses(
+        capabilities: &'static str,
+        refusing: &'static str,
+    ) -> Conversation {
+        answering_imap(capabilities, Some(refusing)).await
+    }
+
+    async fn answering_imap(
+        capabilities: &'static str,
+        refusing: Option<&'static str>,
+    ) -> Conversation {
+        conversing("* OK loopback ready\r\n", move |line| {
+            let tag = line.split_whitespace().next().unwrap_or("*").to_string();
+            let said = line.to_uppercase();
+            if let Some(refusing) = refusing {
+                if said.contains(&refusing.to_uppercase()) {
+                    return Turn::Say(format!("{tag} NO the server would not do it\r\n"));
+                }
+            }
+            let verb = said.split_whitespace().nth(1).unwrap_or_default();
+            match verb {
+                "CAPABILITY" => Turn::Say(format!(
+                    "* CAPABILITY IMAP4rev1 {capabilities}\r\n{tag} OK done\r\n"
+                )),
+                "LOGIN" | "AUTHENTICATE" => Turn::Say(format!("{tag} OK signed in\r\n")),
+                "ID" => Turn::Say(format!("* ID NIL\r\n{tag} OK done\r\n")),
+                "SELECT" | "EXAMINE" => Turn::Say(format!(
+                    "* 0 EXISTS\r\n* 0 RECENT\r\n* OK [UIDVALIDITY 1] valid\r\n\
+                     {tag} OK [READ-WRITE] open\r\n"
+                )),
+                "APPEND" => Turn::TakingALiteral {
+                    done: format!("{tag} OK saved\r\n"),
+                },
+                "LOGOUT" => Turn::Say(format!("* BYE signing off\r\n{tag} OK done\r\n")),
+                // One message found, so a search that finds something and a
+                // search that finds nothing stay different tests.
+                _ if said.contains("SEARCH") => {
+                    Turn::Say(format!("* SEARCH 4\r\n{tag} OK done\r\n"))
+                }
+                "UID" | "STORE" | "COPY" | "MOVE" | "EXPUNGE" | "NOOP" | "CLOSE" => {
+                    Turn::Say(format!("{tag} OK done\r\n"))
+                }
+                // Anything unrecognised is refused rather than ignored, so a
+                // script that has fallen behind the client fails the test in
+                // the moment instead of leaving it to wait out two minutes,
+                // which reads as a slow machine.
+                _ => Turn::Say(format!("{tag} BAD unscripted\r\n")),
+            }
+        })
+        .await
+    }
+
+    /// A session signed in to that server, reading only.
+    pub(crate) async fn reading_only_on(server: &Conversation) -> ImapSession {
+        let client = ImapClient::new(ImapConfig {
+            server: server.server(),
+            port: server.port(),
+            use_tls: false,
+            username: "someone".to_string(),
+        })
+        .expect("a client");
+
+        tokio::time::timeout(
+            LONG_ENOUGH,
+            client.connect(&MailAuth::Password("hunter2".to_string())),
+        )
+        .await
+        .expect("the server never finished the sign-in exchange")
+        .expect("the server answered, so signing in should work")
+    }
+
+    /// A session signed in to that server and allowed to change things.
+    pub(crate) async fn signed_in_to(server: &Conversation) -> ImapSession {
+        let mut session = reading_only_on(server).await;
+        session.allow_changes();
+        session
+    }
+
+    /// The same, with a mailbox open, which every write but the append needs.
+    async fn with_the_inbox_open(server: &Conversation) -> ImapSession {
+        let mut session = signed_in_to(server).await;
+        waiting_for(session.select_folder("INBOX"), "the folder to open")
+            .await
+            .expect("the folder to open");
+        session
+    }
+
+    /// Wait for one command, and fail with a sentence rather than a timeout.
+    async fn waiting_for<T>(operation: impl std::future::Future<Output = T>, expected: &str) -> T {
+        tokio::time::timeout(LONG_ENOUGH, operation)
+            .await
+            .unwrap_or_else(|_| panic!("the server never answered: {expected} never arrived"))
+    }
+
+    /// What went wrong, in the words the caller is actually given.
+    fn the_failure<T: std::fmt::Debug>(outcome: Result<T>) -> String {
+        match outcome {
+            Ok(fine) => panic!("the server refused it and the caller was told it worked: {fine:?}"),
+            Err(said) => said.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_setting_a_flag_names_the_message_and_the_flag() {
+        // Both directions, because a sign error marks read what somebody
+        // marked unread, and nothing anywhere says it happened.
+        let server = a_server_that_can("UIDPLUS").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        waiting_for(session.set_flag(7, flag::SEEN, true), "the flag")
+            .await
+            .expect("the flag to be set");
+        waiting_for(session.set_flag(7, flag::SEEN, false), "the flag")
+            .await
+            .expect("the flag to be cleared");
+
+        let transcript = server.transcript().await;
+        assert!(
+            server.was_told("UID STORE 7 +FLAGS (\\Seen)").await,
+            "{transcript:?}"
+        );
+        assert!(
+            server.was_told("UID STORE 7 -FLAGS (\\Seen)").await,
+            "{transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_copying_a_message_names_the_mailbox_it_goes_into() {
+        let server = a_server_that_can("UIDPLUS").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        waiting_for(session.copy_message(7, "Archive"), "the copy")
+            .await
+            .expect("the copy to be made");
+
+        assert!(
+            server.was_told("UID COPY 7 \"Archive\"").await,
+            "{:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_server_with_move_moves_in_one_command() {
+        // One command is the only way a move is safe. Three can fail between
+        // any two of them.
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let outcome = waiting_for(session.move_message(7, "Archive"), "the move")
+            .await
+            .expect("the move to happen");
+
+        let transcript = server.transcript().await;
+        assert_eq!(outcome, Moved::Moved);
+        assert!(
+            server.was_told("UID MOVE 7 \"Archive\"").await,
+            "{transcript:?}"
+        );
+        assert!(!server.was_told("UID COPY").await, "{transcript:?}");
+        assert!(!server.was_told("EXPUNGE").await, "{transcript:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_server_without_move_copies_then_flags_then_expunges_in_that_order() {
+        // The order is what makes each failure recoverable, and it was stated
+        // in a comment and checked by nothing. Asserted by position rather
+        // than presence: a flag before the copy would put somebody's only copy
+        // of a message one failed command away from gone.
+        let server = a_server_that_can("UIDPLUS").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let outcome = waiting_for(session.move_message(7, "Archive"), "the move")
+            .await
+            .expect("the move to happen");
+
+        let transcript = server.transcript().await;
+        assert_eq!(outcome, Moved::Moved);
+        let copied = server
+            .when_told("UID COPY 7 \"Archive\"")
+            .await
+            .unwrap_or_else(|| panic!("no copy was made: {transcript:?}"));
+        let flagged = server
+            .when_told("UID STORE 7 +FLAGS (\\Deleted)")
+            .await
+            .unwrap_or_else(|| panic!("the original was never flagged: {transcript:?}"));
+        let removed = server
+            .when_told("UID EXPUNGE 7")
+            .await
+            .unwrap_or_else(|| panic!("the original was never removed: {transcript:?}"));
+        assert!(
+            copied < flagged && flagged < removed,
+            "the original was touched before the copy existed: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_server_with_neither_move_nor_uidplus_leaves_the_original_flagged_and_says_so() {
+        // The bare expunge removes every message in the mailbox flagged for
+        // removal, including ones somebody else's client flagged. That is
+        // other people's mail, so the original is left flagged and the outcome
+        // says which of the two things happened.
+        let server = a_server_that_can("").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let outcome = waiting_for(session.move_message(7, "Archive"), "the move")
+            .await
+            .expect("the copy to be made");
+
+        let transcript = server.transcript().await;
+        assert_eq!(outcome, Moved::CopiedAndFlagged);
+        assert!(
+            server.was_told("UID COPY 7 \"Archive\"").await,
+            "{transcript:?}"
+        );
+        assert!(
+            server.was_told("UID STORE 7 +FLAGS (\\Deleted)").await,
+            "{transcript:?}"
+        );
+        assert!(
+            !server.was_told("EXPUNGE").await,
+            "a bare expunge would take everything anybody flagged: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_copy_that_fails_leaves_the_original_untouched() {
+        // The first of the three failure points. Nothing was flagged, so the
+        // message is exactly where it was and a retry is safe.
+        let server = a_server_that_refuses("UIDPLUS", "UID COPY").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let said = the_failure(waiting_for(session.move_message(7, "Archive"), "the move").await);
+
+        let transcript = server.transcript().await;
+        assert!(said.contains("copy the message"), "{said}");
+        assert!(!server.was_told("UID STORE").await, "{transcript:?}");
+        assert!(!server.was_told("EXPUNGE").await, "{transcript:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_move_that_fails_at_the_flag_has_already_made_the_copy() {
+        // The second failure point, measured rather than reasoned about.
+        //
+        // The copy is in the target folder. The original is still in the
+        // source folder, unflagged. Nobody has lost a message, and that is
+        // what the order buys. What the caller is told is asserted below in
+        // the server's own words, because something follows from it: the
+        // sentence does not mention the copy, so somebody retrying makes a
+        // third one and nothing anywhere removes duplicates.
+        let server = a_server_that_refuses("UIDPLUS", "UID STORE").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let said = the_failure(waiting_for(session.move_message(7, "Archive"), "the move").await);
+
+        let transcript = server.transcript().await;
+        assert!(
+            server.was_told("UID COPY 7 \"Archive\"").await,
+            "{transcript:?}"
+        );
+        assert!(
+            !server.was_told("EXPUNGE").await,
+            "the original was removed after the flag failed: {transcript:?}"
+        );
+        assert!(
+            said.contains("change the message"),
+            "the sentence somebody is given: {said}"
+        );
+        assert!(
+            !said.to_lowercase().contains("copy"),
+            "the sentence now mentions the copy already made, so the note saying \
+             it does not should go with it: {said}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_move_that_fails_at_the_expunge_leaves_the_message_in_both_places() {
+        // The third failure point. The copy is in the target folder and the
+        // original is in the source folder flagged for removal, so nobody has
+        // lost anything here either.
+        //
+        // What is wrong is what happens next. The caller is told the move
+        // failed, the message list keeps its row, and the original is flagged
+        // on the server and will go with any later bare expunge from any
+        // client. The list and the server give two answers to one question.
+        let server = a_server_that_refuses("UIDPLUS", "UID EXPUNGE").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let said = the_failure(waiting_for(session.move_message(7, "Archive"), "the move").await);
+
+        let transcript = server.transcript().await;
+        let copied = server
+            .when_told("UID COPY 7 \"Archive\"")
+            .await
+            .unwrap_or_else(|| panic!("no copy was made: {transcript:?}"));
+        let flagged = server
+            .when_told("UID STORE 7 +FLAGS (\\Deleted)")
+            .await
+            .unwrap_or_else(|| panic!("the original was never flagged: {transcript:?}"));
+        assert!(copied < flagged, "{transcript:?}");
+        assert!(
+            said.contains("delete the message"),
+            "the sentence somebody is given: {said}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_removing_a_saved_draft_searches_flags_and_expunges() {
+        let server = a_server_that_can("UIDPLUS").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let removed = waiting_for(
+            session.remove_by_message_id("<d@x>"),
+            "the previous draft to go",
+        )
+        .await
+        .expect("the previous copy to be removed");
+
+        let transcript = server.transcript().await;
+        assert_eq!(removed, 1);
+        let searched = server
+            .when_told("UID SEARCH HEADER MESSAGE-ID \"<d@x>\"")
+            .await
+            .unwrap_or_else(|| panic!("nothing was searched for: {transcript:?}"));
+        let flagged = server
+            .when_told("UID STORE 4 +FLAGS (\\Deleted)")
+            .await
+            .unwrap_or_else(|| panic!("the old copy was never flagged: {transcript:?}"));
+        let removed_at = server
+            .when_told("UID EXPUNGE 4")
+            .await
+            .unwrap_or_else(|| panic!("the old copy was never removed: {transcript:?}"));
+        assert!(searched < flagged && flagged < removed_at, "{transcript:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_draft_that_could_not_be_removed_is_not_counted_as_removed() {
+        // The caller writes the new copy as soon as this comes back without a
+        // failure, so a count of what was found rather than what was removed
+        // ends the day with two drafts on the server, one of them flagged for
+        // removal and neither obviously the newer.
+        let server = a_server_that_can("").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let removed = waiting_for(
+            session.remove_by_message_id("<d@x>"),
+            "the previous draft to go",
+        )
+        .await
+        .expect("a server that cannot remove one message is not a failure");
+
+        let transcript = server.transcript().await;
+        assert!(
+            server.was_told("UID STORE 4 +FLAGS (\\Deleted)").await,
+            "{transcript:?}"
+        );
+        assert!(!server.was_told("EXPUNGE").await, "{transcript:?}");
+        assert_eq!(
+            removed, 0,
+            "nothing was removed from the server and the count says one was"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_search_value_with_a_quote_cannot_end_the_search_key_early() {
+        // The quoting has units of its own. This is the claim that it survives
+        // onto the wire: unquoted, an identifier holding a space is two search
+        // keys, and the second one is whatever the sender chose to put there.
+        let server = a_server_that_can("UIDPLUS").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let _ = waiting_for(session.remove_by_message_id("<d one\"x@x>"), "the search").await;
+
+        assert!(
+            server
+                .was_told("UID SEARCH HEADER MESSAGE-ID \"<d one\\\"x@x>\"")
+                .await,
+            "{:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_message_appended_past_an_open_gate_arrives_whole() {
+        // A saved copy goes up as a counted block of bytes rather than as
+        // lines, so a line of the message that is a single dot is just a line.
+        // The count is the only thing that says where the message ends.
+        let server = a_server_that_can("UIDPLUS").await;
+        let mut session = signed_in_to(&server).await;
+        let raw = "From: me@example.com\r\nSubject: Saved\r\n\r\nfirst\r\n.\r\nlast\r\n";
+
+        waiting_for(
+            session.append_message("Sent", Some("(\\Seen)"), raw.as_bytes()),
+            "the copy",
+        )
+        .await
+        .expect("the copy to be saved");
+
+        let transcript = server.transcript().await;
+        assert!(
+            server
+                .was_told(&format!("APPEND \"Sent\" (\\Seen) {{{}}}", raw.len()))
+                .await,
+            "{transcript:?}"
+        );
+        assert!(
+            transcript.iter().any(|entry| entry == raw),
+            "the message was not stored as it was written: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_deleting_with_a_trash_folder_moves_it_there() {
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let outcome = waiting_for(session.delete_message(7, Some("Trash")), "the delete")
+            .await
+            .expect("the delete to happen");
+
+        assert_eq!(outcome, Deletion::MovedToTrash);
+        assert!(
+            server.was_told("UID MOVE 7 \"Trash\"").await,
+            "{:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_deleting_with_nowhere_to_put_it_removes_it_from_the_server() {
+        // No trash folder means the message really is being removed, and
+        // there is nowhere left to move it to. This is the one path in the
+        // file that leaves no copy anywhere.
+        let server = a_server_that_can("UIDPLUS").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let outcome = waiting_for(session.delete_message(7, None), "the delete")
+            .await
+            .expect("the delete to happen");
+
+        let transcript = server.transcript().await;
+        assert_eq!(outcome, Deletion::Removed);
+        let flagged = server
+            .when_told("UID STORE 7 +FLAGS (\\Deleted)")
+            .await
+            .unwrap_or_else(|| panic!("nothing was flagged: {transcript:?}"));
+        let removed = server
+            .when_told("UID EXPUNGE 7")
+            .await
+            .unwrap_or_else(|| panic!("nothing was removed: {transcript:?}"));
+        assert!(flagged < removed, "{transcript:?}");
+    }
+
+    #[tokio::test]
+    async fn test_deleting_on_a_server_that_cannot_expunge_one_message_marks_it_and_leaves_it() {
+        let server = a_server_that_can("").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let outcome = waiting_for(session.delete_message(7, None), "the delete")
+            .await
+            .expect("the marking to happen");
+
+        let transcript = server.transcript().await;
+        assert_eq!(outcome, Deletion::MarkedOnly);
+        assert!(
+            server.was_told("UID STORE 7 +FLAGS (\\Deleted)").await,
+            "{transcript:?}"
+        );
+        assert!(
+            !server.was_told("EXPUNGE").await,
+            "a bare expunge would take everything anybody flagged: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_every_mailbox_write_says_nothing_to_the_server_with_the_gate_closed() {
+        // The refusing half, measured against the server the tests above show
+        // records what it hears. Opening a folder is not a change and is
+        // allowed, so what is asserted is that nothing past the sign-in
+        // exchange asks the server to alter anything.
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let mut session = reading_only_on(&server).await;
+        waiting_for(session.select_folder("INBOX"), "the folder to open")
+            .await
+            .expect("reading is always allowed");
+
+        let refusals = vec![
+            the_failure(session.set_flag(7, flag::SEEN, true).await),
+            the_failure(session.mark_as_read(7).await),
+            the_failure(session.copy_message(7, "Archive").await),
+            the_failure(session.move_message(7, "Archive").await),
+            the_failure(session.remove_by_message_id("<d@x>").await),
+            the_failure(session.append_message("Sent", None, b"raw").await),
+            the_failure(session.delete_message(7, Some("Trash")).await),
+        ];
+
+        for said in &refusals {
+            assert!(said.contains("Allow Changes"), "{said}");
+        }
+        for act in [
+            "change a message",
+            "copy a message",
+            "move a message",
+            "replace a saved draft",
+            "save a copy of the message",
+            "delete a message",
+        ] {
+            assert!(
+                refusals.iter().any(|said| said.contains(act)),
+                "nothing said it was refused to {act}: {refusals:?}"
+            );
+        }
+        let transcript = server.transcript().await;
+        for command in ["UID", "APPEND", "EXPUNGE"] {
+            assert!(
+                !server.was_told(command).await,
+                "a change reached the server with the gate closed: {transcript:?}"
+            );
+        }
     }
 }

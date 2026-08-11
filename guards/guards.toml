@@ -2270,3 +2270,119 @@ suite = "house_style"
 red = [
     "test_a_sweeping_negative_is_a_word_the_reading_already_knows",
 ]
+
+# ── A change the mail server refused, reported as one that happened ─────────
+#
+# Two of the commands that write to a mailbox were sent through a helper that
+# hands the result back as a stream, and that stream ends at the server's
+# answer without ever reading what the answer was. A refusal came back looking
+# exactly like a change that worked. Every flag this program sets went through
+# one of them, and the other is the command that removes a message, so a person
+# was told "Deleted" over mail still sitting in the folder.
+#
+# Neither result was used for anything. Both are sent as plain command lines
+# now, which is the only form in this library that reads the answer.
+
+[[guard]]
+name = "a flag the mail server refused is not reported as set"
+file = "src/service/protocols/imap.rs"
+before = """        with_timeout(
+            COMMAND_TIMEOUT,
+            self.session
+                .run_command_and_check_ok(format!("UID STORE {uid} {operation} ({flag})")),
+            "changing a message flag",
+        )
+        .await?
+        .map_err(protocol_error("Could not change the message"))
+    }"""
+after = """        let stream = with_timeout(
+            COMMAND_TIMEOUT,
+            self.session
+                .uid_store(uid.to_string(), format!("{operation} ({flag})")),
+            "changing a message flag",
+        )
+        .await?
+        .map_err(protocol_error("Could not change the message"))?;
+        let _: Vec<Fetch> = stream
+            .try_collect()
+            .await
+            .map_err(protocol_error("Could not change the message"))?;
+        Ok(())
+    }"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_a_move_that_fails_at_the_flag_has_already_made_the_copy",
+]
+
+[[guard]]
+name = "a message the mail server would not remove is not reported as removed"
+file = "src/service/protocols/imap.rs"
+before = """        with_timeout(
+            COMMAND_TIMEOUT,
+            self.session
+                .run_command_and_check_ok(format!("UID EXPUNGE {uid}")),
+            "deleting the message",
+        )
+        .await?
+        .map_err(protocol_error("Could not delete the message"))
+    }"""
+after = """        let stream = with_timeout(
+            COMMAND_TIMEOUT,
+            self.session.uid_expunge(uid.to_string()),
+            "deleting the message",
+        )
+        .await?
+        .map_err(protocol_error("Could not delete the message"))?;
+        let _: Vec<u32> = stream
+            .try_collect()
+            .await
+            .map_err(protocol_error("Could not delete the message"))?;
+        Ok(())
+    }"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_a_move_that_fails_at_the_expunge_leaves_the_message_in_both_places",
+]
+
+# ── How many previous drafts were really removed ────────────────────────────
+#
+# The caller writes the new copy as soon as this comes back without a failure.
+# On a server that can only flag the old copy and leave it, a count of what was
+# found rather than what went ends the day with two drafts and neither of them
+# obviously the newer.
+
+[[guard]]
+name = "a draft only flagged for removal is not counted as removed"
+file = "src/service/protocols/imap.rs"
+before = """            if !self.abilities.uid_expunge {
+                continue;
+            }
+            self.expunge_one(*uid).await?;
+            removed += 1;"""
+after = """            if self.abilities.uid_expunge {
+                self.expunge_one(*uid).await?;
+            }
+            removed += 1;"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_a_draft_that_could_not_be_removed_is_not_counted_as_removed",
+]
+
+# ── A blind copy is blind because of a default nobody wrote down ────────────
+#
+# The address is taken out of the header into the envelope and the header is
+# then removed, so the recipient list carries no sign of it and neither does
+# the copy filed in Sent. Turning that off is one call, it makes the whole
+# thing easier to write, and it would put every blind address on the wire for
+# every recipient to read.
+
+[[guard]]
+name = "a blind copy reaches the server and never the message"
+file = "src/service/protocols/smtp.rs"
+before = """    for bcc in &email.bcc {
+        builder = builder.bcc(parse_mailbox(bcc, None)?);
+    }"""
+after = """    for bcc in &email.bcc {
+        builder = builder.bcc(parse_mailbox(bcc, None)?);
+    }
+    builder = builder.keep_bcc();"""
+red = [
+    "service::protocols::smtp::against_a_server_that_answers::test_a_blind_copy_reaches_the_server_and_never_the_message",
+]
