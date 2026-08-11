@@ -10,7 +10,7 @@
 //! Test-only. It exists here rather than beside one caller because three places
 //! had grown their own copy, one of which threw the request away.
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
 /// Answer one request on a loopback port, and hand back what was asked.
 ///
@@ -255,6 +255,457 @@ fn content_length(head: &str) -> usize {
         }
     }
     0
+}
+
+// ── A line protocol needs a different server from an HTTP one ───────────────
+//
+// Everything above answers one request with one canned reply, because that is
+// what HTTP is. Mail is not: the server speaks first, the client's next line
+// depends on the answer to the last one, and a saved message arrives as a
+// counted block of bytes rather than as lines. So this half reads a line at a
+// time, answers from a script, and keeps every line it was told.
+
+/// What the server does with one line it was sent.
+pub enum Turn {
+    /// Answer with these bytes, verbatim, and go back to reading lines.
+    Say(String),
+    /// Take the counted block of bytes the line just read asked to send.
+    ///
+    /// How a saved copy of a message reaches a mail server. Answers `+`, reads
+    /// the number of bytes the line named at its end and the line ending after
+    /// them, records those bytes as one entry of their own, then answers
+    /// `done`.
+    TakingALiteral { done: String },
+    /// Take a message body, which ends at a line holding a single dot.
+    ///
+    /// How a message reaches a sending server. Answers `354`, reads until the
+    /// dot, records the body as one entry of its own, then answers `done`. A
+    /// line the client started with a second dot to keep it from ending the
+    /// body has that dot taken off again, which is what a real server does.
+    TakingAMessage { done: String },
+}
+
+/// A loopback server that holds a line-by-line conversation and remembers it.
+///
+/// Serves every connection offered rather than one, because filing a copy of a
+/// sent message opens a session of its own, and a helper that stopped after
+/// the first would leave the second waiting for a greeting.
+pub struct Conversation {
+    address: std::net::SocketAddr,
+    heard: std::sync::Arc<tokio::sync::Mutex<Vec<String>>>,
+}
+
+impl Conversation {
+    /// Where the server is listening.
+    pub const fn address(&self) -> std::net::SocketAddr {
+        self.address
+    }
+
+    /// The host a client should be pointed at.
+    pub fn server(&self) -> String {
+        self.address.ip().to_string()
+    }
+
+    /// The port a client should be pointed at.
+    pub const fn port(&self) -> u16 {
+        self.address.port()
+    }
+
+    /// Everything said to the server, in order.
+    pub async fn transcript(&self) -> Vec<String> {
+        self.heard.lock().await.clone()
+    }
+
+    /// Where the first line holding this text is, matched without case.
+    ///
+    /// Position rather than presence, because most of the questions here are
+    /// about order: whether the copy was made before the original was flagged
+    /// decides whether a failure loses somebody's only copy of a message.
+    pub async fn when_told(&self, wanted: &str) -> Option<usize> {
+        let wanted = wanted.to_uppercase();
+        self.transcript()
+            .await
+            .iter()
+            .position(|line| line.to_uppercase().contains(&wanted))
+    }
+
+    /// Whether anything at all was said holding this text.
+    pub async fn was_told(&self, wanted: &str) -> bool {
+        self.when_told(wanted).await.is_some()
+    }
+}
+
+/// Take a loopback port and hold a conversation from the script given.
+///
+/// The script sees each line without its ending and decides what happens next.
+/// It may hold state, so a second copy can be refused where the first
+/// succeeded. Give it an arm that answers something for a line it does not
+/// know: a command left unanswered is a client waiting out its own timeout,
+/// which reads as a slow machine rather than as a wrong script.
+pub async fn conversing(
+    greeting: &'static str,
+    answer: impl Fn(&str) -> Turn + Send + Sync + 'static,
+) -> Conversation {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("a loopback port");
+    let address = listener.local_addr().expect("the port that was taken");
+    let heard = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let recording = heard.clone();
+    let script = std::sync::Arc::new(answer);
+
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            let recording = recording.clone();
+            let script = script.clone();
+            tokio::spawn(async move {
+                hold_one(stream, greeting, &recording, script.as_ref()).await;
+            });
+        }
+    });
+
+    Conversation { address, heard }
+}
+
+/// One connection, held until the client stops talking.
+async fn hold_one(
+    stream: tokio::net::TcpStream,
+    greeting: &str,
+    recording: &tokio::sync::Mutex<Vec<String>>,
+    answer: &(impl Fn(&str) -> Turn + ?Sized),
+) {
+    let (reading, mut writing) = stream.into_split();
+    if writing.write_all(greeting.as_bytes()).await.is_err() {
+        return;
+    }
+    let mut reader = tokio::io::BufReader::new(reading);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) | Err(_) => return,
+            Ok(_) => {}
+        }
+        let said = line.trim_end_matches(['\r', '\n']).to_string();
+        // Recorded before the answer goes out, so a client that has heard its
+        // answer can rely on the line already being in the transcript.
+        record(recording, &said).await;
+
+        let reply = match answer(&said) {
+            Turn::Say(reply) => reply,
+            Turn::TakingALiteral { done } => {
+                if writing.write_all(b"+ go ahead\r\n").await.is_err() {
+                    return;
+                }
+                let Some(count) = literal_length(&said) else {
+                    return;
+                };
+                let mut raw = vec![0_u8; count];
+                if reader.read_exact(&mut raw).await.is_err() {
+                    return;
+                }
+                record(recording, &String::from_utf8_lossy(&raw)).await;
+                // The line ending the client writes after the counted bytes.
+                let mut ending = String::new();
+                let _ = reader.read_line(&mut ending).await;
+                done
+            }
+            Turn::TakingAMessage { done } => {
+                if writing.write_all(b"354 go ahead\r\n").await.is_err() {
+                    return;
+                }
+                let mut body: Vec<String> = Vec::new();
+                loop {
+                    let mut part = String::new();
+                    match reader.read_line(&mut part).await {
+                        Ok(0) | Err(_) => return,
+                        Ok(_) => {}
+                    }
+                    let part = part.trim_end_matches(['\r', '\n']).to_string();
+                    if part == "." {
+                        break;
+                    }
+                    // A line the client started with a second dot so it could
+                    // not end the body early.
+                    body.push(
+                        part.strip_prefix("..")
+                            .map_or_else(|| part.clone(), |rest| format!(".{rest}")),
+                    );
+                }
+                record(recording, &body.join("\r\n")).await;
+                done
+            }
+        };
+        if writing.write_all(reply.as_bytes()).await.is_err() {
+            return;
+        }
+    }
+}
+
+async fn record(recording: &tokio::sync::Mutex<Vec<String>>, said: &str) {
+    recording.lock().await.push(without_the_credential(said));
+}
+
+/// How many bytes the counted block announced on this line holds.
+///
+/// `A1 APPEND "Sent" (\Seen) {13}` says thirteen. A count with a `+` on it
+/// says the client is not waiting to be told to go ahead, and says the same
+/// number.
+fn literal_length(line: &str) -> Option<usize> {
+    let opened = line.rfind('{')?;
+    let closed = line[opened..].find('}')? + opened;
+    line[opened + 1..closed].trim_end_matches('+').parse().ok()
+}
+
+/// One command with anything credential-shaped taken off the end.
+///
+/// The transcript is read by the assertions and printed when one fails, so it
+/// is held to the same rule as a log file: a password does not go in it. Three
+/// protocols each spell the line their own way, and the encoded form an SMTP
+/// sign-in uses looks like nothing in particular, so it is matched by where it
+/// sits rather than by what it looks like.
+fn without_the_credential(line: &str) -> String {
+    let mut words = line.split_whitespace();
+    let first = words.next().unwrap_or_default();
+    let second = words.next().unwrap_or_default();
+    if first.eq_ignore_ascii_case("PASS") {
+        return first.to_string();
+    }
+    if first.eq_ignore_ascii_case("AUTH") {
+        return format!("{first} {second}").trim_end().to_string();
+    }
+    match second.to_uppercase().as_str() {
+        "LOGIN" | "AUTHENTICATE" => format!("{first} {second}"),
+        _ => line.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod line_protocol_tests {
+    use super::*;
+
+    /// A client socket that can be driven a line at a time.
+    struct Caller {
+        reader: tokio::io::BufReader<tokio::net::tcp::OwnedReadHalf>,
+        writer: tokio::net::tcp::OwnedWriteHalf,
+    }
+
+    impl Caller {
+        async fn calling(server: &Conversation) -> Self {
+            let stream = tokio::net::TcpStream::connect(server.address())
+                .await
+                .expect("the loopback port to be open");
+            let (reading, writer) = stream.into_split();
+            Self {
+                reader: tokio::io::BufReader::new(reading),
+                writer,
+            }
+        }
+
+        async fn hears(&mut self) -> String {
+            let mut line = String::new();
+            tokio::time::timeout(LONG_ENOUGH, self.reader.read_line(&mut line))
+                .await
+                .expect("the server to answer within the wait")
+                .expect("a line from the server");
+            line
+        }
+
+        async fn says(&mut self, text: &str) {
+            self.writer
+                .write_all(text.as_bytes())
+                .await
+                .expect("the server to still be listening");
+        }
+    }
+
+    /// A server that answers every line the same way.
+    async fn agreeing() -> Conversation {
+        conversing("* OK ready\r\n", |_| {
+            Turn::Say("A1 OK done\r\n".to_string())
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_a_conversation_hands_back_every_line_in_the_order_it_arrived() {
+        // The whole point of a line protocol helper: what the client said, in
+        // the order it said it. A transcript that only holds the last line
+        // cannot tell a copy made before a flag from one made after.
+        let server = agreeing().await;
+        let mut caller = Caller::calling(&server).await;
+        assert_eq!(caller.hears().await, "* OK ready\r\n");
+
+        caller.says("A1 FIRST\r\n").await;
+        caller.hears().await;
+        caller.says("A2 SECOND\r\n").await;
+        caller.hears().await;
+
+        assert_eq!(server.transcript().await, vec!["A1 FIRST", "A2 SECOND"]);
+    }
+
+    #[tokio::test]
+    async fn test_a_line_that_never_came_is_not_read_as_one_that_did() {
+        // The mirror of the wait test above. Before believing an empty
+        // transcript, the transcript has to be able to hold something, and
+        // before believing a match, a miss has to be able to miss.
+        let server = agreeing().await;
+        let mut caller = Caller::calling(&server).await;
+        caller.hears().await;
+
+        caller.says("A1 EXPUNGE\r\n").await;
+        caller.hears().await;
+
+        assert_eq!(server.when_told("EXPUNGE").await, Some(0));
+        assert_eq!(server.when_told("APPEND").await, None);
+        assert!(
+            server.was_told("expunge").await,
+            "matched with the wrong case"
+        );
+        assert!(!server.was_told("APPEND").await);
+    }
+
+    #[tokio::test]
+    async fn test_a_literal_is_taken_whole_rather_than_read_as_lines() {
+        // A saved copy of a sent message is an IMAP literal: a byte count and
+        // then that many bytes, newlines and all. A server reading it as lines
+        // splits the message at the first blank line, which is the boundary
+        // between its headers and everything somebody wrote.
+        let server = conversing("* OK ready\r\n", |line| {
+            if line.to_uppercase().contains("APPEND") {
+                return Turn::TakingALiteral {
+                    done: "A1 OK saved\r\n".to_string(),
+                };
+            }
+            Turn::Say("A1 OK done\r\n".to_string())
+        })
+        .await;
+        let mut caller = Caller::calling(&server).await;
+        caller.hears().await;
+
+        caller.says("A1 APPEND \"Sent\" (\\Seen) {13}\r\n").await;
+        assert!(caller.hears().await.starts_with('+'));
+        caller.says("line one\r\ntwo\r\n").await;
+
+        assert_eq!(caller.hears().await, "A1 OK saved\r\n");
+        assert_eq!(
+            server.transcript().await,
+            vec!["A1 APPEND \"Sent\" (\\Seen) {13}", "line one\r\ntwo"]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_message_body_ending_in_a_dot_line_is_taken_whole() {
+        // An SMTP body is not counted, it is ended by a line holding one dot,
+        // and a line of the message that starts with a dot is sent with a
+        // second one in front of it. A server that does not take that off
+        // records a body nobody wrote.
+        let server = conversing("220 ready\r\n", |line| {
+            if line.eq_ignore_ascii_case("DATA") {
+                return Turn::TakingAMessage {
+                    done: "250 queued\r\n".to_string(),
+                };
+            }
+            Turn::Say("250 ok\r\n".to_string())
+        })
+        .await;
+        let mut caller = Caller::calling(&server).await;
+        caller.hears().await;
+
+        caller.says("DATA\r\n").await;
+        assert!(caller.hears().await.starts_with("354"));
+        caller
+            .says("Subject: Hi\r\n\r\n..hidden\r\nbye\r\n.\r\n")
+            .await;
+
+        assert_eq!(caller.hears().await, "250 queued\r\n");
+        assert_eq!(
+            server.transcript().await,
+            vec!["DATA", "Subject: Hi\r\n\r\n.hidden\r\nbye"]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_password_does_not_reach_the_transcript() {
+        // The transcript is printed by every failing assertion in these tests,
+        // so it is held to the same rule as a log file. Three protocols carry
+        // a credential on a line of their own and each spells it differently.
+        let server = agreeing().await;
+        let mut caller = Caller::calling(&server).await;
+        caller.hears().await;
+
+        for said in [
+            "A1 LOGIN \"me\" \"hunter2\"\r\n",
+            "AUTH PLAIN AGFkYQBodW50ZXIy\r\n",
+            "PASS hunter2\r\n",
+        ] {
+            caller.says(said).await;
+            caller.hears().await;
+        }
+
+        let transcript = server.transcript().await;
+        for line in &transcript {
+            assert!(!line.contains("hunter2"), "a password was recorded: {line}");
+            assert!(
+                !line.contains("AGFkYQBodW50ZXIy"),
+                "an encoded credential was recorded: {line}"
+            );
+        }
+        assert!(transcript[0].contains("LOGIN"), "{transcript:?}");
+        assert!(transcript[1].contains("AUTH"), "{transcript:?}");
+        assert!(transcript[2].contains("PASS"), "{transcript:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_second_connection_is_served_too() {
+        // Filing a copy of a sent message opens its own session, so a test
+        // that covers sending and then filing needs two. A server that stops
+        // after the first leaves the second waiting for a greeting that never
+        // comes, which reads as a slow machine.
+        let server = agreeing().await;
+
+        let mut first = Caller::calling(&server).await;
+        assert_eq!(first.hears().await, "* OK ready\r\n");
+        first.says("A1 FIRST\r\n").await;
+        first.hears().await;
+        drop(first);
+
+        let mut second = Caller::calling(&server).await;
+        assert_eq!(second.hears().await, "* OK ready\r\n");
+        second.says("A2 SECOND\r\n").await;
+        second.hears().await;
+
+        assert!(
+            server.was_told("A1 FIRST").await,
+            "{:?}",
+            server.transcript().await
+        );
+        assert!(
+            server.was_told("A2 SECOND").await,
+            "{:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_length_of_a_literal_is_read_off_the_line_that_announced_it() {
+        // The count is the only thing that says where a literal ends, and it
+        // arrives on the end of the command line. Reading it wrong reads the
+        // next command as part of the message.
+        assert_eq!(literal_length("A1 APPEND \"Sent\" (\\Seen) {13}"), Some(13));
+        assert_eq!(literal_length("A1 APPEND \"Sent\" {2048+}"), Some(2048));
+        assert_eq!(literal_length("A1 NOOP"), None);
+    }
+
+    #[tokio::test]
+    async fn test_a_conversation_that_nobody_calls_reports_an_empty_transcript() {
+        // Not a hang. A test whose client never connected has to be able to
+        // say so rather than wait for the whole run's timeout.
+        let server = agreeing().await;
+
+        assert!(server.transcript().await.is_empty());
+        assert_eq!(server.when_told("ANYTHING").await, None);
+    }
 }
 
 #[cfg(test)]
