@@ -134,9 +134,14 @@ it. Three tests written in one session to catch a named bug passed against that
 bug.
 
 ```bash
-scripts/mutants.sh src/service      # one directory, slow
-scripts/mutants.sh --since main     # only what changed, minutes
+scripts/mutants.sh src/service        # one directory, slow
+scripts/mutants.sh --since v0.19.0    # only what changed, minutes
 ```
+
+Name a real commit or tag to compare against. Every commit here lands on `main`,
+so `--since main` compares `main` with itself, finds nothing, and now says so
+instead of passing. That was written down here as the way to check a change for
+275 commits and could never have tested a line.
 
 Mutation testing alters the code in small ways and runs the suite. Anything
 nothing catches is either untested behaviour or dead code. A whole-tree run is
@@ -183,6 +188,15 @@ Read a partial run as partial. `mutants.out` is written as it goes, and reading
 it mid-run once produced a commit message quoting seventeen of eighteen caught
 when the real figure was thirty-seven of fifty-one. Wait for the process to
 exit.
+
+The script now refuses a partial run rather than summarising one, and it refuses
+two other things that used to read as results. A mutant recorded as unviable
+means one of two things, and only one of them was tested: the compiler looked at
+it and rejected it, or the compiler never started and nothing looked at it at
+all. The whole-tree run of 2026-08-05 recorded 595 that way and 473 of them had
+never reached a compiler, so a third of that run was untested and its summary
+said so nowhere. A run whose build failed before anything was changed used to
+print that every mutant was caught and exit clean.
 
 ```bash
 cargo llvm-cov --lib --summary-only

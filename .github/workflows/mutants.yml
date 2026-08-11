@@ -49,24 +49,23 @@ jobs:
     - name: Install cargo-mutants
       run: cargo install cargo-mutants --locked
 
-    - name: What this change touched
-      shell: bash
-      run: |
-        git diff origin/${{ github.base_ref }}...HEAD -- 'src/**/*.rs' > changed.diff
-        wc -l changed.diff
-
+    # The script, and not the tool directly. "What did this change touch" was
+    # answered here and in the script separately, with two different pathspecs,
+    # and the one written here dropped every file sitting directly in src/.
+    # Worse, this job used to read nothing but the exit code, and a run whose
+    # mutants never built exits zero, so it passed on runs that tested nothing.
+    # The script reads what happened to each mutant and refuses those.
+    #
+    # One job at a time. Two workers collide on Windows and throw away whatever
+    # they had not written out, which this job cannot see and a gate must not
+    # guess at.
     - name: Would anything notice if it were wrong
       shell: bash
-      run: |
-        if [ ! -s changed.diff ]; then
-          echo "Nothing changed under src/."
-          exit 0
-        fi
-        cargo mutants --in-diff changed.diff -j 2
+      run: scripts/mutants.sh --since origin/${{ github.base_ref }}
 
     - name: Keep the report
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: mutants
-        path: mutants.out/
+        path: target/mutants/mutants.out/
