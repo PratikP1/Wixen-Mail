@@ -2911,3 +2911,42 @@ after = """        let outcome = if subscribed {"""
 red = [
     "service::protocols::imap::against_a_server_that_answers::test_every_mailbox_write_says_nothing_to_the_server_with_the_gate_closed",
 ]
+
+# ── Every message sent left with no identifier of its own ───────────────────
+#
+# The mail library fills in a Date when one is missing and writes no
+# Message-ID unless asked, and nothing asked. So no receiving client could
+# thread anything sent from here, the copy filed in Sent had an empty
+# identifier column, and replying to your own sent mail started a new
+# conversation.
+
+[[guard]]
+name = "a sent message carries an identifier of its own"
+file = "src/service/protocols/smtp.rs"
+before = """        .subject(&email.subject)
+        // Taken from the message rather than made here. The mail library will
+        // make one if asked with nothing, and what it makes carries the name
+        // of this computer, which is not something to send to a stranger.
+        .message_id(Some(email.message_id.clone()));"""
+after = """        .subject(&email.subject);"""
+red = [
+    "application::sent_copy::tests::test_a_reply_to_a_message_this_program_sent_joins_its_conversation",
+    "service::protocols::smtp::against_a_server_that_answers::test_the_identifier_on_the_wire_is_the_one_filed_in_sent",
+    "service::protocols::smtp::tests::test_a_sent_message_carries_an_identifier_naming_the_domain_it_is_from",
+]
+
+# ── One queued message, one identifier, however many attempts ───────────────
+#
+# A send that failed after the message reached the server keeps its outbox row
+# and is tried again. Built afresh each time, so a random identifier per
+# attempt is the plausible mistake, and the recipient would get what looks
+# like two messages.
+
+[[guard]]
+name = "one queued message keeps one identifier"
+file = "src/application/mail_controller.rs"
+before = "        message_id: crate::application::message_id::derived(&req.queue_id, &req.from_address),"
+after = "        message_id: crate::application::message_id::fresh(&req.from_address),"
+red = [
+    "application::mail_controller::send_request_tests::test_one_queued_message_keeps_one_identifier_across_attempts",
+]

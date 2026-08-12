@@ -53,6 +53,13 @@ pub struct SendEmailRequest {
     pub auth: MailAuth,
     pub use_tls: bool,
     pub to: Vec<String>,
+    /// The outbox row this message is.
+    ///
+    /// Carried so the message's own `Message-ID` can be derived from it. A row
+    /// survives a failed attempt and only a successful send removes it, so a
+    /// message tried again keeps the identifier it went out with the first
+    /// time, and the recipient's client sees one message rather than two.
+    pub queue_id: String,
     /// Which account this is going out from.
     ///
     /// Carried so the send can ask what that account is allowed to do. Without
@@ -118,6 +125,7 @@ impl SendEmailRequest {
         }
 
         Some(Self {
+            queue_id: queued.id.clone(),
             account_id: account.id.clone(),
             server: account.smtp_server.clone(),
             port,
@@ -153,6 +161,11 @@ impl SendEmailRequest {
 /// stays the first thing `send_email` does.
 pub fn outgoing(req: &SendEmailRequest) -> Result<Email> {
     Ok(Email {
+        // Built here, from the same field the From header is built from, so
+        // the domain the identifier names and the domain the recipient reads
+        // cannot come to disagree. The account's address is also carried on
+        // the account record, and nothing keeps the two equal.
+        message_id: crate::application::message_id::derived(&req.queue_id, &req.from_address),
         // The account's address, not the name it signs in with. On a corporate
         // server the two differ and the login is often not an address at all.
         from: req.from_address.clone(),
@@ -751,6 +764,7 @@ mod tests {
     async fn test_send_email_uses_smtp() {
         let controller = MailController::new();
         let req = SendEmailRequest {
+            queue_id: "q-1".to_string(),
             account_id: "a1".to_string(),
             server: "smtp.example.com".to_string(),
             port: 587,
@@ -1654,6 +1668,50 @@ mod send_request_tests {
 
         assert_eq!(email.in_reply_to.as_deref(), Some("<c@x>"));
         assert_eq!(email.references.as_deref(), Some("<a@x> <c@x>"));
+    }
+
+    #[test]
+    fn test_the_identifier_and_the_from_header_name_one_domain() {
+        // Built through the same path the running program uses, because the
+        // point is which field feeds it. The account record also carries the
+        // address, and nothing keeps that field and the request's equal, so
+        // taking the identifier off one and the From header off the other is
+        // how the two would come to disagree in the recipient's headers.
+        let req = SendEmailRequest::from_queued(
+            &queued("you@example.com"),
+            &account(),
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+        let email = outgoing(&req).expect("a message to build");
+
+        let (_, domain) = email
+            .from
+            .split_once('@')
+            .expect("the sender to be an address");
+        assert!(
+            email.message_id.ends_with(&format!("@{domain}>")),
+            "the identifier names a different domain from the From header: {} against {}",
+            email.message_id,
+            email.from
+        );
+    }
+
+    #[test]
+    fn test_one_queued_message_keeps_one_identifier_across_attempts() {
+        // A send that failed after the message reached the server keeps its
+        // outbox row and is tried again. Built afresh each time, so this is
+        // where a random identifier per attempt would show up, and the
+        // recipient would get what looks like two messages.
+        let row = queued("you@example.com");
+        let build = || {
+            let req =
+                SendEmailRequest::from_queued(&row, &account(), MailAuth::Password("x".into()))
+                    .expect("a sendable request");
+            outgoing(&req).expect("a message to build").message_id
+        };
+
+        assert_eq!(build(), build());
     }
 
     #[test]

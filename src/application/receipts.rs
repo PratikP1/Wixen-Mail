@@ -179,6 +179,12 @@ pub fn noticed(request: &Request, from: &str) -> String {
 /// What a receipt is being sent about.
 #[derive(Debug, Clone)]
 pub struct About {
+    /// This receipt's own `Message-ID`, brackets and all.
+    ///
+    /// Passed in rather than made here, so this stays a function whose output
+    /// a test can read: a random value generated inside would make every one
+    /// of those tests unrepeatable.
+    pub own_id: String,
     /// The address the receipt goes to, as the sender wrote it.
     pub notify: String,
     /// The account's own address, which is what was read.
@@ -216,6 +222,9 @@ pub fn message(about: &About) -> Vec<u8> {
     out.push_str(&format!("From: {}\r\n", about.reader));
     out.push_str(&format!("To: {}\r\n", about.notify));
     out.push_str(&format!("Subject: Read: {}\r\n", about.subject));
+    // Its own, which is a different thing from the two headers below that
+    // name the message it is about.
+    out.push_str(&format!("Message-ID: {}\r\n", about.own_id));
     out.push_str(&format!("Date: {}\r\n", about.read_at));
     if let Some(id) = about.message_id.as_deref() {
         // So the sender's client files it against the message it is about
@@ -265,6 +274,7 @@ mod tests {
             notify: "Ada <ada@example.com>".to_string(),
             reader: "charles@example.com".to_string(),
             subject: "Notes on the engine".to_string(),
+            own_id: "<r-1@example.com>".to_string(),
             message_id: Some("<note-1@example.com>".to_string()),
             read_at: "Mon, 20 Jul 2026 10:00:00 +0000".to_string(),
         }
@@ -310,6 +320,23 @@ mod tests {
         // to work out which message it answers.
         let raw = built();
 
+        assert!(raw.contains("In-Reply-To: <note-1@example.com>"), "{raw}");
+        assert!(
+            raw.contains("Original-Message-ID: <note-1@example.com>"),
+            "{raw}"
+        );
+    }
+
+    #[test]
+    fn test_a_receipt_carries_an_identifier_of_its_own() {
+        // A receipt is mail leaving this machine with somebody's address on
+        // it, and it had no identifier either, so the sender's client had
+        // nothing to file it under except the headers naming the message it is
+        // about. Its own identifier and those two are three different things,
+        // and this fails if the new header is confused with either.
+        let raw = built();
+
+        assert!(raw.contains("Message-ID: <r-1@example.com>"), "{raw}");
         assert!(raw.contains("In-Reply-To: <note-1@example.com>"), "{raw}");
         assert!(
             raw.contains("Original-Message-ID: <note-1@example.com>"),

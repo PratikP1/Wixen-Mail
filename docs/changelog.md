@@ -8,6 +8,29 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: every message sent went out with no identifier of its own, so no
+  mail program could thread it.** A message carries an identifier that every
+  other program uses to work out which conversation it belongs to. Messages sent
+  from here carried none. A recipient's mail program had nothing to join the
+  message to, so a conversation started here arrived as loose mail, and each
+  reply after it started again. The copy kept in Sent had nothing in that column
+  either, so replying to something you had sent yourself began a new
+  conversation rather than continuing the old one.
+
+  Sent mail now carries one. It names the domain of the address the message is
+  sent from, which is the same domain the recipient reads on the From line, and
+  never the name of this computer. A message that failed and is tried again
+  keeps the identifier it had the first time, so the recipient sees one message
+  and not two. Read receipts carry one as well.
+
+  Drafts saved to a Drafts folder keep the rule they already had, which is a
+  deliberately different one: a draft is not a message anybody has received and
+  its identifier says so.
+
+  Replies were already sending the two headers that say which message they
+  answer, and those are unchanged. What was missing was the identifier on the
+  message being answered, when that message was one this program had sent.
+
 - **Fixed: mail collected over POP could be removed from the server whatever
   Allow Changes said.** This only affected accounts set to clear the server:
   the ones where Leave mail on the server is off and a number of days is set.

@@ -32,6 +32,7 @@ pub mod long_text;
 pub mod mail_auth;
 pub mod mail_controller;
 pub mod mail_sync;
+pub mod message_id;
 pub mod messages;
 pub mod new_item;
 pub mod notes;

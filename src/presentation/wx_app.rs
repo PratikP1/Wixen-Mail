@@ -7842,6 +7842,9 @@ fn spawn_receipt(
         };
 
         let raw = message(&About {
+            // A receipt is not queued, so there is no row to derive a stable
+            // identifier from and nothing for it to be stable for.
+            own_id: crate::application::message_id::fresh(&account.email),
             notify: notify.clone(),
             reader: account.email.clone(),
             subject,

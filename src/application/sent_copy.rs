@@ -750,6 +750,71 @@ mod tests {
     }
 
     #[test]
+    fn test_a_reply_to_a_message_this_program_sent_joins_its_conversation() {
+        // The whole reason sent mail needed an identifier, measured end to
+        // end: a message really sent, the copy really filed, and the reply
+        // path's own function asked what a reply to it would carry. With no
+        // identifier on the way out the copy's column is empty, that function
+        // answers nothing, and replying to your own sent mail starts a new
+        // conversation in the recipient's client.
+        let (cache, account) = a_cache(true);
+        let raw = a_message_this_program_really_sent();
+
+        keeping(&Refusing, &cache, &account, false, &raw);
+
+        let row = the_only_row(&cache);
+        assert!(
+            !row.message_id.is_empty(),
+            "the copy in Sent has no identifier, so a reply to it starts a new conversation"
+        );
+        let reply =
+            crate::application::threading::continuing(&row.message_id, row.refs_header.as_deref())
+                .expect("a reply to a message with an identifier continues its conversation");
+        assert!(reply.in_reply_to.contains(&row.message_id), "{reply:?}");
+        assert!(reply.references.ends_with(&reply.in_reply_to), "{reply:?}");
+    }
+
+    /// The bytes of a message sent through the ordinary send path.
+    ///
+    /// A loopback server rather than a message typed out here, because what is
+    /// being measured is what this program really writes on the way out. Bytes
+    /// written by hand would carry whatever header the test remembered to put
+    /// in them and could pass with the send path writing none.
+    fn a_message_this_program_really_sent() -> Vec<u8> {
+        use crate::service::protocols::smtp::against_a_server_that_answers::{
+            an_smtp_server, pointed_at,
+        };
+
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("a runtime")
+            .block_on(async {
+                let server = an_smtp_server().await;
+                let client = crate::service::protocols::smtp::SmtpClient::allowed_to_send(
+                    pointed_at(&server),
+                )
+                .expect("a client");
+                let message = crate::service::protocols::smtp::Email::simple(
+                    "me@example.com".to_string(),
+                    "you@example.com".to_string(),
+                    "The quarterly figures".to_string(),
+                    "Here they are.".to_string(),
+                );
+                tokio::time::timeout(
+                    crate::common::answering::LONG_ENOUGH,
+                    client.send_email(
+                        message,
+                        &crate::service::protocols::MailAuth::Password("hunter2".to_string()),
+                    ),
+                )
+                .await
+                .expect("the server never finished the exchange")
+                .expect("the loopback server takes anything")
+            })
+    }
+
+    #[test]
     fn test_nothing_extra_is_kept_here_when_nobody_asked_for_it() {
         // The setting is off by default, and off means the Sent folder lists
         // each message once, from the server, exactly as it did before.
