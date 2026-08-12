@@ -496,6 +496,7 @@ impl MailController {
         username: String,
         password: String,
         use_tls: bool,
+        account_id: &str,
     ) -> Result<()> {
         let config = Pop3Config {
             server,
@@ -504,7 +505,14 @@ impl MailController {
             username,
         };
         let client = Pop3Client::new(config)?;
-        let session = client.connect(&password).await?;
+        let mut session = client.connect(&password).await?;
+        // Downloading mail is always allowed; removing it from the server is
+        // not, unless this account says so and the setting and command line
+        // agree. Over POP that removal is permanent.
+        if crate::application::allowed::allowed_for(account_id).mail {
+            session.allow_changes();
+        }
+
         let mut pop3_session = self.pop3_session.lock().await;
         *pop3_session = Some(session);
         tracing::info!("Connected to POP3 server");
@@ -697,6 +705,7 @@ mod tests {
                 "test@example.com".to_string(),
                 "password".to_string(),
                 false,
+                "a1",
             )
             .await
             .expect_err("nothing listens on port 1")
@@ -1018,6 +1027,7 @@ mod against_a_server_that_answers {
                 "someone".to_string(),
                 "hunter2".to_string(),
                 false,
+                "a1",
             )
             .await
             .expect("the server answered, so signing in should work");
@@ -1066,6 +1076,57 @@ mod against_a_server_that_answers {
     /// A controller holding a session that may change things.
     async fn allowed_on(server: &crate::common::answering::Conversation) -> MailController {
         holding(a_session_allowed_on(server).await)
+    }
+
+    /// A controller already holding a POP session somebody else opened.
+    ///
+    /// Same reason as the one above. Signing in decides what a session may do
+    /// by reading the account's setting out of the profile of whoever runs the
+    /// suite, so a test that wanted a particular answer could not have one.
+    fn holding_pop(session: Pop3Session) -> MailController {
+        MailController {
+            imap_session: Arc::new(Mutex::new(None)),
+            pop3_session: Arc::new(Mutex::new(Some(session))),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_pop_removal_is_refused_here_when_the_session_may_not_change_anything() {
+        // The refusing direction at this layer. The permitting direction is
+        // measured against the server one layer down, in the POP module: what
+        // the account itself is allowed to do is read at sign-in from the
+        // settings file of whoever is running the suite, which no test can
+        // decide, so a test here that expected a removal to succeed would pass
+        // or fail depending on the machine.
+        let server =
+            crate::service::protocols::pop3::against_a_server_that_answers::a_pop_server().await;
+        let session =
+            crate::service::protocols::pop3::against_a_server_that_answers::reading_only_on(
+                &server,
+            )
+            .await;
+        let controller = holding_pop(session);
+
+        let refused = controller.delete_pop3_message(1).await;
+
+        let said = match refused {
+            Ok(()) => panic!("a message was removed from the server with changes off"),
+            Err(said) => said.to_string(),
+        };
+        let transcript = server.transcript().await;
+        assert!(
+            said.contains("remove a message from the mail server"),
+            "{said}"
+        );
+        assert!(said.contains("Allow Changes"), "{said}");
+        assert!(
+            !transcript.is_empty(),
+            "the server heard nothing at all, so this proves nothing about the gate"
+        );
+        assert!(
+            !server.was_told("DELE").await,
+            "a removal reached the server with the gate closed: {transcript:?}"
+        );
     }
 
     #[tokio::test]
@@ -1465,6 +1526,7 @@ mod against_a_server_that_answers {
                 "someone".to_string(),
                 "hunter2".to_string(),
                 false,
+                "a1",
             )
             .await
             .expect("the server answered, so signing in should work");

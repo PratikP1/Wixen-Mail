@@ -170,6 +170,29 @@ pub fn refusal(doing: &str) -> String {
     )
 }
 
+/// Whether a command that would change something may go ahead.
+///
+/// The single most important decision in the mail transports, and the one
+/// nothing tested. Mutation testing replaced it with "yes" and the suite stayed
+/// green, which means the gate that makes an alpha build unable to reorganise
+/// somebody's real mailbox had no check behind it at all.
+///
+/// A free function rather than a method, so it can be asked the question
+/// without a socket. A session that holds the answer cannot be built without
+/// one, and a safety property that can only be tested against a live server is
+/// a safety property that does not get tested.
+///
+/// Here rather than in one of the transports, because three of them ask it.
+/// [`Outward`] answers it inline for the HTTP clients; the mail and the POP
+/// sessions call this. A second copy of it in a second file is how a change to
+/// the rule comes to reach one transport and not the others.
+pub fn permitted(may_change: bool, doing: &str) -> Result<()> {
+    if may_change {
+        return Ok(());
+    }
+    Err(Error::Security(refusal(doing)))
+}
+
 /// Whether a change was refused by the setting rather than by the provider.
 ///
 /// One answer to the question, here beside the refusal itself, because it is
@@ -264,6 +287,39 @@ mod tests {
     }
 
     #[test]
+    fn test_nothing_may_change_a_mailbox_until_it_is_allowed_to() {
+        // The most important line in the mail transports, and mutation testing
+        // found it untested: replaced with "yes", the whole suite stayed green.
+        // That gate is what stops an alpha build reorganising somebody's real
+        // mailbox, and it had nothing behind it.
+        let refused = permitted(false, "change a message");
+
+        assert!(refused.is_err(), "a change was allowed with changes off");
+        assert!(
+            matches!(refused, Err(Error::Security(_))),
+            "a refusal came back as something other than a refusal"
+        );
+    }
+
+    #[test]
+    fn test_a_refusal_says_what_was_being_attempted() {
+        // "Permission denied" sends somebody looking for a broken account.
+        // Naming the act is what tells them it was a setting instead.
+        let Err(Error::Security(said)) = permitted(false, "delete a message") else {
+            panic!("a change was allowed with changes off");
+        };
+
+        assert!(said.contains("delete a message"), "{said}");
+    }
+
+    #[test]
+    fn test_a_session_that_is_allowed_to_change_things_may() {
+        // The other direction. A gate that refuses everything would be safe
+        // and useless, and nothing checked this either.
+        assert!(permitted(true, "change a message").is_ok());
+    }
+
+    #[test]
     fn test_refusing_happens_before_anything_leaves() {
         // A refusal that happened halfway would be worse than no gate at all:
         // the request would be out and the answer lost. `changing` returns the
@@ -285,18 +341,46 @@ mod tests {
 /// `reqwest::Client` field again, which is how all four HTTP clients came to
 /// have one apiece with nothing able to tell a read from a delete.
 #[cfg(test)]
-const GATED: [&str; 6] = [
+const GATED: [&str; 7] = [
     "src/service/tasks_api.rs",
     "src/service/google_api.rs",
     "src/service/microsoft_graph.rs",
     "src/service/caldav.rs",
     "src/service/protocols/imap.rs",
     "src/service/protocols/smtp.rs",
+    "src/service/protocols/pop3.rs",
 ];
+
+/// Every place that opens a connection of its own and only ever reads.
+///
+/// Nothing here can change anything at somebody's account, so none of it needs
+/// a gate. It is written down anyway, because the reason POP3 went years with
+/// no gate at all is that nothing anywhere held a list of the ways out of this
+/// program: a module that only read was indistinguishable from a module nobody
+/// had thought about. Moving one of these into the list above is what happens
+/// when it grows a write.
+#[cfg(test)]
+const TALKS_BUT_ONLY_READS: [&str; 3] = [
+    // Fetches a published calendar. GET, and nothing else.
+    "src/service/ical_subscription.rs",
+    // Asks Google whether a link is on its lists. POSTs, and they are
+    // questions: nothing at anybody's account changes.
+    "src/service/safebrowsing/client.rs",
+    // Trades an authorisation code for a token at the provider's own endpoint.
+    "src/service/oauth.rs",
+];
+
+/// The gate itself, which holds the client the others are refused through.
+///
+/// On a list of its own because it is the one file that is supposed to hold a
+/// bare client. Putting it among the gated ones would make the check below it
+/// read its own client as an escape route.
+#[cfg(test)]
+const THE_GATE: [&str; 1] = ["src/service/outward.rs"];
 
 #[cfg(test)]
 mod completeness {
-    use super::GATED;
+    use super::{GATED, TALKS_BUT_ONLY_READS, THE_GATE};
 
     #[test]
     fn test_no_transport_holds_a_client_that_cannot_be_gated() {
@@ -348,13 +432,87 @@ mod completeness {
     #[test]
     fn test_every_gated_module_is_still_there() {
         // A list of paths rots. If one is renamed, the test above passes by
-        // reading nothing, so the list is checked separately.
-        for path in GATED {
+        // reading nothing, so the list is checked separately. All three lists,
+        // because the census below decides whether a file is accounted for by
+        // looking it up in them, and a stale entry there accounts for nothing.
+        for path in GATED
+            .iter()
+            .chain(TALKS_BUT_ONLY_READS.iter())
+            .chain(THE_GATE.iter())
+        {
             assert!(
                 std::path::Path::new(path).exists(),
-                "{path} has moved, so the gate list is stale and the test above proves nothing"
+                "{path} has moved, so the list is stale and the checks that read it prove nothing"
             );
         }
+    }
+
+    /// How a module gets a connection of its own out of this program.
+    ///
+    /// Four ways, and every one of them was found by reading the tree rather
+    /// than by remembering. Anything that opens a socket or holds an HTTP
+    /// client of its own matches one of these.
+    const A_WAY_OUT: [&str; 4] = [
+        "TcpStream::connect(",
+        "reqwest::Client::new(",
+        "reqwest::Client::builder(",
+        "AsyncSmtpTransport",
+    ];
+
+    #[test]
+    fn test_every_module_that_talks_to_a_server_is_on_one_of_these_lists() {
+        // The check that would have caught the POP hole. The gate list was
+        // kept by hand and POP3 was never on it, so "mail changes are off" was
+        // never true for a POP account and nothing anywhere could say so.
+        //
+        // The lists are the record; the tree is the answer. A new way out of
+        // this program now fails here until somebody has said in writing
+        // whether it can change anything at a person's account.
+        let accounted_for: Vec<&str> = GATED
+            .iter()
+            .chain(TALKS_BUT_ONLY_READS.iter())
+            .chain(THE_GATE.iter())
+            .copied()
+            .collect();
+
+        for file in every_source_file() {
+            let path = file.to_string_lossy().replace('\\', "/");
+            let source = std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{path}: {e}"));
+            // The production half only. A test may open a loopback socket, and
+            // several do: that is how the gate is measured at all.
+            let production = source.split("#[cfg(test)]").next().unwrap_or_default();
+            let Some(how) = A_WAY_OUT.iter().find(|marker| production.contains(*marker)) else {
+                continue;
+            };
+            assert!(
+                accounted_for.contains(&path.as_str()),
+                "{path} reaches a server with {how} and is on no list, so nobody has said \
+                 whether it can change anything at somebody's account"
+            );
+        }
+    }
+
+    /// Every Rust file under `src`, however deep.
+    fn every_source_file() -> Vec<std::path::PathBuf> {
+        let mut found = Vec::new();
+        let mut looking = vec![std::path::PathBuf::from("src")];
+        while let Some(dir) = looking.pop() {
+            let entries = std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("{dir:?}: {e}"));
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    looking.push(path);
+                } else if path.extension().is_some_and(|kind| kind == "rs") {
+                    found.push(path);
+                }
+            }
+        }
+        assert!(
+            found.len() > 50,
+            "only {} source files were found, so this walked the wrong tree",
+            found.len()
+        );
+        found
     }
 }
 

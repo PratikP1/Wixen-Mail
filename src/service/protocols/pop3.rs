@@ -181,6 +181,10 @@ impl Pop3Client {
 
         let mut session = Pop3Session {
             stream: BufReader::new(stream),
+            // Reading only until somebody says otherwise, the same default the
+            // mail session has and for a sharper reason: a POP delete is
+            // permanent and there is no trash behind it.
+            may_change: false,
         };
         // Every POP3 connection opens with a greeting, and it has to be read
         // before anything is sent or the first command answers the greeting.
@@ -234,9 +238,12 @@ impl Pop3Client {
             .into_plain()
             .ok_or_else(|| Error::Security("The connection was already encrypted".into()))?;
         let encrypted = self.encrypt(plain).await?;
-        // No greeting follows STLS.
+        // No greeting follows STLS. The permission is carried across rather
+        // than defaulted again: an upgraded session is the same session.
+        let may_change = session.may_change;
         Ok(Pop3Session {
             stream: BufReader::new(Pop3Stream::Tls(Box::new(encrypted))),
+            may_change,
         })
     }
 }
@@ -244,9 +251,40 @@ impl Pop3Client {
 /// A signed-in POP3 session.
 pub struct Pop3Session {
     stream: BufReader<Pop3Stream>,
+    /// Whether this session may change anything on the server.
+    ///
+    /// Downloading a mailbox into the local cache cannot hurt anybody.
+    /// Removing a message can, and over POP3 there is no undoing it: DELE has
+    /// no trash behind it and no other client can put the message back. So a
+    /// session may not, unless somebody said otherwise.
+    may_change: bool,
 }
 
 impl Pop3Session {
+    /// Whether this session may change anything on the server.
+    pub const fn may_change(&self) -> bool {
+        self.may_change
+    }
+
+    /// Allow this session to change things on the server.
+    ///
+    /// Named exactly as the mail session's, because both are opened by the
+    /// same function and a check that counts the places the gate is opened
+    /// would go blind to a differently named one.
+    pub fn allow_changes(&mut self) {
+        self.may_change = true;
+    }
+
+    /// Refuse a command that would change the mailbox, if changes are off.
+    ///
+    /// `doing` is the act in words somebody would want to hear. One answer for
+    /// every transport, in [`crate::service::outward::permitted`], so a POP
+    /// account and a mail account cannot come to disagree about what the
+    /// setting means.
+    fn may_i(&self, doing: &str) -> Result<()> {
+        crate::service::outward::permitted(self.may_change, doing)
+    }
+
     /// How many messages the mailbox holds, and how many bytes in total.
     pub async fn stat(&mut self) -> Result<(usize, usize)> {
         let said = self.command("STAT", &[]).await?;
@@ -316,6 +354,11 @@ impl Pop3Session {
     /// connection dropped instead of quitting leaves everything in place, which
     /// is the safe direction.
     pub async fn delete(&mut self, id: u32) -> Result<()> {
+        // Worded for POP rather than borrowed from the mail side. "Delete a
+        // message" is what somebody hears about a mailbox with a trash folder
+        // behind it. Here the message leaves the server, and the sentence
+        // should say so.
+        self.may_i("remove a message from the mail server")?;
         self.command("DELE", &[&id.to_string()]).await?;
         Ok(())
     }
@@ -449,5 +492,102 @@ mod tests {
         assert_eq!(Pop3Security::choose(110, true), Pop3Security::StartTls);
         assert_eq!(Pop3Security::choose(110, false), Pop3Security::Plaintext);
         assert_eq!(Pop3Security::choose(995, false), Pop3Security::Plaintext);
+    }
+}
+
+/// What this says to a POP server that answers, and what it does not.
+///
+/// POP3 is one line each way, so a server that says `+OK` to everything is a
+/// whole server for as long as a test needs one. What that buys is the only
+/// measurement worth having about the gate: a refusal and a server nobody
+/// reached look identical from inside the client, and only a transcript can
+/// tell them apart.
+#[cfg(test)]
+pub(crate) mod against_a_server_that_answers {
+    use super::*;
+    use crate::common::answering::{Conversation, LONG_ENOUGH, Turn, conversing};
+
+    /// A POP3 server that agrees with everything it is told.
+    pub(crate) async fn a_pop_server() -> Conversation {
+        conversing("+OK loopback ready\r\n", |_| {
+            Turn::Say("+OK done\r\n".to_string())
+        })
+        .await
+    }
+
+    /// A session signed in to that server, reading only.
+    pub(crate) async fn reading_only_on(server: &Conversation) -> Pop3Session {
+        let client = Pop3Client::new(Pop3Config {
+            server: server.server(),
+            port: server.port(),
+            use_tls: false,
+            username: "someone".to_string(),
+        })
+        .expect("a client");
+
+        tokio::time::timeout(LONG_ENOUGH, client.connect("hunter2"))
+            .await
+            .expect("the server never finished the sign-in exchange")
+            .expect("the server answered, so signing in should work")
+    }
+
+    /// The same session, allowed to change things.
+    async fn signed_in_to(server: &Conversation) -> Pop3Session {
+        let mut session = reading_only_on(server).await;
+        session.allow_changes();
+        session
+    }
+
+    #[tokio::test]
+    async fn test_a_message_removed_past_an_open_gate_reaches_the_server() {
+        // The proving half. Without it the refusal below cannot be believed:
+        // a transcript that never records a command looks exactly the same as
+        // a gate that held one back.
+        let server = a_pop_server().await;
+        let mut session = signed_in_to(&server).await;
+
+        tokio::time::timeout(LONG_ENOUGH, session.delete(3))
+            .await
+            .expect("the server never answered")
+            .expect("a session that may change things should be able to");
+
+        let transcript = server.transcript().await;
+        assert!(
+            server.was_told("DELE 3").await,
+            "the removal never reached the server: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_nothing_is_said_to_the_server_with_the_gate_closed() {
+        // The reason this unit exists. A POP delete is permanent and there is
+        // no trash behind it, and until now nothing asked whether it was
+        // allowed, so "mail changes are off" was never true for a POP account.
+        let server = a_pop_server().await;
+        let mut session = reading_only_on(&server).await;
+
+        let refused = tokio::time::timeout(LONG_ENOUGH, session.delete(3))
+            .await
+            .expect("a refusal should not need the server at all");
+
+        let said = match refused {
+            Ok(()) => panic!("a message was removed from the server with changes off"),
+            Err(said) => said.to_string(),
+        };
+        assert!(
+            said.contains("remove a message from the mail server"),
+            "{said}"
+        );
+        assert!(said.contains("Allow Changes"), "{said}");
+
+        let transcript = server.transcript().await;
+        assert!(
+            !transcript.is_empty(),
+            "the server heard nothing at all, so this proves nothing about the gate"
+        );
+        assert!(
+            !server.was_told("DELE").await,
+            "a removal reached the server with the gate closed: {transcript:?}"
+        );
     }
 }

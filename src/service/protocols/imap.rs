@@ -663,24 +663,6 @@ pub struct ImapSession {
     abilities: Abilities,
 }
 
-/// Whether a command that would change the mailbox may go ahead.
-///
-/// The single most important decision in this file, and the one nothing tested.
-/// Mutation testing replaced it with "yes" and the suite stayed green, which
-/// means the gate that makes an alpha build unable to reorganise somebody's
-/// real mailbox had no check behind it at all.
-///
-/// A free function rather than a method, so it can be asked the question
-/// without a socket. The session that holds the answer cannot be built without
-/// one, and a safety property that can only be tested against a live server is
-/// a safety property that does not get tested.
-fn permitted(may_change: bool, doing: &str) -> Result<()> {
-    if may_change {
-        return Ok(());
-    }
-    Err(Error::Security(crate::service::outward::refusal(doing)))
-}
-
 impl ImapSession {
     /// Send one command and read the whole of the server's answer.
     ///
@@ -1087,7 +1069,7 @@ impl ImapSession {
     /// them is a refusal, and "permission denied" sends them looking for a
     /// broken account.
     fn may_i(&self, doing: &str) -> Result<()> {
-        permitted(self.may_change, doing)
+        crate::service::outward::permitted(self.may_change, doing)
     }
 
     /// Add or remove a flag on a message.
@@ -1870,39 +1852,6 @@ async fn with_timeout<F: std::future::Future>(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_nothing_may_change_a_mailbox_until_it_is_allowed_to() {
-        // The most important line in this file, and mutation testing found it
-        // untested: replaced with "yes", the whole suite stayed green. That
-        // gate is what stops an alpha build reorganising somebody's real
-        // mailbox, and it had nothing behind it.
-        let refused = permitted(false, "change a message");
-
-        assert!(refused.is_err(), "a change was allowed with changes off");
-        assert!(
-            matches!(refused, Err(Error::Security(_))),
-            "a refusal came back as something other than a refusal"
-        );
-    }
-
-    #[test]
-    fn test_a_refusal_says_what_was_being_attempted() {
-        // "Permission denied" sends somebody looking for a broken account.
-        // Naming the act is what tells them it was a setting instead.
-        let Err(Error::Security(said)) = permitted(false, "delete a message") else {
-            panic!("a change was allowed with changes off");
-        };
-
-        assert!(said.contains("delete a message"), "{said}");
-    }
-
-    #[test]
-    fn test_a_session_that_is_allowed_to_change_things_may() {
-        // The other direction. A gate that refuses everything would be safe
-        // and useless, and nothing checked this either.
-        assert!(permitted(true, "change a message").is_ok());
-    }
 
     #[test]
     fn test_a_message_reports_the_flags_the_server_gave_it() {

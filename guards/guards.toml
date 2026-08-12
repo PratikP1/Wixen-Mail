@@ -2841,3 +2841,55 @@ after = """                format!("UID FETCH {uid} BODY.PEEK[]"),
 red = [
     "service::protocols::imap::against_a_server_that_answers::test_the_message_a_server_sends_back_is_the_one_that_is_handed_over",
 ]
+# ── Mail collected over POP, removed from a server nobody asked ─────────────
+#
+# The gate that holds every other write back was never asked over POP. DELE was
+# sent with no check of any kind, and neither the account's own setting nor
+# --read-only could stop it, so every screen and every document saying writes
+# are behind Allow Changes was wrong for a POP account. It only ran for an
+# account whose own housekeeping is set to clear the server after so many days,
+# which is why it went unnoticed: the default leaves everything alone.
+
+[[guard]]
+name = "a POP removal refused by the setting says nothing to the server"
+file = "src/service/protocols/pop3.rs"
+before = """        self.may_i("remove a message from the mail server")?;
+        self.command("DELE", &[&id.to_string()]).await?;"""
+after = """        self.command("DELE", &[&id.to_string()]).await?;"""
+red = [
+    "application::mail_controller::against_a_server_that_answers::test_a_pop_removal_is_refused_here_when_the_session_may_not_change_anything",
+    "service::protocols::pop3::against_a_server_that_answers::test_nothing_is_said_to_the_server_with_the_gate_closed",
+]
+
+# ── A clear-out the setting held back, reported as a failed mail check ──────
+#
+# Everything downloaded correctly and the only thing that did not happen was
+# the clearing out. Raised through the question mark it ends the whole check,
+# so the polite ending that commits a POP session never runs and the person is
+# told their mail did not arrive when all of it did. The same shape the
+# calendar and the tasks syncs were already fixed for.
+
+[[guard]]
+name = "a POP removal held by Allow Changes is a wait, not a failed check"
+file = "src/application/pop_sync.rs"
+before = """    let mut removed = 0;
+    let mut waiting = 0;
+    for (id, _) in &stale {
+        match server.mark_for_deletion(*id).await {
+            Ok(()) => removed += 1,
+            // Held back by Allow Changes rather than refused by the server.
+            // Nothing left this machine, the mail is still there, and the
+            // check itself worked, so this is a wait and not a failure. The
+            // same rule the calendar and the tasks syncs follow.
+            Err(e) if crate::service::outward::was_refused_by_the_gate(&e) => waiting += 1,
+            Err(e) => return Err(e),
+        }
+    }"""
+after = """    let removed = stale.len();
+    let waiting = 0;
+    for (id, _) in &stale {
+        server.mark_for_deletion(*id).await?;
+    }"""
+red = [
+    "application::pop_sync::tests::test_a_removal_held_by_allow_changes_is_counted_as_waiting_rather_than_failing",
+]

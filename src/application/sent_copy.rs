@@ -927,37 +927,46 @@ mod tests {
             "the command that keeps a copy at a server no longer asks whether it may: {body}"
         );
 
-        // The other link: nothing turns a session's permission on except the
-        // one place that reads the account's own setting first.
+        // The other link: nothing turns a session's permission on without
+        // reading the account's own setting first.
         //
         // The production half of that file only, the way this test already
         // treats its own file below. The claim worth protecting is that no
-        // second place in the running program opens the gate. Counting the
-        // test module as well would forbid ever measuring what happens past an
-        // open gate, which is the only way any of these commands can be
-        // exercised at all.
+        // place in the running program opens the gate on its own say-so.
+        // Counting the test module as well would forbid ever measuring what
+        // happens past an open gate, which is the only way any of these
+        // commands can be exercised at all.
+        //
+        // Every occurrence, not the first. This used to insist there was
+        // exactly one and then read the four lines above that one, so a second
+        // opener added later would have been counted and never looked at,
+        // which is worse than not counting at all. There are two: signing in
+        // to a mail server, and signing in to a POP server.
         let controller = include_str!("mail_controller.rs")
             .split_once("#[cfg(test)]")
             .expect("the controller has tests")
             .0;
-        let turns_it_on: Vec<&str> = controller
-            .lines()
-            .filter(|line| line.contains("allow_changes()"))
+        let lines: Vec<&str> = controller.lines().collect();
+        let opens_it: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.contains("allow_changes()"))
+            .map(|(at, _)| at)
             .collect();
         assert_eq!(
-            turns_it_on.len(),
-            1,
-            "the permission is turned on in more than one place: {turns_it_on:?}"
+            opens_it.len(),
+            2,
+            "the mail gate is opened somewhere other than the two sign-ins: {:?}",
+            opens_it.iter().map(|at| lines[*at]).collect::<Vec<_>>()
         );
-        let before = controller
-            .split_once("allow_changes()")
-            .expect("the one place")
-            .0;
-        let guard = before.lines().rev().take(4).collect::<Vec<_>>().join(" ");
-        assert!(
-            guard.contains("allowed_for") && guard.contains(".mail"),
-            "the permission is no longer read from the account's own setting: {guard}"
-        );
+        for at in opens_it {
+            let guard = lines[at.saturating_sub(4)..at].join(" ");
+            assert!(
+                guard.contains("allowed_for") && guard.contains(".mail"),
+                "a session is allowed to change things without reading the account's \
+                 own setting first: {guard}"
+            );
+        }
 
         // And nothing in this module opens its own session another way.
         let mine = include_str!("sent_copy.rs")

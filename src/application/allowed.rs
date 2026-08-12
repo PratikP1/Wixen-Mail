@@ -129,6 +129,30 @@ pub fn changes_waiting_here(count: usize) -> String {
     }
 }
 
+/// The sentence a POP check says when that setting is holding a clear-out back.
+///
+/// Beside the one above rather than sharing it. That one ends "to send them",
+/// and nothing here is being sent: mail somebody asked to have cleared off
+/// their provider is still sitting there. Telling them a message is waiting to
+/// go out when it is really waiting to be taken away is worse than saying
+/// nothing, because they would go looking in the wrong place.
+///
+/// Both numbers written out whole, for the same reason as the one above: three
+/// words have to agree, and a sentence assembled from a stem and an "s" reads
+/// like one.
+pub fn removals_waiting_here(count: usize) -> String {
+    match count {
+        1 => format!(
+            "1 message is still on the server: turn on {SETTINGS_SECTION} in \
+             Settings to remove it"
+        ),
+        many => format!(
+            "{many} messages are still on the server: turn on {SETTINGS_SECTION} \
+             in Settings to remove them"
+        ),
+    }
+}
+
 /// The warning shown beside the two Allow Changes boxes.
 ///
 /// Kept here rather than typed into the settings screen, because it was typed
@@ -262,6 +286,23 @@ mod tests {
             changes_waiting_here(3),
             "3 changes are waiting here: turn on Allow Changes in Settings to \
              send them"
+        );
+    }
+
+    #[test]
+    fn test_a_removal_held_back_says_the_mail_is_still_on_the_server() {
+        // A sentence of its own rather than the one above. Nothing is being
+        // sent here: mail somebody asked to have cleared off the server is
+        // still there, and "turn this on to send them" would tell them the
+        // wrong thing about their own mailbox.
+        assert_eq!(
+            removals_waiting_here(1),
+            "1 message is still on the server: turn on Allow Changes in Settings to remove it"
+        );
+        assert_eq!(
+            removals_waiting_here(4),
+            "4 messages are still on the server: turn on Allow Changes in Settings \
+             to remove them"
         );
     }
 

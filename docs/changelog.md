@@ -8,6 +8,32 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: mail collected over POP could be removed from the server whatever
+  Allow Changes said.** This only affected accounts set to clear the server:
+  the ones where Leave mail on the server is off and a number of days is set.
+  For those, mail old enough to go was removed from the provider whether or not
+  mail changes were allowed, and starting the program with changes turned off at
+  the command line did not stop it either. Removal over POP is permanent and
+  there is no trash behind it, so where those settings were on, this could have
+  been the last copy anywhere but this computer. Every other kind of change,
+  sending, deleting and filing over IMAP, was already behind the setting.
+
+  Removing a message from a POP server now asks the same question everything
+  else asks, and says so when it is turned down: "Refused to remove a message
+  from the mail server", followed by how to allow it.
+
+  What changes for somebody using it. An account with those housekeeping
+  settings on and mail changes off will now keep its mail on the server, and the
+  status line at the end of the check says how many are still there and where to
+  turn it on, instead of the mailbox quietly emptying. Mail still arrives here
+  exactly as before, and the check itself is not reported as a failure: nothing
+  went wrong, the clear-out is waiting on a setting.
+
+  There is also now a check that fails the build if any part of this program
+  grows a new way of reaching a server without somebody writing down whether it
+  can change anything. That is what was missing: the list of places that can
+  write was kept by hand and POP was never on it.
+
 - **Fixed: a mail server that refused to list a folder was read as a folder
   with no mail in it, and the messages already downloaded were deleted to
   match.** Asking a server which messages a folder holds and being turned down

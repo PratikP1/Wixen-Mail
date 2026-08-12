@@ -7943,6 +7943,7 @@ fn check_pop_mail(
         account.username.clone(),
         password,
         account.pop_use_tls,
+        &account.id,
     )) {
         return fail(e.to_string());
     }
@@ -7979,6 +7980,19 @@ fn check_pop_mail(
                 report.push_str(&format!(
                     ", {} removed from the server",
                     result.removed_from_server
+                ));
+            }
+            if result.waiting_on_the_setting > 0 {
+                // The other half, and it needs saying just as much. This
+                // account is set to clear its server and the setting is
+                // holding that back, so without a word here the mailbox
+                // quietly fills and the first sign is the provider refusing
+                // new mail.
+                report.push_str(&format!(
+                    ". {}",
+                    crate::application::allowed::removals_waiting_here(
+                        result.waiting_on_the_setting
+                    )
                 ));
             }
             say(UIUpdate::StatusUpdated(report));

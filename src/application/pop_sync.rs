@@ -27,6 +27,14 @@ pub struct PopSync {
     pub fetched: usize,
     /// How many were removed from the server, having been kept long enough.
     pub removed_from_server: usize,
+    /// How many were old enough to go and were held back by Allow Changes.
+    ///
+    /// A removal the setting refuses is not a failed check. Everything asked
+    /// for arrived; the only thing that did not happen is the clearing out,
+    /// and that is what the setting is for. Counted so the status line can say
+    /// so, because otherwise a mailbox quietly stops emptying and the only
+    /// sign is that it fills up.
+    pub waiting_on_the_setting: usize,
     /// How many are on the server in total.
     pub on_server: usize,
     /// The rows this check wrote, oldest first.
@@ -225,16 +233,28 @@ pub(crate) async fn sync<M: PopMailbox>(
     // time is mail that silently never leaves the server.
     let downloaded = cache.pop_download_times_for_account(account_id)?;
     let stale = to_remove(&on_server, &downloaded, housekeeping, now);
+    let mut removed = 0;
+    let mut waiting = 0;
     for (id, _) in &stale {
-        server.mark_for_deletion(*id).await?;
+        match server.mark_for_deletion(*id).await {
+            Ok(()) => removed += 1,
+            // Held back by Allow Changes rather than refused by the server.
+            // Nothing left this machine, the mail is still there, and the
+            // check itself worked, so this is a wait and not a failure. The
+            // same rule the calendar and the tasks syncs follow.
+            Err(e) if crate::service::outward::was_refused_by_the_gate(&e) => waiting += 1,
+            Err(e) => return Err(e),
+        }
     }
-    // Committed here. Until this runs, every DELE is a mark the server throws
-    // away if the connection drops.
+    // Committed here, and reached either way. Until this runs, every DELE is a
+    // mark the server throws away if the connection drops, and a session left
+    // without it is a connection somebody's server holds open for nothing.
     server.finish().await?;
 
     Ok(PopSync {
         fetched: written.len(),
-        removed_from_server: stale.len(),
+        removed_from_server: removed,
+        waiting_on_the_setting: waiting,
         on_server: on_server.len(),
         written,
     })
@@ -410,6 +430,12 @@ mod tests {
         bodies: HashMap<u32, Vec<u8>>,
         /// Which message number the connection drops on, if any.
         fails_on: Option<u32>,
+        /// Whether the Allow Changes setting holds every removal back.
+        ///
+        /// What a real POP session does when the account may only be read: the
+        /// refusal is raised before anything is sent, so the server hears
+        /// nothing and the mail is still there.
+        removals_held_by_the_setting: bool,
         asked: std::cell::RefCell<Vec<Asked>>,
     }
 
@@ -458,6 +484,11 @@ mod tests {
         }
 
         async fn mark_for_deletion(&self, id: u32) -> Result<()> {
+            if self.removals_held_by_the_setting {
+                return Err(crate::common::Error::Security(
+                    crate::service::outward::refusal("remove a message from the mail server"),
+                ));
+            }
             self.asked.borrow_mut().push(Asked::MarkedForDeletion(id));
             Ok(())
         }
@@ -1178,6 +1209,82 @@ X-Spam-Flag: YES\r\n\r\nbody";
     }
 
     #[test]
+    fn test_a_removal_held_by_allow_changes_is_counted_as_waiting_rather_than_failing() {
+        // Everything was downloaded and written down correctly. The only thing
+        // that did not happen is the clearing out, and that was the setting
+        // doing its job. Reported as a failure it reads as "your mail did not
+        // arrive", and the session is dropped before the polite ending, which
+        // is the only thing that commits anything on a POP server.
+        let raw = raw_message("Subject: One\r\nFrom: ada@example.com", "Text.");
+        let (cache, folder_id) = a_cache();
+        run(
+            &Scripted::holding(&[(1, "aaa", &raw)]),
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("the first check runs");
+
+        let server = Scripted {
+            removals_held_by_the_setting: true,
+            ..Scripted::holding(&[(1, "aaa", &raw)])
+        };
+        let done = run(
+            &server,
+            &cache,
+            folder_id,
+            AFTER_A_FORTNIGHT,
+            Utc::now() + Duration::days(40),
+        )
+        .expect("a held-back removal is not a failed mail check");
+
+        let journal = server.journal();
+        assert_eq!(done.waiting_on_the_setting, 1);
+        assert_eq!(done.removed_from_server, 0);
+        assert!(
+            journal.contains(&Asked::Finished),
+            "the session was dropped instead of ended politely: {journal:?}"
+        );
+        assert_eq!(
+            cache
+                .get_message_list(folder_id, "acct")
+                .expect("the list")
+                .len(),
+            1,
+            "the copy on this computer went missing over a removal that never happened"
+        );
+    }
+
+    #[test]
+    fn test_an_ordinary_removal_is_still_counted_as_a_removal() {
+        // The other direction, so the test above cannot pass by everything
+        // being nought. A check where nothing was held back has to say so.
+        let raw = raw_message("Subject: One\r\nFrom: ada@example.com", "Text.");
+        let (cache, folder_id) = a_cache();
+        run(
+            &Scripted::holding(&[(1, "aaa", &raw)]),
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("the first check runs");
+
+        let done = run(
+            &Scripted::holding(&[(1, "aaa", &raw)]),
+            &cache,
+            folder_id,
+            AFTER_A_FORTNIGHT,
+            Utc::now() + Duration::days(40),
+        )
+        .expect("the second check runs");
+
+        assert_eq!(done.removed_from_server, 1);
+        assert_eq!(done.waiting_on_the_setting, 0);
+    }
+
+    #[test]
     fn test_a_second_check_brings_down_only_what_is_new() {
         // What somebody is told, and what they wait for. Counting downloads
         // again on every check reports mail that did not arrive and downloads a
@@ -1358,6 +1465,7 @@ X-Spam-Flag: YES\r\n\r\nbody";
                     "someone".to_string(),
                     "the-loopback-server-accepts-anything".to_string(),
                     false,
+                    "acct",
                 )
                 .await
                 .expect("the loopback server signs anybody in");
