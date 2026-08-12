@@ -3138,11 +3138,11 @@ impl WxMailApp {
                                 msg_list.set_focus();
                             }
                         }
-                        _ if id == ID_ACCOUNT_MGR => handle_account_mgr(&frame, &state),
+                        _ if id == ID_ACCOUNT_MGR => handle_account_mgr(&frame, &state, &a11y),
                         _ if id == ID_NEW_CONTACT => {
                             managers::new_contact(&state, &message_cache, &frame, &ui_tx, &runtime)
                         }
-                        _ if id == ID_NEW_ACCOUNT => handle_account_mgr(&frame, &state),
+                        _ if id == ID_NEW_ACCOUNT => handle_account_mgr(&frame, &state, &a11y),
                         _ if id == ID_SAVE => send_status(&ui_tx, &runtime, "No active draft to save"),
                         _ if id == ID_SAVE_AS => send_status(&ui_tx, &runtime, "Save As: no message selected"),
                         _ if id == ID_CONTACT_MGR => {
@@ -6220,7 +6220,7 @@ fn open_for_scanning(
     tracing::info!("Opening {} for the accessibility scan", target.as_name());
     match target {
         ScanTarget::Settings => handle_settings(frame, tx, rt, a11y),
-        ScanTarget::Accounts => handle_account_mgr(frame, state),
+        ScanTarget::Accounts => handle_account_mgr(frame, state, a11y),
         ScanTarget::FirstRun => {
             // The answer is thrown away. On a fresh profile this screen shows
             // itself once and never again, so the only way to look at it more
@@ -6300,7 +6300,7 @@ fn open_for_scanning(
 }
 
 /// Handle Account Manager dialog result.
-fn handle_account_mgr(frame: &Frame, state: &Arc<StdMutex<WxUIState>>) {
+fn handle_account_mgr(frame: &Frame, state: &Arc<StdMutex<WxUIState>>, a11y: &Arc<Accessibility>) {
     let (accounts, active_id, default_id) = {
         let s = lock_state(state);
         (
@@ -6317,6 +6317,7 @@ fn handle_account_mgr(frame: &Frame, state: &Arc<StdMutex<WxUIState>>) {
         &accounts,
         active_id.as_deref(),
         default_id.as_deref(),
+        a11y,
     ) {
         let mut s = lock_state(state);
         if !new.is_empty() {

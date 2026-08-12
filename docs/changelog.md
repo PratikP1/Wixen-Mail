@@ -8,6 +8,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: the Account Manager did everything in silence.** Every answer that
+  screen gives, twenty-three of them, was written on a line of text above the
+  buttons and said nowhere. That is the screen you add your first account on,
+  and it includes the answers you have to do something about: signing in
+  failed, no credentials are set up for that provider, the account is added but
+  not authorised. Working by ear you pressed a button and heard nothing back.
+  All of them are now spoken as well as shown, and the ones you have to act on
+  come in ahead of the ordinary run of messages.
+
+  Two of those sentences pointed you at a page by its file name, which read out
+  one character at a time. They now name the page the way the Help menu does.
+  Being told to select an account, with no word about what for, now says what
+  for.
+
+  Known limitation. The hint under the email address box, the one that tells
+  you to use an app password rather than your ordinary one, is still shown and
+  not spoken. It is rewritten on every keystroke while you type an address, so
+  speaking it would read a paragraph over you again and again. Attaching it to
+  the password box, so a screen reader reads it when you get there, is the
+  proper fix and has not been done yet.
+
 - **Fixed: the same loss in an Outlook calendar, and a meeting marked tentative
   came back confirmed.** A meeting that repeats, made here in an Outlook
   calendar, arrived there as a single appointment for the same reason as at

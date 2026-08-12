@@ -3581,7 +3581,42 @@ after = """    line.set_label(said);
     let _ = (a11y, priority);"""
 red = [
     "presentation::status_line::tests::test_the_one_place_that_shows_a_sentence_says_it_too",
+    "presentation::wx_account_manager::tests::test_every_answer_the_account_manager_gives_is_said_out_loud",
     "presentation::wx_calendar::tests::test_every_answer_the_calendar_window_gives_is_said_out_loud",
+]
+
+# ── The failures on the screen accounts are created on ──────────────────────
+#
+# Twenty-three answers on the account manager landed on a line of text above
+# the buttons and nowhere else, and among them were failures somebody has to
+# act on: signing in failed, and the browser would not open on the page that
+# hands out app passwords. Somebody adding their first account by ear pressed
+# a button, heard nothing, and had no way to know whether it had worked.
+#
+# Signing in failing is the one measured here because it is the worst of them:
+# it leaves an account that looks added and cannot fetch mail. It is said
+# above the ordinary run of outcomes, because it is the answer to the button
+# just pressed.
+#
+# What this record cannot see. It is a source read, because reaching this arm
+# needs a window, a frame and a running event loop. It can tell that the arm
+# says what it shows and at what priority. It cannot tell whether the
+# announcement reaches a screen reader from inside a modal dialog, or whether
+# the sentence is a true one. Only a screen reader run answers the first.
+
+[[guard]]
+name = "signing in failing on the account screen is said, not only shown"
+file = "src/presentation/wx_account_manager.rs"
+before = """                                said_and_shown(
+                                    &status,
+                                    a11y,
+                                    &format!("Signing in failed: {msg}"),
+                                    Priority::High,
+                                );"""
+after = """                                status.set_label(&format!("Signing in failed: {msg}"));"""
+red = [
+    "presentation::wx_account_manager::tests::test_every_answer_the_account_manager_gives_is_said_out_loud",
+    "presentation::wx_account_manager::tests::test_the_two_failures_on_this_screen_are_said_above_the_ordinary_run",
 ]
 
 # ── One day cut out of a series is two writes, and only one takes a day away ─

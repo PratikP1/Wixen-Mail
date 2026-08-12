@@ -9,6 +9,8 @@
 
 use crate::common::types::Protocol;
 use crate::data::account::{Account, app_password_url, oauth_is_default, offers_app_passwords};
+use crate::presentation::accessibility::Accessibility;
+use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
 
 /// What to put in the password box when the provider wants an app password.
@@ -19,10 +21,12 @@ use crate::presentation::accessibility::names::{name_from_label, set_accessible_
 /// which reads as a typo and sends them round again.
 const APP_PASSWORD_HINT: &str = "Password: use an app password, not your ordinary one. \
 Turn on two-step verification with your provider first, then generate one for mail. \
-See docs/PROVIDER_SETUP.md.";
+See Setting up a provider in Help.";
+use crate::presentation::status_line::said_and_shown;
 use crate::presentation::wx_managers::get_selected;
 use crate::service::oauth::{AuthManager, OAuthService};
 use crate::service::oauth_credentials;
+use std::sync::Arc;
 use wxdragon::prelude::*;
 
 const ID_ADD: Id = ID_HIGHEST + 200;
@@ -49,6 +53,7 @@ pub fn show_account_manager_dialog(
     accounts: &[Account],
     active_account_id: Option<&str>,
     default_account_id: Option<&str>,
+    a11y: &Arc<Accessibility>,
 ) -> AccountManagerAction {
     let dlg = Dialog::builder(parent, "Account Manager")
         .with_size(650, 450)
@@ -192,7 +197,7 @@ pub fn show_account_manager_dialog(
     loop {
         match dlg.show_modal() {
             r if r == ID_ADD => {
-                if let Some(mut a) = show_edit(&dlg, None) {
+                if let Some(mut a) = show_edit(&dlg, None, a11y) {
                     if working.is_empty() {
                         active_id = Some(a.id.clone());
                     }
@@ -202,25 +207,32 @@ pub fn show_account_manager_dialog(
                     if a.use_oauth {
                         match run_oauth_flow(&mut a) {
                             OAuthFlowResult::Authorized => {
-                                status.set_label(&format!(
-                                    "Account added, authorized for {}",
-                                    a.email
-                                ));
+                                said_and_shown(
+                                    &status,
+                                    a11y,
+                                    &format!("Account added, authorized for {}", a.email),
+                                    Priority::Normal,
+                                );
                             }
                             OAuthFlowResult::NoCreds => {
-                                status.set_label(
-                                    "Account added. No client credentials are configured for this provider. See docs/PROVIDER_SETUP.md.",
+                                said_and_shown(
+                                    &status,
+                                    a11y,
+                                    "Account added. No client credentials are configured for this provider. See Setting up a provider in Help.",
+                                    Priority::High,
                                 );
                             }
                             OAuthFlowResult::Failed(msg) => {
-                                status.set_label(&format!(
-                                    "Account added, but authorization failed: {}",
-                                    msg
-                                ));
+                                said_and_shown(
+                                    &status,
+                                    a11y,
+                                    &format!("Account added, but authorization failed: {}", msg),
+                                    Priority::High,
+                                );
                             }
                         }
                     } else {
-                        status.set_label("Account added");
+                        said_and_shown(&status, a11y, "Account added", Priority::Normal);
                     }
 
                     working.push(a);
@@ -232,63 +244,107 @@ pub fn show_account_manager_dialog(
                 match get_selected(&list) {
                     Some(idx) if working[idx].use_oauth => {
                         let name = working[idx].name.clone();
-                        status.set_label(&format!("Signing in to {name}. Finish in the browser."));
+                        said_and_shown(
+                            &status,
+                            a11y,
+                            &format!("Signing in to {name}. Finish in the browser."),
+                            Priority::Normal,
+                        );
                         let mut account = working[idx].clone();
                         match run_oauth_flow(&mut account) {
                             OAuthFlowResult::Authorized => {
                                 working[idx] = account;
                                 changed = true;
-                                populate(&list, &working, active_id.as_deref(), default_id.as_deref());
-                                status.set_label(&format!("{name} is signed in again"));
+                                populate(
+                                    &list,
+                                    &working,
+                                    active_id.as_deref(),
+                                    default_id.as_deref(),
+                                );
+                                said_and_shown(
+                                    &status,
+                                    a11y,
+                                    &format!("{name} is signed in again"),
+                                    Priority::Normal,
+                                );
                             }
                             OAuthFlowResult::NoCreds => {
-                                status.set_label(
-                                    "No client credentials are configured for this provider. See docs/PROVIDER_SETUP.md.",
+                                said_and_shown(
+                                    &status,
+                                    a11y,
+                                    "No client credentials are configured for this provider. See Setting up a provider in Help.",
+                                    Priority::High,
                                 );
                             }
                             OAuthFlowResult::Failed(msg) => {
-                                status.set_label(&format!("Signing in failed: {msg}"));
+                                said_and_shown(
+                                    &status,
+                                    a11y,
+                                    &format!("Signing in failed: {msg}"),
+                                    Priority::High,
+                                );
                             }
                         }
                     }
                     // Saying which of the two it is, because they need
                     // different things done about them.
-                    Some(_) => status.set_label(
+                    Some(_) => said_and_shown(
+                        &status,
+                        a11y,
                         "This account signs in with a password, so there is nothing to authorise. Edit it to change its password.",
+                        Priority::High,
                     ),
-                    None => status.set_label("Select an account to sign in again"),
+                    None => said_and_shown(
+                        &status,
+                        a11y,
+                        "Select an account to sign in again",
+                        Priority::High,
+                    ),
                 }
             }
             r if r == ID_EDIT => {
                 if let Some(idx) = get_selected(&list) {
-                    if let Some(mut u) = show_edit(&dlg, Some(&working[idx])) {
+                    if let Some(mut u) = show_edit(&dlg, Some(&working[idx]), a11y) {
                         // Run OAuth if needed and no tokens yet
                         if u.use_oauth && u.oauth_access_token.is_empty() {
                             match run_oauth_flow(&mut u) {
                                 OAuthFlowResult::Authorized => {
-                                    status.set_label("Account updated and authorized");
+                                    said_and_shown(
+                                        &status,
+                                        a11y,
+                                        "Account updated and authorized",
+                                        Priority::Normal,
+                                    );
                                 }
                                 OAuthFlowResult::NoCreds => {
-                                    status.set_label(
+                                    said_and_shown(
+                                        &status,
+                                        a11y,
                                         "Account updated. OAuth credentials are not configured",
+                                        Priority::High,
                                     );
                                 }
                                 OAuthFlowResult::Failed(msg) => {
-                                    status.set_label(&format!(
-                                        "Account updated, but authorization failed: {}",
-                                        msg
-                                    ));
+                                    said_and_shown(
+                                        &status,
+                                        a11y,
+                                        &format!(
+                                            "Account updated, but authorization failed: {}",
+                                            msg
+                                        ),
+                                        Priority::High,
+                                    );
                                 }
                             }
                         } else {
-                            status.set_label("Account updated");
+                            said_and_shown(&status, a11y, "Account updated", Priority::Normal);
                         }
                         working[idx] = u;
                         changed = true;
                         populate(&list, &working, active_id.as_deref(), default_id.as_deref());
                     }
                 } else {
-                    status.set_label("Select an account to edit");
+                    said_and_shown(&status, a11y, "Select an account to edit", Priority::High);
                 }
             }
             r if r == ID_DELETE => {
@@ -314,9 +370,14 @@ pub fn show_account_manager_dialog(
                         active_id = working.first().map(|a| a.id.clone());
                     }
                     populate(&list, &working, active_id.as_deref(), default_id.as_deref());
-                    status.set_label(&format!("Deleted: {}", name));
+                    said_and_shown(
+                        &status,
+                        a11y,
+                        &format!("Deleted: {}", name),
+                        Priority::Normal,
+                    );
                 } else {
-                    status.set_label("Select an account to delete");
+                    said_and_shown(&status, a11y, "Select an account to delete", Priority::High);
                 }
             }
             r if r == ID_SET_DEFAULT => {
@@ -324,12 +385,22 @@ pub fn show_account_manager_dialog(
                     default_id = Some(working[idx].id.clone());
                     changed = true;
                     populate(&list, &working, active_id.as_deref(), default_id.as_deref());
-                    status.set_label(&format!(
-                        "New contacts, events, tasks and notes go to {} from now on",
-                        working[idx].name
-                    ));
+                    said_and_shown(
+                        &status,
+                        a11y,
+                        &format!(
+                            "New contacts, events, tasks and notes go to {} from now on",
+                            working[idx].name
+                        ),
+                        Priority::Normal,
+                    );
                 } else {
-                    status.set_label("Select an account to make it the default");
+                    said_and_shown(
+                        &status,
+                        a11y,
+                        "Select an account to make it the default",
+                        Priority::High,
+                    );
                 }
             }
             r if r == ID_SET_ACTIVE => {
@@ -337,19 +408,34 @@ pub fn show_account_manager_dialog(
                     active_id = Some(working[idx].id.clone());
                     changed = true;
                     populate(&list, &working, active_id.as_deref(), default_id.as_deref());
-                    status.set_label(&format!("Active: {}", working[idx].name));
+                    said_and_shown(
+                        &status,
+                        a11y,
+                        &format!("Active: {}", working[idx].name),
+                        Priority::Normal,
+                    );
                 } else {
-                    status.set_label("Select an account");
+                    said_and_shown(
+                        &status,
+                        a11y,
+                        "Select an account to make it active",
+                        Priority::High,
+                    );
                 }
             }
             r if r == ID_TEST => {
                 if let Some(idx) = get_selected(&list) {
-                    status.set_label(&format!(
-                        "Testing {}... (not yet implemented)",
-                        working[idx].imap_server
-                    ));
+                    said_and_shown(
+                        &status,
+                        a11y,
+                        &format!(
+                            "Testing {}... (not yet implemented)",
+                            working[idx].imap_server
+                        ),
+                        Priority::Normal,
+                    );
                 } else {
-                    status.set_label("Select an account to test");
+                    said_and_shown(&status, a11y, "Select an account to test", Priority::High);
                 }
             }
             _ => break,
@@ -373,7 +459,11 @@ pub fn show_account_manager_dialog(
 
 // ── Account Edit Sub-Dialog ─────────────────────────────────────────────────
 
-fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
+fn show_edit(
+    parent: &Dialog,
+    existing: Option<&Account>,
+    a11y: &Arc<Accessibility>,
+) -> Option<Account> {
     let title = if existing.is_some() {
         "Edit Account"
     } else {
@@ -583,7 +673,16 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
         }
     }
 
-    // Auto-detect provider and update hint on email change
+    // Auto-detect provider and update hint on email change.
+    //
+    // This one hint is shown and not said, and it is the only thing on this
+    // screen that is. It is rewritten on every keystroke while somebody types
+    // an address and runs to about two hundred characters, so saying it would
+    // read a paragraph over them, over and over. That leaves the app password
+    // hint reaching nobody who works by ear: the answer is to attach it to the
+    // password box as its description rather than to speak it, and that is its
+    // own change. The two answers to a button press on this same line, below,
+    // are said.
     email_f.on_text_changed({
         move |_| {
             let email = email_f.get_value();
@@ -613,16 +712,25 @@ fn show_edit(parent: &Dialog, existing: Option<&Account>) -> Option<Account> {
     });
 
     get_app_password.on_click({
+        let a11y = Arc::clone(a11y);
         move |_| match app_password_url(&email_f.get_value()) {
             Some(url) => {
                 if open::that(url).is_err() {
                     // Saying the address rather than only that it failed, so
                     // the page is still reachable by typing it.
-                    auth_hint.set_label(&format!("Could not open a browser. The page is {url}"));
+                    said_and_shown(
+                        &auth_hint,
+                        &a11y,
+                        &format!("Could not open a browser. The page is {url}"),
+                        Priority::High,
+                    );
                 }
             }
-            None => auth_hint.set_label(
+            None => said_and_shown(
+                &auth_hint,
+                &a11y,
                 "Enter your email address first, or ask your provider where it hands out app passwords.",
+                Priority::High,
             ),
         }
     });
@@ -806,5 +914,244 @@ fn detect_provider(domain: &str) -> (&str, &str, &str, &str) {
         "zoho.com" => ("imap.zoho.com", "smtp.zoho.com", "993", "465"),
         "protonmail.com" | "pm.me" | "proton.me" => ("127.0.0.1", "127.0.0.1", "1143", "1025"),
         _ => ("", "", "993", "465"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// This file with its own tests cut off.
+    ///
+    /// Cut, because the samples below quote the very calls the checks look
+    /// for, and a check that reads its own words passes with the code deleted.
+    fn the_account_manager() -> String {
+        let whole = std::fs::read_to_string("src/presentation/wx_account_manager.rs")
+            .expect("this file to be readable")
+            .replace("\r\n", "\n");
+        match whole.split_once("\n#[cfg(test)]") {
+            Some((code, _)) => code.to_string(),
+            None => whole,
+        }
+    }
+
+    /// The one call that shows and says, with its own tests cut off.
+    fn the_one_call_that_says() -> String {
+        let whole = std::fs::read_to_string("src/presentation/status_line.rs")
+            .expect("the shared status line to be readable")
+            .replace("\r\n", "\n");
+        match whole.split_once("\n#[cfg(test)]") {
+            Some((code, _)) => code.to_string(),
+            None => whole,
+        }
+    }
+
+    /// What this screen answers without saying it out loud.
+    ///
+    /// This is the screen an account is created on, and its answers include
+    /// failures somebody has to act on. They land on a line of text above the
+    /// buttons, which is not somewhere anybody navigating by ear goes and
+    /// which raises no notification when it changes, so an answer only shown
+    /// there is an answer nobody gets.
+    ///
+    /// Two lines of text are counted separately. The one under the buttons
+    /// carries every outcome. The one in the add and edit sub-dialog is partly
+    /// a hint rewritten as somebody types, which is not an answer to a key and
+    /// deliberately stays quiet; only the answers to a button press on it are
+    /// required to speak, so that line is allowed a fixed number of quiet
+    /// writes and no more.
+    fn what_this_screen_never_says(screen: &str, the_one_call: &str) -> Vec<String> {
+        let mut wrong = Vec::new();
+        let Some((_, helper)) = the_one_call.split_once("pub(crate) fn said_and_shown(") else {
+            return vec![
+                "nothing this screen can call both shows a sentence and says it, so every \
+                 answer it gives is silent"
+                    .to_string(),
+            ];
+        };
+        let body = &helper[..helper.find("\n}").unwrap_or(helper.len())];
+        if !body.contains("a11y.announce(") {
+            wrong.push("the one place that shows a sentence never says it out loud".to_string());
+        }
+
+        let shown = screen.matches("status.set_label(").count();
+        if shown != 0 {
+            wrong.push(format!(
+                "{shown} answers on this screen are put on the line of text by themselves, \
+                 rather than through the one call that says them as well"
+            ));
+        }
+
+        // Five, and the reason each of them stays quiet is written above the
+        // box that rewrites them. Any more than that is a new one nobody
+        // decided about.
+        let quiet_hints = screen.matches("auth_hint.set_label(").count();
+        if quiet_hints > 5 {
+            wrong.push(format!(
+                "{quiet_hints} writes to the hint under the email box are silent, and only \
+                 the five rewritten as somebody types may be"
+            ));
+        }
+
+        let said = screen.matches("said_and_shown(").count();
+        if said < 25 {
+            wrong.push(format!(
+                "only {said} answers on this screen are said out loud, and there are more \
+                 answers than that"
+            ));
+        }
+
+        // A file name read out one character at a time is not an instruction
+        // anybody can follow, and two of these sentences carried one until the
+        // round that made them audible. The Help menu names that page in
+        // words, so the sentences name it the same way.
+        for spoken in every_sentence_said(screen) {
+            if spoken.contains(".md") || spoken.contains("docs/") {
+                wrong.push(format!(
+                    "a sentence said out loud names a file rather than a page of Help: \
+                     {spoken}"
+                ));
+            }
+        }
+        wrong
+    }
+
+    /// The arguments of every call that says something, one per call.
+    fn every_sentence_said(screen: &str) -> Vec<String> {
+        screen
+            .match_indices("said_and_shown(")
+            .map(|(at, _)| {
+                let rest = &screen[at..];
+                let end = rest.find(");").unwrap_or(rest.len());
+                rest[..end].to_string()
+            })
+            .collect()
+    }
+
+    /// The 300 characters around a sentence, or nothing if it is not there.
+    fn around(screen: &str, sentence: &str) -> Option<String> {
+        let at = screen.find(sentence)?;
+        let from = at.saturating_sub(150);
+        let to = (at + sentence.len() + 150).min(screen.len());
+        Some(
+            screen
+                .char_indices()
+                .filter(|(i, _)| *i >= from && *i < to)
+                .map(|(_, c)| c)
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn test_every_answer_the_account_manager_gives_is_said_out_loud() {
+        // This is the screen a new account is created on and every one of its
+        // answers used to land on a line of text and nowhere else, including
+        // the ones somebody has to act on.
+        //
+        // What this cannot see: whether the announcement reaches a screen
+        // reader from inside a modal dialog, or whether the sentence handed in
+        // is a true one. Only a screen reader run answers the first.
+        let screen = the_account_manager();
+        assert!(
+            screen.len() > 5000,
+            "only {} characters were read, so the reading is broken",
+            screen.len()
+        );
+        assert!(
+            !screen.contains("fn the_account_manager("),
+            "the tests were not cut off, so the check is reading its own words"
+        );
+        let wrong = what_this_screen_never_says(&screen, &the_one_call_that_says());
+        assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
+    }
+
+    #[test]
+    fn test_the_two_failures_on_this_screen_are_said_above_the_ordinary_run() {
+        // Signing in failing, and the browser not opening on the page that
+        // hands out app passwords. Both leave somebody stuck with an account
+        // that cannot fetch mail, and both are the answer to the button just
+        // pressed, so neither may queue behind the ordinary run of outcomes.
+        let screen = the_account_manager();
+        for failure in ["Signing in failed:", "Could not open a browser."] {
+            let near = around(&screen, failure)
+                .unwrap_or_else(|| panic!("this screen no longer says {failure:?} at all"));
+            assert!(
+                near.contains("said_and_shown("),
+                "{failure:?} is shown and not said: {near}"
+            );
+            assert!(
+                near.contains("Priority::High"),
+                "{failure:?} is said behind the ordinary run of outcomes: {near}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_account_manager_check_can_tell_the_two_apart() {
+        // Proving the measurement. A source read that finds nothing passes,
+        // and from outside that is indistinguishable from one that finds
+        // everything.
+        let call = "pub(crate) fn said_and_shown(\n\
+            \x20   line: &StaticText,\n\
+            ) {\n\
+            \x20   line.set_label(said);\n\
+            \x20   let _ = a11y.announce(said, priority);\n\
+            }\n";
+        let sound = "said_and_shown(&status, a11y, x, Priority::High);\n".repeat(25);
+        assert!(
+            what_this_screen_never_says(&sound, call).is_empty(),
+            "a screen that says everything was reported as silent"
+        );
+
+        let one_left_silent = format!("{sound}status.set_label(x);\n");
+        let wrong = what_this_screen_never_says(&one_left_silent, call);
+        assert!(
+            wrong.iter().any(|said| said.contains("by themselves")),
+            "a screen with one answer left silent was not reported: {wrong:?}"
+        );
+
+        let too_few = "said_and_shown(&status, a11y, x, Priority::High);\n".repeat(24);
+        let wrong = what_this_screen_never_says(&too_few, call);
+        assert!(
+            wrong.iter().any(|said| said.contains("more answers")),
+            "a screen that lost answers was not reported: {wrong:?}"
+        );
+
+        let too_many_hints = format!("{sound}{}", "auth_hint.set_label(x);\n".repeat(6));
+        let wrong = what_this_screen_never_says(&too_many_hints, call);
+        assert!(
+            wrong
+                .iter()
+                .any(|said| said.contains("hint under the email")),
+            "a sixth silent hint was not reported: {wrong:?}"
+        );
+
+        let never_says = call.replace("let _ = a11y.announce(said, priority);", "let _ = said;");
+        assert!(
+            what_this_screen_never_says(&sound, &never_says)
+                .iter()
+                .any(|said| said.contains("never says it out loud")),
+            "a call that only shows was not reported"
+        );
+
+        assert!(
+            what_this_screen_never_says(&sound, "fn nothing() {}")[0]
+                .contains("every answer it gives is silent"),
+            "a screen with nothing to call was not reported"
+        );
+
+        let names_a_file = format!(
+            "{sound}said_and_shown(&status, a11y, See docs/PROVIDER_SETUP.md., Priority::High);\n"
+        );
+        let wrong = what_this_screen_never_says(&names_a_file, call);
+        assert!(
+            wrong.iter().any(|said| said.contains("names a file")),
+            "a spoken sentence naming a file was not reported: {wrong:?}"
+        );
+
+        // And the sentence finder really finds a sentence, and really misses
+        // one that is not there.
+        let near = around("aaaa Signing in failed: bbbb", "Signing in failed:")
+            .expect("a sentence that is there to be found");
+        assert!(near.contains("aaaa") && near.contains("bbbb"), "{near}");
+        assert!(around("nothing here", "Signing in failed:").is_none());
     }
 }
