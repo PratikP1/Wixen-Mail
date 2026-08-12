@@ -4064,7 +4064,19 @@ mod tests {
         // Written as `TaskService::method(&client, ..)` on purpose. The
         // client's own methods have the same names, so `client.method(..)`
         // would call those and pin the wrong function.
+        // All six, because two of them used to be on no list at all and a
+        // forwarder nothing calls is a forwarder nobody has read. A create is
+        // refused in the same words as a change: one function sends both.
         let changes = [
+            TaskService::google_create_task(
+                &client,
+                "token",
+                "google:list",
+                &GoogleTask::default(),
+            )
+            .await
+            .err()
+            .map(|e| e.to_string()),
             TaskService::google_update_task(
                 &client,
                 "token",
@@ -4088,11 +4100,96 @@ mod tests {
             assert!(said.contains(&refused_to_change), "got {said}");
         }
 
-        let deletion = TaskService::ms_delete_task(&client, "token", "ms:list", "ms:t1")
+        let deletions = [
+            TaskService::google_delete_task(&client, "token", "google:list", "google:t1")
+                .await
+                .err()
+                .map(|e| e.to_string()),
+            TaskService::ms_delete_task(&client, "token", "ms:list", "ms:t1")
+                .await
+                .err()
+                .map(|e| e.to_string()),
+        ];
+        for refusal in deletions {
+            let said = refusal.expect("a read-only client sent a deletion");
+            assert!(said.contains(&refused_to_delete), "got {said}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_the_six_task_writes_a_sync_uses_each_reach_the_provider_rather_than_the_forwarder()
+     {
+        // The refusing direction above says the call reached a client. It
+        // cannot say which call reached which address, because nothing was
+        // ever sent. Six forwarders, six one-line bodies, and until now any
+        // pair of them could have been swapped: every change would have been
+        // reported as accepted and every one would have gone to the wrong
+        // task.
+        //
+        // Written as `TaskService::method(&client, ..)` on purpose, for the
+        // reason given above: the client's own methods have the same names.
+        //
+        // Nothing is handed back until the last of the six has been answered,
+        // so a run that made five reports a missing request rather than a short
+        // list that looks like success.
+        let (address, listening) = crate::common::answering::answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{}".to_string(); 6],
+        )
+        .await;
+        let client = crate::service::tasks_api::TasksClient::allowed_to_change_things_at(&format!(
+            "http://{address}"
+        ));
+        let google = GoogleTask {
+            id: "t-9".to_string(),
+            title: "Ring the surgery".to_string(),
+            ..Default::default()
+        };
+        let microsoft = MsTodoTask {
+            id: "t-8".to_string(),
+            title: "Ring the surgery".to_string(),
+            ..Default::default()
+        };
+
+        TaskService::google_create_task(&client, "token", "google:list-1", &google)
             .await
-            .expect_err("a read-only client sent a deletion")
-            .to_string();
-        assert!(deletion.contains(&refused_to_delete), "got {deletion}");
+            .expect("a new Google task to be sent");
+        TaskService::google_update_task(&client, "token", "google:list-1", &google)
+            .await
+            .expect("a change to a Google task to be sent");
+        TaskService::google_delete_task(&client, "token", "google:list-1", "google:t-9")
+            .await
+            .expect("a Google task deletion to be sent");
+        TaskService::ms_create_task(&client, "token", "ms:list-2", &microsoft)
+            .await
+            .expect("a new Microsoft task to be sent");
+        TaskService::ms_update_task(&client, "token", "ms:list-2", &microsoft)
+            .await
+            .expect("a change to a Microsoft task to be sent");
+        TaskService::ms_delete_task(&client, "token", "ms:list-2", "ms:t-8")
+            .await
+            .expect("a Microsoft task deletion to be sent");
+
+        let requests = crate::common::answering::heard(listening, "six task writes")
+            .await
+            .expect("all six");
+        let sent: Vec<&str> = requests
+            .iter()
+            .map(|request| crate::common::answering::asked_for(request))
+            .collect();
+        assert_eq!(
+            sent,
+            vec![
+                "POST /lists/list-1/tasks",
+                "PATCH /lists/list-1/tasks/t-9",
+                "DELETE /lists/list-1/tasks/t-9",
+                "POST /me/todo/lists/list-2/tasks",
+                "PATCH /me/todo/lists/list-2/tasks/t-8",
+                "DELETE /me/todo/lists/list-2/tasks/t-8",
+            ],
+            "{requests:?}"
+        );
     }
 
     #[tokio::test]

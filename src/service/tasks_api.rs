@@ -570,6 +570,23 @@ impl TasksClient {
         }
     }
 
+    /// A client that may change things, asking a named address.
+    ///
+    /// Test-only, and the only way to build one apart from [`Self::for_account`].
+    /// It exists because `for_account` reads the settings really stored on the
+    /// machine it runs on, so a test that used it would pass or fail depending
+    /// on whose computer ran it. Both other provider clients grew one of these
+    /// when their writes were first measured; this file went without, which is
+    /// why none of its six writes had ever been read off the wire.
+    #[cfg(test)]
+    pub fn allowed_to_change_things_at(address: &str) -> Self {
+        Self {
+            http: crate::service::outward::Outward::may_change_things(reqwest::Client::new()),
+            google_base: address.to_string(),
+            microsoft_base: address.to_string(),
+        }
+    }
+
     async fn get<T: serde::de::DeserializeOwned>(&self, url: &str, token: &str) -> Result<T> {
         let response = self
             .http
@@ -1176,14 +1193,9 @@ mod tests {
             }
         });
 
-        // Built by hand because this one has to be allowed to change things,
-        // and the constructor that decides that reads the real stored settings.
-        // The address is passed in full, so neither base is consulted.
-        let client = TasksClient {
-            http: crate::service::outward::Outward::may_change_things(reqwest::Client::new()),
-            google_base: GOOGLE_TASKS_BASE.to_string(),
-            microsoft_base: GRAPH_BASE.to_string(),
-        };
+        // The address is passed to `delete` in full, so neither base is
+        // consulted; the constructor is here for the gate it opens.
+        let client = TasksClient::allowed_to_change_things_at(&format!("http://127.0.0.1:{port}"));
         let refused = client
             .delete(&format!("http://127.0.0.1:{port}/tasks/1"), "token")
             .await;
@@ -1394,5 +1406,271 @@ mod tests {
             .expect("the tasks to be read");
 
         assert!(read.complete, "a whole read looked cut short");
+    }
+
+    // ── What a write really sends ───────────────────────────────────────────
+    //
+    // Each of the six below was reachable only through the decision layer until
+    // now: the address it builds, the body it sends and the verb it uses had
+    // never been read off a socket. Nothing here is a new rule. Every one is a
+    // measurement of what already goes out, written down so that changing it
+    // has to be deliberate.
+    //
+    // The identifiers are passed in the shape the push really passes them, and
+    // that shape is not the same for all three calls. A list id always carries
+    // this application's prefix, because it comes off the stored task. A task
+    // id carries one for a deletion, which is sent from the note the deletion
+    // left behind, and does not for a create or a change, because the converter
+    // that builds the body takes it off first.
+
+    /// A server that answers one write, and a task client allowed to send one.
+    ///
+    /// An empty object satisfies both providers' task shapes, because every
+    /// field on both carries a default. Neither write retries, so one request
+    /// per call is all that goes out.
+    async fn a_task_client_allowed_to_change_things()
+    -> (TasksClient, tokio::sync::oneshot::Receiver<String>) {
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        (
+            TasksClient::allowed_to_change_things_at(&format!("http://{address}")),
+            listening,
+        )
+    }
+
+    #[tokio::test]
+    async fn test_a_new_google_task_is_posted_to_the_list_it_belongs_in_and_claims_no_identifier() {
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+
+        client
+            .google_create_task(
+                "a-token",
+                "google:list-1",
+                &GoogleTask {
+                    id: "local-9".to_string(),
+                    title: "Ring the surgery".to_string(),
+                    status: "needsAction".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("the new task to be sent");
+
+        let request = heard(listening, "a new Google task")
+            .await
+            .expect("a request");
+        assert_eq!(asked_for(&request), "POST /lists/list-1/tasks", "{request}");
+        assert!(
+            request.contains(r#""title":"Ring the surgery""#),
+            "{request}"
+        );
+        assert!(request.contains(r#""status":"needsAction""#), "{request}");
+        // A task made here carries the id this computer gave it, and Google
+        // issues its own. Sending ours claims a task Google has never heard of.
+        assert!(
+            !request.contains(r#""id""#),
+            "a create claimed an identifier Google has not issued: {request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_to_a_google_task_names_the_task_in_the_address_and_carries_what_changed()
+    {
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+
+        client
+            .google_update_task(
+                "a-token",
+                "google:list-1",
+                &GoogleTask {
+                    id: "t-9".to_string(),
+                    title: "Ring the surgery".to_string(),
+                    status: "completed".to_string(),
+                    completed: Some("2026-01-30T09:00:00Z".to_string()),
+                    due: Some("2026-01-31T00:00:00Z".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "a change to a Google task")
+            .await
+            .expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "PATCH /lists/list-1/tasks/t-9",
+            "{request}"
+        );
+        assert!(
+            request.contains(r#""title":"Ring the surgery""#),
+            "{request}"
+        );
+        // Dropping either of these is a task marked done here and still
+        // outstanding at Google, or one whose deadline never arrives.
+        assert!(request.contains(r#""status":"completed""#), "{request}");
+        assert!(
+            request.contains(r#""due":"2026-01-31T00:00:00Z""#),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_google_task_deletion_names_the_list_and_the_task_and_sends_no_body() {
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+
+        client
+            .google_delete_task("a-token", "google:list-1", "google:t-9")
+            .await
+            .expect("the deletion to be sent");
+
+        let request = heard(listening, "a Google task deletion")
+            .await
+            .expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "DELETE /lists/list-1/tasks/t-9",
+            "{request}"
+        );
+        // Which task is meant is said once, in the address. A body naming a
+        // second one would be two answers to one question.
+        assert!(
+            !request.contains('{'),
+            "a deletion carried a body as well as an address: {request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_new_microsoft_task_is_posted_to_the_list_it_belongs_in_and_claims_no_identifier()
+     {
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+
+        client
+            .ms_create_task(
+                "a-token",
+                "ms:list-1",
+                &MsTodoTask {
+                    id: "local-9".to_string(),
+                    title: "Ring the surgery".to_string(),
+                    status: "notStarted".to_string(),
+                    importance: "normal".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("the new task to be sent");
+
+        let request = heard(listening, "a new Microsoft task")
+            .await
+            .expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "POST /me/todo/lists/list-1/tasks",
+            "{request}"
+        );
+        assert!(
+            request.contains(r#""title":"Ring the surgery""#),
+            "{request}"
+        );
+        assert!(request.contains(r#""status":"notStarted""#), "{request}");
+        // One of the three words Graph accepts here. Anything else has the
+        // whole create refused, on every sync, for that task.
+        assert!(request.contains(r#""importance":"normal""#), "{request}");
+        assert!(
+            !request.contains(r#""id""#),
+            "Graph refuses a create that carries an identifier: {request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_to_a_microsoft_task_names_the_task_in_the_address_and_says_which_day() {
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+
+        client
+            .ms_update_task(
+                "a-token",
+                "ms:list-1",
+                &MsTodoTask {
+                    id: "t-9".to_string(),
+                    title: "Ring the surgery".to_string(),
+                    status: "notStarted".to_string(),
+                    importance: "normal".to_string(),
+                    due_date_time: Some(MsDateTimeZone {
+                        date_time: "2026-01-31T00:00:00.0000000".to_string(),
+                        time_zone: "UTC".to_string(),
+                    }),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "a change to a Microsoft task")
+            .await
+            .expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "PATCH /me/todo/lists/list-1/tasks/t-9",
+            "{request}"
+        );
+        // The zone is a claim about which day the task is due. Sent without one,
+        // a deadline somebody set in Sydney arrives on the day before in London.
+        assert!(request.contains(r#""timeZone":"UTC""#), "{request}");
+        assert!(
+            request.contains(r#""dateTime":"2026-01-31T00:00:00.0000000""#),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_microsoft_task_deletion_names_the_list_and_the_task() {
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+
+        client
+            .ms_delete_task("a-token", "ms:list-1", "ms:t-9")
+            .await
+            .expect("the deletion to be sent");
+
+        let request = heard(listening, "a Microsoft task deletion")
+            .await
+            .expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "DELETE /me/todo/lists/list-1/tasks/t-9",
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_task_the_service_says_it_never_had_counts_as_deleted() {
+        // What was asked for is that the task is not there, and it is not
+        // there. Read as a failure, the note the deletion left behind is owed
+        // for ever and the same deletion goes out on every sync for the life of
+        // the account.
+        let (address, _listening) =
+            answering("404 Not Found", "application/json", "{}".to_string()).await;
+
+        let gone = TasksClient::allowed_to_change_things_at(&format!("http://{address}"))
+            .google_delete_task("a-token", "google:list-1", "google:t-9")
+            .await;
+
+        assert!(gone.is_ok(), "a task the service never had: {gone:?}");
+
+        // And the mirror, so that arm is shown to tell one answer from another
+        // rather than to say yes to everything.
+        let (address, _listening) = answering(
+            "500 Internal Server Error",
+            "application/json",
+            "{}".to_string(),
+        )
+        .await;
+
+        let failed = TasksClient::allowed_to_change_things_at(&format!("http://{address}"))
+            .google_delete_task("a-token", "google:list-1", "google:t-9")
+            .await;
+
+        assert!(
+            failed.is_err(),
+            "a fault at the service was read as a deletion taken"
+        );
     }
 }
