@@ -15,12 +15,20 @@ mutant. The reader asked only whether a results file existed, and that file is
 created empty before anything is built, so a run that tested nothing read as a
 run that caught everything.
 
-Two rules follow, and they are the whole point of this file. Every count and
+Three rules follow, and they are the whole point of this file. Every count and
 every name comes from the one record of what happened, never from the lists
 written alongside it for people, because a count read from one place and a list
 read from another disagree first on a partial run, which is the case nobody
 looks at. And a build that failed is asked which way it failed before it is
 filed.
+
+The third is the same shape one layer along, and it shipped: whether the run
+learned anything was read off how many mutants were handed to the suite rather
+than off how many the suite came back about. A mutant the suite hung on was
+handed to it, so a run in which every single one hung passed the check and was
+then summed up as a run that caught everything, with nothing caught. A timeout
+is a suite that never finished, and nothing is known about that mutant either
+way.
 """
 
 from __future__ import annotations
@@ -60,7 +68,7 @@ class Run:
     summary counts what it processed, so on the run whose build failed it said
     zero mutants and meant "I never got to any of them".
 
-    Two of the counts below answer questions that sound like one question and
+    Three of the counts below answer questions that sound like one question and
     are not, so they are pinned here together on one run rather than apart. A
     mutant the compiler rejected was really tested, because it was asked and
     something answered. The suite never saw it, so it never reached the tests:
@@ -70,6 +78,13 @@ class Run:
     3
     >>> rejected.reached_the_tests
     0
+
+    And a mutant the suite was started against and never finished against went
+    all the way to the tests without the tests ever saying anything about it:
+
+    >>> hung = Run(declared=2, timed_out=["t"] * 2)
+    >>> hung.really_tested, hung.reached_the_tests, hung.answered_by_the_suite
+    (2, 2, 0)
     """
 
     declared: int
@@ -111,6 +126,19 @@ class Run:
         the whole of why both are here.
         """
         return len(self.caught) + len(self.missed) + len(self.timed_out)
+
+    @property
+    def answered_by_the_suite(self) -> int:
+        """How many mutants the suite ran against and finished against.
+
+        The one number that can say whether this run learned anything, which
+        `reached_the_tests` was being read as and is not. A timeout is a suite
+        that was started and never got to the end, so nothing came back about
+        that mutant: it was tested, it reached the tests, and the answer is
+        still missing. Counting a timeout as an answer let a run in which every
+        single mutant hung print that every mutant which built was caught.
+        """
+        return len(self.caught) + len(self.missed)
 
 
 def windows_status(status: int) -> str:
@@ -315,6 +343,32 @@ def why_this_is_not_an_answer(run: Run) -> str | None:
     There were no mutants, because nothing in these lines can be mutated.
     That is not the same as every mutant being caught, and it is not a result.
 
+    The third is a run the suite was started against and never finished
+    against. It reached the tests every time and came back with nothing, and
+    this used to read as a clean run because a timeout was counted as having
+    got an answer:
+
+    >>> print(why_this_is_not_an_answer(Run(declared=3, timed_out=["t"] * 3)))
+    None of the 3 mutants got an answer from the suite: it was started every
+    time and never once finished.
+    A timeout is not a catch. Run them again before reading this as a result.
+
+    Rejected and hung together is the fourth, and it names both counts,
+    because which of the two a run went down decides what to do about it:
+
+    >>> print(why_this_is_not_an_answer(Run(declared=5, timed_out=["t"] * 2,
+    ...     would_not_compile=["u"] * 3)))
+    None of the 5 mutants got an answer from the suite: the compiler rejected 3
+    and the suite never finished against the other 2.
+    A timeout is not a catch. Run them again before reading this as a result.
+
+    One answer among timeouts is still an answer, the same as one among
+    rejections:
+
+    >>> why_this_is_not_an_answer(Run(declared=4, caught=["c"],
+    ...     timed_out=["t"] * 3)) is None
+    True
+
     And the run of 2026-08-11, which is a real result whether or not anything
     was missed. A check that has never said yes is as untested as one that has
     never said no:
@@ -352,18 +406,37 @@ def why_this_is_not_an_answer(run: Run) -> str | None:
         )
     # Last, so the refusals above keep saying the more particular thing when
     # they apply. Getting here means every mutant that was declared was
-    # reached and not one of them was ever handed to the suite, which happens
-    # two ways, and a check that can fail two ways has to say which.
-    if run.reached_the_tests == 0:
+    # reached and the suite answered for none of them, which happens four
+    # ways, and a check that can fail four ways has to say which.
+    #
+    # It is asked of what came back from the suite and not of what was handed
+    # to it. A mutant the suite hung on was handed to it, so reading this off
+    # `reached_the_tests` passed a run in which every mutant timed out and the
+    # summary then called them all caught.
+    if run.answered_by_the_suite == 0:
         if run.declared == 0:
             return (
                 "There were no mutants, because nothing in these lines can be mutated.\n"
                 "That is not the same as every mutant being caught, and it is not a result."
             )
+        if not run.timed_out:
+            return (
+                f"None of the {run.declared} mutants reached the test suite: "
+                "the compiler rejected every one.\n"
+                "The suite never ran, so this run says nothing about what it would notice."
+            )
+        how_it_went = (
+            "it was started every\ntime and never once finished"
+            if not run.would_not_compile
+            else (
+                f"the compiler rejected {len(run.would_not_compile)}\n"
+                f"and the suite never finished against the other {len(run.timed_out)}"
+            )
+        )
         return (
-            f"None of the {run.declared} mutants reached the test suite: "
-            "the compiler rejected every one.\n"
-            "The suite never ran, so this run says nothing about what it would notice."
+            f"None of the {run.declared} mutants got an answer from the suite: "
+            f"{how_it_went}.\n"
+            "A timeout is not a catch. Run them again before reading this as a result."
         )
     return None
 
@@ -415,13 +488,62 @@ def which_way_cargo_mutants_failed(status: int) -> str:
     return f"It exited {status}: {MEANINGS[status]}."
 
 
+def how_much_of_it_asked_a_question(run: Run) -> str:
+    """How much of the run reached an answer, and how much of it never asked.
+
+    The bucket counts alone do not say this. The run of 2026-08-11 declared 84
+    mutants and the suite answered for 30 of them, and every sentence written
+    about it afterwards quoted the 28 it caught. Nobody reading that could tell
+    it from a run of 84. So the proportion is said in words, once, here:
+
+    >>> print(how_much_of_it_asked_a_question(Run(declared=84,
+    ...     caught=["c"] * 28, missed=["m"] * 2, would_not_compile=["u"] * 54)))
+    30 of the 84 mutants got an answer from the suite.
+    54 the compiler rejected, 0 timed out: 64 percent of this run asked nothing.
+    More of it was turned away than got through, so read it as a check on the
+    30 that got through and not on the 84.
+
+    A run that got all the way through says so in the same shape, and stops
+    after two lines, because there is nothing to warn anybody about:
+
+    >>> print(how_much_of_it_asked_a_question(Run(declared=3, caught=["c"] * 3)))
+    3 of the 3 mutants got an answer from the suite.
+    0 the compiler rejected, 0 timed out: 0 percent of this run asked nothing.
+
+    It divides by how many mutants were declared. It is only ever reached from
+    a run the suite answered for at least once, and a run cannot answer for a
+    mutant it never declared, so that is at least 1 and there is no branch here
+    for zero. A branch no test covers is worth less than a sentence saying why
+    it is not needed.
+    """
+    turned_away = len(run.would_not_compile) + len(run.timed_out)
+    lines = [
+        f"{run.answered_by_the_suite} of the {how_many(run.declared, 'mutant')}"
+        " got an answer from the suite.",
+        f"{len(run.would_not_compile)} the compiler rejected, "
+        f"{len(run.timed_out)} timed out: "
+        f"{round(100 * turned_away / run.declared)} percent of this run asked nothing.",
+    ]
+    if turned_away > run.answered_by_the_suite:
+        lines.append(
+            "More of it was turned away than got through, so read it as a check on the\n"
+            f"{run.answered_by_the_suite} that got through and not on the {run.declared}."
+        )
+    return "\n".join(lines)
+
+
 def say_what_it_found(run: Run) -> None:
     """Print every bucket, so no run can be summed up by naming two of five.
 
-    Only ever reached for a run that put a mutant to the suite: everything
-    else is refused before this is called, so there is nothing here about a
-    run with no mutants in it. There was, and two places answering "was there
-    anything to test" is how this project loses a day.
+    Only ever reached for a run the suite finished against at least once:
+    everything else is refused before this is called, so there is nothing here
+    about a run with no mutants in it. There was, and two places answering "was
+    there anything to test" is how this project loses a day.
+
+    That is a weaker claim than "a run that put a mutant to the suite", which
+    is what it used to say, and the difference is the whole of what went wrong
+    here. A run can put every mutant it has to the suite and finish against
+    none of them.
 
     >>> say_what_it_found(Run(declared=3, caught=["one the suite caught"],
     ...     missed=["one nothing noticed"],
@@ -431,11 +553,33 @@ def say_what_it_found(run: Run) -> None:
     That is behaviour no test would notice losing. Either pin it or delete it.
     <BLANKLINE>
     3 mutants: 1 caught, 1 nothing noticed, 1 the compiler rejected, 0 timed out.
+    2 of the 3 mutants got an answer from the suite.
+    1 the compiler rejected, 0 timed out: 33 percent of this run asked nothing.
 
     >>> say_what_it_found(Run(declared=1, caught=["one the suite caught"]))
     Every mutant that built was caught.
     <BLANKLINE>
     1 mutant: 1 caught, 0 nothing noticed, 0 the compiler rejected, 0 timed out.
+    1 of the 1 mutant got an answer from the suite.
+    0 the compiler rejected, 0 timed out: 0 percent of this run asked nothing.
+
+    A run the suite finished against once and hung on twice is a run with two
+    mutants nobody knows anything about. It used to be summed up as a clean
+    one, because the headline was picked by asking only whether anything had
+    been missed:
+
+    >>> say_what_it_found(Run(declared=3, caught=["one the suite caught"],
+    ...     timed_out=["one it hung on", "another it hung on"]))
+    The suite never finished against 2 mutants:
+        one it hung on
+        another it hung on
+    A timeout is not a catch and it is not a miss. Run those again.
+    <BLANKLINE>
+    3 mutants: 1 caught, 0 nothing noticed, 0 the compiler rejected, 2 timed out.
+    1 of the 3 mutants got an answer from the suite.
+    0 the compiler rejected, 2 timed out: 67 percent of this run asked nothing.
+    More of it was turned away than got through, so read it as a check on the
+    1 that got through and not on the 3.
 
     """
     if run.missed:
@@ -443,7 +587,12 @@ def say_what_it_found(run: Run) -> None:
         for name in run.missed:
             print(f"    {name}")
         print("That is behaviour no test would notice losing. Either pin it or delete it.")
-    else:
+    if run.timed_out:
+        print(f"The suite never finished against {how_many(len(run.timed_out), 'mutant')}:")
+        for name in run.timed_out:
+            print(f"    {name}")
+        print("A timeout is not a catch and it is not a miss. Run those again.")
+    if not run.missed and not run.timed_out:
         print("Every mutant that built was caught.")
     print()
     print(
@@ -453,6 +602,30 @@ def say_what_it_found(run: Run) -> None:
         f"{len(run.would_not_compile)} the compiler rejected, "
         f"{len(run.timed_out)} timed out."
     )
+    print(how_much_of_it_asked_a_question(run))
+
+
+def whether_this_run_passed(run: Run) -> int:
+    """The exit code this run has earned, as a rule rather than as a line in main.
+
+    A run the suite answered for every time, with nothing missed, passes:
+
+    >>> whether_this_run_passed(Run(declared=1, caught=["c"]))
+    0
+
+    A mutant nothing noticed fails it:
+
+    >>> whether_this_run_passed(Run(declared=2, caught=["c"], missed=["m"]))
+    1
+
+    And so does one the suite never finished against. There is no answer about
+    that mutant either way, and a run that learned nothing about a mutant has
+    not cleared it:
+
+    >>> whether_this_run_passed(Run(declared=2, caught=["c"], timed_out=["t"]))
+    1
+    """
+    return 1 if run.missed or run.timed_out else 0
 
 
 def main() -> int:
@@ -512,7 +685,7 @@ def main() -> int:
             print(which_way_cargo_mutants_failed(args.exit_status))
             print("Until those agree, this is not a result. Read the log.")
         return 1
-    return 1 if run.missed else 0
+    return whether_this_run_passed(run)
 
 
 if __name__ == "__main__":

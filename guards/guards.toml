@@ -986,6 +986,7 @@ red = [
     "application::calendar::tests::test_a_deletion_in_a_subscribed_calendar_is_kept_so_the_feed_cannot_hand_it_back",
     "application::calendar::tests::test_a_deletion_in_the_other_providers_calendar_is_left_for_that_provider_to_carry_out",
     "application::calendar::tests::test_a_deletion_nobody_has_taken_is_never_let_go_of_by_the_clock",
+    "application::calendar::tests::test_a_deletion_of_an_event_in_no_calendar_holds_across_three_syncs",
     "application::calendar::tests::test_an_event_deleted_here_is_deleted_at_outlook_and_stops_being_owed",
     "application::calendar::tests::test_an_event_deleted_here_is_deleted_at_the_provider_and_stops_being_owed",
     "application::calendar::tests::test_an_event_outlook_took_the_deletion_for_stays_gone_on_a_later_sync",
@@ -2717,10 +2718,142 @@ red = [
 name = "a mutation run that never reached the tests is not a result"
 file = "scripts/mutants_report.py"
 suite = "house_style"
-before = """    if run.reached_the_tests == 0:"""
+before = """    if run.answered_by_the_suite == 0:"""
 after = """    if False:"""
 red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
+]
+
+# ── A run the suite never finished against, read as one that found nothing ───
+#
+# The same shape as the four above, one layer along, and it shipped. Whether a
+# run had learned anything was read off how many mutants were handed to the
+# test suite. A mutant the suite hung on was handed to it, so a run in which
+# every single mutant timed out passed that check, reached the summary, found
+# nothing missed, and printed that every mutant which built was caught. Nothing
+# had been caught, and run by hand it then exited zero.
+#
+# A timeout is a suite that was started and never got to the end. Nothing came
+# back about that mutant, so the run knows neither that a test would notice nor
+# that none would. It is not a catch and it is not a miss, and the three places
+# that used to disagree about it now read one count: the refusal below, the
+# summary, and the exit code.
+#
+# The last of these is the other half of the same job. A run can pass all three
+# checks and still have been turned away from most of what it asked, because a
+# mutant the compiler rejects is counted and says nothing. One run declared 84
+# mutants, the suite answered for 30, and every sentence written about it
+# afterwards quoted the 28 it caught. The proportion is printed in words now
+# rather than left for somebody to work out of five bucket counts.
+
+[[guard]]
+name = "a mutation run the suite never finished against is not a result"
+file = "scripts/mutants_report.py"
+suite = "house_style"
+before = """        return len(self.caught) + len(self.missed)
+"""
+after = """        return len(self.timed_out) + len(self.caught) + len(self.missed)
+"""
+red = [
+    "test_the_mutation_report_still_obeys_its_own_examples",
+]
+
+[[guard]]
+name = "a mutant the suite never finished against is not summed up as one it caught"
+file = "scripts/mutants_report.py"
+suite = "house_style"
+before = """    if not run.missed and not run.timed_out:
+        print("Every mutant that built was caught.")"""
+after = """    if not run.missed:
+        print("Every mutant that built was caught.")"""
+red = [
+    "test_the_mutation_report_still_obeys_its_own_examples",
+]
+
+[[guard]]
+name = "a mutation run the suite never finished against does not pass"
+file = "scripts/mutants_report.py"
+suite = "house_style"
+before = """    return 1 if run.missed or run.timed_out else 0"""
+after = """    return 1 if run.missed else 0"""
+red = [
+    "test_the_mutation_report_still_obeys_its_own_examples",
+]
+
+[[guard]]
+name = "a mutation report says how much of the run asked a question"
+file = "scripts/mutants_report.py"
+suite = "house_style"
+before = """    print(how_much_of_it_asked_a_question(run))"""
+after = """    pass"""
+red = [
+    "test_the_mutation_report_still_obeys_its_own_examples",
+]
+
+# ── A reason a mail server already punctuated, punctuated again ──────────────
+#
+# Both sentences saying where somebody's only copy of a message ended up
+# finish with the server's own words, and a server that ends them with a full
+# stop got a second one. Read aloud that is a stumble in the middle of the one
+# sentence that says whether the message survived.
+#
+# Neither break below can be found by a mutation run. The early return is a
+# call on a list of three characters and the trim beside it takes no arguments,
+# so cargo-mutants produces no mutant for either line, and both went untested
+# through every run of both files. This is what "a mutation report is a
+# starting point, not the list" means in practice.
+#
+# Two records because the routine is written out once in each of the two files,
+# byte for byte the same. A fix to one of them leaves the other stumbling and
+# only a test in each would notice.
+
+[[guard]]
+name = "a reason a server already punctuated is not punctuated again in the draft path"
+file = "src/application/draft_copy.rs"
+before = """    if reason.ends_with(['.', '!', '?']) {
+        return reason.to_string();
+    }"""
+after = """    if reason.is_empty() {
+        return reason.to_string();
+    }"""
+red = [
+    "application::draft_copy::tests::test_a_reason_that_already_ends_in_a_full_stop_does_not_get_a_second_one",
+]
+
+[[guard]]
+name = "a reason a server already punctuated is not punctuated again in the sent path"
+file = "src/application/sent_copy.rs"
+before = """    if reason.ends_with(['.', '!', '?']) {
+        return reason.to_string();
+    }"""
+after = """    if reason.is_empty() {
+        return reason.to_string();
+    }"""
+red = [
+    "application::sent_copy::tests::test_a_reason_that_already_ends_in_a_full_stop_does_not_get_a_second_one",
+]
+
+# ── The connection a queue of outgoing mail opens, never let go of ───────────
+#
+# One session is opened for a whole queue and closed at the end of it. Emptying
+# the closing out was the one mutant nothing caught out of the 66 across the
+# four files that decide whether a copy of a message survives, so a version of
+# this program that held a connection open at the server after every send would
+# have passed the whole suite.
+#
+# The break below is that mutant written by hand.
+
+[[guard]]
+name = "the connection a queue of outgoing mail opens is let go of"
+file = "src/application/sent_copy.rs"
+before = """    pub(crate) async fn close(self) {
+        if let Self::Open(session) = self {
+            let _ = session.disconnect_imap().await;
+        }
+    }"""
+after = """    pub(crate) async fn close(self) {}"""
+red = [
+    "application::mail_controller::against_a_server_that_answers::test_closing_the_queue_lets_go_of_the_connection_it_opened",
 ]
 
 # ── A changelog entry for a fix nobody could have noticed ────────────────────
