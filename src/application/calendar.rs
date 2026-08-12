@@ -7071,10 +7071,21 @@ mod tests {
             "src/application/caldav_sync.rs",
         ] {
             let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
-            let before_the_tests = source
-                .split_once("#[cfg(test)]")
-                .map(|(before, _)| before)
-                .unwrap_or(&source);
+            // Cutting at the first `#[cfg(test)]` was how this used to decide
+            // what ships, and an indented one on a test-only helper ends the
+            // reading there. Over the contacts file the same reading covered
+            // two hundred of eleven thousand lines.
+            let before_the_tests = crate::common::what_ships::what_ships(&source);
+            // And it has to be reading the file rather than a corner of it.
+            // Without this, the reading going narrow again says nothing and
+            // the guard passes by looking at almost nothing.
+            assert!(
+                before_the_tests.lines().count() * 5 >= source.lines().count(),
+                "{path}: this is reading {} of {} lines, so it would pass whatever the rest \
+                 of the file said",
+                before_the_tests.lines().count(),
+                source.lines().count()
+            );
             assert!(
                 !before_the_tests.contains("may_change_things"),
                 "{path} builds a client that may change things, going round the gate"

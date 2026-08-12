@@ -3232,10 +3232,20 @@ mod tests {
         // sent; contacts had none until now.
         let path = "src/application/contacts_sync.rs";
         let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
-        let before_the_tests = source
-            .split_once("#[cfg(test)]")
-            .map(|(before, _)| before)
-            .unwrap_or(&source);
+        // This read the first two hundred and twenty seven lines of an eleven
+        // thousand line file, because it cut at the first `#[cfg(test)]` and
+        // there is one on a test-only helper near the top. It was decoration.
+        let before_the_tests = crate::common::what_ships::what_ships(&source);
+        // And it has to be reading the file rather than a corner of it. That
+        // is the whole history of this guard: it read two per cent of the file
+        // for as long as it existed, and nothing said so.
+        assert!(
+            before_the_tests.lines().count() * 5 >= source.lines().count(),
+            "{path}: this is reading {} of {} lines, so it would pass whatever the rest of \
+             the file said",
+            before_the_tests.lines().count(),
+            source.lines().count()
+        );
         assert!(
             !before_the_tests.contains("may_change_things"),
             "{path} builds a client that may change things, going round the gate"

@@ -14,5 +14,8 @@ pub mod paths;
 pub mod temp_home;
 pub mod types;
 pub mod version;
+/// The half of a source file a release build compiles.
+#[cfg(test)]
+pub mod what_ships;
 
 pub use error::{Error, Result};

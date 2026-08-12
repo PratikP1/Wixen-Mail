@@ -3955,32 +3955,15 @@ mod tests {
         "FN",
     ];
 
-    /// What a file ships: everything outside the test modules at its margin.
+    /// What a file ships. The tests write documents in one case and read them
+    /// back in another, which is the point of them, so they are left out.
     ///
-    /// The tests write documents in one case and read them back in another,
-    /// which is the point of them, so they are left out.
-    ///
-    /// Whole modules are taken out rather than everything after the first one.
-    /// Cutting at the first `#[cfg(test)]` leaves any code that sits between
-    /// two test modules unread, and cutting at the first one *anywhere* once
-    /// cut at an indented one inside `sign_in`, so the check read a tenth of
-    /// the file and passed against a defect sitting in it.
-    fn what_ships(source: &str) -> String {
-        let mut ships: Vec<&str> = Vec::new();
-        let mut inside_a_test_module = false;
-        for line in source.lines() {
-            if inside_a_test_module {
-                // A module at the margin closes with a brace at the margin.
-                inside_a_test_module = line != "}";
-                continue;
-            }
-            match line == "#[cfg(test)]" {
-                true => inside_a_test_module = true,
-                false => ships.push(line),
-            }
-        }
-        ships.join("\n")
-    }
+    /// This used to be its own reader here. It went to `common::what_ships`
+    /// when three other checks were found asking the same question and
+    /// answering it worse, and it took its history with it: it read a tenth of
+    /// this file once, because it cut at the first `#[cfg(test)]` anywhere and
+    /// there is an indented one inside `sign_in`.
+    use crate::common::what_ships::what_ships;
 
     /// Every place text matches one of those names only when it is written in
     /// capitals.

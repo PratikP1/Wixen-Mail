@@ -445,12 +445,52 @@ const NOT_MEASURED_ON_THE_WIRE: [(&str, &str); 5] = [
 #[cfg(test)]
 const THE_GATE: [&str; 1] = ["src/service/outward.rs"];
 
+/// Every place that names a way out and cannot use it to reach anybody's
+/// account: the crate is there for something other than its transport.
+///
+/// The paths each one may name are written down beside it, so a mail-sending
+/// library that stops being an address parser and starts being a transport
+/// fails here rather than being waved through on the strength of this list.
+#[cfg(test)]
+const NAMES_A_WAY_OUT_AND_CANNOT_CONNECT: [(&str, &str, &[&str]); 3] = [
+    // Formats an address for a header. No transport.
+    (
+        "src/application/draft_message.rs",
+        "lettre",
+        &["lettre::Address", "lettre::message::Mailbox"],
+    ),
+    // The same, for the identifier a sent message carries.
+    (
+        "src/application/message_id.rs",
+        "lettre",
+        &["lettre::Address"],
+    ),
+    // The message-structure types only. No session, no connection.
+    (
+        "src/service/protocols/imap/structure.rs",
+        "async_imap",
+        &["async_imap::imap_proto"],
+    ),
+];
+
+/// Every module only a test build ever compiles, with the declaration that
+/// makes that true.
+///
+/// A loopback listener is a way out of this program by every reading a check
+/// can make of its text. What stops it being one is the attribute on the
+/// module declaration two files away, so that declaration is named here and
+/// checked rather than trusted.
+#[cfg(test)]
+const ONLY_A_TEST_BUILD_COMPILES_THIS: [(&str, &str, &str); 1] =
+    [("src/common/answering.rs", "src/common/mod.rs", "answering")];
+
 #[cfg(test)]
 mod completeness {
     use super::{
-        CLIENTS, GATED, MEASURED_ON_THE_WIRE, NOT_MEASURED_ON_THE_WIRE, TALKS_BUT_ONLY_READS,
-        THE_GATE,
+        CLIENTS, GATED, MEASURED_ON_THE_WIRE, NAMES_A_WAY_OUT_AND_CANNOT_CONNECT,
+        NOT_MEASURED_ON_THE_WIRE, ONLY_A_TEST_BUILD_COMPILES_THIS, TALKS_BUT_ONLY_READS, THE_GATE,
     };
+    use crate::common::what_ships::what_ships;
 
     #[test]
     fn test_no_transport_holds_a_client_that_cannot_be_gated() {
@@ -502,13 +542,22 @@ mod completeness {
     #[test]
     fn test_every_gated_module_is_still_there() {
         // A list of paths rots. If one is renamed, the test above passes by
-        // reading nothing, so the list is checked separately. All three lists,
+        // reading nothing, so the list is checked separately. All five lists,
         // because the census below decides whether a file is accounted for by
         // looking it up in them, and a stale entry there accounts for nothing.
+        let parked = NAMES_A_WAY_OUT_AND_CANNOT_CONNECT
+            .iter()
+            .map(|(path, _, _)| path)
+            .chain(
+                ONLY_A_TEST_BUILD_COMPILES_THIS
+                    .iter()
+                    .map(|(path, _, _)| path),
+            );
         for path in GATED
             .iter()
             .chain(TALKS_BUT_ONLY_READS.iter())
             .chain(THE_GATE.iter())
+            .chain(parked)
         {
             assert!(
                 std::path::Path::new(path).exists(),
@@ -517,17 +566,75 @@ mod completeness {
         }
     }
 
-    /// How a module gets a connection of its own out of this program.
+    /// Every crate a module has to name to get a connection of its own out of
+    /// this program, written as the root of the paths it appears under.
     ///
-    /// Four ways, and every one of them was found by reading the tree rather
-    /// than by remembering. Anything that opens a socket or holds an HTTP
-    /// client of its own matches one of these.
-    const A_WAY_OUT: [&str; 4] = [
-        "TcpStream::connect(",
-        "reqwest::Client::new(",
-        "reqwest::Client::builder(",
-        "AsyncSmtpTransport",
+    /// This used to be four literal call sites: `reqwest::Client::new(` and
+    /// three like it. Ordinary Rust walked straight past them. A module that
+    /// wrote `use reqwest::Client;` and then `Client::new()`, which is how
+    /// most of this tree is written, reached a server and matched none of the
+    /// four. It was proved by writing such a module, watching the census pass,
+    /// and only then replacing the reading; the test below holds that proof
+    /// after the module was removed.
+    ///
+    /// Crate names rather than call sites, because an item from another crate
+    /// cannot be used without that crate's name appearing in the file, in a
+    /// `use` or in an inline path. No arrangement of imports, no alias at the
+    /// use site and no short name can hide it.
+    ///
+    /// `std::net` and `tokio::net` are roots with two segments because their
+    /// crates carry far more than sockets.
+    ///
+    /// Two things still walk past, and neither is closed by matching harder.
+    /// A file that re-exports one of these under a name of its own hides the
+    /// module importing it from there, which is what the refusal below covers.
+    /// A new networking crate nobody has classified is invisible, which is
+    /// what the sweep of the dependency list covers.
+    const A_WAY_OUT_OF_THIS_PROGRAM: [&str; 9] = [
+        "reqwest",
+        "lettre",
+        "async_imap",
+        "native_tls",
+        "tokio_native_tls",
+        "tiny_http",
+        "oauth2",
+        "tokio::net",
+        "std::net",
     ];
+
+    /// Which way out the shipped half of `source` names, if any.
+    ///
+    /// Whole words only, and that is load-bearing rather than tidy: without
+    /// it `pub mod xoauth2;` reads as the authorisation crate and every
+    /// mention of `tokio_native_tls` reads as `native_tls` as well.
+    fn how_it_reaches_a_server(source: &str) -> Option<&'static str> {
+        let ships = what_ships(source);
+        let code: String = ships
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        A_WAY_OUT_OF_THIS_PROGRAM
+            .iter()
+            .find(|root| names_it_as_a_whole_word(&code, root))
+            .copied()
+    }
+
+    fn names_it_as_a_whole_word(code: &str, root: &str) -> bool {
+        let a_name_character = |letter: char| letter.is_alphanumeric() || letter == '_';
+        code.match_indices(root).any(|(at, _)| {
+            let before_is_clear = code[..at]
+                .chars()
+                .next_back()
+                .is_none_or(|letter| !a_name_character(letter));
+            let after_is_clear = root.ends_with(':')
+                || code[at + root.len()..]
+                    .chars()
+                    .next()
+                    .is_none_or(|letter| !a_name_character(letter));
+            before_is_clear && after_is_clear
+        })
+    }
 
     #[test]
     fn test_every_module_that_talks_to_a_server_is_on_one_of_these_lists() {
@@ -543,22 +650,295 @@ mod completeness {
             .chain(TALKS_BUT_ONLY_READS.iter())
             .chain(THE_GATE.iter())
             .copied()
+            .chain(
+                NAMES_A_WAY_OUT_AND_CANNOT_CONNECT
+                    .iter()
+                    .map(|(path, _, _)| *path),
+            )
+            .chain(
+                ONLY_A_TEST_BUILD_COMPILES_THIS
+                    .iter()
+                    .map(|(path, _, _)| *path),
+            )
             .collect();
 
         for file in every_source_file() {
             let path = file.to_string_lossy().replace('\\', "/");
             let source = std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{path}: {e}"));
-            // The production half only. A test may open a loopback socket, and
+            // The shipped half only. A test may open a loopback socket, and
             // several do: that is how the gate is measured at all.
-            let production = source.split("#[cfg(test)]").next().unwrap_or_default();
-            let Some(how) = A_WAY_OUT.iter().find(|marker| production.contains(*marker)) else {
+            let Some(how) = how_it_reaches_a_server(&source) else {
                 continue;
             };
             assert!(
                 accounted_for.contains(&path.as_str()),
-                "{path} reaches a server with {how} and is on no list, so nobody has said \
-                 whether it can change anything at somebody's account"
+                "{path} names {how} and is on no list, so nobody has said whether it can \
+                 change anything at somebody's account"
             );
+        }
+    }
+
+    #[test]
+    fn test_the_census_sees_a_client_built_by_its_short_name() {
+        // The experiment, kept after the module it was run against was
+        // removed. Each of these was a real reading of the tree at the time
+        // the census was replaced.
+        let reaches = |source: &str| how_it_reaches_a_server(source);
+
+        // The idiom the old census missed, which is the ordinary one.
+        assert_eq!(
+            reaches("use reqwest::Client;\nfn go() { let c = Client::new(); }"),
+            Some("reqwest")
+        );
+        // The idiom it caught.
+        assert_eq!(
+            reaches("fn go() { reqwest::Client::new(); }"),
+            Some("reqwest")
+        );
+        // A client only a test build sees does not count.
+        assert_eq!(
+            reaches("#[cfg(test)]\nmod tests {\n    fn go() { reqwest::Client::new(); }\n}"),
+            None
+        );
+        // And a test-only helper does not hide what follows it, which is how
+        // the old reading went blind to nine tenths of two large files.
+        assert_eq!(
+            reaches("#[cfg(test)]\nfn h() {}\nfn go() { reqwest::get(u); }"),
+            Some("reqwest")
+        );
+        // A module that goes through the gate is quiet.
+        assert_eq!(
+            reaches("use crate::service::outward::Outward;\nfn go(o: &Outward) { o.reading(u); }"),
+            None
+        );
+        // And so is a near miss.
+        assert_eq!(reaches("pub mod xoauth2;"), None);
+        assert_eq!(
+            reaches("use tokio_native_tls::TlsConnector;"),
+            Some("tokio_native_tls")
+        );
+    }
+
+    #[test]
+    fn test_nothing_parked_as_harmless_names_more_than_it_said_it_would() {
+        // A file on that list is excused because of what it uses the crate
+        // for. If it starts using the crate for something else, the excuse
+        // stops holding and nobody would otherwise notice.
+        for (path, crate_name, allowed) in NAMES_A_WAY_OUT_AND_CANNOT_CONNECT {
+            let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let ships = what_ships(&source);
+            let mentions = ships.match_indices(crate_name).count();
+            assert!(
+                mentions > 0,
+                "{path} no longer names {crate_name}, so this entry excuses nothing and \
+                 should go"
+            );
+            for (at, _) in ships.match_indices(crate_name) {
+                let from_here = &ships[at..];
+                assert!(
+                    allowed
+                        .iter()
+                        .any(|path_it_may_name| from_here.starts_with(path_it_may_name)),
+                    "{path} names {crate_name} in a way this list did not allow: {}",
+                    from_here.lines().next().unwrap_or_default()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_nothing_parked_as_test_only_is_built_by_the_program() {
+        // Checked rather than asserted from memory: the attribute that makes
+        // this true lives in another file and nothing else would notice it
+        // going.
+        for (path, parent, name) in ONLY_A_TEST_BUILD_COMPILES_THIS {
+            let declared = std::fs::read_to_string(parent)
+                .unwrap_or_else(|e| panic!("{parent}: {e}"))
+                .replace("\r\n", "\n");
+            assert!(
+                declared.contains(&format!("#[cfg(test)]\npub mod {name};")),
+                "{path} is called test-only, but {parent} declares it without the attribute \
+                 that makes that true, so a release build compiles a way out of this program"
+            );
+        }
+    }
+
+    /// Every dependency that can reach a server, by the name Cargo knows it by.
+    ///
+    /// The census reads path roots, which is a different granularity from a
+    /// crate name and will drift from it if nothing holds them together. The
+    /// test below is what holds them together, and it is also what makes a
+    /// newly added networking crate fail until somebody has classified it,
+    /// which is the one blind spot the census cannot close by reading harder.
+    ///
+    /// `std::net` is a root with no crate behind it, so it appears in the
+    /// census list and not here.
+    const A_CRATE_THAT_CAN_REACH_A_SERVER: [&str; 8] = [
+        "lettre",
+        "reqwest",
+        "oauth2",
+        "tiny_http",
+        "async-imap",
+        "tokio-native-tls",
+        "native-tls",
+        "tokio",
+    ];
+
+    /// Every other dependency. Written down rather than left implicit, so that
+    /// adding one has to be a decision and cannot be an omission.
+    const A_CRATE_THAT_CANNOT: [&str; 39] = [
+        "uuid",
+        "chrono",
+        "chrono-tz",
+        "serde",
+        "serde_json",
+        "toml",
+        "tracing",
+        "tracing-subscriber",
+        "tracing-appender",
+        "dirs",
+        "async-channel",
+        "futures",
+        "mail-parser",
+        "wxdragon",
+        "rusqlite",
+        "base64",
+        "ammonia",
+        "regex",
+        "html-escape",
+        "aes-gcm",
+        "rand",
+        "spellbook",
+        "unicode-segmentation",
+        "open",
+        "keyring",
+        "url",
+        "icalendar",
+        "quick-xml",
+        "scraper",
+        "ego-tree",
+        "bitflags",
+        "pdfpurr",
+        "sha2",
+        "pulldown-cmark",
+        "windows",
+        "winresource",
+        "boa_engine",
+        "tokio-test",
+        "tempfile",
+    ];
+
+    /// Every dependency this project builds against, read from the manifest.
+    ///
+    /// Read rather than listed, for the reason every check in this file is
+    /// read rather than listed: a written copy of a fact goes stale and stops
+    /// being about anything.
+    fn every_dependency() -> Vec<String> {
+        let manifest = std::fs::read_to_string("Cargo.toml").expect("Cargo.toml");
+        let mut names = Vec::new();
+        let mut inside = false;
+        for line in manifest.lines().map(str::trim) {
+            if line.starts_with('[') {
+                inside = line.ends_with("dependencies]");
+                continue;
+            }
+            let Some((name, _)) = line.split_once(" =") else {
+                continue;
+            };
+            let ordinary = !name.is_empty()
+                && name.chars().all(|letter| {
+                    letter.is_ascii_lowercase()
+                        || letter.is_ascii_digit()
+                        || matches!(letter, '_' | '-')
+                });
+            if inside && ordinary {
+                names.push(name.to_string());
+            }
+        }
+        assert!(
+            names.len() > 30,
+            "only {} dependencies were read, so the manifest is not being parsed",
+            names.len()
+        );
+        names
+    }
+
+    #[test]
+    fn test_every_dependency_has_been_told_apart_from_a_way_out() {
+        for name in every_dependency() {
+            let reaching = A_CRATE_THAT_CAN_REACH_A_SERVER.contains(&name.as_str());
+            let not = A_CRATE_THAT_CANNOT.contains(&name.as_str());
+            assert!(
+                reaching != not,
+                "{name} is a dependency and is on {}, so nobody has said whether a module \
+                 using it can reach a server, and the census cannot see it",
+                match reaching {
+                    true => "both lists",
+                    false => "neither list",
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn test_neither_list_of_crates_has_gone_stale() {
+        // The other direction. A list naming a dependency that has gone is a
+        // list nobody is reading, and it would let the check above pass by
+        // classifying nothing.
+        let real = every_dependency();
+        for name in A_CRATE_THAT_CAN_REACH_A_SERVER
+            .iter()
+            .chain(A_CRATE_THAT_CANNOT.iter())
+        {
+            assert!(
+                real.iter().any(|dependency| dependency == name),
+                "{name} is on one of these lists and is not a dependency any more"
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_crate_that_can_reach_a_server_is_a_way_the_census_looks_for() {
+        // Crate name and path root are two granularities of one fact. Held
+        // together here so that classifying a crate as reaching, and then not
+        // teaching the census its name, fails instead of going quiet.
+        for name in A_CRATE_THAT_CAN_REACH_A_SERVER {
+            let as_a_path = name.replace('-', "_");
+            assert!(
+                A_WAY_OUT_OF_THIS_PROGRAM
+                    .iter()
+                    .any(|root| root.starts_with(as_a_path.as_str())),
+                "{name} can reach a server and the census looks for no path starting {as_a_path}, \
+                 so a module using it is invisible"
+            );
+        }
+    }
+
+    #[test]
+    fn test_no_module_hands_a_way_out_on_under_another_name() {
+        // The door the crate-name reading leaves open. One listed file could
+        // re-export a client, and a second file would then reach a server
+        // naming nothing this can see. Refused outright, rather than chased.
+        for file in every_source_file() {
+            let path = file.to_string_lossy().replace('\\', "/");
+            if THE_GATE.contains(&path.as_str()) {
+                continue;
+            }
+            let source = std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{path}: {e}"));
+            for line in what_ships(&source).lines() {
+                let handing_on = line.contains("pub use") || line.trim_start().starts_with("type ");
+                if !handing_on {
+                    continue;
+                }
+                for root in A_WAY_OUT_OF_THIS_PROGRAM {
+                    assert!(
+                        !names_it_as_a_whole_word(line, root),
+                        "{path} hands {root} on under another name, so a file that names \
+                         nothing can reach a server through it: {}",
+                        line.trim()
+                    );
+                }
+            }
         }
     }
 
