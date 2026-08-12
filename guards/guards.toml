@@ -2391,6 +2391,7 @@ after = """        let stream = with_timeout(
         Ok(())
     }"""
 red = [
+    "service::protocols::imap::against_a_server_that_answers::test_a_delete_whose_flag_the_server_refuses_changes_nothing",
     "service::protocols::imap::against_a_server_that_answers::test_a_move_that_fails_at_the_flag_has_already_made_the_copy",
 ]
 
@@ -2420,7 +2421,10 @@ after = """        let stream = with_timeout(
         Ok(())
     }"""
 red = [
+    "application::mail_controller::against_a_server_that_answers::test_a_delete_the_server_would_not_finish_comes_back_saying_where_both_copies_are",
     "service::protocols::imap::against_a_server_that_answers::test_a_move_that_fails_at_the_expunge_leaves_the_message_in_both_places",
+    "service::protocols::imap::against_a_server_that_answers::test_deleting_in_place_that_the_server_will_not_remove_says_it_is_only_marked",
+    "service::protocols::imap::against_a_server_that_answers::test_deleting_into_a_trash_the_server_will_not_remove_the_original_from_says_both_places",
 ]
 
 # ── How many previous drafts were really removed ────────────────────────────
@@ -2443,6 +2447,7 @@ after = """            if self.abilities.uid_expunge {
             }
             removed += 1;"""
 red = [
+    "application::mail_controller::against_a_server_that_answers::test_a_server_without_uidplus_only_flags_the_old_copy_and_counts_none_removed",
     "service::protocols::imap::against_a_server_that_answers::test_a_draft_that_could_not_be_removed_is_not_counted_as_removed",
 ]
 
@@ -2487,7 +2492,7 @@ before = """        let session = &mut *guard;
 after = """        let session = &mut *guard;
         session.delete_message(uid, trash).await"""
 red = [
-    "application::mail_controller::against_a_server_that_answers::test_a_delete_that_half_happened_still_comes_back_as_a_plain_failure",
+    "application::mail_controller::against_a_server_that_answers::test_a_delete_the_server_would_not_finish_comes_back_saying_where_both_copies_are",
     "application::mail_controller::against_a_server_that_answers::test_changing_a_message_opens_the_folder_it_names_before_asking",
     "application::mail_controller::against_a_server_that_answers::test_deleting_a_message_past_an_open_gate_opens_its_folder_then_moves_it",
 ]
