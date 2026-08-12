@@ -24,8 +24,8 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 - **Fixed: what the Calendar window did was reported by an internal identifier,
   on a line nobody hears.** Creating an event, changing one, and taking one day
-  off a repeating event each put a line like "Calendar event saved:
-  event-1723456789012" on the status bar and announced nothing. The Delete key
+  off a repeating event each put a line on the status bar naming the event by
+  the identifier it is stored under, and announced nothing. The Delete key
   on the calendar panel already said the same actions in words. The window now
   says what it did in the same words, names the event by its title, and says it
   once when the window closes rather than once per action, because several
