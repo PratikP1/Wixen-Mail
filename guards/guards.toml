@@ -4012,6 +4012,7 @@ red = [
     "application::calendar::tests::test_a_repeating_event_still_repeats_here_after_the_pull_that_follows_the_create",
     "application::calendar::tests::test_a_rule_google_already_named_goes_back_without_being_named_twice",
     "application::calendar::tests::test_a_series_created_here_carries_the_days_it_has_already_called_off",
+    "application::calendar::tests::test_every_field_the_event_form_can_set_is_answered_for_at_both_providers",
 ]
 
 [[guard]]
@@ -4041,4 +4042,67 @@ after = """    format!("RRULE:{rule}")"""
 red = [
     "application::calendar::tests::test_a_rule_google_already_named_goes_back_without_being_named_twice",
     "service::caldav::tests::test_a_rule_that_arrived_with_its_property_name_is_not_sent_with_two",
+]
+
+# ── A meeting that repeats, on its way to Outlook and back ──────────────────
+#
+# Outlook has no rules, only a shape and a stretch of time, so there are two
+# spellings of one thing and they have to be held against each other. Every
+# other pair like this in the program has drifted at least once.
+
+[[guard]]
+name = "a new meeting tells Outlook how it repeats"
+file = "src/application/calendar.rs"
+before = """            TheBodyIsFor::MakingIt => how_outlook_is_told_it_repeats(event),"""
+after = """            TheBodyIsFor::MakingIt => None,"""
+red = [
+    "application::calendar::tests::test_a_repeating_event_made_here_reaches_outlook_carrying_its_repeat_rule",
+    "application::calendar::tests::test_a_series_created_at_outlook_is_one_meeting_here_after_the_pull_that_follows",
+    "application::calendar::tests::test_every_field_the_event_form_can_set_is_answered_for_at_both_providers",
+]
+
+[[guard]]
+name = "a repeat Outlook cannot say is refused rather than rounded to a near one"
+file = "src/application/repeating.rs"
+before = """                index: Some(outlook_calls_the_week(nth)?.to_string()),"""
+after = """                index: Some(outlook_calls_the_week(nth).unwrap_or("first").to_string()),"""
+red = [
+    "application::repeating::tests::test_a_repeat_outlook_cannot_say_is_refused_rather_than_rounded",
+]
+
+[[guard]]
+name = "a repeat Outlook sends is stored as a rule and not as its own shape"
+file = "src/application/calendar.rs"
+before = """        recurrence_rule: event.recurrence.as_ref().and_then(|repeats| {"""
+after = """        recurrence_rule: None.and_then(|repeats: &crate::service::microsoft_graph::MsPatternedRecurrence| {"""
+red = [
+    "application::calendar::tests::test_a_repeat_outlook_sends_is_stored_as_a_rule_and_not_as_a_page_of_its_own_shape",
+]
+
+[[guard]]
+name = "the days of a series held here do not arrive from Outlook a second time"
+file = "src/application/calendar.rs"
+before = """        if let Some(series) = event.series_master_id.as_deref()
+            && cache
+                .get_event_by_provider_id(account_id, series)?
+                .is_some()"""
+after = """        if let Some(series) = event.series_master_id.as_deref()
+            && cache
+                .get_event_by_provider_id(account_id, series)?
+                .is_none()"""
+red = [
+    "application::calendar::tests::test_a_series_created_at_outlook_is_one_meeting_here_after_the_pull_that_follows",
+]
+
+[[guard]]
+name = "a status typed here survives a read from Outlook"
+file = "src/application/calendar.rs"
+before = """    if status == TheStatus::OnlyHere {
+        merged.status = held.status.clone();
+    }"""
+after = """    if status == TheStatus::AlsoAtTheProvider {
+        merged.status = held.status.clone();
+    }"""
+red = [
+    "application::calendar::tests::test_a_status_typed_here_is_not_overwritten_by_a_read_from_outlook",
 ]

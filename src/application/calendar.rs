@@ -831,7 +831,12 @@ pub async fn sync_google_calendar(
         match existing {
             Some(ex) => {
                 let mut merged = local_event;
-                carry_over_local_only(&mut merged, &ex, TheCategory::OnlyHere);
+                carry_over_local_only(
+                    &mut merged,
+                    &ex,
+                    TheCategory::OnlyHere,
+                    TheStatus::AlsoAtTheProvider,
+                );
                 cache.save_calendar_event(&merged)?;
                 result.updated += 1;
             }
@@ -983,6 +988,25 @@ pub async fn sync_microsoft_calendar(
             continue;
         }
 
+        // One day of a series this account already holds. Outlook answers with
+        // the days of a series and never with the series itself, so a series
+        // made here comes back as a row per week, none of them matching the row
+        // it was made from. The series is here with its rule and the days are
+        // drawn from it, so writing the days down as well would leave two of
+        // every one of them in the diary.
+        //
+        // Only when the series is held. A series made in Outlook has no row
+        // here, and its days go on arriving as separate meetings, which is what
+        // they did before this and is written down as a limitation rather than
+        // quietly dropped.
+        if let Some(series) = event.series_master_id.as_deref()
+            && cache
+                .get_event_by_provider_id(account_id, series)?
+                .is_some()
+        {
+            continue;
+        }
+
         let existing = cache.get_event_by_provider_id(account_id, &event.id)?;
         if a_change_here_is_still_waiting(existing.as_ref()) {
             continue;
@@ -992,7 +1016,12 @@ pub async fn sync_microsoft_calendar(
         match existing {
             Some(ex) => {
                 let mut merged = local_event;
-                carry_over_local_only(&mut merged, &ex, TheCategory::AlsoAtTheProvider);
+                carry_over_local_only(
+                    &mut merged,
+                    &ex,
+                    TheCategory::AlsoAtTheProvider,
+                    TheStatus::OnlyHere,
+                );
                 cache.save_calendar_event(&merged)?;
                 result.updated += 1;
             }
@@ -1035,7 +1064,7 @@ pub async fn create_ms_event(
 ) -> Result<CalendarEventEntry> {
     let filed_under = where_to_file(cache, event, MICROSOFT, MICROSOFT_CALENDAR_NAME)?;
     let at_microsoft = calendar_at_microsoft(cache, &filed_under)?;
-    let ms_event = local_to_ms_event(event)?;
+    let ms_event = local_to_ms_event(event, TheBodyIsFor::MakingIt)?;
     let created = ms_client
         .create_event(token, &at_microsoft, &ms_event)
         .await?;
@@ -1061,7 +1090,7 @@ pub async fn update_ms_event(
         .ok_or_else(|| crate::common::Error::Other("No provider event ID".to_string()))?;
     let filed_under = where_to_file(cache, event, MICROSOFT, MICROSOFT_CALENDAR_NAME)?;
     let at_microsoft = calendar_at_microsoft(cache, &filed_under)?;
-    let ms_event = local_to_ms_event(event)?;
+    let ms_event = local_to_ms_event(event, TheBodyIsFor::ChangingIt)?;
     let updated = ms_client
         .update_event(token, &at_microsoft, provider_id, &ms_event)
         .await?;
@@ -1183,14 +1212,33 @@ fn carry_over_local_only(
     merged: &mut CalendarEventEntry,
     held: &CalendarEventEntry,
     category: TheCategory,
+    status: TheStatus,
 ) {
     merged.id = held.id.clone();
     if category == TheCategory::OnlyHere {
         merged.categories = held.categories.clone();
     }
+    if status == TheStatus::OnlyHere {
+        merged.status = held.status.clone();
+    }
     if held.calendar_id.is_some() {
         merged.calendar_id = held.calendar_id.clone();
     }
+}
+
+/// Whether the provider this event came from has anything to say about whether
+/// the meeting is going ahead.
+///
+/// The same question as the one about categories and the same danger in getting
+/// it backwards, so it is asked the same way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TheStatus {
+    /// Only this computer has it. Outlook has no such property, so a read was
+    /// asserting a fact it was never told and turned a tentative meeting into a
+    /// confirmed one.
+    OnlyHere,
+    /// The provider has it too, and its answer is the one that wins.
+    AlsoAtTheProvider,
 }
 
 /// Whether the provider this event came from holds the category too.
@@ -2381,8 +2429,21 @@ pub fn ms_event_to_local(
         end_date,
         is_all_day,
         time_zone,
+        // Graph has no property for this at all, so anything written here is a
+        // fact nobody was told. It used to say every event Outlook sent was
+        // confirmed, which turned a meeting somebody had marked as tentative
+        // into a confirmed one on the next read. The held value is kept
+        // instead, the way a category is on the Google side.
         status: "confirmed".to_string(),
-        recurrence_rule: event.recurrence.as_ref().map(|r| r.to_string()),
+        // Said as a rule, which is the one language this column holds. It used
+        // to be filled with Graph's own shape written out as text, which no
+        // reader of that column can work a day out of, so a series arriving
+        // from Outlook would have shown on one day and said it could not be
+        // read. That never fired only because a calendar view answers with the
+        // days of a series and never with the series itself.
+        recurrence_rule: event.recurrence.as_ref().and_then(|repeats| {
+            crate::application::repeating::what_outlook_said(repeats, the_day_it_starts(event)?)
+        }),
         // Nothing to fill it from. Graph names the days it left out inside the
         // series itself, and the calendar view this asks for hands back the
         // days rather than the series, so no series ever arrives.
@@ -2405,6 +2466,16 @@ pub fn ms_event_to_local(
         pending: false,
         cut_from_event_id: None,
     }
+}
+
+/// The day a Graph event starts on, when its start can be read as one.
+///
+/// A rule leaves the date it lands on to the day the series starts, and Graph
+/// writes that date out, so the two have to be read together or the rule stored
+/// here would mean days the series is not on.
+fn the_day_it_starts(event: &MsGraphEvent) -> Option<chrono::NaiveDate> {
+    let start = event.start.as_ref()?;
+    chrono::NaiveDate::parse_from_str(start.date_time.get(..10)?, "%Y-%m-%d").ok()
 }
 
 /// How Graph writes a moment in time: a clock face, and no offset on the end.
@@ -2496,7 +2567,10 @@ fn wall_clock_for_graph(stored: &str, zone: Option<&str>) -> Option<MsDateTimeTi
 /// Fails rather than sending a time nobody could read. An event whose start
 /// cannot be understood would otherwise arrive at the wrong hour or be refused
 /// by Graph with nothing here able to say which value caused it.
-pub fn local_to_ms_event(event: &CalendarEventEntry) -> Result<MsGraphEvent> {
+pub fn local_to_ms_event(
+    event: &CalendarEventEntry,
+    for_what: TheBodyIsFor,
+) -> Result<MsGraphEvent> {
     let zone = event.time_zone.as_deref();
     let unreadable = |what: &str, value: &str| {
         crate::common::Error::Other(format!(
@@ -2543,8 +2617,40 @@ pub fn local_to_ms_event(event: &CalendarEventEntry) -> Result<MsGraphEvent> {
         is_reminder_on: Some(lead.is_some()),
         reminder_minutes_before_start: Some(lead.unwrap_or(0)),
         categories: categories_for_outlook(&event.categories),
+        recurrence: match for_what {
+            // Left out of a change for the same reason as at Google: Graph
+            // rebuilds the whole series from it, which throws away every day of
+            // it that had been moved or cancelled on its own.
+            TheBodyIsFor::ChangingIt => None,
+            TheBodyIsFor::MakingIt => how_outlook_is_told_it_repeats(event),
+        },
         ..Default::default()
     })
+}
+
+/// The shape Outlook needs to make this series, or nothing when it has no
+/// repeat or Outlook has no way to say the one it has.
+///
+/// Nothing here invents the days a series has already called off. Outlook takes
+/// those one at a time on a series it already holds and has no way to be told
+/// them while the series is being made, so a new series carries none and the
+/// changelog says so rather than the code pretending otherwise.
+fn how_outlook_is_told_it_repeats(
+    event: &CalendarEventEntry,
+) -> Option<crate::service::microsoft_graph::MsPatternedRecurrence> {
+    let rule = said(event.recurrence_rule.as_deref())?;
+    let starts_on = the_day_a_stored_event_starts(event)?;
+    crate::application::repeating::as_outlook_says_it(rule, starts_on)
+}
+
+/// The day a stored event starts on, whichever shape its start was written in.
+fn the_day_a_stored_event_starts(event: &CalendarEventEntry) -> Option<chrono::NaiveDate> {
+    let written = event
+        .start_date
+        .as_deref()
+        .filter(|day| !day.is_empty())
+        .unwrap_or(&event.start_datetime);
+    chrono::NaiveDate::parse_from_str(written.get(..10)?, "%Y-%m-%d").ok()
 }
 
 /// What an event is filed under, as Outlook wants to be told it.
@@ -3861,7 +3967,8 @@ mod tests {
             cut_from_event_id: None,
         };
 
-        let ms = local_to_ms_event(&local).expect("a time Graph could read");
+        let ms =
+            local_to_ms_event(&local, TheBodyIsFor::ChangingIt).expect("a time Graph could read");
         assert_eq!(ms.subject.as_deref(), Some("Sprint Planning"));
         assert_eq!(ms.location.unwrap().display_name, "Teams");
         assert_eq!(ms.body.unwrap().content, "Q2 sprint");
@@ -4839,7 +4946,8 @@ mod tests {
         event.end_datetime = "2026-03-05T13:00:00Z".to_string();
         event.time_zone = Some("America/New_York".to_string());
 
-        let ms = local_to_ms_event(&event).expect("a time Graph could read");
+        let ms =
+            local_to_ms_event(&event, TheBodyIsFor::ChangingIt).expect("a time Graph could read");
         let starts = ms
             .start
             .expect("an event with no start is one Graph refuses");
@@ -4884,7 +4992,7 @@ mod tests {
             event.end_datetime = stored.to_string();
             event.time_zone = zone.map(str::to_string);
 
-            let starts = local_to_ms_event(&event)
+            let starts = local_to_ms_event(&event, TheBodyIsFor::ChangingIt)
                 .unwrap_or_else(|e| panic!("{stored:?} was refused: {e}"))
                 .start
                 .expect("a start");
@@ -4901,7 +5009,7 @@ mod tests {
         let mut event = make_event("e1", "Review", None);
         event.start_datetime = "next Tuesday".to_string();
 
-        let refused = local_to_ms_event(&event);
+        let refused = local_to_ms_event(&event, TheBodyIsFor::ChangingIt);
 
         let Err(said) = refused else {
             panic!("a time nobody could read was sent anyway");
@@ -4918,7 +5026,7 @@ mod tests {
             event.is_all_day = lasts_all_day;
 
             assert_eq!(
-                local_to_ms_event(&event)
+                local_to_ms_event(&event, TheBodyIsFor::ChangingIt)
                     .expect("a time Graph could read")
                     .is_all_day,
                 Some(lasts_all_day),
@@ -4936,7 +5044,7 @@ mod tests {
             event.show_as = blocks_time.to_string();
 
             assert_eq!(
-                local_to_ms_event(&event)
+                local_to_ms_event(&event, TheBodyIsFor::ChangingIt)
                     .expect("a time Graph could read")
                     .show_as
                     .as_deref(),
@@ -4957,12 +5065,14 @@ mod tests {
         let mut filed = make_event("e1", "Dentist", None);
         filed.categories = "Health".to_string();
 
-        let ms = local_to_ms_event(&filed).expect("a time Graph could read");
+        let ms =
+            local_to_ms_event(&filed, TheBodyIsFor::ChangingIt).expect("a time Graph could read");
 
         assert_eq!(ms.categories, vec!["Health".to_string()]);
 
         let unfiled = make_event("e2", "Standup", None);
-        let ms = local_to_ms_event(&unfiled).expect("a time Graph could read");
+        let ms =
+            local_to_ms_event(&unfiled, TheBodyIsFor::ChangingIt).expect("a time Graph could read");
         assert!(
             ms.categories.is_empty(),
             "an event filed under nothing must send no list at all: Graph reads a \
@@ -5023,7 +5133,8 @@ mod tests {
         let mut with_alert = make_event("e1", "Review", None);
         with_alert.reminders_json = Some("[{\"method\":\"popup\",\"minutes\":30}]".to_string());
 
-        let ms = local_to_ms_event(&with_alert).expect("a time Graph could read");
+        let ms = local_to_ms_event(&with_alert, TheBodyIsFor::ChangingIt)
+            .expect("a time Graph could read");
         assert_eq!(
             ms.is_reminder_on,
             Some(true),
@@ -5032,7 +5143,8 @@ mod tests {
         assert_eq!(ms.reminder_minutes_before_start, Some(30));
 
         let silent = make_event("e2", "Quiet", None);
-        let ms = local_to_ms_event(&silent).expect("a time Graph could read");
+        let ms =
+            local_to_ms_event(&silent, TheBodyIsFor::ChangingIt).expect("a time Graph could read");
         assert_eq!(
             ms.is_reminder_on,
             Some(false),
@@ -5059,7 +5171,12 @@ mod tests {
         fresh.attendees_json = Some("[{\"email\":\"new@example.com\"}]".to_string());
         fresh.reminders_json = Some("[{\"minutes\":15}]".to_string());
 
-        carry_over_local_only(&mut fresh, &held, TheCategory::OnlyHere);
+        carry_over_local_only(
+            &mut fresh,
+            &held,
+            TheCategory::OnlyHere,
+            TheStatus::AlsoAtTheProvider,
+        );
 
         assert_eq!(
             fresh.id, "held-1",
@@ -5091,7 +5208,12 @@ mod tests {
         let mut fresh = make_event("fresh-1", "What the provider sent", None);
         fresh.categories = "Health".to_string();
 
-        carry_over_local_only(&mut fresh, &held, TheCategory::AlsoAtTheProvider);
+        carry_over_local_only(
+            &mut fresh,
+            &held,
+            TheCategory::AlsoAtTheProvider,
+            TheStatus::OnlyHere,
+        );
 
         assert_eq!(fresh.categories, "Health");
         // Everything else the carry-over is for is untouched by the choice.
@@ -5108,7 +5230,12 @@ mod tests {
         held.categories = "Birthday".to_string();
         let mut fresh = make_event("fresh-1", "What the provider sent", None);
 
-        carry_over_local_only(&mut fresh, &held, TheCategory::AlsoAtTheProvider);
+        carry_over_local_only(
+            &mut fresh,
+            &held,
+            TheCategory::AlsoAtTheProvider,
+            TheStatus::OnlyHere,
+        );
 
         assert_eq!(fresh.categories, "");
     }
@@ -5122,7 +5249,12 @@ mod tests {
         let held = make_event("held-1", "Held", None);
         let mut fresh = make_event("fresh-1", "What the provider sent", Some("cal-outlook"));
 
-        carry_over_local_only(&mut fresh, &held, TheCategory::OnlyHere);
+        carry_over_local_only(
+            &mut fresh,
+            &held,
+            TheCategory::OnlyHere,
+            TheStatus::AlsoAtTheProvider,
+        );
 
         assert_eq!(
             fresh.calendar_id.as_deref(),
@@ -5135,7 +5267,12 @@ mod tests {
         let moved = make_event("held-2", "Held", Some("cal-work"));
         let mut fresh = make_event("fresh-2", "What the provider sent", Some("cal-outlook"));
 
-        carry_over_local_only(&mut fresh, &moved, TheCategory::OnlyHere);
+        carry_over_local_only(
+            &mut fresh,
+            &moved,
+            TheCategory::OnlyHere,
+            TheStatus::AlsoAtTheProvider,
+        );
 
         assert_eq!(fresh.calendar_id.as_deref(), Some("cal-work"));
     }
@@ -5550,7 +5687,7 @@ mod tests {
         // Whichever way the two are made to agree, one of them breaks.
         let event = an_event_stored_here();
 
-        let graph = local_to_ms_event(&event)
+        let graph = local_to_ms_event(&event, TheBodyIsFor::ChangingIt)
             .expect("a time Graph could read")
             .start
             .expect("a start");
@@ -5606,7 +5743,7 @@ mod tests {
                 ..an_event_stored_here()
             };
 
-            let graph = local_to_ms_event(&event)
+            let graph = local_to_ms_event(&event, TheBodyIsFor::ChangingIt)
                 .expect("a time Graph could read")
                 .start
                 .expect("a start");
@@ -5690,8 +5827,10 @@ mod tests {
 
     /// The same for Graph.
     fn what_outlook_is_sent(event: &CalendarEventEntry) -> serde_json::Value {
-        serde_json::to_value(local_to_ms_event(event).expect("a time Graph could read"))
-            .expect("an event to serialize")
+        serde_json::to_value(
+            local_to_ms_event(event, TheBodyIsFor::ChangingIt).expect("a time Graph could read"),
+        )
+        .expect("an event to serialize")
     }
 
     #[test]
@@ -5762,7 +5901,7 @@ mod tests {
             Some("2026-03-07")
         );
         assert_eq!(
-            local_to_ms_event(&birthday)
+            local_to_ms_event(&birthday, TheBodyIsFor::ChangingIt)
                 .expect("a time Graph could read")
                 .end
                 .expect("an end")
@@ -6161,6 +6300,257 @@ mod tests {
         );
     }
 
+    // ── Every field the form can set, and where it ends up ────────────────
+
+    /// What a field somebody filled in turns into at one provider.
+    enum Reaches {
+        /// A path into the create body, and something the value there has to
+        /// say. A path alone would pass against a key holding the wrong thing.
+        Saying(&'static str, &'static str),
+        /// Nothing carries it: the key that would carry it if anything did,
+        /// and why nothing does. Both halves are checked, so "nothing carries
+        /// this" is a claim the body has to bear out rather than a note
+        /// somebody wrote down once and stopped meaning.
+        Nothing(&'static str, &'static str),
+    }
+
+    /// Which ending the claim about a field has to be asked of.
+    ///
+    /// A series stops on a date or after a count and cannot do both, so the two
+    /// fields that say which are asked of two events.
+    #[derive(PartialEq, Eq)]
+    enum Ending {
+        OnADate,
+        AfterACount,
+    }
+
+    /// Where one field of the event form ends up at each provider.
+    struct WhereItGoes {
+        field: crate::application::item_fields::FieldName,
+        asked_of: Ending,
+        at_google: Reaches,
+        at_outlook: Reaches,
+    }
+
+    /// An event with every field of the form filled in.
+    fn an_event_with_everything_filled_in(ending: &Ending) -> CalendarEventEntry {
+        use crate::application::repeating::{Repeat, Until};
+        let stops = match ending {
+            Ending::OnADate => Until::OnDate("2026-09-30".to_string()),
+            Ending::AfterACount => Until::AfterTimes(6),
+        };
+        CalendarEventEntry {
+            summary: "Sprint planning".to_string(),
+            description: Some("Bring the papers".to_string()),
+            location: Some("Room 42".to_string()),
+            // Named, so what goes out is the same on every machine. Without a
+            // zone each converter reaches for this computer's own.
+            time_zone: Some("UTC".to_string()),
+            start_datetime: "2026-03-10 09:00".to_string(),
+            end_datetime: "2026-03-10 10:00".to_string(),
+            is_all_day: false,
+            show_as: "free".to_string(),
+            status: "tentative".to_string(),
+            categories: "Birthday".to_string(),
+            reminders_json: Some("[{\"minutes\":15}]".to_string()),
+            recurrence_rule: crate::application::repeating::rule(Repeat::Weekly, &stops, None),
+            ..an_event_stored_here()
+        }
+    }
+
+    /// What a body says at a dotted path, or nothing where it says nothing.
+    fn what_it_says_at<'a>(
+        body: &'a serde_json::Value,
+        path: &str,
+    ) -> Option<&'a serde_json::Value> {
+        let mut here = body;
+        for step in path.split('.') {
+            here = here.get(step)?;
+        }
+        Some(here)
+    }
+
+    #[test]
+    fn test_every_field_the_event_form_can_set_is_answered_for_at_both_providers() {
+        use crate::application::item_fields::{FieldName, fields_for};
+        use crate::application::new_item::ItemKind;
+        use Ending::{AfterACount, OnADate};
+        use Reaches::{Nothing, Saying};
+
+        let table = [
+            WhereItGoes {
+                field: FieldName::Title,
+                asked_of: OnADate,
+                at_google: Saying("summary", "Sprint planning"),
+                at_outlook: Saying("subject", "Sprint planning"),
+            },
+            WhereItGoes {
+                field: FieldName::Container,
+                asked_of: OnADate,
+                at_google: Nothing(
+                    "calendarId",
+                    "the calendar is the address the body is sent to",
+                ),
+                at_outlook: Nothing(
+                    "calendar",
+                    "the calendar is the address the body is sent to",
+                ),
+            },
+            WhereItGoes {
+                field: FieldName::AllDay,
+                asked_of: OnADate,
+                at_google: Nothing(
+                    "isAllDay",
+                    "Google has no such field. A whole day is said by putting a bare \
+                     date where a time would go, which the whole-day test asserts",
+                ),
+                at_outlook: Saying("isAllDay", "false"),
+            },
+            WhereItGoes {
+                field: FieldName::StartDate,
+                asked_of: OnADate,
+                at_google: Saying("start.dateTime", "2026-03-10"),
+                at_outlook: Saying("start.dateTime", "2026-03-10"),
+            },
+            WhereItGoes {
+                field: FieldName::StartTime,
+                asked_of: OnADate,
+                at_google: Saying("start.dateTime", "09:00"),
+                at_outlook: Saying("start.dateTime", "09:00"),
+            },
+            WhereItGoes {
+                field: FieldName::EndDate,
+                asked_of: OnADate,
+                at_google: Saying("end.dateTime", "2026-03-10"),
+                at_outlook: Saying("end.dateTime", "2026-03-10"),
+            },
+            WhereItGoes {
+                field: FieldName::EndTime,
+                asked_of: OnADate,
+                at_google: Saying("end.dateTime", "10:00"),
+                at_outlook: Saying("end.dateTime", "10:00"),
+            },
+            WhereItGoes {
+                field: FieldName::Location,
+                asked_of: OnADate,
+                at_google: Saying("location", "Room 42"),
+                at_outlook: Saying("location.displayName", "Room 42"),
+            },
+            WhereItGoes {
+                field: FieldName::Repeat,
+                asked_of: OnADate,
+                at_google: Saying("recurrence", "FREQ=WEEKLY"),
+                at_outlook: Saying("recurrence.pattern.type", "weekly"),
+            },
+            WhereItGoes {
+                field: FieldName::RepeatUntil,
+                asked_of: OnADate,
+                at_google: Saying("recurrence", "UNTIL="),
+                at_outlook: Saying("recurrence.range.type", "endDate"),
+            },
+            WhereItGoes {
+                field: FieldName::RepeatUntilDate,
+                asked_of: OnADate,
+                at_google: Saying("recurrence", "20260930"),
+                at_outlook: Saying("recurrence.range.endDate", "2026-09-30"),
+            },
+            WhereItGoes {
+                field: FieldName::RepeatTimes,
+                asked_of: AfterACount,
+                at_google: Saying("recurrence", "COUNT=6"),
+                at_outlook: Saying("recurrence.range.numberOfOccurrences", "6"),
+            },
+            WhereItGoes {
+                field: FieldName::AlertMinutes,
+                asked_of: OnADate,
+                at_google: Saying("reminders.overrides", "15"),
+                at_outlook: Saying("reminderMinutesBeforeStart", "15"),
+            },
+            WhereItGoes {
+                field: FieldName::ShowAs,
+                asked_of: OnADate,
+                at_google: Saying("transparency", "transparent"),
+                at_outlook: Saying("showAs", "free"),
+            },
+            WhereItGoes {
+                field: FieldName::Status,
+                asked_of: OnADate,
+                at_google: Saying("status", "tentative"),
+                at_outlook: Nothing(
+                    "status",
+                    "Graph has no property for it, so the read keeps the copy here",
+                ),
+            },
+            WhereItGoes {
+                field: FieldName::Category,
+                asked_of: OnADate,
+                at_google: Nothing(
+                    "categories",
+                    "Google has no such field, so the read keeps the copy here",
+                ),
+                at_outlook: Saying("categories", "Birthday"),
+            },
+            WhereItGoes {
+                field: FieldName::Notes,
+                asked_of: OnADate,
+                at_google: Saying("description", "Bring the papers"),
+                at_outlook: Saying("body.content", "Bring the papers"),
+            },
+        ];
+
+        // Every field the form has, decided about. One added to the form and
+        // carried nowhere fails here rather than going missing out of
+        // somebody's calendar with nothing said.
+        let asked_for: Vec<_> = fields_for(ItemKind::Event)
+            .iter()
+            .map(|field| field.name)
+            .collect();
+        let decided: Vec<_> = table.iter().map(|row| row.field).collect();
+        assert_eq!(
+            decided, asked_for,
+            "the event form asks for fields this table has not decided about"
+        );
+
+        for row in &table {
+            let event = an_event_with_everything_filled_in(&row.asked_of);
+            let google = serde_json::to_value(
+                local_to_google_event(&event, TheBodyIsFor::MakingIt).expect("a Google body"),
+            )
+            .expect("a body to write out");
+            let outlook = serde_json::to_value(
+                local_to_ms_event(&event, TheBodyIsFor::MakingIt).expect("an Outlook body"),
+            )
+            .expect("a body to write out");
+
+            for (provider, body, reaches) in [
+                ("Google", &google, &row.at_google),
+                ("Outlook", &outlook, &row.at_outlook),
+            ] {
+                match reaches {
+                    Saying(path, value) => {
+                        let said = what_it_says_at(body, path).unwrap_or_else(|| {
+                            panic!(
+                                "{:?} says nothing at {path} at {provider}: {body}",
+                                row.field
+                            )
+                        });
+                        assert!(
+                            said.to_string().contains(value),
+                            "{:?} at {provider}: {path} says {said} rather than {value}",
+                            row.field
+                        );
+                    }
+                    Nothing(path, why) => assert!(
+                        what_it_says_at(body, path).is_none(),
+                        "{:?} reaches {provider} at {path} after all, and this record says it \
+                         does not, because {why}: {body}",
+                        row.field
+                    ),
+                }
+            }
+        }
+    }
+
     /// Make a repeating event nobody has sent yet, and capture the create.
     ///
     /// The body of the request, not a promise about it: every assertion about
@@ -6355,6 +6745,186 @@ mod tests {
             Some("RRULE:FREQ=WEEKLY;BYDAY=TU"),
             "the meeting still repeats after the read that followed making it"
         );
+    }
+
+    #[tokio::test]
+    async fn test_a_repeating_event_made_here_reaches_outlook_carrying_its_repeat_rule() {
+        // The Outlook half of the same silent loss. Outlook is told a shape
+        // rather than a rule, and every part of the shape is asserted: a
+        // pattern that lost its days, its interval or its start date files the
+        // meeting on days nobody chose.
+        let (line, sent) = what_a_new_series_sends(
+            MICROSOFT,
+            MICROSOFT_CALENDAR_NAME,
+            "FREQ=WEEKLY;BYDAY=TU",
+            None,
+        )
+        .await;
+
+        assert_eq!(line, "POST /me/events");
+        assert_eq!(
+            sent["recurrence"],
+            serde_json::json!({
+                "pattern": {
+                    "type": "weekly",
+                    "interval": 1,
+                    "daysOfWeek": ["tuesday"],
+                    "firstDayOfWeek": "monday",
+                },
+                "range": { "type": "noEnd", "startDate": "2026-03-06" },
+            }),
+            "{sent}"
+        );
+    }
+
+    /// What a calendar view really answers with for a series: its days, each
+    /// under an identity of its own, each naming the series it belongs to and
+    /// none of them repeating.
+    fn the_days_outlook_sends_for(master: &str) -> String {
+        let day = |on: &str| {
+            serde_json::json!({
+                "id": format!("{master}_{on}"),
+                "seriesMasterId": master,
+                "subject": "Sprint planning",
+                "start": { "dateTime": format!("{on}T09:00:00"), "timeZone": "UTC" },
+                "end": { "dateTime": format!("{on}T10:00:00"), "timeZone": "UTC" },
+            })
+        };
+        serde_json::json!({ "value": [day("2026-03-10"), day("2026-03-17")] }).to_string()
+    }
+
+    #[tokio::test]
+    async fn test_a_series_created_at_outlook_is_one_meeting_here_after_the_pull_that_follows() {
+        // The Outlook half of the round trip, against a fake that behaves the
+        // way the real calendar does: told about a series it answers the next
+        // read with the days of it and never with the series itself.
+        //
+        // Two things have to hold at once, and only counting the diary sees
+        // both. The meeting still repeats, which it did not while the create
+        // said nothing about the repeat and the single appointment came back
+        // empty. And the diary holds one meeting rather than a row per week
+        // sitting on top of a series already drawing those same weeks.
+        let cache = temp_cache("outlook_series_round_trip");
+        let mut series = a_pending_event_in(&cache, MICROSOFT, MICROSOFT_CALENDAR_NAME, None);
+        series.recurrence_rule = Some("FREQ=WEEKLY;BYDAY=TU".to_string());
+        cache.save_calendar_event(&series).expect("the series");
+
+        let (address, listening) = answering_as_asked(
+            "200 OK",
+            "application/json",
+            vec![
+                Box::new(|asked: &[String]| {
+                    echoed_with_the_identity(&asked[0], "made-at-outlook", "2026-03-06T09:00:00Z")
+                }),
+                Box::new(|asked: &[String]| {
+                    if body_of(&asked[0])["recurrence"].is_null() {
+                        // Told about one appointment, it answers with one.
+                        return format!(
+                            "{{\"value\":[{}]}}",
+                            echoed_with_the_identity(
+                                &asked[0],
+                                "made-at-outlook",
+                                "2026-03-06T09:00:00Z"
+                            )
+                        );
+                    }
+                    the_days_outlook_sends_for("made-at-outlook")
+                }),
+            ],
+        )
+        .await;
+
+        sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+        heard(listening, "a create and a read")
+            .await
+            .expect("two requests");
+
+        let held = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        assert_eq!(
+            held.len(),
+            1,
+            "one meeting was made, so one row is what the diary holds: {held:#?}"
+        );
+        assert_eq!(
+            held[0].recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;BYDAY=TU"),
+            "the meeting still repeats after the read that followed making it"
+        );
+    }
+
+    #[test]
+    fn test_a_repeat_outlook_sends_is_stored_as_a_rule_and_not_as_a_page_of_its_own_shape() {
+        // One column, one language. Outlook's own shape written out as text
+        // sat in the column every other reader treats as a calendar rule, so
+        // the day a series from Outlook did arrive it would have been shown on
+        // one day and said it could not be read.
+        let from_outlook = MsGraphEvent {
+            id: "series-at-outlook".to_string(),
+            subject: Some("Sprint planning".to_string()),
+            start: Some(MsDateTimeTimeZone {
+                date_time: "2026-03-10T09:00:00".to_string(),
+                time_zone: "UTC".to_string(),
+            }),
+            end: Some(MsDateTimeTimeZone {
+                date_time: "2026-03-10T10:00:00".to_string(),
+                time_zone: "UTC".to_string(),
+            }),
+            recurrence: Some(crate::service::microsoft_graph::MsPatternedRecurrence {
+                pattern: crate::service::microsoft_graph::MsRecurrencePattern {
+                    pattern_type: "weekly".to_string(),
+                    interval: 1,
+                    days_of_week: vec!["tuesday".to_string()],
+                    first_day_of_week: Some("monday".to_string()),
+                    ..Default::default()
+                },
+                range: crate::service::microsoft_graph::MsRecurrenceRange {
+                    range_type: "noEnd".to_string(),
+                    start_date: "2026-03-10".to_string(),
+                    ..Default::default()
+                },
+            }),
+            ..Default::default()
+        };
+
+        let held = ms_event_to_local(&from_outlook, "acct", "cal-outlook");
+
+        assert_eq!(
+            held.recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;BYDAY=TU")
+        );
+    }
+
+    #[test]
+    fn test_a_status_typed_here_is_not_overwritten_by_a_read_from_outlook() {
+        // Outlook has no field for it, so every read was asserting something
+        // nobody had been told, and a meeting marked as tentative here came
+        // back confirmed with nothing said.
+        let mut held = an_event_stored_here();
+        held.status = "tentative".to_string();
+        let from_outlook = MsGraphEvent {
+            id: "evt1".to_string(),
+            subject: Some("Sprint planning".to_string()),
+            ..Default::default()
+        };
+
+        let mut merged = ms_event_to_local(&from_outlook, "acct", "cal-outlook");
+        carry_over_local_only(
+            &mut merged,
+            &held,
+            TheCategory::AlsoAtTheProvider,
+            TheStatus::OnlyHere,
+        );
+
+        assert_eq!(merged.status, "tentative");
     }
 
     #[tokio::test]

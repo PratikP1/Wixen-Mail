@@ -8,6 +8,36 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: the same loss in an Outlook calendar, and a meeting marked tentative
+  came back confirmed.** A meeting that repeats, made here in an Outlook
+  calendar, arrived there as a single appointment for the same reason as at
+  Google, and the read that followed took the repeat off the copy here. Making a
+  meeting now says how often it comes round, which days of the week it lands on,
+  and whether and when it stops.
+
+  Outlook is told a shape rather than a rule, and the two ways of saying it are
+  now checked against each other, so a repeat cannot be filed as a different one.
+  A repeat Outlook has no way of saying is refused and reported rather than
+  rounded to something near it: a meeting on Tuesdays and Thursdays used to be at
+  risk of being filed as a Tuesday meeting with every Thursday gone.
+
+  A meeting Outlook sends back as part of a series is also no longer written into
+  your diary a second time on top of the series already there.
+
+  Separately, the status of a meeting, confirmed or tentative or cancelled, is
+  yours alone on an Outlook calendar. Outlook has no field for it, so every read
+  used to say confirmed, and a meeting you had marked tentative quietly became
+  confirmed. What you set is now kept.
+
+  Known limitations. Turning a repeat on or off on a meeting Outlook already
+  holds does not reach Outlook. Days you have cancelled out of a series cannot be
+  sent to Outlook when the series is made, because Outlook only takes those one
+  at a time on a series it already holds; the cancellation is kept here. A series
+  made in Outlook still arrives here as separate meetings, one per day, because
+  the only way Outlook offers to read a calendar bit by bit answers with days and
+  never with the series. None of the Outlook calendar syncing has run against a
+  real account.
+
 - **Fixed: a meeting that repeats, made here in a Google calendar, arrived there
   as a single appointment and then stopped repeating here as well.** Make a
   weekly meeting in a Google calendar in this program and it was filed at Google

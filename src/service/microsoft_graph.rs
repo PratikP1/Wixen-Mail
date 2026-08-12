@@ -179,7 +179,14 @@ pub struct MsGraphEvent {
     /// What makes this a repeating series. Sent as null, the series is flattened
     /// into the one appointment the change was about.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub recurrence: Option<serde_json::Value>,
+    pub recurrence: Option<MsPatternedRecurrence>,
+    /// The series this is one day of, when Graph is answering with days.
+    ///
+    /// The server's to set. A calendar view answers with the days of a series
+    /// and never with the series itself, so this is the only thing that says
+    /// two of them belong together.
+    #[serde(default, skip_serializing)]
+    pub series_master_id: Option<String>,
     /// Where to open the event in a browser. The server's to set.
     #[serde(skip_serializing)]
     pub web_link: Option<String>,
@@ -207,6 +214,68 @@ pub struct MsEventBody {
     pub content_type: String,
     #[serde(default)]
     pub content: String,
+}
+
+/// How Graph says a series repeats: a shape and a stretch of time, never a rule.
+///
+/// Written out in full rather than held as whatever arrived. It used to be a
+/// blob of unread structure, and the reader turned that blob into text and put
+/// it in the column every other reader treats as a calendar rule, so the same
+/// column would have held two languages and only one of them could be read.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MsPatternedRecurrence {
+    pub pattern: MsRecurrencePattern,
+    pub range: MsRecurrenceRange,
+}
+
+/// The shape of a series: how often it comes round and which days it lands on.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MsRecurrencePattern {
+    /// `daily`, `weekly`, `absoluteMonthly`, `relativeMonthly`,
+    /// `absoluteYearly` or `relativeYearly`.
+    #[serde(default, rename = "type")]
+    pub pattern_type: String,
+    #[serde(default)]
+    pub interval: u32,
+    /// The weekdays it lands on, spelled out in full and in lower case.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub days_of_week: Vec<String>,
+    /// Which one of those weekdays in the month: `first` through `fourth`, or
+    /// `last`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub day_of_month: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub month: Option<u32>,
+    /// Which day Graph counts a week from.
+    ///
+    /// It decides which weeks a series skipping weeks lands in, and Graph takes
+    /// Sunday when nothing says otherwise while a calendar rule takes Monday.
+    /// So it is always sent rather than left to a default the two sides
+    /// disagree about.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_day_of_week: Option<String>,
+}
+
+/// The stretch of time a series runs for.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MsRecurrenceRange {
+    /// `noEnd`, `endDate` or `numbered`.
+    #[serde(default, rename = "type")]
+    pub range_type: String,
+    #[serde(default)]
+    pub start_date: String,
+    /// Filled in by Graph even on a series that never ends, where it holds a
+    /// date at the very start of the calendar and means nothing. Which kind of
+    /// range it is decides whether this says anything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub number_of_occurrences: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

@@ -157,7 +157,11 @@ pub enum Until {
 
 impl Until {
     /// The part of the rule that ends it, if anything does.
-    fn ending(&self) -> Option<String> {
+    ///
+    /// The one writer of it. Every `UNTIL` and every `COUNT` this program puts
+    /// in a rule comes from here, so a series read back from a provider and one
+    /// typed into the form cannot disagree about whether the last day counts.
+    pub(crate) fn ending(&self) -> Option<String> {
         match self {
             Until::Forever => None,
             // UNTIL is a date-time in UTC in the form RFC 5545 wants, and the
@@ -257,6 +261,269 @@ fn days_in_month(year: i32, month: u32) -> u32 {
         .and_then(|first| first.pred_opt())
         .map(|last| chrono::Datelike::day(&last))
         .unwrap_or(28)
+}
+
+// ── The same series, said the way Outlook says one ───────────────────────
+//
+// Outlook has no rules. It has a shape and a stretch of time, and the two
+// spellings have to be held against each other rather than each against a
+// hand-written expectation, or one of them changes and the other does not.
+// That is the failure this project has had more often than any other.
+
+use crate::service::microsoft_graph::{
+    MsPatternedRecurrence, MsRecurrencePattern, MsRecurrenceRange,
+};
+
+/// The seven weekdays, spelled both ways.
+///
+/// One table read in both directions, so a day cannot be written out under one
+/// name and read back as another.
+const THE_WEEKDAYS: [(chrono::Weekday, &str, &str); 7] = [
+    (chrono::Weekday::Mon, "monday", "MO"),
+    (chrono::Weekday::Tue, "tuesday", "TU"),
+    (chrono::Weekday::Wed, "wednesday", "WE"),
+    (chrono::Weekday::Thu, "thursday", "TH"),
+    (chrono::Weekday::Fri, "friday", "FR"),
+    (chrono::Weekday::Sat, "saturday", "SA"),
+    (chrono::Weekday::Sun, "sunday", "SU"),
+];
+
+/// Which of a weekday's occurrences in a month, spelled both ways.
+///
+/// A rule can name the fifth of a weekday and count from either end of the
+/// month. Outlook offers the first four and the last, and nothing else, so
+/// anything outside this table is refused rather than rounded to a day the
+/// series is not on.
+const THE_WEEKS_OF_A_MONTH: [(i32, &str); 5] = [
+    (1, "first"),
+    (2, "second"),
+    (3, "third"),
+    (4, "fourth"),
+    (-1, "last"),
+];
+
+/// Which day a week is counted from, which a rule leaves unsaid and means
+/// Monday by.
+const A_WEEK_STARTS_ON: &str = "monday";
+
+/// The shape and stretch Outlook needs to make this series, or nothing when
+/// Outlook has no way to say it.
+///
+/// The rule is read by the one reader that refuses what it cannot work out day
+/// by day, never by the lenient one the item form uses. That reader answers
+/// "every week" to anything it does not recognise, which is right for a form
+/// and would file a Tuesday and Thursday meeting at Outlook as a Tuesday one,
+/// losing every Thursday without a word.
+///
+/// The day the series starts fills in what a rule leaves to the start date: a
+/// weekly rule naming no weekday, and the date or month a monthly or yearly one
+/// keeps.
+pub fn as_outlook_says_it(
+    rule: &str,
+    starts_on: chrono::NaiveDate,
+) -> Option<MsPatternedRecurrence> {
+    use crate::application::occurrences::{How, Rule};
+    use chrono::Datelike;
+
+    let read = Rule::read(crate::service::caldav::without_the_property_name(rule))?;
+    // Refuses rather than sending a short list: a weekly meeting that lost one
+    // of its days would go on quietly, on fewer days than somebody chose.
+    let named_days = |days: &[chrono::Weekday]| -> Option<Vec<String>> {
+        days.iter().map(|day| outlook_calls_the_day(*day)).collect()
+    };
+    let pattern = match read.how {
+        How::Daily => MsRecurrencePattern {
+            pattern_type: "daily".to_string(),
+            interval: read.every,
+            ..Default::default()
+        },
+        How::Weekly => MsRecurrencePattern {
+            pattern_type: "weekly".to_string(),
+            interval: read.every,
+            // Outlook has no weekly shape without a day on it, so a rule that
+            // leaves the day to the date it starts has that day written out.
+            days_of_week: if read.weekdays.is_empty() {
+                named_days(&[starts_on.weekday()])?
+            } else {
+                named_days(&read.weekdays)?
+            },
+            first_day_of_week: Some(A_WEEK_STARTS_ON.to_string()),
+            ..Default::default()
+        },
+        How::Monthly => match read.nth_weekday {
+            Some((nth, weekday)) => MsRecurrencePattern {
+                pattern_type: "relativeMonthly".to_string(),
+                interval: read.every,
+                days_of_week: named_days(&[weekday])?,
+                index: Some(outlook_calls_the_week(nth)?.to_string()),
+                ..Default::default()
+            },
+            None => MsRecurrencePattern {
+                pattern_type: "absoluteMonthly".to_string(),
+                interval: read.every,
+                day_of_month: Some(starts_on.day()),
+                ..Default::default()
+            },
+        },
+        How::Yearly => MsRecurrencePattern {
+            pattern_type: "absoluteYearly".to_string(),
+            interval: read.every,
+            day_of_month: Some(starts_on.day()),
+            month: Some(starts_on.month()),
+            ..Default::default()
+        },
+    };
+    let range = match &read.stops {
+        Until::Forever => MsRecurrenceRange {
+            range_type: "noEnd".to_string(),
+            start_date: starts_on.to_string(),
+            ..Default::default()
+        },
+        Until::OnDate(last_day) => MsRecurrenceRange {
+            range_type: "endDate".to_string(),
+            start_date: starts_on.to_string(),
+            end_date: Some(last_day.clone()),
+            ..Default::default()
+        },
+        Until::AfterTimes(times) => MsRecurrenceRange {
+            range_type: "numbered".to_string(),
+            start_date: starts_on.to_string(),
+            number_of_occurrences: Some(*times),
+            ..Default::default()
+        },
+    };
+    Some(MsPatternedRecurrence { pattern, range })
+}
+
+/// What Outlook calls a weekday, or nothing for one it has no name for.
+fn outlook_calls_the_day(day: chrono::Weekday) -> Option<String> {
+    THE_WEEKDAYS
+        .iter()
+        .find(|(weekday, _, _)| *weekday == day)
+        .map(|(_, outlook, _)| (*outlook).to_string())
+}
+
+/// What a rule calls a weekday Outlook has named, or nothing for a name it does
+/// not use.
+fn the_day_outlook_named(said: &str) -> Option<&'static str> {
+    let said = said.trim();
+    THE_WEEKDAYS
+        .iter()
+        .find(|(_, outlook, _)| outlook.eq_ignore_ascii_case(said))
+        .map(|(_, _, in_a_rule)| *in_a_rule)
+}
+
+/// What Outlook calls the nth weekday of a month, or nothing for an ordinal it
+/// cannot say.
+fn outlook_calls_the_week(nth: i32) -> Option<&'static str> {
+    THE_WEEKS_OF_A_MONTH
+        .iter()
+        .find(|(ordinal, _)| *ordinal == nth)
+        .map(|(_, outlook)| *outlook)
+}
+
+/// Which occurrence of a weekday in the month Outlook has named, or nothing for
+/// a word it does not use.
+fn the_week_outlook_named(said: &str) -> Option<i32> {
+    let said = said.trim();
+    THE_WEEKS_OF_A_MONTH
+        .iter()
+        .find(|(_, outlook)| outlook.eq_ignore_ascii_case(said))
+        .map(|(ordinal, _)| *ordinal)
+}
+
+/// The rule an Outlook shape means, or nothing when this program cannot say it.
+///
+/// Refuses rather than approximates, for the same reason the reading of a rule
+/// does: a series drawn on days it does not fall on is worse than one shown
+/// once and saying so.
+///
+/// The day the series starts is needed because a rule leaves the date to the
+/// start and Outlook writes it out. Where the two disagree the shape means days
+/// the rule would not, so it is refused.
+pub fn what_outlook_said(
+    said: &MsPatternedRecurrence,
+    starts_on: chrono::NaiveDate,
+) -> Option<String> {
+    use chrono::Datelike;
+
+    let shape = &said.pattern;
+    // Nought is not a shape, it is a series that never advances, and Outlook
+    // leaves the field out on an answer it did not fill in.
+    let every = shape.interval.max(1);
+    let the_only_day = || match shape.days_of_week.as_slice() {
+        [only] => the_day_outlook_named(only),
+        _ => None,
+    };
+    let how_often = match shape.pattern_type.to_ascii_lowercase().as_str() {
+        "daily" => "FREQ=DAILY".to_string(),
+        "weekly" => {
+            // Which day a week is counted from decides which weeks a series
+            // skipping weeks lands in, and a rule can only mean Monday. A
+            // series that comes round every week lands in all of them, so the
+            // question does not arise there.
+            let counted_from = shape
+                .first_day_of_week
+                .as_deref()
+                .unwrap_or(A_WEEK_STARTS_ON);
+            if every > 1 && !counted_from.eq_ignore_ascii_case(A_WEEK_STARTS_ON) {
+                return None;
+            }
+            let named: Option<Vec<&str>> = shape
+                .days_of_week
+                .iter()
+                .map(|day| the_day_outlook_named(day))
+                .collect();
+            let named = named.filter(|days| !days.is_empty())?;
+            format!("FREQ=WEEKLY;BYDAY={}", named.join(","))
+        }
+        "absolutemonthly" => {
+            // The date it lands on comes from the day the series starts, which
+            // is the only place a rule can keep it. A shape naming another date
+            // means other days, so it is refused rather than filed as this one.
+            if shape.day_of_month? != starts_on.day() {
+                return None;
+            }
+            "FREQ=MONTHLY".to_string()
+        }
+        "relativemonthly" => {
+            let which = the_week_outlook_named(shape.index.as_deref()?)?;
+            format!("FREQ=MONTHLY;BYDAY={which}{}", the_only_day()?)
+        }
+        "absoluteyearly" => {
+            if shape.day_of_month? != starts_on.day() || shape.month? != starts_on.month() {
+                return None;
+            }
+            "FREQ=YEARLY".to_string()
+        }
+        // The same weekday of the same month every year, and anything Outlook
+        // adds later. Neither is something a rule this program reads can say.
+        _ => return None,
+    };
+    let stops = match said.range.range_type.to_ascii_lowercase().as_str() {
+        "noend" => Until::Forever,
+        // Outlook fills the end in on a series that never ends too, so the kind
+        // of range is what decides whether it says anything.
+        "enddate" => Until::OnDate(said.range.end_date.clone()?),
+        "numbered" => Until::AfterTimes(said.range.number_of_occurrences?),
+        _ => return None,
+    };
+
+    let mut written = how_often;
+    if every > 1 {
+        // After the frequency and before the days, which is where a rule
+        // written here puts it.
+        let (frequency, rest) = written.split_once(';').unwrap_or((&written, ""));
+        written = match rest {
+            "" => format!("{frequency};INTERVAL={every}"),
+            days => format!("{frequency};INTERVAL={every};{days}"),
+        };
+    }
+    if let Some(ending) = stops.ending() {
+        written.push(';');
+        written.push_str(&ending);
+    }
+    Some(written)
 }
 
 /// What is said about a series when the item is read out.
@@ -478,6 +745,137 @@ mod tests {
             spoken(Repeat::Weekly, &Until::AfterTimes(6)),
             "every week, 6 times"
         );
+    }
+
+    // ── Outlook says the same series ────────────────────────────────
+
+    /// The day every series in these tests starts on: a Tuesday, the second
+    /// Tuesday of its month, in a month with a thirty-first.
+    const A_TUESDAY: &str = "2026-03-10";
+
+    /// The day this program draws a series on, from the rule alone.
+    ///
+    /// The production reader, not a second one written for the test. Comparing
+    /// the days two rules fall on is the only comparison that would notice a
+    /// conversion that kept the words and changed the meaning.
+    fn the_days_it_falls_on(rule: &str) -> Vec<String> {
+        let event = crate::data::message_cache::CalendarEventEntry {
+            id: "e1".to_string(),
+            account_id: "a1".to_string(),
+            provider_event_id: None,
+            calendar_id: None,
+            summary: "Standup".to_string(),
+            description: None,
+            location: None,
+            start_datetime: format!("{A_TUESDAY} 09:00"),
+            end_datetime: format!("{A_TUESDAY} 10:00"),
+            start_date: None,
+            end_date: None,
+            is_all_day: false,
+            time_zone: None,
+            status: "confirmed".to_string(),
+            recurrence_rule: Some(rule.to_string()),
+            categories: String::new(),
+            source_provider: Some("local".to_string()),
+            etag: None,
+            web_link: None,
+            show_as: "busy".to_string(),
+            last_modified_remote: None,
+            last_synced_at: None,
+            attendees_json: None,
+            reminders_json: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+            pending: false,
+            exception_dates: None,
+            cut_from_event_id: None,
+        };
+        let from = chrono::NaiveDate::parse_from_str(A_TUESDAY, "%Y-%m-%d").expect("a Tuesday");
+        crate::application::occurrences::falls_on(&event, from, from + chrono::Duration::days(900))
+            .days
+            .into_iter()
+            .map(|day| day.start)
+            .collect()
+    }
+
+    #[test]
+    fn test_every_repeat_this_program_offers_survives_the_trip_to_outlook_and_back() {
+        // The two conversions held against each other rather than each against
+        // a hand-written expectation, because a hand-written expectation is
+        // written twice by the same person on the same afternoon and agrees
+        // with itself. This is the check that notices when one direction
+        // changes and the other does not, which is the way this project has
+        // lost data more often than any other.
+        //
+        // Compared on the days the series falls on, not on the text. Outlook
+        // has to be told a weekday a rule can leave to the start date, so the
+        // rule that comes back says more than the one that went out and means
+        // exactly the same thing.
+        let starts_on = chrono::NaiveDate::parse_from_str(A_TUESDAY, "%Y-%m-%d").expect("a day");
+        let mut checked = 0;
+        for repeat in Repeat::ALL {
+            for ending in [
+                Until::Forever,
+                Until::OnDate("2026-09-30".to_string()),
+                Until::AfterTimes(6),
+            ] {
+                let Some(written) = rule(repeat, &ending, weekday_of_month(A_TUESDAY).as_deref())
+                else {
+                    assert_eq!(repeat, Repeat::Never, "{repeat:?} has no rule");
+                    continue;
+                };
+                let said = as_outlook_says_it(&written, starts_on)
+                    .unwrap_or_else(|| panic!("Outlook can say {written}"));
+                let back = what_outlook_said(&said, starts_on)
+                    .unwrap_or_else(|| panic!("{written} came back from Outlook unreadable"));
+
+                assert_eq!(
+                    the_days_it_falls_on(&back),
+                    the_days_it_falls_on(&written),
+                    "{written:?} became {back:?}, which falls on other days"
+                );
+                assert_eq!(
+                    Until::from_rule(&back),
+                    ending,
+                    "{written:?} became {back:?}, which stops somewhere else"
+                );
+                checked += 1;
+            }
+        }
+        assert_eq!(
+            checked, 24,
+            "eight repeats that are one, times three endings"
+        );
+    }
+
+    #[test]
+    fn test_a_repeat_outlook_cannot_say_is_refused_rather_than_rounded() {
+        // Refused, because the alternative is a meeting filed on days nobody
+        // chose. The lenient reader the item form uses answers "every week" to
+        // all four of these, so routing the conversion through it would send
+        // Outlook a plain weekly meeting and drop the rest without a word.
+        let starts_on = chrono::NaiveDate::parse_from_str(A_TUESDAY, "%Y-%m-%d").expect("a day");
+        for beyond in [
+            // The second-to-last Tuesday, and the fifth: countable here,
+            // and Outlook offers the first four and the last only.
+            "FREQ=MONTHLY;BYDAY=-2TU",
+            "FREQ=MONTHLY;BYDAY=5TU",
+            // Finer than a day, which nothing here draws either.
+            "FREQ=HOURLY",
+            // A part of the standard nothing here reads.
+            "FREQ=MONTHLY;BYSETPOS=2",
+        ] {
+            assert_eq!(
+                as_outlook_says_it(beyond, starts_on),
+                None,
+                "{beyond} is not something Outlook can be told"
+            );
+        }
+
+        // And the one that made this worth doing exactly: two named days stay
+        // two named days.
+        let both = as_outlook_says_it("FREQ=WEEKLY;BYDAY=TU,TH", starts_on).expect("a pattern");
+        assert_eq!(both.pattern.days_of_week, ["tuesday", "thursday"]);
     }
 
     #[test]

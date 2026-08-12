@@ -3394,7 +3394,11 @@ mod tests {
         assert_eq!(edited.start_datetime, stored.start_datetime);
         assert_eq!(edited.time_zone.as_deref(), Some("Asia/Kolkata"));
 
-        let sent = crate::application::calendar::local_to_ms_event(&edited).expect("an event");
+        let sent = crate::application::calendar::local_to_ms_event(
+            &edited,
+            crate::application::calendar::TheBodyIsFor::ChangingIt,
+        )
+        .expect("an event");
         let start = sent.start.expect("a start");
         assert_eq!(start.date_time, "2026-07-27T09:00:00");
         assert_eq!(start.time_zone, "Asia/Kolkata");

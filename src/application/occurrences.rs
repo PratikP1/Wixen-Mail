@@ -238,7 +238,7 @@ fn the_offset_on(stored: &str) -> Option<chrono::FixedOffset> {
 
 /// How often a rule comes round, at the coarseness a day can show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum How {
+pub(crate) enum How {
     Daily,
     Weekly,
     Monthly,
@@ -251,19 +251,19 @@ enum How {
 /// event is then shown once and says so, which is a smaller wrong answer than
 /// showing it on days it does not fall on.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Rule {
-    how: How,
-    every: u32,
+pub(crate) struct Rule {
+    pub(crate) how: How,
+    pub(crate) every: u32,
     /// The weekdays a weekly rule names, in week order.
-    weekdays: Vec<chrono::Weekday>,
+    pub(crate) weekdays: Vec<chrono::Weekday>,
     /// Which weekday of the month a monthly rule names, -1 being the last.
-    nth_weekday: Option<(i32, chrono::Weekday)>,
-    stops: crate::application::repeating::Until,
+    pub(crate) nth_weekday: Option<(i32, chrono::Weekday)>,
+    pub(crate) stops: crate::application::repeating::Until,
 }
 
 impl Rule {
     /// Read a stored rule, or refuse it.
-    fn read(written: &str) -> Option<Self> {
+    pub(crate) fn read(written: &str) -> Option<Self> {
         let text = written.trim().to_ascii_uppercase();
         let mut how = None;
         let mut every = 1u32;
