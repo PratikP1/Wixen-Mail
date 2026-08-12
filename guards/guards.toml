@@ -3934,3 +3934,63 @@ after = """        let already_read = format!("({})", crate::service::protocols:
 red = [
     "application::mail_controller::against_a_server_that_answers::test_the_copy_of_a_sent_message_is_appended_where_it_was_told_flagged_as_read",
 ]
+
+# ── Four answers to "which part of this file ships", three of them wrong ────
+#
+# A check that reads source text has to decide what a release build compiles.
+# Four pieces of code decided it, and three cut at the first `#[cfg(test)]`
+# anywhere in the file. An indented one on a test-only helper is ordinary Rust,
+# so the contacts guard read 227 of 11123 lines and the outbound census read
+# 186 of caldav's 6411. There is one answer now, in `common::what_ships`.
+#
+# The break below puts the naive cut back into the census. Measured on
+# 2026-08-12: it reddens exactly one test, and that is worth being clear about.
+# The census sweep over the tree stays green, because no file in the tree today
+# hides a way out of this program behind an indented `#[cfg(test)]`. The only
+# thing that notices is the test that hands the reading source text directly.
+#
+# So this record measures a reading, not a state of the tree. The day some file
+# does hide a client that way, the sweep would go red too and this record would
+# be short. That is the failure this file exists to catch, and it is caught by
+# the run rather than by the record, so leave the record at one and let a run
+# say when it has changed.
+#
+# What neither test can see: both read source text, so a way out through a
+# crate nobody classified, or through a macro that writes the call, is invisible
+# to them. The manifest sweep in the same module covers the first. Nothing
+# covers the second.
+
+[[guard]]
+name = "the outbound census reads the whole shipped half of a file"
+file = "src/service/outward.rs"
+before = """        let ships = what_ships(source);"""
+after = """        let ships = source.split("#[cfg(test)]").next().unwrap_or_default().to_string();"""
+red = [
+    "service::outward::completeness::test_the_census_sees_a_client_built_by_its_short_name",
+]
+
+# The prose rule runs against the house style suite rather than the library,
+# because a rule about what the pages say lives where the pages are read.
+#
+# Measured on 2026-08-12: the break reddens exactly one test, and it is the
+# plant-proof rather than the sweep. That is the whole reason the plant-proof
+# exists. With the reading made blind the sweep passes, reports a clean tree,
+# and says nothing, which is how two checks that only read source text shipped
+# in round seventeen while the thing they were about was already gone.
+#
+# What it cannot see: a machine name that is not a dependency at all. A
+# database engine and a widget toolkit walk past this reading, and both were
+# corrected by hand rather than by the check.
+
+[[guard]]
+name = "a machinery name in a page a person reads is still recognised"
+file = "tests/house_style.rs"
+suite = "house_style"
+before = """    if ALSO_AN_ORDINARY_WORD.contains(&name) {"""
+after = """    if true {
+        return None;
+    }
+    if ALSO_AN_ORDINARY_WORD.contains(&name) {"""
+red = [
+    "test_the_machinery_check_can_tell_the_two_apart",
+]
