@@ -3686,6 +3686,36 @@ fn test_what_a_change_touched_is_asked_the_same_way_in_both_places() {
 }
 
 #[test]
+fn test_the_mutation_report_still_obeys_its_own_examples() {
+    // The rules about what a mutation run may be reported as are written as
+    // worked examples inside the report itself, and until now the only thing
+    // that ran them was the mutation script, which nobody runs on an ordinary
+    // change. So the rules held on the days somebody spent an hour on a
+    // mutation run and on no other day.
+    //
+    // Missing python fails rather than skips. A check that quietly does
+    // nothing is the whole defect this file keeps finding.
+    let examples = std::process::Command::new("python")
+        .args(["-m", "doctest", "scripts/mutants_report.py"])
+        .output()
+        .unwrap_or_else(|e| {
+            panic!(
+                "python could not be run, so the rules the mutation report \
+                 follows went unchecked: {e}.\nInstall python and put it on \
+                 the path; the mutation run needs it too."
+            )
+        });
+
+    assert!(
+        examples.status.success(),
+        "the mutation report no longer does what its own examples say it \
+         does.\n{}{}",
+        String::from_utf8_lossy(&examples.stdout),
+        String::from_utf8_lossy(&examples.stderr)
+    );
+}
+
+#[test]
 fn test_no_mutation_run_has_its_failure_swallowed() {
     let script = fs::read_to_string("scripts/mutants.sh").expect("the mutation script");
 

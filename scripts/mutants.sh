@@ -15,6 +15,10 @@
 # see whether anything fails. A mutant nothing catches is either untested
 # behaviour or dead code, and both are worth knowing about.
 #
+# A run in which the suite was never once run against a mutant is refused
+# rather than summarised, and the report says which of the two ways it went:
+# every mutant rejected by the compiler, or no mutants to begin with.
+#
 # What it found is read by scripts/mutants_report.py, and not by this script.
 # The reading is the part that was wrong: this script used to decide whether a
 # run had produced anything by asking whether a results file existed, and that

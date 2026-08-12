@@ -190,13 +190,23 @@ when the real figure was thirty-seven of fifty-one. Wait for the process to
 exit.
 
 The script now refuses a partial run rather than summarising one, and it refuses
-two other things that used to read as results. A mutant recorded as unviable
+three other things that used to read as results. A mutant recorded as unviable
 means one of two things, and only one of them was tested: the compiler looked at
 it and rejected it, or the compiler never started and nothing looked at it at
 all. The whole-tree run of 2026-08-05 recorded 595 that way and 473 of them had
 never reached a compiler, so a third of that run was untested and its summary
 said so nowhere. A run whose build failed before anything was changed used to
 print that every mutant was caught and exit clean.
+
+The third is a run where the suite was never once run against a mutant. That
+happens two ways and the report says which: every mutant was rejected by the
+compiler, or there were no mutants at all because nothing in those lines can be
+changed. Either way the run learned nothing, so it fails rather than printing a
+headline nobody can tell from a clean result. This reverses an earlier decision
+that called having nothing to mutate an honest way to test nothing: it is
+honest, and it is still not a result. A change that touches only comments or
+documentation inside `src` now fails this gate on a pull request. The answer to
+that is a sentence on the pull request saying so, not a lower check.
 
 A compiler that never starts is this machine failing to start a process, and it
 says nothing about the mutant. It comes and goes: six mutants that never built

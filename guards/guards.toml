@@ -2574,10 +2574,15 @@ red = [
 # Only the first was tested. The whole-tree run of 2026-08-05 recorded 595 that
 # way and 473 of them had never reached a compiler.
 #
-# All three run against the house style suite rather than the library, because
+# On top of that, a run in which not one mutant ever reached the suite counted
+# as a clean result: every mutant rejected by the compiler, or no mutants at
+# all, printed a headline nobody could tell from a run that caught everything.
+#
+# All four run against the house style suite rather than the library, because
 # these are rules about what the tree says. See `Guard.suite` in
-# scripts/guards.py. The wording rules the reading itself follows are checked
-# by its own doctests, which nothing here can run.
+# scripts/guards.py. The wording rules the reading itself follows are worked
+# examples inside it, and the house style suite now runs them, so they hold on
+# an ordinary change rather than only on the days somebody runs a mutation run.
 
 [[guard]]
 name = "a mutation result is read from the record, not from the lists written for people"
@@ -2607,6 +2612,16 @@ before = """    cargo mutants -j "$JOBS" --output "$OUT" || STATUS=$?"""
 after = """    cargo mutants -j "$JOBS" --output "$OUT" || true"""
 red = [
     "test_no_mutation_run_has_its_failure_swallowed",
+]
+
+[[guard]]
+name = "a mutation run that never reached the tests is not a result"
+file = "scripts/mutants_report.py"
+suite = "house_style"
+before = """    if run.reached_the_tests == 0:"""
+after = """    if False:"""
+red = [
+    "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 
 # ── An unrecognised trash used to mean a permanent deletion ─────────────────

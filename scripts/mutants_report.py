@@ -59,6 +59,17 @@ class Run:
     it is the only number that can say whether the run finished. The tool's own
     summary counts what it processed, so on the run whose build failed it said
     zero mutants and meant "I never got to any of them".
+
+    Two of the counts below answer questions that sound like one question and
+    are not, so they are pinned here together on one run rather than apart. A
+    mutant the compiler rejected was really tested, because it was asked and
+    something answered. The suite never saw it, so it never reached the tests:
+
+    >>> rejected = Run(declared=3, would_not_compile=["u"] * 3)
+    >>> rejected.really_tested
+    3
+    >>> rejected.reached_the_tests
+    0
     """
 
     declared: int
@@ -89,6 +100,17 @@ class Run:
             + len(self.timed_out)
             + len(self.would_not_compile)
         )
+
+    @property
+    def reached_the_tests(self) -> int:
+        """How many mutants the suite was really run against.
+
+        The one number that can say whether this run learned anything. A
+        mutant the compiler rejected was tested and never reached a test, so
+        `really_tested` counts it and this does not, and that difference is
+        the whole of why both are here.
+        """
+        return len(self.caught) + len(self.missed) + len(self.timed_out)
 
 
 def windows_status(status: int) -> str:
@@ -277,12 +299,34 @@ def why_this_is_not_an_answer(run: Run) -> str | None:
     The run stopped after 18 of the 51 mutants, so this is part of an answer.
     Wait for it to finish, or read it as the part it is.
 
+    A run where the suite was never once run against a mutant. This can happen
+    two ways and the two need telling apart, because one is a machine to go and
+    look at and the other is a set of lines with nothing in them to change.
+    Every mutant rejected by the compiler is the first:
+
+    >>> print(why_this_is_not_an_answer(Run(declared=3,
+    ...     would_not_compile=["u"] * 3)))
+    None of the 3 mutants reached the test suite: the compiler rejected every one.
+    The suite never ran, so this run says nothing about what it would notice.
+
+    No mutants at all is the second:
+
+    >>> print(why_this_is_not_an_answer(Run(declared=0)))
+    There were no mutants, because nothing in these lines can be mutated.
+    That is not the same as every mutant being caught, and it is not a result.
+
     And the run of 2026-08-11, which is a real result whether or not anything
     was missed. A check that has never said yes is as untested as one that has
     never said no:
 
     >>> why_this_is_not_an_answer(Run(declared=24, caught=["c"] * 19,
     ...     missed=["m"] * 2, would_not_compile=["u"] * 3)) is None
+    True
+
+    One real answer among rejections is still an answer:
+
+    >>> why_this_is_not_an_answer(Run(declared=4, caught=["c"],
+    ...     would_not_compile=["u"] * 3)) is None
     True
     """
     if run.baseline_failed:
@@ -305,6 +349,21 @@ def why_this_is_not_an_answer(run: Run) -> str | None:
             f"The run stopped after {run.processed} of the {run.declared} mutants, "
             "so this is part of an answer.\n"
             "Wait for it to finish, or read it as the part it is."
+        )
+    # Last, so the refusals above keep saying the more particular thing when
+    # they apply. Getting here means every mutant that was declared was
+    # reached and not one of them was ever handed to the suite, which happens
+    # two ways, and a check that can fail two ways has to say which.
+    if run.reached_the_tests == 0:
+        if run.declared == 0:
+            return (
+                "There were no mutants, because nothing in these lines can be mutated.\n"
+                "That is not the same as every mutant being caught, and it is not a result."
+            )
+        return (
+            f"None of the {run.declared} mutants reached the test suite: "
+            "the compiler rejected every one.\n"
+            "The suite never ran, so this run says nothing about what it would notice."
         )
     return None
 
@@ -359,6 +418,11 @@ def which_way_cargo_mutants_failed(status: int) -> str:
 def say_what_it_found(run: Run) -> None:
     """Print every bucket, so no run can be summed up by naming two of five.
 
+    Only ever reached for a run that put a mutant to the suite: everything
+    else is refused before this is called, so there is nothing here about a
+    run with no mutants in it. There was, and two places answering "was there
+    anything to test" is how this project loses a day.
+
     >>> say_what_it_found(Run(declared=3, caught=["one the suite caught"],
     ...     missed=["one nothing noticed"],
     ...     would_not_compile=["one the compiler rejected"]))
@@ -373,18 +437,7 @@ def say_what_it_found(run: Run) -> None:
     <BLANKLINE>
     1 mutant: 1 caught, 0 nothing noticed, 0 the compiler rejected, 0 timed out.
 
-    Nothing to mutate is an honest way to test nothing, and it has to say so in
-    words that cannot be read as everything having passed:
-
-    >>> say_what_it_found(Run(declared=0))
-    No mutant was tested, because nothing in these lines can be mutated.
-    That is not the same as every mutant being caught.
     """
-    if run.declared == 0:
-        print("No mutant was tested, because nothing in these lines can be mutated.")
-        print("That is not the same as every mutant being caught.")
-        return
-
     if run.missed:
         print("Nothing was watching this:")
         for name in run.missed:
