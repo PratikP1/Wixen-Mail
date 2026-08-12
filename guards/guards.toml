@@ -2126,8 +2126,7 @@ red = [
 [[guard]]
 name = "cancelled days go out grouped by what each value says"
 file = "src/service/caldav.rs"
-before = """        let day = a_cancelled_day_taken_apart(one);
-        match day.form {
+before = """        match day.form {
             CancelledDayForm::SaysUtc => says_for_itself.push(day.clock_face),
             CancelledDayForm::WholeDay => whole_days.push(day.clock_face),
             CancelledDayForm::ClockFace => {
@@ -2138,8 +2137,7 @@ before = """        let day = a_cancelled_day_taken_apart(one);
                 }
             }
         }"""
-after = """        let day = a_cancelled_day_taken_apart(one);
-        let under = day.its_own_zone.or(zone);
+after = """        let under = day.its_own_zone.or(zone);
         match clock_faces.iter_mut().find(|(named, _)| *named == under) {
             Some((_, faces)) => faces.push(day.clock_face),
             None => clock_faces.push((under, vec![day.clock_face])),
@@ -2150,6 +2148,52 @@ red = [
     "service::caldav::tests::test_a_day_called_off_lands_on_the_line_its_own_form_belongs_on",
     "service::caldav::tests::test_a_mixed_list_of_cancelled_days_splits_by_what_each_value_says",
     "service::caldav::tests::test_a_time_stored_with_a_small_z_still_goes_back_out_saying_it_is_utc",
+]
+
+# The column holds two shapes, and a comma means something different in each.
+# Deciding which shape it is before splitting is the whole of the rule, and
+# splitting first is how the zone written once at the front of a row stopped
+# reaching the days named after the first comma.
+
+[[guard]]
+name = "a whole property line is told from a list of values before either is split"
+file = "src/service/caldav.rs"
+before = """    let column = column.trim();
+    if names_the_property(column, "EXDATE")
+        && let Some((in_front, values)) = column.split_once(':')
+    {"""
+after = """    let column = column.trim();
+    if false
+        && let Some((in_front, values)) = column.split_once(':')
+    {"""
+red = [
+    "service::caldav::tests::test_a_row_written_the_old_way_keeps_its_zone_on_every_day_it_names",
+    "service::caldav::tests::test_the_column_is_walked_by_one_routine_whatever_shape_it_holds",
+]
+
+[[guard]]
+name = "a day already called off is recognised by its clock face and its zone"
+file = "src/application/calendar.rs"
+before = """        named_already |= day.clock_face == new_day.clock_face
+            && day.its_own_zone.or(its_zone) == new_day.its_own_zone.or(its_zone);
+        all.push(a_cancelled_day_stored(day.its_own_zone, day.clock_face));"""
+after = """        named_already |= a_cancelled_day_stored(day.its_own_zone, day.clock_face) == called_off;
+        all.push(a_cancelled_day_stored(day.its_own_zone, day.clock_face));"""
+red = [
+    "application::calendar::tests::test_a_day_a_row_written_the_old_way_already_calls_off_is_not_named_twice",
+]
+
+[[guard]]
+name = "a row written out again keeps the zone each day it names arrived under"
+file = "src/application/calendar.rs"
+before = """        all.push(a_cancelled_day_stored(day.its_own_zone, day.clock_face));
+    }
+    if !named_already {"""
+after = """        all.push(day.clock_face.to_string());
+    }
+    if !named_already {"""
+red = [
+    "application::calendar::tests::test_calling_a_day_off_a_row_written_the_old_way_leaves_one_reading_of_it",
 ]
 
 [[guard]]
@@ -2197,8 +2241,10 @@ before = """                let under = day.its_own_zone.or(zone);"""
 after = """                let under = zone;"""
 red = [
     "application::caldav_sync::tests::test_a_new_event_whose_cancelled_day_names_a_zone_we_cannot_describe_stays_waiting",
+    "application::calendar::tests::test_calling_a_day_off_a_row_written_the_old_way_leaves_one_reading_of_it",
     "service::caldav::tests::test_a_cancelled_day_in_a_windows_zone_goes_back_out_in_that_zone",
     "service::caldav::tests::test_a_cancelled_day_the_clocks_skipped_keeps_the_zone_it_was_written_in",
+    "service::caldav::tests::test_a_row_written_the_old_way_keeps_its_zone_on_every_day_it_names",
     "service::caldav::tests::test_cancelled_days_in_two_zones_go_out_on_a_line_each",
 ]
 

@@ -165,25 +165,19 @@ fn days_called_off(
     let Some(written) = written else {
         return std::collections::HashSet::new();
     };
-    written
-        .split(',')
-        .filter_map(|one| {
-            // Taken apart by the one routine the calendar reader and the
-            // calendar writer use, so there are not two answers about what a
-            // stored cancelled day is. There were: this reader stripped
-            // anything in front of a colon and the writer assumed bare digits,
-            // and that gap is how a cancellation went back to a server with
-            // its own property name written in front of it twice.
-            //
-            // The day is still read from the digits. Every value that carries
-            // a zone carries one this program could not convert, so the digits
-            // are the only day it can be said to fall on, which is the answer
-            // this reader has always given.
-            the_day_called_off(
-                crate::service::caldav::a_cancelled_day_taken_apart(one).clock_face,
-                the_events_offset,
-            )
-        })
+    // Walked by the one routine the calendar reader and the calendar writer
+    // use, so there are not two answers about what this column holds. There
+    // were: this reader stripped anything in front of a colon and the writer
+    // assumed bare digits, and that gap is how a cancellation went back to a
+    // server with its own property name written in front of it twice.
+    //
+    // The day is still read from the digits. Every value that carries a zone
+    // carries one this program could not convert, so the digits are the only
+    // day it can be said to fall on, which is the answer this reader has
+    // always given.
+    crate::service::caldav::the_cancelled_days_in(written)
+        .into_iter()
+        .filter_map(|day| the_day_called_off(day.clock_face, the_events_offset))
         .collect()
 }
 

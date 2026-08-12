@@ -1461,31 +1461,46 @@ pub const fn a_repeat_kept_here_only(goes: WhereAChangeGoes) -> Option<&'static 
 /// A day already called off is left alone rather than named twice. The reader
 /// counts days into a set, so a second copy changes nothing there, but the
 /// writer puts every value on the wire and a server is entitled to refuse a
-/// document that calls the same day off twice.
+/// document that calls the same day off twice. Whether it is the same day is a
+/// question about a clock face and a zone, where a value carrying no zone of
+/// its own means the series' own zone. Asked of the text, it could not see
+/// that a row written the old way spells the same day differently, and named
+/// it twice.
+///
+/// Every day already on the row is written out again as a stored value, so a
+/// row written the old way, which holds a whole property line, is left holding
+/// values instead. Without that, appending a day to such a row makes a column
+/// that reads two ways: as a property line whose zone at the front covers the
+/// new day too, which is an instant nobody called off, or as separate values,
+/// which loses that zone off the front. The column is written to one reading
+/// here so nothing downstream has to guess between them.
 ///
 /// The repeat rule is never read here, only carried. Two different languages
 /// end up in that column, so anything that parses it has to answer for both,
 /// and this does not need to.
 pub fn one_day_called_off(series: &CalendarEventEntry, the_day_opened: &str) -> CalendarEventEntry {
-    let called_off =
-        crate::service::caldav::the_called_off_value_for(the_day_opened, series.is_all_day);
-    let already = series
-        .exception_dates
-        .as_deref()
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-    let named_already = already
-        .split(',')
-        .map(str::trim)
-        .any(|one| one == called_off);
-    let all = if named_already {
-        already
-    } else if already.is_empty() {
-        called_off
-    } else {
-        format!("{already},{called_off}")
+    use crate::service::caldav::{
+        a_cancelled_day_stored, a_cancelled_day_taken_apart, the_called_off_value_for,
+        the_cancelled_days_in,
     };
+
+    let called_off = the_called_off_value_for(the_day_opened, series.is_all_day);
+    let new_day = a_cancelled_day_taken_apart(&called_off);
+    let its_zone = series.time_zone.as_deref();
+    let mut named_already = false;
+    let mut all: Vec<String> = Vec::new();
+    for day in the_cancelled_days_in(series.exception_dates.as_deref().unwrap_or_default()) {
+        named_already |= day.clock_face == new_day.clock_face
+            && day.its_own_zone.or(its_zone) == new_day.its_own_zone.or(its_zone);
+        all.push(a_cancelled_day_stored(day.its_own_zone, day.clock_face));
+    }
+    if !named_already {
+        all.push(a_cancelled_day_stored(
+            new_day.its_own_zone,
+            new_day.clock_face,
+        ));
+    }
+    let all = all.join(",");
     CalendarEventEntry {
         exception_dates: Some(all),
         // The series is a change nobody has told the calendar about yet.
@@ -2511,6 +2526,75 @@ mod tests {
                 .as_deref()
                 .expect("one day called off")
         );
+    }
+
+    #[test]
+    fn test_calling_a_day_off_a_row_written_the_old_way_leaves_one_reading_of_it() {
+        // Rows written before this column carried a zone hold a whole property
+        // line, parameters at the front and every day on it under them.
+        // Appending a bare day to one of those makes a column that reads two
+        // ways: as a line whose zone covers the new day too, which is an
+        // instant nobody called off, or as values that each speak for
+        // themselves, which loses the zone off the front. So the row is
+        // written out again as values the moment a day is called off it.
+        let mut series = a_weekly_series(
+            "2026-03-05T09:00:00+00:00",
+            "2026-03-05T09:15:00+00:00",
+            false,
+        );
+        series.time_zone = Some("Europe/London".to_string());
+        series.exception_dates = Some("EXDATE;TZID=America/New_York:20260312T090000".to_string());
+
+        let after = one_day_called_off(&series, "2026-03-19T09:00:00+00:00");
+
+        let column = after
+            .exception_dates
+            .as_deref()
+            .expect("two days called off");
+        assert!(
+            !column.to_ascii_uppercase().contains("EXDATE"),
+            "the column still holds a property name, so it reads two ways: {column}"
+        );
+        let lines = crate::service::caldav::cancelled_day_lines(column, Some("Europe/London"));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("America/New_York") && line.contains("20260312T090000")),
+            "the day the server put in New York lost its zone: {lines:?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("Europe/London") && line.contains("20260319T090000")),
+            "the day just called off is not under the meeting's own zone: {lines:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_day_a_row_written_the_old_way_already_calls_off_is_not_named_twice() {
+        // Compared as a day and a zone rather than as text. A row written the
+        // old way spells the same day differently, so a text compare cannot
+        // see that it is the same one, and the document then calls it off
+        // twice, which a server is entitled to refuse.
+        let mut series = a_weekly_series(
+            "2026-08-03T09:00:00+05:30",
+            "2026-08-03T09:15:00+05:30",
+            false,
+        );
+        series.exception_dates = Some("EXDATE;TZID=Asia/Kolkata:20260803T090000".to_string());
+
+        let after = one_day_called_off(&series, "2026-08-03T09:00:00+05:30");
+
+        let column = after
+            .exception_dates
+            .as_deref()
+            .expect("one day called off");
+        let named: usize =
+            crate::service::caldav::cancelled_day_lines(column, Some("Asia/Kolkata"))
+                .iter()
+                .map(|line| line.matches("20260803T090000").count())
+                .sum();
+        assert_eq!(named, 1, "the day is called off {named} times: {column}");
     }
 
     #[test]

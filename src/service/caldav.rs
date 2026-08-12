@@ -1611,13 +1611,64 @@ pub(crate) struct ACancelledDay<'a> {
     form: CancelledDayForm,
 }
 
+/// Every cancelled day the stored column names.
+///
+/// The column holds two shapes, and the difference between them is what a
+/// comma means. A list of stored values is what everything written here since
+/// the column grew a zone holds, and there a comma separates values that each
+/// say for themselves which zone they belong to. A whole property line is what
+/// rows written the old way hold, and there the parameters are written once at
+/// the front and belong to every value on the line.
+///
+/// So the shape is decided before anything is split. Splitting first and
+/// asking afterwards read the first value with the line's zone on it and left
+/// every value after the first comma bare, and a bare value is then dressed in
+/// the meeting's own zone: a renamed instant, up to five hours out, on exactly
+/// the Outlook and Exchange shape the zone was kept for.
+pub(crate) fn the_cancelled_days_in(column: &str) -> Vec<ACancelledDay<'_>> {
+    let column = column.trim();
+    if names_the_property(column, "EXDATE")
+        && let Some((in_front, values)) = column.split_once(':')
+    {
+        let its_own_zone = in_front
+            .split_once(';')
+            .and_then(|(_, parameters)| parameter_among(parameters, TIME_ZONE_PARAMETER));
+        return each_value_in(values)
+            .map(|clock_face| ACancelledDay {
+                its_own_zone,
+                clock_face,
+                form: form_of_a_cancelled_day(clock_face),
+            })
+            .collect();
+    }
+    each_value_in(column)
+        .map(a_cancelled_day_taken_apart)
+        .collect()
+}
+
+/// The comma-separated values of one column or one property line, with the
+/// blanks a trailing comma leaves dropped.
+fn each_value_in(values: &str) -> impl Iterator<Item = &str> {
+    values
+        .split(',')
+        .map(str::trim)
+        .filter(|one| !one.is_empty())
+}
+
 /// One stored cancelled day taken apart.
 ///
-/// Three shapes arrive and all three are read: a bare clock face, which is
-/// what a value converted into the event's own zone is stored as; a clock face
+/// Two shapes arrive and both are read: a bare clock face, which is what a
+/// value converted into the event's own zone is stored as, and a clock face
 /// behind the zone it belongs to, which is what a value nothing here can
-/// convert is stored as; and a whole property line, which is the shape rows
-/// written from Google have always held.
+/// convert is stored as. A whole property line naming one day comes apart the
+/// same way, because a property name in front of the parameters is discarded
+/// and the parameters are read where they always are.
+///
+/// One value, never the whole column. A column holds its days separated by
+/// commas, and a property line separates its own values the same way while
+/// meaning something different by it, so the column is walked by
+/// [`the_cancelled_days_in`] and that is the one place the difference is
+/// decided.
 ///
 /// Split at the last colon. A clock face never holds one and a quoted zone
 /// name is allowed to, so the last colon is the one that divides them.
@@ -1650,7 +1701,7 @@ pub(crate) fn a_cancelled_day_taken_apart(one: &str) -> ACancelledDay<'_> {
 /// joins its days with commas, so such a name would split one cancelled day
 /// into two and call off a day nobody named. No real zone name holds one, and
 /// it is handled here rather than left to chance.
-fn a_cancelled_day_stored(its_own_zone: Option<&str>, clock_face: &str) -> String {
+pub(crate) fn a_cancelled_day_stored(its_own_zone: Option<&str>, clock_face: &str) -> String {
     match its_own_zone {
         Some(named) if named.contains(',') => {
             tracing::warn!(
@@ -1685,12 +1736,7 @@ pub(crate) fn cancelled_day_lines(called_off: &str, zone: Option<&str>) -> Vec<S
     // holds them and a document read back names its instants in that order.
     let mut clock_faces: Vec<(Option<&str>, Vec<&str>)> = Vec::new();
     let mut whole_days: Vec<&str> = Vec::new();
-    for one in called_off
-        .split(',')
-        .map(str::trim)
-        .filter(|one| !one.is_empty())
-    {
-        let day = a_cancelled_day_taken_apart(one);
+    for day in the_cancelled_days_in(called_off) {
         match day.form {
             CancelledDayForm::SaysUtc => says_for_itself.push(day.clock_face),
             CancelledDayForm::WholeDay => whole_days.push(day.clock_face),
@@ -3427,6 +3473,93 @@ mod tests {
             assert_eq!(apart.clock_face, face, "the face {stored} came back as");
             assert_eq!(apart.form, day.form, "the form {stored} came back as");
         }
+    }
+
+    #[test]
+    fn test_the_column_is_walked_by_one_routine_whatever_shape_it_holds() {
+        // The column holds two shapes and the difference is what a comma
+        // means. In a list of stored values a comma separates values that each
+        // speak for themselves; on a whole property line, which is what rows
+        // written the old way hold, a comma separates values that all belong
+        // to the parameters written once at the front. Splitting first cannot
+        // tell those apart, so the walk is asked here and nowhere else.
+        for (column, wanted) in [
+            (
+                "20260312T090000",
+                vec![(None, "20260312T090000", CancelledDayForm::ClockFace)],
+            ),
+            // Stored values, each carrying its own zone or carrying none.
+            (
+                "TZID=America/New_York:20260312T090000,20260319T090000",
+                vec![
+                    (
+                        Some("America/New_York"),
+                        "20260312T090000",
+                        CancelledDayForm::ClockFace,
+                    ),
+                    (None, "20260319T090000", CancelledDayForm::ClockFace),
+                ],
+            ),
+            // A whole property line: what is written once at the front belongs
+            // to every value on it.
+            (
+                "EXDATE;TZID=Europe/London:20260312T090000,20260319T090000",
+                vec![
+                    (
+                        Some("Europe/London"),
+                        "20260312T090000",
+                        CancelledDayForm::ClockFace,
+                    ),
+                    (
+                        Some("Europe/London"),
+                        "20260319T090000",
+                        CancelledDayForm::ClockFace,
+                    ),
+                ],
+            ),
+            (
+                "EXDATE;VALUE=DATE:20260312,20260319",
+                vec![
+                    (None, "20260312", CancelledDayForm::WholeDay),
+                    (None, "20260319", CancelledDayForm::WholeDay),
+                ],
+            ),
+            (
+                "EXDATE:20260312T090000Z",
+                vec![(None, "20260312T090000Z", CancelledDayForm::SaysUtc)],
+            ),
+        ] {
+            let found: Vec<(Option<&str>, &str, CancelledDayForm)> = the_cancelled_days_in(column)
+                .iter()
+                .map(|day| (day.its_own_zone, day.clock_face, day.form))
+                .collect();
+
+            assert_eq!(found, wanted, "the days named by {column}");
+        }
+    }
+
+    #[test]
+    fn test_a_row_written_the_old_way_keeps_its_zone_on_every_day_it_names() {
+        // A row stored as a whole property line names its zone once, at the
+        // front, and every day after the first comma is under it too. Read a
+        // value at a time, the second day loses that zone and is dressed in
+        // the meeting's own, which is a different instant on exactly the shape
+        // the zone was kept for.
+        let lines = cancelled_day_lines(
+            "EXDATE;TZID=America/New_York:20260312T090000,20260319T090000",
+            Some("Europe/London"),
+        );
+
+        assert_eq!(
+            lines,
+            vec!["EXDATE;TZID=America/New_York:20260312T090000,20260319T090000"],
+            "a row written the old way went out as {lines:?}"
+        );
+        assert!(
+            !lines.iter().any(|line| line.contains("Europe/London")),
+            "a day the server put in New York went out under the meeting's own \
+             zone: {lines:?}"
+        );
     }
 
     #[test]
