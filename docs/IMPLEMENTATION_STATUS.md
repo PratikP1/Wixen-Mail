@@ -145,6 +145,33 @@ A later sweep, on 2026-08-01, took the message filters, due dates, tagging and
 signatures modules through the same measurement: 157 mutants, 141 caught, 16
 that would not compile, and none missed.
 
+On 2026-08-12, at commit 0bc0614, the four modules that decide what becomes of
+somebody's copy of a message were measured for the first time: where a deleted
+message may go, the copy of a draft kept at the server, the copy of a sent
+message, and what the list does once the server has answered a delete. 66
+mutants, 53 caught, 1 missed, 12 that would not compile, none timed out. The
+suite answered for 54 of the 66, so 18 percent of that run asked nothing. It
+took two runs to get there, because the first was killed after 35 of them; each
+of the four files was finished within one run, and no file's result is spread
+across both.
+
+The one survivor was the closing of the connection a queue of outgoing mail
+opens. Emptied out, the whole suite still passed, so a build that held a
+connection open at the server after every send would have gone out. It is
+pinned now.
+
+Two things that run could not see matter more than the one it found. No mutant
+is produced for the early return that stops a reason the server already
+punctuated being punctuated again, so a doubled full stop in the middle of the
+sentence saying where a message ended up was untested in both of the two places
+that sentence is built. And of the four mutants in the module deciding what the
+list does after a delete, two would not compile and the other two are about the
+sentence for a change that never reached the server, so a clean result there
+means two questions were asked about the least consequential function in the
+file. The lists of endings it walks are written out by hand and nothing made
+them keep up with the two sets of endings they stand for. Both gaps are tests
+now.
+
 Line coverage was 60.4% when last measured, on 2026-07-26, with
 `cargo llvm-cov --lib --summary-only`. A great deal has landed since, so that
 number is the last measurement rather than today's answer. The least covered
