@@ -2405,6 +2405,44 @@ red = [
     "test_a_sweeping_negative_is_a_word_the_reading_already_knows",
 ]
 
+# ── A record in this file that had stopped naming one place ─────────────────
+#
+# A commit added a second sentence in the settings module opening on the same
+# two lines as the one a record here is about. The break matched twice from
+# then on, `scripts/guards.py` refuses to guess between two places, and that
+# record measured nothing for a whole commit while a report said the opposite.
+#
+# The runner is strict about this and nothing was strict about it at commit
+# time, and a full run is an hour or two that nothing forces. So the same
+# question is now asked in milliseconds by a test that reads this file. The two
+# breaks below are the two halves of that reading: text that appears twice, and
+# text that appears nowhere.
+
+[[guard]]
+name = "a break that could be applied in two places is refused rather than guessed at"
+file = "tests/house_style.rs"
+suite = "house_style"
+before = """    if found > 1 {"""
+after = """    if found > 2 {"""
+red = [
+    "test_the_guard_record_check_can_tell_the_two_apart",
+]
+
+[[guard]]
+name = "a break whose text has gone is not passed off as one that still points somewhere"
+file = "tests/house_style.rs"
+suite = "house_style"
+before = """    if found == 0 && !file_is_mid_measurement {"""
+after = """    if found == 0 && file_is_mid_measurement {"""
+# Two, measured rather than expected. Turning the exemption round makes the
+# reading complain about exactly the records a break is meant to excuse, and
+# this break is one of those records, so the sweep over the real file reports
+# itself and goes red alongside the made-up-input test.
+red = [
+    "test_every_guard_record_still_names_one_place_in_the_tree",
+    "test_the_guard_record_check_can_tell_the_two_apart",
+]
+
 # ── A change the mail server refused, reported as one that happened ─────────
 #
 # Two of the commands that write to a mailbox were sent through a helper that

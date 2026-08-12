@@ -3921,3 +3921,228 @@ fn test_only_the_calendar_document_writer_builds_a_day_in_the_calendar_format() 
         );
     }
 }
+
+/// What a guard record gets wrong about the one place it points at.
+///
+/// Over plain strings, so the rule can be proved on made-up input below rather
+/// than only on whatever the tree happens to hold today.
+///
+/// A break has to be exactly one edit, so text that appears twice is reported
+/// whatever else is true: the run cannot choose between two places and refuses
+/// to guess, and until somebody notices, that record measures nothing. Text
+/// that appears nowhere is the same fault with a different cause, and it is
+/// reported unless the file is mid-measurement, which is what
+/// `file_is_mid_measurement` is for and is explained on the caller.
+///
+/// Both sides are compared with one kind of line ending. This repository mixes
+/// them, and the runner that really applies these breaks reads every file with
+/// the line endings translated, so a break written with plain endings matches a
+/// file that ends its lines the other way. Comparing raw bytes here would
+/// report two records as moved that the runner applies without complaint, which
+/// is the same question answered two ways, and the reader that matters is the
+/// runner.
+fn what_the_guard_record_gets_wrong(
+    name: &str,
+    before: &str,
+    text: &str,
+    file_is_mid_measurement: bool,
+) -> Option<String> {
+    let found = text
+        .replace("\r\n", "\n")
+        .matches(&before.replace("\r\n", "\n"))
+        .count();
+    if found > 1 {
+        return Some(format!(
+            "{name}: the text this break replaces appears {found} times, and a \
+             break has to be exactly one edit, so this record cannot be measured \
+             at all. Anchor it on something that names one place, such as the \
+             routine it is inside."
+        ));
+    }
+    if found == 0 && !file_is_mid_measurement {
+        return Some(format!(
+            "{name}: the text this break replaces is not in that file any more, \
+             so somebody has moved the code this guard is about. Measure the \
+             guard by hand and write down what it really does now."
+        ));
+    }
+    None
+}
+
+/// Every guard record still points at exactly one place in the tree.
+///
+/// `scripts/guards.py` is strict about this when it runs, and nothing was
+/// strict about it at commit time, so a record went a whole commit pointing at
+/// two places while a report said the opposite. A full guards run is an hour or
+/// two and nothing forces one; this is the same question answered in
+/// milliseconds on every commit.
+///
+/// What it cannot see: whether the list of tests beside each record is still
+/// true. That answer costs a build and a run per record and only
+/// `scripts/guards.sh` has it. This says a record still points somewhere, not
+/// that it still guards anything.
+///
+/// The mid-measurement exemption is load-bearing rather than politeness.
+/// `scripts/guards.py` applies a break and then runs the suite the record
+/// names, and seven records name this suite, so this test runs with their break
+/// sitting in the tree. Two of those seven share one identical before-text, so
+/// breaking either leaves the other with nothing to match. Without the
+/// exemption every one of those runs would report a test going red that the
+/// record does not name, and the natural next move would be to weaken this
+/// check. A file counts as mid-measurement when some record naming it has an
+/// after-text present while that record's own before-text is absent, which is
+/// exactly the state a break leaves the file in.
+///
+/// The exemption's own blind spot: a record whose after-text happens to sit in
+/// the tree for real would mark its file mid-measurement for good and hide a
+/// genuine "this text has gone" from every record naming that file. Nothing
+/// here can tell those two apart. Doubled text is reported either way, which is
+/// why that rule has no exemption.
+///
+/// No record naming this suite has an empty after-text today. If one is ever
+/// added, this exemption has to be looked at again, because an empty after
+/// deletes the before rather than replacing it and leaves nothing to recognise
+/// the break by.
+#[test]
+fn test_every_guard_record_still_names_one_place_in_the_tree() {
+    let written: toml::Value =
+        toml::from_str(&fs::read_to_string("guards/guards.toml").expect("the record of guards"))
+            .expect("the record of guards to parse");
+    let records = written
+        .get("guard")
+        .and_then(toml::Value::as_array)
+        .expect("the record of guards to hold guards");
+
+    let field = |record: &toml::Value, key: &str| -> String {
+        record
+            .get(key)
+            .and_then(toml::Value::as_str)
+            .unwrap_or_else(|| panic!("a guard record with no {key}"))
+            .to_string()
+    };
+
+    let mut read: Vec<(String, String, String, String)> = Vec::new();
+    for record in records {
+        let file = field(record, "file");
+        let text =
+            fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", field(record, "name")));
+        read.push((field(record, "name"), file, field(record, "before"), text));
+    }
+
+    // Proving the measurement: a parse that quietly found nothing, or fields
+    // that quietly came back empty, would report a clean tree and read exactly
+    // like one.
+    assert!(
+        read.len() > 150,
+        "only {} guard records were read, so the reading is broken",
+        read.len()
+    );
+    for (name, file, before, _) in &read {
+        assert!(
+            !name.is_empty() && !file.is_empty() && !before.is_empty(),
+            "a guard record came back with an empty field, so the reading is broken"
+        );
+    }
+
+    let mid_measurement: Vec<String> = records
+        .iter()
+        .filter(|record| {
+            let after = field(record, "after").replace("\r\n", "\n");
+            let file = field(record, "file");
+            let text = fs::read_to_string(&file)
+                .unwrap_or_default()
+                .replace("\r\n", "\n");
+            !after.is_empty()
+                && text.contains(&after)
+                && !text.contains(&field(record, "before").replace("\r\n", "\n"))
+        })
+        .map(|record| field(record, "file"))
+        .collect();
+
+    let wrong: Vec<String> = read
+        .iter()
+        .filter_map(|(name, file, before, text)| {
+            what_the_guard_record_gets_wrong(name, before, text, mid_measurement.contains(file))
+        })
+        .collect();
+    // Both ways written out rather than one built from a stem and an "s". This
+    // project keeps a guard called "a count and the thing it counts agree in
+    // number", and the first run of this test printed "1 guard records".
+    let how_many = if wrong.len() == 1 {
+        "1 guard record no longer names".to_string()
+    } else {
+        format!("{} guard records no longer name", wrong.len())
+    };
+    assert!(
+        wrong.is_empty(),
+        "{how_many} one place in the tree:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_guard_record_check_can_tell_the_two_apart() {
+    // Made-up text only. This never reads `guards/guards.toml`, because
+    // records in that file break this suite and a proving test that read the
+    // tree would go red under every one of them.
+    let once = "fn changes_waiting_here() {}\nfn removals_waiting_here() {}\n";
+    assert!(
+        what_the_guard_record_gets_wrong("sound", "fn changes_waiting_here() {}", once, false)
+            .is_none(),
+        "a record that names one place was reported as broken"
+    );
+
+    let twice =
+        "fn a(count: usize) {\n    match count {\n}\nfn b(count: usize) {\n    match count {\n}\n";
+    let doubled = what_the_guard_record_gets_wrong(
+        "doubled",
+        "(count: usize) {\n    match count {",
+        twice,
+        false,
+    )
+    .expect("a record matching twice to be reported");
+    assert!(
+        doubled.contains("appears 2 times"),
+        "the count of places a doubled record matches was not said: {doubled}"
+    );
+
+    // Reported even mid-measurement. A break cannot choose between two places
+    // whatever else is going on.
+    assert!(
+        what_the_guard_record_gets_wrong(
+            "doubled",
+            "(count: usize) {\n    match count {",
+            twice,
+            true,
+        )
+        .is_some(),
+        "a record matching twice was let through because its file was being measured"
+    );
+
+    assert!(
+        what_the_guard_record_gets_wrong("gone", "fn nothing_here() {}", once, false)
+            .expect("a record matching nothing to be reported")
+            .contains("not in that file any more"),
+        "a record whose text has gone was not reported"
+    );
+    assert!(
+        what_the_guard_record_gets_wrong("gone", "fn nothing_here() {}", once, true).is_none(),
+        "a record whose text is absent because its own file is mid-measurement was reported"
+    );
+
+    // The line endings this repository mixes. Two records really do point at
+    // files that end their lines the other way, and the runner applies both of
+    // them, so reading the bytes as they stand would report two guards as moved
+    // that are exactly where they say they are.
+    let other_endings = "fn changes_waiting_here() {}\r\nfn removals_waiting_here() {}\r\n";
+    assert!(
+        what_the_guard_record_gets_wrong(
+            "sound",
+            "fn changes_waiting_here() {}\nfn removals_waiting_here() {}",
+            other_endings,
+            false,
+        )
+        .is_none(),
+        "a record pointing at a file that ends its lines the other way was reported as moved"
+    );
+}
