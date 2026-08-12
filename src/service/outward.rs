@@ -554,6 +554,11 @@ mod wiring {
         // The specific one that matters most. SmtpClient::new cannot send, so
         // a send path that only ever calls it is a mail client that cannot
         // post a message.
+        //
+        // What this cannot see: whether that call is on the path a send takes.
+        // It asks only that the words appear somewhere in the controller. A
+        // controller that builds a client which can send inside a branch
+        // nothing reaches, and refuses everywhere else, keeps this green.
         let source =
             std::fs::read_to_string("src/application/mail_controller.rs").expect("the controller");
 

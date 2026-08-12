@@ -729,7 +729,14 @@ mod tests {
         after[..end].to_string()
     }
 
-    /// What one arm gets wrong about the order it does things in.
+    /// What one arm gets wrong about asking, and about acting on the answer.
+    ///
+    /// Two rules, and asking used to be the only one. Asking early is not the
+    /// behaviour: taking the other branch when the answer is no is. An arm that
+    /// asks, reads the refusal out and then queues the change anyway keeps
+    /// every order this used to check, and it is the shape that has come up
+    /// three times in this project now. So the refusal and the thing it refuses
+    /// have to sit on opposite branches.
     fn what_the_arm_gets_wrong(arm: &str, before: &[&str]) -> Vec<String> {
         let Some(asked) = arm.find("can_be_honoured(") else {
             return vec![
@@ -738,14 +745,38 @@ mod tests {
                     .to_string(),
             ];
         };
-        before
-            .iter()
-            .filter_map(|later| {
-                arm.find(later)
-                    .filter(|at| *at < asked)
-                    .map(|_| format!("{later} happens before the answer is asked about"))
-            })
-            .collect()
+        let mut wrong = Vec::new();
+        for later in before {
+            let Some(acted) = arm.find(later) else {
+                continue;
+            };
+            if acted < asked {
+                wrong.push(format!("{later} happens before the answer is asked about"));
+                continue;
+            }
+            let Some(refused) = arm.find("&refused") else {
+                wrong.push(
+                    "the arm asks and never reads the refusal out, so a calendar that \
+                     will not take the change says nothing at all"
+                        .to_string(),
+                );
+                continue;
+            };
+            // Measured from the refusal onwards, because the refusal is itself
+            // one of these calls: the sentence is said with the same routine
+            // that says what is waiting, so the first match is the refusal and
+            // the one that matters is the next.
+            let Some(acted) = arm[refused..].find(later).map(|at| refused + at) else {
+                continue;
+            };
+            if !arm[refused..acted].contains("else") {
+                wrong.push(format!(
+                    "{later} runs whether the answer was refused or not, so the \
+                     refusal is read out and the calendar is changed anyway"
+                ));
+            }
+        }
+        wrong
     }
 
     /// What this window says without saying it out loud.
@@ -783,6 +814,11 @@ mod tests {
         // one day" on a Google, an Outlook or a read-only calendar by putting
         // the refusal on a line of text and queueing nothing, so a refusal that
         // used to be read out at once became silence.
+        //
+        // What this cannot see: whether the announcement reaches a screen
+        // reader, and whether the sentence handed to it is a true one. It asks
+        // that one routine both shows and says, and that nothing else in the
+        // window puts a sentence on the line by itself.
         let source = the_calendar_window();
         let wrong = what_the_window_never_says(&source);
         assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
@@ -905,6 +941,21 @@ mod tests {
             "an arm that never asks was not reported"
         );
 
+        // Asking and then doing it anyway, which is the shape the order rule
+        // above cannot see: everything still happens in the right order and the
+        // refusal is read out, and the change is queued all the same.
+        let asks_and_does_it_anyway =
+            sound.replace("                } else {\n", "                }\n");
+        let wrong = what_the_arm_gets_wrong(
+            &asks_and_does_it_anyway,
+            &["actions.push(", "said_and_shown("],
+        );
+        assert!(
+            wrong.iter().any(|said| said.contains("refused or not")),
+            "an arm that reads the refusal out and queues the change anyway was \
+             reported as sound: {wrong:?}"
+        );
+
         // And the tests underneath are really cut off, because they quote every
         // sentence the check looks for.
         let window = the_calendar_window();
@@ -963,6 +1014,10 @@ mod tests {
         // cannot be ticked at all, so the question opened with focus on Cancel
         // and the answer that would be taken was nowhere in what a screen
         // reader read out.
+        //
+        // What this cannot see: whether a screen reader really reads that
+        // answer out when the window opens. Only a run with one says that.
+        // What is pinned here is that the code asks for the right thing.
         let window = the_window_that_asks();
 
         assert!(
@@ -1025,6 +1080,11 @@ mod tests {
         // Both answers act on somebody's calendar and one of them acts on every
         // day of it. Enter pressed partway through hearing the question must
         // change nothing.
+        //
+        // What this cannot see: what Enter really does when the window is on
+        // screen. It asks that one button in the source is made the default and
+        // that nothing else is. A framework that ignores that call, or a
+        // control that swallows Enter first, keeps this green.
         let window = the_window_that_asks();
 
         assert!(

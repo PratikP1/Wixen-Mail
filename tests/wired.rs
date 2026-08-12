@@ -15,6 +15,19 @@
 //!
 //! A compiler cannot see this: both halves are live code and the id is used at
 //! both ends. Only asking "and who sends it?" finds it.
+//!
+//! What none of the menu and shortcut checks in this file can see, said once
+//! here rather than nine times below. A key bound to a menu item proves Windows
+//! will dispatch it and the handler will be entered. It says nothing about what
+//! the handler then does, whether the right thing is on the screen when it
+//! runs, or whether anybody hears the answer. Every one of them can be green
+//! with the command doing the wrong thing every time it is pressed.
+//!
+//! The same holds for the handler checks further down, which read the source of
+//! the main window because reaching those paths needs a window, an account with
+//! stored credentials and a mail server. Each says what it is blind to in its
+//! own words, because what stays green while the behaviour goes is different
+//! for each of them.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -456,6 +469,11 @@ fn test_the_menu_key_is_given_to_every_list_and_tree() {
 /// It was sent with no `In-Reply-To` for one reason only: the list row did not
 /// carry the original's `Message-ID`. It does now, so the receipt arrives in
 /// the sender's thread instead of as loose mail with a subject line.
+///
+/// What this cannot see: whether the identifier read off the row is the right
+/// one, or whether it is empty. It asks only that nothing files a receipt
+/// against nothing and that something on that path reads the original's
+/// identifier. A receipt naming the wrong message keeps this green.
 #[test]
 fn test_a_read_receipt_names_the_message_it_is_about() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
@@ -641,6 +659,11 @@ DeletedGoesTo::NoTrashFolderFound => {
 ///
 /// Read from the source because reaching this handler needs a window, an
 /// account with stored credentials and a mail server.
+///
+/// What this cannot see: whether the answer is acted on. It compares where two
+/// calls sit and nothing else, so a handler that asks first, throws the answer
+/// away and connects regardless keeps this green. The arms are read for that
+/// separately below, which is the half this one used to be trusted for.
 #[test]
 fn test_nothing_asks_a_server_to_delete_before_asking_where_it_goes() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
@@ -718,6 +741,11 @@ fn test_a_delete_with_no_recognised_trash_is_refused_rather_than_sent() {
 /// wrote its own sentence a few lines below one that said the same event
 /// differently. Two pieces of code answering one question is how the list and
 /// the server came to disagree in the first place.
+///
+/// What this cannot see: whether the one place gives the right answer, or
+/// whether what it gives back is used. It asks that the handler calls it and
+/// words no outcome itself. A handler that calls it, ignores the answer and
+/// takes the row out every time keeps this green.
 #[test]
 fn test_the_delete_and_move_handlers_ask_one_place_what_to_say_and_what_to_do() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
@@ -750,6 +778,12 @@ fn test_the_delete_and_move_handlers_ask_one_place_what_to_say_and_what_to_do() 
 /// no copy on the server at all, and the only record of it was a line in a file
 /// nobody reads. The person went on writing, believing their other devices had
 /// it.
+///
+/// What this cannot see: whether the sentence is ever sent. It asks that the
+/// handler works the answer out and that the routine below it holds the call
+/// that speaks. A handler that works the answer out and drops it on a branch
+/// nothing takes keeps this green, and so does one that speaks a sentence
+/// saying the opposite of what happened.
 #[test]
 fn test_a_draft_the_server_would_not_take_reaches_the_person() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
@@ -783,6 +817,10 @@ fn test_a_draft_the_server_would_not_take_reaches_the_person() {
 /// runtime, and it is the calling that was missing before. A change nothing
 /// can send waits for ever and is looked at again on every sync, and the only
 /// place anybody learns that is the summary this feeds.
+///
+/// What this cannot see: whether the summary it is added to is ever read out.
+/// It asks that the sweep is called and that its answer is kept. A sync that
+/// keeps the answer in a list nothing reports keeps this green.
 #[test]
 fn test_the_calendar_sync_says_what_nothing_can_send() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
@@ -810,6 +848,10 @@ fn test_the_calendar_sync_says_what_nothing_can_send() {
 /// Read from the source because reaching either handler needs a window, a
 /// dialog somebody clicks through and a folder of files. What is asked here is
 /// only that neither call passes a literal, which is the whole of the defect.
+///
+/// What this cannot see: whether the value handed in is the account on the
+/// screen. It asks that a name rather than a quoted word is passed. A handler
+/// that passes the wrong account, or one that is empty, keeps this green.
 #[test]
 fn test_importing_and_exporting_cards_use_the_account_being_looked_at() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
@@ -845,6 +887,10 @@ fn test_importing_and_exporting_cards_use_the_account_being_looked_at() {
 /// What no test there can say is whether the window asks it, and asking is the
 /// half that was missing: reaching the composer needs a window, an account and
 /// a runtime.
+///
+/// What this cannot see: whether the setting read is the one the settings
+/// screen writes, or whether the composer ever opens. It asks that three calls
+/// are written and that the composer is handed the answer of the third.
 #[test]
 fn test_the_composer_asks_whether_a_signature_was_wanted() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");

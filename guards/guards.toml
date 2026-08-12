@@ -3322,6 +3322,26 @@ red = [
     "presentation::wx_calendar::tests::test_the_calendar_window_asks_before_it_says_anything",
 ]
 
+# The narrower edit, the third of this shape found in this project. The record
+# above takes the question away altogether. This one leaves the question asked
+# and the refusal read out, and takes away the branch, so the day is refused
+# out loud and queued for the calendar server in the same breath. Everything
+# still happens in the order the guard used to check.
+
+[[guard]]
+name = "a calendar answer that was refused is not queued anyway"
+file = "src/presentation/wx_calendar.rs"
+before = """                                said_and_shown(&status, a11y, &refused, Priority::High);
+                            } else {
+                                actions.push(CalendarAction::DeleteEvent(item.clone(), means));"""
+after = """                                said_and_shown(&status, a11y, &refused, Priority::High);
+                            }
+                            {
+                                actions.push(CalendarAction::DeleteEvent(item.clone(), means));"""
+red = [
+    "presentation::wx_calendar::tests::test_the_calendar_window_asks_before_it_says_anything",
+]
+
 [[guard]]
 name = "the calendar window says what is waiting rather than what is done"
 file = "src/presentation/wx_calendar.rs"

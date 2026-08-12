@@ -7246,6 +7246,11 @@ mod tests {
         // with its own cache, so there is no seam short of a running window.
         // Without the field carried through, the sentence is built in the
         // application layer and thrown away before anybody hears it.
+        //
+        // What this cannot see: whether what is carried through is ever said,
+        // or whether the sentence is true. It asks that the value is passed
+        // from one place to the next. A window that receives it and drops it
+        // keeps this green.
         let path = "src/presentation/wx_app.rs";
         let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
         // Read with the white space taken out, so a line the formatter decides

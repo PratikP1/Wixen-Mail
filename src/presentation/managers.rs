@@ -4931,6 +4931,11 @@ mod deletion_wiring {
         // off the row, nothing else in the suite goes red and the sentence
         // promising a calendar back at the next sync comes back for one made
         // on this computer, which nothing will ever put back.
+        //
+        // What this cannot see: whether the answer that comes back is used.
+        // It asks that the question is asked with the row's own values. A
+        // command that asks and then words the sentence from something else
+        // keeps this green.
         let source = the_code_these_checks_are_about();
 
         assert!(
@@ -6562,6 +6567,12 @@ one_day_of_a_series_changed(&cache, &series, &opened, that_day)
 
     #[test]
     fn test_every_answer_a_delete_gives_reaches_the_one_place_that_speaks_and_reloads() {
+        // What this cannot see: whether the sentences those exits carry are
+        // true, and whether the one place that speaks really speaks. It counts
+        // calls and their absence in the text of one command. The three rules
+        // it checks are proved on made-up input by the test below it, which is
+        // what stops a reading that finds nothing passing as one that finds
+        // everything.
         let source = std::fs::read_to_string("src/presentation/managers.rs")
             .expect("this file to be readable");
 

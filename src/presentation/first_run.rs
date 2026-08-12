@@ -170,6 +170,11 @@ mod tests {
         // book, calendar and tasks switched on without being told.
         //
         // Which answer it starts on is a separate question, and this is not it.
+        //
+        // What this cannot see: whether a screen reader really reads the
+        // ticked answer out when the screen opens. Only a run with one says
+        // that. What is pinned here is that the code asks for the right thing,
+        // in the right order, in one place.
         let window = the_window_that_draws_it();
 
         assert!(
@@ -222,6 +227,11 @@ mod tests {
         // Read from the source, the same way the focus rule above is, because
         // reaching the real answer needs a window. Whether a screen reader
         // speaks either of them is a separate question and this is not it.
+        //
+        // What this cannot see beyond that: whether either sentence is the
+        // right one for the answer it sits on. It asks that both calls are
+        // written and handed the explanation. A screen that puts every
+        // explanation on the same button keeps this green.
         let window = the_window_that_draws_it();
 
         assert!(

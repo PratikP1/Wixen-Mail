@@ -3034,6 +3034,11 @@ mod tests {
         // Without it the sync would send somebody's change to their calendar
         // server and then tell them nothing about it, which is the silence
         // this program treats as its worst failure.
+        //
+        // What this cannot see: whether the count it checks for is right, or
+        // whether the sync arm is ever entered. It asks that the counting is
+        // written where the sending is. A sync that counts every change as
+        // nought, or one nothing calls, keeps this green.
         let path = "src/presentation/wx_app.rs";
         let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
         let arm = source
