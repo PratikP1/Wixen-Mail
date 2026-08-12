@@ -410,6 +410,23 @@ pub fn ms_task_to_entry(task: &MsTodoTask, account_id: &str, list_id: &str) -> T
 }
 
 /// One of this application's tasks as Microsoft wants it.
+///
+/// # The priority goes out exactly as it was stored
+///
+/// The two halves of this file do not agree about what a priority is. Reading a
+/// task, anything that is not "high" or "low" is taken as "normal". Writing one,
+/// whatever is in the stored row leaves as Microsoft's importance, and Microsoft
+/// takes only those three words: anything else has the whole change refused, on
+/// every sync, for that task, and the person is told a sync had a problem
+/// without being told which task or why.
+///
+/// Nothing produces a fourth value today. The screen that asks offers exactly
+/// those three and lowercases the answer, and a task arriving from either
+/// service is put into one of the three on the way in. So this is written down
+/// rather than guarded: a guard needs a case where a bad value really reaches
+/// here and there is not one to point at. The value is read straight out of a
+/// database column, so if this ever does bite, what wrote that row is the thing
+/// to look at and not this function.
 pub fn entry_to_ms_task(task: &TaskEntry) -> MsTodoTask {
     MsTodoTask {
         id: strip_prefix(&task.id, "ms:"),
