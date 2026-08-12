@@ -2624,6 +2624,36 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 
+# ── A changelog entry for a fix nobody could have noticed ────────────────────
+#
+# The clearest shape of a changelog entry claiming a change that did not
+# happen: a value saying what became of somebody's mail is worked out, and the
+# only place in the running program that asks for it drops it. The entry
+# describing the improvement is then true of the code and false of the day.
+#
+# It really happened. Replacing a filed draft was changed to answer with how
+# many copies really went rather than how many were found, an entry announced
+# it, and the one caller threw the number away and appended regardless. The
+# compiler cannot see this, because discarding a value is legal.
+#
+# The break below is that shape put back into the draft path, which is where
+# it was. It runs against the house style suite, since the rule is about what
+# the tree says.
+
+[[guard]]
+name = "an answer about somebody's mail is read rather than thrown away"
+file = "src/application/draft_copy.rs"
+suite = "house_style"
+before = """        self.session
+            .remove_these(folder, uids)
+            .await
+            .map_err(|e| e.to_string())"""
+after = """        let _ = self.session.remove_these(folder, uids).await;
+        Ok(uids.len())"""
+red = [
+    "test_no_answer_about_somebody_s_mail_is_worked_out_and_thrown_away",
+]
+
 # ── An unrecognised trash used to mean a permanent deletion ─────────────────
 #
 # Three readers answer "is this folder the trash", and the last of them treated

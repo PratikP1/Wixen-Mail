@@ -3685,6 +3685,179 @@ fn test_what_a_change_touched_is_asked_the_same_way_in_both_places() {
     );
 }
 
+/// The methods that come back with something to say about somebody's mail.
+///
+/// Read out of the mail controller rather than listed here, because a list
+/// here is a second answer to what the controller offers and the two come
+/// apart the first time somebody adds a method.
+///
+/// `Result<()>` is left out on purpose: it carries a refusal and nothing
+/// else, so a caller that only looks at the failure has read all there is.
+fn answers_about_somebody_s_mail() -> Vec<String> {
+    let controller = fs::read_to_string(
+        Path::new("src")
+            .join("application")
+            .join("mail_controller.rs"),
+    )
+    .expect("the mail controller");
+    let production = controller
+        .split("#[cfg(test)]")
+        .next()
+        .unwrap_or_default()
+        .to_string();
+
+    let mut answering = Vec::new();
+    for (position, _) in production.match_indices("pub async fn ") {
+        let rest = &production[position..];
+        // To the end of the signature, so the several that run over more than
+        // one line are read as well as the short ones.
+        let Some(body_starts) = rest.find(" {\n") else {
+            continue;
+        };
+        let signature = &rest[..body_starts];
+        let declared = signature["pub async fn ".len()..].trim();
+        let Some(name) = declared.split('(').next() else {
+            continue;
+        };
+        if !signature.contains("-> ") {
+            continue;
+        }
+        let returns = signature.rsplit("-> ").next().unwrap_or_default().trim();
+        if returns.starts_with("Result<") && returns != "Result<()>" {
+            answering.push(name.trim().to_string());
+        }
+    }
+    answering
+}
+
+/// Where a value describing what happened to somebody's mail is dropped.
+///
+/// The shape, as it really occurred: the answer is worked out, the only place
+/// in the running program that asks for it throws it away, and the change
+/// gets written up in the changelog as something a person would notice. The
+/// compiler cannot see it, because discarding a value is legal, so this can.
+///
+/// Only the half of a file above the first `#[cfg(test)]` counts. A test may
+/// drop an answer it is not asking about.
+fn answers_thrown_away_in(path: &Path, text: &str, answering: &[String]) -> (usize, Vec<String>) {
+    if path.starts_with("tests") {
+        return (0, Vec::new());
+    }
+    let production = text.split("#[cfg(test)]").next().unwrap_or_default();
+
+    let mut seen = 0;
+    let mut dropped = Vec::new();
+    for (number, line) in production.lines().enumerate() {
+        for method in answering {
+            let call = format!(".{method}(");
+            if !line.contains(&call) {
+                continue;
+            }
+            seen += 1;
+            let before = line.split(&call).next().unwrap_or_default().trim_start();
+            let after = line.split(&call).nth(1).unwrap_or_default();
+            let thrown_away = before.starts_with("let _ =")
+                || before.starts_with("if let Err(")
+                || after.contains(").ok();")
+                || after.contains(").is_err()");
+            if thrown_away {
+                dropped.push(format!(
+                    "{}:{}: {}",
+                    path.display(),
+                    number + 1,
+                    line.trim()
+                ));
+            }
+        }
+    }
+    (seen, dropped)
+}
+
+#[test]
+fn test_no_answer_about_somebody_s_mail_is_worked_out_and_thrown_away() {
+    // The changelog once announced, as a thing somebody would notice, a fix
+    // that made one of these answers more accurate. Nothing in the running
+    // program read it: the one caller dropped it and carried on. The code was
+    // better and nobody's day was different, which is the shape this catches.
+    let answering = answers_about_somebody_s_mail();
+
+    // The parse is proved before it is trusted. A parse that quietly found
+    // nothing would make every assertion below pass while checking nothing,
+    // which is the same defect one level up.
+    for named in ["delete_message", "move_message", "remove_these"] {
+        assert!(
+            answering.iter().any(|found| found == named),
+            "the list of answers was read from the mail controller and does \
+             not include {named}, so the reading is broken and this check is \
+             looking for nothing.\nFound: {answering:?}"
+        );
+    }
+    assert!(
+        answering.len() >= 10,
+        "only {} answering methods were found in the mail controller, which \
+         is fewer than it has. The reading is broken.",
+        answering.len()
+    );
+
+    let mut sites = 0;
+    let mut dropped = Vec::new();
+    for path in ours() {
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let (seen, thrown) = answers_thrown_away_in(&path, &text, &answering);
+        sites += seen;
+        dropped.extend(thrown);
+    }
+
+    assert!(
+        sites >= 20,
+        "only {sites} places in the running program ask any of these, which is \
+         fewer than there are. The scan is looking in the wrong place."
+    );
+
+    assert!(
+        dropped.is_empty(),
+        "{} places work out what happened to somebody's mail and throw the \
+         answer away, so nothing can say it out loud and no changelog entry \
+         about it is true:\n  {}",
+        dropped.len(),
+        dropped.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_thrown_away_answer_check_can_tell_the_two_apart() {
+    // Without this the check above passes by seeing nothing. Both lines are
+    // copied from what the tree really held rather than invented: the first
+    // is the draft removal as it stood when the changelog announced a fix to
+    // it, the second is the same call once somebody reads the answer.
+    let answering = vec!["remove_by_message_id".to_string()];
+    let thrown_away = "        if let Err(e) = handle.block_on(controller.remove_by_message_id(&folder, &message_id)) {\n";
+    let read = "        let outcome = handle.block_on(controller.remove_by_message_id(&folder, &message_id))?;\n";
+
+    let (seen, dropped) =
+        answers_thrown_away_in(Path::new("src/made_up.rs"), thrown_away, &answering);
+    assert_eq!(seen, 1, "the check did not see the call at all");
+    assert_eq!(dropped.len(), 1, "the check passed a thrown away answer");
+
+    let (seen, dropped) = answers_thrown_away_in(Path::new("src/made_up.rs"), read, &answering);
+    assert_eq!(seen, 1, "the check did not see the call at all");
+    assert!(
+        dropped.is_empty(),
+        "the check refused an answer that is read"
+    );
+
+    // And the same dropped answer below a `#[cfg(test)]` is a test's business,
+    // so the split is not taken on trust either.
+    let in_a_test = format!("#[cfg(test)]\nmod tests {{\n{thrown_away}}}\n");
+    let (_, dropped) = answers_thrown_away_in(Path::new("src/made_up.rs"), &in_a_test, &answering);
+    assert!(dropped.is_empty(), "the check read the test half of a file");
+}
+
 #[test]
 fn test_the_mutation_report_still_obeys_its_own_examples() {
     // The rules about what a mutation run may be reported as are written as

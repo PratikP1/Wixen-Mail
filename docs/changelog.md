@@ -556,6 +556,14 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   saved but an older copy may still be beside it, or it all worked. Only the
   last one stays quiet, because saving happens once a minute while you write.
 
+  The third of those is what you hear on a mail server that can only mark the
+  old copy and leave it in the folder. Such a server is now told apart from one
+  that really took the old copy away, by counting the copies that went rather
+  than the copies that were asked about, so the two drafts your other devices
+  show are at least explained. They are still both there and this program will
+  not remove the older one: the only removal such a server offers takes every
+  message in the folder that anything has marked for removal.
+
   A draft that could not be put in the Drafts folder on this computer, which is
   what a POP account uses, is now said out loud too. It was also only logged.
 
@@ -616,12 +624,6 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   message, so on an account whose mail goes straight out rather than to a
   Trash folder you could be told "Deleted" over a message still sitting in the
   folder. Both now report a refusal as a refusal.
-
-- **Saving a draft again could leave two copies on the server.** Replacing the
-  copy already filed counted the drafts it found rather than the ones it
-  removed. On a mail server that can only mark the old copy and leave it, the
-  new copy was written anyway, and the day ended with two drafts and neither of
-  them obviously the newer.
 
 - **The privacy page said nothing here sends your contacts, your calendar or
   your tasks to anybody. They are sent.** It opened by saying that nothing in
