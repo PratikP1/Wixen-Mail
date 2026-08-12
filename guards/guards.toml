@@ -2649,3 +2649,48 @@ red = [
     "service::protocols::imap::against_a_server_that_answers::test_a_server_without_move_copies_then_flags_then_expunges_in_that_order",
     "service::protocols::imap::against_a_server_that_answers::test_deleting_into_a_trash_the_server_will_not_remove_the_original_from_says_both_places",
 ]
+
+# ── A failed draft save that left no copy on the server ────────────────────
+#
+# The old copy was removed and the new one filed second, on purpose, so that a
+# failure could not leave two drafts with nothing saying which was newer. What
+# it left instead was none: a save the server turned down took the only copy
+# somebody's other devices had, and both failures went to a line in a log
+# inside a background task with no way of speaking.
+#
+# Swapping the two lines is not the fix either. Both copies carry the same
+# identifier, so a sweep run afterwards takes the copy just filed. The copies
+# that are there are asked for first, and the removal names exactly those.
+
+[[guard]]
+name = "the newer draft is on the server before the older one is taken away"
+file = "src/application/draft_copy.rs"
+before = """    let older = asked.clone().unwrap_or_default();
+
+    if let Err(refused) = server.file_this_one(folder, raw).await {"""
+after = """    let older = asked.clone().unwrap_or_default();
+    let _ = server.remove_these(folder, &older).await;
+
+    if let Err(refused) = server.file_this_one(folder, raw).await {"""
+red = [
+    "application::draft_copy::tests::test_a_draft_the_server_will_not_take_leaves_the_older_copy_alone",
+    "application::draft_copy::tests::test_the_new_copy_is_filed_before_the_old_one_is_removed",
+    "application::mail_controller::against_a_server_that_answers::test_a_draft_the_server_refuses_to_take_leaves_the_older_copy_on_the_server",
+    "application::mail_controller::against_a_server_that_answers::test_a_draft_the_server_takes_is_filed_before_the_older_copy_is_removed",
+]
+
+[[guard]]
+name = "a draft the server would not take is said rather than logged"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """        if filed.needs_saying() {
+            handle.block_on(async {
+                let _ = tx
+                    .send(UIUpdate::StatusUpdated(filed.what_happened()))
+                    .await;
+            });
+        }"""
+after = """        tracing::warn!("{}", filed.what_happened());"""
+red = [
+    "test_a_draft_the_server_would_not_take_reaches_the_person",
+]

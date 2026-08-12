@@ -17,6 +17,7 @@ pub mod contacts_sync;
 pub mod context_menu;
 pub mod deletions;
 pub mod destinations;
+pub mod draft_copy;
 pub mod draft_message;
 pub mod due;
 pub mod filters;

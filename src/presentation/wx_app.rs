@@ -5846,7 +5846,7 @@ fn open_compose(
         let rt = rt.clone();
         let draft_id = draft_id.clone();
         move |data: &wx_compose::ComposeData| {
-            match save_as_draft(&state, &cache, &rt, data, draft_id.borrow().clone()) {
+            match save_as_draft(&state, &cache, &tx, &rt, data, draft_id.borrow().clone()) {
                 Ok((id, _)) => {
                     *draft_id.borrow_mut() = Some(id);
                     // Said, not silent. Somebody who relies on this needs to
@@ -5891,7 +5891,7 @@ fn open_compose(
             }
         }
         ComposeResult::SaveDraft(data) => {
-            match save_as_draft(state, cache, rt, &data, draft_id.borrow().clone()) {
+            match save_as_draft(state, cache, tx, rt, &data, draft_id.borrow().clone()) {
                 Ok((id, subject)) => {
                     *draft_id.borrow_mut() = Some(id);
                     send_status(tx, rt, &format!("Draft saved: {}", subject))
@@ -5925,6 +5925,7 @@ fn open_compose(
 fn save_as_draft(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
+    tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
     data: &wx_compose::ComposeData,
     existing: Option<String>,
@@ -5971,7 +5972,7 @@ fn save_as_draft(
     // look rather than only in a table reachable by one menu command. On IMAP
     // that is the server's Drafts folder, so it is on every device; on POP
     // there is no server folder and it goes to the local one.
-    file_draft_copy(state, cache, rt, &draft);
+    file_draft_copy(state, cache, tx, rt, &draft);
     Ok((id, subject))
 }
 
@@ -5984,6 +5985,7 @@ fn save_as_draft(
 fn file_draft_copy(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Arc<MessageCache>,
+    tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
     draft: &crate::data::message_cache::CachedDraft,
 ) {
@@ -6013,7 +6015,14 @@ fn file_draft_copy(
         .find(|folder| folder.kind == crate::common::types::FolderType::Drafts)
     {
         if let Err(e) = replace_local_draft(cache, &account, &folder.path(), draft, &raw) {
-            tracing::warn!("The draft was saved but not filed: {e}");
+            // Said rather than logged. A line in a log reaches nobody, and
+            // this is the copy that shows up in the Drafts folder somebody
+            // goes looking in.
+            send_status(
+                tx,
+                rt,
+                &format!("The draft is saved, but it could not be put in the Drafts folder: {e}"),
+            );
         }
         return;
     }
@@ -6032,7 +6041,7 @@ fn file_draft_copy(
         // No Drafts folder yet, which is an account that has never synced.
         return;
     };
-    spawn_draft_append(rt, account, folder, draft.id.clone(), raw);
+    spawn_draft_append(tx, rt, account, folder, draft.id.clone(), raw);
 }
 
 /// Replace this draft's row in a folder on this computer.
@@ -6093,55 +6102,48 @@ fn replace_local_draft(
 }
 
 /// Put a draft in the server's Drafts folder, replacing the copy already there.
+///
+/// The order and every answer are decided elsewhere so they can be tested. What
+/// is here is the runtime and the one sentence that comes back, said only when
+/// it is not the ordinary one: this runs on every automatic save, once a minute
+/// for as long as somebody writes.
 fn spawn_draft_append(
+    tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
     account: crate::data::account::Account,
     folder: String,
     draft_id: String,
     raw: Vec<u8>,
 ) {
+    let tx = tx.clone();
     let handle = rt.handle().clone();
 
     rt.spawn_blocking(move || {
-        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
-            return;
-        };
-        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
-            return;
-        };
-        let controller = MailController::new();
-        if handle
-            .block_on(controller.connect_imap(
-                account.imap_server.clone(),
-                port,
-                account.username.clone(),
-                auth,
-                account.imap_use_tls,
-                &account.id,
-            ))
-            .is_err()
-        {
-            return;
-        }
+        use crate::application::draft_copy;
 
-        // The old copy goes first. Appending before removing would leave two
-        // drafts on the server if the removal then failed, and no way to tell
-        // which was the newer.
         let message_id = crate::application::draft_message::message_id_for(&draft_id);
-        if let Err(e) = handle.block_on(controller.remove_by_message_id(&folder, &message_id)) {
-            tracing::warn!("The previous copy of the draft was not removed: {e}");
+        let filed = match handle.block_on(draft_copy::a_session_at(&account)) {
+            Ok(session) => {
+                let filed = handle.block_on(draft_copy::replace_the_filed_copy(
+                    &draft_copy::DraftAtTheServer { session: &session },
+                    &folder,
+                    &message_id,
+                    &raw,
+                ));
+                let _ = handle.block_on(session.disconnect_imap());
+                filed
+            }
+            // Nothing was learnt about what the server holds, so the answer is
+            // the one that claims least: whatever copy it has is untouched.
+            Err(reason) => draft_copy::Filed::NotFiledAndTheOlderOneIsStillThere(reason),
+        };
+        if filed.needs_saying() {
+            handle.block_on(async {
+                let _ = tx
+                    .send(UIUpdate::StatusUpdated(filed.what_happened()))
+                    .await;
+            });
         }
-        let as_a_read_draft = format!(
-            "({} {})",
-            crate::service::protocols::imap::flag::DRAFT,
-            crate::service::protocols::imap::flag::SEEN
-        );
-        if let Err(e) =
-            handle.block_on(controller.append_message(&folder, Some(&as_a_read_draft), &raw))
-        {
-            tracing::warn!("The draft was saved but not filed on the server: {e}");
-        }
-        let _ = handle.block_on(controller.disconnect_imap());
     });
 }
 

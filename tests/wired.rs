@@ -571,6 +571,39 @@ fn test_the_delete_and_move_handlers_ask_one_place_what_to_say_and_what_to_do() 
     }
 }
 
+/// A draft the server would not take is said, not written to a log.
+///
+/// Both halves of filing a draft at the server used to fail into
+/// `tracing::warn!` inside a background task that held no way of speaking. The
+/// old copy was removed before the new one was offered, so a refused save left
+/// no copy on the server at all, and the only record of it was a line in a file
+/// nobody reads. The person went on writing, believing their other devices had
+/// it.
+#[test]
+fn test_a_draft_the_server_would_not_take_reaches_the_person() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let handler = body_of(&app, "fn spawn_draft_append(");
+
+    assert!(
+        handler.contains("replace_the_filed_copy"),
+        "the draft handler decides the order for itself again, and the order is \
+         what keeps a copy on the server at every moment"
+    );
+    assert!(
+        handler.contains("needs_saying") && handler.contains("what_happened"),
+        "the answer is worked out and dropped, which reaches nobody"
+    );
+    assert!(
+        !handler.contains("tracing::warn!"),
+        "a failure to file the draft goes to a log and nowhere else again"
+    );
+    assert!(
+        body_of(&app, "fn file_draft_copy(").contains("send_status"),
+        "a draft that could not be put in the folder on this computer is still \
+         only logged"
+    );
+}
+
 /// The calendar sync asks whether anything can send what is still waiting.
 ///
 /// The sweep is a plain function over the account's rows, so it is tested

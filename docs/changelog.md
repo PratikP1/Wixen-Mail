@@ -369,6 +369,29 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A draft your mail server would not take could leave no copy on the server
+  at all, and nothing said so.** Saving a draft again replaced the copy in the
+  server's Drafts folder, and it did that by taking the old copy away first and
+  offering the new one second. When the server then turned the new one down,
+  there was no copy of the draft on the server, so it was gone from your phone
+  and from anything else reading that account. Both failures went to a line in a
+  log file. Nothing on the screen changed and nothing was read out.
+
+  Now the copies already there are found first, the new one is saved second, and
+  only then are the older ones taken away. At no point in that order is the
+  server left without a copy. When something goes wrong you are told which of
+  four things happened: the draft is on this computer and the server has the
+  older copy, the draft is on this computer and nowhere else, the draft was
+  saved but an older copy may still be beside it, or it all worked. Only the
+  last one stays quiet, because saving happens once a minute while you write.
+
+  A draft that could not be put in the Drafts folder on this computer, which is
+  what a POP account uses, is now said out loud too. It was also only logged.
+
+  Your work was never at risk in any of this. The draft is written to this
+  computer before the server is asked, so what was lost was the copy your other
+  devices see.
+
 - **A delete or a move the server only half carried out was announced as one
   that never happened.** On a mail server that cannot move a message in one
   command, moving one is three steps: copy it, mark the original, remove the

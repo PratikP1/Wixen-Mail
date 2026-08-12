@@ -1089,14 +1089,33 @@ impl ImapSession {
     /// this comes back: a count of what was found ends the day with two
     /// drafts, one flagged for removal and neither obviously the newer.
     pub async fn remove_by_message_id(&mut self, message_id: &str) -> Result<usize> {
+        let found = self.uids_with_message_id(message_id).await?;
+        self.remove_these(&found).await
+    }
+
+    /// Which messages in the open mailbox carry this `Message-ID`.
+    ///
+    /// Split from the removal so that a newer copy can be filed between the
+    /// two. Both copies of a draft carry the same identifier, so a sweep run
+    /// after the new copy is filed takes the new copy with it; asking first
+    /// names exactly the copies that were there before.
+    pub async fn uids_with_message_id(&mut self, message_id: &str) -> Result<Vec<u32>> {
         self.may_i("replace a saved draft")?;
         let quoted = quote_for_search(message_id);
-        let found = self
-            .search_uids(&format!("HEADER MESSAGE-ID {quoted}"))
-            .await?;
+        self.search_uids(&format!("HEADER MESSAGE-ID {quoted}"))
+            .await
+    }
 
+    /// Take these messages off the server, and say how many really went.
+    ///
+    /// The number is what was removed, not what was asked for. Those are
+    /// different on a server without UIDPLUS, where the old copy can only be
+    /// flagged and left, and a count of what was asked for ends the day with
+    /// two drafts, one flagged for removal and neither obviously the newer.
+    pub async fn remove_these(&mut self, uids: &[u32]) -> Result<usize> {
+        self.may_i("replace a saved draft")?;
         let mut removed = 0;
-        for uid in &found {
+        for uid in uids {
             self.set_flag(*uid, flag::DELETED, true).await?;
             if !self.abilities.uid_expunge {
                 continue;
@@ -1104,7 +1123,7 @@ impl ImapSession {
             self.expunge_one(*uid).await?;
             removed += 1;
         }
-        if !found.is_empty() && !self.abilities.uid_expunge {
+        if !uids.is_empty() && !self.abilities.uid_expunge {
             // Flagged and left. Without UIDPLUS the only expunge available
             // removes everything in the mailbox flagged for deletion, which
             // would be other people's mail as well as the old draft.
@@ -2458,6 +2477,46 @@ pub(crate) mod against_a_server_that_answers {
             transcript.iter().any(|entry| entry == raw),
             "the message was not stored as it was written: {transcript:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_a_refused_message_does_not_leave_the_server_reading_it_as_commands() {
+        // Measured before anything is asserted about a refused save, because
+        // the two ways this can go look identical from the outside. A message
+        // goes up as a counted block of bytes. A server that turns the command
+        // down without reading those bytes, on a client that sent them anyway,
+        // reads a person's mail as a list of commands: the transcript fills
+        // with it, every later assertion is made against nonsense, and the
+        // whole thing still looks green.
+        let server = a_server_that_refuses("UIDPLUS", "APPEND").await;
+        let mut session = signed_in_to(&server).await;
+        let raw = "From: me@example.com\r\nSubject: Draft\r\n\r\nnot finished yet\r\n";
+
+        let refused = waiting_for(
+            session.append_message("Drafts", Some("(\\Draft)"), raw.as_bytes()),
+            "the refusal",
+        )
+        .await;
+        // Something ordinary afterwards, to show the connection is still a
+        // conversation rather than a client and a server talking past one
+        // another.
+        let _ = waiting_for(session.select_folder("INBOX"), "the folder to open").await;
+
+        let transcript = server.transcript().await;
+        assert!(
+            !transcript.iter().any(|line| line.contains("not finished")),
+            "the message reached the server after it was turned down: {transcript:?}"
+        );
+        assert!(refused.is_err(), "the server said no and nobody noticed");
+        let asked = server
+            .when_told("APPEND \"Drafts\"")
+            .await
+            .unwrap_or_else(|| panic!("nothing was ever offered: {transcript:?}"));
+        let opened = server
+            .when_told("SELECT \"INBOX\"")
+            .await
+            .unwrap_or_else(|| panic!("the connection was left unusable: {transcript:?}"));
+        assert!(asked < opened, "{transcript:?}");
     }
 
     #[tokio::test]
