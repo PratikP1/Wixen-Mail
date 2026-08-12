@@ -582,10 +582,13 @@ mod tests {
         let (_cache, account) = a_cache(false);
         let raw = a_message();
 
-        for goes_to in [
-            Destination::OnThisComputer("\u{1}Local/Sent".to_string()),
-            Destination::NotKnownYet,
-        ] {
+        // The folder a POP account really files its sent mail in, taken from
+        // the one place that answers that, rather than spelled out again here.
+        let here =
+            crate::application::local_folders::local_sent(crate::common::types::Protocol::Pop3)
+                .expect("an account that keeps its sent mail here has somewhere to keep it");
+
+        for goes_to in [Destination::OnThisComputer(here), Destination::NotKnownYet] {
             let session = a_session_for(&goes_to, &account).await;
             assert!(
                 matches!(session, FilingSession::NotNeeded),

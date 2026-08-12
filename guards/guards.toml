@@ -2641,6 +2641,10 @@ red = [
 # Saving a copy of a sent message deliberately opens nothing. Its caller is
 # usually in the middle of reading a folder, and opening one here changes which
 # mailbox is open underneath them.
+#
+# Re-measured 2026-08-12: two tests now, not one. The second drives the adapter
+# that really files the copy rather than the command underneath it, and it asks
+# the same question one layer up, because that is the layer the send loop uses.
 
 [[guard]]
 name = "saving a copy does not change which folder is open"
@@ -2652,6 +2656,7 @@ after = """        let session = &mut *guard;
         session.append_message(into, flags, raw).await"""
 red = [
     "application::mail_controller::against_a_server_that_answers::test_saving_a_copy_of_a_sent_message_appends_it_where_it_was_told",
+    "application::mail_controller::against_a_server_that_answers::test_the_copy_of_a_sent_message_is_appended_where_it_was_told_flagged_as_read",
 ]
 
 # ── A mutation run that tested nothing, reported as one that found nothing ───
