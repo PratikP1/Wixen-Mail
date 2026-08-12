@@ -34,6 +34,39 @@
 # guard is about and the guard needs measuring again by hand. That is not a
 # reason to edit this file until the break matches; it is a reason to check the
 # guard still discriminates and then write down what it does now.
+#
+# That rule is also checked at commit time now, by
+# `test_every_guard_record_still_names_one_place_in_the_tree` in
+# tests/house_style.rs, because a full run is an hour or two and nothing forces
+# one. It says a record still points at one place. It cannot say the list of
+# tests beside that record is still true; only a run says that.
+#
+# ── Where this file stood on 2026-08-12 ─────────────────────────────────────
+#
+# 192 records. All 192 checked for pointing at exactly one place: none was
+# ambiguous and none had moved. Every test named in a `red` list resolves to a
+# test that is still in the tree.
+#
+# 24 of the 192 are defended only by tests that read the tree as text. Every one
+# of those was read and judged against one question: would it go red if the
+# behaviour went while the source text stayed? Three could not. All three had
+# one shape, a refusal that is said and then not acted on:
+#
+#   - the two arms that refuse a delete on an account with no recognised trash,
+#     which were changed to say the refusal and carry on deleting
+#   - the refusal about a day of a series that cannot be kept, which was changed
+#     to say no and take the day off anyway
+#   - the calendar window's own refusal, which was changed to say no and queue
+#     the change in the same breath
+#
+# All three are guarded now, each by a record whose break is that narrower edit,
+# and each was measured against the old guard first and seen to stay green. The
+# other 21 read wiring facts with no runtime path in a test, and each of their
+# tests now says in its own words what stays green while the behaviour goes.
+#
+# 18 records were measured with the runner as part of that sweep. The rest were
+# not: a full run is one build and one suite each and takes hours, and it needs
+# a quiet machine.
 
 # ── The two questions the contacts sync must not confuse ────────────────────
 #
