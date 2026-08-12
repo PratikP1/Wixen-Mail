@@ -82,6 +82,7 @@ pub fn nothing_changed(reason: &str) -> String {
 mod tests {
     use super::*;
     use crate::service::protocols::imap::StillHere;
+    use std::collections::BTreeSet;
 
     fn refused() -> StillHere {
         StillHere::TheServerRefusedIt("over quota".to_string())
@@ -106,6 +107,65 @@ mod tests {
             Moved::CopiedAndFlagged(refused()),
             Moved::CopiedAndNotFlagged("over quota".to_string()),
         ]
+    }
+
+    /// Which ending this is, named rather than counted.
+    ///
+    /// The point of the match is that it has no wildcard arm. An ending added
+    /// to `Deletion` stops this file compiling until somebody comes here, and
+    /// the list it then has to be added to is directly above.
+    fn which_ending(deletion: &Deletion) -> &'static str {
+        match deletion {
+            Deletion::MovedToTrash => "moved to trash",
+            Deletion::Removed => "removed from the server",
+            Deletion::CopiedToTrashAndFlagged(_) => "copied to trash and flagged",
+            Deletion::CopiedToTrashAndNotFlagged(_) => "copied to trash, not flagged",
+            Deletion::MarkedOnly(_) => "marked, still in the folder",
+        }
+    }
+
+    /// The same again for the endings a move has.
+    fn which_move_ending(moved: &Moved) -> &'static str {
+        match moved {
+            Moved::Moved => "moved",
+            Moved::CopiedAndFlagged(_) => "copied and flagged",
+            Moved::CopiedAndNotFlagged(_) => "copied and not flagged",
+        }
+    }
+
+    #[test]
+    fn test_the_endings_asked_about_are_all_the_endings_there_are() {
+        // `every_deletion` and `every_move` are written out by hand and three
+        // other tests here walk them, so an ending missing from either list is an
+        // ending nothing in this file ever asks either question about, and not
+        // one test goes red. That exact thing has happened here: a commit added
+        // an arm to a decision in the contacts sync, two guard tests started
+        // reaching the new arm instead of the one they were about, both went on
+        // passing under their old names, and it was found by hand three commits
+        // later.
+        //
+        // Two halves close it, and neither does on its own. The matches above
+        // have no wildcard arm, so a new ending stops the build here. The two
+        // lists of names below are then the second copy that has to agree, so
+        // adding the arm and forgetting the list is a red test rather than a
+        // quieter suite.
+        let asked: BTreeSet<&str> = every_deletion().iter().map(which_ending).collect();
+        let all: BTreeSet<&str> = [
+            "moved to trash",
+            "removed from the server",
+            "copied to trash and flagged",
+            "copied to trash, not flagged",
+            "marked, still in the folder",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(asked, all, "a delete can end a way nothing here asks about");
+
+        let asked: BTreeSet<&str> = every_move().iter().map(which_move_ending).collect();
+        let all: BTreeSet<&str> = ["moved", "copied and flagged", "copied and not flagged"]
+            .into_iter()
+            .collect();
+        assert_eq!(asked, all, "a move can end a way nothing here asks about");
     }
 
     #[test]

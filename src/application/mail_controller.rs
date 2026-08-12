@@ -1432,6 +1432,31 @@ mod against_a_server_that_answers {
         assert!(!reason.trim().is_empty(), "a refusal with nothing to say");
     }
 
+    #[tokio::test]
+    async fn test_closing_the_queue_lets_go_of_the_connection_it_opened() {
+        // One session is opened for a whole queue of outgoing mail and closed
+        // at the end of it. Left open it is a connection still held at the
+        // server after every send, and somebody sends mail all day.
+        //
+        // Nothing was watching this. Emptying the closing out entirely was the
+        // one mutant the suite did not catch across all 66 in the four files
+        // that decide whether a copy of a message survives.
+        let server = an_imap_server().await;
+        let controller = signed_in_to(&server).await;
+
+        crate::application::sent_copy::FilingSession::Open(controller)
+            .close()
+            .await;
+
+        let transcript = server.transcript().await;
+        assert!(
+            transcript
+                .iter()
+                .any(|line| line.to_uppercase().contains("LOGOUT")),
+            "the queue's session was never signed out of: {transcript:?}"
+        );
+    }
+
     /// The adapter that really runs, pointed at the loopback server.
     ///
     /// The decisions are proved against fakes beside them. What this proves is

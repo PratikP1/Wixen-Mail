@@ -682,6 +682,29 @@ mod tests {
     }
 
     #[test]
+    fn test_a_reason_that_already_ends_in_a_full_stop_does_not_get_a_second_one() {
+        // The same rule, and the same untested branch, as the draft path. The
+        // routine that puts the stop on is written out once in each of the two
+        // files, so a fix to one of them leaves the other stumbling, and the
+        // only thing that would notice is a test in each.
+        //
+        // Neither can be reached by changing the code in small ways and seeing
+        // what the suite notices: the early return is a call to `ends_with` on
+        // a list of three characters, and the trim beside it takes no
+        // arguments. A mutation run produces no mutant for either.
+        for said_by_the_server in ["the mailbox is over quota.", "the mailbox is over quota. "] {
+            let kept = Kept::HereBecauseTheServerRefused(said_by_the_server.to_string());
+
+            let said = kept.what_happened();
+
+            assert!(
+                said.ends_with("the mailbox is over quota."),
+                "the server's own words were punctuated again: {said}"
+            );
+        }
+    }
+
+    #[test]
     fn test_a_reply_kept_here_still_threads_with_what_it_answered() {
         // The chain the recipient's client threads on has to be the chain this
         // one stores, or a reply somebody sent is a message on its own in their

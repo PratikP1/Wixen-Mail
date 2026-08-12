@@ -422,6 +422,31 @@ mod tests {
     }
 
     #[test]
+    fn test_a_reason_that_already_ends_in_a_full_stop_does_not_get_a_second_one() {
+        // Every reason in these sentences is a mail server's own words, and
+        // plenty of servers punctuate them. Read aloud, a doubled stop is a
+        // stumble in the middle of the one sentence that says where somebody's
+        // draft is, and the trailing space some servers leave is the same
+        // thing again with a gap in it.
+        //
+        // Nothing here can be reached by changing the code in small ways and
+        // seeing what the suite notices: the early return is a call to
+        // `ends_with` on a list of three characters, and the trim next to it is
+        // a call with no arguments. Neither is a line a mutation run produces a
+        // mutant for, so both were untested and would have stayed that way.
+        for said_by_the_server in ["the mailbox is over quota.", "the mailbox is over quota. "] {
+            let filed = Filed::NotFiledAndTheOlderOneIsStillThere(said_by_the_server.to_string());
+
+            let said = filed.what_happened();
+
+            assert!(
+                said.ends_with("the mailbox is over quota."),
+                "the server's own words were punctuated again: {said}"
+            );
+        }
+    }
+
+    #[test]
     fn test_every_outcome_says_something_and_no_two_say_the_same_thing() {
         let all = [
             Filed::Replaced,
