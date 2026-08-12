@@ -3767,3 +3767,31 @@ red = [
     "application::mail_controller::against_a_server_that_answers::test_the_copies_the_server_is_told_to_remove_are_the_ones_it_named",
     "application::mail_controller::against_a_server_that_answers::test_the_draft_filed_at_the_server_is_flagged_as_a_draft_that_has_been_read",
 ]
+
+# ── The adapter that files a copy of everything sent had never run ──────────
+#
+# Every message that goes out has a copy filed at the account's server, and
+# nothing had ever constructed the object that files it. It could not be: it
+# signed in for itself, so reaching it needed a real account and a real server.
+# The only thing holding it to the running program was a check that reads the
+# source, and a check that reads source cannot tell a body that still sends the
+# right thing from one that stopped.
+#
+# The sign-in moved out to one place used by both this and the draft path, so
+# what is left is the append, and a test can hand it a session it opened and
+# allowed itself. The break below is what that bought, measured by hand on
+# 2026-08-12: before it, changing the flag on the copy reddened nothing.
+#
+# Flagged read matters because the copy lands in the same Sent folder the sync
+# fills. A message somebody wrote themselves is not unread mail waiting to be
+# dealt with, and an unread count that climbs every time they send something is
+# a count nobody can use.
+
+[[guard]]
+name = "the copy of a sent message is flagged read at the server"
+file = "src/application/sent_copy.rs"
+before = """        let already_read = format!("({})", crate::service::protocols::imap::flag::SEEN);"""
+after = """        let already_read = format!("({})", crate::service::protocols::imap::flag::FLAGGED);"""
+red = [
+    "application::mail_controller::against_a_server_that_answers::test_the_copy_of_a_sent_message_is_appended_where_it_was_told_flagged_as_read",
+]

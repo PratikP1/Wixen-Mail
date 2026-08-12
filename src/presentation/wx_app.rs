@@ -6123,7 +6123,8 @@ fn spawn_draft_append(
         use crate::application::draft_copy;
 
         let message_id = crate::application::draft_message::message_id_for(&draft_id);
-        let filed = match handle.block_on(draft_copy::a_session_at(&account)) {
+        let filed = match handle.block_on(crate::application::mail_session::a_session_at(&account))
+        {
             Ok(session) => {
                 let filed = handle.block_on(draft_copy::replace_the_filed_copy(
                     &draft_copy::DraftAtTheServer { session: &session },
@@ -7040,10 +7041,19 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
         let keep_one_here = crate::data::config::ConfigManager::load_stored()
             .map(|stored| stored.app_config().keep_sent_mail_on_this_computer)
             .unwrap_or(false);
-        let file_at_the_server = crate::application::sent_copy::ServerCopy { account: &account };
         // Where every copy in this queue goes. The same answer for all of them,
         // and worked out before the loop so the folder list is read once.
         let copies_go_to = crate::application::sent_copy::destination(&cache, &account);
+        // One sign-in for the whole queue, closed when the queue ends. It used
+        // to sign in and disconnect around every single message, so a queue of
+        // fifty was fifty sign-ins and some providers turn that down. An
+        // account with no server folder to file anything in does not sign in at
+        // all.
+        //
+        // The cost is that a very long queue can outlive the session. After
+        // that each copy is refused, each one is kept on this computer instead,
+        // and the person is told. Nothing goes missing quietly.
+        let filing = crate::application::sent_copy::a_session_for(&copies_go_to, &account).await;
 
         for msg in &queued {
             // A message the account cannot send is a configuration problem, not
@@ -7084,12 +7094,9 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
                     // writes here happens afterwards. The connection to this
                     // program's own database cannot be held across a wait for
                     // a server.
-                    let said = crate::application::sent_copy::offer_to_the_server(
-                        &file_at_the_server,
-                        &copies_go_to,
-                        raw,
-                    )
-                    .await;
+                    let said =
+                        crate::application::sent_copy::offer_through(&filing, &copies_go_to, raw)
+                            .await;
                     let filed = crate::application::sent_copy::file_the_copy(
                         &cache,
                         &account,
@@ -7118,6 +7125,8 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
                 })
                 .await;
         }
+
+        filing.close().await;
 
         // What actually happened, rather than an optimistic "Connected". One
         // message through is proof the server answered; nothing through is

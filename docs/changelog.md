@@ -8,6 +8,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Changed: sending a queue of mail now signs in to your mail server once
+  instead of once per message.** Every message sent put a copy in your Sent
+  folder, and each copy opened its own connection and closed it again. A queue of
+  fifty messages was fifty sign-ins, and some providers turn that down partway
+  through. One connection is opened before the queue starts and closed when it
+  finishes. If your account keeps its sent mail on this computer, nothing signs
+  in at all.
+
+  A very long queue can still outlive that connection. If it does, the copies
+  after it are saved on this computer instead and you are told, the same as when
+  a server refuses one. Nothing goes missing quietly.
+
 - **Fixed: the Outbox sat at the bottom of the folder list.** Mail waiting to go
   is the one folder there is something to do about, and it was the last thing in
   the tree: below Trash on an account that downloads its mail, and in among your

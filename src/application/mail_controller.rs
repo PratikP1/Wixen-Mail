@@ -1351,6 +1351,87 @@ mod against_a_server_that_answers {
         );
     }
 
+    /// Offer a copy of a sent message through the adapter that really runs.
+    fn the_sent_copy_at(session: &MailController) -> crate::application::sent_copy::ServerCopy<'_> {
+        crate::application::sent_copy::ServerCopy { session }
+    }
+
+    /// A message that has gone out, and what its bytes are.
+    fn a_sent_message() -> &'static [u8] {
+        b"From: me@example.com\r\nSubject: The quarterly figures\r\n\r\nHere they are.\r\n"
+    }
+
+    #[tokio::test]
+    async fn test_the_copy_of_a_sent_message_is_appended_where_it_was_told_flagged_as_read() {
+        // The adapter that files a copy of everything sent, on the wire. It had
+        // never run: the only thing holding it to the running program was a
+        // check that read the source.
+        //
+        // Flagged read, because a message somebody wrote themselves is not
+        // unread mail waiting to be dealt with, and an unread count that climbs
+        // every time they send something is a count nobody can use.
+        let server = a_server_that_can("UIDPLUS").await;
+        let controller = allowed_on(&server).await;
+
+        let said = crate::application::sent_copy::offer_to_the_server(
+            &the_sent_copy_at(&controller),
+            &crate::application::sent_copy::Destination::AtTheServer("Sent".to_string()),
+            a_sent_message(),
+        )
+        .await;
+
+        let transcript = server.transcript().await;
+        assert_eq!(said, crate::application::sent_copy::ServerSaid::ItHasIt);
+        assert!(
+            server
+                .was_told(&format!(
+                    "APPEND \"Sent\" (\\Seen) {{{}}}",
+                    a_sent_message().len()
+                ))
+                .await,
+            "the copy was not offered to Sent as a message already read: {transcript:?}"
+        );
+        assert!(
+            transcript
+                .iter()
+                .any(|line| line.as_bytes() == a_sent_message()),
+            "the copy filed is not the message that was sent: {transcript:?}"
+        );
+        assert!(
+            !server.was_told("SELECT").await,
+            "filing a copy changed which mailbox is open underneath whoever is \
+             reading: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_server_that_will_not_take_the_copy_hands_back_what_it_said() {
+        // The message has gone and this is the only record of it, so what the
+        // server said has to come back rather than a shrug: it is what decides
+        // that the copy is kept on this computer instead, and it is what the
+        // person is read out.
+        let server = a_server_that_refuses("UIDPLUS", "APPEND").await;
+        let controller = allowed_on(&server).await;
+
+        let said = crate::application::sent_copy::offer_to_the_server(
+            &the_sent_copy_at(&controller),
+            &crate::application::sent_copy::Destination::AtTheServer("Sent".to_string()),
+            a_sent_message(),
+        )
+        .await;
+
+        let transcript = server.transcript().await;
+        assert!(
+            server.was_told("APPEND \"Sent\"").await,
+            "the copy was never offered, so a refusal is not what was measured: \
+             {transcript:?}"
+        );
+        let crate::application::sent_copy::ServerSaid::No(reason) = said else {
+            panic!("a refused copy came back as {said:?}");
+        };
+        assert!(!reason.trim().is_empty(), "a refusal with nothing to say");
+    }
+
     /// The adapter that really runs, pointed at the loopback server.
     ///
     /// The decisions are proved against fakes beside them. What this proves is

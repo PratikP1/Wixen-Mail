@@ -31,6 +31,7 @@ pub mod local_folders;
 pub mod long_text;
 pub mod mail_auth;
 pub mod mail_controller;
+pub mod mail_session;
 pub mod mail_sync;
 pub mod message_id;
 pub mod messages;

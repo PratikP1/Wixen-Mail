@@ -809,6 +809,45 @@ fn test_a_draft_the_server_would_not_take_reaches_the_person() {
     );
 }
 
+/// The send loop files its copies through one session, and closes it.
+///
+/// Filing a copy used to sign in to the mail server and disconnect again around
+/// every single message, so a queue of fifty was fifty sign-ins and some
+/// providers turn that down. The session is opened once for the queue now.
+///
+/// One opened per queue and never closed is worse than what it replaced: a
+/// connection left held at the server after every send, and a provider counts
+/// those.
+///
+/// What this cannot see: it reads the send loop as text. It says the three
+/// calls are written there. It cannot say the session really carried a copy,
+/// which is measured against a server in `application::mail_controller`, and it
+/// cannot say the close is reached on every path out of the loop.
+#[test]
+fn test_the_send_loop_files_its_copies_through_one_session_and_closes_it() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let loop_body = body_of(&app, "fn flush_outbox(");
+
+    assert!(
+        loop_body.contains("a_session_for"),
+        "the send loop no longer opens one session for the queue"
+    );
+    assert!(
+        loop_body.contains("offer_through"),
+        "the copies no longer go through the queue's own session"
+    );
+    assert!(
+        loop_body.contains("close()"),
+        "the session the queue opened is never closed, which leaves a connection \
+         held at the server after every send"
+    );
+    assert!(
+        !loop_body.contains("ServerCopy {"),
+        "the send loop builds the adapter itself again, which is how it came to \
+         sign in once per message"
+    );
+}
+
 /// The calendar sync asks whether anything can send what is still waiting.
 ///
 /// The sweep is a plain function over the account's rows, so it is tested

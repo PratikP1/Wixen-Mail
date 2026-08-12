@@ -19,8 +19,6 @@
 //! exactly the ones the first step found. At no point in that sequence is there
 //! no copy on the server.
 
-use crate::data::account::Account;
-
 /// Somewhere a draft can be kept that is not this computer.
 ///
 /// Three steps, which is the whole of what replacing a filed draft asks of a
@@ -157,44 +155,13 @@ pub(crate) async fn replace_the_filed_copy<K: KeepsTheDraft>(
 /// automatic save, once a minute for as long as somebody writes, and a
 /// connection of its own per step would be three sign-ins a minute.
 ///
-/// Built by [`a_session_at`], which passes the account's own id, so this runs
-/// under the same permission the rest of the account's writing does: an account
-/// that may not change anything at its server gets a session that refuses each
-/// of these rather than one that carries them out.
+/// Built on a session from [`crate::application::mail_session::a_session_at`],
+/// which passes the account's own id, so this runs under the same permission
+/// the rest of the account's writing does: an account that may not change
+/// anything at its server gets a session that refuses each of these rather than
+/// one that carries them out.
 pub(crate) struct DraftAtTheServer<'a> {
     pub session: &'a crate::application::mail_controller::MailController,
-}
-
-/// Sign in to the account's mail server for the length of one save.
-///
-/// The caller closes it. Kept apart from the steps above so that failing to
-/// reach the server at all is one failure rather than three, and so the
-/// connection is not opened before anything has decided it is needed.
-pub(crate) async fn a_session_at(
-    account: &Account,
-) -> std::result::Result<crate::application::mail_controller::MailController, String> {
-    let port = account
-        .imap_port
-        .trim()
-        .parse::<u16>()
-        .map_err(|_| format!("{} has no usable IMAP port", account.name))?;
-    let auth = crate::application::mail_auth::for_account(account)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let controller = crate::application::mail_controller::MailController::new();
-    controller
-        .connect_imap(
-            account.imap_server.clone(),
-            port,
-            account.username.clone(),
-            auth,
-            account.imap_use_tls,
-            &account.id,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(controller)
 }
 
 impl KeepsTheDraft for DraftAtTheServer<'_> {

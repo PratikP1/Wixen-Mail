@@ -148,6 +148,21 @@ pub enum Destination {
     AtTheServer(String),
 }
 
+impl Destination {
+    /// The folder at the account's own server, where there is one.
+    ///
+    /// One place answers "is there a server to offer a copy to". It is asked
+    /// twice, by the signing in and by the offering, and two answers to it is a
+    /// queue that signs in to say nothing, or one that files nothing having
+    /// signed in.
+    pub(crate) fn at_the_server(&self) -> Option<&str> {
+        match self {
+            Self::AtTheServer(folder) => Some(folder),
+            _ => None,
+        }
+    }
+}
+
 /// Where this account's sent mail is filed.
 pub fn destination(cache: &MessageCache, account: &Account) -> Destination {
     if let Some(here) = crate::application::local_folders::local_sent(account.protocol()) {
@@ -195,12 +210,72 @@ pub(crate) async fn offer_to_the_server<F: FilesACopy>(
     goes_to: &Destination,
     raw: &[u8],
 ) -> ServerSaid {
-    let Destination::AtTheServer(folder) = goes_to else {
+    let Some(folder) = goes_to.at_the_server() else {
         return ServerSaid::Nothing;
     };
     match server.keep_a_copy(folder, raw).await {
         Ok(()) => ServerSaid::ItHasIt,
         Err(refusal) => ServerSaid::No(refusal),
+    }
+}
+
+/// The session this queue's copies go through.
+///
+/// Opened once for a queue rather than once per message: filing a copy used to
+/// sign in again for every message sent, so a queue of fifty was fifty
+/// sign-ins, which some providers turn down.
+///
+/// Three states because two of them are not failures. An account that keeps its
+/// sent mail on this computer has nothing to sign in to, and one that could not
+/// sign in still keeps every copy here and says why.
+pub(crate) enum FilingSession {
+    /// There is no server to offer anything to.
+    NotNeeded,
+    /// Signed in, and copies go through it.
+    Open(crate::application::mail_controller::MailController),
+    /// The account has a server and it could not be reached. This is what it
+    /// said, and it is what the person is read out.
+    CouldNotSignIn(String),
+}
+
+/// Sign in for this queue, if there is anywhere to sign in to.
+pub(crate) async fn a_session_for(goes_to: &Destination, account: &Account) -> FilingSession {
+    if goes_to.at_the_server().is_none() {
+        return FilingSession::NotNeeded;
+    }
+    match crate::application::mail_session::a_session_at(account).await {
+        Ok(session) => FilingSession::Open(session),
+        Err(reason) => FilingSession::CouldNotSignIn(reason),
+    }
+}
+
+/// Offer this copy through the queue's session.
+///
+/// A sign-in that failed is a refusal for every message in the queue, and a
+/// refusal is what keeps the copy on this computer instead of losing it.
+pub(crate) async fn offer_through(
+    session: &FilingSession,
+    goes_to: &Destination,
+    raw: &[u8],
+) -> ServerSaid {
+    match session {
+        FilingSession::NotNeeded => ServerSaid::Nothing,
+        FilingSession::Open(session) => {
+            offer_to_the_server(&ServerCopy { session }, goes_to, raw).await
+        }
+        FilingSession::CouldNotSignIn(reason) => ServerSaid::No(reason.clone()),
+    }
+}
+
+impl FilingSession {
+    /// Close it, if one was ever opened.
+    ///
+    /// A session left behind is a connection still held at the server after
+    /// every send.
+    pub(crate) async fn close(self) {
+        if let Self::Open(session) = self {
+            let _ = session.disconnect_imap().await;
+        }
     }
 }
 
@@ -346,48 +421,26 @@ fn addresses(list: &[EmailAddress]) -> String {
 
 /// The account's Sent folder at its own mail server.
 ///
-/// On a connection of its own. The send loop holds no IMAP session, and opening
-/// one here keeps a failure to file the copy from touching the send at all.
+/// The append and nothing else. It used to sign in and disconnect around every
+/// message, which is where the sign-in went unmeasured: nothing could construct
+/// this without a real account and a real server. The session comes from
+/// [`a_session_for`] now, once for the whole queue.
 ///
-/// Flagged `\Seen`, for the same reason the copy kept here is marked read.
+/// Flagged `\Seen`, for the same reason the copy kept on this computer is
+/// marked read: a message somebody wrote themselves is not unread mail waiting
+/// to be dealt with, and an unread count that climbs every time they send
+/// something is a count nobody can use.
 pub(crate) struct ServerCopy<'a> {
-    pub account: &'a Account,
+    pub session: &'a crate::application::mail_controller::MailController,
 }
 
 impl FilesACopy for ServerCopy<'_> {
     async fn keep_a_copy(&self, folder: &str, raw: &[u8]) -> std::result::Result<(), String> {
-        let account = self.account;
-        let port = account
-            .imap_port
-            .trim()
-            .parse::<u16>()
-            .map_err(|_| format!("{} has no usable IMAP port", account.name))?;
-        let auth = crate::application::mail_auth::for_account(account)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let controller = crate::application::mail_controller::MailController::new();
-        // The account's own id, so this connection is under the same permission
-        // the send was. An account that may not change anything at its server
-        // gets a session that refuses the append rather than one that makes it.
-        controller
-            .connect_imap(
-                account.imap_server.clone(),
-                port,
-                account.username.clone(),
-                auth,
-                account.imap_use_tls,
-                &account.id,
-            )
-            .await
-            .map_err(|e| e.to_string())?;
         let already_read = format!("({})", crate::service::protocols::imap::flag::SEEN);
-        let filed = controller
+        self.session
             .append_message(folder, Some(&already_read), raw)
             .await
-            .map_err(|e| e.to_string());
-        let _ = controller.disconnect_imap().await;
-        filed
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -476,6 +529,74 @@ mod tests {
                 let said = offer_to_the_server(server, &goes_to, raw).await;
                 file_the_copy(cache, account, &goes_to, &said, also_here, raw)
             })
+    }
+
+    #[tokio::test]
+    async fn test_a_send_that_could_not_sign_in_keeps_the_copy_here_and_says_why() {
+        // The sign-in used to happen inside the one step that reaches a server,
+        // where nothing could reach it. A queue whose account cannot sign in
+        // still has to keep every copy on this computer and say so, because the
+        // message has gone and this is the only record left of it.
+        let (cache, account) = a_cache(true);
+        let raw = a_message();
+        let goes_to = Destination::AtTheServer("Sent".to_string());
+
+        let said = offer_through(
+            &FilingSession::CouldNotSignIn("the server could not be reached".to_string()),
+            &goes_to,
+            &raw,
+        )
+        .await;
+
+        assert_eq!(
+            said,
+            ServerSaid::No("the server could not be reached".to_string())
+        );
+        let kept = file_the_copy(&cache, &account, &goes_to, &said, false, &raw);
+        let Kept::HereBecauseTheServerRefused(reason) = &kept else {
+            panic!("the copy was not kept here: {kept:?}");
+        };
+        assert!(reason.contains("could not be reached"), "{reason}");
+        assert!(kept.needs_saying());
+
+        let row = the_only_row(&cache);
+        assert_eq!(row.subject, "The quarterly figures");
+        let body = cache
+            .get_message_body(row.id)
+            .expect("read the body")
+            .expect("a body was stored");
+        assert!(
+            body.body_plain
+                .unwrap_or_default()
+                .contains("Here they are"),
+            "the copy was filed without its body"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_no_session_is_opened_for_an_account_that_keeps_its_sent_mail_here() {
+        // An account collecting its mail over POP has no server folder to file
+        // anything in, so signing in to one would be a connection made to say
+        // nothing. The same for an account that has not learnt where its Sent
+        // folder is: there is nowhere to put a copy and nothing to name.
+        let (_cache, account) = a_cache(false);
+        let raw = a_message();
+
+        for goes_to in [
+            Destination::OnThisComputer("\u{1}Local/Sent".to_string()),
+            Destination::NotKnownYet,
+        ] {
+            let session = a_session_for(&goes_to, &account).await;
+            assert!(
+                matches!(session, FilingSession::NotNeeded),
+                "a session was opened for {goes_to:?}"
+            );
+            assert_eq!(
+                offer_through(&session, &goes_to, &raw).await,
+                ServerSaid::Nothing
+            );
+            session.close().await;
+        }
     }
 
     #[test]
@@ -1033,15 +1154,32 @@ mod tests {
             );
         }
 
-        // And nothing in this module opens its own session another way.
+        // And there is one route to a mail server for the copies this program
+        // files on somebody's behalf, in one place.
+        //
+        // It used to be here, and there was a second copy of the same six lines
+        // in the draft path. Both are gone into one sign-in, so this module now
+        // holds none and that file holds one. Counted in both directions: a
+        // module that grows its own sign-in again is what this notices.
         let mine = include_str!("sent_copy.rs")
             .split_once("#[cfg(test)]")
             .expect("this module has tests")
             .0;
         assert_eq!(
             mine.matches(".connect_imap(").count(),
+            0,
+            "this module opens a session of its own again, and the one it should \
+             be using is opened once for the whole queue"
+        );
+        let one_sign_in = include_str!("mail_session.rs")
+            .split_once("#[cfg(test)]")
+            .expect("the sign-in has tests")
+            .0;
+        assert_eq!(
+            one_sign_in.matches(".connect_imap(").count(),
             1,
-            "this module reaches a mail server by more than one route"
+            "the one sign-in the copies go through reaches a mail server by \
+             some other number of routes than one"
         );
     }
 
