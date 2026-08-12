@@ -39,6 +39,7 @@
 use crate::application::summing_up::SummingUp;
 use crate::common::Result;
 use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache, SyncState};
+use crate::service::caldav::worth_sending;
 use crate::service::google_api::{
     GoogleApiClient, GoogleEvent, GoogleEventDateTime, GoogleReminderOverride, GoogleReminders,
 };
@@ -760,7 +761,7 @@ async fn push_to_microsoft(
 /// Asking it a second way would be two answers to one question, which is how
 /// this program has lost things before.
 fn this_repeat_cannot_reach_outlook(event: &CalendarEventEntry) -> bool {
-    said(event.recurrence_rule.as_deref()).is_some()
+    worth_sending(event.recurrence_rule.as_deref()).is_some()
         && how_outlook_is_told_it_repeats(event).is_none()
 }
 
@@ -2234,22 +2235,17 @@ pub enum TheBodyIsFor {
 /// with its property name already on it, which is the shape the Google reader
 /// stores, cannot go back out carrying two.
 fn how_the_series_repeats(event: &CalendarEventEntry) -> Vec<String> {
-    let Some(rule) = said(event.recurrence_rule.as_deref()) else {
+    let Some(rule) = worth_sending(event.recurrence_rule.as_deref()) else {
         return Vec::new();
     };
     let mut lines = vec![crate::service::caldav::a_rule_line(rule)];
-    if let Some(called_off) = said(event.exception_dates.as_deref()) {
+    if let Some(called_off) = worth_sending(event.exception_dates.as_deref()) {
         lines.extend(crate::service::caldav::cancelled_day_lines(
             called_off,
             crate::common::moment::the_zone_named(event.time_zone.as_deref()),
         ));
     }
     lines
-}
-
-/// A stored value that says something, rather than one that is there and blank.
-fn said(value: Option<&str>) -> Option<&str> {
-    value.map(str::trim).filter(|value| !value.is_empty())
 }
 
 /// What a stored event becomes on its way to Google.
@@ -2678,7 +2674,7 @@ pub fn local_to_ms_event(
 fn how_outlook_is_told_it_repeats(
     event: &CalendarEventEntry,
 ) -> Option<crate::service::microsoft_graph::MsPatternedRecurrence> {
-    let rule = said(event.recurrence_rule.as_deref())?;
+    let rule = worth_sending(event.recurrence_rule.as_deref())?;
     let starts_on = the_day_a_stored_event_starts(event)?;
     crate::application::repeating::as_outlook_says_it(rule, starts_on)
 }

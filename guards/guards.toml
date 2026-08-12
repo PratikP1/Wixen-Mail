@@ -4018,8 +4018,8 @@ red = [
 [[guard]]
 name = "the days a new series has already called off go up with its rule"
 file = "src/application/calendar.rs"
-before = """    if let Some(called_off) = said(event.exception_dates.as_deref()) {"""
-after = """    if let Some(called_off) = said(None) {"""
+before = """    if let Some(called_off) = worth_sending(event.exception_dates.as_deref()) {"""
+after = """    if let Some(called_off) = worth_sending(None) {"""
 red = [
     "application::calendar::tests::test_a_series_created_here_carries_the_days_it_has_already_called_off",
 ]

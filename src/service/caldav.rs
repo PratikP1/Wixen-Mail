@@ -2417,7 +2417,12 @@ fn as_typed(value: &str) -> String {
 }
 
 /// A property value that says something, or nothing at all.
-fn worth_sending(value: Option<&str>) -> Option<&str> {
+///
+/// The one answer to that question. The calendar converters ask it of the same
+/// stored columns before deciding whether to build a repeat rule or a list of
+/// cancelled days, and a second copy of it in that module was a second way for
+/// "there and blank" to be told from "not there".
+pub(crate) fn worth_sending(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|value| !value.is_empty())
 }
 
