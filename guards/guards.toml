@@ -2668,8 +2668,15 @@ red = [
 # no copy kept anywhere, and said "Deleted", which was true. A server naming
 # its trash in another language was enough.
 #
-# The two breaks below are the two halves of the fix: the decision that names
-# the refusal, and the handler that says it instead of sending the delete.
+# The four breaks below are the two halves of the fix and the two narrower
+# edits that used to go unseen. The halves are the decision that names the
+# refusal and the handler that says it instead of sending the delete. The
+# narrower edits leave the refusal being said and take away the stop after it,
+# which reads as tidying and is the message loss itself: the arm's value
+# becomes the same "nowhere to move it to" the delete-off-the-server answer
+# gives, so the sentence is spoken and the only copy is removed anyway. The
+# guard could not see that shape, because it asked whether the refusal was
+# written and never whether the arm stopped.
 
 [[guard]]
 name = "not knowing where the trash is does not read as having nowhere to put it"
@@ -2695,6 +2702,38 @@ before = """                    DeletedGoesTo::NoTrashFolderFound => {
                         return;
                     }"""
 after = """                    DeletedGoesTo::NoTrashFolderFound => None,"""
+red = [
+    "test_a_delete_with_no_recognised_trash_is_refused_rather_than_sent",
+]
+
+[[guard]]
+name = "the arm that found no trash stops rather than carrying on"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """                            crate::application::destinations::NO_TRASH_FOLDER_FOUND.to_string(),
+                        ));
+                        return;
+                    }"""
+after = """                            crate::application::destinations::NO_TRASH_FOLDER_FOUND.to_string(),
+                        ));
+                        None
+                    }"""
+red = [
+    "test_a_delete_with_no_recognised_trash_is_refused_rather_than_sent",
+]
+
+[[guard]]
+name = "the arm that knows no folders yet stops rather than carrying on"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """                            crate::application::destinations::NO_FOLDERS_KNOWN_YET.to_string(),
+                        ));
+                        return;
+                    }"""
+after = """                            crate::application::destinations::NO_FOLDERS_KNOWN_YET.to_string(),
+                        ));
+                        None
+                    }"""
 red = [
     "test_a_delete_with_no_recognised_trash_is_refused_rather_than_sent",
 ]
