@@ -396,6 +396,15 @@ fn calendar_events_url(base: &str, calendar_id: &str) -> String {
 /// with an identity the series' own row never matches. No ordering is asked
 /// for either: Google offers ordering by start time only over expanded days
 /// and refuses a request that asks for both.
+///
+/// One thing about that is not settled and nothing here can settle it. The
+/// first read of an account carries a window of time, and it is not certain
+/// from the documentation whether a series that began before the window opens
+/// but still comes round inside it is inside that window or outside it. Asked
+/// for the days it plainly would be. Asked for the series it depends on
+/// whether the window is measured against the series or against its first day,
+/// and only a real account answers that. If it turns out to be the first day,
+/// the window has to go and the whole calendar be asked for instead.
 fn events_url(
     base: &str,
     calendar_id: &str,

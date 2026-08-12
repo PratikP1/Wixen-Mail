@@ -4106,3 +4106,12 @@ after = """    if status == TheStatus::AlsoAtTheProvider {
 red = [
     "application::calendar::tests::test_a_status_typed_here_is_not_overwritten_by_a_read_from_outlook",
 ]
+
+[[guard]]
+name = "a repeat Outlook could not be told is said out loud"
+file = "src/application/calendar.rs"
+before = """            if made.is_ok() && this_repeat_cannot_reach_outlook(&event) {"""
+after = """            if false && this_repeat_cannot_reach_outlook(&event) {"""
+red = [
+    "application::calendar::tests::test_a_repeat_outlook_could_not_be_told_is_said_rather_than_left_to_be_found",
+]

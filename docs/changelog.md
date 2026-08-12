@@ -17,9 +17,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
   Outlook is told a shape rather than a rule, and the two ways of saying it are
   now checked against each other, so a repeat cannot be filed as a different one.
-  A repeat Outlook has no way of saying is refused and reported rather than
-  rounded to something near it: a meeting on Tuesdays and Thursdays used to be at
-  risk of being filed as a Tuesday meeting with every Thursday gone.
+  A repeat Outlook has no way of saying is refused rather than rounded to
+  something near it: a meeting on Tuesdays and Thursdays would otherwise have
+  been at risk of being filed as a Tuesday meeting with every Thursday gone. When
+  that happens the meeting still goes up, once, on the day it starts, and the
+  sync tells you how many meetings went without their repeat, so the days that
+  are only on this computer are not something you have to find for yourself.
 
   A meeting Outlook sends back as part of a series is also no longer written into
   your diary a second time on top of the series already there.

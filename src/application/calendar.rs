@@ -720,11 +720,20 @@ async fn push_to_microsoft(
         record(sent, "Deleting an event from Outlook Calendar", result);
     }
 
+    // Counted rather than one sentence each, the way every other thing this
+    // summary has to say is. A meeting a week for a term is one repeat and
+    // would otherwise be one sentence per meeting.
+    let mut repeats_left_behind = 0;
+
     for (event, _at_microsoft) in waiting_for(cache, account_id, MICROSOFT, the_main_one, result) {
         let sent = if event.provider_event_id.is_some() {
             update_ms_event(cache, ms_client, token, &event).await
         } else {
-            create_ms_event(cache, ms_client, token, &event).await
+            let made = create_ms_event(cache, ms_client, token, &event).await;
+            if made.is_ok() && this_repeat_cannot_reach_outlook(&event) {
+                repeats_left_behind += 1;
+            }
+            made
         };
         record(
             sent.map(|_| ()),
@@ -732,6 +741,37 @@ async fn push_to_microsoft(
             result,
         );
     }
+
+    // Said out loud rather than left for somebody to come across. The meeting
+    // is at Outlook, once, on the day it starts, and every other day of it is
+    // only on this computer. A repeat that goes missing with nothing said is
+    // the whole thing this guards against.
+    if repeats_left_behind > 0 {
+        result
+            .changes_that_cannot_be_saved
+            .push(the_repeat_outlook_could_not_be_told(repeats_left_behind));
+    }
+}
+
+/// Whether the repeat on a new meeting cannot go to Outlook at all.
+///
+/// Asked through the very function that builds what is sent, so the sentence
+/// and the body cannot come to differ about which repeats Outlook can say.
+/// Asking it a second way would be two answers to one question, which is how
+/// this program has lost things before.
+fn this_repeat_cannot_reach_outlook(event: &CalendarEventEntry) -> bool {
+    said(event.recurrence_rule.as_deref()).is_some()
+        && how_outlook_is_told_it_repeats(event).is_none()
+}
+
+/// What is said about meetings that reached Outlook without their repeat.
+fn the_repeat_outlook_could_not_be_told(how_many: usize) -> String {
+    format!(
+        "{} added to your Outlook calendar went without how often it comes \
+         round, because Outlook has no way of saying it. Each is there once, \
+         on the day it starts, and the other days are only on this computer.",
+        crate::service::caldav::how_many(how_many, "meeting")
+    )
 }
 
 // ── Google Calendar Sync ────────────────────────────────────────────────────
@@ -6858,6 +6898,78 @@ mod tests {
             held[0].recurrence_rule.as_deref(),
             Some("FREQ=WEEKLY;BYDAY=TU"),
             "the meeting still repeats after the read that followed making it"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_repeat_outlook_could_not_be_told_is_said_rather_than_left_to_be_found() {
+        // The meeting goes up, because half a meeting at Outlook beats none.
+        // What must not happen is it going up quietly: it is there once, on the
+        // day it starts, and every other day of it is on this computer alone.
+        //
+        // The second Tuesday from the end of the month is a repeat a calendar
+        // server can name and Outlook cannot, which is how one reaches an
+        // Outlook calendar in the first place.
+        let cache = temp_cache("outlook_repeat_refused");
+        let mut awkward = a_pending_event_in(&cache, MICROSOFT, MICROSOFT_CALENDAR_NAME, None);
+        awkward.recurrence_rule = Some("FREQ=MONTHLY;BYDAY=-2TU".to_string());
+        cache.save_calendar_event(&awkward).expect("the series");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{\"id\":\"made-there\"}".to_string(), "{}".to_string()],
+        )
+        .await;
+
+        let summary = sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a new meeting")
+            .await
+            .expect("two requests");
+        assert!(
+            body_of(&requests[0])["recurrence"].is_null(),
+            "a repeat Outlook cannot say is not sent as a near one: {}",
+            requests[0]
+        );
+        let said = summary.changes_that_cannot_be_saved.join(" ");
+        assert!(
+            said.contains("1 meeting") && said.contains("how often it comes round"),
+            "the sync said nothing about the repeat it left behind: {said:?}"
+        );
+
+        // And the other half, so it does not say this about every meeting: a
+        // repeat Outlook can say is sent and nothing is said about it.
+        let cache = temp_cache("outlook_repeat_taken");
+        let mut ordinary = a_pending_event_in(&cache, MICROSOFT, MICROSOFT_CALENDAR_NAME, None);
+        ordinary.recurrence_rule = Some("FREQ=WEEKLY;BYDAY=TU".to_string());
+        cache.save_calendar_event(&ordinary).expect("the series");
+        let (address, _listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{\"id\":\"made-there\"}".to_string(), "{}".to_string()],
+        )
+        .await;
+
+        let summary = sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        assert!(
+            summary.changes_that_cannot_be_saved.is_empty(),
+            "{:?}",
+            summary.changes_that_cannot_be_saved
         );
     }
 

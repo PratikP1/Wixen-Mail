@@ -849,6 +849,45 @@ mod tests {
     }
 
     #[test]
+    fn test_both_spellings_of_every_weekday_are_in_the_one_table() {
+        // The conversions refuse a weekday the table has no name for, and that
+        // refusal is only ever right while the table is whole. A row lost from
+        // it would turn "Outlook cannot say this" into the answer for a
+        // perfectly ordinary Wednesday meeting, and the refusal reads as
+        // deliberate either way.
+        for day in [
+            chrono::Weekday::Mon,
+            chrono::Weekday::Tue,
+            chrono::Weekday::Wed,
+            chrono::Weekday::Thu,
+            chrono::Weekday::Fri,
+            chrono::Weekday::Sat,
+            chrono::Weekday::Sun,
+        ] {
+            let outlook = outlook_calls_the_day(day).unwrap_or_else(|| panic!("{day} at Outlook"));
+            let in_a_rule =
+                the_day_outlook_named(&outlook).unwrap_or_else(|| panic!("{outlook} in a rule"));
+            assert_eq!(
+                in_a_rule.len(),
+                2,
+                "{day} is written {in_a_rule} in a rule, and a rule names a day in two letters"
+            );
+        }
+
+        // And back again for every week of the month Outlook offers, which is
+        // the other table the refusals are read against.
+        for (nth, outlook) in THE_WEEKS_OF_A_MONTH {
+            assert_eq!(outlook_calls_the_week(nth), Some(outlook));
+            assert_eq!(the_week_outlook_named(outlook), Some(nth));
+        }
+        assert_eq!(
+            the_week_outlook_named("fifth"),
+            None,
+            "Outlook has no fifth week, so nothing may read one"
+        );
+    }
+
+    #[test]
     fn test_a_repeat_outlook_cannot_say_is_refused_rather_than_rounded() {
         // Refused, because the alternative is a meeting filed on days nobody
         // chose. The lenient reader the item form uses answers "every week" to
