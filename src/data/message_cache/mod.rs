@@ -772,6 +772,15 @@ pub struct CalendarEventEntry {
     /// not part of the rule. Without it a cancelled day of a series is shown as
     /// a meeting somebody turns up to that is not happening.
     pub exception_dates: Option<String>,
+    /// The series this appointment was cut out of, when somebody changed one
+    /// day of a repeating event. Nothing for every other event.
+    ///
+    /// Changing one day is one action to the person and two writes to the
+    /// server: this appointment is created, and the day is taken off the
+    /// series. The second one takes a day away, so it must not reach a server
+    /// before the first one has landed there. After the program is closed and
+    /// opened again this is the only thing that still knows the two are a pair.
+    pub cut_from_event_id: Option<String>,
 }
 
 /// Reminder entry
@@ -1723,6 +1732,10 @@ impl MessageCache {
         // shipped, a series was shown on one day and had no other days to call
         // off.
         self.ensure_column_exists("calendar_events", "exception_dates", "TEXT")?;
+        // The series an appointment was cut out of. Nothing for every event
+        // already stored, which is the right answer for all of them: until
+        // this shipped no day had ever been cut out of a series.
+        self.ensure_column_exists("calendar_events", "cut_from_event_id", "TEXT")?;
         // Where an event was at the calendar server that held it. Nothing for
         // every note already written, which is the right answer for all of
         // them: until this shipped no deletion had ever been sent anywhere, so
@@ -2242,6 +2255,12 @@ impl MessageCache {
                 -- column to copy from, and no series it could have called a day
                 -- off, because a series was shown on one day only.
                 exception_dates TEXT,
+                -- Left out of EVENT_COLUMNS for the same reason as the two
+                -- columns above. It has to be named here all the same: this
+                -- rebuild runs after the columns are added, so a column added
+                -- there and missing here is dropped again on exactly the
+                -- oldest databases, and every later read naming it fails.
+                cut_from_event_id TEXT,
                 UNIQUE(account_id, calendar_id, provider_event_id)
             )",
                 [],

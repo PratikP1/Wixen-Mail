@@ -36,7 +36,7 @@ const EVENT_COLS: &str =
      start_datetime, end_datetime, start_date, end_date, is_all_day, time_zone,
      status, recurrence_rule, source_provider, etag, web_link, show_as,
      last_modified_remote, last_synced_at, attendees_json, reminders_json,
-     created_at, updated_at, categories, pending, exception_dates";
+     created_at, updated_at, categories, pending, exception_dates, cut_from_event_id";
 
 /// Map a rusqlite row to a `CalendarEventEntry` (columns must match `EVENT_COLS` order).
 fn map_event_row(row: &rusqlite::Row) -> rusqlite::Result<CalendarEventEntry> {
@@ -72,6 +72,7 @@ fn map_event_row(row: &rusqlite::Row) -> rusqlite::Result<CalendarEventEntry> {
         categories: row.get(25)?,
         pending: row.get(26)?,
         exception_dates: row.get(27)?,
+        cut_from_event_id: row.get(28)?,
     })
 }
 
@@ -101,12 +102,12 @@ impl MessageCache {
               start_datetime, end_datetime, start_date, end_date, is_all_day, time_zone,
               status, recurrence_rule, source_provider, etag, web_link, show_as,
               last_modified_remote, last_synced_at, attendees_json, reminders_json,
-              created_at, updated_at, categories, pending, exception_dates)
+              created_at, updated_at, categories, pending, exception_dates, cut_from_event_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
                      ?17, ?18, ?19, ?20, ?21, ?22, ?23,
                      COALESCE((SELECT created_at FROM calendar_events
                                WHERE account_id = ?2 AND calendar_id IS ?4 AND provider_event_id = ?3), ?24),
-                     ?25, ?26, ?27, ?28)
+                     ?25, ?26, ?27, ?28, ?29)
              ON CONFLICT(id) DO UPDATE SET
                 provider_event_id = COALESCE(excluded.provider_event_id, calendar_events.provider_event_id),
                 calendar_id = excluded.calendar_id,
@@ -132,6 +133,7 @@ impl MessageCache {
                 categories = excluded.categories,
                 pending = excluded.pending,
                 exception_dates = excluded.exception_dates,
+                cut_from_event_id = excluded.cut_from_event_id,
                 updated_at = excluded.updated_at
              ON CONFLICT(account_id, calendar_id, provider_event_id) DO UPDATE SET
                 summary = excluded.summary,
@@ -156,6 +158,7 @@ impl MessageCache {
                 categories = excluded.categories,
                 pending = excluded.pending,
                 exception_dates = excluded.exception_dates,
+                cut_from_event_id = excluded.cut_from_event_id,
                 updated_at = excluded.updated_at",
             params![
                 &event.id, &event.account_id, &event.provider_event_id, &event.calendar_id,
@@ -168,6 +171,7 @@ impl MessageCache {
                 &event.last_modified_remote, &event.last_synced_at,
                 &event.attendees_json, &event.reminders_json,
                 &now, &now, &event.categories, &event.pending, &event.exception_dates,
+                &event.cut_from_event_id,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save calendar event: {}", e)))?;
         Ok(())
@@ -280,6 +284,44 @@ impl MessageCache {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect events: {}", e)))?;
         Ok(events)
+    }
+
+    /// The days cut out of this series that no server has been told about yet.
+    ///
+    /// Identities only, because the caller asks one question of the answer: is
+    /// there anything here. Taking a day off a series at the server is the
+    /// write that removes something, so it waits until this is empty.
+    ///
+    /// Asked of what is stored rather than of anything remembered from earlier
+    /// in a sync. A row stops waiting only when the write that cleared it has
+    /// already been through, so an empty answer is the server's own outcome and
+    /// not a hope about it.
+    pub fn days_cut_out_of_it_still_waiting(&self, event_id: &str) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id FROM calendar_events WHERE cut_from_event_id = ?1 AND pending = 1")
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to prepare the query for days cut out of a series: {}",
+                    e
+                ))
+            })?;
+        let waiting = stmt
+            .query_map(params![event_id], |row| row.get::<_, String>(0))
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to query the days cut out of a series: {}",
+                    e
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to collect the days cut out of a series: {}",
+                    e
+                ))
+            })?;
+        Ok(waiting)
     }
 
     /// Every change waiting to go to the provider, oldest first.
@@ -616,6 +658,7 @@ mod tests {
             updated_at: chrono::Utc::now().to_rfc3339(),
             pending: false,
             exception_dates: None,
+            cut_from_event_id: None,
         }
     }
 
@@ -722,6 +765,7 @@ mod tests {
             updated_at: chrono::Utc::now().to_rfc3339(),
             pending: false,
             exception_dates: None,
+            cut_from_event_id: None,
         };
 
         cache.save_calendar_event(&event).unwrap();
@@ -1658,6 +1702,124 @@ mod tests {
                 "provider_event_id".to_string(),
             ]],
             "an event is not recognised by the calendar it is in",
+        );
+    }
+
+    /// A day cut out of a series, waiting to go to the server.
+    fn a_day_cut_out_of(series: &str, id: &str) -> CalendarEventEntry {
+        let mut day = make_event(id, "acct", &format!("uid-{id}"), "Stand-up, small room");
+        day.calendar_id = Some("cal-1".to_string());
+        day.cut_from_event_id = Some(series.to_string());
+        day.pending = true;
+        day
+    }
+
+    #[test]
+    fn test_the_series_a_day_was_cut_from_survives_a_save_and_a_read_back() {
+        // Read back three ways, because the column list and the row reader are
+        // positional against each other: a column added anywhere but the end of
+        // both makes every field after it read the wrong value, and that looks
+        // like corrupted calendar data rather than a schema mistake.
+        let cache = temp_cache("cut_from_survives");
+        cache
+            .save_calendar_event(&a_day_cut_out_of("series-1", "day-1"))
+            .expect("the day to save");
+
+        let by_id = cache
+            .get_event_by_id("day-1")
+            .expect("the day to be readable")
+            .expect("the day");
+        assert_eq!(by_id.cut_from_event_id.as_deref(), Some("series-1"));
+        assert_eq!(by_id.summary, "Stand-up, small room", "the columns shifted");
+
+        let all = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].cut_from_event_id.as_deref(), Some("series-1"));
+
+        let waiting = cache
+            .pending_calendar_events("acct")
+            .expect("the waiting changes");
+        assert_eq!(waiting.len(), 1);
+        assert_eq!(waiting[0].cut_from_event_id.as_deref(), Some("series-1"));
+    }
+
+    #[test]
+    fn test_a_row_saved_again_keeps_the_series_it_was_cut_from() {
+        // The single most likely way to lose the pair. A save matches on the
+        // identity here or on the server's, and each match has its own list of
+        // columns to write. One that forgets this column unlinks the two halves
+        // with no symptom at all until the next half-failure destroys the day.
+        let cache = temp_cache("cut_from_saved_again");
+        let day = a_day_cut_out_of("series-1", "day-1");
+        cache.save_calendar_event(&day).expect("the day to save");
+
+        let mut retyped = day.clone();
+        retyped.summary = "Stand-up, moved again".to_string();
+        cache
+            .save_calendar_event(&retyped)
+            .expect("the day to save again by its identity here");
+        assert_eq!(
+            cache
+                .get_event_by_id("day-1")
+                .expect("the day to be readable")
+                .expect("the day")
+                .cut_from_event_id
+                .as_deref(),
+            Some("series-1"),
+            "saving the day again by its own identity unlinked it from the series"
+        );
+
+        // The way a sync writes it: a different row identity carrying the same
+        // account, calendar and server identity, which lands on the other
+        // conflict clause.
+        let mut from_the_server = day.clone();
+        from_the_server.id = "written-by-the-sync".to_string();
+        from_the_server.summary = "Stand-up, as the server has it".to_string();
+        cache
+            .save_calendar_event(&from_the_server)
+            .expect("the server's copy to save");
+
+        let after = cache
+            .get_event_by_id("day-1")
+            .expect("the day to be readable")
+            .expect("the day");
+        assert_eq!(after.summary, "Stand-up, as the server has it");
+        assert_eq!(
+            after.cut_from_event_id.as_deref(),
+            Some("series-1"),
+            "a sync writing the server's copy down unlinked the day from the series"
+        );
+    }
+
+    #[test]
+    fn test_the_days_cut_out_of_a_series_that_are_still_waiting_are_the_ones_named() {
+        let cache = temp_cache("cut_from_still_waiting");
+        cache
+            .save_calendar_event(&a_day_cut_out_of("series-1", "day-1"))
+            .expect("the day to save");
+        cache
+            .save_calendar_event(&a_day_cut_out_of("series-2", "day-2"))
+            .expect("another series' day to save");
+
+        assert_eq!(
+            cache
+                .days_cut_out_of_it_still_waiting("series-1")
+                .expect("the waiting days"),
+            vec!["day-1".to_string()],
+            "a day cut out of another series was counted against this one"
+        );
+
+        let mut landed = a_day_cut_out_of("series-1", "day-1");
+        landed.pending = false;
+        cache.save_calendar_event(&landed).expect("the day to land");
+        assert!(
+            cache
+                .days_cut_out_of_it_still_waiting("series-1")
+                .expect("the waiting days")
+                .is_empty(),
+            "a day that has already reached the server still holds its series back"
         );
     }
 }

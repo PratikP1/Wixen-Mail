@@ -861,6 +861,7 @@ mod tests {
             updated_at: "2026-01-01T00:00:00Z".to_string(),
             pending: false,
             exception_dates: None,
+            cut_from_event_id: None,
         }
     }
 

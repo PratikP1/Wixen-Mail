@@ -522,31 +522,50 @@ fn the_calendar_it_is_in(
     crate::application::calendar::where_a_change_goes(container.as_ref())
 }
 
+/// The one day somebody changed, as an appointment of its own.
+///
+/// Carries the series' calendar, zone, account and status and none of its
+/// identity: no repeat rule, no called-off days, and nothing the server that
+/// holds the series knows it by. It is a new appointment, so it goes up as one.
+///
+/// It does name the series it was cut out of. That is what lets the sync send
+/// the two halves as a pair and hold the destructive one back, and after the
+/// program is closed and opened again it is the only thing that still knows
+/// they are a pair.
+///
+/// Built here rather than inside the routine that stores it, so the same value
+/// can be asked about before anything is written and then stored. Nothing sends
+/// a pair like this to a Google or an Outlook calendar today, because changing
+/// one day is refused for those; anything that widens that has to give those
+/// passes a hold-back of their own first, or the day goes and the replacement
+/// never follows.
+fn the_day_kept_on_its_own(
+    series: &crate::data::message_cache::CalendarEventEntry,
+    data: &wx_calendar::CalendarEventData,
+) -> crate::data::message_cache::CalendarEventEntry {
+    let entry = event_entry(new_id("event"), &series.account_id, data);
+    crate::data::message_cache::CalendarEventEntry {
+        calendar_id: series.calendar_id.clone(),
+        time_zone: series.time_zone.clone(),
+        status: series.status.clone(),
+        categories: series.categories.clone(),
+        cut_from_event_id: Some(series.id.clone()),
+        ..entry
+    }
+}
+
 /// Store the one day somebody changed, and take that day off the series.
 ///
 /// The changed day is written first, on purpose. If the second write fails, the
 /// day is on the calendar twice, which somebody can see and put right. The
 /// other order leaves the day missing, which nothing says and nobody can get
 /// back.
-///
-/// The separate day carries the series' calendar, zone, account and status and
-/// none of its identity: no repeat rule, no called-off days, and nothing the
-/// server that holds the series knows it by. It is a new appointment, so it
-/// goes up as one.
 fn one_day_of_a_series_changed(
     cache: &MessageCache,
     series: &crate::data::message_cache::CalendarEventEntry,
     opened: &CalendarEventItem,
-    data: &wx_calendar::CalendarEventData,
+    that_day: crate::data::message_cache::CalendarEventEntry,
 ) -> crate::common::Result<()> {
-    let entry = event_entry(new_id("event"), &series.account_id, data);
-    let that_day = crate::data::message_cache::CalendarEventEntry {
-        calendar_id: series.calendar_id.clone(),
-        time_zone: series.time_zone.clone(),
-        status: series.status.clone(),
-        categories: series.categories.clone(),
-        ..entry
-    };
     cache.save_calendar_event(&that_day)?;
     cache.save_calendar_event(&crate::application::calendar::one_day_called_off(
         series,
@@ -642,7 +661,8 @@ pub fn manage_calendar(
                 }
                 let written = match (stored, means) {
                     (Some(series), EditMeans::OneDay) => {
-                        one_day_of_a_series_changed(&cache, &series, &opened, &data)
+                        let that_day = the_day_kept_on_its_own(&series, &data);
+                        one_day_of_a_series_changed(&cache, &series, &opened, that_day)
                     }
                     (Some(stored), EditMeans::WholeSeries) => {
                         cache.save_calendar_event(&event_with_edits(stored, &opened, &data))
@@ -1053,6 +1073,7 @@ fn event_entry(
         // Anything the editor here produces is a change the provider has not
         // been told about, whether it is a new event or a correction to one.
         pending: true,
+        cut_from_event_id: None,
     }
 }
 
@@ -1838,6 +1859,7 @@ fn store_new_item(
                 // A series just made has no days called off yet. Calling one
                 // off is not something any screen here offers.
                 exception_dates: None,
+                cut_from_event_id: None,
             })
         }
         ItemKind::Reminder => cache.save_reminder(&ReminderEntry {
@@ -5887,6 +5909,7 @@ mod changing_one_day_of_a_series {
             updated_at: chrono::Utc::now().to_rfc3339(),
             pending: false,
             exception_dates: None,
+            cut_from_event_id: None,
         };
         cache.save_calendar_event(&series).expect("the series");
         series
@@ -5919,8 +5942,13 @@ mod changing_one_day_of_a_series {
         let day = the_day_opened(&series);
         assert_eq!(day.start, "2026-08-03T09:00:00+05:30");
 
-        one_day_of_a_series_changed(&cache, &series, &day, &only_the_summary_retyped(&day))
-            .expect("the day and the series to be stored");
+        one_day_of_a_series_changed(
+            &cache,
+            &series,
+            &day,
+            the_day_kept_on_its_own(&series, &only_the_summary_retyped(&day)),
+        )
+        .expect("the day and the series to be stored");
 
         let stored = cache
             .get_all_events_for_account("acct-1")
@@ -5964,6 +5992,47 @@ mod changing_one_day_of_a_series {
         assert_eq!(on_its_own.etag, None);
         assert_eq!(on_its_own.web_link, None);
         assert!(on_its_own.pending, "the day is not waiting to be sent");
+    }
+
+    #[test]
+    fn test_the_day_kept_on_its_own_names_the_series_it_was_cut_from() {
+        // The link is what lets the sync treat the two writes as a pair. The
+        // half that takes the day off the series waits until the half that
+        // creates this one is known to have arrived, and after the program is
+        // closed and opened again this is the only thing that still knows.
+        let cache = a_cache("one_day_names_its_series");
+        a_calendar_on_a_server(&cache);
+        let series = a_weekly_series(&cache);
+        let day = the_day_opened(&series);
+
+        one_day_of_a_series_changed(
+            &cache,
+            &series,
+            &day,
+            the_day_kept_on_its_own(&series, &only_the_summary_retyped(&day)),
+        )
+        .expect("the day and the series to be stored");
+
+        let stored = cache
+            .get_all_events_for_account("acct-1")
+            .expect("the calendar to be readable");
+        let on_its_own = stored
+            .iter()
+            .find(|event| event.id != "series-1")
+            .expect("the day kept on its own");
+        assert_eq!(
+            on_its_own.cut_from_event_id.as_deref(),
+            Some("series-1"),
+            "the day kept on its own does not say which series it was cut out of"
+        );
+        let kept = stored
+            .iter()
+            .find(|event| event.id == "series-1")
+            .expect("the series");
+        assert_eq!(
+            kept.cut_from_event_id, None,
+            "the series says it was cut out of something"
+        );
     }
 
     #[test]
@@ -6145,8 +6214,13 @@ mod changing_one_day_of_a_series {
         let series = a_weekly_series(&cache);
         let day = the_day_opened(&series);
 
-        one_day_of_a_series_changed(&cache, &series, &day, &only_the_summary_retyped(&day))
-            .expect("the day and the series to be stored");
+        one_day_of_a_series_changed(
+            &cache,
+            &series,
+            &day,
+            the_day_kept_on_its_own(&series, &only_the_summary_retyped(&day)),
+        )
+        .expect("the day and the series to be stored");
 
         let stored = cache
             .get_all_events_for_account("acct-1")

@@ -164,6 +164,10 @@ async fn push_to_the_calendar_server(
     }
 
     for event in changes_waiting(cache, calendar, account_id, result) {
+        if let Some(said) = why_this_one_has_to_wait(cache, &event.id) {
+            result.errors.push(said);
+            continue;
+        }
         let sent = send_one_change(cache, caldav, calendar_url, &event, username, password).await;
         if let Ok(ref uid) = sent {
             just_sent.insert(uid.clone());
@@ -178,6 +182,43 @@ async fn push_to_the_calendar_server(
     }
 
     just_sent
+}
+
+/// Why a change is held back this pass, or nothing when it can go.
+///
+/// Changing one day of a repeating event is one action to the person and two
+/// writes to the server: a new appointment for that day, and the day taken off
+/// the series. Only the second one takes something away, so it waits until the
+/// first has really arrived. Sent the other way round, a create that is refused
+/// leaves the day gone from the server and stored on this computer alone.
+///
+/// The question is put to the cache on each turn of the loop and never to the
+/// list this loop started with. That list was read before the new appointment
+/// was even attempted, so it cannot say how that attempt went. A row stops
+/// waiting only after the write that recorded the server's answer has been
+/// through, which is what makes an empty answer here the real outcome rather
+/// than a hope about it.
+///
+/// A cache that cannot be read counts as still waiting. The safe answer when
+/// this computer does not know is not to take a day off somebody's calendar.
+fn why_this_one_has_to_wait(cache: &MessageCache, event_id: &str) -> Option<String> {
+    // The event's own identity here, never its title: this goes to a summary
+    // and a log, and a title is the person's own words.
+    match cache.days_cut_out_of_it_still_waiting(event_id) {
+        Ok(waiting) if waiting.is_empty() => None,
+        Ok(_) => Some(format!(
+            "Event {event_id} at the calendar server: the day taken off this \
+             repeating event has not been taken off it there yet, because the \
+             separate appointment kept for that day has not been created yet. \
+             Both are still waiting and will be tried again at the next sync."
+        )),
+        Err(e) => Some(format!(
+            "Event {event_id} at the calendar server: whether a day cut out of \
+             this repeating event is still waiting could not be read, so the \
+             day has not been taken off it there: {e}. It will be tried again \
+             at the next sync."
+        )),
+    }
 }
 
 /// Send one change, and write down that the server now holds it.
@@ -293,7 +334,18 @@ fn settled_here(
     cache.save_calendar_event(&settled)
 }
 
-/// Everything waiting to go to this calendar.
+/// Everything waiting to go to this calendar, days cut out of a series first.
+///
+/// A day somebody cut out of a repeating event goes up before the series it was
+/// cut out of, because the write to the series takes that day away and the
+/// write that creates the day puts it somewhere. Both halves then land in one
+/// pass rather than one pass each. Order alone does not make the pair safe, and
+/// the loop that sends them holds the series back until the cache says the day
+/// really arrived; this only spares somebody a second sync.
+///
+/// Stable, so the order the rows came back in, which is oldest first, stays the
+/// order inside each half. The query is left alone: it has two other callers,
+/// and one order decided in two places is two orders.
 fn changes_waiting(
     cache: &MessageCache,
     calendar: &CalendarContainer,
@@ -301,10 +353,13 @@ fn changes_waiting(
     result: &mut CalendarSyncResult,
 ) -> Vec<CalendarEventEntry> {
     match cache.pending_calendar_events(account_id) {
-        Ok(waiting) => waiting
-            .into_iter()
-            .filter(|event| event.calendar_id.as_deref() == Some(calendar.id.as_str()))
-            .collect(),
+        Ok(waiting) => {
+            let (cut_out, everything_else): (Vec<_>, Vec<_>) = waiting
+                .into_iter()
+                .filter(|event| event.calendar_id.as_deref() == Some(calendar.id.as_str()))
+                .partition(|event| event.cut_from_event_id.is_some());
+            cut_out.into_iter().chain(everything_else).collect()
+        }
         Err(e) => {
             result.errors.push(format!(
                 "The changes waiting to be sent could not be read: {e}"
@@ -782,6 +837,10 @@ fn the_one_stored_at<'a>(
 /// has to come out of here, or the server's copy will be thrown away instead.
 fn carry_over_local_only(merged: &mut CalendarEventEntry, held: &CalendarEventEntry) {
     merged.id = held.id.clone();
+    // Which series this appointment was cut out of. Nothing in a calendar
+    // document says so, and blanking it here would unlink the pair the first
+    // time a sync read the server's copy back over the row.
+    merged.cut_from_event_id = held.cut_from_event_id.clone();
     merged.categories = held.categories.clone();
     merged.attendees_json = held.attendees_json.clone();
     merged.reminders_json = held.reminders_json.clone();
@@ -854,6 +913,7 @@ fn caldav_event_to_local(
         created_at: now.clone(),
         updated_at: now,
         pending: false,
+        cut_from_event_id: None,
     }
 }
 
@@ -961,6 +1021,7 @@ mod tests {
             updated_at: "2026-01-01T00:00:00Z".to_string(),
             pending: false,
             exception_dates: None,
+            cut_from_event_id: None,
         };
 
         let caldav = local_to_caldav_event(&local);
@@ -1046,6 +1107,7 @@ mod tests {
             updated_at: "2026-01-01T00:00:00Z".to_string(),
             pending: false,
             exception_dates: None,
+            cut_from_event_id: None,
         }
     }
 
@@ -1918,7 +1980,9 @@ mod tests {
 
     // ── Sending a change back to the calendar server ─────────────────────
 
-    use crate::common::answering::{Answer, answering_in_turn, asked_for, heard};
+    use crate::common::answering::{
+        Answer, answering_in_turn, answering_several, asked_for, heard,
+    };
     use crate::service::caldav::writing_tests::a_document_the_server_holds;
 
     /// A change somebody made here that has not been sent yet.
@@ -3400,6 +3464,476 @@ mod tests {
         assert!(
             (forward - 365 * 24).abs() <= 1,
             "the window should end a year ahead, it ended {forward} hours from now"
+        );
+    }
+
+    // ── One day cut out of a series: two writes, one action ──────────────
+
+    /// A series in a calendar the server holds, waiting to be told a day is off.
+    fn a_series_waiting_in(
+        cache: &MessageCache,
+        calendar: &CalendarContainer,
+        at: &str,
+        zone: &str,
+    ) -> CalendarEventEntry {
+        let mut series = held_event("series-1", "e-1", &calendar.id, &calendar.account_id);
+        series.summary = "Stand-up".to_string();
+        series.web_link = Some(at.to_string());
+        series.etag = Some("\"the tag from the last sync\"".to_string());
+        series.time_zone = Some(zone.to_string());
+        series.recurrence_rule = Some("FREQ=WEEKLY".to_string());
+        series.exception_dates = Some("20260312T090000Z".to_string());
+        series.pending = true;
+        cache.save_calendar_event(&series).expect("the series");
+        series
+    }
+
+    /// The day somebody cut out of that series, kept as its own appointment.
+    fn a_day_cut_out_waiting_in(
+        cache: &MessageCache,
+        calendar: &CalendarContainer,
+        zone: &str,
+    ) -> CalendarEventEntry {
+        let mut day = held_event("day-1", "unused", &calendar.id, &calendar.account_id);
+        day.summary = "Stand-up, in the small room".to_string();
+        day.provider_event_id = None;
+        day.web_link = None;
+        day.etag = None;
+        day.time_zone = Some(zone.to_string());
+        day.start_datetime = "2026-03-12T09:00:00".to_string();
+        day.end_datetime = "2026-03-12T09:15:00".to_string();
+        day.cut_from_event_id = Some("series-1".to_string());
+        day.pending = true;
+        cache.save_calendar_event(&day).expect("the day cut out");
+        day
+    }
+
+    #[tokio::test]
+    async fn test_a_day_cut_out_of_a_series_goes_up_before_the_day_is_taken_off_the_series() {
+        // The positive control, and it comes first. Every test below asserts
+        // that something was not sent, and each of them would pass against a
+        // program that never sends anything at all.
+        let cache = temp_cache("push_cut_out_pair");
+        let mut calendar = container("cal-pair", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::tagged("\"new\"", String::new()),
+                Answer::tagged("\"v7\"", a_document_the_server_holds("e-1")),
+                Answer::plain(String::new()),
+                Answer::plain(multi_status(&["e-1"])),
+            ],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let at = format!("http://{address}/cal/e-1.ics");
+        a_series_waiting_in(&cache, &calendar, &at, "Europe/London");
+        a_day_cut_out_waiting_in(&cache, &calendar, "Europe/London");
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "the new appointment, then the series")
+            .await
+            .expect("four requests");
+        assert!(
+            asked_for(&requests[0]).starts_with("PUT /cal/"),
+            "the new appointment did not go up first: {}",
+            asked_for(&requests[0])
+        );
+        assert_eq!(asked_for(&requests[1]), "GET /cal/e-1.ics");
+        assert_eq!(asked_for(&requests[2]), "PUT /cal/e-1.ics");
+        assert_eq!(asked_for(&requests[3]), "REPORT /cal/");
+        assert!(
+            body_of(&requests[2]).contains("EXDATE"),
+            "the day was not taken off the series: {}",
+            body_of(&requests[2])
+        );
+        assert_eq!(result.sent, 2);
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+
+        let day = cache
+            .get_event_by_id("day-1")
+            .expect("the day to be readable")
+            .expect("the day");
+        assert!(!day.pending, "the new appointment is still waiting");
+        assert!(
+            day.web_link.is_some() && day.provider_event_id.is_some(),
+            "the new appointment kept no address or identity from the server"
+        );
+        assert!(
+            !cache
+                .get_event_by_id("series-1")
+                .expect("the series to be readable")
+                .expect("the series")
+                .pending,
+            "the series is still waiting"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_day_whose_replacement_cannot_be_created_is_not_taken_off_the_series_at_the_server()
+     {
+        // The bug this was written for. The half that creates the replacement
+        // is refused for ever over a zone the document cannot define, and the
+        // half that takes the day off the series used to go anyway: the day
+        // left the server and lived on this computer only.
+        //
+        // A row in exactly this state is one an older build already wrote, so
+        // it is a state somebody's database can be in today.
+        let cache = temp_cache("push_cut_out_create_refused");
+        let mut calendar = container("cal-create-refused", "acct");
+        let (address, listening) = answering("200 OK", "text/calendar", multi_status(&[])).await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let at = format!("http://{address}/cal/e-1.ics");
+        a_series_waiting_in(&cache, &calendar, &at, "Europe/London");
+        a_day_cut_out_waiting_in(&cache, &calendar, "Eastern Standard Time");
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let request = heard(listening, "only the calendar read")
+            .await
+            .expect("one request");
+        assert!(
+            asked_for(&request).starts_with("REPORT"),
+            "a day was taken off the series while its replacement was refused: {}",
+            asked_for(&request)
+        );
+        assert_eq!(result.sent, 0);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|said| said.contains("Eastern Standard Time")),
+            "nothing named the zone that was refused: {:?}",
+            result.errors
+        );
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|said| said.contains("series-1") && said.contains("not been created yet")),
+            "nothing said why the day was left on the series: {:?}",
+            result.errors
+        );
+
+        let series = cache
+            .get_event_by_id("series-1")
+            .expect("the series to be readable")
+            .expect("the series");
+        assert!(
+            series.pending,
+            "the series stopped waiting without being sent"
+        );
+        assert_eq!(
+            series.exception_dates.as_deref(),
+            Some("20260312T090000Z"),
+            "the days the series calls off were changed"
+        );
+        let day = cache
+            .get_event_by_id("day-1")
+            .expect("the day to be readable")
+            .expect("the day");
+        assert!(
+            day.pending,
+            "the replacement stopped waiting without being sent"
+        );
+        assert_eq!(day.provider_event_id, None);
+        assert_eq!(day.web_link, None);
+    }
+
+    #[tokio::test]
+    async fn test_a_replacement_that_went_up_is_kept_when_taking_the_day_off_the_series_fails() {
+        // The other half failing. The replacement is at the server and the
+        // series change is refused, so the appointment shows twice, which
+        // somebody can see and put right, and never nowhere.
+        let cache = temp_cache("push_cut_out_series_refused");
+        let mut calendar = container("cal-series-refused", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::tagged("\"new\"", String::new()),
+                Answer::tagged("\"v7\"", a_document_the_server_holds("somebody-else")),
+                Answer::plain(multi_status(&["e-1"])),
+            ],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let at = format!("http://{address}/cal/e-1.ics");
+        a_series_waiting_in(&cache, &calendar, &at, "Europe/London");
+        a_day_cut_out_waiting_in(&cache, &calendar, "Europe/London");
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "the new appointment, then the series read")
+            .await
+            .expect("three requests");
+        assert!(
+            asked_for(&requests[0]).starts_with("PUT /cal/"),
+            "the new appointment did not go up: {}",
+            asked_for(&requests[0])
+        );
+        assert!(
+            body_of(&requests[0]).contains("SUMMARY:Stand-up\\, in the small room"),
+            "the new appointment carried somebody else's words: {}",
+            body_of(&requests[0])
+        );
+        assert!(
+            !result.errors.is_empty(),
+            "the series change failed and nothing was said"
+        );
+
+        let day = cache
+            .get_event_by_id("day-1")
+            .expect("the day to be readable")
+            .expect("the day");
+        assert!(!day.pending, "the new appointment is still waiting");
+        assert!(day.web_link.is_some() && day.provider_event_id.is_some());
+        let series = cache
+            .get_event_by_id("series-1")
+            .expect("the series to be readable")
+            .expect("the series");
+        assert!(
+            series.pending,
+            "the series stopped waiting although the day was never taken off it"
+        );
+        assert_eq!(series.exception_dates.as_deref(), Some("20260312T090000Z"));
+    }
+
+    #[tokio::test]
+    async fn test_the_series_stays_waiting_when_the_server_refuses_the_replacement() {
+        // The hold-back is not about zones. Whatever stops the replacement
+        // reaching the server stops the day being taken off it.
+        let cache = temp_cache("push_cut_out_server_refuses");
+        let mut calendar = container("cal-server-refuses", "acct");
+        let (address, listening) = answering_several(
+            "507 Insufficient Storage",
+            "text/calendar",
+            vec![String::new(), multi_status(&["e-1"])],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let at = format!("http://{address}/cal/e-1.ics");
+        a_series_waiting_in(&cache, &calendar, &at, "Europe/London");
+        a_day_cut_out_waiting_in(&cache, &calendar, "Europe/London");
+
+        let _ = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await;
+
+        let requests = heard(listening, "the refused create and the calendar read")
+            .await
+            .expect("two requests");
+        assert_eq!(
+            requests.len(),
+            2,
+            "more than the create and the read went out"
+        );
+        assert!(
+            asked_for(&requests[1]).starts_with("REPORT"),
+            "something went out between the refused create and the read: {}",
+            asked_for(&requests[1])
+        );
+        assert!(
+            !requests
+                .iter()
+                .any(|sent| asked_for(sent) == "PUT /cal/e-1.ics"),
+            "the day was taken off the series although the replacement was refused"
+        );
+        assert!(
+            cache
+                .get_event_by_id("series-1")
+                .expect("the series to be readable")
+                .expect("the series")
+                .pending,
+            "the series stopped waiting without being sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_series_whose_replacement_already_reached_the_server_is_sent_on_the_next_pass() {
+        // Taken with the test above, this is the proof that the decision is
+        // read from what really happened to the replacement. The same series is
+        // held in one case and sent in the other, and the only difference
+        // between them is what the cache says about the replacement.
+        let cache = temp_cache("push_cut_out_next_pass");
+        let mut calendar = container("cal-next-pass", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::tagged("\"v7\"", a_document_the_server_holds("e-1")),
+                Answer::plain(String::new()),
+                Answer::plain(multi_status(&["e-1"])),
+            ],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let at = format!("http://{address}/cal/e-1.ics");
+        a_series_waiting_in(&cache, &calendar, &at, "Europe/London");
+        let mut landed = a_day_cut_out_waiting_in(&cache, &calendar, "Europe/London");
+        landed.provider_event_id = Some("day-uid".to_string());
+        landed.web_link = Some(format!("http://{address}/cal/day-uid.ics"));
+        landed.pending = false;
+        cache
+            .save_calendar_event(&landed)
+            .expect("the replacement to have landed");
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "the series change and the calendar read")
+            .await
+            .expect("three requests");
+        assert_eq!(asked_for(&requests[1]), "PUT /cal/e-1.ics");
+        assert!(
+            body_of(&requests[1]).contains("EXDATE"),
+            "the day was not taken off the series: {}",
+            body_of(&requests[1])
+        );
+        assert_eq!(result.sent, 1);
+    }
+
+    #[tokio::test]
+    async fn test_a_series_that_comes_first_in_the_queue_still_waits_for_the_day_cut_out_of_it() {
+        // The waiting changes come back oldest first, so a series saved before
+        // its replacement is offered first. Both halves still go in one pass,
+        // in the right order, which is what stops a person having to sync twice
+        // for one edit.
+        let cache = temp_cache("push_cut_out_series_first");
+        let mut calendar = container("cal-series-first", "acct");
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::tagged("\"new\"", String::new()),
+                Answer::tagged("\"v7\"", a_document_the_server_holds("e-1")),
+                Answer::plain(String::new()),
+                Answer::plain(multi_status(&["e-1"])),
+            ],
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let at = format!("http://{address}/cal/e-1.ics");
+        a_series_waiting_in(&cache, &calendar, &at, "Europe/London");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        a_day_cut_out_waiting_in(&cache, &calendar, "Europe/London");
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "the new appointment, then the series")
+            .await
+            .expect("four requests");
+        assert!(
+            asked_for(&requests[0]).starts_with("PUT /cal/")
+                && asked_for(&requests[0]) != "PUT /cal/e-1.ics",
+            "the day was taken off the series before the replacement went up: {}",
+            asked_for(&requests[0])
+        );
+        assert_eq!(asked_for(&requests[1]), "GET /cal/e-1.ics");
+        assert_eq!(asked_for(&requests[2]), "PUT /cal/e-1.ics");
+        assert_eq!(asked_for(&requests[3]), "REPORT /cal/");
+        assert_eq!(
+            result.sent, 2,
+            "one edit needed two syncs: {:?}",
+            result.errors
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reading_the_calendar_back_leaves_the_day_still_naming_the_series_it_came_from() {
+        // Nothing in a calendar document says which series an appointment was
+        // cut out of, so the read that follows a push has to keep what is
+        // stored. Blanking it unlinks the two halves with no symptom at all
+        // until the next half-failure, and then a day leaves the server.
+        let cache = temp_cache("pull_keeps_cut_from");
+        let mut calendar = container("cal-keeps-link", "acct");
+        let (address, listening) =
+            answering("200 OK", "text/calendar", multi_status(&["day-uid"])).await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let mut landed = a_day_cut_out_waiting_in(&cache, &calendar, "Europe/London");
+        landed.provider_event_id = Some("day-uid".to_string());
+        landed.web_link = Some(format!("http://{address}/cal/day-uid.ics"));
+        landed.pending = false;
+        cache
+            .save_calendar_event(&landed)
+            .expect("the replacement to have landed");
+
+        sync_caldav_calendar(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+        heard(listening, "the calendar read").await.expect("a read");
+
+        let day = cache
+            .get_event_by_id("day-1")
+            .expect("the day to be readable")
+            .expect("the day");
+        assert_eq!(
+            day.summary, "Event day-uid",
+            "the server's copy was never written down, so this proves nothing"
+        );
+        assert_eq!(
+            day.cut_from_event_id.as_deref(),
+            Some("series-1"),
+            "reading the calendar back unlinked the day from the series it was cut out of"
         );
     }
 }

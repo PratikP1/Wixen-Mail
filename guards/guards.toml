@@ -1269,6 +1269,7 @@ before = """        exception_dates: Some(all),"""
 after = """        exception_dates: series.exception_dates.clone(),"""
 red = [
     "application::calendar::tests::test_a_day_called_off_is_written_the_way_the_start_it_came_from_is_written",
+    "application::calendar::tests::test_calling_a_day_off_a_row_written_the_old_way_leaves_one_reading_of_it",
     "application::calendar::tests::test_calling_off_a_day_already_called_off_does_not_name_it_twice",
     "application::calendar::tests::test_calling_off_one_day_keeps_the_days_the_series_had_already_called_off",
     "application::calendar::tests::test_calling_off_one_day_takes_that_day_off_the_series_and_leaves_the_others",
@@ -3081,4 +3082,66 @@ after = """                                status.set_label(match means {
                                 });"""
 red = [
     "presentation::wx_calendar::tests::test_the_calendar_window_asks_before_it_says_anything",
+]
+
+# ── One day cut out of a series is two writes, and only one takes a day away ─
+#
+# Changing one day of a repeating event creates a separate appointment for that
+# day and takes the day off the series. The second write removes something, so
+# it waits for the first. Sent the other way round, a create the server refuses
+# leaves the day gone from the calendar server and stored on this computer
+# alone, which is where it stayed until a reinstall.
+
+[[guard]]
+name = "the day cut out of a series is stored naming the series it came from"
+file = "src/presentation/managers.rs"
+before = """        categories: series.categories.clone(),
+        cut_from_event_id: Some(series.id.clone()),
+        ..entry"""
+after = """        categories: series.categories.clone(),
+        ..entry"""
+red = [
+    "presentation::managers::changing_one_day_of_a_series::test_the_day_kept_on_its_own_names_the_series_it_was_cut_from",
+]
+
+[[guard]]
+name = "a day is not taken off a series until the appointment kept for it has really arrived"
+file = "src/application/caldav_sync.rs"
+before = """        if let Some(said) = why_this_one_has_to_wait(cache, &event.id) {
+            result.errors.push(said);
+            continue;
+        }
+        let sent = send_one_change(cache, caldav, calendar_url, &event, username, password).await;"""
+after = """        let sent = send_one_change(cache, caldav, calendar_url, &event, username, password).await;"""
+red = [
+    "application::caldav_sync::tests::test_a_day_whose_replacement_cannot_be_created_is_not_taken_off_the_series_at_the_server",
+    "application::caldav_sync::tests::test_the_series_stays_waiting_when_the_server_refuses_the_replacement",
+]
+
+[[guard]]
+name = "a day cut out of a series is offered to the server before the series it came from"
+file = "src/application/caldav_sync.rs"
+before = """            let (cut_out, everything_else): (Vec<_>, Vec<_>) = waiting
+                .into_iter()
+                .filter(|event| event.calendar_id.as_deref() == Some(calendar.id.as_str()))
+                .partition(|event| event.cut_from_event_id.is_some());
+            cut_out.into_iter().chain(everything_else).collect()"""
+after = """            waiting
+                .into_iter()
+                .filter(|event| event.calendar_id.as_deref() == Some(calendar.id.as_str()))
+                .collect()"""
+red = [
+    "application::caldav_sync::tests::test_a_day_cut_out_of_a_series_goes_up_before_the_day_is_taken_off_the_series",
+    "application::caldav_sync::tests::test_a_replacement_that_went_up_is_kept_when_taking_the_day_off_the_series_fails",
+    "application::caldav_sync::tests::test_a_series_that_comes_first_in_the_queue_still_waits_for_the_day_cut_out_of_it",
+]
+
+[[guard]]
+name = "reading the calendar back keeps which series an appointment was cut out of"
+file = "src/application/caldav_sync.rs"
+before = """    merged.cut_from_event_id = held.cut_from_event_id.clone();
+    merged.categories = held.categories.clone();"""
+after = """    merged.categories = held.categories.clone();"""
+red = [
+    "application::caldav_sync::tests::test_reading_the_calendar_back_leaves_the_day_still_naming_the_series_it_came_from",
 ]

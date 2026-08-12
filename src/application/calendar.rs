@@ -1734,6 +1734,7 @@ pub fn google_event_to_local(
         created_at: now.clone(),
         updated_at: now,
         pending: false,
+        cut_from_event_id: None,
     }
 }
 
@@ -2088,6 +2089,7 @@ pub fn ms_event_to_local(
         created_at: now.clone(),
         updated_at: now,
         pending: false,
+        cut_from_event_id: None,
     }
 }
 
@@ -2561,6 +2563,7 @@ mod tests {
             updated_at: String::new(),
             pending: false,
             exception_dates: None,
+            cut_from_event_id: None,
         }
     }
 
@@ -3206,6 +3209,7 @@ mod tests {
             updated_at: chrono::Utc::now().to_rfc3339(),
             pending: false,
             exception_dates: None,
+            cut_from_event_id: None,
         };
 
         let google = local_to_google_event(&local).expect("a time Google could read");
@@ -3275,6 +3279,7 @@ mod tests {
             updated_at: chrono::Utc::now().to_rfc3339(),
             pending: false,
             exception_dates: None,
+            cut_from_event_id: None,
         };
 
         let ms = local_to_ms_event(&local).expect("a time Graph could read");
@@ -3315,6 +3320,7 @@ mod tests {
             updated_at: chrono::Utc::now().to_rfc3339(),
             pending: false,
             exception_dates: None,
+            cut_from_event_id: None,
         });
         mgr.add_event(CalendarEventEntry {
             id: "e2".to_string(),
@@ -3345,6 +3351,7 @@ mod tests {
             updated_at: chrono::Utc::now().to_rfc3339(),
             pending: false,
             exception_dates: None,
+            cut_from_event_id: None,
         });
 
         let day_events = mgr.events_for_day("2026-03-05");
@@ -3407,6 +3414,7 @@ mod tests {
             updated_at: "2026-01-01T00:00:00Z".to_string(),
             pending: false,
             exception_dates: None,
+            cut_from_event_id: None,
         }
     }
 
@@ -3648,6 +3656,7 @@ mod tests {
             updated_at: "2026-03-01T00:00:00Z".to_string(),
             pending: false,
             exception_dates: None,
+            cut_from_event_id: None,
         }
     }
 

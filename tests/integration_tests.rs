@@ -686,6 +686,7 @@ fn test_calendar_manager_visibility_filters_unified() {
         updated_at: "2026-01-01T00:00:00Z".to_string(),
         pending: false,
         exception_dates: None,
+        cut_from_event_id: None,
     });
 
     assert_eq!(mgr.unified_events().len(), 1);

@@ -8,6 +8,34 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: changing just one day of a repeating event could take that day off
+  your calendar server and never put it back.** Changing one day is one action
+  to you and two changes to the calendar server: a separate appointment is
+  created for that day, and the day is taken off the series. Those two went up
+  independently, and the one that takes the day away was allowed to succeed on
+  its own. If the calendar server would not accept the new appointment, and for
+  a series whose time zone came from Outlook or Exchange it never would, the day
+  was removed from the series at the server and the replacement never arrived.
+  The appointment was then on this computer and nowhere else: gone from your
+  phone, gone from anything else reading the same calendar, and gone for good if
+  this computer was ever set up again from scratch. Nothing said so, because the
+  copy here still showed it.
+
+  The two now go up as a pair. The new appointment goes first, and the day is
+  only taken off the series once this computer has seen the calendar server
+  accept it. If the new appointment is turned down, or the sync cannot tell
+  whether it went, the series is left exactly as it was and the sync says why
+  and that it will try again next time. If the new appointment lands and the
+  change to the series is turned down, the appointment shows twice until the
+  next sync, which you can see and put right. It can no longer show nowhere.
+
+  Both halves still go up in one sync rather than needing two, and a program
+  closed between the two remembers they belong together.
+
+  Known limitation, unchanged: none of this has run against a real calendar
+  server. What is tested is what is sent, what is stored, and one test server
+  running on this machine.
+
 - **Fixed: taking one day off a repeating event said it was done while the day
   was still on the list.** Pressing Delete on one day of a repeating event and
   answering "just this one day" said that the day was taken off and the other
