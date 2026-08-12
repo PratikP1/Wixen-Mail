@@ -2794,3 +2794,50 @@ after = """    let forgotten = uids_to_forget(&on_server, &stored);"""
 red = [
     "application::mail_sync::tests::test_a_server_that_counts_a_full_mailbox_and_then_lists_none_of_it_removes_nothing",
 ]
+
+# ── Two reads that were never asked whether they read anything ──────────────
+#
+# Both found by mutation testing on the day the read side was rewritten. Every
+# test around them asserted a refusal or an absence, so the arm that does the
+# actual reading could be deleted outright with the whole suite still green.
+#
+# Taking the subscriptions out means no folder on any account is ever
+# subscribed, and the window that asks which folders to sync offers an empty
+# default. Taking the message out means every message a server hands over is
+# reported as a message that is not there.
+
+[[guard]]
+name = "a subscription the server lists reaches the folder it is about"
+file = "src/service/protocols/imap.rs"
+before = """                |response| match response {
+                    Response::MailboxData(MailboxDatum::List { name, .. }) => {
+                        Some(name.to_string())
+                    }
+                    _ => None,
+                },"""
+after = """                |response| match response {
+                    _ => None,
+                },"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_the_subscriptions_a_server_lists_reach_the_folders_they_are_about",
+]
+
+[[guard]]
+name = "a message the server hands over is not reported as one that is not there"
+file = "src/service/protocols/imap.rs"
+before = """                format!("UID FETCH {uid} BODY.PEEK[]"),
+                "fetching the message",
+                |response| match response {
+                    Response::Fetch(_, attributes) => {
+                        attributes.iter().find_map(body_bytes).map(<[u8]>::to_vec)
+                    }
+                    _ => None,
+                },"""
+after = """                format!("UID FETCH {uid} BODY.PEEK[]"),
+                "fetching the message",
+                |response| match response {
+                    _ => None,
+                },"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_the_message_a_server_sends_back_is_the_one_that_is_handed_over",
+]

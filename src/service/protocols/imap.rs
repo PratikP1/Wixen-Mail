@@ -3172,6 +3172,66 @@ pub(crate) mod against_a_server_that_answers {
     }
 
     #[tokio::test]
+    async fn test_the_subscriptions_a_server_lists_reach_the_folders_they_are_about() {
+        // Found by mutation testing: with the reading of a subscription taken
+        // out entirely, every test above still passed, because they all assert
+        // that nothing is subscribed. So no folder was ever subscribed here and
+        // the window that asks which folders to sync would have offered an
+        // empty default on every account.
+        let server = a_server_answering(|said, tag| {
+            if said.starts_with_command("LSUB") {
+                return Some(Turn::Say(format!(
+                    "* LSUB () \"/\" \"INBOX\"\r\n{tag} OK done\r\n"
+                )));
+            }
+            said.starts_with_command("LIST").then(|| {
+                Turn::Say(format!(
+                    "* LIST (\\HasNoChildren) \"/\" \"Notizen\"\r\n\
+                     * LIST (\\HasNoChildren) \"/\" \"INBOX\"\r\n{tag} OK done\r\n"
+                ))
+            })
+        })
+        .await;
+        let mut session = reading_only_on(&server).await;
+
+        let folders = waiting_for(session.list_folders(), "the folder list")
+            .await
+            .expect("the folders to arrive");
+
+        let subscribed: Vec<&str> = folders
+            .iter()
+            .filter(|folder| folder.subscribed)
+            .map(|folder| folder.path.as_str())
+            .collect();
+        assert_eq!(subscribed, vec!["INBOX"], "{folders:?}");
+    }
+
+    #[tokio::test]
+    async fn test_the_message_a_server_sends_back_is_the_one_that_is_handed_over() {
+        // Also found by mutation testing. With the reading of a message taken
+        // out, every test around this one still passed: one asserts a refusal
+        // and one asserts a message that is not there, and neither notices that
+        // no message ever arrives.
+        const RAW: &str = "Subject: Lunch\r\n\r\nOne o'clock?\r\n";
+        let server = a_server_answering(|said, tag| {
+            said.starts_with_command("UID FETCH").then(|| {
+                Turn::Say(format!(
+                    "* 1 FETCH (UID 9 BODY[] {{{}}}\r\n{RAW})\r\n{tag} OK done\r\n",
+                    RAW.len()
+                ))
+            })
+        })
+        .await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let raw = waiting_for(session.fetch_body(9), "the message")
+            .await
+            .expect("the message to arrive");
+
+        assert_eq!(String::from_utf8_lossy(&raw), RAW);
+    }
+
+    #[tokio::test]
     async fn test_a_header_fetch_the_server_refuses_is_not_a_folder_with_no_mail() {
         let server = a_server_that_refuses("", "UID FETCH").await;
         let mut session = with_the_inbox_open(&server).await;
