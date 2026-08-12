@@ -370,6 +370,73 @@ const TALKS_BUT_ONLY_READS: [&str; 3] = [
     "src/service/oauth.rs",
 ];
 
+/// The three provider clients that can change something with an HTTP request.
+///
+/// The two lists below account for every write in these files between them.
+#[cfg(test)]
+const CLIENTS: [&str; 3] = [
+    "src/service/google_api.rs",
+    "src/service/microsoft_graph.rs",
+    "src/service/tasks_api.rs",
+];
+
+/// Every provider write whose request has been read off a socket by a test.
+///
+/// The gate above answers whether a change may go out. It says nothing about
+/// what goes out, and that is where this project has found its worst faults: a
+/// sender's address carrying the login name, a password column written as an
+/// empty string. Neither was visible from the layer that decided to send.
+///
+/// Contacts and tasks were called safe on decision-layer coverage that never
+/// reached a server. Of the twelve below, six had no test calling them in
+/// either direction, and the deletion of a contact was measured only by a test
+/// asserting that it was refused. A refusal is not a measurement of a deletion.
+///
+/// What this cannot see, which is most of what matters:
+///
+/// - Whether the assertion behind a name is any good. It reads that the name
+///   appears in a test file that also stands up a loopback server. A test
+///   naming the method and asserting nothing about the request keeps it green.
+/// - Whether something on the second list has quietly become measured. Moving
+///   an entry across is a judgement somebody makes, not one this can make.
+/// - A write that reaches a server some sixth way, not through one of the five
+///   helpers the check below looks for.
+///
+/// What it can see is the thing that was missing: a write added to one of these
+/// files and never measured fails here instead of being remembered.
+#[cfg(test)]
+const MEASURED_ON_THE_WIRE: [(&str, &str); 13] = [
+    ("src/service/google_api.rs", "create_contact"),
+    ("src/service/google_api.rs", "update_contact"),
+    ("src/service/google_api.rs", "delete_contact"),
+    ("src/service/google_api.rs", "update_event"),
+    ("src/service/microsoft_graph.rs", "create_contact"),
+    ("src/service/microsoft_graph.rs", "update_contact"),
+    ("src/service/microsoft_graph.rs", "delete_contact"),
+    ("src/service/tasks_api.rs", "google_create_task"),
+    ("src/service/tasks_api.rs", "google_update_task"),
+    ("src/service/tasks_api.rs", "google_delete_task"),
+    ("src/service/tasks_api.rs", "ms_create_task"),
+    ("src/service/tasks_api.rs", "ms_update_task"),
+    ("src/service/tasks_api.rs", "ms_delete_task"),
+];
+
+/// Every provider write whose request nobody has read yet.
+///
+/// Written down rather than left off, because a gap nobody has named is a gap
+/// nobody is pressured to close. All five are the calendar half. What is not
+/// known about each of them is the same thing that was not known about the
+/// contact and task writes: the address it builds, the verb it uses and what
+/// its body carries.
+#[cfg(test)]
+const NOT_MEASURED_ON_THE_WIRE: [(&str, &str); 5] = [
+    ("src/service/google_api.rs", "create_event"),
+    ("src/service/google_api.rs", "delete_event"),
+    ("src/service/microsoft_graph.rs", "create_event"),
+    ("src/service/microsoft_graph.rs", "update_event"),
+    ("src/service/microsoft_graph.rs", "delete_event"),
+];
+
 /// The gate itself, which holds the client the others are refused through.
 ///
 /// On a list of its own because it is the one file that is supposed to hold a
@@ -380,7 +447,10 @@ const THE_GATE: [&str; 1] = ["src/service/outward.rs"];
 
 #[cfg(test)]
 mod completeness {
-    use super::{GATED, TALKS_BUT_ONLY_READS, THE_GATE};
+    use super::{
+        CLIENTS, GATED, MEASURED_ON_THE_WIRE, NOT_MEASURED_ON_THE_WIRE, TALKS_BUT_ONLY_READS,
+        THE_GATE,
+    };
 
     #[test]
     fn test_no_transport_holds_a_client_that_cannot_be_gated() {
@@ -488,6 +558,124 @@ mod completeness {
                 accounted_for.contains(&path.as_str()),
                 "{path} reaches a server with {how} and is on no list, so nobody has said \
                  whether it can change anything at somebody's account"
+            );
+        }
+    }
+
+    /// How a method in a provider client reaches a server with a change.
+    ///
+    /// Five, because each client funnels its changes through a helper that
+    /// holds the gate rather than reaching for the transport itself. A sixth
+    /// way added later is the blind spot named in the doc comment on the list
+    /// this serves.
+    const SENDS_A_CHANGE: [&str; 5] = [
+        "api_post",
+        "api_patch",
+        "api_delete",
+        "self.send(",
+        "self.delete(",
+    ];
+
+    /// Everything in a source file before its tests begin.
+    fn the_production_half(source: &str) -> &str {
+        source.split("mod tests {").next().unwrap_or_default()
+    }
+
+    /// Everything in a source file from its tests on.
+    fn the_test_half(source: &str) -> &str {
+        source
+            .split_once("mod tests {")
+            .map_or("", |(_, tests)| tests)
+    }
+
+    /// Every public method in one client whose body sends a change.
+    ///
+    /// Read off the tree rather than listed, so a write added next year has to
+    /// be accounted for instead of remembered. Each chunk runs to the next
+    /// public method, so a private helper between two of them is read as part
+    /// of the one above it; none of the five markers appears in one of those
+    /// helpers' own bodies, so that costs nothing.
+    fn writes_in(production: &str) -> Vec<String> {
+        let mut methods = production.split("\n    pub async fn ");
+        // Everything before the first method, which names none.
+        let _ = methods.next();
+        methods
+            .filter(|body| SENDS_A_CHANGE.iter().any(|how| body.contains(how)))
+            .map(|body| {
+                body.chars()
+                    .take_while(|letter| letter.is_alphanumeric() || *letter == '_')
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_every_provider_write_is_on_one_of_the_two_wire_lists() {
+        // The check that would have caught this round's gap. Six task writes
+        // and one contact deletion sent changes to somebody's account with no
+        // test anywhere reading what they sent, and nothing could say so,
+        // because nothing held a list of the ways this program changes
+        // something at a provider.
+        let mut on_neither_list: Vec<String> = Vec::new();
+        for path in CLIENTS {
+            let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let production = the_production_half(&source);
+            let writes = writes_in(production);
+            // Before believing a short answer, the reading has to be able to
+            // find anything at all. A file this read as empty, or one whose
+            // methods it no longer recognises, would pass by looking at
+            // nothing.
+            assert!(
+                writes.len() >= 6,
+                "{path}: only {} writes were found, so the way a write is recognised has \
+                 moved and this is looking at the wrong thing",
+                writes.len()
+            );
+            for write in writes {
+                let accounted_for = MEASURED_ON_THE_WIRE
+                    .iter()
+                    .chain(NOT_MEASURED_ON_THE_WIRE.iter())
+                    .any(|(file, method)| *file == path && *method == write);
+                if !accounted_for {
+                    on_neither_list.push(format!("{path}: {write}"));
+                }
+            }
+        }
+
+        assert!(
+            on_neither_list.is_empty(),
+            "these change something at somebody's account and are on neither list, so nobody \
+             has said whether what they send has ever been read off a socket: {on_neither_list:?}"
+        );
+    }
+
+    #[test]
+    fn test_every_write_called_measured_is_named_in_a_test_that_stands_up_a_server() {
+        // The other half. The list above only says a write is accounted for;
+        // this says the account is true.
+        //
+        // The client's own tests and nowhere else, which is narrower than it
+        // sounds and was arrived at the hard way. Written to look in every test
+        // file that stands up a server, this passed while claiming the calendar
+        // writes were measured, because a calendar server client two files away
+        // has methods of the same names and this file's own list of names sits
+        // inside its own test half. A check that reads source text will satisfy
+        // itself if it is allowed to.
+        //
+        // What it still cannot say is whether the assertion behind the name is
+        // worth anything. That is written down where the list is.
+        for (path, method) in MEASURED_ON_THE_WIRE {
+            let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let tests = the_test_half(&source);
+            assert!(
+                tests.contains("answering"),
+                "{path}: nothing in its tests stands up a server, so no write in it can have \
+                 been read off one"
+            );
+            assert!(
+                tests.contains(method),
+                "{path}: {method} is called measured on the wire and no test in this file so \
+                 much as names it"
             );
         }
     }

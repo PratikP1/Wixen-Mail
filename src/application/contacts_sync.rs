@@ -7393,6 +7393,60 @@ mod tests {
         assert_eq!(changed.odata_etag.as_deref(), Some("W/\"v8\""));
     }
 
+    #[tokio::test]
+    async fn test_the_google_address_book_a_sync_uses_really_sends_a_deletion() {
+        // Neither of the two deletion forwarders was called by any test, in
+        // either direction. Both bodies could have been replaced by "nothing
+        // went wrong" and the suite would have stayed green while every
+        // deletion was reported as taken and nothing left this computer. The
+        // note the deletion left behind would then stop being owed, so nothing
+        // would ever send it again.
+        let (address, listening) =
+            crate::common::answering::answering("200 OK", "application/json", "{}".to_string())
+                .await;
+        let client = GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        <GoogleApiClient as GoogleContactBook>::delete_contact(&client, "a token", "people/c1")
+            .await
+            .expect("the deletion to be sent");
+
+        let request = crate::common::answering::heard(listening, "a deletion")
+            .await
+            .expect("a request");
+        assert_eq!(
+            crate::common::answering::asked_for(&request),
+            "DELETE /people/c1:deleteContact",
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_outlook_address_book_a_sync_uses_really_sends_a_deletion() {
+        let (address, listening) =
+            crate::common::answering::answering("200 OK", "application/json", "{}".to_string())
+                .await;
+        let client = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        // The escaping is load-bearing and is why this identifier is an awkward
+        // one: it is what makes the deletion reach that contact and no other.
+        <MsGraphClient as MicrosoftContactBook>::delete_contact(
+            &client,
+            "a token",
+            "AAMk/AGI2+3?x",
+        )
+        .await
+        .expect("the deletion to be sent");
+
+        let request = crate::common::answering::heard(listening, "a deletion")
+            .await
+            .expect("a request");
+        assert_eq!(
+            crate::common::answering::asked_for(&request),
+            "DELETE /me/contacts/AAMk%2FAGI2%2B3%3Fx",
+            "{request}"
+        );
+    }
+
     /// What one address book last said this contact's version was.
     fn the_version_kept_for(
         cache: &MessageCache,

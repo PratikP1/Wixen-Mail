@@ -973,6 +973,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_new_contact_reaches_graph_carrying_what_somebody_typed_and_no_identifier() {
+        // The address a new contact goes to is already pinned where the sync
+        // reaches this through its trait. What it carries was not.
+        let (address, listening) = answering("200 OK", "application/json", "{}".to_string()).await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+        let grace = MsGraphContact {
+            display_name: "Grace van der Berg".to_string(),
+            given_name: "Grace".to_string(),
+            surname: "van der Berg".to_string(),
+            email_addresses: vec![MsEmailAddress {
+                name: "Grace van der Berg".to_string(),
+                address: "grace@example.test".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        graph
+            .create_contact("a-token", &grace)
+            .await
+            .expect("the new contact to be sent");
+
+        let request = heard(listening, "a new contact").await.expect("a request");
+        assert_eq!(asked_for(&request), "POST /me/contacts", "{request}");
+        assert!(
+            request.contains(r#""displayName":"Grace van der Berg""#),
+            "{request}"
+        );
+        assert!(request.contains(r#""givenName":"Grace""#), "{request}");
+        assert!(request.contains(r#""surname":"van der Berg""#), "{request}");
+        assert!(request.contains("grace@example.test"), "{request}");
+        // Graph refuses a create that carries an identifier, and the other two
+        // are its record of its own copy. All three stay out only because the
+        // caller leaves the field empty and an empty one is left out, so the
+        // create depends on a decision made in another file.
+        for the_servers_own in [r#""id""#, "@odata.etag", "lastModifiedDateTime"] {
+            assert!(
+                !request.contains(the_servers_own),
+                "a create claimed {the_servers_own}, which is Graph's to set: {request}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn test_a_client_pointed_at_an_address_asks_that_address() {
         let (graph, listening) = a_graph_client_talking_to_itself().await;
 

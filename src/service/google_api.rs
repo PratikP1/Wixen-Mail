@@ -63,9 +63,15 @@ pub struct GooglePersonMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleName {
-    /// What Google works out to call this person. Google documents it as
-    /// something it writes and nothing else may set, so it is read on the way
-    /// in and ignored on the way out.
+    /// What Google works out to call this person, which Google documents as
+    /// something it writes and nothing else may set.
+    ///
+    /// It goes out all the same, on every create and every change: nothing here
+    /// leaves it behind, and a test now reads it off the wire. This line used to
+    /// say it was ignored on the way out, which reads as though nothing sends
+    /// it, and that is a different claim from the true one. Google throws it
+    /// away at the far end. Whether it should be sent at all is its own
+    /// question, because `names` is a field a change replaces wholesale.
     #[serde(default)]
     pub display_name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -907,6 +913,98 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_google_is_asked_to_delete_is_named_in_the_address_and_nowhere_else() {
+        // The only test that reached this method asserted the refusing
+        // direction, so the address a real deletion goes to had never been
+        // read: a destructive path measured only by a refusal. A deletion sent
+        // to the wrong contact cannot be taken back.
+        let (google, listening) = a_google_client_allowed_to_change_things().await;
+
+        google
+            .delete_contact("a-token", "people/c1")
+            .await
+            .expect("the deletion to be sent");
+
+        let request = heard(listening, "the deletion").await.expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "DELETE /people/c1:deleteContact",
+            "{request}"
+        );
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains("authorization: bearer a-token"),
+            "{request}"
+        );
+        // Which person is meant is said once, in the address. A body naming a
+        // second one would be two answers to one question.
+        assert!(
+            !request.contains('{'),
+            "a deletion carried a body as well as an address: {request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_new_contact_reaches_google_carrying_what_somebody_typed_and_no_server_fields() {
+        // The address a new contact goes to is already pinned where the sync
+        // reaches this through its trait. What it carries was not, and the body
+        // is where this repo has found its worst faults.
+        let (google, listening) = a_google_client_allowed_to_change_things().await;
+        let grace = GooglePerson {
+            names: vec![GoogleName {
+                display_name: "Grace van der Berg".to_string(),
+                given_name: "Grace".to_string(),
+                family_name: "van der Berg".to_string(),
+                unstructured_name: String::new(),
+            }],
+            email_addresses: vec![GoogleEmail {
+                value: "grace@example.test".to_string(),
+                ..Default::default()
+            }],
+            phone_numbers: vec![GooglePhone {
+                value: "01632 960123".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        google
+            .create_contact("a-token", &grace)
+            .await
+            .expect("the new contact to be sent");
+
+        let request = heard(listening, "a new contact").await.expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "POST /people:createContact",
+            "{request}"
+        );
+        assert!(request.contains(r#""givenName":"Grace""#), "{request}");
+        assert!(
+            request.contains(r#""familyName":"van der Berg""#),
+            "{request}"
+        );
+        assert!(request.contains("grace@example.test"), "{request}");
+        assert!(request.contains("01632 960123"), "{request}");
+        // Three things Google sets itself. A create claiming a resource name
+        // Google has not issued is refused outright, and the other two are its
+        // record of its own copy. All three stay out only because of an
+        // attribute on the field, and nothing would have noticed one going.
+        for the_servers_own in ["resourceName", "etag", "metadata"] {
+            assert!(
+                !request.contains(the_servers_own),
+                "a create claimed {the_servers_own}, which is Google's to set: {request}"
+            );
+        }
+        // And one that does go out, which the note beside the field used to
+        // deny. Asserted as present rather than absent, because it is the wire
+        // fact: `names` is a field a change replaces wholesale, so whether this
+        // should go is a question of its own and not one to answer in passing.
+        assert!(request.contains(r#""displayName""#), "{request}");
     }
 
     #[tokio::test]
