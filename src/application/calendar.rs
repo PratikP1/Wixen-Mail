@@ -1379,15 +1379,73 @@ pub fn why_this_change_cannot_be_sent(ical_data: &str) -> Option<String> {
 /// such a zone to a server. Lifting the definition out of the document the
 /// server already holds is the real fix and is not built.
 pub fn why_that_day_cannot_be_kept_on_its_own(day: &CalendarEventEntry) -> Option<String> {
+    the_zone_that_cannot_be_written(day).map(|clause| one_day_cannot_be_kept(&clause))
+}
+
+/// The zone this day would carry that no calendar server can be told, as a
+/// clause, or nothing when there is none.
+///
+/// Asked of the day that would really be stored, built the way the sync would
+/// build it. The window asks it before the editor opens and the write asks it
+/// again before either half is stored, and both of them turn the answer into
+/// the same sentence through [`one_day_cannot_be_kept`].
+pub fn the_zone_that_cannot_be_written(day: &CalendarEventEntry) -> Option<String> {
     let going = crate::application::caldav_sync::local_to_caldav_event(day);
-    a_zone_the_document_never_defines(&going.ical_data).map(|clause| {
-        format!(
-            "That one day was not kept as a separate appointment: {clause} \
-             Nothing has been changed and the day is still part of the series. \
-             Time zones written this way come from Outlook and Exchange, and \
-             this program cannot yet describe one to a calendar server."
-        )
-    })
+    a_zone_the_document_never_defines(&going.ical_data)
+}
+
+/// The refusal for a day that cannot be kept as an appointment of its own.
+///
+/// One owner for these words, because the window says them before the editor
+/// opens and the write says them before either half is stored. Two spellings of
+/// one refusal is how one of them becomes false without anybody editing it.
+pub fn one_day_cannot_be_kept(clause: &str) -> String {
+    format!(
+        "That one day was not kept as a separate appointment: {clause} \
+         Nothing has been changed and the day is still part of the series. \
+         Time zones written this way come from Outlook and Exchange, and \
+         this program cannot yet describe one to a calendar server."
+    )
+}
+
+/// Which door somebody came through: changing a day, or taking one off.
+///
+/// The two are not the same question. A change keeps a second appointment for
+/// the day, so it needs a zone the calendar server can be told. A delete keeps
+/// nothing, so it needs no such thing, and refusing it over that zone would
+/// take away a delete that works.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhatIsBeingDone {
+    /// Editing the day, or the series.
+    Changing,
+    /// Taking the day off, or deleting the series.
+    Deleting,
+}
+
+/// What the calendar this row is filed in allows, answered once.
+///
+/// One value, asked once and read by the window that describes the answer, the
+/// window that refuses it and the write that carries it out. Three places
+/// answering one question from three rules is how the question came to promise
+/// what the write refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhatTheCalendarAllows {
+    /// Where a change to this row can actually go.
+    pub goes: WhereAChangeGoes,
+    /// Why the day kept as an appointment of its own could not be written, as a
+    /// clause. Nothing where it can be, and nothing for any calendar but a
+    /// calendar server, which is the only one anything is sent from.
+    pub keeping_the_day_apart: Option<String>,
+}
+
+impl WhatTheCalendarAllows {
+    /// The calendar alone, with nothing to say about the day's time zone.
+    pub const fn just(goes: WhereAChangeGoes) -> Self {
+        Self {
+            goes,
+            keeping_the_day_apart: None,
+        }
+    }
 }
 
 /// Whether an answer can be carried out, or the sentence saying why not.
@@ -1409,21 +1467,55 @@ pub fn why_that_day_cannot_be_kept_on_its_own(day: &CalendarEventEntry) -> Optio
 /// for ever. A calendar this program can only read takes neither half, and the
 /// next refresh writes both away.
 pub fn can_be_honoured(
+    done: WhatIsBeingDone,
     means: EditMeans,
-    goes: WhereAChangeGoes,
+    allows: &WhatTheCalendarAllows,
 ) -> std::result::Result<(), String> {
-    match (means, goes) {
-        (EditMeans::WholeSeries, _)
-        | (EditMeans::OneDay, WhereAChangeGoes::ACalendarServer | WhereAChangeGoes::KeptHere) => {
-            Ok(())
+    match (means, allows.goes) {
+        (EditMeans::WholeSeries, _) => Ok(()),
+        (EditMeans::OneDay, WhereAChangeGoes::ACalendarServer | WhereAChangeGoes::KeptHere) => {
+            match (done, allows.keeping_the_day_apart.as_deref()) {
+                // Only the door that keeps something. A delete keeps no
+                // appointment, so there is nothing for a calendar server to
+                // refuse and nothing to lose by carrying it out.
+                (WhatIsBeingDone::Changing, Some(clause)) => Err(one_day_cannot_be_kept(clause)),
+                _ => Ok(()),
+            }
         }
         (EditMeans::OneDay, refused) => Err(format!(
-            "Changing one day of a repeating event on its own is not something \
-             this can do for {}. Nothing has been changed. Choose \"every day \
-             in the series\" to change all of them.{}",
+            "{} one day of a repeating event on its own is not something this \
+             can do for {}. Nothing has been changed. Choose \"every day in \
+             the series\" to {} all of them.{}",
+            match done {
+                WhatIsBeingDone::Changing => "Changing",
+                WhatIsBeingDone::Deleting => "Taking off",
+            },
             refused.named(),
+            match done {
+                WhatIsBeingDone::Changing => "change",
+                WhatIsBeingDone::Deleting => "delete",
+            },
             further_off_for(refused),
         )),
+    }
+}
+
+/// The sentence read under an answer that cannot be carried out.
+///
+/// One spelling, so the question and the refusal cannot come to disagree about
+/// whether something is possible. `why` is the clause naming what stops it,
+/// where anything beyond the calendar itself does.
+fn cannot_be_done_for(goes: WhereAChangeGoes, why: Option<&str>) -> String {
+    match why {
+        None => format!(
+            "Cannot be done for {} yet. Choosing it changes nothing at all.",
+            goes.named()
+        ),
+        Some(clause) => format!(
+            "Cannot be done for {} yet, because the appointment kept for that day could \
+             not be created there: {clause} Choosing it changes nothing at all.",
+            goes.named()
+        ),
     }
 }
 
@@ -1454,34 +1546,84 @@ const fn further_off_for(goes: WhereAChangeGoes) -> &'static str {
 /// one costs before choosing rather than a refusal afterwards. Two answers that
 /// read alike are two answers nobody can choose between, so no two of these are
 /// the same sentence for any calendar.
-pub fn what_it_will_do(means: EditMeans, goes: WhereAChangeGoes) -> String {
-    let every_day = "Changes every day this event falls on, and leaves the day it starts on \
-                     where it is.";
-    let one_day = "Changes only the day you opened, and leaves the rest of them alone. That \
-                   day is taken off the series and kept as a separate appointment, so it is \
-                   two entries from then on rather than one moved day.";
+pub fn what_it_will_do(
+    done: WhatIsBeingDone,
+    means: EditMeans,
+    allows: &WhatTheCalendarAllows,
+) -> String {
+    let goes = allows.goes;
+    let every_day = match done {
+        WhatIsBeingDone::Changing => {
+            "Changes every day this event falls on, and leaves the day it starts on where it is."
+        }
+        WhatIsBeingDone::Deleting => {
+            "Takes every day this event falls on off the calendar, so the whole repeating \
+             event goes."
+        }
+    };
+    // A delete keeps nothing, so it must not be described as an edit that
+    // leaves a second appointment behind. It was, on both doors a delete comes
+    // through, for every calendar there is.
+    let one_day = match done {
+        WhatIsBeingDone::Changing => {
+            "Changes only the day you opened, and leaves the rest of them alone. That day is \
+             taken off the series and kept as a separate appointment, so it is two entries \
+             from then on rather than one moved day."
+        }
+        WhatIsBeingDone::Deleting => {
+            "Takes only the day you opened off the series, and leaves the rest of them \
+             alone. Nothing is kept for that day."
+        }
+    };
     match (means, goes) {
         (EditMeans::WholeSeries, WhereAChangeGoes::OnlyReadable) => format!(
-            "{every_day} This is a calendar this program can only read, so the change is kept \
-             on this computer and the next refresh writes over it."
+            "{every_day} This is a calendar this program can only read, so nothing is sent \
+             and the next refresh writes over what you did here."
         ),
         (EditMeans::WholeSeries, WhereAChangeGoes::KeptHere) => {
-            format!("{every_day} It is kept on this computer, because no account holds it.")
+            format!("{every_day} Nothing is sent anywhere, because no account holds this event.")
         }
-        (EditMeans::WholeSeries, sent) => format!(
-            "{every_day} The change goes to {} on the next sync.",
-            sent.named()
-        ),
-        (EditMeans::OneDay, WhereAChangeGoes::KeptHere) => {
-            format!("{one_day} Both are kept on this computer, because no account holds them.")
+        (EditMeans::WholeSeries, sent) => {
+            format!(
+                "{every_day} It is sent to {} on the next sync.",
+                sent.named()
+            )
         }
-        (EditMeans::OneDay, WhereAChangeGoes::ACalendarServer) => format!(
+        // The two calendars a one-day answer can be carried out on. Both halves
+        // of a change are stored, and on a calendar server both halves really
+        // go up, unless the day would carry a time zone the server cannot be
+        // told. That stops the change, which keeps an appointment for the day,
+        // and not the delete, which keeps nothing.
+        (EditMeans::OneDay, WhereAChangeGoes::ACalendarServer | WhereAChangeGoes::KeptHere) => {
+            what_one_day_will_do(done, goes, one_day, allows.keeping_the_day_apart.as_deref())
+        }
+        (EditMeans::OneDay, refused) => cannot_be_done_for(refused, None),
+    }
+}
+
+/// What the one-day answer will do on a calendar that can carry it out.
+///
+/// Its own routine because it answers over the door as well as the calendar,
+/// and the same rule decides it that [`can_be_honoured`] decides on. The two
+/// must not be able to disagree.
+fn what_one_day_will_do(
+    done: WhatIsBeingDone,
+    goes: WhereAChangeGoes,
+    one_day: &str,
+    keeping_the_day_apart: Option<&str>,
+) -> String {
+    match (done, keeping_the_day_apart) {
+        (WhatIsBeingDone::Changing, Some(clause)) => cannot_be_done_for(goes, Some(clause)),
+        (_, _) if goes == WhereAChangeGoes::KeptHere => {
+            format!("{one_day} Nothing is sent anywhere, because no account holds this event.")
+        }
+        (WhatIsBeingDone::Changing, None) => format!(
             "{one_day} Both go to your calendar server on the next sync, and other calendar \
              programs will show them as two entries."
         ),
-        (EditMeans::OneDay, refused) => format!(
-            "Cannot be done for {} yet. Choosing it changes nothing at all.",
-            refused.named()
+        (WhatIsBeingDone::Deleting, _) => format!(
+            "{one_day} The day taken off goes to your calendar server on the next sync, so \
+             other calendar programs stop showing it too."
         ),
     }
 }
@@ -2479,7 +2621,11 @@ mod tests {
     fn test_changing_every_day_of_a_series_is_what_this_can_do() {
         for goes in EVERY_CALENDAR {
             assert_eq!(
-                can_be_honoured(EditMeans::WholeSeries, goes),
+                can_be_honoured(
+                    WhatIsBeingDone::Changing,
+                    EditMeans::WholeSeries,
+                    &WhatTheCalendarAllows::just(goes)
+                ),
                 Ok(()),
                 "for {goes:?}"
             );
@@ -2495,7 +2641,11 @@ mod tests {
             WhereAChangeGoes::KeptHere,
         ] {
             assert_eq!(
-                can_be_honoured(EditMeans::OneDay, goes),
+                can_be_honoured(
+                    WhatIsBeingDone::Changing,
+                    EditMeans::OneDay,
+                    &WhatTheCalendarAllows::just(goes)
+                ),
                 Ok(()),
                 "for {goes:?}"
             );
@@ -2505,23 +2655,200 @@ mod tests {
     #[test]
     fn test_both_answers_say_what_they_will_do_for_the_calendar_the_event_is_in() {
         for goes in EVERY_CALENDAR {
-            let every_day = what_it_will_do(EditMeans::WholeSeries, goes);
-            let one_day = what_it_will_do(EditMeans::OneDay, goes);
-            assert_ne!(
-                every_day, one_day,
-                "the two answers read alike for {goes:?}, so nobody can choose between them"
-            );
-            for sentence in [&every_day, &one_day] {
-                assert!(!sentence.trim().is_empty(), "nothing said for {goes:?}");
-                assert!(
-                    !sentence.contains("  "),
-                    "a wrapped literal lost a space: {sentence}"
+            let allows = WhatTheCalendarAllows::just(goes);
+            for done in [WhatIsBeingDone::Changing, WhatIsBeingDone::Deleting] {
+                let every_day = what_it_will_do(done, EditMeans::WholeSeries, &allows);
+                let one_day = what_it_will_do(done, EditMeans::OneDay, &allows);
+                assert_ne!(
+                    every_day, one_day,
+                    "the two answers read alike for {done:?} on {goes:?}, so nobody can \
+                     choose between them"
                 );
-                for machine in ["RRULE", "EXDATE", "RECURRENCE-ID", "provider", "API"] {
-                    assert!(!sentence.contains(machine), "{machine} in {sentence}");
+                for sentence in [&every_day, &one_day] {
+                    assert!(
+                        !sentence.trim().is_empty(),
+                        "nothing said for {done:?} on {goes:?}"
+                    );
+                    assert!(
+                        !sentence.contains("  "),
+                        "a wrapped literal lost a space: {sentence}"
+                    );
+                    for machine in ["RRULE", "EXDATE", "RECURRENCE-ID", "provider", "API"] {
+                        assert!(!sentence.contains(machine), "{machine} in {sentence}");
+                    }
                 }
             }
         }
+    }
+
+    /// What a sentence saying the answer cannot be carried out begins with.
+    ///
+    /// Named here rather than spelt out four times, because two of the tests
+    /// below exist to prove the question and the refusal cannot disagree, and
+    /// they can only do that if they are both asking about the same words.
+    const CANNOT_BE_DONE: &str = "Cannot be done for";
+
+    /// The event of a series whose zone cannot be described to a server.
+    fn a_day_in_a_zone_no_server_can_be_told() -> CalendarEventEntry {
+        let mut day = an_event_stored_here();
+        day.time_zone = Some("Eastern Standard Time".to_string());
+        day
+    }
+
+    /// What a calendar server allows for a series in such a zone.
+    fn a_server_that_cannot_be_told_the_zone() -> WhatTheCalendarAllows {
+        WhatTheCalendarAllows {
+            goes: WhereAChangeGoes::ACalendarServer,
+            keeping_the_day_apart: Some(
+                the_zone_that_cannot_be_written(&a_day_in_a_zone_no_server_can_be_told())
+                    .expect("a zone no server can be told"),
+            ),
+        }
+    }
+
+    #[test]
+    fn test_a_delete_is_not_described_as_an_edit_that_keeps_a_second_appointment() {
+        // A delete keeps nothing. The one place these answers are described was
+        // written for an edit and read out for both, so somebody taking one day
+        // off a series was told that day would be kept as an appointment of its
+        // own and that there would be two entries from then on.
+        let server = WhatTheCalendarAllows::just(WhereAChangeGoes::ACalendarServer);
+        let taking_off = what_it_will_do(WhatIsBeingDone::Deleting, EditMeans::OneDay, &server);
+
+        assert!(
+            !taking_off.contains("separate appointment"),
+            "a delete is described as keeping something: {taking_off}"
+        );
+        assert!(
+            !taking_off.contains("two entries"),
+            "a delete is described as leaving two entries: {taking_off}"
+        );
+        assert!(
+            taking_off.contains("taken off"),
+            "a delete does not say the day comes off the series: {taking_off}"
+        );
+
+        // The positive control. The same answer on the other door really does
+        // keep a second appointment, and must go on saying so.
+        let changing = what_it_will_do(WhatIsBeingDone::Changing, EditMeans::OneDay, &server);
+        assert!(
+            changing.contains("kept as a separate appointment"),
+            "an edit no longer says what it keeps: {changing}"
+        );
+
+        // And the whole series is not described as a change either.
+        let all_of_them =
+            what_it_will_do(WhatIsBeingDone::Deleting, EditMeans::WholeSeries, &server);
+        assert!(
+            !all_of_them.starts_with("Changes every day"),
+            "deleting the whole series is described as changing it: {all_of_them}"
+        );
+    }
+
+    #[test]
+    fn test_the_one_day_answer_does_not_promise_a_calendar_server_a_zone_it_cannot_be_told() {
+        // Heard before the refusal, and on a series whose zone is spelt the way
+        // Outlook and Exchange spell it the edit is refused at the write. So
+        // this sentence promised both halves would go up and then nothing went
+        // anywhere.
+        let refused = what_it_will_do(
+            WhatIsBeingDone::Changing,
+            EditMeans::OneDay,
+            &a_server_that_cannot_be_told_the_zone(),
+        );
+
+        assert!(
+            !refused.contains("go to your calendar server on the next sync"),
+            "a series whose zone cannot be written is still promised a sync: {refused}"
+        );
+        assert!(
+            refused.contains("Eastern Standard Time"),
+            "the sentence does not say which zone stops it: {refused}"
+        );
+        assert!(
+            refused.contains("changes nothing at all"),
+            "the sentence does not say choosing it does nothing: {refused}"
+        );
+
+        // The positive control. The same calendar with a zone it can be told
+        // still promises both halves go up.
+        let sent = what_it_will_do(
+            WhatIsBeingDone::Changing,
+            EditMeans::OneDay,
+            &WhatTheCalendarAllows::just(WhereAChangeGoes::ACalendarServer),
+        );
+        assert!(
+            sent.contains("go to your calendar server on the next sync"),
+            "an edit that really is sent no longer says so: {sent}"
+        );
+    }
+
+    #[test]
+    fn test_taking_one_day_off_is_not_refused_over_a_zone_the_replacement_would_have_needed() {
+        // A delete keeps no appointment, so there is no replacement for a
+        // server to refuse and nothing to lose. Refusing it would take away a
+        // delete that works.
+        let allows = a_server_that_cannot_be_told_the_zone();
+
+        assert_eq!(
+            can_be_honoured(WhatIsBeingDone::Deleting, EditMeans::OneDay, &allows),
+            Ok(()),
+            "a day taken off was refused over a zone nothing would have needed"
+        );
+        assert!(
+            can_be_honoured(WhatIsBeingDone::Changing, EditMeans::OneDay, &allows).is_err(),
+            "an edit that would need that zone was allowed"
+        );
+    }
+
+    #[test]
+    fn test_the_question_and_the_refusal_are_one_answer() {
+        // The defect family this round is about. The question describes the
+        // answer from one rule and the write refuses it from another, so
+        // somebody hears what will happen and then hears that it did not.
+        for goes in EVERY_CALENDAR {
+            for keeping_the_day_apart in [
+                None,
+                the_zone_that_cannot_be_written(&a_day_in_a_zone_no_server_can_be_told()),
+            ] {
+                let allows = WhatTheCalendarAllows {
+                    goes,
+                    keeping_the_day_apart,
+                };
+                for means in [EditMeans::OneDay, EditMeans::WholeSeries] {
+                    for done in [WhatIsBeingDone::Changing, WhatIsBeingDone::Deleting] {
+                        let refused = can_be_honoured(done, means, &allows).is_err();
+                        let described = what_it_will_do(done, means, &allows);
+                        assert_eq!(
+                            refused,
+                            described.starts_with(CANNOT_BE_DONE),
+                            "for {done:?} {means:?} on {goes:?} with {:?}, the write says \
+                             refused is {refused} and the question says: {described}",
+                            allows.keeping_the_day_apart,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_the_window_and_the_write_refuse_an_edit_in_the_same_words() {
+        // Two spellings of one refusal is how one of them becomes false without
+        // anybody editing it. The window refuses before the editor opens and
+        // the write refuses before either half is stored, and the same person
+        // hears both about the same event.
+        let day = a_day_in_a_zone_no_server_can_be_told();
+        let from_the_window = can_be_honoured(
+            WhatIsBeingDone::Changing,
+            EditMeans::OneDay,
+            &a_server_that_cannot_be_told_the_zone(),
+        )
+        .expect_err("the window to refuse it");
+        let from_the_write =
+            why_that_day_cannot_be_kept_on_its_own(&day).expect("the write to refuse it");
+
+        assert_eq!(from_the_window, from_the_write);
     }
 
     #[test]
@@ -2894,8 +3221,12 @@ mod tests {
             WhereAChangeGoes::Outlook,
             WhereAChangeGoes::OnlyReadable,
         ] {
-            let refusal = can_be_honoured(EditMeans::OneDay, goes)
-                .expect_err("changing one day on its own cannot be done there");
+            let refusal = can_be_honoured(
+                WhatIsBeingDone::Changing,
+                EditMeans::OneDay,
+                &WhatTheCalendarAllows::just(goes),
+            )
+            .expect_err("changing one day on its own cannot be done there");
 
             assert!(
                 refusal.contains("one day"),
@@ -2921,8 +3252,12 @@ mod tests {
         // saved here and never sent. A refusal that only talks about single
         // days would leave somebody expecting the other answer to reach their
         // calendar.
-        let only_read = can_be_honoured(EditMeans::OneDay, WhereAChangeGoes::OnlyReadable)
-            .expect_err("one day cannot be done there");
+        let only_read = can_be_honoured(
+            WhatIsBeingDone::Changing,
+            EditMeans::OneDay,
+            &WhatTheCalendarAllows::just(WhereAChangeGoes::OnlyReadable),
+        )
+        .expect_err("one day cannot be done there");
 
         assert!(only_read.contains("read"), "{only_read}");
         assert!(
@@ -2933,7 +3268,11 @@ mod tests {
         // A calendar held on a server is different now: one day of a series is
         // carried out there, so there is no refusal to word at all.
         assert_eq!(
-            can_be_honoured(EditMeans::OneDay, WhereAChangeGoes::ACalendarServer),
+            can_be_honoured(
+                WhatIsBeingDone::Changing,
+                EditMeans::OneDay,
+                &WhatTheCalendarAllows::just(WhereAChangeGoes::ACalendarServer)
+            ),
             Ok(())
         );
     }

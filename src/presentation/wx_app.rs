@@ -1440,7 +1440,8 @@ impl WxMailApp {
                 let cache = message_cache.clone();
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
-                move |_| managers::manage_calendar(&state, &cache, &frame, &ui_tx, &runtime)
+                let a11y = a11y.clone();
+                move |_| managers::manage_calendar(&state, &cache, &frame, &ui_tx, &runtime, &a11y)
             });
 
             // ── Contacts panel button handlers ──────────────────────────

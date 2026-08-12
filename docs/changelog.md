@@ -8,6 +8,37 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: the Calendar window answered out loud and then stopped.** Everything
+  that window says back, a refusal, a note that nothing is selected, and what it
+  is waiting to do when you close it, went onto a line of text under the title
+  and nowhere else. Nothing raises a notification for that line, so a screen
+  reader read it only if you went looking. The clearest case: press Delete on
+  one day of a repeating event in a Google calendar, an Outlook calendar or one
+  this program can only read, answer "just this one day", and the refusal
+  arrived in silence. Every sentence that window gives back is now said as well
+  as shown, and a refusal comes in above the ordinary run of status, because it
+  is the answer to the key you just pressed.
+
+  Known limitation: this has not been through a screen reader yet. What is
+  tested is that every sentence goes out through the same call that shows it.
+
+- **Fixed: "just this one day" described a delete as though it kept the day.**
+  Under that answer, the Calendar window and the Delete key both read out a
+  sentence written for an edit: that the day would be taken off the series and
+  kept as a separate appointment, so there would be two entries from then on. A
+  delete keeps nothing. Deleting and changing now describe themselves in their
+  own words, on both doors.
+
+- **Fixed: "just this one day" promised a calendar server a change it would
+  refuse.** For a repeating event whose time zone is spelt the way Outlook and
+  Exchange spell it, changing one day is refused before anything is written,
+  because the appointment kept for that day could never be created on a calendar
+  server. The sentence read out under the answer still said both halves would go
+  up on the next sync, and it was heard before the refusal. It now says the
+  change cannot be done there yet, names the time zone that stops it, and says
+  choosing it changes nothing. Taking one day off such a series is unaffected: a
+  delete keeps no appointment, so there is nothing for the server to refuse.
+
 - **Fixed: changing just one day of a repeating event could take that day off
   your calendar server and never put it back.** Changing one day is one action
   to you and two changes to the calendar server: a separate appointment is
@@ -64,9 +95,8 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   there. For an edit that refusal now comes before the editor opens rather than
   after the whole form has been filled in.
 
-  Known limitation, unchanged: that line of status text still has no accessible
-  name and nothing announces it, so a screen reader reads it only if you go
-  looking for it. What it says is now true. Making it heard is separate work.
+  That line of status text is now read out as well as shown. See the entry
+  below.
 
 - **Fixed: taking one day off a repeating event from the Calendar window
   reported it as a deletion.** The event is still there, with that one day taken

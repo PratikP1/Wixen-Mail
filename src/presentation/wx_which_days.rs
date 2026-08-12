@@ -27,7 +27,8 @@
 //! one Tab away, and it takes whatever is ticked.
 
 use crate::application::calendar::{
-    EditMeans, WhereAChangeGoes, a_repeat_kept_here_only, asking_is_needed, what_it_will_do,
+    EditMeans, WhatIsBeingDone, WhatTheCalendarAllows, a_repeat_kept_here_only, asking_is_needed,
+    what_it_will_do,
 };
 use crate::presentation::accessibility::names::{
     set_accessible_name, set_accessible_name_and_description,
@@ -43,11 +44,16 @@ const THE_QUESTION: &str = "Which days do you mean?";
 /// not repeat is not asked about at all: there is only one day, so there is
 /// nothing to choose between, and a question with one true answer is a question
 /// nobody should be made to read.
+///
+/// `done` is which door somebody came through. A delete keeps nothing, so
+/// describing it in the words written for an edit told somebody taking one day
+/// off that the day would be kept as an appointment of its own.
 pub fn which_days_are_meant(
     parent: &dyn WxWidget,
     summary: &str,
     repeats: &str,
-    goes: WhereAChangeGoes,
+    done: WhatIsBeingDone,
+    allows: &WhatTheCalendarAllows,
 ) -> Option<EditMeans> {
     if !asking_is_needed(repeats) {
         return Some(EditMeans::WholeSeries);
@@ -68,7 +74,7 @@ pub fn which_days_are_meant(
     // event that repeats only on this computer is one appointment at the
     // calendar it is filed in, so a question about which days somebody means is
     // being asked over a series nothing else can see.
-    if let Some(only_here) = a_repeat_kept_here_only(goes) {
+    if let Some(only_here) = a_repeat_kept_here_only(allows.goes) {
         let warning = StaticText::builder(&dialog).with_label(only_here).build();
         set_accessible_name(&warning, only_here);
         sizer.add(&warning, 0, SizerFlag::Expand | SizerFlag::All, 10);
@@ -87,7 +93,7 @@ pub fn which_days_are_meant(
     // Dropping either takes the sentence away from somebody.
     let mut buttons = Vec::new();
     for (index, means) in EditMeans::AS_OFFERED.iter().enumerate() {
-        let will_do = what_it_will_do(*means, goes);
+        let will_do = what_it_will_do(done, *means, allows);
         let button = RadioButton::builder(&dialog)
             .with_label(means.label())
             .with_style(if index == 0 {

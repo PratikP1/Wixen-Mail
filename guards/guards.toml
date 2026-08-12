@@ -3104,8 +3104,10 @@ red = [
 [[guard]]
 name = "the calendar window asks whether an answer can be carried out before it queues it"
 file = "src/presentation/wx_calendar.rs"
-before = """                            if let Err(refused) = can_be_honoured(means, goes) {
-                                status.set_label(&refused);
+before = """                            if let Err(refused) =
+                                can_be_honoured(WhatIsBeingDone::Deleting, means, &allows)
+                            {
+                                said_and_shown(&status, a11y, &refused, Priority::High);
                             } else {
                                 actions.push(CalendarAction::DeleteEvent(item.clone(), means));"""
 after = """                            {
@@ -3117,16 +3119,52 @@ red = [
 [[guard]]
 name = "the calendar window says what is waiting rather than what is done"
 file = "src/presentation/wx_calendar.rs"
-before = """                                status.set_label(what_is_waiting(match means {
-                                    EditMeans::OneDay => WrittenDown::OneDayTakenOff,
-                                    EditMeans::WholeSeries => WrittenDown::WholeSeriesDeleted,
-                                }));"""
-after = """                                status.set_label(match means {
-                                    EditMeans::OneDay => "That one day is taken off.",
-                                    EditMeans::WholeSeries => "Event deleted.",
-                                });"""
+before = """                                said_and_shown(
+                                    &status,
+                                    a11y,
+                                    what_is_waiting(match means {
+                                        EditMeans::OneDay => WrittenDown::OneDayTakenOff,
+                                        EditMeans::WholeSeries => WrittenDown::WholeSeriesDeleted,
+                                    }),
+                                    Priority::Normal,
+                                );"""
+after = """                                said_and_shown(
+                                    &status,
+                                    a11y,
+                                    match means {
+                                        EditMeans::OneDay => "That one day is taken off.",
+                                        EditMeans::WholeSeries => "Event deleted.",
+                                    },
+                                    Priority::Normal,
+                                );"""
 red = [
     "presentation::wx_calendar::tests::test_the_calendar_window_asks_before_it_says_anything",
+]
+
+# ── Every answer the calendar window gives has to be heard ──────────────────
+#
+# The window puts its sentences on a line of text under the title. Nothing
+# raises a notification for that line, so a sentence only shown there is an
+# answer nobody navigating by ear ever gets. That is what a commit in round 17
+# left behind: the refusal for "just this one day" on a Google, an Outlook or a
+# read-only calendar stopped being queued and started being written to that
+# line, and a refusal that used to be read out at once became silence.
+#
+# What this record cannot see. It is a source read, so it can tell that one
+# routine shows and says every sentence and that nothing else writes to the
+# line. It cannot tell whether the announcement reaches a screen reader from
+# inside a modal dialog, whether the priority is the right one, or whether the
+# sentence itself is true. Only a screen reader run answers the first.
+
+[[guard]]
+name = "every answer the calendar window gives is said out loud"
+file = "src/presentation/wx_calendar.rs"
+before = """    status.set_label(said);
+    let _ = a11y.announce(said, priority);"""
+after = """    status.set_label(said);
+    let _ = (a11y, priority);"""
+red = [
+    "presentation::wx_calendar::tests::test_every_answer_the_calendar_window_gives_is_said_out_loud",
 ]
 
 # ── One day cut out of a series is two writes, and only one takes a day away ─
@@ -3194,13 +3232,14 @@ red = [
 [[guard]]
 name = "one day of a series is refused before either half is written when the zone cannot be sent"
 file = "src/presentation/managers.rs"
-before = """    crate::application::calendar::why_that_day_cannot_be_kept_on_its_own(that_day)
+before = """    crate::application::calendar::the_zone_that_cannot_be_written(that_day)
 }"""
 after = """    let _ = that_day;
     None
 }"""
 red = [
     "presentation::managers::changing_one_day_of_a_series::test_a_day_cut_out_of_an_outlook_zone_series_is_refused_and_neither_half_is_written",
+    "presentation::managers::changing_one_day_of_a_series::test_what_a_rows_calendar_allows_is_answered_once_for_both_doors",
 ]
 
 [[guard]]
@@ -3209,10 +3248,53 @@ file = "src/presentation/managers.rs"
 before = """    if goes != crate::application::calendar::WhereAChangeGoes::ACalendarServer {
         return None;
     }
-    crate::application::calendar::why_that_day_cannot_be_kept_on_its_own(that_day)"""
-after = """    crate::application::calendar::why_that_day_cannot_be_kept_on_its_own(that_day)"""
+    crate::application::calendar::the_zone_that_cannot_be_written(that_day)"""
+after = """    crate::application::calendar::the_zone_that_cannot_be_written(that_day)"""
 red = [
     "presentation::managers::changing_one_day_of_a_series::test_a_day_cut_out_of_a_series_kept_only_here_is_not_refused_over_its_zone",
+    "presentation::managers::changing_one_day_of_a_series::test_what_a_rows_calendar_allows_is_answered_once_for_both_doors",
+]
+
+# ── One question, one answer, on both doors ─────────────────────────────────
+#
+# Whether one day of a series can be taken out on its own was answered in three
+# places from three rules: the sentence read under the answer before anybody
+# chooses, the refusal the window gives, and the refusal the write gives. So the
+# sentence promised a calendar server would get both halves and the write
+# refused the edit a moment later, and somebody heard the promise first.
+#
+# The doors differ and that is the point. A change keeps an appointment for the
+# day, so it needs a time zone the server can be told. A delete keeps nothing,
+# so refusing it over that zone would take away a delete that works.
+
+[[guard]]
+name = "the question and the refusal about one day are one answer"
+file = "src/application/calendar.rs"
+before = """                (WhatIsBeingDone::Changing, Some(clause)) => Err(one_day_cannot_be_kept(clause)),"""
+after = """                (WhatIsBeingDone::Changing, Some(clause)) => {
+                    let _ = clause;
+                    Ok(())
+                }"""
+red = [
+    "application::calendar::tests::test_taking_one_day_off_is_not_refused_over_a_zone_the_replacement_would_have_needed",
+    "application::calendar::tests::test_the_question_and_the_refusal_are_one_answer",
+    "application::calendar::tests::test_the_window_and_the_write_refuse_an_edit_in_the_same_words",
+]
+
+[[guard]]
+name = "a delete is not described as an edit that keeps a second appointment"
+file = "src/application/calendar.rs"
+before = """        WhatIsBeingDone::Deleting => {
+            "Takes only the day you opened off the series, and leaves the rest of them \\
+             alone. Nothing is kept for that day."
+        }"""
+after = """        WhatIsBeingDone::Deleting => {
+            "Changes only the day you opened, and leaves the rest of them alone. That day \\
+             is taken off the series and kept as a separate appointment, so it is two \\
+             entries from then on rather than one moved day."
+        }"""
+red = [
+    "application::calendar::tests::test_a_delete_is_not_described_as_an_edit_that_keeps_a_second_appointment",
 ]
 
 [[guard]]

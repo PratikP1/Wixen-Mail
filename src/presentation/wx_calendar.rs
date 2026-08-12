@@ -3,20 +3,29 @@
 //! Keyboard-navigable list, accelerator keys on all buttons, and a line of
 //! status text under the title.
 //!
-//! That status line is not announced. It has no accessible name and nothing
-//! raises a notification when it changes, so a screen reader reads it only if
-//! somebody goes looking for it. This file used to claim otherwise. What the
-//! line says is now true of what has happened, which is a different thing from
-//! being heard, and making it heard is its own change.
+//! Every sentence this window gives back is shown on that status line and
+//! said out loud, from one call. Each of them answers a key somebody has just
+//! pressed, and a line of text under a title is not somewhere anybody
+//! navigating by ear goes, so a sentence that was only shown was an answer
+//! nobody got. Refusals are said above the ordinary run of status, because a
+//! refusal is the one answer nobody can be left to miss.
+//!
+//! Nothing sets a fixed accessible name on that line. Windows gives a piece of
+//! static text its own label as its name, so naming it would replace the
+//! sentence with a fixed string and take the sentence away.
 
 use wxdragon::prelude::*;
 
 use crate::application::calendar::{
-    EditMeans, WhereAChangeGoes, WrittenDown, can_be_honoured, what_is_waiting,
+    EditMeans, WhatIsBeingDone, WhatTheCalendarAllows, WrittenDown, can_be_honoured,
+    what_is_waiting,
 };
+use crate::presentation::accessibility::Accessibility;
+use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::ui_types::CalendarEventItem;
 use crate::presentation::wx_which_days::which_days_are_meant;
+use std::sync::Arc;
 
 // ── Button IDs ──────────────────────────────────────────────────────────────
 
@@ -30,8 +39,6 @@ const ID_CAL_SYNC: Id = ID_HIGHEST + 503;
 /// Actions that the calendar dialog can produce.
 #[derive(Debug, Clone)]
 pub enum CalendarAction {
-    /// No action; dialog was closed.
-    None,
     /// User wants to sync calendar events.
     SyncRequested,
     /// User created a new event.
@@ -149,14 +156,17 @@ impl CalendarEventData {
 ///
 /// Returns a list of `CalendarAction`s the user performed.
 ///
-/// `where_changes_go` answers, for one row, which kind of calendar the event is
-/// filed in. Handed in rather than worked out here, because answering it needs
-/// the stored calendar and this window has none, and because there is one place
-/// that question is answered for the whole program.
+/// `where_changes_go` answers, for one row, what the calendar the event is
+/// filed in allows: which kind of calendar it is, and whether the day could be
+/// kept as an appointment of its own there. Handed in rather than worked out
+/// here, because answering it needs the stored calendar and this window has
+/// none, and because there is one place that question is answered for the whole
+/// program.
 pub fn show_calendar_dialog(
     parent: &Frame,
     events: &[CalendarEventItem],
-    where_changes_go: &dyn Fn(&CalendarEventItem) -> WhereAChangeGoes,
+    where_changes_go: &dyn Fn(&CalendarEventItem) -> WhatTheCalendarAllows,
+    a11y: &Arc<Accessibility>,
 ) -> Vec<CalendarAction> {
     let dialog = Dialog::builder(parent, "Calendar")
         .with_size(800, 600)
@@ -262,12 +272,17 @@ pub fn show_calendar_dialog(
             r if r == ID_OK || r == ID_CANCEL => break,
             r if r == ID_CAL_SYNC => {
                 actions.push(CalendarAction::SyncRequested);
-                status.set_label("Sync requested...");
+                said_and_shown(&status, a11y, "Sync requested...", Priority::Normal);
             }
             r if r == ID_CAL_NEW => {
                 if let Some(data) = show_event_editor(&dialog, None) {
                     actions.push(CalendarAction::CreateEvent(data));
-                    status.set_label(what_is_waiting(WrittenDown::Created));
+                    said_and_shown(
+                        &status,
+                        a11y,
+                        what_is_waiting(WrittenDown::Created),
+                        Priority::Normal,
+                    );
                 }
             }
             r if r == ID_CAL_EDIT => {
@@ -276,33 +291,44 @@ pub fn show_calendar_dialog(
                     let idx = sel as usize;
                     if let Some(item) = events_data.get(idx) {
                         let prefill = CalendarEventData::as_shown(item);
-                        let goes = where_changes_go(item);
+                        let allows = where_changes_go(item);
                         // Both asked before the editor opens, so somebody who
                         // meant one day is not made to fill a form in first and
                         // then told it cannot be done. The refusal is the same
                         // sentence the manager would give afterwards, from the
                         // same place, because two spellings of that rule is how
                         // this window comes to offer what the manager refuses.
-                        if let Some(means) =
-                            which_days_are_meant(&dialog, &item.summary, &item.repeats, goes)
-                        {
-                            if let Err(refused) = can_be_honoured(means, goes) {
-                                status.set_label(&refused);
+                        if let Some(means) = which_days_are_meant(
+                            &dialog,
+                            &item.summary,
+                            &item.repeats,
+                            WhatIsBeingDone::Changing,
+                            &allows,
+                        ) {
+                            if let Err(refused) =
+                                can_be_honoured(WhatIsBeingDone::Changing, means, &allows)
+                            {
+                                said_and_shown(&status, a11y, &refused, Priority::High);
                             } else if let Some(data) = show_event_editor(&dialog, Some(&prefill)) {
                                 actions.push(CalendarAction::UpdateEvent(
                                     item.clone(),
                                     means,
                                     data,
                                 ));
-                                status.set_label(what_is_waiting(match means {
-                                    EditMeans::OneDay => WrittenDown::OneDayChanged,
-                                    EditMeans::WholeSeries => WrittenDown::WholeSeriesChanged,
-                                }));
+                                said_and_shown(
+                                    &status,
+                                    a11y,
+                                    what_is_waiting(match means {
+                                        EditMeans::OneDay => WrittenDown::OneDayChanged,
+                                        EditMeans::WholeSeries => WrittenDown::WholeSeriesChanged,
+                                    }),
+                                    Priority::Normal,
+                                );
                             }
                         }
                     }
                 } else {
-                    status.set_label("Select an event to edit.");
+                    said_and_shown(&status, a11y, "Select an event to edit.", Priority::High);
                 }
             }
             r if r == ID_CAL_DELETE => {
@@ -346,18 +372,25 @@ pub fn show_calendar_dialog(
                             }
                         });
 
-                        let goes = where_changes_go(item);
+                        let allows = where_changes_go(item);
                         if confirm.show_modal() == ID_OK
-                            && let Some(means) =
-                                which_days_are_meant(&dialog, &item.summary, &item.repeats, goes)
+                            && let Some(means) = which_days_are_meant(
+                                &dialog,
+                                &item.summary,
+                                &item.repeats,
+                                WhatIsBeingDone::Deleting,
+                                &allows,
+                            )
                         {
                             // Asked here, where the person is standing, rather
                             // than after this window closes. A calendar that
                             // will refuse the answer refuses it now, instead of
                             // saying the day is off and then saying nothing was
                             // changed a moment later.
-                            if let Err(refused) = can_be_honoured(means, goes) {
-                                status.set_label(&refused);
+                            if let Err(refused) =
+                                can_be_honoured(WhatIsBeingDone::Deleting, means, &allows)
+                            {
+                                said_and_shown(&status, a11y, &refused, Priority::High);
                             } else {
                                 actions.push(CalendarAction::DeleteEvent(item.clone(), means));
                                 // Said as what is waiting to happen. Nothing on
@@ -365,16 +398,21 @@ pub fn show_calendar_dialog(
                                 // off a series is not a deletion either: the
                                 // event stays and the other days keep their own
                                 // values.
-                                status.set_label(what_is_waiting(match means {
-                                    EditMeans::OneDay => WrittenDown::OneDayTakenOff,
-                                    EditMeans::WholeSeries => WrittenDown::WholeSeriesDeleted,
-                                }));
+                                said_and_shown(
+                                    &status,
+                                    a11y,
+                                    what_is_waiting(match means {
+                                        EditMeans::OneDay => WrittenDown::OneDayTakenOff,
+                                        EditMeans::WholeSeries => WrittenDown::WholeSeriesDeleted,
+                                    }),
+                                    Priority::Normal,
+                                );
                             }
                         }
                         confirm.destroy();
                     }
                 } else {
-                    status.set_label("Select an event to delete.");
+                    said_and_shown(&status, a11y, "Select an event to delete.", Priority::High);
                 }
             }
             _ => break,
@@ -383,6 +421,21 @@ pub fn show_calendar_dialog(
 
     dialog.destroy();
     actions
+}
+
+/// Put a sentence on the status line and say it out loud, from one call.
+///
+/// One call, so a sentence cannot be shown and left unsaid. Everything this
+/// window gives back is the answer to a key somebody has just pressed, and the
+/// line of text alone reaches only somebody who goes looking for it.
+///
+/// Refusals and "nothing is selected" come in above the ordinary run of status,
+/// for the reason the refused-command update gives: they are the answer to that
+/// key, and the one thing nobody can be left to miss. What is waiting to happen
+/// comes in at the ordinary level.
+fn said_and_shown(status: &StaticText, a11y: &Accessibility, said: &str, priority: Priority) {
+    status.set_label(said);
+    let _ = a11y.announce(said, priority);
 }
 
 fn populate_event_list(list: &ListCtrl, events: &[CalendarEventItem]) {
@@ -695,6 +748,92 @@ mod tests {
             .collect()
     }
 
+    /// What this window says without saying it out loud.
+    ///
+    /// A line of text under the title is not somewhere anybody navigating by
+    /// ear goes, and nothing raises a notification when it changes. Every
+    /// sentence this window produces is an answer to a key somebody has just
+    /// pressed, so a sentence that is only shown is an answer nobody gets.
+    fn what_the_window_never_says(source: &str) -> Vec<String> {
+        let mut wrong = Vec::new();
+        let Some((_, helper)) = source.split_once("fn said_and_shown(") else {
+            return vec![
+                "nothing in this window both shows a sentence and says it, so every \
+                 answer it gives is silent"
+                    .to_string(),
+            ];
+        };
+        let body = &helper[..helper.find("\n}").unwrap_or(helper.len())];
+        if !body.contains("a11y.announce(") {
+            wrong.push("the one place that shows a sentence never says it out loud".to_string());
+        }
+        let shown = source.matches("status.set_label(").count();
+        if shown != 1 {
+            wrong.push(format!(
+                "{shown} places put a sentence on the status line, and only the one that \
+                 says it out loud as well may"
+            ));
+        }
+        wrong
+    }
+
+    #[test]
+    fn test_every_answer_the_calendar_window_gives_is_said_out_loud() {
+        // The regression this round is about. The window answered "just this
+        // one day" on a Google, an Outlook or a read-only calendar by putting
+        // the refusal on a line of text and queueing nothing, so a refusal that
+        // used to be read out at once became silence.
+        let source = the_calendar_window();
+        let wrong = what_the_window_never_says(&source);
+        assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
+    }
+
+    #[test]
+    fn test_the_saying_check_can_tell_the_two_apart() {
+        // Proving the measurement. A source read that finds nothing passes, and
+        // from outside that is indistinguishable from one that finds
+        // everything.
+        let sound = "fn said_and_shown(status: &StaticText, a11y: &Accessibility) {\n\
+            \x20   status.set_label(said);\n\
+            \x20   let _ = a11y.announce(said, priority);\n\
+            }\n\
+            \x20               said_and_shown(&status, a11y, &refused, Priority::High);\n";
+        assert!(
+            what_the_window_never_says(sound).is_empty(),
+            "a window that says everything was reported as silent"
+        );
+
+        let one_left_silent = format!("{sound}                status.set_label(\"x\");\n");
+        let wrong = what_the_window_never_says(&one_left_silent);
+        assert_eq!(wrong.len(), 1, "{wrong:?}");
+        assert!(wrong[0].contains("status line"), "{wrong:?}");
+
+        let never_says = sound.replace("let _ = a11y.announce(said, priority);", "let _ = said;");
+        assert!(
+            what_the_window_never_says(&never_says)[0].contains("never says it out loud"),
+            "a helper that only shows was not reported"
+        );
+
+        let no_helper = "                status.set_label(\"x\");\n";
+        assert!(
+            what_the_window_never_says(no_helper)[0].contains("every answer it gives is silent"),
+            "a window with nothing that speaks was not reported"
+        );
+
+        // And the tests underneath are really cut off, because they quote every
+        // sentence the check looks for.
+        let window = the_calendar_window();
+        assert!(
+            window.len() > 5000,
+            "only {} characters of the window were read, so the reading is broken",
+            window.len()
+        );
+        assert!(
+            !window.contains("fn the_calendar_window("),
+            "the tests were not cut off, so the check is reading its own words"
+        );
+    }
+
     #[test]
     fn test_the_calendar_window_asks_before_it_says_anything() {
         let source = the_calendar_window();
@@ -708,7 +847,7 @@ mod tests {
             edit.len()
         );
 
-        let mut wrong = what_the_arm_gets_wrong(&delete, &["actions.push(", "set_label("]);
+        let mut wrong = what_the_arm_gets_wrong(&delete, &["actions.push(", "said_and_shown("]);
         // The editor is a form somebody fills in. Asking after it opens means
         // filling the whole thing in and then being told it cannot be done,
         // which is what the comment in that arm has always promised it does
@@ -742,22 +881,22 @@ mod tests {
         // Proving the measurement. A source read that finds nothing passes,
         // and from outside that is indistinguishable from one that finds
         // everything.
-        let sound = "                let goes = where_changes_go(item);\n\
-            \x20               if let Err(refused) = can_be_honoured(means, goes) {\n\
-            \x20                   status.set_label(&refused);\n\
+        let sound = "                let allows = where_changes_go(item);\n\
+            \x20               if let Err(refused) = can_be_honoured(done, means, &allows) {\n\
+            \x20                   said_and_shown(&status, a11y, &refused, Priority::High);\n\
             \x20               } else {\n\
             \x20                   actions.push(CalendarAction::DeleteEvent(item.clone(), means));\n\
             \x20               }\n";
         assert!(
-            what_the_arm_gets_wrong(sound, &["actions.push(", "set_label("]).is_empty(),
+            what_the_arm_gets_wrong(sound, &["actions.push(", "said_and_shown("]).is_empty(),
             "a sound arm was reported as broken"
         );
 
-        let said_first = "                status.set_label(\"That one day is taken off.\");\n\
-            \x20               if let Err(refused) = can_be_honoured(means, goes) {}\n";
-        let wrong = what_the_arm_gets_wrong(said_first, &["actions.push(", "set_label("]);
+        let said_first = "                said_and_shown(&status, a11y, &off, Priority::High);\n\
+            \x20               if let Err(refused) = can_be_honoured(done, means, &allows) {}\n";
+        let wrong = what_the_arm_gets_wrong(said_first, &["actions.push(", "said_and_shown("]);
         assert_eq!(wrong.len(), 1, "{wrong:?}");
-        assert!(wrong[0].contains("set_label("), "{wrong:?}");
+        assert!(wrong[0].contains("said_and_shown("), "{wrong:?}");
 
         let never_asks =
             "                actions.push(CalendarAction::DeleteEvent(item, means));\n";

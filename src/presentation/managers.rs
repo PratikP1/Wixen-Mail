@@ -522,6 +522,36 @@ fn the_calendar_it_is_in(
     crate::application::calendar::where_a_change_goes(container.as_ref())
 }
 
+/// What the calendar this row is filed in allows, answered in one place.
+///
+/// The window that describes the answer, the window that refuses it and the
+/// write that carries it out all read this one value. Three places answering
+/// one question from three rules is how the question came to promise both
+/// halves of a one-day change would be sent while the write refused it.
+fn what_this_rows_calendar_allows(
+    cache: &MessageCache,
+    row: &CalendarEventItem,
+) -> crate::application::calendar::WhatTheCalendarAllows {
+    let goes = the_calendar_it_is_in(cache, row);
+    // The day as it stands, before the editor opens. It carries the series'
+    // own time zone, and the editor has no time zone box, so this is the same
+    // zone the write asks about afterwards.
+    let keeping_the_day_apart = cache
+        .get_event_by_id(&row.id)
+        .ok()
+        .flatten()
+        .and_then(|series| {
+            the_zone_that_stops_keeping_the_day(
+                goes,
+                &the_day_kept_on_its_own(&series, &wx_calendar::CalendarEventData::as_shown(row)),
+            )
+        });
+    crate::application::calendar::WhatTheCalendarAllows {
+        goes,
+        keeping_the_day_apart,
+    }
+}
+
 /// The one day somebody changed, as an appointment of its own.
 ///
 /// Carries the series' calendar, zone, account and status and none of its
@@ -566,10 +596,24 @@ fn why_that_day_cannot_be_kept(
     goes: crate::application::calendar::WhereAChangeGoes,
     that_day: &crate::data::message_cache::CalendarEventEntry,
 ) -> Option<String> {
+    the_zone_that_stops_keeping_the_day(goes, that_day)
+        .map(|clause| crate::application::calendar::one_day_cannot_be_kept(&clause))
+}
+
+/// The time zone that stops the day being kept on its own, as a clause.
+///
+/// The gate lives here, once, and both the window that describes the answer
+/// before anybody chooses and the write that refuses it afterwards read it. Two
+/// readers of one condition is how the question came to promise what the write
+/// refused.
+fn the_zone_that_stops_keeping_the_day(
+    goes: crate::application::calendar::WhereAChangeGoes,
+    that_day: &crate::data::message_cache::CalendarEventEntry,
+) -> Option<String> {
     if goes != crate::application::calendar::WhereAChangeGoes::ACalendarServer {
         return None;
     }
-    crate::application::calendar::why_that_day_cannot_be_kept_on_its_own(that_day)
+    crate::application::calendar::the_zone_that_cannot_be_written(that_day)
 }
 
 /// Store the one day somebody changed, and take that day off the series.
@@ -632,6 +676,7 @@ pub fn manage_calendar(
     frame: &Frame,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
 ) {
     let (cache, account) = match manager_account(state, cache) {
         Ok(pair) => pair,
@@ -640,15 +685,17 @@ pub fn manage_calendar(
     // The events already on screen, rather than an empty list. The dialog used
     // to be handed nothing whatever the calendar held.
     let events = lock_state(state).events.clone();
-    let actions = wx_calendar::show_calendar_dialog(frame, &events, &|row| {
-        the_calendar_it_is_in(&cache, row)
-    });
+    let actions = wx_calendar::show_calendar_dialog(
+        frame,
+        &events,
+        &|row| what_this_rows_calendar_allows(&cache, row),
+        a11y,
+    );
 
     let mut failures = Vec::new();
     let mut changed = false;
     for action in actions {
         match action {
-            wx_calendar::CalendarAction::None => {}
             wx_calendar::CalendarAction::SyncRequested => {
                 send_status(tx, rt, "Calendar sync requested");
             }
@@ -671,8 +718,9 @@ pub fn manage_calendar(
                 // series would otherwise rewrite every day of it, and the other
                 // days' own values cannot be got back.
                 if let Err(refused) = crate::application::calendar::can_be_honoured(
+                    crate::application::calendar::WhatIsBeingDone::Changing,
                     means,
-                    the_calendar_it_is_in(&cache, &opened),
+                    &what_this_rows_calendar_allows(&cache, &opened),
                 ) {
                     send_refusal(tx, rt, &refused);
                     continue;
@@ -712,8 +760,9 @@ pub fn manage_calendar(
             wx_calendar::CalendarAction::DeleteEvent(opened, means) => {
                 let stored = cache.get_event_by_id(&opened.id).ok().flatten();
                 if let Err(refused) = crate::application::calendar::can_be_honoured(
+                    crate::application::calendar::WhatIsBeingDone::Deleting,
                     means,
-                    the_calendar_it_is_in(&cache, &opened),
+                    &what_this_rows_calendar_allows(&cache, &opened),
                 ) {
                     send_refusal(tx, rt, &refused);
                     continue;
@@ -1486,7 +1535,7 @@ pub fn pim_command(
             let Some(opened) = opened else {
                 return send_refusal(tx, rt, &no_longer_there(kind, &name));
             };
-            let goes = the_calendar_it_is_in(&cache, &opened);
+            let allows = what_this_rows_calendar_allows(&cache, &opened);
             // The other silence that is right here: the question about which
             // days was left alone rather than answered, which is not a failure
             // and must not be announced as one.
@@ -1494,11 +1543,16 @@ pub fn pim_command(
                 frame,
                 &name,
                 &opened.repeats,
-                goes,
+                crate::application::calendar::WhatIsBeingDone::Deleting,
+                &allows,
             ) else {
                 return;
             };
-            if let Err(refused) = crate::application::calendar::can_be_honoured(means, goes) {
+            if let Err(refused) = crate::application::calendar::can_be_honoured(
+                crate::application::calendar::WhatIsBeingDone::Deleting,
+                means,
+                &allows,
+            ) {
                 return send_refusal(tx, rt, &refused);
             }
             // Calling one day off leaves the series and takes that day out of
@@ -6151,6 +6205,79 @@ mod changing_one_day_of_a_series {
                 .iter()
                 .any(|event| event.id == "series-1" && event.exception_dates.is_some()),
             "the day was not taken off the series"
+        );
+    }
+
+    #[test]
+    fn test_what_a_rows_calendar_allows_is_answered_once_for_both_doors() {
+        // The window describes the answer, the window refuses it, and the write
+        // refuses it again. All three read this. Answered three ways, the
+        // question promised both halves of a one-day change would be sent and
+        // the write refused it a moment later.
+        let cache = a_cache("what_a_rows_calendar_allows");
+        a_calendar_on_a_server(&cache);
+        let series = a_series_in_a_zone_we_cannot_describe(&cache);
+        let day = the_day_opened(&series);
+
+        let on_a_server = what_this_rows_calendar_allows(&cache, &day);
+        assert_eq!(
+            on_a_server.goes,
+            crate::application::calendar::WhereAChangeGoes::ACalendarServer
+        );
+        let clause = on_a_server
+            .keeping_the_day_apart
+            .clone()
+            .expect("a zone a calendar server cannot be told");
+        assert!(
+            clause.contains("Eastern Standard Time"),
+            "the clause does not name the zone: {clause}"
+        );
+
+        // The window asks before the editor opens and the write asks after it
+        // closes, and they agree only because the day is built from the series'
+        // own zone and the editor has no time zone box. Asserted rather than
+        // assumed, so adding such a box fails here instead of drifting.
+        let after_the_editor =
+            the_day_kept_on_its_own(&series, &only_the_summary_retyped(&day)).time_zone;
+        assert_eq!(
+            after_the_editor, series.time_zone,
+            "the day the window asked about and the day the write asks about carry \
+             different time zones"
+        );
+        assert_eq!(
+            why_that_day_cannot_be_kept(
+                crate::application::calendar::WhereAChangeGoes::ACalendarServer,
+                &the_day_kept_on_its_own(&series, &only_the_summary_retyped(&day)),
+            ),
+            Some(crate::application::calendar::one_day_cannot_be_kept(
+                &clause
+            )),
+            "the window and the write refuse the same edit in different words"
+        );
+
+        // A zone a calendar server will take. The positive control: without it
+        // this would pass against an answer that refuses every one-day change.
+        let plain = a_cache("what_a_rows_calendar_allows_plain");
+        a_calendar_on_a_server(&plain);
+        let plain_series = a_weekly_series(&plain);
+        assert_eq!(
+            what_this_rows_calendar_allows(&plain, &the_day_opened(&plain_series))
+                .keeping_the_day_apart,
+            None,
+            "a zone a calendar server will take was refused anyway"
+        );
+
+        // Nothing is ever sent from a calendar kept on this computer, so there
+        // is nothing for a server to refuse and a refusal would take away an
+        // edit that works.
+        let here = a_cache("what_a_rows_calendar_allows_here");
+        a_calendar_kept_here(&here);
+        let here_series = a_series_in_a_zone_we_cannot_describe(&here);
+        assert_eq!(
+            what_this_rows_calendar_allows(&here, &the_day_opened(&here_series))
+                .keeping_the_day_apart,
+            None,
+            "an edit that never leaves this computer was refused over a zone"
         );
     }
 
