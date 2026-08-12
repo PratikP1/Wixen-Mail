@@ -3550,14 +3550,21 @@ red = [
     "presentation::wx_calendar::tests::test_the_calendar_window_asks_before_it_says_anything",
 ]
 
-# ── Every answer the calendar window gives has to be heard ──────────────────
+# ── Every answer a window gives on a line of text has to be heard ───────────
 #
-# The window puts its sentences on a line of text under the title. Nothing
+# These windows put their sentences on a line of text under the title. Nothing
 # raises a notification for that line, so a sentence only shown there is an
 # answer nobody navigating by ear ever gets. That is what a commit in round 17
 # left behind: the refusal for "just this one day" on a Google, an Outlook or a
 # read-only calendar stopped being queued and started being written to that
 # line, and a refusal that used to be read out at once became silence.
+#
+# The one call that shows and says was the calendar's own until the round that
+# found three more windows doing the same thing. It moved into a module of its
+# own rather than being copied three times, because two pieces of code
+# answering one question is how most of the faults recorded in this file
+# started. So this break is now measured where that call lives, and it silences
+# every window that leans on it at once.
 #
 # What this record cannot see. It is a source read, so it can tell that one
 # routine shows and says every sentence and that nothing else writes to the
@@ -3566,13 +3573,14 @@ red = [
 # sentence itself is true. Only a screen reader run answers the first.
 
 [[guard]]
-name = "every answer the calendar window gives is said out loud"
-file = "src/presentation/wx_calendar.rs"
-before = """    status.set_label(said);
+name = "every answer a window gives on a line of text is said out loud"
+file = "src/presentation/status_line.rs"
+before = """    line.set_label(said);
     let _ = a11y.announce(said, priority);"""
-after = """    status.set_label(said);
+after = """    line.set_label(said);
     let _ = (a11y, priority);"""
 red = [
+    "presentation::status_line::tests::test_the_one_place_that_shows_a_sentence_says_it_too",
     "presentation::wx_calendar::tests::test_every_answer_the_calendar_window_gives_is_said_out_loud",
 ]
 

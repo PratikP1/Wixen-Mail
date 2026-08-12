@@ -23,6 +23,7 @@ use crate::application::calendar::{
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::status_line::said_and_shown;
 use crate::presentation::ui_types::CalendarEventItem;
 use crate::presentation::wx_which_days::which_days_are_meant;
 use std::sync::Arc;
@@ -423,21 +424,6 @@ pub fn show_calendar_dialog(
     actions
 }
 
-/// Put a sentence on the status line and say it out loud, from one call.
-///
-/// One call, so a sentence cannot be shown and left unsaid. Everything this
-/// window gives back is the answer to a key somebody has just pressed, and the
-/// line of text alone reaches only somebody who goes looking for it.
-///
-/// Refusals and "nothing is selected" come in above the ordinary run of status,
-/// for the reason the refused-command update gives: they are the answer to that
-/// key, and the one thing nobody can be left to miss. What is waiting to happen
-/// comes in at the ordinary level.
-fn said_and_shown(status: &StaticText, a11y: &Accessibility, said: &str, priority: Priority) {
-    status.set_label(said);
-    let _ = a11y.announce(said, priority);
-}
-
 fn populate_event_list(list: &ListCtrl, events: &[CalendarEventItem]) {
     list.delete_all_items();
     for (i, event) in events.iter().enumerate() {
@@ -785,11 +771,15 @@ mod tests {
     /// ear goes, and nothing raises a notification when it changes. Every
     /// sentence this window produces is an answer to a key somebody has just
     /// pressed, so a sentence that is only shown is an answer nobody gets.
-    fn what_the_window_never_says(source: &str) -> Vec<String> {
+    ///
+    /// The one call that shows and says now lives in its own module, shared
+    /// with the account manager and the manager windows, so its body is read
+    /// from there rather than from this file.
+    fn what_the_window_never_says(window: &str, the_one_call: &str) -> Vec<String> {
         let mut wrong = Vec::new();
-        let Some((_, helper)) = source.split_once("fn said_and_shown(") else {
+        let Some((_, helper)) = the_one_call.split_once("pub(crate) fn said_and_shown(") else {
             return vec![
-                "nothing in this window both shows a sentence and says it, so every \
+                "nothing this window can call both shows a sentence and says it, so every \
                  answer it gives is silent"
                     .to_string(),
             ];
@@ -798,14 +788,29 @@ mod tests {
         if !body.contains("a11y.announce(") {
             wrong.push("the one place that shows a sentence never says it out loud".to_string());
         }
-        let shown = source.matches("status.set_label(").count();
-        if shown != 1 {
+        let shown = window.matches("status.set_label(").count();
+        if shown != 0 {
             wrong.push(format!(
-                "{shown} places put a sentence on the status line, and only the one that \
-                 says it out loud as well may"
+                "{shown} places in this window put a sentence on the status line by \
+                 themselves, rather than through the one call that says it as well"
             ));
         }
+        if !window.contains("said_and_shown(") {
+            wrong
+                .push("this window never reaches the one call that says what it shows".to_string());
+        }
         wrong
+    }
+
+    /// The one call that shows and says, with its own tests cut off.
+    fn the_one_call_that_says() -> String {
+        let whole = std::fs::read_to_string("src/presentation/status_line.rs")
+            .expect("the shared status line to be readable")
+            .replace("\r\n", "\n");
+        match whole.split_once("\n#[cfg(test)]") {
+            Some((code, _)) => code.to_string(),
+            None => whole,
+        }
     }
 
     #[test]
@@ -820,7 +825,7 @@ mod tests {
         // that one routine both shows and says, and that nothing else in the
         // window puts a sentence on the line by itself.
         let source = the_calendar_window();
-        let wrong = what_the_window_never_says(&source);
+        let wrong = what_the_window_never_says(&source, &the_one_call_that_says());
         assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
     }
 
@@ -829,31 +834,47 @@ mod tests {
         // Proving the measurement. A source read that finds nothing passes, and
         // from outside that is indistinguishable from one that finds
         // everything.
-        let sound = "fn said_and_shown(status: &StaticText, a11y: &Accessibility) {\n\
-            \x20   status.set_label(said);\n\
+        let call = "pub(crate) fn said_and_shown(\n\
+            \x20   line: &StaticText,\n\
+            ) {\n\
+            \x20   line.set_label(said);\n\
             \x20   let _ = a11y.announce(said, priority);\n\
-            }\n\
-            \x20               said_and_shown(&status, a11y, &refused, Priority::High);\n";
+            }\n";
+        let sound = "                said_and_shown(&status, a11y, &refused, Priority::High);\n";
         assert!(
-            what_the_window_never_says(sound).is_empty(),
+            what_the_window_never_says(sound, call).is_empty(),
             "a window that says everything was reported as silent"
         );
 
         let one_left_silent = format!("{sound}                status.set_label(\"x\");\n");
-        let wrong = what_the_window_never_says(&one_left_silent);
+        let wrong = what_the_window_never_says(&one_left_silent, call);
         assert_eq!(wrong.len(), 1, "{wrong:?}");
         assert!(wrong[0].contains("status line"), "{wrong:?}");
 
-        let never_says = sound.replace("let _ = a11y.announce(said, priority);", "let _ = said;");
+        let never_says = call.replace("let _ = a11y.announce(said, priority);", "let _ = said;");
         assert!(
-            what_the_window_never_says(&never_says)[0].contains("never says it out loud"),
-            "a helper that only shows was not reported"
+            what_the_window_never_says(sound, &never_says)[0].contains("never says it out loud"),
+            "a call that only shows was not reported"
         );
 
-        let no_helper = "                status.set_label(\"x\");\n";
+        let no_call = "                status.set_label(\"x\");\n";
         assert!(
-            what_the_window_never_says(no_helper)[0].contains("every answer it gives is silent"),
-            "a window with nothing that speaks was not reported"
+            what_the_window_never_says(sound, no_call)[0]
+                .contains("every answer it gives is silent"),
+            "a window with nothing to call was not reported"
+        );
+
+        let never_calls = "                status.set_label(\"x\");\n";
+        let wrong = what_the_window_never_says(never_calls, call);
+        assert!(
+            wrong.iter().any(|said| said.contains("never reaches")),
+            "a window that never calls it was not reported: {wrong:?}"
+        );
+
+        // And the shared call really was read.
+        assert!(
+            the_one_call_that_says().contains("pub(crate) fn said_and_shown("),
+            "the shared call was not read, so this check is measuring nothing"
         );
 
         // And the tests underneath are really cut off, because they quote every
