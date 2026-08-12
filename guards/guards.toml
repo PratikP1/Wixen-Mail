@@ -3092,6 +3092,40 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_every_answer_a_delete_gives_reaches_the_one_place_that_speaks_and_reloads",
 ]
 
+# ── The two doors every answer leaves through ──────────────────────────────
+#
+# Every outcome and every refusal the managers layer produces goes out as one
+# of two updates. Both write to the status bar, which is a line at the bottom
+# of a window and not somewhere anybody navigating by ear goes, and both say
+# what they write as well. If either stopped saying it, that whole layer would
+# go quiet at once and nothing here would have noticed: neither of these was
+# recorded until the round that found the Calendar window had gone quiet the
+# same way.
+#
+# What these records cannot see. Both tests are source reads, because reaching
+# these arms needs a window, a frame and a running event loop. They can tell
+# that the arm announces what it shows and at what priority. They cannot tell
+# whether the announcement reaches a screen reader, or whether the sentence
+# handed in is true. Only a screen reader run answers the first.
+
+[[guard]]
+name = "what goes to the status bar is said as well as shown"
+file = "src/presentation/wx_app.rs"
+before = """            let _ = a11y.announce_topic(status, Priority::Low, "status");"""
+after = """            let _ = status;"""
+red = [
+    "presentation::wx_app::what_the_status_line_says::test_the_two_answers_every_command_leaves_through_are_said_out_loud",
+]
+
+[[guard]]
+name = "a refusal is said as well as shown"
+file = "src/presentation/wx_app.rs"
+before = """            let _ = a11y.announce_topic(why, Priority::High, "refusal");"""
+after = """            let _ = why;"""
+red = [
+    "presentation::wx_app::what_the_status_line_says::test_the_two_answers_every_command_leaves_through_are_said_out_loud",
+]
+
 [[guard]]
 name = "a series that is still there is not reported as deleted"
 file = "src/presentation/managers.rs"

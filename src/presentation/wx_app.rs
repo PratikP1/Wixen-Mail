@@ -11180,6 +11180,108 @@ mod what_the_status_line_says {
         assert_eq!(how_many_on_the_server(1), "1 folder on the server");
         assert_eq!(how_many_on_the_server(12), "12 folders on the server");
     }
+
+    /// One arm of the update handler, from its label to the start of the next.
+    fn the_arm_for(source: &str, update: &str) -> String {
+        let marker = format!("        UIUpdate::{update}");
+        let after = source
+            .split_once(marker.as_str())
+            .unwrap_or_else(|| panic!("no arm for {update}"))
+            .1;
+        let end = after.find("\n        UIUpdate::").unwrap_or(after.len());
+        after[..end].to_string()
+    }
+
+    /// What an arm that writes to the status bar gets wrong.
+    ///
+    /// The status bar is a line at the bottom of a window, which is not
+    /// somewhere anybody navigating by ear goes. Everything written there and
+    /// nowhere else was written to nobody.
+    fn what_the_arm_leaves_unsaid(arm: &str) -> Vec<String> {
+        let mut wrong = Vec::new();
+        if !arm.contains("set_status_text(") {
+            wrong.push("the arm no longer shows anything at all".to_string());
+        }
+        if !arm.contains("a11y.announce") {
+            wrong.push(
+                "what this arm writes goes to the status bar and nowhere else, so \
+                 nobody working by ear hears it"
+                    .to_string(),
+            );
+        }
+        wrong
+    }
+
+    #[test]
+    fn test_the_two_answers_every_command_leaves_through_are_said_out_loud() {
+        // Every outcome and every refusal the managers layer produces leaves
+        // through one of these two, so if either stops saying what it was given
+        // the whole layer goes quiet at once and nothing else would notice.
+        //
+        // Read as text because reaching these arms needs a window, a frame and
+        // a running event loop. What this cannot see is whether the
+        // announcement reaches a screen reader, or whether the sentence handed
+        // in is a true one. Only a screen reader run answers the first.
+        let source = std::fs::read_to_string("src/presentation/wx_app.rs")
+            .expect("this file to be readable")
+            .replace("\r\n", "\n");
+
+        for update in ["StatusUpdated(status)", "CommandRefused(why)"] {
+            let arm = the_arm_for(&source, update);
+            assert!(
+                arm.len() > 100,
+                "the arm for {update} read as {} characters, so the reading is broken",
+                arm.len()
+            );
+            let wrong = what_the_arm_leaves_unsaid(&arm);
+            assert!(wrong.is_empty(), "{update}: {}", wrong.join("\n  "));
+        }
+
+        // A refusal is the answer to a key somebody just pressed, so it comes
+        // in above the ordinary run of status rather than behind it.
+        assert!(
+            the_arm_for(&source, "CommandRefused(why)").contains("Priority::High"),
+            "a refusal is no longer said above the ordinary run of status"
+        );
+    }
+
+    #[test]
+    fn test_the_saying_check_on_those_two_can_tell_the_two_apart() {
+        // Proving the measurement. A source read that finds nothing passes, and
+        // from outside that is indistinguishable from one that finds
+        // everything.
+        let sound = "            frame.set_status_text(status, 0);\n\
+            \x20           let _ = a11y.announce_topic(status, Priority::Low, \"status\");\n";
+        assert!(
+            what_the_arm_leaves_unsaid(sound).is_empty(),
+            "an arm that says what it shows was reported as silent"
+        );
+
+        let shown_only = "            frame.set_status_text(status, 0);\n";
+        assert!(
+            what_the_arm_leaves_unsaid(shown_only)[0].contains("nowhere else"),
+            "an arm that only shows was not reported"
+        );
+        assert!(
+            what_the_arm_leaves_unsaid("")
+                .iter()
+                .any(|said| said.contains("shows anything")),
+            "an arm that shows nothing at all was not reported"
+        );
+
+        // And the cutter stops at the next arm rather than running on.
+        let handler = "        UIUpdate::StatusUpdated(status) => {\n\
+            \x20           status_only();\n\
+            \x20       }\n\
+            \x20       UIUpdate::CommandRefused(why) => {\n\
+            \x20           refusal_only();\n\
+            \x20       }\n";
+        assert!(the_arm_for(handler, "StatusUpdated(status)").contains("status_only"));
+        assert!(
+            !the_arm_for(handler, "StatusUpdated(status)").contains("refusal_only"),
+            "the cutter ran on into the next arm"
+        );
+    }
 }
 
 #[cfg(test)]
