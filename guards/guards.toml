@@ -3145,3 +3145,43 @@ after = """    merged.categories = held.categories.clone();"""
 red = [
     "application::caldav_sync::tests::test_reading_the_calendar_back_leaves_the_day_still_naming_the_series_it_came_from",
 ]
+
+[[guard]]
+name = "one day of a series is refused before either half is written when the zone cannot be sent"
+file = "src/presentation/managers.rs"
+before = """    crate::application::calendar::why_that_day_cannot_be_kept_on_its_own(that_day)
+}"""
+after = """    let _ = that_day;
+    None
+}"""
+red = [
+    "presentation::managers::changing_one_day_of_a_series::test_a_day_cut_out_of_an_outlook_zone_series_is_refused_and_neither_half_is_written",
+]
+
+[[guard]]
+name = "a one-day change on a calendar kept here is not refused over its zone"
+file = "src/presentation/managers.rs"
+before = """    if goes != crate::application::calendar::WhereAChangeGoes::ACalendarServer {
+        return None;
+    }
+    crate::application::calendar::why_that_day_cannot_be_kept_on_its_own(that_day)"""
+after = """    crate::application::calendar::why_that_day_cannot_be_kept_on_its_own(that_day)"""
+red = [
+    "presentation::managers::changing_one_day_of_a_series::test_a_day_cut_out_of_a_series_kept_only_here_is_not_refused_over_its_zone",
+]
+
+[[guard]]
+name = "the calendar window asks about the day before it writes either half"
+file = "src/presentation/managers.rs"
+before = """                        if let Some(refused) = why_that_day_cannot_be_kept(
+                            the_calendar_it_is_in(&cache, &opened),
+                            &that_day,
+                        ) {
+                            send_refusal(tx, rt, &refused);
+                            continue;
+                        }
+                        one_day_of_a_series_changed(&cache, &series, &opened, that_day)"""
+after = """                        one_day_of_a_series_changed(&cache, &series, &opened, that_day)"""
+red = [
+    "presentation::managers::changing_one_day_of_a_series::test_the_one_day_answer_asks_whether_the_day_can_be_kept_before_it_writes",
+]

@@ -1324,6 +1324,72 @@ pub fn asking_is_needed(how_often_the_row_repeats: &str) -> bool {
     !how_often_the_row_repeats.trim().is_empty()
 }
 
+/// The zone a document names and defines nowhere, said as a clause.
+///
+/// One clause, in one place, because two sentences about one condition drift
+/// the moment one of them is edited, and these two are read by the same person
+/// about the same event.
+///
+/// Asked of the built document rather than of the event's zone column, matching
+/// the one reader every other question of this kind goes through. A predicate
+/// over the column would be stricter than the writer and would refuse all-day
+/// and events kept in universal time, which name no zone on any line and are
+/// perfectly sendable.
+///
+/// What follows the clause belongs to whoever asked, because what happens next
+/// differs: the sync keeps the change waiting, and the editor changes nothing
+/// at all.
+fn a_zone_the_document_never_defines(ical_data: &str) -> Option<String> {
+    crate::service::caldav::zone_left_undefined(ical_data).map(|zone| {
+        format!(
+            "it names the time zone \"{zone}\", which is not in the list of \
+             time zones this program knows, so the calendar server could put \
+             its times at the wrong hour."
+        )
+    })
+}
+
+/// Why a change must not be sent to a calendar server, or nothing when it can.
+///
+/// A document that names a zone and defines it nowhere is refused whole by a
+/// strict server and quietly guessed at by a lenient one. The name may be the
+/// event's own or one that a day the series calls off arrived in, so the
+/// sentence says both rather than sending somebody to change a zone that is
+/// fine.
+pub fn why_this_change_cannot_be_sent(ical_data: &str) -> Option<String> {
+    a_zone_the_document_never_defines(ical_data).map(|clause| {
+        format!(
+            "This change was not sent: {clause} The name may be the event's \
+             own or one that a day the series calls off arrived in. The change \
+             is still waiting; if it is the event's own, changing the event's \
+             time zone will let it go out."
+        )
+    })
+}
+
+/// Why one day cannot be kept as an appointment of its own, or nothing.
+///
+/// Asked before either half of a one-day change is written, and only where the
+/// halves really go to a calendar server. The appointment kept for that day
+/// would be refused there for ever, and the other half, which takes the day off
+/// the series, would be the only one that happened: the day would leave the
+/// server and live on this computer alone.
+///
+/// Refusing the whole edit is the honest answer while nothing here can describe
+/// such a zone to a server. Lifting the definition out of the document the
+/// server already holds is the real fix and is not built.
+pub fn why_that_day_cannot_be_kept_on_its_own(day: &CalendarEventEntry) -> Option<String> {
+    let going = crate::application::caldav_sync::local_to_caldav_event(day);
+    a_zone_the_document_never_defines(&going.ical_data).map(|clause| {
+        format!(
+            "That one day was not kept as a separate appointment: {clause} \
+             Nothing has been changed and the day is still part of the series. \
+             Time zones written this way come from Outlook and Exchange, and \
+             this program cannot yet describe one to a calendar server."
+        )
+    })
+}
+
 /// Whether an answer can be carried out, or the sentence saying why not.
 ///
 /// Changing every day is what the save already does, so it is honoured
@@ -3658,6 +3724,41 @@ mod tests {
             exception_dates: None,
             cut_from_event_id: None,
         }
+    }
+
+    #[test]
+    fn test_the_editor_and_the_sync_say_the_same_thing_about_a_zone_they_cannot_write() {
+        // Two sentences about one condition drift the moment one is edited, and
+        // the same person reads both about the same event: one when the edit is
+        // refused, one when a change that is already stored will not go.
+        let mut event = an_event_stored_here();
+        event.time_zone = Some("Eastern Standard Time".to_string());
+
+        let clause = a_zone_the_document_never_defines(
+            &crate::application::caldav_sync::local_to_caldav_event(&event).ical_data,
+        )
+        .expect("a zone that cannot be described");
+        let from_the_sync = why_this_change_cannot_be_sent(
+            &crate::application::caldav_sync::local_to_caldav_event(&event).ical_data,
+        )
+        .expect("the sync to refuse it");
+        let from_the_editor =
+            why_that_day_cannot_be_kept_on_its_own(&event).expect("the editor to refuse it");
+
+        for said in [&from_the_sync, &from_the_editor] {
+            assert!(
+                said.contains(&clause),
+                "the shared clause is missing: {said}"
+            );
+            assert!(
+                said.contains("Eastern Standard Time"),
+                "the zone is not named: {said}"
+            );
+        }
+        assert_ne!(
+            from_the_sync, from_the_editor,
+            "one sentence for two different outcomes tells somebody the wrong              thing about one of them"
+        );
     }
 
     /// A cache in a directory of its own, named after the test using it.

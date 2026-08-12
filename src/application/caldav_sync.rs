@@ -286,16 +286,13 @@ async fn send_one_change(
             // document, not of the event's zone column, so an all-day or UTC
             // event whose lines name no zone is never held up, and a name that
             // came from a day the series calls off is caught as well.
-            if let Some(zone) = crate::service::caldav::zone_left_undefined(&going.ical_data) {
-                return Err(crate::common::Error::Other(format!(
-                    "This change was not sent: it names the time zone \
-                     \"{zone}\", which is not in the list of time zones this \
-                     program knows, so the calendar server could put its \
-                     times at the wrong hour. The name may be the event's own \
-                     or one that a day the series calls off arrived in. The \
-                     change is still waiting; if it is the event's own, \
-                     changing the event's time zone will let it go out."
-                )));
+            //
+            // The sentence is built beside the editor's, off one clause, so
+            // the two cannot come to read differently about one condition.
+            if let Some(said) =
+                crate::application::calendar::why_this_change_cannot_be_sent(&going.ical_data)
+            {
+                return Err(crate::common::Error::Other(said));
             }
             let added = caldav
                 .create_event(calendar_url, username, password, &going)

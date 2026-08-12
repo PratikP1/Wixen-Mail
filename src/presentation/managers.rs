@@ -554,6 +554,24 @@ fn the_day_kept_on_its_own(
     }
 }
 
+/// Why that day cannot be kept on its own, or nothing when it can.
+///
+/// Only where the two halves really go to a calendar server. Nothing is ever
+/// sent from a calendar kept on this computer, so nothing there can be refused
+/// and nothing can be lost; refusing it would take away an edit that works.
+///
+/// Asked of the day as it would be built, before either half is written,
+/// because the half that takes the day off the series cannot be taken back.
+fn why_that_day_cannot_be_kept(
+    goes: crate::application::calendar::WhereAChangeGoes,
+    that_day: &crate::data::message_cache::CalendarEventEntry,
+) -> Option<String> {
+    if goes != crate::application::calendar::WhereAChangeGoes::ACalendarServer {
+        return None;
+    }
+    crate::application::calendar::why_that_day_cannot_be_kept_on_its_own(that_day)
+}
+
 /// Store the one day somebody changed, and take that day off the series.
 ///
 /// The changed day is written first, on purpose. If the second write fails, the
@@ -662,6 +680,18 @@ pub fn manage_calendar(
                 let written = match (stored, means) {
                     (Some(series), EditMeans::OneDay) => {
                         let that_day = the_day_kept_on_its_own(&series, &data);
+                        // Before either half is written, and asked of the day
+                        // that will really be stored. The half that takes the
+                        // day off the series cannot be undone, and where the
+                        // other half would be refused by a calendar server for
+                        // ever the day would leave that server for good.
+                        if let Some(refused) = why_that_day_cannot_be_kept(
+                            the_calendar_it_is_in(&cache, &opened),
+                            &that_day,
+                        ) {
+                            send_refusal(tx, rt, &refused);
+                            continue;
+                        }
                         one_day_of_a_series_changed(&cache, &series, &opened, that_day)
                     }
                     (Some(stored), EditMeans::WholeSeries) => {
@@ -5994,6 +6024,136 @@ mod changing_one_day_of_a_series {
         assert!(on_its_own.pending, "the day is not waiting to be sent");
     }
 
+    /// A calendar kept on this computer, which nothing is ever sent from.
+    fn a_calendar_kept_here(cache: &MessageCache) {
+        let stamp = chrono::Utc::now().to_rfc3339();
+        cache
+            .save_calendar(&CalendarContainer {
+                id: "cal-1".to_string(),
+                account_id: "acct-1".to_string(),
+                name: "Mine".to_string(),
+                color: "#4285F4".to_string(),
+                source_provider: Some("local".to_string()),
+                caldav_url: None,
+                subscription_url: None,
+                is_default: true,
+                is_visible: true,
+                is_read_only: false,
+                display_order: 0,
+                etag: None,
+                ctag: None,
+                sync_token: None,
+                refresh_interval_minutes: None,
+                created_at: stamp.clone(),
+                updated_at: stamp,
+            })
+            .expect("the calendar to save");
+    }
+
+    /// The same series, with the zone spelt the way Outlook and Exchange do.
+    fn a_series_in_a_zone_we_cannot_describe(cache: &MessageCache) -> CalendarEventEntry {
+        let mut series = a_weekly_series(cache);
+        series.time_zone = Some("Eastern Standard Time".to_string());
+        series.start_datetime = "2026-07-27T09:00:00".to_string();
+        series.end_datetime = "2026-07-27T09:15:00".to_string();
+        cache.save_calendar_event(&series).expect("the series");
+        series
+    }
+
+    #[test]
+    fn test_a_day_cut_out_of_a_series_keeps_a_zone_a_server_will_take() {
+        // The positive control. Without it the test below would pass against a
+        // check that refuses every one-day change there is.
+        let cache = a_cache("one_day_zone_kept");
+        a_calendar_on_a_server(&cache);
+        let series = a_weekly_series(&cache);
+        let day = the_day_opened(&series);
+
+        let that_day = the_day_kept_on_its_own(&series, &only_the_summary_retyped(&day));
+
+        assert_eq!(that_day.time_zone.as_deref(), Some("Asia/Kolkata"));
+        assert_eq!(
+            why_that_day_cannot_be_kept(
+                crate::application::calendar::WhereAChangeGoes::ACalendarServer,
+                &that_day
+            ),
+            None,
+            "a zone a calendar server will take was refused anyway"
+        );
+    }
+
+    #[test]
+    fn test_a_day_cut_out_of_an_outlook_zone_series_is_refused_and_neither_half_is_written() {
+        // A zone spelt the way Outlook and Exchange spell it cannot be
+        // described to a calendar server, so the appointment kept for that day
+        // can never be created there. Taking the day off the series would then
+        // be the only half that happened, and the day would leave the server
+        // for good. Both halves are refused instead, before either is written.
+        let cache = a_cache("one_day_zone_refused");
+        a_calendar_on_a_server(&cache);
+        let series = a_series_in_a_zone_we_cannot_describe(&cache);
+        let day = the_day_opened(&series);
+        let that_day = the_day_kept_on_its_own(&series, &only_the_summary_retyped(&day));
+
+        let refused = why_that_day_cannot_be_kept(
+            crate::application::calendar::WhereAChangeGoes::ACalendarServer,
+            &that_day,
+        )
+        .expect("a zone that cannot be described to be refused");
+        assert!(
+            refused.contains("Eastern Standard Time"),
+            "the refusal has to name the zone: {refused}"
+        );
+        assert!(
+            refused.contains("Nothing has been changed"),
+            "the refusal has to say the series is untouched: {refused}"
+        );
+
+        let stored = cache
+            .get_all_events_for_account("acct-1")
+            .expect("the calendar to be readable");
+        assert_eq!(stored.len(), 1, "something was written before the refusal");
+        assert_eq!(
+            stored[0].exception_dates, None,
+            "the day was taken off the series although the replacement was refused"
+        );
+        assert!(!stored[0].pending, "the series was queued to be sent");
+    }
+
+    #[test]
+    fn test_a_day_cut_out_of_a_series_kept_only_here_is_not_refused_over_its_zone() {
+        // Nothing is ever sent from a calendar kept on this computer, so there
+        // is no calendar server to refuse the zone and nothing to lose. A
+        // refusal here would take away an edit that works.
+        let cache = a_cache("one_day_zone_kept_here");
+        a_calendar_kept_here(&cache);
+        let series = a_series_in_a_zone_we_cannot_describe(&cache);
+        let day = the_day_opened(&series);
+        let that_day = the_day_kept_on_its_own(&series, &only_the_summary_retyped(&day));
+
+        assert_eq!(
+            why_that_day_cannot_be_kept(
+                crate::application::calendar::WhereAChangeGoes::KeptHere,
+                &that_day
+            ),
+            None,
+            "an edit that never leaves this computer was refused over a zone"
+        );
+
+        one_day_of_a_series_changed(&cache, &series, &day, that_day)
+            .expect("the day and the series to be stored");
+        let stored = cache
+            .get_all_events_for_account("acct-1")
+            .expect("the calendar to be readable");
+        assert_eq!(stored.len(), 2, "the day was not kept on its own");
+        assert!(
+            stored
+                .iter()
+                .any(|event| event.id == "series-1" && event.exception_dates.is_some()),
+            "the day was not taken off the series"
+        );
+    }
+
     #[test]
     fn test_the_day_kept_on_its_own_names_the_series_it_was_cut_from() {
         // The link is what lets the sync treat the two writes as a pair. The
@@ -6032,6 +6192,30 @@ mod changing_one_day_of_a_series {
         assert_eq!(
             kept.cut_from_event_id, None,
             "the series says it was cut out of something"
+        );
+    }
+
+    #[test]
+    fn test_the_one_day_answer_asks_whether_the_day_can_be_kept_before_it_writes() {
+        // The window this runs in needs a real frame, so the wiring cannot be
+        // driven from a test. It is read instead. A gate that exists and is
+        // never called is the failure this project keeps hitting, and here it
+        // would let a day leave somebody's calendar server for good.
+        let source = std::fs::read_to_string("src/presentation/managers.rs")
+            .expect("this file to be readable");
+        let body = source
+            .split_once("(Some(series), EditMeans::OneDay) => {")
+            .expect("the answer that changes one day")
+            .1;
+        let asked = body
+            .find("why_that_day_cannot_be_kept(")
+            .expect("the day to be asked about before it is written");
+        let written = body
+            .find("one_day_of_a_series_changed(")
+            .expect("the day to be written");
+        assert!(
+            asked < written,
+            "the two halves are written before anything asks whether the              calendar server can take them, so a refusal comes after the day              has already been taken off the series"
         );
     }
 

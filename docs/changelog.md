@@ -209,6 +209,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   on this computer, and one test server running on this machine. Nothing has
   been checked with a screen reader.
 
+  Known limitation, new: on a calendar held on a calendar server, changing just
+  one day is now refused when the repeating event carries a time zone written
+  the way Outlook and Exchange write them, such as Eastern Standard Time. This
+  program cannot yet tell a calendar server what such a zone means, so the
+  separate appointment for that day could never be created there. Nothing is
+  changed and the day stays part of the series, and the refusal says so. Every
+  day in the series still works on those events, and just this one day still
+  works on events whose zone has an ordinary name such as Europe/London.
+
+  Rough edge that goes with it: the question about which days you mean still
+  reads out, under just this one day, that both go to your calendar server on
+  the next sync. On one of these events that is not true, and you hear it
+  before the refusal.
+
 - **A contact group does something now.** Until now a group could be made, named
   and listed, and that was all it could do. You can now rename one, put a
   contact in one, take a contact out of one, and, the point of the whole thing,
