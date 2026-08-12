@@ -6697,14 +6697,6 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 tracing::warn!("Calendar sync error: {}", err);
             }
         }
-        UIUpdate::CalendarEventSaved(id) => {
-            let msg = format!("Calendar event saved: {}", id);
-            frame.set_status_text(&msg, 0);
-        }
-        UIUpdate::CalendarEventDeleted(id) => {
-            let msg = format!("Calendar event deleted: {}", id);
-            frame.set_status_text(&msg, 0);
-        }
         UIUpdate::ModuleChanged(module) => {
             let label = module.label().replace('&', "");
             frame.set_status_text(&label, 2);
@@ -9590,7 +9582,11 @@ fn spawn_tasks_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt:
 }
 
 /// Spawn calendar sync on a blocking thread (MessageCache is not Send).
-fn spawn_calendar_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
+pub(crate) fn spawn_calendar_sync(
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
     let tx = tx.clone();
     let account_id = state.lock().ok().and_then(|s| s.active_account_id.clone());
     let handle = rt.handle().clone();

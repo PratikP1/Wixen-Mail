@@ -433,10 +433,6 @@ pub enum UIUpdate {
         changes_that_cannot_be_saved: Vec<String>,
         errors: Vec<String>,
     },
-    /// A calendar event was saved successfully
-    CalendarEventSaved(String),
-    /// A calendar event was deleted successfully
-    CalendarEventDeleted(String),
     /// Active PIM module changed
     ModuleChanged(PimModule),
     /// Calendar containers loaded

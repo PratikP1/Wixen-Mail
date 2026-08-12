@@ -1690,6 +1690,47 @@ pub const fn what_is_waiting(written: WrittenDown) -> &'static str {
     }
 }
 
+/// What to say about something the calendar window has now carried out.
+///
+/// The past-tense twin of [`what_is_waiting`], and written to the same rule: no
+/// two of them read alike, so somebody who asked for two things can tell which
+/// of them happened. The row is named rather than numbered. Two of these
+/// outcomes used to leave as the identifier the row is stored under, on a line
+/// of text nobody hears.
+///
+/// A deletion and a day taken off are handed to the two places that already own
+/// those words, so the calendar window and the Delete key say one sentence
+/// about one action rather than two.
+pub fn what_was_done(written: WrittenDown, name: &str) -> String {
+    match written {
+        WrittenDown::Created => about(name, "The new event was added.", "it was added."),
+        WrittenDown::WholeSeriesChanged => {
+            about(name, "The change was saved.", "the change was saved.")
+        }
+        WrittenDown::OneDayChanged => about(
+            name,
+            "Only the day you opened was changed. The other days were left alone.",
+            "only the day you opened was changed. The other days were left alone.",
+        ),
+        WrittenDown::WholeSeriesDeleted => crate::application::pim_command::deleted(
+            crate::application::new_item::ItemKind::Event,
+            name,
+        ),
+        WrittenDown::OneDayTakenOff => one_day_taken_off(name),
+    }
+}
+
+/// A sentence about one row, naming the row where it has a name.
+///
+/// A row whose title never loaded still has to be spoken as a sentence rather
+/// than start with a colon.
+fn about(name: &str, on_its_own: &str, after_the_name: &str) -> String {
+    match name.trim() {
+        "" => on_its_own.to_string(),
+        title => format!("{title}: {after_the_name}"),
+    }
+}
+
 /// What has to be said about a repeating event filed in a Google or Outlook
 /// calendar, because neither of them has ever been told it repeats.
 ///
@@ -2849,6 +2890,73 @@ mod tests {
             why_that_day_cannot_be_kept_on_its_own(&day).expect("the write to refuse it");
 
         assert_eq!(from_the_window, from_the_write);
+    }
+
+    #[test]
+    fn test_what_the_calendar_window_did_is_said_in_words_a_person_can_tell_apart() {
+        // Two of these outcomes left as the identifier the row is stored under,
+        // written to the status bar and announced nowhere. Somebody who took
+        // one day off a repeating event heard nothing, and what was on the bar
+        // for a braille reader to find was a machine identifier.
+        let every_outcome = [
+            WrittenDown::Created,
+            WrittenDown::WholeSeriesChanged,
+            WrittenDown::OneDayChanged,
+            WrittenDown::WholeSeriesDeleted,
+            WrittenDown::OneDayTakenOff,
+        ];
+        let mut said = Vec::new();
+        for written in every_outcome {
+            let sentence = what_was_done(written, "Stand-up");
+            assert!(
+                sentence.contains("Stand-up"),
+                "{written:?} does not name the event: {sentence}"
+            );
+            assert!(
+                !sentence.contains("  "),
+                "a wrapped literal lost a space: {sentence}"
+            );
+            for machine in [
+                "event-",
+                "RRULE",
+                "EXDATE",
+                "RECURRENCE-ID",
+                "provider",
+                "API",
+            ] {
+                assert!(!sentence.contains(machine), "{machine} in {sentence}");
+            }
+            // A row whose title never loaded still has to be a sentence.
+            let nameless = what_was_done(written, "   ");
+            assert!(!nameless.trim().is_empty(), "nothing said for {written:?}");
+            assert!(
+                !nameless.starts_with(':'),
+                "a nameless row leaves a sentence starting with a colon: {nameless}"
+            );
+            said.push(sentence);
+        }
+        for (first, sentence) in said.iter().enumerate() {
+            for other in said.iter().skip(first + 1) {
+                assert_ne!(
+                    sentence, other,
+                    "two outcomes read alike, so nobody can tell which happened"
+                );
+            }
+        }
+
+        // One owner for each of these words. The Delete key says them too, and
+        // two spellings of one sentence is how one of them becomes false.
+        assert_eq!(
+            what_was_done(WrittenDown::OneDayTakenOff, "Stand-up"),
+            one_day_taken_off("Stand-up")
+        );
+        assert_eq!(
+            what_was_done(WrittenDown::WholeSeriesDeleted, "Stand-up"),
+            crate::application::pim_command::deleted(
+                crate::application::new_item::ItemKind::Event,
+                "Stand-up"
+            )
+        );
     }
 
     #[test]

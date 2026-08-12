@@ -635,18 +635,45 @@ fn one_day_of_a_series_changed(
     ))
 }
 
-/// Which of the two a Delete answer really carried out.
+/// Which of the two a Delete answer really carried out, said in words.
 ///
 /// Both answers arrive on the same key and only one of them removes anything.
 /// Taking one day off saves the series with that day taken out of it, so the
 /// event is still there, and reporting that as a deletion tells somebody an
 /// event they can still open has gone.
-const fn what_a_delete_answer_did(the_event_is_still_there: bool, id: String) -> UIUpdate {
+///
+/// The two sentences are the two the Delete key on the calendar panel already
+/// uses, so one action has one answer whichever door it came through. This
+/// used to hand back the identifier the row is stored under, which went to the
+/// status bar and was announced nowhere.
+fn what_a_delete_answer_did(the_event_is_still_there: bool, name: &str) -> String {
     if the_event_is_still_there {
-        UIUpdate::CalendarEventSaved(id)
+        crate::application::calendar::one_day_taken_off(name)
     } else {
-        UIUpdate::CalendarEventDeleted(id)
+        crate::application::pim_command::deleted(
+            crate::application::new_item::ItemKind::Event,
+            name,
+        )
     }
+}
+
+/// The one sentence for everything the calendar window really did, or nothing
+/// when it did nothing.
+///
+/// Said once, when the window closes, rather than once per action: these leave
+/// under a single topic and the queue keeps only the latest on a topic, so
+/// several sent in a row swallow each other and only the last is heard.
+///
+/// Nothing at all for a window that did nothing. It used to report that
+/// calendar events had been saved whatever happened, so opening the window and
+/// pressing Close announced a save nobody had asked for.
+fn what_to_report(done: &[String]) -> Option<String> {
+    let (first, rest) = done.split_first()?;
+    let mut summing_up = crate::application::summing_up::SummingUp::opening(first.clone());
+    for said in rest {
+        summing_up.sentence(said.clone());
+    }
+    Some(summing_up.spoken())
 }
 
 /// One day taken off a series that stays, and the sentence for it.
@@ -693,18 +720,26 @@ pub fn manage_calendar(
     );
 
     let mut failures = Vec::new();
+    let mut done: Vec<String> = Vec::new();
     let mut changed = false;
     for action in actions {
         match action {
             wx_calendar::CalendarAction::SyncRequested => {
-                send_status(tx, rt, "Calendar sync requested");
+                // Really started, rather than announced. It said a sync had
+                // been asked for and nothing else happened, which is the one
+                // thing worse than saying nothing.
+                crate::presentation::wx_app::spawn_calendar_sync(state, tx, rt);
+                done.push("A calendar sync has started.".to_string());
             }
             wx_calendar::CalendarAction::CreateEvent(data) => {
                 let entry = event_entry(new_id("event"), &account, &data);
                 match cache.save_calendar_event(&entry) {
                     Ok(()) => {
                         changed = true;
-                        let _ = tx.try_send(UIUpdate::CalendarEventSaved(entry.id));
+                        done.push(crate::application::calendar::what_was_done(
+                            crate::application::calendar::WrittenDown::Created,
+                            &data.summary,
+                        ));
                     }
                     Err(e) => failures.push(format!("{}: {}", data.summary, e)),
                 }
@@ -752,7 +787,17 @@ pub fn manage_calendar(
                 match written {
                     Ok(()) => {
                         changed = true;
-                        let _ = tx.try_send(UIUpdate::CalendarEventSaved(opened.id));
+                        done.push(crate::application::calendar::what_was_done(
+                            match means {
+                                EditMeans::OneDay => {
+                                    crate::application::calendar::WrittenDown::OneDayChanged
+                                }
+                                EditMeans::WholeSeries => {
+                                    crate::application::calendar::WrittenDown::WholeSeriesChanged
+                                }
+                            },
+                            &data.summary,
+                        ));
                     }
                     Err(e) => failures.push(format!("{}: {}", data.summary, e)),
                 }
@@ -780,7 +825,7 @@ pub fn manage_calendar(
                 match written {
                     Ok(()) => {
                         changed = true;
-                        let _ = tx.try_send(what_a_delete_answer_did(one_day_off, opened.id));
+                        done.push(what_a_delete_answer_did(one_day_off, &opened.summary));
                     }
                     // Named, not numbered, and not called a deletion when it
                     // was a save. This is read out.
@@ -803,7 +848,15 @@ pub fn manage_calendar(
             Err(e) => failures.push(format!("reload: {}", e)),
         }
     }
-    report(tx, rt, "calendar events", failures);
+    // Named failures win: an outcome sentence beside them would be read as
+    // though everything had worked.
+    if failures.is_empty() {
+        if let Some(said) = what_to_report(&done) {
+            send_status(tx, rt, &said);
+        }
+    } else {
+        report(tx, rt, "calendar events", failures);
+    }
 }
 
 /// The stored event with what the editor changed folded into it, or the stored
@@ -6463,7 +6516,7 @@ mod changing_one_day_of_a_series {
         );
         let reloads_nowhere = sound.replace(
             "    load_module_data(module_for(kind), &Some(cache), account_id, tx);",
-            "    let _ = tx.try_send(UIUpdate::CalendarEventSaved(opened.id));",
+            "    let _ = tx.try_send(UIUpdate::StatusUpdated(said));",
         );
         for (broken, expected) in [
             (&writes_and_returns, "read back"),
@@ -6480,22 +6533,108 @@ mod changing_one_day_of_a_series {
     }
 
     #[test]
-    fn test_a_day_taken_off_by_the_calendar_window_is_not_reported_as_a_deletion() {
+    fn test_a_day_taken_off_by_the_calendar_window_says_the_same_thing_as_the_panel_does() {
+        // Two doors on one action. The Delete key on the calendar panel already
+        // said the right sentence; the calendar window sent the identifier the
+        // row is stored under to the status bar and announced nothing. So the
+        // same action was answered two ways, and one of the answers reached
+        // nobody.
+        //
         // The series is saved with that one day taken out of it, so the event
-        // is still there and every other day of it is unchanged. Reported as a
-        // deletion, the status line names an event that still exists as gone,
-        // and the only way to find out otherwise is to read the list.
-        let kept = what_a_delete_answer_did(true, "series-1".to_string());
-        assert!(
-            matches!(kept, UIUpdate::CalendarEventSaved(_)),
-            "a series that is still there was reported as {kept:?}"
+        // is still there and every other day of it is unchanged. Called a
+        // deletion, the sentence names an event somebody can still open as
+        // gone.
+        assert_eq!(
+            what_a_delete_answer_did(true, "Stand-up"),
+            crate::application::calendar::one_day_taken_off("Stand-up"),
+            "the window and the panel say different things about one day taken off"
         );
-        let gone = what_a_delete_answer_did(false, "series-1".to_string());
+        assert_eq!(
+            what_a_delete_answer_did(false, "Stand-up"),
+            crate::application::pim_command::deleted(
+                crate::application::new_item::ItemKind::Event,
+                "Stand-up"
+            ),
+            "the window and the panel say different things about a deletion"
+        );
+        assert_ne!(
+            what_a_delete_answer_did(true, "Stand-up"),
+            what_a_delete_answer_did(false, "Stand-up"),
+            "a series that is still there is reported the same way as one that has gone"
+        );
+    }
+
+    #[test]
+    fn test_no_sentence_the_calendar_window_gives_back_names_a_row_by_its_identifier() {
+        // The identifier a row is stored under is a machine's word for it. It
+        // went to the status bar on every create, every change and every day
+        // taken off, and nothing announced any of them, so what a braille
+        // reader found on the bar was that identifier.
+        let identifier = "event-1723456789012";
+        let mut said = vec![
+            what_a_delete_answer_did(true, "Stand-up"),
+            what_a_delete_answer_did(false, "Stand-up"),
+        ];
+        for written in [
+            crate::application::calendar::WrittenDown::Created,
+            crate::application::calendar::WrittenDown::WholeSeriesChanged,
+            crate::application::calendar::WrittenDown::OneDayChanged,
+            crate::application::calendar::WrittenDown::WholeSeriesDeleted,
+            crate::application::calendar::WrittenDown::OneDayTakenOff,
+        ] {
+            said.push(crate::application::calendar::what_was_done(
+                written, "Stand-up",
+            ));
+        }
+        for sentence in &said {
+            assert!(
+                !sentence.contains(identifier) && !sentence.contains("event-"),
+                "a row is named by its identifier: {sentence}"
+            );
+            assert!(
+                sentence.contains("Stand-up"),
+                "a row is not named at all: {sentence}"
+            );
+        }
+
+        // And the two updates that carried one have gone, rather than being
+        // left with no sender for somebody to wire up again.
+        let updates = std::fs::read_to_string("src/presentation/ui_types.rs")
+            .expect("the update list to be readable");
+        for carried_one in ["CalendarEventSaved", "CalendarEventDeleted"] {
+            assert!(
+                !updates.contains(carried_one),
+                "{carried_one} is still an update something can send"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_calendar_window_that_did_nothing_says_nothing_was_done() {
+        // Open the Calendar window, press Close, and a screen reader said
+        // "calendar events saved". Every other manager returns without a word
+        // when nothing was done.
+        assert_eq!(what_to_report(&[]), None, "a window that did nothing spoke");
+
+        // The positive control, and the reason there is one sentence rather
+        // than one per action: these leave under one topic, so several sent in
+        // a row swallow each other and only the last is heard.
+        let both = what_to_report(&[
+            "Stand-up: that one day is taken off. The other days are unchanged.".to_string(),
+            "Review: the change was saved.".to_string(),
+        ])
+        .expect("two things done to be said");
+        assert!(both.contains("Stand-up"), "{both}");
+        assert!(both.contains("Review"), "{both}");
         assert!(
-            matches!(gone, UIUpdate::CalendarEventDeleted(_)),
-            "a real deletion was reported as {gone:?}"
+            !both.contains(".."),
+            "a doubled stop is a stutter read aloud: {both}"
         );
 
+        // Read as text as well, because the gate is at the end of a routine
+        // that needs a window on a screen to reach. What this cannot see is
+        // whether the sentence is right, only that nothing is said when the
+        // list is empty.
         let source = std::fs::read_to_string("src/presentation/managers.rs")
             .expect("this file to be readable");
         let body = the_body_of(&source, "pub fn manage_calendar(");
@@ -6505,13 +6644,67 @@ mod changing_one_day_of_a_series {
             body.len()
         );
         assert!(
-            body.contains("what_a_delete_answer_did("),
-            "the dialog decides for itself what a Delete answer did"
+            body.contains("what_to_report(&done)"),
+            "the window no longer asks whether there is anything to say"
         );
         assert!(
-            !body.contains("UIUpdate::CalendarEventDeleted("),
-            "the dialog still names a deletion of its own, so the two answers \
-             can drift apart again"
+            !body.contains("report(tx, rt, \"calendar events\", failures);\n}"),
+            "the window still reports unconditionally at the end"
+        );
+    }
+
+    /// What the Sync button in the calendar window gets wrong.
+    fn what_the_sync_button_gets_wrong(body: &str) -> Vec<String> {
+        let Some((_, arm)) = body.split_once("CalendarAction::SyncRequested => {") else {
+            return vec!["the window has no Sync button at all".to_string()];
+        };
+        let arm = &arm[..arm.find("\n            }").unwrap_or(arm.len())];
+        if arm.contains("spawn_calendar_sync(") {
+            return Vec::new();
+        }
+        vec![
+            "the button says a sync is happening and starts nothing, so the sentence \
+             is about something that did not happen"
+                .to_string(),
+        ]
+    }
+
+    #[test]
+    fn test_the_sync_button_in_the_calendar_window_really_starts_a_sync() {
+        // It said "Calendar sync requested" and did nothing else. The menu
+        // entry beside it really syncs. An announced sentence about something
+        // that did not happen is worse than silence, because the next one is
+        // believed too.
+        let source = std::fs::read_to_string("src/presentation/managers.rs")
+            .expect("this file to be readable");
+        let body = the_body_of(&source, "pub fn manage_calendar(");
+        let wrong = what_the_sync_button_gets_wrong(&body);
+        assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
+    }
+
+    #[test]
+    fn test_the_sync_button_check_can_tell_the_two_apart() {
+        // Proving the measurement. A source read that finds nothing passes, and
+        // from outside that is indistinguishable from one that finds
+        // everything.
+        let sound = "            wx_calendar::CalendarAction::SyncRequested => {\n\
+            \x20               spawn_calendar_sync(state, tx, rt);\n\
+            \x20           }\n";
+        assert!(
+            what_the_sync_button_gets_wrong(sound).is_empty(),
+            "a button that really syncs was reported as broken"
+        );
+
+        let says_only = "            wx_calendar::CalendarAction::SyncRequested => {\n\
+            \x20               send_status(tx, rt, \"Calendar sync requested\");\n\
+            \x20           }\n";
+        assert!(
+            what_the_sync_button_gets_wrong(says_only)[0].contains("did not happen"),
+            "a button that only speaks was not reported"
+        );
+        assert!(
+            what_the_sync_button_gets_wrong("nothing at all")[0].contains("no Sync button"),
+            "a window with no Sync button was not reported"
         );
     }
 

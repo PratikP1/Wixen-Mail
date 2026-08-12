@@ -3098,7 +3098,80 @@ file = "src/presentation/managers.rs"
 before = """    if the_event_is_still_there {"""
 after = """    if false {"""
 red = [
-    "presentation::managers::changing_one_day_of_a_series::test_a_day_taken_off_by_the_calendar_window_is_not_reported_as_a_deletion",
+    "presentation::managers::changing_one_day_of_a_series::test_a_day_taken_off_by_the_calendar_window_says_the_same_thing_as_the_panel_does",
+]
+
+# ── One action, one answer, whichever door it came through ──────────────────
+#
+# Taking one day off a repeating event is reachable two ways: the Delete key on
+# the calendar panel, and Delete inside the Calendar window. The panel said the
+# sentence somebody needs. The window handed back the identifier the row is
+# stored under, which went to the status bar and was announced nowhere, so the
+# same action was answered two ways and one of the answers reached nobody.
+
+[[guard]]
+name = "the two doors say one sentence about a day taken off"
+file = "src/presentation/managers.rs"
+before = """        crate::application::calendar::one_day_taken_off(name)"""
+after = """        format!("Calendar event saved: {name}")"""
+red = [
+    "presentation::managers::changing_one_day_of_a_series::test_a_day_taken_off_by_the_calendar_window_says_the_same_thing_as_the_panel_does",
+]
+
+[[guard]]
+name = "one owner for the words about a day taken off"
+file = "src/application/calendar.rs"
+before = """        WrittenDown::OneDayTakenOff => one_day_taken_off(name),"""
+after = """        WrittenDown::OneDayTakenOff => format!("{name}: that day is off."),"""
+red = [
+    "application::calendar::tests::test_what_the_calendar_window_did_is_said_in_words_a_person_can_tell_apart",
+]
+
+# ── The Calendar window's closing sentence ──────────────────────────────────
+#
+# It reported that calendar events had been saved whatever happened, so opening
+# the window and pressing Close announced a save nobody had asked for. Every
+# other manager returns without a word when the dialog is cancelled.
+#
+# What the first of these records cannot see. Half of its test is a source
+# read, because the decision sits at the end of a routine that needs a window
+# on a screen to reach. The read can tell that the window asks before it
+# speaks; it cannot tell whether the sentence it then says is true. The other
+# half is a real call and does check the sentence.
+
+[[guard]]
+name = "a calendar window that did nothing says nothing"
+file = "src/presentation/managers.rs"
+before = """    if failures.is_empty() {
+        if let Some(said) = what_to_report(&done) {
+            send_status(tx, rt, &said);
+        }
+    } else {"""
+after = """    if failures.is_empty() {
+        send_status(tx, rt, "calendar events saved");
+    } else {"""
+red = [
+    "presentation::managers::changing_one_day_of_a_series::test_a_calendar_window_that_did_nothing_says_nothing_was_done",
+]
+
+# ── A sentence about something that did not happen ──────────────────────────
+#
+# The Sync button in the Calendar window announced that a sync had been asked
+# for and started nothing at all. That is worse than silence: the next sentence
+# from the same place is believed too.
+#
+# What this record cannot see. It is a source read, so it can tell that the arm
+# calls the routine that starts a sync. It cannot tell whether that sync then
+# reaches a server, and nothing here has ever run against a real account.
+
+[[guard]]
+name = "the sync button in the calendar window really starts a sync"
+file = "src/presentation/managers.rs"
+before = """                crate::presentation::wx_app::spawn_calendar_sync(state, tx, rt);
+                done.push("A calendar sync has started.".to_string());"""
+after = """                send_status(tx, rt, "Calendar sync requested");"""
+red = [
+    "presentation::managers::changing_one_day_of_a_series::test_the_sync_button_in_the_calendar_window_really_starts_a_sync",
 ]
 
 [[guard]]

@@ -22,6 +22,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   Known limitation: this has not been through a screen reader yet. What is
   tested is that every sentence goes out through the same call that shows it.
 
+- **Fixed: what the Calendar window did was reported by an internal identifier,
+  on a line nobody hears.** Creating an event, changing one, and taking one day
+  off a repeating event each put a line like "Calendar event saved:
+  event-1723456789012" on the status bar and announced nothing. The Delete key
+  on the calendar panel already said the same actions in words. The window now
+  says what it did in the same words, names the event by its title, and says it
+  once when the window closes rather than once per action, because several
+  status sentences in a row leave only the last one heard.
+
+- **Fixed: closing the Calendar window having done nothing said events were
+  saved.** Open Calendar, press Close, and a screen reader announced "calendar
+  events saved". It now says nothing, which is what every other manager already
+  did when you cancel out of it.
+
+- **Fixed: the Sync button in the Calendar window said a sync had started and
+  started nothing.** It announced "Calendar sync requested" and that was the
+  whole of it. It now starts the same sync the Calendar menu entry starts.
+
+  Known limitation, unchanged: calendar syncing has never run against a real
+  account.
+
 - **Fixed: "just this one day" described a delete as though it kept the day.**
   Under that answer, the Calendar window and the Delete key both read out a
   sentence written for an edit: that the day would be taken off the series and
