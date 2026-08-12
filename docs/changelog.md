@@ -8,6 +8,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: the Outbox sat at the bottom of the folder list.** Mail waiting to go
+  is the one folder there is something to do about, and it was the last thing in
+  the tree: below Trash on an account that downloads its mail, and in among your
+  own folders in alphabetical order on one that keeps it on a server. It now
+  sits where the rest of the program already said it belongs, just under Drafts
+  and above Sent. Nothing moves in your mailbox; this is only where the folder
+  appears in the list.
+
+  A folder whose kind was stored with spaces around it also used to sort as
+  though it were an ordinary folder while reading as what it really is
+  everywhere else. It now sorts as what it is. Folder names with accented
+  letters may come back in a slightly different order than before, and it is now
+  the same order the server's own folder list uses.
+
 - **Fixed: a change or a deletion for a task could reach the wrong task, or
   nothing at all.** A task and the list holding it are named by identifiers the
   service picked, and those identifiers were put into the web address exactly as

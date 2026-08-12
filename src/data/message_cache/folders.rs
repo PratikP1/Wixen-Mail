@@ -229,23 +229,18 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare(
-                // Ordered by what the folder is for, then by name. Alphabetical
-                // order alone puts Archive and Drafts above the inbox, so
-                // somebody arrowing down the tree passes them both every time
-                // to reach their mail. The cases match `FolderType::tree_order`.
+                // Read in a settled order and sorted below, rather than sorted
+                // here. The database used to hold a second answer to where a
+                // folder sits, and it disagreed: it had no place for mail
+                // waiting to go, so the Outbox fell in among somebody's own
+                // folders, and it read the kind of a folder without trimming it
+                // where every other reader trims. Both are gone with the
+                // expression. Alphabetical order alone is wrong either way,
+                // because it puts Archive and Drafts above the inbox and makes
+                // somebody arrow past both to reach their mail.
                 "SELECT id, account_id, name, path, folder_type, unread_count, total_count
              FROM folders WHERE account_id = ?1
-             ORDER BY CASE lower(folder_type)
-                          WHEN 'inbox' THEN 0
-                          WHEN 'drafts' THEN 1
-                          WHEN 'sent' THEN 2
-                          WHEN 'archive' THEN 3
-                          WHEN 'spam' THEN 4
-                          WHEN 'junk' THEN 4
-                          WHEN 'trash' THEN 5
-                          ELSE 6
-                      END,
-                      lower(name)",
+             ORDER BY id",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
 
@@ -265,6 +260,13 @@ impl MessageCache {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect folders: {}", e)))?;
 
+        let mut folders = folders;
+        folders.sort_by_key(|folder| {
+            crate::common::types::tree_position(
+                crate::common::types::FolderType::from_stored(&folder.folder_type),
+                &folder.name,
+            )
+        });
         Ok(folders)
     }
 }
@@ -522,5 +524,129 @@ mod tests {
                 "Zebra project",
             ]
         );
+    }
+
+    /// Save these folders for one account and read the tree back by name.
+    fn tree_of(cache: &MessageCache, folders: &[(&str, &str)]) -> Vec<String> {
+        for (name, folder_type) in folders {
+            cache
+                .save_folder(&CachedFolder {
+                    id: 0,
+                    account_id: "acc".to_string(),
+                    name: (*name).to_string(),
+                    path: (*name).to_string(),
+                    folder_type: (*folder_type).to_string(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .expect("a folder");
+        }
+        cache
+            .get_folders_for_account("acc")
+            .expect("the tree")
+            .into_iter()
+            .map(|folder| folder.name)
+            .collect()
+    }
+
+    fn a_cache() -> (tempfile::TempDir, MessageCache) {
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+        (dir, cache)
+    }
+
+    #[test]
+    fn test_mail_waiting_to_go_sits_between_the_drafts_and_what_has_gone() {
+        // Mail that has not gone anywhere yet is the one folder somebody has to
+        // act on, and a reader arrowing down the tree used to meet it last,
+        // after everything they had already dealt with.
+        let (_dir, cache) = a_cache();
+
+        let order = tree_of(
+            &cache,
+            &[
+                ("INBOX", "Inbox"),
+                ("Drafts", "Drafts"),
+                ("Outbox", "Outbox"),
+                ("Sent", "Sent"),
+                ("Archive", "Archive"),
+                ("Junk", "Spam"),
+                ("Deleted Items", "Trash"),
+                ("Apple project", "Custom"),
+                ("Zebra project", "Custom"),
+            ],
+        );
+
+        assert_eq!(
+            order,
+            vec![
+                "INBOX",
+                "Drafts",
+                "Outbox",
+                "Sent",
+                "Archive",
+                "Junk",
+                "Deleted Items",
+                "Apple project",
+                "Zebra project",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_the_tree_reads_folders_in_the_order_the_folder_type_gives() {
+        // The two answers are one answer. Names run against the order on
+        // purpose, so a tree that fell back to sorting by name would come back
+        // exactly reversed. This is also what would notice a ninth kind of
+        // folder added later with no place of its own in a sort.
+        let (_dir, cache) = a_cache();
+
+        let order = tree_of(
+            &cache,
+            &[
+                ("h", "Inbox"),
+                ("g", "Drafts"),
+                ("f", "Outbox"),
+                ("e", "Sent"),
+                ("d", "Archive"),
+                ("c", "Spam"),
+                ("b", "Trash"),
+                ("a", "Custom"),
+            ],
+        );
+
+        let read_back = cache.get_folders_for_account("acc").expect("the tree");
+        let places: Vec<u8> = read_back
+            .iter()
+            .map(|folder| {
+                crate::common::types::FolderType::from_stored(&folder.folder_type).tree_order()
+            })
+            .collect();
+        assert!(
+            places.windows(2).all(|pair| pair[0] <= pair[1]),
+            "the tree came back out of the order the folder types give: {places:?}"
+        );
+
+        let mut by_hand = read_back.clone();
+        by_hand.sort_by_key(|folder| {
+            crate::common::types::tree_position(
+                crate::common::types::FolderType::from_stored(&folder.folder_type),
+                &folder.name,
+            )
+        });
+        let by_hand: Vec<String> = by_hand.into_iter().map(|folder| folder.name).collect();
+        assert_eq!(order, by_hand);
+    }
+
+    #[test]
+    fn test_a_folder_type_stored_with_spaces_round_it_sorts_as_what_it_is() {
+        // Every other reader of this column trims before it decides what the
+        // folder is, so a row written with spaces round it read as Sent
+        // everywhere in the tree and sorted among somebody's own folders.
+        let (_dir, cache) = a_cache();
+
+        let order = tree_of(&cache, &[("Sent", " Sent "), ("Aaa", "Custom")]);
+
+        assert_eq!(order, vec!["Sent", "Aaa"]);
     }
 }

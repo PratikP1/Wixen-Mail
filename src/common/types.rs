@@ -151,6 +151,18 @@ impl FolderType {
     }
 }
 
+/// Where a folder sits in the tree: what it is for, then its name.
+///
+/// One answer, because there were two. The tree read out of the cache sorted
+/// with a database expression that had no place for mail waiting to go, so the
+/// Outbox sat at the bottom among somebody's own folders while this said it
+/// belongs above Sent. Callers pass their own name field, which really does
+/// differ: a folder a server lists is announced by its display path and one
+/// held on this computer by its name.
+pub fn tree_position(kind: FolderType, name: &str) -> (u8, String) {
+    (kind.tree_order(), name.to_lowercase())
+}
+
 /// Server configuration for email protocols
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
@@ -455,11 +467,33 @@ mod tests {
     }
 
     #[test]
+    fn test_mail_waiting_to_go_sorts_above_mail_that_has_gone() {
+        // One answer for where a folder sits, asked by the tree read out of the
+        // cache and by the list a server gives. Mail that has not gone anywhere
+        // yet is the one folder somebody has to act on, so it sits with the
+        // drafts and above what has already gone.
+        assert!(
+            tree_position(FolderType::Outbox, "z") < tree_position(FolderType::Sent, "a"),
+            "mail waiting to go sorted below mail that has gone"
+        );
+        assert!(
+            tree_position(FolderType::Drafts, "z") < tree_position(FolderType::Outbox, "a"),
+            "mail waiting to go sorted above the drafts"
+        );
+        // Same kind, so the name decides, and it decides without case.
+        assert!(
+            tree_position(FolderType::Custom, "apple") < tree_position(FolderType::Custom, "Zebra"),
+            "two ordinary folders stopped sorting by name"
+        );
+    }
+
+    #[test]
     fn test_every_folder_type_survives_a_trip_through_the_database() {
         for folder_type in [
             FolderType::Inbox,
             FolderType::Sent,
             FolderType::Drafts,
+            FolderType::Outbox,
             FolderType::Trash,
             FolderType::Spam,
             FolderType::Archive,
@@ -499,6 +533,7 @@ mod tests {
         for other in [
             FolderType::Sent,
             FolderType::Drafts,
+            FolderType::Outbox,
             FolderType::Trash,
             FolderType::Spam,
             FolderType::Archive,

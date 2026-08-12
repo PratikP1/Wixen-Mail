@@ -3686,3 +3686,36 @@ after = """        Ok(())
 red = [
     "application::contacts_sync::tests::test_the_outlook_address_book_a_sync_uses_really_sends_a_deletion",
 ]
+
+# ── Mail waiting to go sat at the bottom of the tree ────────────────────────
+#
+# Where a folder sits in the tree had two answers. One was a database
+# expression that sorted the tree read out of this computer, and it had no
+# place at all for the Outbox, so mail nobody had managed to send fell to the
+# end, below the trash on a POP account and among somebody's own folders on an
+# IMAP one. The other said it belongs above Sent, with the drafts, because it
+# is the one folder there is something to do about.
+#
+# The two answers are now one function and the sort is taken from it in both
+# places. This break moves the Outbox back to where the database used to put
+# it.
+#
+# What this cannot see: the test that reads the tree back and checks it against
+# the same function stays green under this break, because both sides of it move
+# together. That test is about the two answers being one answer and not about
+# which order the one answer gives. The two named below are the ones that spell
+# the order out.
+
+[[guard]]
+name = "mail waiting to go sits where the tree order says"
+file = "src/common/types.rs"
+before = """            // Above Sent, because mail waiting to go is something to act on
+            // and mail already gone is something to look up.
+            FolderType::Outbox => 2,"""
+after = """            // Above Sent, because mail waiting to go is something to act on
+            // and mail already gone is something to look up.
+            FolderType::Outbox => 7,"""
+red = [
+    "common::types::tests::test_mail_waiting_to_go_sorts_above_mail_that_has_gone",
+    "data::message_cache::folders::tests::test_mail_waiting_to_go_sits_between_the_drafts_and_what_has_gone",
+]

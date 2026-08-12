@@ -789,15 +789,11 @@ impl ImapSession {
             })
             .collect();
 
-        folders.sort_by(|a, b| {
-            a.folder_type
-                .tree_order()
-                .cmp(&b.folder_type.tree_order())
-                .then_with(|| {
-                    a.display_path
-                        .to_lowercase()
-                        .cmp(&b.display_path.to_lowercase())
-                })
+        // The same answer the tree read out of this computer sorts by. Spelled
+        // out here by hand once, beside a second spelling in the database, and
+        // that is how the pair came apart.
+        folders.sort_by_key(|folder| {
+            crate::common::types::tree_position(folder.folder_type, &folder.display_path)
         });
         Ok(folders)
     }
