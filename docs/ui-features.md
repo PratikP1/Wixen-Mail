@@ -34,7 +34,7 @@
 ## Accessibility Features ✅
 
 ### Screen Reader Support
-- **AccessKit Integration**: Windows UIA enabled
+- **Screen reader integration**: Windows UI Automation enabled
 - **Supported Readers**: NVDA, JAWS, Windows Narrator
 - **Announcements**: Priority-based (Urgent, High, Normal, Low)
 - **Semantic Labels**: All UI elements properly labeled
@@ -363,7 +363,7 @@ cargo test
 Wixen Mail's UI is **fully functional** with:
 - ✅ Accessibility-first design
 - ✅ Complete keyboard navigation
-- ✅ Screen reader support via AccessKit
+- ✅ Screen reader support
 - ✅ All major windows and dialogs
 - ✅ Visual indicators and icons
 - ✅ Mock data for testing

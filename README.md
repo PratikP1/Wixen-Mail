@@ -2,7 +2,7 @@
 
 # Wixen Mail
 
-Wixen Mail is an accessibility-first email client built with Rust and wxdragon (wxWidgets).
+Wixen Mail is an accessibility-first email client built with Rust on native Windows controls.
 It focuses on complete keyboard navigation, screen-reader support, and practical multi-account workflows with a native Windows look and feel.
 
 ## Highlights
@@ -10,7 +10,7 @@ It focuses on complete keyboard navigation, screen-reader support, and practical
 Read [Status](#status) first. This list describes what the project is for, not
 what is finished.
 
-- Native wxWidgets UI with toolbar, three-pane layout, and modern styling
+- Native Windows controls with toolbar, three-pane layout, and modern styling
 - Keyboard navigation throughout, and an accessibility layer built for NVDA, JAWS and Narrator (not yet verified against a live screen reader)
 - Multiple account management with provider auto-detection and OAuth 2.0
 - SMTP sending over TLS, with an outbox that retries rather than losing a failed send
@@ -79,13 +79,13 @@ cargo build
 - [Brand](docs/brand.md)
 - [Roadmap](docs/roadmap.md)
 - [Implementation Status](docs/IMPLEMENTATION_STATUS.md)
-- [wxdragon Integration](docs/wxdragon-integration.md)
+- [How the interface is built](docs/wxdragon-integration.md)
 
 ### Development history
 
 - [Implementation History](docs/development/implementation-history.md)
 - [Requirements Backlog](docs/development/requirements-backlog.md)
-- [wxdragon Migration Notes](docs/development/wxdragon-migration.md)
+- [Moving to the current interface toolkit](docs/development/wxdragon-migration.md)
 
 ## Status
 
@@ -109,7 +109,7 @@ See [how to contribute](docs/contributing.md).
 
 The message reader window follows the design of
 [Paperback](https://github.com/trypsynth/paperback) by Quin Gillespie, an
-accessible document reader built on the same wxWidgets bindings. Paperback
+accessible document reader built on the same interface toolkit. Paperback
 renders every format it supports into a read-only rich text control inside a
 tabbed notebook, and keeps its WebView for a separate optional dialog. It got
 there for the same reasons we did, after we had learned them the hard way, and

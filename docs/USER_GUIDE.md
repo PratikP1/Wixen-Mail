@@ -152,7 +152,7 @@ Use **View → Offline Mode** to switch to offline-first behavior.
 
 When offline mode is enabled:
 - Sending a composed message queues it to the offline outbox (instead of SMTP send)
-- Queue is persisted per account in local SQLite storage
+- The queue is kept on this computer, one per account
 
 Use **View → Flush Outbox** to attempt queued sends when back online.
 
@@ -484,7 +484,6 @@ All UI elements have proper ARIA labels and roles for screen reader compatibilit
 2. Try restarting both the screen reader and Wixen Mail
 3. Check screen reader verbosity settings
 4. Update to latest version of screen reader
-5. Verify AccessKit support is enabled (it is by default)
 
 ## Getting Help
 

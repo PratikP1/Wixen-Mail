@@ -365,8 +365,8 @@ Complete overview of all features in Wixen Mail with accessibility support.
 - **JAWS** - Full support, commercial standard
 - **Windows Narrator** - Full support, built-in
 
-### AccessKit Integration
-- Windows UIA (UI Automation) enabled
+### Screen reader integration
+- Windows UI Automation enabled
 - ARIA roles and labels on all elements
 - Live regions for dynamic updates
 - Proper focus management
@@ -403,20 +403,6 @@ Complete overview of all features in Wixen Mail with accessibility support.
 - Large message list performance
 - Real email provider connectivity
 
-## Technology Stack
-
-### Core Framework
-- **UI:** egui 0.29 (immediate mode GUI)
-- **Accessibility:** AccessKit (Windows UIA)
-- **Async Runtime:** Tokio 1.x
-- **Email Protocols:** IMAP (custom), SMTP (lettre 0.11)
-
-### Supporting Libraries
-- **Parsing:** mail-parser 0.9
-- **Security:** ammonia 4.0 (HTML sanitization)
-- **Database:** rusqlite 0.32 (message caching)
-- **Async:** async-channel 2.3
-
 ## Platform Support
 
 ### Current
@@ -432,7 +418,7 @@ Complete overview of all features in Wixen Mail with accessibility support.
 ### Implemented
 - TLS/SSL for IMAP and SMTP
 - Encrypted password storage (placeholder)
-- HTML sanitization (ammonia)
+- HTML in a message is stripped of anything that could run
 - No plain text credential storage
 - Connection security indicators
 

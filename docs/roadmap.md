@@ -21,7 +21,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [x] Create logging framework for debugging and diagnostics
 
 ### Accessibility Framework
-- [x] Native wxWidgets UI via wxdragon 0.9.12 with built-in Windows UIA
+- [x] Native Windows controls with built-in Windows UIA
 - [x] Implement accessibility layer for screen reader support (NVDA, JAWS, Narrator)
 - [x] Define comprehensive keyboard shortcuts system (25+)
 - [ ] Create accessibility testing framework
@@ -34,7 +34,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [x] Support for IDLE (push notifications)
 - [x] Folder synchronization
 - [x] Message fetching and caching
-- [x] Search functionality (SQLite FTS)
+- [x] Search functionality (full-text search)
 - [x] Read the server's capabilities once at sign-in and behave accordingly
 - [x] SPECIAL-USE for folder roles, with the folder's name as the fallback
 - [x] UIDPLUS, MOVE, CONDSTORE, ID, and Gmail's X-GM-EXT-1 where offered
@@ -46,7 +46,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
       Both are blocked on the IMAP library rather than on this code
 
 ### SMTP Implementation
-- [x] Implement SMTP client for sending emails (lettre)
+- [x] Implement SMTP client for sending emails
 - [x] Support for authentication (PLAIN, LOGIN)
 - [x] Support for TLS/SSL/STARTTLS encryption
 - [x] Outbox queue infrastructure for offline sending
@@ -83,7 +83,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 
 ### Message Reading Pane
 - [x] Plain text email rendering
-- [x] HTML email rendering with sanitization (ammonia)
+- [x] HTML email rendering with anything that could run stripped out
 - [x] Plain text fallback for screen readers
 - [x] Attachment display with metadata
 - [x] Navigation between messages with keyboard
@@ -121,7 +121,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 ## Phase 5: Advanced Features (Complete)
 
 ### Search and Filtering
-- [x] Full-text search across all folders (SQLite FTS)
+- [x] Full-text search across all folders
 - [x] Advanced search filters (date range, sender, recipient, attachments)
 - [x] Unread-only / starred-only filters
 - [x] Tag-based filtering
@@ -152,9 +152,9 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 ### OAuth 2.0 Authentication
 - [x] Authorization flow UI
 - [x] Provider-specific scopes (Gmail, Outlook)
-- [x] Real HTTP token exchange via reqwest
+- [x] Real HTTP token exchange
 - [x] Token refresh logic
-- [x] Token persistence (SQLite)
+- [x] Token persistence
 - [ ] Local callback server for OAuth redirect
 
 ### Multiple Account Support
@@ -168,7 +168,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 ## Phase 7: Offline Mode & Polish (Complete)
 
 ### Offline Mode
-- [x] SQLite message/folder/draft caching
+- [x] Message, folder and draft caching on this computer
 - [x] Outbox queue table with CRUD
 - [x] Offline mode UI toggle (View menu)
 - [x] Queue flush to SMTP on reconnect

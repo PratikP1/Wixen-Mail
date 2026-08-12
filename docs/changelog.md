@@ -244,17 +244,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   of quietly syncing less of it, and the same for a folder whose flags it will
   not read. A loud incomplete answer is better than a quiet wrong one.
 
-  Known limitations: the library this program uses to speak to mail servers,
-  async-imap 0.11.3, is where this comes from. Its own helpers stop reading a
-  server's answer at the last line without looking at whether that line said yes
-  or no, so a refusal arrives as no data. Two of its parsers do check, and those
-  two are still used. The rest of the commands are now sent and read here
-  instead. The same library has two faults in the part that watches a folder for
-  new mail that cannot be worked around from here: a server that refuses to
-  start a watch comes back with no reason given, and a server that rejects the
-  request with no explanation at all crashes inside the library. The first now
-  gets a sentence of its own so nobody is told a watch failed with nothing after
-  the colon; the second is still a crash. None of this has been reported to that
+  Known limitations: the library this program uses to speak to mail servers is
+  where this comes from. Its own helpers stop reading a server's answer at the
+  last line without looking at whether that line said yes or no, so a refusal
+  arrives as no data. Two of its parsers do check, and those two are still
+  used. The rest of the commands are now sent and read here instead. The same
+  library has two faults in the part that watches a folder for new mail that
+  cannot be worked around from here: a server that refuses to start a watch
+  comes back with no reason given, and a server that rejects the request with
+  no explanation at all crashes inside the library. The first now gets a
+  sentence of its own so nobody is told a watch failed with nothing after the
+  colon; the second is still a crash. None of this has been reported to that
   library's authors yet, and none of it has run against a real mail account.
 
 
@@ -4531,7 +4531,7 @@ be added by its address, and an event read aloud says its category.
 - **Attachments can be saved.** The reader lists them below the message, so they are the next thing after it in the tab order, and each row reads as the name, the kind of file in plain words, and the size: "Report.pdf, PDF document, 240 KB". `F8` jumps to the list and back, `Ctrl+S` or `Enter` saves the row you are on. Nothing is kept on your computer in advance: the message is downloaded again when you save, which is what keeps the cache small. Until now the Has Attachment column promised something the application could not do.
 - **Links can be checked against Google's lists of known phishing and malware sites**, off by default, in Settings then Advanced. Google's lists are downloaded to your computer and the comparison happens on your computer, so for ordinary mail nothing is sent to Google at all: not the link, not a fingerprint of it, not a note that a message was read. Only when a link matches one of the downloaded entries do four bytes go, and four bytes match millions of possible addresses. Google never receives the link, the sender, the subject or any part of a message. The other way of using Safe Browsing posts the URL itself, and that one is not used and will not be. Needs a Google API key, and does nothing without one. [What Wixen Mail sends, and where](privacy.md) has the whole of it.
 - **A page saying what the application sends and where**, [What Wixen Mail sends, and where](privacy.md), because "we respect your privacy" is a sentence anybody can write.
-- **PDF attachments can be read in the reader.** `Enter` on a PDF row, or `Ctrl+O`, opens it as another tab, so everything that works on a message works on it: arrow keys, find, selection, and `Ctrl+Down` to move between pages and headings. Each page starts with a line naming it. Reading uses [pdfpurr](https://crates.io/crates/pdfpurr), which is pure Rust, so there is no PDF viewer to install and nothing is handed to another application.
+- **PDF attachments can be read in the reader.** `Enter` on a PDF row, or `Ctrl+O`, opens it as another tab, so everything that works on a message works on it: arrow keys, find, selection, and `Ctrl+Down` to move between pages and headings. Each page starts with a line naming it. Reading uses [a PDF reader written in Rust](https://crates.io/crates/pdfpurr), so there is no PDF viewer to install and nothing is handed to another application.
 - **A PDF says where its structure came from, before a word of the document.** Tagged, tagged with gaps, or no structure at all with the headings guessed from the size and position of the text. And when a PDF has no text, it says the thing every other application leaves you to work out from the silence: this is a scan, a picture of a page rather than words, and nothing here can read it aloud. Ask the sender for a real one.
 - **A file Windows would run is called a program.** An attachment ending in `.exe`, `.msi`, `.scr`, `.bat`, `.ps1`, `.lnk` or anything else Windows executes reads as "program" rather than as whatever the message claimed it was, and the announcement when the message opens says so before you have reached the list. The type in a message is written by whoever sent it, so it is a claim rather than a fact, and on a malicious attachment the claim is usually the harmless one. The extension is a claim too, but it is the one Windows acts on.
 

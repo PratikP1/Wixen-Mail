@@ -39,7 +39,14 @@ fn ours() -> Vec<PathBuf> {
     collect(Path::new("guards"), &["toml"], &mut found);
     collect(Path::new("installer"), &["iss"], &mut found);
     collect(Path::new(".github"), &["yml"], &mut found);
-    for single in ["README.md", "CLAUDE.md", "Cargo.toml", ".gitignore"] {
+    // build.rs carries prose comments and was outside every reading here.
+    for single in [
+        "README.md",
+        "CLAUDE.md",
+        "Cargo.toml",
+        ".gitignore",
+        "build.rs",
+    ] {
         let path = PathBuf::from(single);
         if path.exists() {
             found.push(path);
@@ -1862,6 +1869,340 @@ fn documents() -> Vec<PathBuf> {
     collect(Path::new("docs"), &["md"], &mut found);
     found.push(PathBuf::from("README.md"));
     found
+}
+
+/// Documents written for somebody using the program, rather than building it.
+///
+/// A subtraction rather than a list, so a new page is inside the check by
+/// default. Every path taken out is checked to exist, because an exclusion
+/// that has rotted would widen the reading quietly, and quietly is how this
+/// rule got broken twice.
+fn documents_people_read() -> Vec<PathBuf> {
+    documents()
+        .into_iter()
+        .filter(|path| !written_for_somebody_building_it(path))
+        .collect()
+}
+
+/// Pages about how this is built, where a machine name is the subject.
+const FOR_SOMEBODY_BUILDING_IT: [&str; 7] = [
+    "docs/architecture.md",
+    "docs/contributing.md",
+    "docs/wxdragon-integration.md",
+    "docs/integration-guide.md",
+    "docs/accessibility-framework-evaluation.md",
+    "docs/principles.md",
+    "docs/brand.md",
+];
+
+fn written_for_somebody_building_it(path: &Path) -> bool {
+    let named = path.to_string_lossy().replace('\\', "/");
+    FOR_SOMEBODY_BUILDING_IT.contains(&named.as_str())
+        || named.starts_with("docs/development/")
+        || named.starts_with("docs/plans/")
+}
+
+/// The files whose whole job is words for people, read as strings only.
+const WORDS_FOR_PEOPLE: [&str; 6] = [
+    "src/presentation/command_line.rs",
+    "src/presentation/first_run.rs",
+    "src/presentation/help_page.rs",
+    "src/application/help.rs",
+    "src/application/allowed.rs",
+    "src/presentation/accessibility/announcements.rs",
+];
+
+/// Names that are machinery whatever they sit beside.
+///
+/// Kept short and held to it: every one has to be a real dependency and has to
+/// carry no separator, so this cannot become a place to put any word somebody
+/// dislikes.
+const A_NAME_THAT_IS_ONLY_MACHINERY: [&str; 8] = [
+    "reqwest",
+    "rusqlite",
+    "lettre",
+    "ammonia",
+    "spellbook",
+    "pdfpurr",
+    "wxdragon",
+    "oauth2",
+];
+
+/// The one dependency whose name people also need in its ordinary sense.
+///
+/// It is a dependency and it is the operating system, and "Windows 10 or
+/// later" is a sentence two pages have to be able to say.
+const ALSO_AN_ORDINARY_WORD: [&str; 1] = ["windows"];
+
+/// Every dependency, read from the manifest.
+///
+/// Read rather than typed, for the reason `the_shipped_answer` asks the code:
+/// a written copy of a fact goes stale, and the evidence is in this very tree,
+/// where three user-facing pages carried version numbers the manifest stopped
+/// agreeing with years ago.
+///
+/// The census in `service::outward` parses the manifest too, for a different
+/// question. Both read the file rather than a copy of it, and both fail loudly
+/// if the parse returns too little, so neither can quietly go stale while the
+/// other does not.
+fn every_dependency() -> Vec<String> {
+    let manifest = fs::read_to_string("Cargo.toml").expect("Cargo.toml");
+    let mut names = Vec::new();
+    let mut inside = false;
+    for line in manifest.lines().map(str::trim) {
+        if line.starts_with('[') {
+            inside = line.ends_with("dependencies]");
+            continue;
+        }
+        let Some((name, _)) = line.split_once(" =") else {
+            continue;
+        };
+        let ordinary = !name.is_empty()
+            && name.chars().all(|letter| {
+                letter.is_ascii_lowercase()
+                    || letter.is_ascii_digit()
+                    || matches!(letter, '_' | '-')
+            });
+        if inside && ordinary {
+            names.push(name.to_string());
+        }
+    }
+    names
+}
+
+/// Why a name in a line of prose is machinery, if it is.
+///
+/// Three doors, and a name has to go through one of them. A version beside it,
+/// which is the shape that reached the changelog. A separator in the name,
+/// which no ordinary English word carries. Or a place on the short list above.
+///
+/// What walks past, said plainly: a bare name with no version and no separator
+/// that nobody put on the list, and machinery that is not a dependency at all,
+/// which is how a database engine and a widget toolkit survive this reading
+/// and were corrected by hand.
+fn why_this_name_is_machinery(prose: &str, name: &str) -> Option<String> {
+    if ALSO_AN_ORDINARY_WORD.contains(&name) {
+        return None;
+    }
+    let lowered = prose.to_lowercase();
+    let mut from = 0;
+    while let Some(at) = lowered[from..].find(name) {
+        let at = from + at;
+        from = at + name.len();
+        if !a_whole_word(&lowered, at, name.len()) {
+            continue;
+        }
+        if a_version_follows(&lowered[at + name.len()..]) {
+            return Some("with a version beside it".to_string());
+        }
+        if name.contains(['-', '_']) {
+            return Some("and no English word is written that way".to_string());
+        }
+        if A_NAME_THAT_IS_ONLY_MACHINERY.contains(&name) {
+            return Some("which is only ever machinery".to_string());
+        }
+    }
+    None
+}
+
+fn a_whole_word(lowered: &str, at: usize, length: usize) -> bool {
+    let part_of_a_name = |letter: char| letter.is_alphanumeric() || matches!(letter, '-' | '_');
+    let before_is_clear = lowered[..at]
+        .chars()
+        .next_back()
+        .is_none_or(|letter| !part_of_a_name(letter));
+    let after_is_clear = lowered[at + length..]
+        .chars()
+        .next()
+        .is_none_or(|letter| !part_of_a_name(letter));
+    before_is_clear && after_is_clear
+}
+
+fn a_version_follows(rest: &str) -> bool {
+    let after = rest.trim_start_matches(' ');
+    if after.len() == rest.len() {
+        return false;
+    }
+    let mut token = after
+        .chars()
+        .take_while(|letter| letter.is_ascii_digit() || matches!(letter, '.' | 'x'));
+    token.next().is_some_and(|first| first.is_ascii_digit())
+}
+
+/// Every machinery name in `text`, read as a page somebody reads.
+fn machinery_named_in(text: &str, names: &[String]) -> Vec<(usize, String, String)> {
+    let mut found = Vec::new();
+    let mut inside_a_fence = false;
+    for (number, line) in text.lines().enumerate() {
+        if line.trim_start().starts_with("```") {
+            inside_a_fence = !inside_a_fence;
+            continue;
+        }
+        if inside_a_fence || line.starts_with("    ") || line.starts_with('\t') {
+            continue;
+        }
+        let prose = without_code_and_addresses(line);
+        for name in names {
+            if let Some(why) = why_this_name_is_machinery(&prose, name) {
+                found.push((number + 1, name.clone(), why));
+                break;
+            }
+        }
+    }
+    found
+}
+
+/// Every double-quoted string in a line of source, with addresses left out.
+fn quoted_text(line: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut letters = line.chars();
+    while letters.any(|letter| letter == '"') {
+        let mut literal = String::new();
+        let mut escaped = false;
+        for letter in letters.by_ref() {
+            match (escaped, letter) {
+                (true, _) => escaped = false,
+                (false, '\\') => escaped = true,
+                (false, '"') => break,
+                (false, _) => literal.push(letter),
+            }
+        }
+        if !literal.contains("://") {
+            found.push(literal);
+        }
+    }
+    found
+}
+
+#[test]
+fn test_no_page_a_person_reads_names_the_machinery() {
+    // Round seventeen shipped a crate name and a version into the changelog,
+    // and the round after that found it still there. Nobody using this needs
+    // to know which library speaks to a mail server, and a name like that read
+    // aloud is noise between the reader and the sentence.
+    //
+    // The names come from the manifest rather than from a list here, so this
+    // is about what the project really depends on.
+    let names = every_dependency();
+    assert!(
+        names.len() > 30,
+        "only {} dependencies were read, so the manifest is not being parsed and this \
+         would report a clean tree whatever the pages said",
+        names.len()
+    );
+
+    let mut named = Vec::new();
+    for document in documents_people_read() {
+        let Ok(text) = fs::read_to_string(&document) else {
+            continue;
+        };
+        for (line, name, why) in machinery_named_in(&text, &names) {
+            named.push(format!("{}:{line}: {name}, {why}", document.display()));
+        }
+    }
+    for path in WORDS_FOR_PEOPLE {
+        let Ok(source) = fs::read_to_string(path) else {
+            continue;
+        };
+        for (number, line) in source.lines().enumerate() {
+            for spoken in quoted_text(line) {
+                for name in &names {
+                    if let Some(why) = why_this_name_is_machinery(&spoken, name) {
+                        named.push(format!("{path}:{}: {name}, {why}", number + 1));
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(
+        named.is_empty(),
+        "these say a machine name to somebody reading or hearing them:\n  {}",
+        named.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_machinery_check_can_tell_the_two_apart() {
+    // Every line here was copied out of this tree rather than invented, so a
+    // reading that stops working on real pages fails here first.
+    let names = every_dependency();
+    let fires = |line: &str| !machinery_named_in(line, &names).is_empty();
+
+    // The changelog shape: a name with its version, in a sentence.
+    assert!(fires(
+        "the library this program uses to speak to mail servers, async-imap 0.11.3, is \
+         where this comes from"
+    ));
+    // The same sentence with the name taken out.
+    assert!(!fires(
+        "the library this program uses to speak to mail servers is where this comes from"
+    ));
+    // A list of parts, which is the other shape.
+    assert!(fires("- **Database:** rusqlite 0.32 (message caching)"));
+    assert!(fires("- HTML sanitization (ammonia)"));
+    // The operating system, which two pages have to be able to name.
+    assert!(!fires("- Windows 10 or later"));
+    // The calendar format, correctly named. Only a version beside it would
+    // make this the crate.
+    assert!(!fires(
+        "Fixed iCalendar property lookup matching on a prefix"
+    ));
+    // A machine name inside a code span is a machine name doing a machine's
+    // job, which is the convention the rest of this file already keeps.
+    assert!(!fires("Pinned `rusqlite` to 0.40 in the manifest"));
+    // And a fenced block is not prose.
+    assert!(!fires("```\nrusqlite 0.40\n```"));
+
+    // A source string is read the same way, and an address in one is not
+    // prose at all.
+    assert!(
+        quoted_text(r#"say("built with wxdragon");"#).contains(&"built with wxdragon".to_string())
+    );
+    assert!(quoted_text(r#"open("https://github.com/x/wxdragon");"#).is_empty());
+
+    // The list of names cannot be padded with anything that is not really a
+    // dependency, and cannot hold a name the separator door already covers.
+    for name in A_NAME_THAT_IS_ONLY_MACHINERY {
+        assert!(
+            names.iter().any(|dependency| dependency == name),
+            "{name} is called machinery here and is not a dependency, so this list has \
+             become somebody's opinion"
+        );
+        assert!(
+            !name.contains(['-', '_']),
+            "{name} is already caught by its separator, so listing it says nothing"
+        );
+    }
+    for name in ALSO_AN_ORDINARY_WORD {
+        assert!(
+            names.iter().any(|dependency| dependency == name),
+            "{name} is excused here and is not a dependency, so the excuse covers nothing"
+        );
+    }
+
+    // The scope has to be the scope it says it is. An exclusion list that has
+    // rotted must fail here rather than quietly widening the check.
+    let read = documents_people_read();
+    for wanted in ["USER_GUIDE.md", "changelog.md", "README.md"] {
+        assert!(
+            read.iter().any(|path| path.ends_with(wanted)),
+            "{wanted} is not being checked"
+        );
+    }
+    assert!(
+        !read.iter().any(|path| path.ends_with("architecture.md")),
+        "the pages about how this is built are being checked as if people read them"
+    );
+    for excluded in FOR_SOMEBODY_BUILDING_IT {
+        assert!(
+            Path::new(excluded).exists(),
+            "{excluded} is taken out of this check and is not there any more"
+        );
+    }
+    for named in WORDS_FOR_PEOPLE {
+        assert!(Path::new(named).exists(), "{named} is not there any more");
+    }
 }
 
 /// Every `[label](target)` in a document.

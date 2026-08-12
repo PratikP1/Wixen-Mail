@@ -37,11 +37,11 @@ a time. POP3 with the same protections and its own folders on this computer;
 mail stays on the POP server unless the account is told to remove it. OAuth
 sign-in works for receiving as well as sending.
 
-**Local storage.** A SQLite cache holds messages, contacts, contact groups,
-calendars, calendar events, reminders, task lists, tasks, note folders, and
-notes. It is not encrypted, so anybody who can read the file can read the mail
-in it. It carries no credentials, though: passwords and tokens go to the Windows
-credential store instead.
+**Local storage.** A cache on this computer holds messages, contacts, contact
+groups, calendars, calendar events, reminders, task lists, tasks, note folders,
+and notes. It is not encrypted, so anybody who can read the file can read the
+mail in it. It carries no credentials, though: passwords and tokens go to the
+Windows credential store instead.
 
 **The six modules.** Mail, contacts, calendar, reminders, tasks, and notes share
 one window, switched with `Ctrl+Shift+1` through `Ctrl+Shift+6`. Opening a module
