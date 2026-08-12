@@ -2327,9 +2327,8 @@ pub(crate) mod against_a_server_that_answers {
                 _ if said.contains("SEARCH") => {
                     Turn::Say(format!("* SEARCH 4\r\n{tag} OK done\r\n"))
                 }
-                "UID" | "STORE" | "COPY" | "MOVE" | "EXPUNGE" | "NOOP" | "CLOSE" => {
-                    Turn::Say(format!("{tag} OK done\r\n"))
-                }
+                "UID" | "STORE" | "COPY" | "MOVE" | "EXPUNGE" | "NOOP" | "CLOSE" | "SUBSCRIBE"
+                | "UNSUBSCRIBE" => Turn::Say(format!("{tag} OK done\r\n")),
                 // Anything unrecognised is refused rather than ignored, so a
                 // script that has fallen behind the client fails the test in
                 // the moment instead of leaving it to wait out two minutes,
@@ -2412,6 +2411,41 @@ pub(crate) mod against_a_server_that_answers {
         assert!(
             server.was_told("UID STORE 7 -FLAGS (\\Seen)").await,
             "{transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_changing_a_subscription_names_the_folder_in_both_directions() {
+        // Which folders somebody has chosen to sync is written to the server so
+        // the same choice holds in every client the account is opened in, and
+        // neither half of it had ever been sent to anything. No folder needs
+        // opening first: the command takes a mailbox name of its own.
+        let server = a_server_that_can("").await;
+        let mut session = signed_in_to(&server).await;
+
+        waiting_for(session.set_subscribed("Work", true), "the subscription")
+            .await
+            .expect("the folder to be subscribed");
+        waiting_for(session.set_subscribed("Work", false), "the subscription")
+            .await
+            .expect("the subscription to be dropped");
+
+        // A leading space on the first needle, because the transcript is
+        // searched by substring and `SUBSCRIBE "Work"` also matches the line
+        // that says UNSUBSCRIBE. Without it this test would pass with only one
+        // of the two commands ever sent.
+        let transcript = server.transcript().await;
+        let subscribed = server
+            .when_told(" SUBSCRIBE \"Work\"")
+            .await
+            .unwrap_or_else(|| panic!("the folder was never subscribed: {transcript:?}"));
+        let dropped = server
+            .when_told("UNSUBSCRIBE \"Work\"")
+            .await
+            .unwrap_or_else(|| panic!("the subscription was never dropped: {transcript:?}"));
+        assert!(
+            subscribed < dropped,
+            "one line was matched twice rather than two commands sent: {transcript:?}"
         );
     }
 
@@ -2941,6 +2975,7 @@ pub(crate) mod against_a_server_that_answers {
             the_failure(session.remove_by_message_id("<d@x>").await),
             the_failure(session.append_message("Sent", None, b"raw").await),
             the_failure(session.delete_message(7, Some("Trash")).await),
+            the_failure(session.set_subscribed("Work", true).await),
         ];
 
         for said in &refusals {
@@ -2953,6 +2988,7 @@ pub(crate) mod against_a_server_that_answers {
             "replace a saved draft",
             "save a copy of the message",
             "delete a message",
+            "change which folders you are subscribed to",
         ] {
             assert!(
                 refusals.iter().any(|said| said.contains(act)),
@@ -2960,7 +2996,9 @@ pub(crate) mod against_a_server_that_answers {
             );
         }
         let transcript = server.transcript().await;
-        for command in ["UID", "APPEND", "EXPUNGE"] {
+        // SUBSCRIBE covers UNSUBSCRIBE as well, which for a negative
+        // assertion is exactly what is wanted.
+        for command in ["UID", "APPEND", "EXPUNGE", "SUBSCRIBE"] {
             assert!(
                 !server.was_told(command).await,
                 "a change reached the server with the gate closed: {transcript:?}"

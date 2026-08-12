@@ -2893,3 +2893,21 @@ after = """    let removed = stale.len();
 red = [
     "application::pop_sync::tests::test_a_removal_held_by_allow_changes_is_counted_as_waiting_rather_than_failing",
 ]
+
+# ── A subscription change nothing had ever sent ─────────────────────────────
+#
+# Which folders somebody has chosen to sync is written to the server so the
+# choice holds in every client the account is opened in. Neither direction had
+# ever been sent to anything: the loopback script had no arm for either command
+# and the gate-closed list had no row for it, so the one write with no
+# measurement at all was the one that decides what gets synced.
+
+[[guard]]
+name = "a subscription change refused by the setting says nothing to the server"
+file = "src/service/protocols/imap.rs"
+before = """        self.may_i("change which folders you are subscribed to")?;
+        let outcome = if subscribed {"""
+after = """        let outcome = if subscribed {"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_every_mailbox_write_says_nothing_to_the_server_with_the_gate_closed",
+]

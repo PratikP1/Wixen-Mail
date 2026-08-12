@@ -1078,6 +1078,30 @@ mod against_a_server_that_answers {
         holding(a_session_allowed_on(server).await)
     }
 
+    #[tokio::test]
+    async fn test_changing_a_subscription_reaches_the_server_without_opening_a_folder() {
+        // The one production caller of this is the window that asks which
+        // folders to sync. Nothing needs opening first, and opening one here
+        // would change which mailbox is open underneath whoever is reading.
+        let server = a_server_that_can("").await;
+        let controller = allowed_on(&server).await;
+
+        controller
+            .set_subscribed("Work", true)
+            .await
+            .expect("the subscription to be written");
+
+        let transcript = server.transcript().await;
+        assert!(
+            server.was_told(" SUBSCRIBE \"Work\"").await,
+            "the subscription never reached the server: {transcript:?}"
+        );
+        assert!(
+            !server.was_told("SELECT").await,
+            "a mailbox was opened underneath the caller: {transcript:?}"
+        );
+    }
+
     /// A controller already holding a POP session somebody else opened.
     ///
     /// Same reason as the one above. Signing in decides what a session may do
