@@ -6320,6 +6320,15 @@ mod tests {
             "{}",
             requests[0]
         );
+        // A meeting that happens once says nothing about repeating. An empty
+        // rule built into a property line would be a line saying "RRULE:" and
+        // nothing after it, which is not a rule and which Google would either
+        // refuse or take literally.
+        assert!(
+            !body_keys(&requests[0]).contains(&"recurrence".to_string()),
+            "{}",
+            requests[0]
+        );
 
         let stored = cache
             .get_event_by_id(&made_here.id)
@@ -7080,6 +7089,11 @@ mod tests {
             asked_for(&requests[0]),
             "POST /me/events",
             "{}",
+            requests[0]
+        );
+        assert!(
+            !body_keys(&requests[0]).contains(&"recurrence".to_string()),
+            "a meeting that happens once says nothing about repeating: {}",
             requests[0]
         );
 
