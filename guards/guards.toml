@@ -4115,3 +4115,12 @@ after = """            if false && this_repeat_cannot_reach_outlook(&event) {"""
 red = [
     "application::calendar::tests::test_a_repeat_outlook_could_not_be_told_is_said_rather_than_left_to_be_found",
 ]
+
+[[guard]]
+name = "a repeat Outlook sends that means other days is refused rather than read"
+file = "src/application/repeating.rs"
+before = """            if every > 1 && !counted_from.eq_ignore_ascii_case(A_WEEK_STARTS_ON) {"""
+after = """            if false {"""
+red = [
+    "application::repeating::tests::test_a_shape_outlook_sends_that_means_other_days_is_refused_rather_than_read",
+]

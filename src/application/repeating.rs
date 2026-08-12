@@ -448,9 +448,11 @@ pub fn what_outlook_said(
     use chrono::Datelike;
 
     let shape = &said.pattern;
-    // Nought is not a shape, it is a series that never advances, and Outlook
-    // leaves the field out on an answer it did not fill in.
-    let every = shape.interval.max(1);
+    // Nought is not a shape, it is a series that never advances. The reading
+    // of a rule refuses one for exactly that reason, so this refuses it too
+    // rather than quietly deciding it meant every one. Outlook always says how
+    // often, so a nought is an answer that did not.
+    let every = (shape.interval > 0).then_some(shape.interval)?;
     let the_only_day = || match shape.days_of_week.as_slice() {
         [only] => the_day_outlook_named(only),
         _ => None,
@@ -846,6 +848,177 @@ mod tests {
             checked, 24,
             "eight repeats that are one, times three endings"
         );
+    }
+
+    /// A shape Outlook could have sent, to be spoiled one field at a time.
+    fn a_weekly_shape_from_outlook() -> MsPatternedRecurrence {
+        MsPatternedRecurrence {
+            pattern: MsRecurrencePattern {
+                pattern_type: "weekly".to_string(),
+                interval: 2,
+                days_of_week: vec!["tuesday".to_string()],
+                first_day_of_week: Some(A_WEEK_STARTS_ON.to_string()),
+                ..Default::default()
+            },
+            range: MsRecurrenceRange {
+                range_type: "noEnd".to_string(),
+                start_date: A_TUESDAY.to_string(),
+                ..Default::default()
+            },
+        }
+    }
+
+    #[test]
+    fn test_a_shape_outlook_sends_that_means_other_days_is_refused_rather_than_read() {
+        // Every refusal in the reading, taken. The round trip above only ever
+        // hands this shapes that came out of the writer beside it, so it walks
+        // the happy arm of each of these and would go on passing with every one
+        // of them removed. What is refused here is a series arriving from
+        // Outlook that falls on days a rule written here would not.
+        let starts_on = chrono::NaiveDate::parse_from_str(A_TUESDAY, "%Y-%m-%d").expect("a day");
+        let said = |shape: &MsPatternedRecurrence| what_outlook_said(shape, starts_on);
+
+        // The one it is all about: a fortnightly series counted from Sunday
+        // lands in different weeks from one counted from Monday, and a rule can
+        // only mean Monday.
+        let mut counted_from_sunday = a_weekly_shape_from_outlook();
+        counted_from_sunday.pattern.first_day_of_week = Some("sunday".to_string());
+        assert_eq!(said(&counted_from_sunday), None);
+
+        // Every week, and the question does not arise, because a series in
+        // every week is in all of them however the weeks are counted.
+        let mut every_week = counted_from_sunday.clone();
+        every_week.pattern.interval = 1;
+        assert_eq!(said(&every_week).as_deref(), Some("FREQ=WEEKLY;BYDAY=TU"));
+
+        // A weekly shape naming no day at all is not a shape.
+        let mut no_days = a_weekly_shape_from_outlook();
+        no_days.pattern.days_of_week.clear();
+        assert_eq!(said(&no_days), None);
+
+        // A day Outlook spells in a way this does not know.
+        let mut a_strange_day = a_weekly_shape_from_outlook();
+        a_strange_day.pattern.days_of_week = vec!["thorsday".to_string()];
+        assert_eq!(said(&a_strange_day), None);
+
+        // Nought is a series that never advances, and the reading of a rule
+        // refuses one, so this refuses it too rather than deciding on its own
+        // that it meant every one.
+        let mut never_advances = a_weekly_shape_from_outlook();
+        never_advances.pattern.interval = 0;
+        assert_eq!(said(&never_advances), None);
+
+        // A date in the month that is not the day the series starts means other
+        // days than the rule would, and a rule has nowhere else to keep it.
+        let a_month = |day_of_month, month| MsPatternedRecurrence {
+            pattern: MsRecurrencePattern {
+                pattern_type: "absoluteMonthly".to_string(),
+                interval: 1,
+                day_of_month,
+                month,
+                ..Default::default()
+            },
+            range: a_weekly_shape_from_outlook().range,
+        };
+        assert_eq!(
+            said(&a_month(Some(10), None)).as_deref(),
+            Some("FREQ=MONTHLY")
+        );
+        assert_eq!(said(&a_month(Some(11), None)), None);
+        assert_eq!(said(&a_month(None, None)), None);
+
+        let a_year = |day_of_month, month| MsPatternedRecurrence {
+            pattern: MsRecurrencePattern {
+                pattern_type: "absoluteYearly".to_string(),
+                interval: 1,
+                day_of_month,
+                month,
+                ..Default::default()
+            },
+            range: a_weekly_shape_from_outlook().range,
+        };
+        assert_eq!(
+            said(&a_year(Some(10), Some(3))).as_deref(),
+            Some("FREQ=YEARLY")
+        );
+        assert_eq!(said(&a_year(Some(10), Some(4))), None, "another month");
+        assert_eq!(said(&a_year(Some(11), Some(3))), None, "another date");
+        assert_eq!(said(&a_year(Some(10), None)), None, "no month at all");
+
+        // The same weekday of the month: the ordinal has to be one this reads,
+        // and there has to be exactly one day named.
+        let a_weekday_of_the_month =
+            |index: Option<&str>, days: Vec<String>| MsPatternedRecurrence {
+                pattern: MsRecurrencePattern {
+                    pattern_type: "relativeMonthly".to_string(),
+                    interval: 1,
+                    index: index.map(str::to_string),
+                    days_of_week: days,
+                    ..Default::default()
+                },
+                range: a_weekly_shape_from_outlook().range,
+            };
+        assert_eq!(
+            said(&a_weekday_of_the_month(
+                Some("second"),
+                vec!["tuesday".to_string()]
+            ))
+            .as_deref(),
+            Some("FREQ=MONTHLY;BYDAY=2TU")
+        );
+        assert_eq!(
+            said(&a_weekday_of_the_month(None, vec!["tuesday".to_string()])),
+            None,
+            "no ordinal"
+        );
+        assert_eq!(
+            said(&a_weekday_of_the_month(
+                Some("fifth"),
+                vec!["tuesday".to_string()]
+            )),
+            None,
+            "an ordinal Outlook does not have"
+        );
+        assert_eq!(
+            said(&a_weekday_of_the_month(
+                Some("second"),
+                vec!["tuesday".to_string(), "thursday".to_string()]
+            )),
+            None,
+            "two days, which is a rule this cannot write as one weekday"
+        );
+
+        // A shape of a kind this has no rule for at all.
+        let mut yearly_by_weekday = a_weekly_shape_from_outlook();
+        yearly_by_weekday.pattern.pattern_type = "relativeYearly".to_string();
+        assert_eq!(said(&yearly_by_weekday), None);
+
+        // And every ending, including the two that carry a value and the one
+        // that is not an ending at all.
+        for (range_type, end_date, times, expected) in [
+            ("noEnd", None, None, Some("FREQ=WEEKLY;INTERVAL=2;BYDAY=TU")),
+            (
+                "endDate",
+                Some("2026-09-30"),
+                None,
+                Some("FREQ=WEEKLY;INTERVAL=2;BYDAY=TU;UNTIL=20260930T235959Z"),
+            ),
+            ("endDate", None, None, None),
+            (
+                "numbered",
+                None,
+                Some(6),
+                Some("FREQ=WEEKLY;INTERVAL=2;BYDAY=TU;COUNT=6"),
+            ),
+            ("numbered", None, None, None),
+            ("everyOtherTuesday", None, None, None),
+        ] {
+            let mut shape = a_weekly_shape_from_outlook();
+            shape.range.range_type = range_type.to_string();
+            shape.range.end_date = end_date.map(str::to_string);
+            shape.range.number_of_occurrences = times;
+            assert_eq!(said(&shape).as_deref(), expected, "{range_type}");
+        }
     }
 
     #[test]
