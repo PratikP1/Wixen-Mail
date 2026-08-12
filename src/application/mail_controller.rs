@@ -1351,46 +1351,177 @@ mod against_a_server_that_answers {
         );
     }
 
-    /// A draft-keeping server that is really the loopback one.
+    /// The adapter that really runs, pointed at the loopback server.
     ///
     /// The decisions are proved against fakes beside them. What this proves is
     /// the other half: that each of the three steps puts the right thing on the
     /// wire, in the right folder, in the right order. Between them nothing is
     /// assumed about a step except the connecting itself, which no test can
     /// reach: opening the write gate needs stored settings for a real account.
-    struct TheLoopbackServer<'a> {
-        controller: &'a MailController,
+    ///
+    /// Not a second implementation of those three steps. There was one, here,
+    /// and it spelled the draft flags out again by hand, so every test below
+    /// could have gone on passing while the adapter that really runs sent
+    /// something else.
+    fn the_draft_at(
+        session: &MailController,
+    ) -> crate::application::draft_copy::DraftAtTheServer<'_> {
+        crate::application::draft_copy::DraftAtTheServer { session }
     }
 
-    impl crate::application::draft_copy::KeepsTheDraft for TheLoopbackServer<'_> {
-        async fn copies_already_there(
-            &self,
-            folder: &str,
-            message_id: &str,
-        ) -> std::result::Result<Vec<u32>, String> {
-            self.controller
-                .uids_with_message_id(folder, message_id)
-                .await
-                .map_err(|e| e.to_string())
-        }
+    /// A draft to save, and what its bytes are.
+    fn a_draft() -> &'static [u8] {
+        b"From: me@example.com\r\nSubject: Draft\r\n\r\nnot finished\r\n"
+    }
 
-        async fn file_this_one(&self, folder: &str, raw: &[u8]) -> std::result::Result<(), String> {
-            self.controller
-                .append_message(folder, Some("(\\Draft \\Seen)"), raw)
-                .await
-                .map_err(|e| e.to_string())
-        }
+    /// Save that draft at the loopback server, replacing whatever is there.
+    async fn saving_the_draft_at(
+        controller: &MailController,
+    ) -> crate::application::draft_copy::Filed {
+        crate::application::draft_copy::replace_the_filed_copy(
+            &the_draft_at(controller),
+            "Drafts",
+            "<d@x>",
+            a_draft(),
+        )
+        .await
+    }
 
-        async fn remove_these(
-            &self,
-            folder: &str,
-            uids: &[u32],
-        ) -> std::result::Result<usize, String> {
-            self.controller
-                .remove_these(folder, uids)
-                .await
-                .map_err(|e| e.to_string())
+    #[tokio::test]
+    async fn test_the_draft_filed_at_the_server_is_flagged_as_a_draft_that_has_been_read() {
+        // Both flags, from the adapter that really runs. Without the draft flag
+        // the copy is an ordinary message on every other device and cannot be
+        // opened and finished there. Without the read flag it is unread mail on
+        // every device, once a minute, for as long as somebody is writing.
+        let server = a_server_that_can("UIDPLUS").await;
+        let controller = allowed_on(&server).await;
+
+        let filed = saving_the_draft_at(&controller).await;
+
+        let transcript = server.transcript().await;
+        assert_eq!(filed, crate::application::draft_copy::Filed::Replaced);
+        assert!(
+            server
+                .was_told(&format!(
+                    "APPEND \"Drafts\" (\\Draft \\Seen) {{{}}}",
+                    a_draft().len()
+                ))
+                .await,
+            "the draft was not offered as a draft that has been read: {transcript:?}"
+        );
+        assert!(
+            transcript
+                .iter()
+                .any(|line| line.as_bytes() == a_draft() || line.contains("not finished")),
+            "the bytes saved were not the draft that was written: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_copies_the_server_is_told_to_remove_are_the_ones_it_named() {
+        // Both copies carry the same identifier, so a removal that swept by
+        // identifier would take the copy just filed along with the old one. The
+        // removal naming what the search found is the only thing stopping that,
+        // and this is where it is measured on the wire rather than against a
+        // fake.
+        let server = a_server_that_can("UIDPLUS").await;
+        let controller = allowed_on(&server).await;
+
+        let filed = saving_the_draft_at(&controller).await;
+
+        let transcript = server.transcript().await;
+        assert_eq!(filed, crate::application::draft_copy::Filed::Replaced);
+        let steps = [
+            "SELECT \"Drafts\"",
+            "UID SEARCH HEADER MESSAGE-ID \"<d@x>\"",
+            "APPEND \"Drafts\"",
+            "UID STORE 4 +FLAGS (\\Deleted)",
+            "UID EXPUNGE 4",
+        ];
+        let mut at = Vec::new();
+        for step in steps {
+            at.push(
+                server
+                    .when_told(step)
+                    .await
+                    .unwrap_or_else(|| panic!("{step} never reached the server: {transcript:?}")),
+            );
         }
+        assert!(
+            at.windows(2).all(|pair| pair[0] < pair[1]),
+            "the save happened out of order, which is what leaves a person with \
+             no copy of their draft at all: {transcript:?}"
+        );
+
+        let swept: Vec<&String> = transcript
+            .iter()
+            .filter(|line| line.to_uppercase().contains("EXPUNGE"))
+            .collect();
+        assert_eq!(
+            swept.len(),
+            1,
+            "more than one removal was sent, so the copy just filed may have \
+             gone with the old one: {transcript:?}"
+        );
+        assert!(swept[0].contains(" 4"), "{swept:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_server_that_cannot_remove_one_message_leaves_the_older_copy_and_says_so() {
+        // Without UIDPLUS there is only the bare removal, which takes every
+        // message anybody flagged in that mailbox. On a shared or a busy
+        // mailbox that is other people's mail, so the old copy is flagged and
+        // left, and the person is told there may be two.
+        let server = a_server_that_can("").await;
+        let controller = allowed_on(&server).await;
+
+        let filed = saving_the_draft_at(&controller).await;
+
+        let transcript = server.transcript().await;
+        assert!(
+            server.was_told("UID STORE 4 +FLAGS (\\Deleted)").await,
+            "the old copy was never flagged: {transcript:?}"
+        );
+        assert!(
+            !server.was_told("EXPUNGE").await,
+            "a removal was sent that takes every flagged message in the \
+             mailbox: {transcript:?}"
+        );
+        assert!(
+            matches!(
+                filed,
+                crate::application::draft_copy::Filed::FiledAndAnOlderCopyMayStillBeThere(_)
+            ),
+            "{filed:?}"
+        );
+        assert!(filed.needs_saying());
+        let said = filed.what_happened();
+        assert!(said.contains("two"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_removal_the_server_refuses_still_leaves_the_newer_draft_on_it() {
+        // A refusal at the last step is not a lost draft. The newer copy is
+        // already on the server, so what is left is two copies rather than
+        // none, and that is what the person hears.
+        let server = a_server_that_refuses("UIDPLUS", "UID STORE").await;
+        let controller = allowed_on(&server).await;
+
+        let filed = saving_the_draft_at(&controller).await;
+
+        let transcript = server.transcript().await;
+        assert!(
+            server.was_told("APPEND \"Drafts\"").await,
+            "the newer draft was never offered: {transcript:?}"
+        );
+        assert!(
+            matches!(
+                filed,
+                crate::application::draft_copy::Filed::FiledAndAnOlderCopyMayStillBeThere(_)
+            ),
+            "{filed:?}"
+        );
+        assert!(filed.needs_saying());
     }
 
     #[tokio::test]
@@ -1481,15 +1612,7 @@ mod against_a_server_that_answers {
         let server = a_server_that_refuses("UIDPLUS", "APPEND").await;
         let controller = allowed_on(&server).await;
 
-        let filed = crate::application::draft_copy::replace_the_filed_copy(
-            &TheLoopbackServer {
-                controller: &controller,
-            },
-            "Drafts",
-            "<d@x>",
-            b"From: me@example.com\r\nSubject: Draft\r\n\r\nnot finished\r\n",
-        )
-        .await;
+        let filed = saving_the_draft_at(&controller).await;
 
         let transcript = server.transcript().await;
         assert!(
@@ -1519,15 +1642,7 @@ mod against_a_server_that_answers {
         let server = a_server_that_can("UIDPLUS").await;
         let controller = allowed_on(&server).await;
 
-        let filed = crate::application::draft_copy::replace_the_filed_copy(
-            &TheLoopbackServer {
-                controller: &controller,
-            },
-            "Drafts",
-            "<d@x>",
-            b"From: me@example.com\r\nSubject: Draft\r\n\r\nnot finished\r\n",
-        )
-        .await;
+        let filed = saving_the_draft_at(&controller).await;
 
         let transcript = server.transcript().await;
         assert_eq!(filed, crate::application::draft_copy::Filed::Replaced);

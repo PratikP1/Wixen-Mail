@@ -2732,6 +2732,16 @@ red = [
 # The break below is that shape put back into the draft path, which is where
 # it was. It runs against the house style suite, since the rule is about what
 # the tree says.
+#
+# Re-measured 2026-08-12, and this is the one thing about it worth knowing. The
+# named test reads the tree as text, so on its own it could not tell a body that
+# still reads the answer from one that stopped. It is no longer on its own: the
+# same break now reddens two tests that drive this body against a server and
+# read what came back, "a server that cannot remove one message leaves the older
+# copy and says so" and "a removal the server refuses still leaves the newer
+# draft on it". They are not named here because this record runs the house style
+# suite, which never builds them. If this record is ever widened to the library,
+# they belong in the list.
 
 [[guard]]
 name = "an answer about somebody's mail is read rather than thrown away"
@@ -2905,6 +2915,7 @@ red = [
     "application::draft_copy::tests::test_the_new_copy_is_filed_before_the_old_one_is_removed",
     "application::mail_controller::against_a_server_that_answers::test_a_draft_the_server_refuses_to_take_leaves_the_older_copy_on_the_server",
     "application::mail_controller::against_a_server_that_answers::test_a_draft_the_server_takes_is_filed_before_the_older_copy_is_removed",
+    "application::mail_controller::against_a_server_that_answers::test_the_copies_the_server_is_told_to_remove_are_the_ones_it_named",
 ]
 
 [[guard]]
@@ -3718,4 +3729,41 @@ after = """            // Above Sent, because mail waiting to go is something to
 red = [
     "common::types::tests::test_mail_waiting_to_go_sorts_above_mail_that_has_gone",
     "data::message_cache::folders::tests::test_mail_waiting_to_go_sits_between_the_drafts_and_what_has_gone",
+]
+
+# ── The adapter that saves a draft at the server had never run ──────────────
+#
+# Three steps run on the automatic save, once a minute for as long as somebody
+# is writing, and the last of them removes messages from a server. Nothing had
+# ever constructed the object that does them. What looked like proof was a
+# second implementation of the same three steps living in the test module,
+# which the wire tests drove instead, and it spelled the draft flags out again
+# by hand. The two agreed by luck. Changing the flags the running program sends
+# would have left every one of those tests green.
+#
+# The duplicate is gone and the tests drive the object that really runs. These
+# two breaks are what that bought, measured by hand on 2026-08-12: before it,
+# the first of them reddened nothing at all.
+
+[[guard]]
+name = "a draft filed at the server is filed as a draft"
+file = "src/application/draft_copy.rs"
+before = """            crate::service::protocols::imap::flag::DRAFT,"""
+after = """            crate::service::protocols::imap::flag::ANSWERED,"""
+red = [
+    "application::mail_controller::against_a_server_that_answers::test_the_draft_filed_at_the_server_is_flagged_as_a_draft_that_has_been_read",
+]
+
+[[guard]]
+name = "the removal names the copies the search found"
+file = "src/application/draft_copy.rs"
+before = """    match server.remove_these(folder, &older).await {"""
+after = """    match server.remove_these(folder, &[]).await {"""
+red = [
+    "application::draft_copy::tests::test_the_new_copy_is_filed_before_the_old_one_is_removed",
+    "application::draft_copy::tests::test_the_removal_only_names_the_copies_that_were_there_before_the_new_one",
+    "application::mail_controller::against_a_server_that_answers::test_a_draft_the_server_takes_is_filed_before_the_older_copy_is_removed",
+    "application::mail_controller::against_a_server_that_answers::test_a_server_that_cannot_remove_one_message_leaves_the_older_copy_and_says_so",
+    "application::mail_controller::against_a_server_that_answers::test_the_copies_the_server_is_told_to_remove_are_the_ones_it_named",
+    "application::mail_controller::against_a_server_that_answers::test_the_draft_filed_at_the_server_is_flagged_as_a_draft_that_has_been_read",
 ]
