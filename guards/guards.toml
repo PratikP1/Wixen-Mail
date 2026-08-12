@@ -3583,6 +3583,7 @@ red = [
     "presentation::status_line::tests::test_the_one_place_that_shows_a_sentence_says_it_too",
     "presentation::wx_account_manager::tests::test_every_answer_the_account_manager_gives_is_said_out_loud",
     "presentation::wx_calendar::tests::test_every_answer_the_calendar_window_gives_is_said_out_loud",
+    "presentation::wx_managers::tests::test_every_answer_the_manager_windows_give_is_said_out_loud",
 ]
 
 # ── The failures on the screen accounts are created on ──────────────────────
@@ -3617,6 +3618,41 @@ after = """                                status.set_label(&format!("Signing in
 red = [
     "presentation::wx_account_manager::tests::test_every_answer_the_account_manager_gives_is_said_out_loud",
     "presentation::wx_account_manager::tests::test_the_two_failures_on_this_screen_are_said_above_the_ordinary_run",
+]
+
+# ── What the tag, signature, filter and contact windows answer ──────────────
+#
+# Added, updated, deleted with a name, and being told to select something
+# first: ten answers across four windows, every one shown on a line of text
+# above the buttons and said nowhere. The description of the chrome those
+# windows share said that line announced changes, and it never had, which is
+# how it went unnoticed for as long as it did.
+#
+# Deleting is measured because it is the one that names something: hearing
+# which item went is the only confirmation that the right one did. The line it
+# goes on has two names in this one file, one in the shared loop and one in the
+# contact loop, and the check counts both, because a check that counted one
+# would pass with half the file silent.
+#
+# What this record cannot see. It is a source read, because reaching these arms
+# needs a window, a frame and a running event loop. It can tell that the arm
+# says what it shows and at what priority. It cannot tell whether the
+# announcement reaches a screen reader from inside a modal dialog, or whether
+# the name in the sentence is the item that was really deleted. Only a screen
+# reader run answers the first.
+
+[[guard]]
+name = "deleting from a manager window says which item went"
+file = "src/presentation/wx_managers.rs"
+before = """                    said_and_shown(
+                        status_text,
+                        a11y,
+                        &format!("Deleted: {}", name),
+                        Priority::Normal,
+                    );"""
+after = """                    status_text.set_label(&format!("Deleted: {}", name));"""
+red = [
+    "presentation::wx_managers::tests::test_every_answer_the_manager_windows_give_is_said_out_loud",
 ]
 
 # ── One day cut out of a series is two writes, and only one takes a day away ─

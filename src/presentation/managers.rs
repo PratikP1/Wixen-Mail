@@ -104,6 +104,7 @@ pub fn manage_tags(
     frame: &Frame,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
 ) {
     let (cache, account) = match manager_account(state, cache) {
         Ok(pair) => pair,
@@ -123,7 +124,7 @@ pub fn manage_tags(
         .collect();
 
     let wx_managers::TagManagerAction::Updated(updated) =
-        wx_managers::show_tag_manager_dialog(frame, &rows)
+        wx_managers::show_tag_manager_dialog(frame, &rows, a11y)
     else {
         return;
     };
@@ -190,6 +191,7 @@ pub fn manage_signatures(
     frame: &Frame,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
 ) {
     let (cache, account) = match manager_account(state, cache) {
         Ok(pair) => pair,
@@ -211,7 +213,7 @@ pub fn manage_signatures(
         .collect();
 
     let wx_managers::SignatureManagerAction::Updated(updated) =
-        wx_managers::show_signature_manager_dialog(frame, &rows)
+        wx_managers::show_signature_manager_dialog(frame, &rows, a11y)
     else {
         return;
     };
@@ -269,6 +271,7 @@ pub fn manage_filters(
     frame: &Frame,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
 ) {
     let (cache, account) = match manager_account(state, cache) {
         Ok(pair) => pair,
@@ -294,7 +297,7 @@ pub fn manage_filters(
         .collect();
 
     let wx_managers::FilterManagerAction::Updated(updated) =
-        wx_managers::show_filter_manager_dialog(frame, &rows)
+        wx_managers::show_filter_manager_dialog(frame, &rows, a11y)
     else {
         return;
     };
@@ -1307,6 +1310,7 @@ pub fn manage_contacts(
     frame: &Frame,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
 ) -> bool {
     let (cache, account) = match manager_account(state, cache) {
         Ok(pair) => pair,
@@ -1326,7 +1330,7 @@ pub fn manage_contacts(
     let rows: Vec<wx_managers::ContactEntry> =
         stored.iter().map(contact_convert::to_editor).collect();
 
-    match wx_managers::show_contact_manager_dialog(frame, &rows) {
+    match wx_managers::show_contact_manager_dialog(frame, &rows, a11y) {
         wx_managers::ContactManagerAction::SyncRequested => return true,
         wx_managers::ContactManagerAction::None => return false,
         wx_managers::ContactManagerAction::Updated(updated) => {

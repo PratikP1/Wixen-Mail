@@ -1,10 +1,21 @@
 //! wxdragon Manager Dialogs
 //!
 //! Contact, Filter, Tag, and Signature managers sharing a generic modal loop.
+//!
+//! Every answer these windows give is shown on a line of text above their
+//! buttons and said out loud, from one call. Nothing raises a notification for
+//! such a line and it is not somewhere anybody navigating by ear goes, so an
+//! answer that was only shown was an answer nobody got. Being told to select
+//! something first is said above the ordinary run of outcomes, because it is
+//! the answer to the key just pressed.
 
+use crate::presentation::accessibility::Accessibility;
+use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
+use crate::presentation::status_line::said_and_shown;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 use wxdragon::prelude::*;
 
 // ── Shared Button IDs ──────────────────────────────────────────────────────
@@ -53,12 +64,19 @@ fn get_choice_string(choice: &Choice) -> Option<String> {
 // ── Generic Manager Dialog Loop ────────────────────────────────────────────
 
 /// The chrome every manager dialog shares: the dialog, its sizer, the item
-/// list, and the status line that announces changes.
+/// list, the line of text every answer is written on, and the way those
+/// sentences are said out loud.
+///
+/// This used to say the line announced changes, and it never did: for as long
+/// as the description existed, every answer these windows gave was written
+/// there and said nowhere. Both go through one call now, so the line and the
+/// ear cannot come apart again.
 struct ManagerChrome<'a> {
     dialog: &'a Dialog,
     main_sizer: &'a BoxSizer,
     list: &'a ListCtrl,
     status_text: &'a StaticText,
+    a11y: &'a Accessibility,
 }
 
 /// Run the standard Add/Edit/Delete modal loop shared by all manager dialogs.
@@ -77,6 +95,7 @@ fn run_manager_loop<T: Clone>(
         main_sizer,
         list,
         status_text,
+        a11y,
     } = chrome;
 
     // Create and attach buttons
@@ -143,7 +162,7 @@ fn run_manager_loop<T: Clone>(
                     working.push(item);
                     changed = true;
                     populate(list, working);
-                    status_text.set_label("Added");
+                    said_and_shown(status_text, a11y, "Added", Priority::Normal);
                 }
             }
             r if r == ID_MGR_EDIT => {
@@ -152,10 +171,10 @@ fn run_manager_loop<T: Clone>(
                         working[idx] = updated;
                         changed = true;
                         populate(list, working);
-                        status_text.set_label("Updated");
+                        said_and_shown(status_text, a11y, "Updated", Priority::Normal);
                     }
                 } else {
-                    status_text.set_label("Select an item to edit");
+                    said_and_shown(status_text, a11y, "Select an item to edit", Priority::High);
                 }
             }
             r if r == ID_MGR_DELETE => {
@@ -164,9 +183,19 @@ fn run_manager_loop<T: Clone>(
                     working.remove(idx);
                     changed = true;
                     populate(list, working);
-                    status_text.set_label(&format!("Deleted: {}", name));
+                    said_and_shown(
+                        status_text,
+                        a11y,
+                        &format!("Deleted: {}", name),
+                        Priority::Normal,
+                    );
                 } else {
-                    status_text.set_label("Select an item to delete");
+                    said_and_shown(
+                        status_text,
+                        a11y,
+                        "Select an item to delete",
+                        Priority::High,
+                    );
                 }
             }
             _ => break,
@@ -528,6 +557,7 @@ pub(crate) fn get_address_field_labels(country: &str) -> (&'static str, &'static
 pub fn show_contact_manager_dialog(
     parent: &Frame,
     contacts: &[ContactEntry],
+    a11y: &Arc<Accessibility>,
 ) -> ContactManagerAction {
     let dialog = Dialog::builder(parent, "Contact Manager")
         .with_size(700, 500)
@@ -666,7 +696,7 @@ pub fn show_contact_manager_dialog(
                     let query = search_f.get_value();
                     let w = working.borrow();
                     populate_contacts_filtered(&list, &w, &query, &mut index_map.borrow_mut());
-                    status.set_label("Added");
+                    said_and_shown(&status, a11y, "Added", Priority::Normal);
                 }
             }
             r if r == ID_MGR_EDIT => {
@@ -685,10 +715,10 @@ pub fn show_contact_manager_dialog(
                         let query = search_f.get_value();
                         let w = working.borrow();
                         populate_contacts_filtered(&list, &w, &query, &mut index_map.borrow_mut());
-                        status.set_label("Updated");
+                        said_and_shown(&status, a11y, "Updated", Priority::Normal);
                     }
                 } else {
-                    status.set_label("Select a contact to edit");
+                    said_and_shown(&status, a11y, "Select a contact to edit", Priority::High);
                 }
             }
             r if r == ID_MGR_DELETE => {
@@ -706,9 +736,14 @@ pub fn show_contact_manager_dialog(
                     let query = search_f.get_value();
                     let w = working.borrow();
                     populate_contacts_filtered(&list, &w, &query, &mut index_map.borrow_mut());
-                    status.set_label(&format!("Deleted: {}", name));
+                    said_and_shown(
+                        &status,
+                        a11y,
+                        &format!("Deleted: {}", name),
+                        Priority::Normal,
+                    );
                 } else {
-                    status.set_label("Select a contact to delete");
+                    said_and_shown(&status, a11y, "Select a contact to delete", Priority::High);
                 }
             }
             r if r == ID_MGR_SYNC => {
@@ -1611,7 +1646,11 @@ pub enum FilterManagerAction {
     Updated(Vec<FilterRule>),
 }
 
-pub fn show_filter_manager_dialog(parent: &Frame, rules: &[FilterRule]) -> FilterManagerAction {
+pub fn show_filter_manager_dialog(
+    parent: &Frame,
+    rules: &[FilterRule],
+    a11y: &Arc<Accessibility>,
+) -> FilterManagerAction {
     let (dialog, sizer, list, status) = make_shell(parent, "Filter Manager", 650, 450);
 
     list.insert_column(0, "Name", ListColumnFormat::Left, 130);
@@ -1627,6 +1666,7 @@ pub fn show_filter_manager_dialog(parent: &Frame, rules: &[FilterRule]) -> Filte
             main_sizer: &sizer,
             list: &list,
             status_text: &status,
+            a11y,
         },
         &mut working,
         populate_filters,
@@ -1846,7 +1886,11 @@ const TAG_COLORS: &[(&str, &str)] = &[
     ("Gray", "#757575"),
 ];
 
-pub fn show_tag_manager_dialog(parent: &Frame, tags: &[TagEntry]) -> TagManagerAction {
+pub fn show_tag_manager_dialog(
+    parent: &Frame,
+    tags: &[TagEntry],
+    a11y: &Arc<Accessibility>,
+) -> TagManagerAction {
     let (dialog, sizer, list, status) = make_shell(parent, "Tag Manager", 450, 400);
 
     list.insert_column(0, "Tag", ListColumnFormat::Left, 200);
@@ -1860,6 +1904,7 @@ pub fn show_tag_manager_dialog(parent: &Frame, tags: &[TagEntry]) -> TagManagerA
             main_sizer: &sizer,
             list: &list,
             status_text: &status,
+            a11y,
         },
         &mut working,
         populate_tags,
@@ -1999,6 +2044,7 @@ pub enum SignatureManagerAction {
 pub fn show_signature_manager_dialog(
     parent: &Frame,
     signatures: &[SignatureEntry],
+    a11y: &Arc<Accessibility>,
 ) -> SignatureManagerAction {
     let (dialog, sizer, list, status) = make_shell(parent, "Signature Manager", 550, 450);
 
@@ -2014,6 +2060,7 @@ pub fn show_signature_manager_dialog(
             main_sizer: &sizer,
             list: &list,
             status_text: &status,
+            a11y,
         },
         &mut working,
         populate_sigs,
@@ -2326,6 +2373,183 @@ pub fn choose_from_list(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// This file with its own tests cut off.
+    ///
+    /// Cut, because the samples below quote the very calls the checks look
+    /// for, and a check that reads its own words passes with the code deleted.
+    fn the_manager_windows() -> String {
+        let whole = std::fs::read_to_string("src/presentation/wx_managers.rs")
+            .expect("this file to be readable")
+            .replace("\r\n", "\n");
+        match whole.split_once("\n#[cfg(test)]") {
+            Some((code, _)) => code.to_string(),
+            None => whole,
+        }
+    }
+
+    /// The one call that shows and says, with its own tests cut off.
+    fn the_one_call_that_says() -> String {
+        let whole = std::fs::read_to_string("src/presentation/status_line.rs")
+            .expect("the shared status line to be readable")
+            .replace("\r\n", "\n");
+        match whole.split_once("\n#[cfg(test)]") {
+            Some((code, _)) => code.to_string(),
+            None => whole,
+        }
+    }
+
+    /// What these windows answer without saying it out loud.
+    ///
+    /// Added, updated, deleted with a name, and select something first: the
+    /// tag, signature, filter and contact windows all answer on a line of
+    /// text above their buttons. Nothing raises a notification for that line,
+    /// so an answer only written there is an answer nobody working by ear
+    /// gets.
+    ///
+    /// Both names are counted. The shared loop calls its line one thing and
+    /// the contact loop calls it another, and a check that counted one of them
+    /// would pass with half the file silent.
+    fn what_these_windows_never_say(windows: &str, the_one_call: &str) -> Vec<String> {
+        let mut wrong = Vec::new();
+        let Some((_, helper)) = the_one_call.split_once("pub(crate) fn said_and_shown(") else {
+            return vec![
+                "nothing these windows can call both shows a sentence and says it, so \
+                 every answer they give is silent"
+                    .to_string(),
+            ];
+        };
+        let body = &helper[..helper.find("\n}").unwrap_or(helper.len())];
+        if !body.contains("a11y.announce(") {
+            wrong.push("the one place that shows a sentence never says it out loud".to_string());
+        }
+
+        // Not `rl.set_label(` and `cl.set_label(`, which rewrite the visible
+        // labels of two address fields when somebody picks a different
+        // country. They relabel a box rather than answer a command, and they
+        // carry a fault of their own that is not this one: the accessible
+        // names of those two boxes are fixed when the dialog is built and are
+        // never rewritten, so choosing Japan shows "Prefecture" while a screen
+        // reader still says "State or region". That wants its own change.
+        for line in ["status_text.set_label(", "status.set_label("] {
+            let shown = windows.matches(line).count();
+            if shown != 0 {
+                wrong.push(format!(
+                    "{shown} answers are put on the line of text by themselves, rather than \
+                     through the one call that says them as well"
+                ));
+            }
+        }
+
+        let said = windows.matches("said_and_shown(").count();
+        if said < 10 {
+            wrong.push(format!(
+                "only {said} answers these windows give are said out loud, and there are \
+                 more answers than that"
+            ));
+        }
+
+        // A promise in a comment with nothing checking it is what this round
+        // is cleaning up: the description of this chrome said its line of text
+        // announced changes for as long as it never did.
+        if windows.contains("announce") && !windows.contains("said_and_shown(") {
+            wrong.push(
+                "the description of the shared chrome claims its line of text announces \
+                 things, and nothing in this file says anything"
+                    .to_string(),
+            );
+        }
+        wrong
+    }
+
+    #[test]
+    fn test_every_answer_the_manager_windows_give_is_said_out_loud() {
+        // Ten answers across the tag, signature, filter and contact windows,
+        // every one of them shown on a line of text and said nowhere.
+        //
+        // What this cannot see: whether the announcement reaches a screen
+        // reader from inside a modal dialog, or whether the sentence handed in
+        // is a true one. Only a screen reader run answers the first.
+        let windows = the_manager_windows();
+        assert!(
+            windows.len() > 5000,
+            "only {} characters were read, so the reading is broken",
+            windows.len()
+        );
+        assert!(
+            !windows.contains("fn the_manager_windows("),
+            "the tests were not cut off, so the check is reading its own words"
+        );
+        let wrong = what_these_windows_never_say(&windows, &the_one_call_that_says());
+        assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
+    }
+
+    #[test]
+    fn test_the_manager_check_can_tell_the_two_apart() {
+        // Proving the measurement. A source read that finds nothing passes,
+        // and from outside that is indistinguishable from one that finds
+        // everything.
+        let call = "pub(crate) fn said_and_shown(\n\
+            \x20   line: &StaticText,\n\
+            ) {\n\
+            \x20   line.set_label(said);\n\
+            \x20   let _ = a11y.announce(said, priority);\n\
+            }\n";
+        let sound = "said_and_shown(&status, a11y, x, Priority::High);\n".repeat(10);
+        assert!(
+            what_these_windows_never_say(&sound, call).is_empty(),
+            "windows that say everything were reported as silent"
+        );
+
+        // The two names the same line goes by. A check that counted only the
+        // first would pass with the whole contact window silent, and the other
+        // way round.
+        for left_silent in ["status_text.set_label(x);\n", "status.set_label(x);\n"] {
+            let one_left = format!("{sound}{left_silent}");
+            let wrong = what_these_windows_never_say(&one_left, call);
+            assert!(
+                wrong.iter().any(|said| said.contains("by themselves")),
+                "a line written by itself as {left_silent:?} was not reported: {wrong:?}"
+            );
+        }
+
+        let too_few = "said_and_shown(&status, a11y, x, Priority::High);\n".repeat(9);
+        let wrong = what_these_windows_never_say(&too_few, call);
+        assert!(
+            wrong.iter().any(|said| said.contains("more answers")),
+            "windows that lost answers were not reported: {wrong:?}"
+        );
+
+        let promise_only = "the status line that announces changes\n";
+        let wrong = what_these_windows_never_say(promise_only, call);
+        assert!(
+            wrong.iter().any(|said| said.contains("claims its line")),
+            "a promise with nothing behind it was not reported: {wrong:?}"
+        );
+        // And that check is awake on the real file rather than only on the
+        // sample above. It fires when the description promises something the
+        // file does nothing about, so it is asleep the moment the description
+        // stops promising.
+        assert!(
+            the_manager_windows().contains("announce"),
+            "the description of the shared chrome no longer promises anything, so the \
+             promise check is asleep on the real file"
+        );
+
+        let never_says = call.replace("let _ = a11y.announce(said, priority);", "let _ = said;");
+        assert!(
+            what_these_windows_never_say(&sound, &never_says)
+                .iter()
+                .any(|said| said.contains("never says it out loud")),
+            "a call that only shows was not reported"
+        );
+
+        assert!(
+            what_these_windows_never_say(&sound, "fn nothing() {}")[0]
+                .contains("every answer they give is silent"),
+            "windows with nothing to call were not reported"
+        );
+    }
 
     /// Somebody with two addresses and two numbers, which is the ordinary
     /// shape of a contact and the shape the search used to half ignore.

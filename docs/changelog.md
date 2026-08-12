@@ -8,6 +8,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: the tag, signature, filter and contact windows did everything in
+  silence too.** Adding, changing and deleting an item put a word on a line of
+  text above the buttons and said nothing, so by ear there was no confirmation
+  that anything had happened and no way to tell which item had been deleted.
+  All of them now speak, and deleting says the name of what went. Being told to
+  select something first comes in ahead of the ordinary run of messages.
+
 - **Fixed: the Account Manager did everything in silence.** Every answer that
   screen gives, twenty-three of them, was written on a line of text above the
   buttons and said nowhere. That is the screen you add your first account on,

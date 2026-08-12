@@ -3152,6 +3152,7 @@ impl WxMailApp {
                                 &frame,
                                 &ui_tx,
                                 &runtime,
+                                &a11y,
                             ) {
                                 send_status(&ui_tx, &runtime, "Contacts sync requested...");
                                 spawn_contacts_sync(&state, &ui_tx, &runtime);
@@ -3162,13 +3163,13 @@ impl WxMailApp {
                         // opened blank however much was stored and anything the
                         // user added, edited or deleted was lost on OK.
                         _ if id == ID_FILTER_MGR => {
-                            managers::manage_filters(&state, &message_cache, &frame, &ui_tx, &runtime)
+                            managers::manage_filters(&state, &message_cache, &frame, &ui_tx, &runtime, &a11y)
                         }
                         _ if id == ID_TAG_MGR => {
-                            managers::manage_tags(&state, &message_cache, &frame, &ui_tx, &runtime)
+                            managers::manage_tags(&state, &message_cache, &frame, &ui_tx, &runtime, &a11y)
                         }
                         _ if id == ID_SIG_MGR => {
-                            managers::manage_signatures(&state, &message_cache, &frame, &ui_tx, &runtime)
+                            managers::manage_signatures(&state, &message_cache, &frame, &ui_tx, &runtime, &a11y)
                         }
                         _ if id == ID_ADD_CALENDAR_BY_ADDRESS => {
                             managers::add_calendar_by_address(&state, &message_cache, &frame, &ui_tx, &runtime)
@@ -6295,7 +6296,7 @@ fn open_for_scanning(
         ScanTarget::Search => {
             let _ = show_search_dialog(frame);
         }
-        ScanTarget::Filters => managers::manage_filters(state, &None, frame, tx, rt),
+        ScanTarget::Filters => managers::manage_filters(state, &None, frame, tx, rt, a11y),
     }
 }
 
