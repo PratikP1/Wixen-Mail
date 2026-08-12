@@ -3643,3 +3643,46 @@ red = [
     "service::tasks_api::tests::test_a_new_google_task_is_posted_to_the_list_it_belongs_in_and_claims_no_identifier",
     "service::tasks_api::tests::test_a_new_microsoft_task_is_posted_to_the_list_it_belongs_in_and_claims_no_identifier",
 ]
+
+# ── The one-line bodies that join a sync to a real client ───────────────────
+#
+# Each of these forwards one call and does nothing else, and a body that short
+# is a body nothing notices going. Replaced by an answer of its own, every
+# change is reported as accepted at the provider with nothing having left this
+# computer, and the push then clears the flag or the note that was the only
+# record the change was ever owed. Three of them had no test at all in either
+# direction until this round.
+
+[[guard]]
+name = "the task forwarders really reach the client rather than answering themselves"
+file = "src/application/tasks_sync.rs"
+before = """        TasksClient::google_create_task(self, token, list_id, task).await
+    }"""
+after = """        Ok(GoogleTask::default())
+    }"""
+red = [
+    "application::tasks_sync::tests::test_the_six_task_writes_a_sync_uses_each_reach_the_provider_rather_than_the_forwarder",
+    "application::tasks_sync::tests::test_the_trait_the_sync_talks_through_still_asks_the_read_only_client",
+]
+
+[[guard]]
+name = "the Google address book forwarder really sends a deletion"
+file = "src/application/contacts_sync.rs"
+before = """        GoogleApiClient::delete_contact(self, token, provider_contact_id).await
+    }"""
+after = """        Ok(())
+    }"""
+red = [
+    "application::contacts_sync::tests::test_the_google_address_book_a_sync_uses_really_sends_a_deletion",
+]
+
+[[guard]]
+name = "the Outlook address book forwarder really sends a deletion"
+file = "src/application/contacts_sync.rs"
+before = """        MsGraphClient::delete_contact(self, token, provider_contact_id).await
+    }"""
+after = """        Ok(())
+    }"""
+red = [
+    "application::contacts_sync::tests::test_the_outlook_address_book_a_sync_uses_really_sends_a_deletion",
+]
