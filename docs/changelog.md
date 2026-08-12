@@ -8,6 +8,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: opening Tasks or Notes did not say what had loaded.** Opening the
+  calendar says how many calendars and how many reminders arrived. Opening
+  Tasks said how many tasks but never how many lists, and opening Notes filled
+  its sidebar without a word either way. Both now say what arrived, the same as
+  the calendar does.
+
+  Three other things that change the status bar stay silent on purpose, and the
+  reason for each is now written down beside the code: turning offline mode on
+  or off, the outbox queue count, and the module name in the status bar. The
+  first two would repeat a sentence you have just heard. The third is sent both
+  when you really switch module and when a finished task sync asks the panel to
+  redraw, so speaking it would tell you that you had moved to Tasks when you
+  had not.
+
 - **Fixed: the tag, signature, filter and contact windows did everything in
   silence too.** Adding, changing and deleting an item put a word on a line of
   text above the buttons and said nothing, so by ear there was no confirmation

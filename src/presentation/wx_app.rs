@@ -6762,6 +6762,12 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
             let msg = how_many_loaded(lists.len(), "task list");
             frame.set_status_text(&msg, 0);
+            // Said as well as shown, matching the calendar containers and the
+            // reminders a few arms above. Opening Tasks says how many tasks
+            // there are, and how many lists hold them is the same kind of
+            // answer, so leaving this one shown and silent was an oversight
+            // rather than a decision.
+            let _ = a11y.announce_topic(&msg, Priority::Low, "task-lists");
         }
         UIUpdate::TasksLoaded(tasks) => {
             lock_state(state).tasks = tasks.clone();
@@ -6782,6 +6788,13 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 }
                 pim.notes_tree.expand(&root);
             }
+            // The fourth sidebar, and the only one that filled itself without
+            // saying or showing anything. Calendars, reminders and task lists
+            // are all loaded ahead of the items they hold and all say how many
+            // arrived; notes were loaded the same way and answered nothing.
+            let msg = how_many_loaded(folders.len(), "note folder");
+            frame.set_status_text(&msg, 0);
+            let _ = a11y.announce_topic(&msg, Priority::Low, "note-folders");
         }
         UIUpdate::NotesLoaded(notes) => {
             {
@@ -11158,6 +11171,260 @@ mod tests {
 #[cfg(test)]
 mod what_the_status_line_says {
     use super::{how_many_loaded, how_many_on_the_server, what_a_mailbox_holds};
+
+    /// This file with its own tests cut off.
+    ///
+    /// Cut, because the checks below quote the very names they look for, and
+    /// a check that reads its own words measures nothing: the first run of the
+    /// check on the senders below matched itself and reported the whole of
+    /// offline mode as silent.
+    fn the_window_itself() -> String {
+        let whole = std::fs::read_to_string("src/presentation/wx_app.rs")
+            .expect("this file to be readable")
+            .replace("\r\n", "\n");
+        match whole.split_once("\n#[cfg(test)]") {
+            Some((code, _)) => code.to_string(),
+            None => whole,
+        }
+    }
+
+    /// The body of the one routine that handles every update, and nothing
+    /// after it.
+    ///
+    /// Cut at the closing brace in the first column, because the arms are the
+    /// only thing indented eight spaces inside it and the same variant names
+    /// appear again further down the file where they are sent rather than
+    /// handled.
+    fn the_update_handler(source: &str) -> String {
+        let after = source
+            .split_once("fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {")
+            .expect("the one routine that handles every update")
+            .1;
+        let end = after.find("\n}\n").unwrap_or(after.len());
+        after[..end].to_string()
+    }
+
+    /// Every arm of that routine, as (variant name, the arm's text).
+    fn every_arm(handler: &str) -> Vec<(String, String)> {
+        let mut arms = Vec::new();
+        for (at, _) in handler.match_indices("\n        UIUpdate::") {
+            let rest = &handler[at + "\n        UIUpdate::".len()..];
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            let end = rest.find("\n        UIUpdate::").unwrap_or(rest.len());
+            arms.push((name, rest[..end].to_string()));
+        }
+        arms
+    }
+
+    /// The arms that write to the status bar, say nothing, and are meant to.
+    ///
+    /// Each is quiet because the same event is already spoken somewhere else,
+    /// and each reason has to say where, because a silence nobody can explain
+    /// is the defect this list exists to keep out. The test below requires a
+    /// real sentence rather than a word, so an arm cannot be silenced by
+    /// adding its name here and nothing else.
+    fn quiet_on_purpose() -> &'static [(&'static str, &'static str)] {
+        &[
+            (
+                "OfflineModeChanged",
+                "Keeps the mode indicator, which stays on screen. The one place that \
+                 sends this already sends the whole sentence, offline mode enabled and \
+                 outgoing mail will be queued, and the status arm shows and says that. \
+                 Saying the one word here as well would say the same change twice, a \
+                 moment apart.",
+            ),
+            (
+                "OutboxQueueCount",
+                "The one place that sends this sends the flush result immediately \
+                 before it, and that arm shows and says how many went and how many \
+                 failed. The queue count is the same event counted a second way. It \
+                 does overwrite the visible field with the count while the ear keeps \
+                 the fuller sentence, so eye and ear end up holding different sentences \
+                 about one event; they do not contradict each other and the spoken one \
+                 is the fuller.",
+            ),
+            (
+                "ModuleChanged",
+                "This one is not repetition. It has two senders and this arm cannot \
+                 tell them apart. One is somebody really switching module, and that is \
+                 announced where it happens. The other is the end of a task sync asking \
+                 the panel to repaint, with nothing switched at all. Announcing here \
+                 would tell somebody they had moved to Tasks when they had not. One \
+                 update doing two jobs is the real fault and splitting it is its own \
+                 change.",
+            ),
+        ]
+    }
+
+    /// What an arm that shows something and says nothing gets wrong.
+    fn what_is_shown_and_never_said(
+        arms: &[(String, String)],
+        registered: &[(&str, &str)],
+    ) -> Vec<String> {
+        let mut wrong = Vec::new();
+        for (name, arm) in arms {
+            if !arm.contains("set_status_text(") {
+                continue;
+            }
+            if arm.contains("a11y.announce") || arm.contains("a11y.signal") {
+                continue;
+            }
+            match registered.iter().find(|(who, _)| who == name) {
+                None => wrong.push(format!(
+                    "{name} writes to the status bar and says nothing, and nobody has \
+                     said why it is allowed to"
+                )),
+                Some((_, why)) if why.len() < 40 => wrong.push(format!(
+                    "{name} is registered as quiet with {} characters of reason, which \
+                     is not one",
+                    why.len()
+                )),
+                Some(_) => {}
+            }
+        }
+        wrong
+    }
+
+    #[test]
+    fn test_every_arm_that_shows_something_says_it_or_is_named_as_quiet() {
+        // The status bar is a line at the bottom of a window, which is not
+        // somewhere anybody navigating by ear goes. Four arms wrote there and
+        // said nothing, and one of them, the task lists loading, sat between
+        // two siblings that both announce.
+        //
+        // A handler may still be quiet, but only on purpose and only with the
+        // reason written down, so the next person reads a decision rather than
+        // guessing at an oversight.
+        let source = the_window_itself();
+        let arms = every_arm(&the_update_handler(&source));
+        assert!(
+            arms.len() > 30,
+            "only {} arms were found, so the reading is broken",
+            arms.len()
+        );
+        let wrong = what_is_shown_and_never_said(&arms, quiet_on_purpose());
+        assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
+    }
+
+    #[test]
+    fn test_the_quiet_arms_are_each_said_somewhere_else() {
+        // Every registered silence rests on a fact somewhere else in this
+        // file. This is the test that notices when one of those facts stops
+        // being true, which nothing else would.
+        //
+        // Green the day it was written, so it was proved by taking each of the
+        // three supports out by hand and watching it go red. All three are
+        // recorded in guards.toml.
+        let source = the_window_itself();
+        assert!(
+            !source.contains("fn the_window_itself("),
+            "the tests were not cut off, so these checks are reading their own words"
+        );
+
+        // Offline mode is safe only while the whole sentence goes out ahead of
+        // it. A second sender added without one would be silent and nothing
+        // else would notice.
+        let senders: Vec<_> = source
+            .match_indices("try_send(UIUpdate::OfflineModeChanged(")
+            .map(|(at, _)| at)
+            .collect();
+        assert!(!senders.is_empty(), "nothing sends the offline mode update");
+        for at in &senders {
+            let before = &source[at.saturating_sub(400)..*at];
+            assert!(
+                before.contains("send_status("),
+                "the offline mode update is sent with no sentence in front of it, so \
+                 the change is now silent"
+            );
+        }
+
+        // The queue count is safe only while the flush result goes out first.
+        for (at, _) in source.match_indices("tx.send(UIUpdate::OutboxQueueCount(") {
+            let before = &source[at.saturating_sub(400)..at];
+            assert!(
+                before.contains("UIUpdate::OutboxFlushComplete("),
+                "the outbox queue count is sent without the flush result in front of \
+                 it, so the flush is now silent"
+            );
+        }
+
+        // A real module switch is safe only while the switch itself announces.
+        let switch = source
+            .split_once("let _ = switch_tx.try_send(UIUpdate::ModuleChanged(module));")
+            .expect("the place a module is really switched")
+            .1;
+        let near = &switch[..600.min(switch.len())];
+        assert!(
+            near.contains("a11y.announce(") && near.contains("Switching to"),
+            "switching module no longer says so where it happens, and the handler is \
+             registered as quiet on the strength of it"
+        );
+    }
+
+    #[test]
+    fn test_the_quiet_check_can_tell_the_two_apart() {
+        // Proving the measurement. A source read that finds nothing passes,
+        // and from outside that is indistinguishable from one that finds
+        // everything.
+        let handler = "\n        UIUpdate::SaysIt(x) => {\n\
+            \x20           frame.set_status_text(&msg, 0);\n\
+            \x20           let _ = a11y.announce_topic(&msg, Priority::Low, \"x\");\n\
+            \x20       }\n\
+            \x20       UIUpdate::ShowsOnly(x) => {\n\
+            \x20           frame.set_status_text(&msg, 0);\n\
+            \x20       }\n\
+            \x20       UIUpdate::FillsAList(x) => {\n\
+            \x20           list.set_item_count(0);\n\
+            \x20       }\n";
+        let arms = every_arm(handler);
+        assert_eq!(arms.len(), 3, "{arms:?}");
+        assert_eq!(arms[0].0, "SaysIt");
+
+        // An arm that only fills a list is not asked to say anything.
+        let real_reason = "a reason long enough to be a sentence rather than a word, \
+                           naming where the same event is said instead";
+        assert!(
+            what_is_shown_and_never_said(&arms, &[("ShowsOnly", real_reason)]).is_empty(),
+            "a registered silence with a real reason was reported"
+        );
+
+        let wrong = what_is_shown_and_never_said(&arms, &[]);
+        assert_eq!(wrong.len(), 1, "{wrong:?}");
+        assert!(wrong[0].contains("ShowsOnly"), "{wrong:?}");
+        assert!(wrong[0].contains("nobody has said why"), "{wrong:?}");
+
+        let wrong = what_is_shown_and_never_said(&arms, &[("ShowsOnly", "because")]);
+        assert!(
+            wrong[0].contains("which is not one"),
+            "a silence registered with a word rather than a reason was not reported: \
+             {wrong:?}"
+        );
+
+        // Every reason really written down is a sentence.
+        for (name, why) in quiet_on_purpose() {
+            assert!(
+                why.len() >= 40,
+                "{name} is registered with {} characters of reason",
+                why.len()
+            );
+        }
+
+        // And the handler really was found and really was cut at its end.
+        let body = the_update_handler(&the_window_itself());
+        assert!(
+            body.len() > 5000,
+            "only {} characters of the handler were read",
+            body.len()
+        );
+        assert!(
+            !body.contains("fn flush_outbox("),
+            "the handler was not cut at its end, so arms are being read from the rest \
+             of the file"
+        );
+    }
 
     #[test]
     fn test_a_mailbox_holding_one_message_does_not_say_one_messages() {

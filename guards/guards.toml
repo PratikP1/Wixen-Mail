@@ -3655,6 +3655,67 @@ red = [
     "presentation::wx_managers::tests::test_every_answer_the_manager_windows_give_is_said_out_loud",
 ]
 
+# ── An update that shows something either says it or is named as quiet ───────
+#
+# Four arms of the one routine that handles every update wrote to the status
+# bar and said nothing. Three of them were quiet for a reason nobody had
+# written down and the fourth, the task lists arriving, was an oversight: it
+# sits between calendar containers and reminders, both of which show and say.
+# Notes turned out to be worse still, filling its sidebar without showing or
+# saying anything, and now does both.
+#
+# The other three stay quiet on purpose and are registered with a reason each.
+# A silence is now allowed only if somebody writes a sentence saying where the
+# same event is spoken instead, and the four records below are what notices
+# when one of those explanations stops being true.
+#
+# What these records cannot see. They are source reads, because reaching an arm
+# needs a window, a frame and a running event loop. They can tell that the arm
+# announces what it shows. They cannot tell whether the announcement reaches a
+# screen reader, whether two announcements a second apart are distinguishable
+# by ear, or whether the sentence is a true one. Only a screen reader run
+# answers those, and opening Tasks now says two sentences where it said one.
+
+[[guard]]
+name = "how many task lists arrived is said, not only shown"
+file = "src/presentation/wx_app.rs"
+before = """            let _ = a11y.announce_topic(&msg, Priority::Low, "task-lists");"""
+after = """            let _ = &msg;"""
+red = [
+    "presentation::wx_app::what_the_status_line_says::test_every_arm_that_shows_something_says_it_or_is_named_as_quiet",
+]
+
+[[guard]]
+name = "the offline mode change is spoken by the sentence sent ahead of it"
+file = "src/presentation/wx_app.rs"
+before = """                            send_status(&ui_tx, &runtime, label);"""
+after = """                            let _ = label;"""
+red = [
+    "presentation::wx_app::what_the_status_line_says::test_the_quiet_arms_are_each_said_somewhere_else",
+]
+
+[[guard]]
+name = "the outbox queue count is covered by the flush result sent before it"
+file = "src/presentation/wx_app.rs"
+before = """        let _ = tx.send(UIUpdate::OutboxFlushComplete(sent, failed)).await;"""
+after = """        let _ = (sent, failed);"""
+red = [
+    "presentation::wx_app::what_the_status_line_says::test_the_quiet_arms_are_each_said_somewhere_else",
+]
+
+[[guard]]
+name = "switching module is said where the switch happens"
+file = "src/presentation/wx_app.rs"
+before = """                    // Announce to screen reader
+                    let _ = a11y.announce(
+                        &format!("Switching to {}", label),
+                        crate::presentation::accessibility::announcements::Priority::Normal,
+                    );"""
+after = """                    let _ = label;"""
+red = [
+    "presentation::wx_app::what_the_status_line_says::test_the_quiet_arms_are_each_said_somewhere_else",
+]
+
 # ── One day cut out of a series is two writes, and only one takes a day away ─
 #
 # Changing one day of a repeating event creates a separate appointment for that
