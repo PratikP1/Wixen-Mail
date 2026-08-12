@@ -428,6 +428,22 @@ red = [
 ]
 
 [[guard]]
+# The sentence whose arrival made the record above ambiguous, and which had no
+# record of its own, so the same plural fault could come back in it with
+# everything green. Anchored on the routine for the same reason.
+name = "one removal waiting is not read out in the plural"
+file = "src/application/allowed.rs"
+before = """pub fn removals_waiting_here(count: usize) -> String {
+    match count {
+        1 => format!("""
+after = """pub fn removals_waiting_here(count: usize) -> String {
+    match count {
+        0 => format!("""
+red = [
+    "application::allowed::tests::test_a_removal_held_back_says_the_mail_is_still_on_the_server",
+]
+
+[[guard]]
 name = "folding two results keeps the other setting's count"
 file = "src/application/contacts_sync.rs"
 before = """        self.waiting_on_how_far_a_change_goes = self
