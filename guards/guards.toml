@@ -2996,3 +2996,61 @@ after = "        message_id: crate::application::message_id::fresh(&req.from_add
 red = [
     "application::mail_controller::send_request_tests::test_one_queued_message_keeps_one_identifier_across_attempts",
 ]
+
+# ── What is said about a repeating event, and when ──────────────────────────
+#
+# This product exists for people who cannot see the list, so a sentence that
+# disagrees with what happened is not a cosmetic fault, it is the fault. Four
+# of them lived on this path at once: a day taken off announced while the day
+# stayed on the list, two exits after a confirmed delete that said nothing at
+# all, a window that announced a deletion at the moment it wrote the request
+# down rather than when it was carried out, and a save reported as a deletion.
+
+[[guard]]
+name = "a confirmed delete that finds nothing to delete still says so"
+file = "src/application/pim_command.rs"
+before = """    format!("{named} is no longer there. Nothing has been changed.")"""
+after = """    format!("{named} deleted")"""
+red = [
+    "application::pim_command::tests::test_a_row_that_went_away_between_the_question_and_the_answer_is_said_not_left_silent",
+]
+
+[[guard]]
+name = "one day taken off a series is not called a deletion"
+file = "src/application/calendar.rs"
+before = """        title => format!("{title}: that one day is taken off. The other days are unchanged."),"""
+after = """        title => format!("{title} deleted"),"""
+red = [
+    "application::calendar::tests::test_the_words_for_a_day_taken_off_say_the_others_are_unchanged",
+]
+
+[[guard]]
+name = "nothing the calendar window has written down is said as though it happened"
+file = "src/application/calendar.rs"
+before = """        WrittenDown::WholeSeriesDeleted => "The event will be deleted when you close this window.","""
+after = """        WrittenDown::WholeSeriesDeleted => "Event deleted.","""
+red = [
+    "application::calendar::tests::test_nothing_the_calendar_window_writes_down_is_said_as_though_it_had_happened",
+]
+
+[[guard]]
+name = "both exits after a confirmed delete say the row has gone"
+file = "src/presentation/managers.rs"
+before = """            let Some(opened) = opened else {
+                return send_refusal(tx, rt, &no_longer_there(kind, &name));
+            };"""
+after = """            let Some(opened) = opened else {
+                return;
+            };"""
+red = [
+    "presentation::managers::changing_one_day_of_a_series::test_every_answer_a_delete_gives_reaches_the_one_place_that_speaks_and_reloads",
+]
+
+[[guard]]
+name = "a series that is still there is not reported as deleted"
+file = "src/presentation/managers.rs"
+before = """    if the_event_is_still_there {"""
+after = """    if false {"""
+red = [
+    "presentation::managers::changing_one_day_of_a_series::test_a_day_taken_off_by_the_calendar_window_is_not_reported_as_a_deletion",
+]

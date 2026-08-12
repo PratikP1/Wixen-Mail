@@ -195,6 +195,26 @@ pub fn cannot_be_moved_into(kind: ItemKind, holder: ContainerKind, container_nam
     )
 }
 
+/// What to say when the row a confirmed command was about has gone.
+///
+/// Between the question and the answer somebody else's sync, or another window,
+/// can take the row away. Returning quietly at that point is the worst of both:
+/// the question was answered, so something is expected to have happened, and
+/// nothing is said either way. Somebody listening then presses the key again on
+/// whichever row moved up into the selection.
+///
+/// It does not say deleted, because nothing was. It says the row has gone and
+/// that nothing was changed, which are the two facts worth having.
+pub fn no_longer_there(kind: ItemKind, name: &str) -> String {
+    let named = match name.trim() {
+        // A row whose title never loaded, the same case the question itself
+        // copes with. "That event is no longer there" is still a sentence.
+        "" => format!("That {}", thing(kind)),
+        title => format!("\"{title}\""),
+    };
+    format!("{named} is no longer there. Nothing has been changed.")
+}
+
 /// What to say after a toggle, which has to name the new state.
 ///
 /// "Done" rather than "toggled". The whole point of a toggle is that you
@@ -359,6 +379,31 @@ mod tests {
 
         assert!(PimCommand::TogglePin.applies_to(ItemKind::Note));
         assert!(!PimCommand::TogglePin.applies_to(ItemKind::Task));
+    }
+
+    #[test]
+    fn test_a_row_that_went_away_between_the_question_and_the_answer_is_said_not_left_silent() {
+        // Somebody has answered a question about destroying something named,
+        // and then a second question about which days it meant. Silence after
+        // that is indistinguishable from a delete that worked, and the next
+        // thing they do is press Delete again on whatever row moved up.
+        let said = no_longer_there(ItemKind::Event, "Stand-up");
+
+        assert!(said.contains("Stand-up"), "the row is not named: {said}");
+        assert!(
+            said.contains("Nothing has been changed"),
+            "it does not say nothing happened: {said}"
+        );
+        assert!(
+            !said.to_lowercase().contains("delet"),
+            "it says something was deleted, and nothing was: {said}"
+        );
+
+        let untitled = no_longer_there(ItemKind::Event, "   ");
+        assert_eq!(
+            untitled, "That event is no longer there. Nothing has been changed.",
+            "a row whose title never loaded left the sentence unfinished"
+        );
     }
 
     #[test]

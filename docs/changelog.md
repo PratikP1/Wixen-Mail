@@ -8,6 +8,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: taking one day off a repeating event said it was done while the day
+  was still on the list.** Pressing Delete on one day of a repeating event and
+  answering "just this one day" said that the day was taken off and the other
+  days were unchanged. That was true in what is stored, and the calendar list on
+  screen still held the day until something else read it back, so the sentence
+  and the list disagreed. Anybody working from the sentence had no way to know,
+  and anybody working from the list would delete it again. The list is now read
+  back before the sentence is said, the same way every other delete on that key
+  already worked.
+
+- **Fixed: a confirmed delete of a repeating event could end in silence.** If
+  the event was taken away by a sync, or by another window, between the
+  confirmation and the answer about which days it meant, the key did nothing and
+  said nothing. Silence there is the one thing indistinguishable from a delete
+  that worked, so the next press landed on whichever row had moved up. It now
+  says the event is no longer there and that nothing has been changed.
+
+- **Fixed: taking one day off a repeating event from the Calendar window
+  reported it as a deletion.** The event is still there, with that one day taken
+  out of it. The status line said it had been deleted.
+
 - **Fixed: every message sent went out with no identifier of its own, so no
   mail program could thread it.** A message carries an identifier that every
   other program uses to work out which conversation it belongs to. Messages sent

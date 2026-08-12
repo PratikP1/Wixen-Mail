@@ -1420,6 +1420,68 @@ pub fn what_it_will_do(means: EditMeans, goes: WhereAChangeGoes) -> String {
     }
 }
 
+/// What one day taken off a series is called, wherever it is said.
+///
+/// Taking one day off is not a deletion, and it was announced as one for as
+/// long as it existed. The event stays, the other days keep their own values,
+/// and somebody told the event was deleted has been told the other fifty-one
+/// days went with it.
+///
+/// One owner for these words. Two places said them, in two spellings, and two
+/// spellings of one sentence is how one of them becomes false without anybody
+/// editing it.
+pub fn one_day_taken_off(name: &str) -> String {
+    match name.trim() {
+        // A row whose title never loaded. The sentence still has to be a
+        // sentence rather than start with a colon.
+        "" => "That one day is taken off. The other days are unchanged.".to_string(),
+        title => format!("{title}: that one day is taken off. The other days are unchanged."),
+    }
+}
+
+/// Something the calendar window has been asked for and not yet carried out.
+///
+/// The window collects what it is asked for and hands the list back when it
+/// closes, so nothing it writes down has happened at the moment it is written
+/// down, and one of them may still be refused. Saying "Event deleted" there
+/// was a sentence that disagreed with what had happened, every time, and on a
+/// calendar this program can only read it was followed a moment later by a
+/// refusal saying nothing had changed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WrittenDown {
+    /// A new event, typed into the editor.
+    Created,
+    /// A change meant for every day the event falls on.
+    WholeSeriesChanged,
+    /// A change meant for the one day that was opened.
+    OneDayChanged,
+    /// The event itself, taken off the calendar.
+    WholeSeriesDeleted,
+    /// The one day that was opened, taken out of the series.
+    OneDayTakenOff,
+}
+
+/// What to say about something written down and not yet carried out.
+///
+/// Each one says it will happen and says when. No two of them read alike, for
+/// the same reason [`what_it_will_do`] gives: two sentences that read the same
+/// leave somebody unable to tell which of the two things they asked for.
+pub const fn what_is_waiting(written: WrittenDown) -> &'static str {
+    match written {
+        WrittenDown::Created => "The new event will be added when you close this window.",
+        WrittenDown::WholeSeriesChanged => "The change will be saved when you close this window.",
+        WrittenDown::OneDayChanged => {
+            "Only the day you opened will be changed when you close this window. The other \
+             days will be left alone."
+        }
+        WrittenDown::WholeSeriesDeleted => "The event will be deleted when you close this window.",
+        WrittenDown::OneDayTakenOff => {
+            "That one day will be taken off when you close this window. The other days will \
+             be left alone."
+        }
+    }
+}
+
 /// What has to be said about a repeating event filed in a Google or Outlook
 /// calendar, because neither of them has ever been told it repeats.
 ///
@@ -2392,6 +2454,80 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_the_words_for_a_day_taken_off_say_the_others_are_unchanged() {
+        // Taking one day off a series is not a deletion. The event stays, and
+        // somebody told it was deleted has been told the other fifty-one days
+        // are gone too.
+        let said = one_day_taken_off("Stand-up");
+
+        assert!(said.contains("Stand-up"), "the event is not named: {said}");
+        assert!(
+            said.contains("taken off"),
+            "it does not say the day is off: {said}"
+        );
+        assert!(
+            said.contains("other days are unchanged"),
+            "it does not say the rest are untouched: {said}"
+        );
+        assert!(
+            !said.to_lowercase().contains("delet"),
+            "it says the event was deleted, and it was not: {said}"
+        );
+        assert_eq!(
+            one_day_taken_off("  "),
+            "That one day is taken off. The other days are unchanged.",
+            "an untitled event left the sentence starting with a colon"
+        );
+    }
+
+    #[test]
+    fn test_nothing_the_calendar_window_writes_down_is_said_as_though_it_had_happened() {
+        // The calendar window collects what it is asked for and hands it back
+        // when it closes. Nothing it writes down has happened yet, and one of
+        // them may still be refused, so none of these may be in the past
+        // tense.
+        let all = [
+            WrittenDown::Created,
+            WrittenDown::WholeSeriesChanged,
+            WrittenDown::OneDayChanged,
+            WrittenDown::WholeSeriesDeleted,
+            WrittenDown::OneDayTakenOff,
+        ];
+        let mut said: Vec<&str> = Vec::new();
+        for written in all {
+            let sentence = what_is_waiting(written);
+            assert!(
+                sentence.contains("will"),
+                "{written:?} is not said as something still to happen: {sentence}"
+            );
+            assert!(
+                sentence.contains("when you close this window"),
+                "{written:?} does not say when it happens: {sentence}"
+            );
+            for past in [
+                "Event created",
+                "Event updated",
+                "Event deleted",
+                "That one day is taken off",
+            ] {
+                assert!(
+                    !sentence.contains(past),
+                    "{written:?} still reads as done: {sentence}"
+                );
+            }
+            said.push(sentence);
+        }
+        said.sort_unstable();
+        let before = said.len();
+        said.dedup();
+        assert_eq!(
+            said.len(),
+            before,
+            "two of the five read alike, so nobody can tell which one they got"
+        );
     }
 
     /// A weekly series, stored the way a calendar server sends one.

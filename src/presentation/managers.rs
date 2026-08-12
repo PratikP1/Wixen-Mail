@@ -554,6 +554,40 @@ fn one_day_of_a_series_changed(
     ))
 }
 
+/// Which of the two a Delete answer really carried out.
+///
+/// Both answers arrive on the same key and only one of them removes anything.
+/// Taking one day off saves the series with that day taken out of it, so the
+/// event is still there, and reporting that as a deletion tells somebody an
+/// event they can still open has gone.
+const fn what_a_delete_answer_did(the_event_is_still_there: bool, id: String) -> UIUpdate {
+    if the_event_is_still_there {
+        UIUpdate::CalendarEventSaved(id)
+    } else {
+        UIUpdate::CalendarEventDeleted(id)
+    }
+}
+
+/// One day taken off a series that stays, and the sentence for it.
+///
+/// Not a deletion, so it hands back what to say rather than doing the saying.
+/// The answer then leaves through the same place every other answer leaves
+/// through, which is where the list on screen is read back. Saying it here and
+/// returning is what left the day on the list while announcing it was off.
+fn a_day_taken_off(
+    cache: &MessageCache,
+    series: &crate::data::message_cache::CalendarEventEntry,
+    opened: &CalendarEventItem,
+    name: &str,
+) -> crate::common::Result<String> {
+    cache
+        .save_calendar_event(&crate::application::calendar::one_day_called_off(
+            series,
+            &opened.start,
+        ))
+        .map(|()| crate::application::calendar::one_day_taken_off(name))
+}
+
 /// The calendar dialog, which returns a list of actions rather than a set.
 pub fn manage_calendar(
     state: &Arc<StdMutex<WxUIState>>,
@@ -637,6 +671,7 @@ pub fn manage_calendar(
                 // Calling one day off is not a deletion. The series stays, with
                 // that day taken out of it, so the other days keep their own
                 // values and the event still exists to be changed again.
+                let one_day_off = matches!((&stored, means), (Some(_), EditMeans::OneDay));
                 let written = match (stored, means) {
                     (Some(series), EditMeans::OneDay) => cache.save_calendar_event(
                         &crate::application::calendar::one_day_called_off(&series, &opened.start),
@@ -646,9 +681,11 @@ pub fn manage_calendar(
                 match written {
                     Ok(()) => {
                         changed = true;
-                        let _ = tx.try_send(UIUpdate::CalendarEventDeleted(opened.id));
+                        let _ = tx.try_send(what_a_delete_answer_did(one_day_off, opened.id));
                     }
-                    Err(e) => failures.push(format!("delete {}: {}", opened.id, e)),
+                    // Named, not numbered, and not called a deletion when it
+                    // was a save. This is read out.
+                    Err(e) => failures.push(format!("{}: {}", opened.summary, e)),
                 }
             }
         }
@@ -1341,7 +1378,9 @@ pub fn pim_command(
     rt: &Arc<Runtime>,
 ) {
     use crate::application::new_item::ItemKind;
-    use crate::application::pim_command::{PimCommand, confirm_delete, deleted, toggled};
+    use crate::application::pim_command::{
+        PimCommand, confirm_delete, deleted, no_longer_there, toggled,
+    };
 
     let crate::application::pim_command::PimAction { command, kind, row } = action;
 
@@ -1361,6 +1400,12 @@ pub fn pim_command(
     // of what the panel is showing, and the panel was filled from the cache.
     let now = !was_set;
 
+    // The answer to one day of a series taken off, held rather than acted on
+    // here. It is a save and not a deletion, so it cannot join the deletions
+    // below, and returning from inside this block is what used to say the day
+    // was gone while leaving it on the list.
+    let mut one_day: Option<crate::common::Result<String>> = None;
+
     if command == PimCommand::Delete {
         // Confirmed, always. Nothing here can be undone, and a Delete key is
         // one row away from every other key somebody might have meant.
@@ -1372,6 +1417,8 @@ pub fn pim_command(
             .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
             .build()
             .show_modal();
+        // The one silence that is right here. The question was answered No,
+        // and the answer to No is that nothing happens.
         if asked != ID_YES {
             return;
         }
@@ -1381,8 +1428,17 @@ pub fn pim_command(
         // above only ever named the one.
         if kind == ItemKind::Event {
             let opened = lock_state(state).events.get(row).cloned();
-            let Some(opened) = opened else { return };
+            // Said, not returned from quietly. Somebody has answered a question
+            // about destroying something named, so silence here reads exactly
+            // like a delete that worked, and the next key press lands on
+            // whichever row moved up into the selection.
+            let Some(opened) = opened else {
+                return send_refusal(tx, rt, &no_longer_there(kind, &name));
+            };
             let goes = the_calendar_it_is_in(&cache, &opened);
+            // The other silence that is right here: the question about which
+            // days was left alone rather than answered, which is not a failure
+            // and must not be announced as one.
             let Some(means) = crate::presentation::wx_which_days::which_days_are_meant(
                 frame,
                 &name,
@@ -1399,54 +1455,43 @@ pub fn pim_command(
             // through the deletion below.
             if means == EditMeans::OneDay {
                 let Some(series) = cache.get_event_by_id(&opened.id).ok().flatten() else {
-                    return;
+                    return send_refusal(tx, rt, &no_longer_there(kind, &name));
                 };
-                let called_off =
-                    crate::application::calendar::one_day_called_off(&series, &opened.start);
-                return match cache.save_calendar_event(&called_off) {
-                    Ok(()) => {
-                        let _ = tx.try_send(UIUpdate::CalendarEventSaved(opened.id));
-                        send_status(
-                            tx,
-                            rt,
-                            &format!(
-                                "{name}: that one day is taken off. The other days are unchanged."
-                            ),
-                        );
-                    }
-                    Err(e) => send_refusal(tx, rt, &format!("{name}: {e}")),
-                };
+                one_day = Some(a_day_taken_off(&cache, &series, &opened, &name));
             }
         }
     }
 
-    let outcome = match command {
-        PimCommand::Delete => match kind {
-            ItemKind::Contact => cache.delete_contact(&id),
-            ItemKind::Event => cache.delete_calendar_event(&id),
-            ItemKind::Reminder => cache.delete_reminder(&id),
-            ItemKind::Task => cache.delete_task(&id),
-            ItemKind::Note => cache.delete_note(&id),
-            ItemKind::Mail => return,
-        }
-        .map(|()| deleted(kind, &name)),
-        PimCommand::ToggleComplete => match kind {
-            ItemKind::Task => cache.toggle_task_complete(&id),
-            ItemKind::Reminder => cache.toggle_reminder_complete(&id),
-            _ => return,
-        }
-        .map(|()| toggled(command, &name, now)),
-        PimCommand::TogglePin => match kind {
-            ItemKind::Note => cache.toggle_note_pin(&id),
-            _ => return,
-        }
-        .map(|()| toggled(command, &name, now)),
-        // Its own path: it has a window in the middle of it, and somebody can
-        // leave that window without choosing, which is not a failure and must
-        // not be announced as one.
-        PimCommand::Move => match move_item(&cache, state, frame, kind, &id, &name) {
-            Some(outcome) => outcome,
-            None => return,
+    let outcome = match one_day {
+        Some(written) => written,
+        None => match command {
+            PimCommand::Delete => match kind {
+                ItemKind::Contact => cache.delete_contact(&id),
+                ItemKind::Event => cache.delete_calendar_event(&id),
+                ItemKind::Reminder => cache.delete_reminder(&id),
+                ItemKind::Task => cache.delete_task(&id),
+                ItemKind::Note => cache.delete_note(&id),
+                ItemKind::Mail => return,
+            }
+            .map(|()| deleted(kind, &name)),
+            PimCommand::ToggleComplete => match kind {
+                ItemKind::Task => cache.toggle_task_complete(&id),
+                ItemKind::Reminder => cache.toggle_reminder_complete(&id),
+                _ => return,
+            }
+            .map(|()| toggled(command, &name, now)),
+            PimCommand::TogglePin => match kind {
+                ItemKind::Note => cache.toggle_note_pin(&id),
+                _ => return,
+            }
+            .map(|()| toggled(command, &name, now)),
+            // Its own path: it has a window in the middle of it, and somebody can
+            // leave that window without choosing, which is not a failure and must
+            // not be announced as one.
+            PimCommand::Move => match move_item(&cache, state, frame, kind, &id, &name) {
+                Some(outcome) => outcome,
+                None => return,
+            },
         },
     };
 
@@ -5943,6 +5988,150 @@ mod changing_one_day_of_a_series {
             day_first < series_after,
             "the day is taken off the series before it is kept anywhere, so a \
              failure in the second write loses it with nothing said"
+        );
+    }
+
+    /// The body of one routine, from its signature to the brace that closes it
+    /// in the first column.
+    fn the_body_of(source: &str, signature: &str) -> String {
+        let after = source
+            .split_once(signature)
+            .unwrap_or_else(|| panic!("{signature} was not found"))
+            .1;
+        let end = after.find("\n}").map_or(after.len(), |at| at + 1);
+        after[..end].to_string()
+    }
+
+    /// What a confirmed delete gets wrong, read off its own source.
+    ///
+    /// Three rules, and each of them has been broken here. Every answer has to
+    /// reach the one place that speaks and reads the list back, so a write
+    /// inside the command is a return out of it and leaves the sentence and
+    /// the list disagreeing. And every exit taken after somebody has answered
+    /// a question about destroying something has to say something, because
+    /// silence there is indistinguishable from a delete that worked.
+    fn what_a_confirmed_delete_gets_wrong(body: &str) -> Vec<String> {
+        let mut wrong = Vec::new();
+        let reloads = body.matches("load_module_data(").count();
+        if reloads != 1 {
+            wrong.push(format!(
+                "the list on screen is read back {reloads} times, and every answer \
+                 has to leave through the one place that speaks and reads it back"
+            ));
+        }
+        if body.contains("save_calendar_event(") {
+            wrong.push(
+                "a write inside the command is a return out of it, so the sentence \
+                 is said and the list on screen is never read back"
+                    .to_string(),
+            );
+        }
+        let said = body.matches("no_longer_there(").count();
+        if said < 2 {
+            wrong.push(format!(
+                "{said} of the exits taken after a confirmed delete say the row has \
+                 gone, and both of them have to"
+            ));
+        }
+        wrong
+    }
+
+    #[test]
+    fn test_every_answer_a_delete_gives_reaches_the_one_place_that_speaks_and_reloads() {
+        let source = std::fs::read_to_string("src/presentation/managers.rs")
+            .expect("this file to be readable");
+
+        let body = the_body_of(&source, "pub fn pim_command(");
+
+        assert!(
+            body.len() > 1000,
+            "only {} characters of the command were read, so the reading is broken",
+            body.len()
+        );
+        let wrong = what_a_confirmed_delete_gets_wrong(&body);
+        assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
+    }
+
+    #[test]
+    fn test_the_delete_wiring_check_can_tell_the_two_apart() {
+        // Proving the measurement. A source read that finds nothing passes,
+        // and from outside that is indistinguishable from one that finds
+        // everything. Each of the three rules is broken here on purpose, in
+        // the shape it was really broken in.
+        let sound = "pub fn pim_command(a: u8) {\n\
+            \x20   let Some(opened) = opened else {\n\
+            \x20       return send_refusal(tx, rt, &no_longer_there(kind, &name));\n\
+            \x20   };\n\
+            \x20   let Some(series) = stored else {\n\
+            \x20       return send_refusal(tx, rt, &no_longer_there(kind, &name));\n\
+            \x20   };\n\
+            \x20   load_module_data(module_for(kind), &Some(cache), account_id, tx);\n\
+            }\n";
+        assert!(
+            what_a_confirmed_delete_gets_wrong(&the_body_of(sound, "pub fn pim_command("))
+                .is_empty(),
+            "a sound body was reported as broken"
+        );
+
+        let writes_and_returns = sound.replace(
+            "    load_module_data(module_for(kind), &Some(cache), account_id, tx);",
+            "    return match cache.save_calendar_event(&called_off) { Ok(()) => (), _ => () };",
+        );
+        let silent = sound.replace(
+            "        return send_refusal(tx, rt, &no_longer_there(kind, &name));\n    };\n    let Some(series)",
+            "        return;\n    };\n    let Some(series)",
+        );
+        let reloads_nowhere = sound.replace(
+            "    load_module_data(module_for(kind), &Some(cache), account_id, tx);",
+            "    let _ = tx.try_send(UIUpdate::CalendarEventSaved(opened.id));",
+        );
+        for (broken, expected) in [
+            (&writes_and_returns, "read back"),
+            (&silent, "say the row has"),
+            (&reloads_nowhere, "read back"),
+        ] {
+            let wrong =
+                what_a_confirmed_delete_gets_wrong(&the_body_of(broken, "pub fn pim_command("));
+            assert!(
+                wrong.iter().any(|said| said.contains(expected)),
+                "a break the check exists for was not reported: {wrong:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_day_taken_off_by_the_calendar_window_is_not_reported_as_a_deletion() {
+        // The series is saved with that one day taken out of it, so the event
+        // is still there and every other day of it is unchanged. Reported as a
+        // deletion, the status line names an event that still exists as gone,
+        // and the only way to find out otherwise is to read the list.
+        let kept = what_a_delete_answer_did(true, "series-1".to_string());
+        assert!(
+            matches!(kept, UIUpdate::CalendarEventSaved(_)),
+            "a series that is still there was reported as {kept:?}"
+        );
+        let gone = what_a_delete_answer_did(false, "series-1".to_string());
+        assert!(
+            matches!(gone, UIUpdate::CalendarEventDeleted(_)),
+            "a real deletion was reported as {gone:?}"
+        );
+
+        let source = std::fs::read_to_string("src/presentation/managers.rs")
+            .expect("this file to be readable");
+        let body = the_body_of(&source, "pub fn manage_calendar(");
+        assert!(
+            body.len() > 500,
+            "only {} characters of the calendar dialog were read, so the reading is broken",
+            body.len()
+        );
+        assert!(
+            body.contains("what_a_delete_answer_did("),
+            "the dialog decides for itself what a Delete answer did"
+        );
+        assert!(
+            !body.contains("UIUpdate::CalendarEventDeleted("),
+            "the dialog still names a deletion of its own, so the two answers \
+             can drift apart again"
         );
     }
 
